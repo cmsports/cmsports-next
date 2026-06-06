@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import dynamic from 'next/dynamic'
+
+const QRCodeSVG = dynamic(() => import('qrcode.react').then(mod => mod.QRCodeSVG), { ssr: false })
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,9 +84,13 @@ export default function PerfilPage() {
       <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, marginBottom:16, textAlign:'center' }}>
         <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Mi código QR de ingreso</div>
         <div style={{ background:'white', padding:16, borderRadius:12, display:'inline-block', marginBottom:12 }}>
-          <div style={{ width:160, height:160, background:'#f0f0f0', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:'#999' }}>
-            QR: {jugador.id.slice(0,8)}...
-          </div>
+          <QRCodeSVG
+            value={`cmsports:jugador:${jugador.id}`}
+            size={160}
+            bgColor="#ffffff"
+            fgColor="#000000"
+            level="M"
+          />
         </div>
         <div style={{ fontSize:12, color:'#6c7280' }}>Muestra este código al ingresar al club</div>
       </div>
