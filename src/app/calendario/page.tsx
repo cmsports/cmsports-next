@@ -213,6 +213,7 @@ export default function CalendarioPage() {
                     <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>
                       {ev.hora_inicio?.slice(0,5)}{ev.hora_fin ? ' - '+ev.hora_fin.slice(0,5) : ''}{ev.hora_inicio ? ' · ' : ''}{ev.tipo}
                     </div>
+                    {ev.descripcion && <div style={{ fontSize:11, color:'#8890a4', marginTop:4 }}>{ev.descripcion}</div>}
                   </div>
                   {esAdmin && <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#f87171', cursor:'pointer', fontSize:14 }}>✕</button>}
                 </div>
