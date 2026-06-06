@@ -23,7 +23,7 @@ const navAdmin = [
 ]
 
 const navProfesor = [
-  { label:'Dashboard', icon:'📊', href:'/dashboard' },
+  { label:'Dashboard', icon:'📊', href:'/dashboard-profesor' },
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
