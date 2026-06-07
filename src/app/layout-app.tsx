@@ -14,12 +14,13 @@ const navAdmin = [
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
-  { label:'QR Asistencia', icon:'📱', href:'/asistencia' },
+  { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
   { label:'Clases', icon:'📚', href:'/clases' },
   { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
   { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
   { label:'Finanzas', icon:'💰', href:'/finanzas' },
+  { label:'Reportes', icon:'📄', href:'/reportes' }
 ]
 
 const navProfesor = [
@@ -28,7 +29,7 @@ const navProfesor = [
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
   { label:'Mis clases', icon:'📚', href:'/clases' },
-  { label:'QR Asistencia', icon:'📱', href:'/asistencia' },
+  { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
 ]
 
