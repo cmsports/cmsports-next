@@ -23,6 +23,187 @@ const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','mat
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
+function ReportesTab({ clubId, perfil }: { clubId: string | null, perfil: any }) {
+  const [tipo, setTipo] = useState<'mensual'|'trimestral'|'semestral'|'anual'>('mensual')
+  const [mes, setMes] = useState(new Date().getMonth() + 1)
+  const [trimestre, setTrimestre] = useState(Math.ceil((new Date().getMonth() + 1) / 3))
+  const [semestre, setSemestre] = useState(new Date().getMonth() < 6 ? 1 : 2)
+  const [anio, setAnio] = useState(new Date().getFullYear())
+  const [preview, setPreview] = useState<any>(null)
+  const [generando, setGenerando] = useState(false)
+
+  const mesesNR = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const catLabelR: Record<string, string> = {
+    mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo', arriendo_cancha:'Arriendo cancha',
+    donacion:'Donación', otro_ingreso:'Otro ingreso', sueldo_profesor:'Sueldo profesor',
+    sueldo_staff:'Sueldo staff', material_deportivo:'Material deportivo',
+    servicios_basicos:'Servicios básicos', mantenimiento:'Mantenimiento', otro_gasto:'Otro gasto'
+  }
+
+  function getRango() {
+    if (tipo === 'mensual') {
+      const ultimoDia = new Date(anio, mes, 0).getDate()
+      return { inicio: `${anio}-${String(mes).padStart(2,'0')}-01`, fin: `${anio}-${String(mes).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`, titulo: `${mesesNR[mes-1]} ${anio}` }
+    }
+    if (tipo === 'trimestral') {
+      const mi = (trimestre-1)*3+1, mf = trimestre*3
+      return { inicio: `${anio}-${String(mi).padStart(2,'0')}-01`, fin: `${anio}-${String(mf).padStart(2,'0')}-${new Date(anio,mf,0).getDate()}`, titulo: `Q${trimestre} ${anio}` }
+    }
+    if (tipo === 'semestral') {
+      const mi = semestre===1?1:7, mf = semestre===1?6:12
+      return { inicio: `${anio}-${String(mi).padStart(2,'0')}-01`, fin: `${anio}-${String(mf).padStart(2,'0')}-${new Date(anio,mf,0).getDate()}`, titulo: `${semestre===1?'1er':'2do'} Semestre ${anio}` }
+    }
+    return { inicio: `${anio}-01-01`, fin: `${anio}-12-31`, titulo: `Año ${anio}` }
+  }
+
+  const supabaseR = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+
+  async function generarPreview() {
+    if (!clubId) return
+    setGenerando(true)
+    const { inicio, fin } = getRango()
+    const [{ data: jugadores }, { data: movimientos }, { data: asistencias }, { data: torneos }] = await Promise.all([
+      supabaseR.from('jugadores').select('*').eq('club_id', clubId),
+      supabaseR.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+      supabaseR.from('asistencia').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+      supabaseR.from('torneos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
+    ])
+    const activos = (jugadores||[]).filter(j => j.estado==='activo')
+    const ingresos = (movimientos||[]).filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+m.monto,0)
+    const gastos = (movimientos||[]).filter(m=>m.tipo==='gasto').reduce((s,m)=>s+m.monto,0)
+    const desgloseI: Record<string,number> = {}
+    const desgloseG: Record<string,number> = {}
+    ;(movimientos||[]).forEach(m => {
+      if (m.tipo==='ingreso') desgloseI[m.categoria]=(desgloseI[m.categoria]||0)+m.monto
+      else desgloseG[m.categoria]=(desgloseG[m.categoria]||0)+m.monto
+    })
+    setPreview({ activos, ingresos, gastos, desgloseI, desgloseG, asistencias: asistencias||[], torneos: torneos||[] })
+    setGenerando(false)
+  }
+
+  async function exportarPDF() {
+    if (!preview) return
+    setGenerando(true)
+    const { titulo } = getRango()
+    const fmt = (n: number) => '$'+n.toLocaleString('es-CL')
+    const { default: jsPDF } = await import('jspdf')
+    const { default: autoTable } = await import('jspdf-autotable')
+    const doc = new jsPDF()
+    const W = doc.internal.pageSize.getWidth()
+    doc.setFillColor(108,99,255); doc.rect(0,0,W,32,'F')
+    doc.setTextColor(255,255,255); doc.setFontSize(20); doc.setFont('helvetica','bold')
+    doc.text('CmSports',14,14); doc.setFontSize(11); doc.setFont('helvetica','normal')
+    doc.text(`Informe ${tipo} — ${titulo}`,14,24)
+    doc.text(`Generado el ${new Date().toLocaleDateString('es-CL')}`,W-14,24,{align:'right'})
+    let y = 42
+    doc.setTextColor(40,40,40); doc.setFontSize(13); doc.setFont('helvetica','bold')
+    doc.text('Resumen Financiero',14,y); y+=8
+    autoTable(doc,{ startY:y, head:[['Concepto','Monto']], body:[['Ingresos',fmt(preview.ingresos)],['Gastos',fmt(preview.gastos)],['Balance',fmt(preview.ingresos-preview.gastos)]], theme:'striped', headStyles:{fillColor:[108,99,255]}, margin:{left:14,right:14} })
+    y=(doc as any).lastAutoTable.finalY+10
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.text('Ingresos por Categoría',14,y); y+=8
+    autoTable(doc,{ startY:y, head:[['Categoría','Monto']], body:Object.entries(preview.desgloseI).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[52,211,153]}, margin:{left:14,right:14} })
+    y=(doc as any).lastAutoTable.finalY+10
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.text('Gastos por Categoría',14,y); y+=8
+    autoTable(doc,{ startY:y, head:[['Categoría','Monto']], body:Object.entries(preview.desgloseG).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[248,113,113]}, margin:{left:14,right:14} })
+    doc.addPage(); y=20
+    autoTable(doc,{ startY:y, head:[['Nombre','Categoría','ELO','Estado']], body:preview.activos.sort((a:any,b:any)=>b.elo-a.elo).map((j:any)=>[j.nombre,j.categoria,j.elo,j.estado]), theme:'striped', headStyles:{fillColor:[108,99,255]}, margin:{left:14,right:14} })
+    const pc=doc.getNumberOfPages()
+    for(let i=1;i<=pc;i++){doc.setPage(i);doc.setFontSize(9);doc.setTextColor(150);doc.text(`CmSports — ${titulo} — Pág ${i} de ${pc}`,W/2,doc.internal.pageSize.getHeight()-8,{align:'center'})}
+    doc.save(`reporte_${titulo.replace(/ /g,'_')}.pdf`)
+    setGenerando(false)
+  }
+
+  const fmt = (n: number) => '$'+n.toLocaleString('es-CL')
+  const { titulo } = getRango()
+
+  return (
+    <div>
+      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, marginBottom:16 }}>
+        <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:16 }}>Configurar reporte</div>
+        <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
+          {(['mensual','trimestral','semestral','anual'] as const).map(t => (
+            <button key={t} onClick={() => setTipo(t)} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #1e2030', background: tipo===t?'#6c63ff':'#0a0c12', color: tipo===t?'white':'#8890a4', fontSize:12, cursor:'pointer', textTransform:'capitalize' }}>{t}</button>
+          ))}
+        </div>
+        <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:16 }}>
+          {tipo==='mensual' && (
+            <div style={{ flex:1, minWidth:140 }}>
+              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Mes</label>
+              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={mes} onChange={e=>setMes(parseInt(e.target.value))}>
+                {mesesNR.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+              </select>
+            </div>
+          )}
+          {tipo==='trimestral' && (
+            <div style={{ flex:1, minWidth:140 }}>
+              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Trimestre</label>
+              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={trimestre} onChange={e=>setTrimestre(parseInt(e.target.value))}>
+                <option value={1}>Q1 — Ene, Feb, Mar</option><option value={2}>Q2 — Abr, May, Jun</option>
+                <option value={3}>Q3 — Jul, Ago, Sep</option><option value={4}>Q4 — Oct, Nov, Dic</option>
+              </select>
+            </div>
+          )}
+          {tipo==='semestral' && (
+            <div style={{ flex:1, minWidth:140 }}>
+              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Semestre</label>
+              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={semestre} onChange={e=>setSemestre(parseInt(e.target.value))}>
+                <option value={1}>1er Semestre</option><option value={2}>2do Semestre</option>
+              </select>
+            </div>
+          )}
+          <div style={{ flex:1, minWidth:120 }}>
+            <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Año</label>
+            <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={anio} onChange={e=>setAnio(parseInt(e.target.value))}>
+              {[2024,2025,2026,2027].map(a=><option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:10 }}>
+          <button onClick={generarPreview} disabled={generando} style={{ flex:1, padding:12, background:'#1e1b4b', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            {generando?'Cargando...':'👁 Vista previa'}
+          </button>
+          <button onClick={exportarPDF} disabled={generando||!preview} style={{ flex:1, padding:12, background:preview?'#6c63ff':'#1e2030', color:preview?'white':'#4b5063', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:preview?'pointer':'not-allowed' }}>
+            {generando?'Generando...':'📄 Exportar PDF'}
+          </button>
+        </div>
+      </div>
+      {preview && (
+        <div>
+          <div style={{ fontSize:14, fontWeight:600, color:'#fff', marginBottom:12 }}>Vista previa — {titulo}</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
+            {[{label:'Ingresos',value:fmt(preview.ingresos),color:'#34d399'},{label:'Gastos',value:fmt(preview.gastos),color:'#f87171'},{label:'Balance',value:fmt(preview.ingresos-preview.gastos),color:'#a78bfa'}].map(s=>(
+              <div key={s.label} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
+                <div style={{ fontSize:20, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
+                <div style={{ fontSize:12, color:'#6c7280', marginTop:4 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Ingresos por categoría</div>
+              {Object.entries(preview.desgloseI).map(([cat,total])=>(
+                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
+                  <span style={{ color:'#8890a4' }}>{catLabelR[cat]||cat}</span>
+                  <span style={{ color:'#34d399', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Gastos por categoría</div>
+              {Object.entries(preview.desgloseG).map(([cat,total])=>(
+                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
+                  <span style={{ color:'#8890a4' }}>{catLabelR[cat]||cat}</span>
+                  <span style={{ color:'#f87171', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function FinanzasPage() {
   const [perfil, setPerfil] = useState<any>(null)
   const [movimientos, setMovimientos] = useState<any[]>([])
@@ -33,6 +214,15 @@ export default function FinanzasPage() {
   const [clubId, setClubId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('')
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'reportes'>('movimientos')
+  // Estado reportes
+  const [tipoReporte, setTipoReporte] = useState<'mensual'|'trimestral'|'semestral'|'anual'>('mensual')
+  const [mesReporte, setMesReporte] = useState(new Date().getMonth() + 1)
+  const [trimestreReporte, setTrimestreReporte] = useState(Math.ceil((new Date().getMonth() + 1) / 3))
+  const [semestreReporte, setSemestreReporte] = useState(new Date().getMonth() < 6 ? 1 : 2)
+  const [anioReporte, setAnioReporte] = useState(new Date().getFullYear())
+  const [preview, setPreview] = useState<any>(null)
+  const [generando, setGenerando] = useState(false)
   const [form, setForm] = useState({
     tipo: 'ingreso', categoria: 'mensualidad', descripcion: '',
     monto: '', fecha: new Date().toISOString().slice(0,10),
@@ -149,6 +339,24 @@ export default function FinanzasPage() {
 
   return (
     <AppLayout perfil={perfil}>
+      {/* Tabs */}
+      <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:20 }}>
+        {[
+          { key:'movimientos', label:'💰 Movimientos' },
+          { key:'reportes', label:'📄 Reportes' }
+        ].map(t => (
+          <div key={t.key} onClick={() => setTabActivo(t.key as any)}
+            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background: tabActivo===t.key?'#14161f':'transparent', color: tabActivo===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+            {t.label}
+          </div>
+        ))}
+      </div>
+
+      {tabActivo === 'reportes' && (
+        <ReportesTab clubId={clubId} perfil={perfil} />
+      )}
+
+      {tabActivo === 'movimientos' && <>
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:10 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -248,6 +456,8 @@ export default function FinanzasPage() {
           <div style={{ padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>Sin movimientos este mes</div>
         )}
       </div>
+
+      </>}
 
       {/* Modal nuevo movimiento */}
       {modalOpen && (

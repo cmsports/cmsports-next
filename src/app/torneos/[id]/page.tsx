@@ -33,6 +33,8 @@ export default function TorneoDetallePage() {
   const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
   const [criterioEmpate, setCriterioEmpate] = useState<'sets'|'puntos'>('sets')
   const [modalEmpate, setModalEmpate] = useState<any>(null)
+  const [empateManual, setEmpateManual] = useState<Record<string, any>>({}) // grupoId -> {primero, segundo}
+  const [pagosPorJugador, setPagosPorJugador] = useState<Record<string, 'pagado'|'pendiente'>>({}) // jugadorId -> estado
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -149,9 +151,9 @@ export default function TorneoDetallePage() {
 
     await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
 
-    // Registrar pago si hay cuota
+    // Crear registro de pago como pendiente — se marca pagado manualmente
     if (torneo?.cuota_inscripcion > 0) {
-      await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: jugadorId, estado: 'pagado', metodo_pago: metodoPago, fecha_pago: new Date().toISOString().slice(0,10) })
+      await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: jugadorId, estado: 'pendiente', metodo_pago: metodoPago })
     }
 
     setBusquedaMesa('')
@@ -273,13 +275,26 @@ export default function TorneoDetallePage() {
     const clasificados: any[] = []
 
     for (const grupo of gruposReales) {
-      const { ordenados } = calcularStats(grupo.id)
-      if (ordenados[0]) {
-        clasificados.push({ ...ordenados[0], posicion: 1, grupo_nombre: grupo.nombre })
-        await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('grupo_id', grupo.id).eq('jugador_id', ordenados[0].jugador.id)
-      }
-      if (ordenados[1]) {
-        clasificados.push({ ...ordenados[1], posicion: 2, grupo_nombre: grupo.nombre })
+      const { ordenados, hayTripleEmpate } = calcularStats(grupo.id)
+      
+      // Si hay triple empate y el admin eligió manualmente
+      if (hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo) {
+        const manualPrimero = { jugador: empateManual[grupo.id].primero, pts: 0 }
+        const manualSegundo = { jugador: empateManual[grupo.id].segundo, pts: 0 }
+        clasificados.push({ ...manualPrimero, posicion: 1, grupo_nombre: grupo.nombre })
+        clasificados.push({ ...manualSegundo, posicion: 2, grupo_nombre: grupo.nombre })
+        await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('grupo_id', grupo.id).eq('jugador_id', empateManual[grupo.id].primero.id)
+      } else if (hayTripleEmpate && (!empateManual[grupo.id]?.primero || !empateManual[grupo.id]?.segundo || empateManual[grupo.id].primero.id === empateManual[grupo.id].segundo.id)) {
+        alert(`Grupo ${grupo.nombre} tiene triple empate. Debes elegir tanto el 1° como el 2° antes de continuar.`)
+        return
+      } else {
+        if (ordenados[0]) {
+          clasificados.push({ ...ordenados[0], posicion: 1, grupo_nombre: grupo.nombre })
+          await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('grupo_id', grupo.id).eq('jugador_id', ordenados[0].jugador.id)
+        }
+        if (ordenados[1]) {
+          clasificados.push({ ...ordenados[1], posicion: 2, grupo_nombre: grupo.nombre })
+        }
       }
     }
 
@@ -458,6 +473,16 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
+      {/* BOTÓN INSCRIPCIÓN TARDÍA — disponible en grupos y playoffs */}
+      {esAdmin && (faseActual === 'grupos' || fasesOrden.includes(faseActual)) && (
+        <div style={{ marginBottom:16 }}>
+          <button onClick={() => setMesaOpen(true)} style={{ background:'#14161f', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
+            + Inscribir jugador adicional
+          </button>
+          <span style={{ fontSize:11, color:'#4b5063', marginLeft:10 }}>El jugador se puede agregar a un grupo manualmente</span>
+        </div>
+      )}
+
       {/* FASE GRUPOS */}
       {faseActual === 'grupos' && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16, marginBottom:16 }}>
@@ -469,7 +494,8 @@ export default function TorneoDetallePage() {
               <div key={grupo.id} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
                 <div style={{ padding:'12px 16px', borderBottom:'1px solid #1e2030', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <span style={{ fontSize:14, fontWeight:600, color:'#fff' }}>Grupo {grupo.nombre}</span>
-                  {hayTripleEmpate && <span style={{ background:'#f8717122', color:'#f87171', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
+                  {hayTripleEmpate && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && partidosGrupo.some((p:any) => p.ganador) && <span style={{ background:'#f8717122', color:'#f87171', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
+                {hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && <span style={{ background:'#34d39922', color:'#34d399', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto</span>}
                 </div>
                 {ordenados.map((j: any, i: number) => (
                   <div key={j.jugador?.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #1e2030', borderLeft:`3px solid ${i===0?'#fbbf24':i===1?'#94a3b8':'transparent'}` }}>
@@ -491,6 +517,48 @@ export default function TorneoDetallePage() {
                     })()}
                   </div>
                 ))}
+                {/* PANEL TRIPLE EMPATE - solo cuando hay partidos jugados y empate real */}
+                {hayTripleEmpate && partidosGrupo.some((p:any) => p.ganador) && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && esAdmin && (
+                  <div style={{ background:'#2d1500', borderTop:'1px solid #f9731633', padding:'12px 16px' }}>
+                    <div style={{ fontSize:12, color:'#f97316', fontWeight:600, marginBottom:8 }}>⚠️ Triple empate — elige el orden manualmente</div>
+                    <div style={{ fontSize:11, color:'#8890a4', marginBottom:10 }}>Revisa las papeletas y marca quién queda 1° y quién queda 2°</div>
+                    {empatados.map((j: any, idx: number) => (
+                      <div key={j.jugador?.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                        <span style={{ fontSize:12, color:'#c8cfe0', flex:1 }}>{j.jugador?.nombre}</span>
+                        <button
+                          onClick={() => setEmpateManual((prev: any) => {
+                            const actual = prev[grupo.id] || {}
+                            return { ...prev, [grupo.id]: { ...actual, primero: j.jugador } }
+                          })}
+                          style={{ background: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#fbbf24' : '#1e2030', color: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#0f1117' : '#8890a4', border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                          🥇 1°
+                        </button>
+                        <button
+                          disabled={empateManual[grupo.id]?.primero?.id === j.jugador?.id}
+                          onClick={() => setEmpateManual((prev: any) => {
+                            const actual = prev[grupo.id] || {}
+                            if (actual.primero?.id === j.jugador?.id) return prev // no puede ser 1° y 2°
+                            return { ...prev, [grupo.id]: { ...actual, segundo: j.jugador } }
+                          })}
+                          style={{ background: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#94a3b8' : '#1e2030', color: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#0f1117' : empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#2e3148' : '#8890a4', border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? 'not-allowed' : 'pointer', fontWeight:600 }}>
+                          🥈 2°
+                        </button>
+                      </div>
+                    ))}
+                    {/* Confirmación solo cuando AMBOS están elegidos y son distintos */}
+                    {empateManual[grupo.id]?.primero && !empateManual[grupo.id]?.segundo && (
+                      <div style={{ marginTop:8, padding:'8px', background:'#1e1b4b', borderRadius:8, fontSize:11, color:'#a78bfa', textAlign:'center' }}>
+                        ✓ 1°: {empateManual[grupo.id].primero.nombre} — Ahora elige quién queda 2°
+                      </div>
+                    )}
+                    {empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo &&
+                      empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && (
+                      <div style={{ marginTop:8, padding:'8px', background:'#052e16', borderRadius:8, fontSize:12, color:'#34d399', textAlign:'center' }}>
+                        ✓ Resuelto — 1°: {empateManual[grupo.id].primero.nombre} · 2°: {empateManual[grupo.id].segundo.nombre}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div style={{ padding:'8px 16px' }}>
                   {partidosGrupo.map(p => {
                     const jugA = ordenados.find((j: any) => j.jugador?.id === p.jugador_a)
@@ -517,8 +585,8 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
-      {/* PAGOS TARDÍOS — visible cuando torneo en curso o finalizado */}
-      {esAdmin && cuota > 0 && (faseActual === 'grupos' || fasesOrden.includes(faseActual) || faseActual === 'finalizado') && (
+      {/* PAGOS TARDÍOS — al final, después del bracket */}
+      {esAdmin && cuota > 0 && false && (
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginBottom:16 }}>
           <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>💳 Pagos pendientes</div>
           {jugadores.filter((j: any) => {
@@ -611,6 +679,36 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
+      {/* PAGOS PENDIENTES — siempre al final */}
+      {esAdmin && cuota > 0 && (faseActual === 'grupos' || fasesOrden.includes(faseActual) || faseActual === 'finalizado') && (
+        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginBottom:16, marginTop:16 }}>
+          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>💳 Pagos pendientes</div>
+          {jugadores.filter((j: any) => {
+            const pago = pagos.find(p => p.jugador_id === j.jugador_id)
+            return !pago || pago.estado !== 'pagado'
+          }).length === 0
+            ? <p style={{ fontSize:13, color:'#34d399' }}>✓ Todos han pagado</p>
+            : jugadores.filter((j: any) => {
+                const pago = pagos.find(p => p.jugador_id === j.jugador_id)
+                return !pago || pago.estado !== 'pagado'
+              }).map((j: any) => (
+              <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #1e2030' }}>
+                <div style={{ flex:1, fontSize:13, color:'#c8cfe0' }}>{j.jugadores?.nombre||'—'}</div>
+                <span style={{ background:'#f8717122', color:'#f87171', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
+                <button onClick={async () => {
+                  const ex = pagos.find(p => p.jugador_id === j.jugador_id)
+                  if (ex) await supabase.from('torneo_pagos').update({ estado:'pagado', metodo_pago:'efectivo', fecha_pago: new Date().toISOString().slice(0,10) }).eq('id', ex.id)
+                  else await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: j.jugador_id, estado:'pagado', metodo_pago:'efectivo', fecha_pago: new Date().toISOString().slice(0,10) })
+                  await cargarTorneo()
+                }} style={{ background:'#34d39922', color:'#34d399', border:'1px solid #34d39944', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
+                  ✓ Marcar pagado
+                </button>
+              </div>
+            ))
+          }
+        </div>
+      )}
+
       {/* MESA DE INSCRIPCIÓN */}
       {mesaOpen && (
         <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
@@ -674,6 +772,13 @@ export default function TorneoDetallePage() {
                     >
                       {cabezasSerie.has(j.jugador_id) ? '⭐ Cabeza de serie' : 'Cabeza de serie'}
                     </button>
+                    {/* Estado pago */}
+                    {(torneo?.cuota_inscripcion > 0) && (
+                      <button onClick={() => setPagosPorJugador(prev => ({ ...prev, [j.jugador_id]: prev[j.jugador_id] === 'pagado' ? 'pendiente' : 'pagado' }))}
+                        style={{ background: pagosPorJugador[j.jugador_id] === 'pagado' ? '#34d39922' : '#f8717122', color: pagosPorJugador[j.jugador_id] === 'pagado' ? '#34d399' : '#f87171', border:`1px solid ${pagosPorJugador[j.jugador_id] === 'pagado' ? '#34d39944' : '#f8717144'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}>
+                        {pagosPorJugador[j.jugador_id] === 'pagado' ? '✓ Pagado' : 'Pendiente'}
+                      </button>
+                    )}
                     {/* Quitar */}
                     <button onClick={async () => {
                       await supabase.from('grupo_jugadores').delete().eq('jugador_id', j.jugador_id).in('grupo_id', grupos.map((g:any)=>g.id))

@@ -20,7 +20,7 @@ const navAdmin = [
   { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
   { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
   { label:'Finanzas', icon:'💰', href:'/finanzas' },
-  { label:'Reportes', icon:'📄', href:'/reportes' }
+
 ]
 
 const navProfesor = [

@@ -15,12 +15,19 @@ const cols = ['#f59e0b','#6c63ff','#059669','#0891b2','#7c3aed']
 export default function DashboardPage() {
   const [perfil, setPerfil] = useState<any>(null)
   const [kpis, setKpis] = useState<any>({})
-  const [topRanking, setTopRanking] = useState<any[]>([])
   const [ultimasAsist, setUltimasAsist] = useState<any[]>([])
+  const [jugadores, setJugadores] = useState<any[]>([])
+  const [solicitudes, setSolicitudes] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [ddOpen, setDdOpen] = useState<string | null>(null)
   const [ddData, setDdData] = useState<any[]>([])
+  const [busquedaAsist, setBusquedaAsist] = useState('')
+  const [registrando, setRegistrando] = useState<string | null>(null)
+  const [asistenciasHoy, setAsistenciasHoy] = useState<any[]>([])
   const router = useRouter()
+
+  const hoy = new Date().toISOString().slice(0,10)
+  const hora = new Date().toTimeString().slice(0,5)
 
   useEffect(() => {
     async function cargar() {
@@ -28,53 +35,52 @@ export default function DashboardPage() {
       if (!session) { router.push('/login'); return }
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
-
-      // Redirigir según rol
       if (p?.rol === 'jugador') { router.push('/perfil'); return }
       if (p?.rol === 'profesor') { router.push('/dashboard-profesor'); return }
-
-      if (p?.club_id) await cargarKpis(p.club_id, p)
+      if (p?.club_id) await cargarDatos(p.club_id)
       setLoading(false)
     }
     cargar()
   }, [])
 
-  async function cargarKpis(cid: string, p: any) {
+  async function cargarDatos(cid: string) {
     const mesActual = new Date().getMonth() + 1
     const anioActual = new Date().getFullYear()
     const mesInicio = `${anioActual}-${String(mesActual).padStart(2,'0')}-01`
 
     const [
-      { data: jugadores },
+      { data: jugsData },
       { data: asistencias },
       { data: torneos },
       { data: mensualidades },
       { data: movimientos },
-      { data: solicitudes }
+      { data: solicitudesData },
+      { data: asistHoy }
     ] = await Promise.all([
       supabase.from('jugadores').select('*').eq('club_id', cid),
       supabase.from('asistencia').select('*').eq('club_id', cid).gte('fecha', mesInicio),
       supabase.from('torneos').select('*').eq('club_id', cid).eq('estado', 'en_curso'),
       supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
       supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicio),
-      supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).gte('creado_en', mesInicio)
+      supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).eq('estado', 'pendiente'),
+      supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).eq('fecha', hoy).order('hora', { ascending: false })
     ])
 
-    const activos = jugadores?.filter(j => j.estado === 'activo') || []
-    const morosos = mensualidades?.filter(m => m.estado === 'pendiente' || m.estado === 'atrasado') || []
-    const gastos = movimientos?.filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
-    const ingresos = movimientos?.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
+    const activos = (jugsData || []).filter(j => j.estado === 'activo')
+    const morosos = (mensualidades || []).filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
+    const gastos = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
+    const ingresos = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
     const coa = activos.length > 0 ? Math.round(gastos / activos.length) : 0
     const tm = activos.length > 0 ? Math.round((morosos.length / activos.length) * 100) : 0
-    const solAprobadas = solicitudes?.filter(s => s.estado === 'aprobado').length || 0
-    const captacion = (solicitudes?.length ?? 0) > 0 ? Math.round((solAprobadas / (solicitudes?.length ?? 1)) * 100) : 0
+    const captacion = (solicitudesData?.length ?? 0) > 0 ? Math.round(((solicitudesData?.filter(s => s.estado === 'aprobado').length || 0) / (solicitudesData?.length ?? 1)) * 100) : 0
 
     setKpis({ activos: activos.length, tm, coa, ingresos, gastos, torneos: torneos?.length || 0, captacion, mensualidadBase: 25000, morosos, jugadores: activos })
+    setJugadores(activos)
+    setSolicitudes(solicitudesData || [])
+    setAsistenciasHoy(asistHoy || [])
 
-    const top = [...(jugadores || [])].filter(j => j.estado === 'activo').sort((a,b) => b.elo - a.elo).slice(0,5)
-    setTopRanking(top)
-
-    const ultimas = (asistencias || []).sort((a,b) => b.fecha > a.fecha ? 1 : -1).slice(0,6)
+    // Últimas asistencias del mes
+    const ultimas = (asistencias || []).sort((a,b) => b.fecha > a.fecha ? 1 : -1).slice(0,5)
     const ids = [...new Set(ultimas.map(a => a.jugador_id))]
     if (ids.length) {
       const { data: jugsAsist } = await supabase.from('jugadores').select('id,nombre').in('id', ids)
@@ -82,17 +88,29 @@ export default function DashboardPage() {
     }
   }
 
+  async function registrarAsistencia(jugador: any) {
+    const yaRegistro = asistenciasHoy.find(a => a.jugador_id === jugador.id)
+    if (yaRegistro) { alert(`${jugador.nombre} ya registró hoy`); return }
+    setRegistrando(jugador.id)
+    await supabase.from('asistencia').insert({ club_id: perfil?.club_id, jugador_id: jugador.id, fecha: hoy, hora })
+    if (jugador.sesiones_limite > 0) {
+      await supabase.from('jugadores').update({ sesiones_usadas: jugador.sesiones_usadas + 1 }).eq('id', jugador.id)
+    }
+    setRegistrando(null)
+    setBusquedaAsist('')
+    await cargarDatos(perfil?.club_id)
+  }
+
   async function abrirDrilldown(tipo: string) {
     setDdOpen(tipo)
     if (tipo === 'morosidad') setDdData(kpis.morosos || [])
-    if (tipo === 'captacion') {
-      const mesInicio = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-01`
-      const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', perfil?.club_id).gte('creado_en', mesInicio)
-      setDdData(data || [])
-    }
   }
 
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+  const jugadoresFiltrados = busquedaAsist.length > 1
+    ? jugadores.filter(j => j.nombre?.toLowerCase().includes(busquedaAsist.toLowerCase())).slice(0, 5)
+    : []
+  const registradosHoy = new Set(asistenciasHoy.map(a => a.jugador_id))
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
@@ -102,110 +120,144 @@ export default function DashboardPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:20 }}>Dashboard</h1>
+      {/* Header con solicitudes */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+        <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Dashboard</h1>
+        {solicitudes.length > 0 && (
+          <button onClick={() => router.push('/solicitudes')}
+            style={{ background:'#6c63ff22', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            📨 {solicitudes.length} solicitud{solicitudes.length > 1 ? 'es' : ''} pendiente{solicitudes.length > 1 ? 's' : ''}
+          </button>
+        )}
+      </div>
 
-      <div style={{ fontSize:12, color:'#6c7280', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:12 }}>Asistencia</div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:24 }}>
+      {/* KPIs fila 1 */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:24 }}>🏓</div>
-          <div style={{ fontSize:28, fontWeight:700, color:'#a78bfa', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.activos || 0}</div>
+          <div style={{ fontSize:22 }}>🏓</div>
+          <div style={{ fontSize:26, fontWeight:700, color:'#a78bfa', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.activos || 0}</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>Jugadores activos</div>
         </div>
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:24 }}>🎯</div>
-          <div style={{ fontSize:28, fontWeight:700, color:'#fbbf24', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.torneos || 0}</div>
+          <div style={{ fontSize:22 }}>🎯</div>
+          <div style={{ fontSize:26, fontWeight:700, color:'#fbbf24', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.torneos || 0}</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>Torneos activos</div>
         </div>
-        <div onClick={() => abrirDrilldown('captacion')} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer' }}>
-          <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ fontSize:24 }}>📨</span><span style={{ fontSize:10, color:'#4b5063' }}>↗</span></div>
-          <div style={{ fontSize:28, fontWeight:700, color:'#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.captacion || 0}%</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Conversión solicitudes</div>
+        <div onClick={() => abrirDrilldown('morosidad')} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer' }}>
+          <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ fontSize:22 }}>⚠️</span><span style={{ fontSize:10, color:'#4b5063' }}>↗</span></div>
+          <div style={{ fontSize:26, fontWeight:700, color: (kpis.tm||0) > 25 ? '#f87171' : (kpis.tm||0) > 10 ? '#fbbf24' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.tm || 0}%</div>
+          <div style={{ fontSize:12, color:'#6c7280' }}>Tasa de morosidad</div>
         </div>
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:24 }}>📈</div>
-          <div style={{ fontSize:28, fontWeight:700, color:'#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.ingresos || 0)}</div>
+          <div style={{ fontSize:22 }}>📈</div>
+          <div style={{ fontSize:26, fontWeight:700, color:'#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.ingresos || 0)}</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>Ingresos este mes</div>
         </div>
       </div>
 
-      <div style={{ fontSize:12, color:'#6c7280', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:12 }}>Finanzas</div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:24 }}>
-        <div onClick={() => abrirDrilldown('morosidad')} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer' }}>
-          <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ fontSize:24 }}>⚠️</span><span style={{ fontSize:10, color:'#4b5063' }}>↗</span></div>
-          <div style={{ fontSize:28, fontWeight:700, color: (kpis.tm||0) > 25 ? '#f87171' : (kpis.tm||0) > 10 ? '#fbbf24' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.tm || 0}%</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Tasa de morosidad</div>
+      {/* Fila 2 — Asistencia + Últimas */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
+
+        {/* Registro asistencia */}
+        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>📱 Asistencia hoy</div>
+            <span style={{ background:'#34d39922', color:'#34d399', padding:'2px 8px', borderRadius:20, fontSize:11 }}>{asistenciasHoy.length} registros</span>
+          </div>
+          <div style={{ position:'relative' }}>
+            <input
+              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'9px 12px', color:'#e8e8f0', fontSize:13, outline:'none', boxSizing:'border-box' }}
+              placeholder="Buscar jugador para registrar..."
+              value={busquedaAsist}
+              onChange={e => setBusquedaAsist(e.target.value)}
+            />
+            {jugadoresFiltrados.length > 0 && (
+              <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden' }}>
+                {jugadoresFiltrados.map(j => {
+                  const yaRegistro = registradosHoy.has(j.id)
+                  return (
+                    <div key={j.id} onClick={() => !yaRegistro && registrarAsistencia(j)}
+                      style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', borderBottom:'1px solid #1e2030', cursor: yaRegistro ? 'default' : 'pointer', opacity: yaRegistro ? 0.6 : 1 }}>
+                      <div>
+                        <div style={{ fontSize:13, color:'#c8cfe0' }}>{j.nombre}</div>
+                        <div style={{ fontSize:10, color:'#6c7280' }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones</div>
+                      </div>
+                      {yaRegistro
+                        ? <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 8px', borderRadius:20, fontSize:10 }}>✓ Ya registrado</span>
+                        : registrando === j.id
+                        ? <span style={{ color:'#6c7280', fontSize:11 }}>...</span>
+                        : <button style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✓</button>
+                      }
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          {/* Lista últimas asistencias de hoy */}
+          <div style={{ marginTop:12, maxHeight:120, overflowY:'auto' }}>
+            {asistenciasHoy.slice(0,4).map(a => (
+              <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
+                <span style={{ color:'#c8cfe0' }}>{(a as any).jugadores?.nombre || '—'}</span>
+                <span style={{ color:'#6c7280' }}>{a.hora?.slice(0,5)}</span>
+              </div>
+            ))}
+            {asistenciasHoy.length === 0 && <p style={{ fontSize:12, color:'#4b5063', marginTop:8 }}>Sin registros hoy</p>}
+          </div>
         </div>
+
+        {/* Últimas asistencias del mes */}
+        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
+          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>📅 Últimas asistencias</div>
+          {ultimasAsist.length === 0
+            ? <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'20px 0' }}>Sin asistencias</p>
+            : ultimasAsist.map(a => (
+              <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #1a1d2e', fontSize:13 }}>
+                <span style={{ color:'#c8cfe0' }}>{a.nombre}</span>
+                <span style={{ color:'#6c7280', fontSize:12 }}>{a.fecha}</span>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+
+      {/* Fila 3 — COA y Gastos */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:24 }}>💰</div>
-          <div style={{ fontSize:28, fontWeight:700, color: kpis.coa > kpis.mensualidadBase ? '#f87171' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.coa || 0)}</div>
+          <div style={{ fontSize:22 }}>💰</div>
+          <div style={{ fontSize:26, fontWeight:700, color: kpis.coa > kpis.mensualidadBase ? '#f87171' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.coa || 0)}</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>COA — Costo por alumno</div>
           <div style={{ fontSize:11, marginTop:4, color: kpis.coa > kpis.mensualidadBase ? '#f87171' : '#34d399' }}>
             {kpis.coa > kpis.mensualidadBase ? '🔴 Pérdida por alumno' : '✓ Margen saludable'}
           </div>
         </div>
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:24 }}>📉</div>
-          <div style={{ fontSize:28, fontWeight:700, color:'#f87171', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.gastos || 0)}</div>
+          <div style={{ fontSize:22 }}>📉</div>
+          <div style={{ fontSize:26, fontWeight:700, color:'#f87171', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.gastos || 0)}</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>Gastos este mes</div>
         </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Últimas asistencias</div>
-          {ultimasAsist.length === 0
-            ? <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'20px 0' }}>Sin asistencias</p>
-            : <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                <thead><tr>
-                  <th style={{ fontSize:11, color:'#6c7280', padding:'4px 0', textAlign:'left' }}>Jugador</th>
-                  <th style={{ fontSize:11, color:'#6c7280', padding:'4px 0', textAlign:'left' }}>Fecha</th>
-                </tr></thead>
-                <tbody>{ultimasAsist.map(a => (
-                  <tr key={a.id}>
-                    <td style={{ fontSize:13, color:'#c8cfe0', padding:'6px 0', borderBottom:'1px solid #1a1d2e' }}>{a.nombre}</td>
-                    <td style={{ fontSize:12, color:'#6c7280', padding:'6px 0', borderBottom:'1px solid #1a1d2e' }}>{a.fecha}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-          }
-        </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Top ELO</div>
-          {topRanking.map((j, i) => (
-            <div key={j.id} onClick={() => router.push(`/jugadores/${j.id}`)}
-              style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #1a1d2e', cursor:'pointer' }}>
-              <div style={{ fontSize:16 }}>{i < 3 ? ['🥇','🥈','🥉'][i] : i+1}</div>
-              <div style={{ width:32, height:32, borderRadius:'50%', background:`linear-gradient(135deg,${cols[i]},${cols[i]}88)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:700, color:'white', flexShrink:0 }}>
-                {j.nombre?.split(' ').map((n:string)=>n[0]).join('').slice(0,2)}
-              </div>
-              <div style={{ flex:1, fontSize:13, color:'#c8cfe0' }}>{j.nombre}</div>
-              <div style={{ fontSize:16, fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
+      {/* Modal drilldown */}
       {ddOpen && (
         <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:24, width:'100%', maxWidth:520, maxHeight:'80vh', overflowY:'auto' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <div style={{ fontSize:16, fontWeight:600, color:'#fff' }}>
-                {ddOpen === 'morosidad' ? '⚠️ Deudores' : '📨 Solicitudes del mes'}
-              </div>
+              <div style={{ fontSize:16, fontWeight:600, color:'#fff' }}>⚠️ Deudores</div>
               <button onClick={() => setDdOpen(null)} style={{ background:'transparent', border:'none', color:'#6c7280', cursor:'pointer', fontSize:20 }}>✕</button>
             </div>
             {ddData.length === 0
-              ? <p style={{ color:'#34d399', textAlign:'center', padding:20 }}>✓ Sin registros</p>
+              ? <p style={{ color:'#34d399', textAlign:'center', padding:20 }}>✓ Sin deudores</p>
               : ddData.map((item: any) => (
                 <div key={item.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #1e2030' }}>
                   <div>
                     <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>
-                      {ddOpen === 'morosidad' ? kpis.jugadores?.find((j:any) => j.id === item.jugador_id)?.nombre || '—' : item.nombre}
+                      {kpis.jugadores?.find((j:any) => j.id === item.jugador_id)?.nombre || '—'}
                     </div>
                     <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>{item.estado}</div>
                   </div>
-                  {item.telefono && (
-                    <a href={`https://wa.me/${item.telefono.replace(/[^0-9]/g,'')}`} target="_blank" style={{ background:'#0a2d1a', color:'#34d399', padding:'5px 10px', borderRadius:8, fontSize:11, textDecoration:'none' }}>💬 WA</a>
+                  {kpis.jugadores?.find((j:any) => j.id === item.jugador_id)?.telefono && (
+                    <a href={`https://wa.me/${kpis.jugadores.find((j:any) => j.id === item.jugador_id).telefono.replace(/[^0-9]/g,'')}`} target="_blank" style={{ background:'#0a2d1a', color:'#34d399', padding:'5px 10px', borderRadius:8, fontSize:11, textDecoration:'none' }}>💬 WA</a>
                   )}
                 </div>
               ))
