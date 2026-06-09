@@ -163,10 +163,22 @@ export default function JugadorDetallePage() {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:20, fontWeight:700, color:'#fff' }}>{jugador.nombre}</div>
-            <div style={{ fontSize:12, color:'#6c7280', marginTop:2 }}>{jugador.categoria}</div>
+            <div style={{ display:'flex', gap:8, alignItems:'center', marginTop:2 }}>
+              <div style={{ fontSize:12, color:'#6c7280' }}>{jugador.categoria}</div>
+              {jugador.es_externo && <span style={{ background:'#fbbf2422', color:'#fbbf24', padding:'2px 8px', borderRadius:20, fontSize:10, fontWeight:600 }}>Participante externo</span>}
+            </div>
           </div>
           {esAdmin && (
-            <div style={{ display:'flex', gap:8 }}>
+            <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+              {jugador.es_externo && (
+                <button onClick={async () => {
+                  if (!confirm('¿Agregar este jugador al club? Aparecerá en la lista de jugadores, ranking y mensualidades.')) return
+                  await supabase.from('jugadores').update({ es_externo: false, sesiones_limite: 12, estado: 'activo' }).eq('id', jugadorId)
+                  setJugador({ ...jugador, es_externo: false })
+                }} style={{ background:'#34d39922', color:'#34d399', border:'1px solid #34d39944', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
+                  ✅ Agregar al club
+                </button>
+              )}
               <button onClick={async () => {
                 const nuevoEstado = jugador.estado === 'activo' ? 'bloqueado' : 'activo'
                 await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', jugadorId)
@@ -193,7 +205,7 @@ export default function JugadorDetallePage() {
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:16 }}>
-        {['📊 Competencia', ...(puedeVerTodo ? ['📝 Feedback'] : [])].map((t, i) => (
+        {['📊 Competencia', ...(puedeVerTodo ? ['🕸️ Capacidades', '📝 Feedback'] : [])].map((t, i) => (
           <div key={i} onClick={() => setTab(i)} style={{ flex:1, padding:'8px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:500, background: tab===i?'#14161f':'transparent', color: tab===i?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
             {t}
           </div>

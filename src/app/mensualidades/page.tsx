@@ -44,7 +44,7 @@ export default function MensualidadesPage() {
 
   async function cargarMensualidades() {
     const [{ data: j }, { data: m }] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', clubId).eq('estado', 'activo').order('nombre'),
+      supabase.from('jugadores').select('*').eq('club_id', clubId).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
       supabase.from('mensualidades').select('*').eq('club_id', clubId).eq('mes', mes).eq('anio', anio)
     ])
     setJugadores(j || [])

@@ -26,7 +26,7 @@ export default function RankingPage() {
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
       if (p?.club_id) {
-        const { data: j } = await supabase.from('jugadores').select('*').eq('club_id', p.club_id).eq('estado', 'activo').order('elo', { ascending: false })
+        const { data: j } = await supabase.from('jugadores').select('*').eq('club_id', p.club_id).eq('estado', 'activo').neq('es_externo', true).order('elo', { ascending: false })
         setJugadores(j || [])
       }
       setLoading(false)
