@@ -48,7 +48,7 @@ export default function JugadoresPage() {
   }, [clubId])
 
   async function cargarJugadores() {
-    const { data } = await supabase.from('jugadores').select('*').eq('club_id', clubId).order('elo', { ascending: false })
+    const { data } = await supabase.from('jugadores').select('*').eq('club_id', clubId).neq('es_externo', true).order('elo', { ascending: false })
     setJugadores(data || [])
   }
 
