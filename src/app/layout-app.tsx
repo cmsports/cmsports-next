@@ -14,26 +14,27 @@ const navAdmin = [
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
+  { label:'QR Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
   { label:'Clases', icon:'📚', href:'/clases' },
   { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
   { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
   { label:'Finanzas', icon:'💰', href:'/finanzas' },
-
 ]
 
 const navProfesor = [
-  { label:'Dashboard', icon:'📊', href:'/dashboard-profesor' },
+  { label:'Dashboard', icon:'📊', href:'/dashboard' },
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
   { label:'Mis clases', icon:'📚', href:'/clases' },
-  { label:'Asistencia', icon:'📱', href:'/asistencia' },
+  { label:'QR Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
 ]
 
 const navJugador = [
   { label:'Mi perfil', icon:'👤', href:'/perfil' },
+  { label:'Mis clases', icon:'📚', href:'/mis-clases' },
   { label:'Mi Estado de Cuenta', icon:'💳', href:'/estado-cuenta' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
@@ -60,8 +61,8 @@ const mobileNavProfesor = [
 
 const mobileNavJugador = [
   { label:'Perfil', icon:'👤', href:'/perfil' },
+  { label:'Mis clases', icon:'📚', href:'/mis-clases' },
   { label:'Ranking', icon:'🏆', href:'/ranking' },
-  { label:'Externos', icon:'🌎', href:'/torneos-externos' },
   { label:'Mi cuenta', icon:'💳', href:'/estado-cuenta' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
 ]
