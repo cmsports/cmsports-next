@@ -205,7 +205,7 @@ export default function JugadorDetallePage() {
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:16 }}>
-        {['📊 Competencia', ...(puedeVerTodo ? ['🕸️ Capacidades', '📝 Feedback'] : [])].map((t, i) => (
+        {['📊 Competencia', ...(puedeVerTodo ? ['📝 Feedback'] : [])].map((t, i) => (
           <div key={i} onClick={() => setTab(i)} style={{ flex:1, padding:'8px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:500, background: tab===i?'#14161f':'transparent', color: tab===i?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
             {t}
           </div>
