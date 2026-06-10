@@ -132,7 +132,8 @@ export default function TorneoDetallePage() {
     } else {
       const { data: nuevo } = await supabase.from('jugadores').insert({
         club_id: perfil?.club_id, nombre: busquedaMesa.trim(),
-        rut: rutMesa || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200
+        rut: rutMesa || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
+        es_externo: true
       }).select().single()
       if (!nuevo) return
       jugadorId = nuevo.id
@@ -389,7 +390,10 @@ export default function TorneoDetallePage() {
 
   const esAdmin = perfil?.rol === 'admin'
   const cuota = torneo?.cuota_inscripcion || 0
-  const totalInscritos = jugadoresInscritos.length
+  // Contar inscritos reales desde grupo_jugadores (excluyendo grupo MESA)
+  const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
+  const inscritosReales = jugadores.filter((j: any) => gruposReales.some((g: any) => g.id === j.grupo_id))
+  const totalInscritos = inscritosReales.length || jugadoresInscritos.length
   const pagados = pagos.filter(p => p.estado === 'pagado').length
   const recaudado = pagados * cuota
   const proyectado = totalInscritos * cuota
@@ -739,7 +743,7 @@ export default function TorneoDetallePage() {
                 onChange={e => setBusquedaMesa(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && inscribirEnMesa()} />
               <input style={{ flex:1, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
-                placeholder="RUT" value={rutMesa} onChange={e => setRutMesa(e.target.value)} />
+                placeholder="RUT sin puntos ni guion" value={rutMesa} onChange={e => setRutMesa(e.target.value.replace(/[^0-9kK]/g,''))} maxLength={9} />
             </div>
             <div style={{ display:'flex', gap:8, marginBottom:16 }}>
               <select style={{ flex:1, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}

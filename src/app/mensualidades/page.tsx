@@ -50,7 +50,6 @@ export default function MensualidadesPage() {
     setJugadores(j || [])
     setMensualidades(m || [])
 
-    // Crear registros pendientes
     const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
     if (sinMens.length > 0) {
       await supabase.from('mensualidades').insert(sinMens.map(jug => ({
@@ -74,9 +73,7 @@ export default function MensualidadesPage() {
     const jugador = jugadores.find(j => j.id === jugadorId)
     const monto = parseInt(montoPago) || 25000
     await supabase.from('mensualidades').update({
-      estado: 'pagado',
-      fecha_pago: new Date().toISOString().slice(0,10),
-      monto
+      estado: 'pagado', fecha_pago: new Date().toISOString().slice(0,10), monto
     }).eq('id', mensId)
     await supabase.from('movimientos').insert({
       club_id: clubId, tipo: 'ingreso', categoria: 'mensualidad',
@@ -100,20 +97,74 @@ export default function MensualidadesPage() {
 
   async function exportarExcel() {
     const { utils, writeFile } = await import('xlsx')
-    const datos = jugadores.map(j => {
+
+    // Cargar historial completo de todos los jugadores (todos los meses)
+    const { data: historial } = await supabase.from('mensualidades')
+      .select('*').eq('club_id', clubId).order('anio').order('mes')
+
+    const wb = utils.book_new()
+
+    // Hoja 1: Mes actual
+    const datosMesActual = jugadores.map(j => {
       const mens = mensualidades.find(m => m.jugador_id === j.id)
       return {
         'Nombre': j.nombre,
         'Estado': mens?.estado || 'pendiente',
         'Fecha pago': mens?.fecha_pago || '',
-        'Monto': mens?.monto || '',
+        'Monto': mens?.monto ? `$${mens.monto.toLocaleString('es-CL')}` : '',
         'Mes': mesesN[mes-1],
         'Año': anio
       }
     })
-    const ws = utils.json_to_sheet(datos)
-    const wb = utils.book_new()
-    utils.book_append_sheet(wb, ws, 'Mensualidades')
+    const ws1 = utils.json_to_sheet(datosMesActual)
+
+    // Colorear filas según estado
+    const range = utils.decode_range(ws1['!ref'] || 'A1')
+    for (let r = 1; r <= range.e.r; r++) {
+      const estadoCell = ws1[utils.encode_cell({ r, c: 1 })]
+      if (estadoCell) {
+        const estado = estadoCell.v
+        if (estado === 'atrasado') estadoCell.v = '🔴 Atrasado'
+        if (estado === 'pendiente') estadoCell.v = '⏳ Pendiente'
+        if (estado === 'pagado') estadoCell.v = '✅ Pagado'
+      }
+    }
+
+    utils.book_append_sheet(wb, ws1, `${mesesN[mes-1]} ${anio}`)
+
+    // Hoja 2: Historial completo por jugador
+    const datosHistorial = (historial || []).map(h => {
+      const jug = jugadores.find(j => j.id === h.jugador_id)
+      return {
+        'Nombre': jug?.nombre || h.jugador_id,
+        'Mes': mesesN[h.mes-1],
+        'Año': h.anio,
+        'Estado': h.estado === 'atrasado' ? '🔴 Atrasado' : h.estado === 'pendiente' ? '⏳ Pendiente' : '✅ Pagado',
+        'Fecha pago': h.fecha_pago || '',
+        'Monto': h.monto ? `$${h.monto.toLocaleString('es-CL')}` : ''
+      }
+    })
+    const ws2 = utils.json_to_sheet(datosHistorial)
+    utils.book_append_sheet(wb, ws2, 'Historial completo')
+
+    // Hoja 3: Resumen por jugador (todas las cuotas)
+    const resumenPorJugador = jugadores.map(j => {
+      const histJug = (historial || []).filter(h => h.jugador_id === j.id)
+      const pagadas = histJug.filter(h => h.estado === 'pagado').length
+      const atrasadas = histJug.filter(h => h.estado === 'atrasado').length
+      const pendientes = histJug.filter(h => h.estado === 'pendiente').length
+      const totalPagado = histJug.filter(h => h.estado === 'pagado').reduce((s, h) => s + (h.monto || 0), 0)
+      return {
+        'Nombre': j.nombre,
+        'Cuotas pagadas': pagadas,
+        'Cuotas atrasadas': atrasadas,
+        'Cuotas pendientes': pendientes,
+        'Total pagado': `$${totalPagado.toLocaleString('es-CL')}`
+      }
+    })
+    const ws3 = utils.json_to_sheet(resumenPorJugador)
+    utils.book_append_sheet(wb, ws3, 'Resumen por jugador')
+
     writeFile(wb, `mensualidades_${mesesN[mes-1]}_${anio}.xlsx`)
   }
 
@@ -162,7 +213,9 @@ export default function MensualidadesPage() {
                   <tr key={j.id} style={{ borderBottom:'1px solid #1e2030' }}>
                     <td style={{ padding:'12px 16px', fontWeight:600, color:'#c8cfe0', whiteSpace:'nowrap' }}>{j.nombre}</td>
                     <td style={{ padding:'12px 16px' }}>
-                      <span style={{ background: col+'22', color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{estado}</span>
+                      <span style={{ background: col+'22', color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                        {estado === 'pagado' ? '✅ Pagado' : estado === 'atrasado' ? '🔴 Atrasado' : '⏳ Pendiente'}
+                      </span>
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{mens?.fecha_pago || '—'}</td>
                     <td style={{ padding:'12px 16px', fontSize:13, color:'#a78bfa', fontFamily:'monospace' }}>
@@ -201,7 +254,6 @@ export default function MensualidadesPage() {
         )}
       </div>
 
-      {/* Modal confirmar pago */}
       {modalPago && (
         <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:360 }}>

@@ -28,6 +28,7 @@ export default function JugadoresPage() {
   const [editando, setEditando] = useState<any>(null)
   const [form, setForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', sesiones_limite:'12' })
   const [guardando, setGuardando] = useState(false)
+  const [toast, setToast] = useState('')
   const router = useRouter()
 
   useEffect(() => {
@@ -48,8 +49,14 @@ export default function JugadoresPage() {
   }, [clubId])
 
   async function cargarJugadores() {
-    const { data } = await supabase.from('jugadores').select('*').eq('club_id', clubId).neq('es_externo', true).order('elo', { ascending: false })
+    const { data, error } = await supabase.from('jugadores').select('*').eq('club_id', clubId).neq('es_externo', true).order('elo', { ascending: false })
+    if (error) { mostrarToast('Error al cargar jugadores'); return }
     setJugadores(data || [])
+  }
+
+  function mostrarToast(msg: string) {
+    setToast(msg)
+    setTimeout(() => setToast(''), 3000)
   }
 
   function abrirNuevo() {
@@ -65,36 +72,56 @@ export default function JugadoresPage() {
   }
 
   async function guardar() {
-    if (!form.nombre) return
+    if (!form.nombre.trim()) { mostrarToast('El nombre es obligatorio'); return }
+    if (!clubId) { mostrarToast('Error: no hay club activo'); return }
     setGuardando(true)
+
     if (editando) {
-      await supabase.from('jugadores').update({
-        nombre: form.nombre, rut: form.rut||null, email: form.email||null,
-        telefono: form.telefono||null, categoria: form.categoria,
-        sesiones_limite: parseInt(form.sesiones_limite)||12
+      const { error } = await supabase.from('jugadores').update({
+        nombre: form.nombre.trim(),
+        rut: form.rut || null,
+        email: form.email || null,
+        telefono: form.telefono || null,
+        categoria: form.categoria,
+        sesiones_limite: parseInt(form.sesiones_limite) || 12
       }).eq('id', editando.id)
+      if (error) { mostrarToast('Error al editar: ' + error.message); setGuardando(false); return }
+      mostrarToast('Jugador actualizado')
     } else {
-      await supabase.from('jugadores').insert({
-        club_id: clubId, nombre: form.nombre, rut: form.rut||null,
-        email: form.email||null, telefono: form.telefono||null,
-        categoria: form.categoria, sesiones_limite: parseInt(form.sesiones_limite)||12,
-        elo: 1200, sesiones_usadas: 0, estado: 'activo'
+      const { error } = await supabase.from('jugadores').insert({
+        club_id: clubId,
+        nombre: form.nombre.trim(),
+        rut: form.rut || null,
+        email: form.email || null,
+        telefono: form.telefono || null,
+        categoria: form.categoria,
+        sesiones_limite: parseInt(form.sesiones_limite) || 12,
+        elo: 1200,
+        sesiones_usadas: 0,
+        estado: 'activo',
+        es_externo: false
       })
+      if (error) { mostrarToast('Error al crear: ' + error.message); setGuardando(false); return }
+      mostrarToast('Jugador creado exitosamente')
     }
+
     setGuardando(false)
     setModalOpen(false)
-    cargarJugadores()
+    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', sesiones_limite:'12' })
+    await cargarJugadores()
   }
 
   async function toggleEstado(j: any) {
     const nuevoEstado = j.estado === 'activo' ? 'bloqueado' : 'activo'
     await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', j.id)
+    mostrarToast(`Jugador ${nuevoEstado === 'activo' ? 'activado' : 'bloqueado'}`)
     cargarJugadores()
   }
 
   async function eliminar(id: string) {
     if (!confirm('¿Eliminar este jugador? Esta acción no se puede deshacer.')) return
     await supabase.from('jugadores').delete().eq('id', id)
+    mostrarToast('Jugador eliminado')
     cargarJugadores()
   }
 
@@ -119,7 +146,6 @@ export default function JugadoresPage() {
 
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
   const esAdmin = perfil?.rol === 'admin'
-  const esProfesor = perfil?.rol === 'profesor'
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
@@ -213,7 +239,7 @@ export default function JugadoresPage() {
             </div>
             {[
               { label:'Nombre completo *', key:'nombre', type:'text', placeholder:'Ej: Carlos Muñoz' },
-              { label:'RUT', key:'rut', type:'text', placeholder:'12.345.678-9' },
+              { label:'RUT', key:'rut', type:'text', placeholder:'12345678K' },
               { label:'Email', key:'email', type:'email', placeholder:'tu@email.com' },
               { label:'Teléfono', key:'telefono', type:'tel', placeholder:'+56 9 1234 5678' },
               { label:'Sesiones por mes', key:'sesiones_limite', type:'number', placeholder:'12' },
@@ -243,6 +269,13 @@ export default function JugadoresPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div style={{ position:'fixed', bottom:24, right:24, background:'#1e2030', border:'1px solid #34d39944', borderRadius:10, padding:'12px 18px', fontSize:13, color:'#34d399', zIndex:200 }}>
+          {toast}
         </div>
       )}
     </AppLayout>

@@ -23,6 +23,8 @@ export default function DashboardPage() {
   const [ddData, setDdData] = useState<any[]>([])
   const [busquedaAsist, setBusquedaAsist] = useState('')
   const [registrando, setRegistrando] = useState<string | null>(null)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notificaciones, setNotificaciones] = useState<any[]>([])
   const [asistenciasHoy, setAsistenciasHoy] = useState<any[]>([])
   const router = useRouter()
 
@@ -79,6 +81,28 @@ export default function DashboardPage() {
     setSolicitudes(solicitudesData || [])
     setAsistenciasHoy(asistHoy || [])
 
+    // Notificaciones — movimientos recientes
+    const todasNotif: any[] = []
+    
+    // Mensualidades atrasadas
+    const morososNotif = (mensualidades||[]).filter(m => m.estado === 'atrasado' || m.estado === 'pendiente')
+    morososNotif.slice(0,5).forEach(m => {
+      const jug = (jugsData||[]).find(j => j.id === m.jugador_id)
+      if (jug) todasNotif.push({ tipo:'pago', msg:`${jug.nombre} — mensualidad ${m.estado}`, tiempo:'Este mes', color:'#fbbf24' })
+    })
+    
+    // Solicitudes pendientes
+    ;(solicitudesData||[]).forEach(s => {
+      todasNotif.push({ tipo:'solicitud', msg:`Nueva solicitud de ${s.nombre}`, tiempo: new Date(s.creado_en).toLocaleDateString('es-CL'), color:'#a78bfa' })
+    })
+
+    // Últimos movimientos
+    ;(movimientos||[]).slice(0,5).forEach(m => {
+      todasNotif.push({ tipo:'movimiento', msg:`${m.tipo === 'ingreso' ? '💰' : '💸'} ${m.descripcion} — $${m.monto?.toLocaleString('es-CL')}`, tiempo: m.fecha, color: m.tipo === 'ingreso' ? '#34d399' : '#f87171' })
+    })
+
+    setNotificaciones(todasNotif)
+
     // Últimas asistencias del mes
     const ultimas = (asistencias || []).sort((a,b) => b.fecha > a.fecha ? 1 : -1).slice(0,5)
     const ids = [...new Set(ultimas.map(a => a.jugador_id))]
@@ -123,12 +147,18 @@ export default function DashboardPage() {
       {/* Header con solicitudes */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Dashboard</h1>
-        {solicitudes.length > 0 && (
-          <button onClick={() => router.push('/solicitudes')}
-            style={{ background:'#6c63ff22', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-            📨 {solicitudes.length} solicitud{solicitudes.length > 1 ? 'es' : ''} pendiente{solicitudes.length > 1 ? 's' : ''}
+        <div style={{ display:'flex', gap:8 }}>
+          {solicitudes.length > 0 && (
+            <button onClick={() => router.push('/solicitudes')}
+              style={{ background:'#6c63ff22', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+              📨 {solicitudes.length} solicitud{solicitudes.length > 1 ? 'es' : ''}
+            </button>
+          )}
+          <button onClick={() => setNotifOpen(true)} style={{ position:'relative', background:'#14161f', border:'1px solid #1e2030', borderRadius:20, padding:'6px 14px', fontSize:12, color:'#c8cfe0', cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            🔔 Actividad
+            {notificaciones.length > 0 && <span style={{ background:'#f87171', color:'white', borderRadius:'50%', width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700 }}>{notificaciones.length}</span>}
           </button>
-        )}
+        </div>
       </div>
 
       {/* KPIs fila 1 */}
@@ -237,6 +267,30 @@ export default function DashboardPage() {
           <div style={{ fontSize:12, color:'#6c7280' }}>Gastos este mes</div>
         </div>
       </div>
+
+      {/* Modal notificaciones */}
+      {notifOpen && (
+        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', zIndex:100, padding:20, paddingTop:60 }}>
+          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, width:360, maxHeight:'80vh', overflowY:'auto' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 20px', borderBottom:'1px solid #1e2030' }}>
+              <div style={{ fontSize:15, fontWeight:600, color:'#fff' }}>🔔 Actividad reciente</div>
+              <button onClick={() => setNotifOpen(false)} style={{ background:'transparent', border:'none', color:'#6c7280', cursor:'pointer', fontSize:18 }}>✕</button>
+            </div>
+            {notificaciones.length === 0
+              ? <div style={{ padding:30, textAlign:'center', color:'#6c7280', fontSize:13 }}>Sin actividad reciente</div>
+              : notificaciones.map((n, i) => (
+                <div key={i} style={{ display:'flex', gap:12, padding:'12px 20px', borderBottom:'1px solid #1e2030', alignItems:'flex-start' }}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:n.color, marginTop:5, flexShrink:0 }} />
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, color:'#c8cfe0' }}>{n.msg}</div>
+                    <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>{n.tiempo}</div>
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      )}
 
       {/* Modal drilldown */}
       {ddOpen && (

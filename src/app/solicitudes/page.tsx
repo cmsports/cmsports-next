@@ -45,7 +45,8 @@ export default function SolicitudesPage() {
       inv = newInv
     }
     const codigo = inv?.[0]?.codigo || ''
-    setLinkInvitacion(`${window.location.origin}/registro?club=${clubId}&code=${codigo}`)
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://cmsports-next.vercel.app'
+    setLinkInvitacion(`${origin}/registro?club=${clubId}&code=${codigo}`)
 
     // Cargar solicitudes
     const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
