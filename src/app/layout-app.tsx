@@ -171,11 +171,19 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         </div>
       )}
 
+      {/* Campana flotante móvil — solo jugador y profesor */}
+      {(perfil?.rol === 'jugador' || perfil?.rol === 'profesor') && (
+        <div className="mobile-bell" style={{ position:'fixed', top:12, right:12, zIndex:30, display:'none' }}>
+          <CampanaNotificaciones perfil={perfil} />
+        </div>
+      )}
+
       <style>{`
         @media (max-width: 768px) {
           .sidebar { display: none !important; }
-          .main-content { margin-left: 0 !important; padding: 12px !important; padding-bottom: 80px !important; }
+          .main-content { margin-left: 0 !important; padding: 12px !important; padding-bottom: 80px !important; padding-top: 56px !important; }
           .mobile-nav { display: block !important; }
+          .mobile-bell { display: block !important; }
         }
       `}</style>
     </div>
