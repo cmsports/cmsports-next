@@ -18,10 +18,8 @@ const navAdmin = [
   { label:'Asistencia', icon:'📈', href:'/asistencia-stats' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
   { label:'Clases', icon:'📚', href:'/clases' },
-  { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
   { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
   { label:'Finanzas', icon:'💰', href:'/finanzas' },
-  { label:'Reportes', icon:'📄', href:'/reportes' },
 ]
 
 const navProfesor = [
@@ -158,9 +156,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
               { label:'Ranking', icon:'🏆', href:'/ranking' },
               { label:'Asistencia', icon:'📈', href:'/asistencia-stats' },
-              { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
               { label:'Clases', icon:'📚', href:'/clases' },
-              { label:'Reportes', icon:'📄', href:'/reportes' },
+              { label:'Calendario', icon:'📅', href:'/calendario' },
+              { label:'Finanzas', icon:'💰', href:'/finanzas' },
             ].map(item => (
               <div key={item.href} onClick={() => { router.push(item.href); setMasOpen(false) }}
                 style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:10, padding:14, textAlign:'center', cursor:'pointer' }}>
