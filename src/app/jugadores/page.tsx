@@ -29,6 +29,8 @@ export default function JugadoresPage() {
   const [form, setForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', sesiones_limite:'12' })
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
+  const [tabJug, setTabJug] = useState<'jugadores'|'ranking'>('jugadores')
+  const [busquedaRanking, setBusquedaRanking] = useState('')
   const router = useRouter()
 
   useEffect(() => {
@@ -155,13 +157,13 @@ export default function JugadoresPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:10 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Jugadores</h1>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={exportarExcel} style={{ background:'#14161f', color:'#34d399', border:'1px solid #1e2030', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
             📥 Excel
           </button>
-          {esAdmin && (
+          {esAdmin && tabJug === 'jugadores' && (
             <button onClick={abrirNuevo} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
               + Nuevo jugador
             </button>
@@ -169,6 +171,53 @@ export default function JugadoresPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:16 }}>
+        {[{key:'jugadores',label:'👥 Jugadores'},{key:'ranking',label:'🏆 Ranking ELO'}].map(t => (
+          <div key={t.key} onClick={() => setTabJug(t.key as any)}
+            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#14161f':'transparent', color:tabJug===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+            {t.label}
+          </div>
+        ))}
+      </div>
+
+      {/* TAB RANKING */}
+      {tabJug === 'ranking' && (
+        <div>
+          <div style={{ marginBottom:12 }}>
+            <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+              placeholder="🔍 Buscar jugador en el ranking..."
+              value={busquedaRanking} onChange={e => setBusquedaRanking(e.target.value)} />
+          </div>
+          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
+            {jugadores.filter(j => !busquedaRanking || j.nombre.toLowerCase().includes(busquedaRanking.toLowerCase()))
+              .sort((a,b) => b.elo - a.elo)
+              .map((j, i) => {
+                const cols = ['#f59e0b','#6c63ff','#059669','#0891b2','#7c3aed','#ec4899','#14b8a6','#f97316']
+                const posicion = jugadores.sort((a,b) => b.elo-a.elo).findIndex(x => x.id === j.id) + 1
+                return (
+                  <div key={j.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', borderBottom:'1px solid #1e2030' }}>
+                    <div style={{ width:32, textAlign:'center', fontSize:14, fontWeight:700, color: posicion===1?'#fbbf24':posicion===2?'#94a3b8':posicion===3?'#f97316':'#6c7280' }}>
+                      {posicion<=3 ? ['🥇','🥈','🥉'][posicion-1] : posicion}
+                    </div>
+                    <div style={{ width:36, height:36, borderRadius:'50%', background:`linear-gradient(135deg,${cols[i%cols.length]},${cols[i%cols.length]}88)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white', flexShrink:0 }}>
+                      {j.nombre.split(' ').map((n:string)=>n[0]).join('').slice(0,2)}
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>{j.nombre}</div>
+                      <div style={{ fontSize:11, color:'#6c7280' }}>{j.categoria}</div>
+                    </div>
+                    <div style={{ fontSize:18, fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</div>
+                  </div>
+                )
+              })
+            }
+          </div>
+        </div>
+      )}
+
+      {/* TAB JUGADORES */}
+      {tabJug === 'jugadores' && <>
       <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:12, marginBottom:16 }}>
         <input
           style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
@@ -229,6 +278,7 @@ export default function JugadoresPage() {
           </div>
         )}
       </div>
+      </>}
 
       {/* Modal crear/editar */}
       {modalOpen && (
