@@ -22,7 +22,6 @@ export default function DashboardPage() {
   const [busquedaAsist, setBusquedaAsist] = useState('')
   const [registrando, setRegistrando] = useState<string | null>(null)
   const [asistenciasHoy, setAsistenciasHoy] = useState<any[]>([])
-  const [tabDash, setTabDash] = useState<'dashboard'|'solicitudes'>('dashboard')
   const router = useRouter()
 
   const hoy = new Date().toISOString().slice(0,10)
@@ -106,34 +105,9 @@ export default function DashboardPage() {
   return (
     <AppLayout perfil={perfil}>
       {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Dashboard</h1>
       </div>
-
-      {/* Tabs */}
-      <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:20 }}>
-        {[
-          { key:'dashboard', label:'📊 Dashboard' },
-          { key:'solicitudes', label:`📨 Solicitudes${solicitudes.length > 0 ? ` (${solicitudes.length})` : ''}` }
-        ].map(t => (
-          <div key={t.key} onClick={() => setTabDash(t.key as any)}
-            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabDash===t.key?'#14161f':'transparent', color:tabDash===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
-            {t.label}
-          </div>
-        ))}
-      </div>
-
-      {/* TAB SOLICITUDES */}
-      {tabDash === 'solicitudes' && (
-        <SolicitudesInline
-          clubId={perfil?.club_id}
-          onUpdate={() => cargarDatos(perfil?.club_id)}
-        />
-      )}
-
-      {/* TAB DASHBOARD */}
-      {tabDash === 'dashboard' && (
-        <>
           {/* KPIs */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
             <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
@@ -224,7 +198,7 @@ export default function DashboardPage() {
                       <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>{sol.nombre}</div>
                       <div style={{ fontSize:11, color:'#6c7280' }}>{new Date(sol.creado_en).toLocaleDateString('es-CL')}</div>
                     </div>
-                    <button onClick={() => setTabDash('solicitudes')}
+                    <button onClick={() => router.push('/solicitudes')}
                       style={{ background:'#6c63ff22', color:'#a78bfa', border:'none', borderRadius:6, padding:'4px 8px', fontSize:11, cursor:'pointer' }}>
                       Ver →
                     </button>
@@ -232,7 +206,7 @@ export default function DashboardPage() {
                 ))
               }
               {solicitudes.length > 3 && (
-                <button onClick={() => setTabDash('solicitudes')}
+                <button onClick={() => router.push('/solicitudes')}
                   style={{ width:'100%', marginTop:10, background:'transparent', border:'1px solid #1e2030', borderRadius:8, padding:'7px', color:'#6c7280', fontSize:12, cursor:'pointer' }}>
                   Ver todas ({solicitudes.length}) →
                 </button>
@@ -271,9 +245,6 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-        </>
-      )}
-
       {/* Modal drilldown morosidad */}
       {ddOpen && (
         <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
