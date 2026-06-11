@@ -38,9 +38,54 @@ export default function TorneosPage() {
     cargarTorneos()
   }, [clubId])
 
+  async function exportarTorneos() {
+    const { utils, writeFile } = await import('xlsx')
+    const datos = torneos.map(t => ({
+      'Nombre': t.nombre,
+      'Estado': t.estado,
+      'Fase': t.fase,
+      'Fecha inicio': t.fecha_inicio || '',
+      'Inscritos': t.inscritos || 0,
+      'Campeón': t.campeon || '',
+      'Cuota': t.cuota_inscripcion ? '$'+t.cuota_inscripcion.toLocaleString('es-CL') : '',
+    }))
+    const ws = utils.json_to_sheet(datos)
+    const wb = utils.book_new()
+    utils.book_append_sheet(wb, ws, 'Torneos')
+    writeFile(wb, 'torneos.xlsx')
+  }
+
   async function cargarTorneos() {
     const { data } = await supabase.from('torneos').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
-    setTorneos(data || [])
+    if (!data?.length) { setTorneos([]); return }
+
+    // Cargar inscritos y campeón para cada torneo
+    const torneosConDatos = await Promise.all(data.map(async t => {
+      // Contar inscritos
+      const { data: grupos } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', t.id)
+      let inscritos = 0
+      if (grupos?.length) {
+        const { count } = await supabase.from('grupo_jugadores').select('*', { count:'exact', head:true }).in('grupo_id', grupos.map((g:any) => g.id))
+        inscritos = count || 0
+      }
+
+      // Campeón si está finalizado
+      let campeon = null
+      if (t.fase === 'finalizado' || t.estado === 'finalizado') {
+        const { data: pFinal } = await supabase.from('torneo_partidos').select('ganador,ja:jugador_a(nombre),jb:jugador_b(nombre)').eq('torneo_id', t.id).eq('fase','final').not('ganador','is',null).maybeSingle()
+        if (pFinal) {
+          const esA = pFinal.ganador === (pFinal as any).ja?.id
+          campeon = (pFinal as any).ja?.nombre || (pFinal as any).jb?.nombre
+          // Buscar nombre del ganador directamente
+          const { data: jGanador } = await supabase.from('jugadores').select('nombre').eq('id', pFinal.ganador).single()
+          if (jGanador) campeon = jGanador.nombre
+        }
+      }
+
+      return { ...t, inscritos, campeon }
+    }))
+
+    setTorneos(torneosConDatos)
   }
 
   async function crearTorneo() {
@@ -92,29 +137,34 @@ export default function TorneosPage() {
           <div
             key={t.id}
             onClick={() => router.push(`/torneos/${t.id}`)}
-            style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, cursor:'pointer', display:'flex', justifyContent:'space-between', alignItems:'center' }}
+            style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, cursor:'pointer' }}
           >
-            <div>
-              <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:6 }}>{t.nombre}</div>
-              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                <span style={{ background: (estadoColor[t.estado] || '#6c7280') + '22', color: estadoColor[t.estado] || '#6c7280', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                  {t.estado}
-                </span>
-                <span style={{ background:'#a78bfa22', color:'#a78bfa', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                  {faseLabel[t.fase] || t.fase}
-                </span>
-                {t.fecha_inicio && (
-                  <span style={{ fontSize:12, color:'#6c7280' }}>📅 {t.fecha_inicio}</span>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:10 }}>
+              <div style={{ fontSize:16, fontWeight:700, color:'#fff' }}>{t.nombre}</div>
+              <div style={{ fontSize:11, color:'#6c7280' }}>Ver detalle →</div>
+            </div>
+            <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:10 }}>
+              <span style={{ background: (estadoColor[t.estado] || '#6c7280') + '22', color: estadoColor[t.estado] || '#6c7280', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                {t.estado}
+              </span>
+              <span style={{ background:'#a78bfa22', color:'#a78bfa', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                {faseLabel[t.fase] || t.fase}
+              </span>
+              {t.fecha_inicio && <span style={{ fontSize:12, color:'#6c7280' }}>📅 {t.fecha_inicio}</span>}
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ display:'flex', gap:14, alignItems:'center' }}>
+                <span style={{ fontSize:13, color:'#8890a4' }}>👥 <strong style={{ color:'#c8cfe0' }}>{t.inscritos || 0}</strong> inscritos</span>
+                {t.cuota_inscripcion > 0 && (
+                  <span style={{ fontSize:13, color:'#8890a4' }}>💰 <strong style={{ color:'#34d399' }}>${t.cuota_inscripcion?.toLocaleString('es-CL')}</strong></span>
                 )}
               </div>
-            </div>
-            <div style={{ textAlign:'right' }}>
-              {t.cuota_inscripcion > 0 && (
-                <div style={{ fontSize:16, fontWeight:700, color:'#34d399', fontFamily:'monospace' }}>
-                  ${t.cuota_inscripcion?.toLocaleString('es-CL')}
+              {t.campeon && (
+                <div style={{ display:'flex', alignItems:'center', gap:6, background:'#fbbf2422', border:'1px solid #fbbf2444', borderRadius:20, padding:'4px 12px' }}>
+                  <span style={{ fontSize:14 }}>🏆</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:'#fbbf24' }}>{t.campeon}</span>
                 </div>
               )}
-              <div style={{ fontSize:11, color:'#6c7280', marginTop:4 }}>Ver detalle →</div>
             </div>
           </div>
         ))}
