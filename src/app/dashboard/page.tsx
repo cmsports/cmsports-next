@@ -10,8 +10,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-const cols = ['#f59e0b','#6c63ff','#059669','#0891b2','#7c3aed']
-
 export default function DashboardPage() {
   const [perfil, setPerfil] = useState<any>(null)
   const [kpis, setKpis] = useState<any>({})
@@ -23,9 +21,8 @@ export default function DashboardPage() {
   const [ddData, setDdData] = useState<any[]>([])
   const [busquedaAsist, setBusquedaAsist] = useState('')
   const [registrando, setRegistrando] = useState<string | null>(null)
-  const [notifOpen, setNotifOpen] = useState(false)
-  const [notificaciones, setNotificaciones] = useState<any[]>([])
   const [asistenciasHoy, setAsistenciasHoy] = useState<any[]>([])
+  const [tabDash, setTabDash] = useState<'dashboard'|'solicitudes'>('dashboard')
   const router = useRouter()
 
   const hoy = new Date().toISOString().slice(0,10)
@@ -59,7 +56,7 @@ export default function DashboardPage() {
       { data: solicitudesData },
       { data: asistHoy }
     ] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', cid),
+      supabase.from('jugadores').select('*').eq('club_id', cid).neq('es_externo', true),
       supabase.from('asistencia').select('*').eq('club_id', cid).gte('fecha', mesInicio),
       supabase.from('torneos').select('*').eq('club_id', cid).eq('estado', 'en_curso'),
       supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
@@ -74,42 +71,14 @@ export default function DashboardPage() {
     const ingresos = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
     const coa = activos.length > 0 ? Math.round(gastos / activos.length) : 0
     const tm = activos.length > 0 ? Math.round((morosos.length / activos.length) * 100) : 0
-    const captacion = (solicitudesData?.length ?? 0) > 0 ? Math.round(((solicitudesData?.filter(s => s.estado === 'aprobado').length || 0) / (solicitudesData?.length ?? 1)) * 100) : 0
 
-    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, torneos: torneos?.length || 0, captacion, mensualidadBase: 25000, morosos, jugadores: activos })
+    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, torneos: torneos?.length || 0, morosos, jugadores: activos, mensualidadBase: 25000 })
     setJugadores(activos)
     setSolicitudes(solicitudesData || [])
     setAsistenciasHoy(asistHoy || [])
 
-    // Notificaciones — movimientos recientes
-    const todasNotif: any[] = []
-    
-    // Mensualidades atrasadas
-    const morososNotif = (mensualidades||[]).filter(m => m.estado === 'atrasado' || m.estado === 'pendiente')
-    morososNotif.slice(0,5).forEach(m => {
-      const jug = (jugsData||[]).find(j => j.id === m.jugador_id)
-      if (jug) todasNotif.push({ tipo:'pago', msg:`${jug.nombre} — mensualidad ${m.estado}`, tiempo:'Este mes', color:'#fbbf24' })
-    })
-    
-    // Solicitudes pendientes
-    ;(solicitudesData||[]).forEach(s => {
-      todasNotif.push({ tipo:'solicitud', msg:`Nueva solicitud de ${s.nombre}`, tiempo: new Date(s.creado_en).toLocaleDateString('es-CL'), color:'#a78bfa' })
-    })
-
-    // Últimos movimientos
-    ;(movimientos||[]).slice(0,5).forEach(m => {
-      todasNotif.push({ tipo:'movimiento', msg:`${m.tipo === 'ingreso' ? '💰' : '💸'} ${m.descripcion} — $${m.monto?.toLocaleString('es-CL')}`, tiempo: m.fecha, color: m.tipo === 'ingreso' ? '#34d399' : '#f87171' })
-    })
-
-    setNotificaciones(todasNotif)
-
-    // Últimas asistencias del mes
-    const ultimas = (asistencias || []).sort((a,b) => b.fecha > a.fecha ? 1 : -1).slice(0,5)
-    const ids = [...new Set(ultimas.map(a => a.jugador_id))]
-    if (ids.length) {
-      const { data: jugsAsist } = await supabase.from('jugadores').select('id,nombre').in('id', ids)
-      setUltimasAsist(ultimas.map(a => ({ ...a, nombre: jugsAsist?.find(j => j.id === a.jugador_id)?.nombre || '—' })))
-    }
+    const { data: asistMes } = await supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).gte('fecha', mesInicio).order('fecha', { ascending: false }).limit(5)
+    setUltimasAsist(asistMes || [])
   }
 
   async function registrarAsistencia(jugador: any) {
@@ -117,17 +86,9 @@ export default function DashboardPage() {
     if (yaRegistro) { alert(`${jugador.nombre} ya registró hoy`); return }
     setRegistrando(jugador.id)
     await supabase.from('asistencia').insert({ club_id: perfil?.club_id, jugador_id: jugador.id, fecha: hoy, hora })
-    if (jugador.sesiones_limite > 0) {
-      await supabase.from('jugadores').update({ sesiones_usadas: jugador.sesiones_usadas + 1 }).eq('id', jugador.id)
-    }
     setRegistrando(null)
     setBusquedaAsist('')
     await cargarDatos(perfil?.club_id)
-  }
-
-  async function abrirDrilldown(tipo: string) {
-    setDdOpen(tipo)
-    if (tipo === 'morosidad') setDdData(kpis.morosos || [])
   }
 
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
@@ -144,155 +105,176 @@ export default function DashboardPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      {/* Header con solicitudes */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
         <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Dashboard</h1>
-        <div style={{ display:'flex', gap:8 }}>
-          {solicitudes.length > 0 && (
-            <button onClick={() => router.push('/solicitudes')}
-              style={{ background:'#6c63ff22', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-              📨 {solicitudes.length} solicitud{solicitudes.length > 1 ? 'es' : ''}
-            </button>
-          )}
-          <button onClick={() => setNotifOpen(true)} style={{ position:'relative', background:'#14161f', border:'1px solid #1e2030', borderRadius:20, padding:'6px 14px', fontSize:12, color:'#c8cfe0', cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-            🔔 Actividad
-            {notificaciones.length > 0 && <span style={{ background:'#f87171', color:'white', borderRadius:'50%', width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700 }}>{notificaciones.length}</span>}
-          </button>
-        </div>
       </div>
 
-      {/* KPIs fila 1 */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>🏓</div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#a78bfa', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.activos || 0}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Jugadores activos</div>
-        </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>🎯</div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#fbbf24', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.torneos || 0}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Torneos activos</div>
-        </div>
-        <div onClick={() => abrirDrilldown('morosidad')} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer' }}>
-          <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ fontSize:22 }}>⚠️</span><span style={{ fontSize:10, color:'#4b5063' }}>↗</span></div>
-          <div style={{ fontSize:26, fontWeight:700, color: (kpis.tm||0) > 25 ? '#f87171' : (kpis.tm||0) > 10 ? '#fbbf24' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.tm || 0}%</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Tasa de morosidad</div>
-        </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>📈</div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.ingresos || 0)}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Ingresos este mes</div>
-        </div>
+      {/* Tabs */}
+      <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:20 }}>
+        {[
+          { key:'dashboard', label:'📊 Dashboard' },
+          { key:'solicitudes', label:`📨 Solicitudes${solicitudes.length > 0 ? ` (${solicitudes.length})` : ''}` }
+        ].map(t => (
+          <div key={t.key} onClick={() => setTabDash(t.key as any)}
+            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabDash===t.key?'#14161f':'transparent', color:tabDash===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+            {t.label}
+          </div>
+        ))}
       </div>
 
-      {/* Fila 2 — Asistencia + Últimas */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
-
-        {/* Registro asistencia */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>📱 Asistencia hoy</div>
-            <span style={{ background:'#34d39922', color:'#34d399', padding:'2px 8px', borderRadius:20, fontSize:11 }}>{asistenciasHoy.length} registros</span>
-          </div>
-          <div style={{ position:'relative' }}>
-            <input
-              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'9px 12px', color:'#e8e8f0', fontSize:13, outline:'none', boxSizing:'border-box' }}
-              placeholder="Buscar jugador para registrar..."
-              value={busquedaAsist}
-              onChange={e => setBusquedaAsist(e.target.value)}
-            />
-            {jugadoresFiltrados.length > 0 && (
-              <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden' }}>
-                {jugadoresFiltrados.map(j => {
-                  const yaRegistro = registradosHoy.has(j.id)
-                  return (
-                    <div key={j.id} onClick={() => !yaRegistro && registrarAsistencia(j)}
-                      style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', borderBottom:'1px solid #1e2030', cursor: yaRegistro ? 'default' : 'pointer', opacity: yaRegistro ? 0.6 : 1 }}>
-                      <div>
-                        <div style={{ fontSize:13, color:'#c8cfe0' }}>{j.nombre}</div>
-                        <div style={{ fontSize:10, color:'#6c7280' }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones</div>
-                      </div>
-                      {yaRegistro
-                        ? <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 8px', borderRadius:20, fontSize:10 }}>✓ Ya registrado</span>
-                        : registrando === j.id
-                        ? <span style={{ color:'#6c7280', fontSize:11 }}>...</span>
-                        : <button style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✓</button>
-                      }
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-          {/* Lista últimas asistencias de hoy */}
-          <div style={{ marginTop:12, maxHeight:120, overflowY:'auto' }}>
-            {asistenciasHoy.slice(0,4).map(a => (
-              <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
-                <span style={{ color:'#c8cfe0' }}>{(a as any).jugadores?.nombre || '—'}</span>
-                <span style={{ color:'#6c7280' }}>{a.hora?.slice(0,5)}</span>
-              </div>
-            ))}
-            {asistenciasHoy.length === 0 && <p style={{ fontSize:12, color:'#4b5063', marginTop:8 }}>Sin registros hoy</p>}
-          </div>
-        </div>
-
-        {/* Últimas asistencias del mes */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>📅 Últimas asistencias</div>
-          {ultimasAsist.length === 0
-            ? <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'20px 0' }}>Sin asistencias</p>
-            : ultimasAsist.map(a => (
-              <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #1a1d2e', fontSize:13 }}>
-                <span style={{ color:'#c8cfe0' }}>{a.nombre}</span>
-                <span style={{ color:'#6c7280', fontSize:12 }}>{a.fecha}</span>
-              </div>
-            ))
-          }
-        </div>
-      </div>
-
-      {/* Fila 3 — COA y Gastos */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>💰</div>
-          <div style={{ fontSize:26, fontWeight:700, color: kpis.coa > kpis.mensualidadBase ? '#f87171' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.coa || 0)}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>COA — Costo por alumno</div>
-          <div style={{ fontSize:11, marginTop:4, color: kpis.coa > kpis.mensualidadBase ? '#f87171' : '#34d399' }}>
-            {kpis.coa > kpis.mensualidadBase ? '🔴 Pérdida por alumno' : '✓ Margen saludable'}
-          </div>
-        </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>📉</div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#f87171', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.gastos || 0)}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Gastos este mes</div>
-        </div>
-      </div>
-
-      {/* Modal notificaciones */}
-      {notifOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'flex-start', justifyContent:'flex-end', zIndex:100, padding:20, paddingTop:60 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, width:360, maxHeight:'80vh', overflowY:'auto' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 20px', borderBottom:'1px solid #1e2030' }}>
-              <div style={{ fontSize:15, fontWeight:600, color:'#fff' }}>🔔 Actividad reciente</div>
-              <button onClick={() => setNotifOpen(false)} style={{ background:'transparent', border:'none', color:'#6c7280', cursor:'pointer', fontSize:18 }}>✕</button>
-            </div>
-            {notificaciones.length === 0
-              ? <div style={{ padding:30, textAlign:'center', color:'#6c7280', fontSize:13 }}>Sin actividad reciente</div>
-              : notificaciones.map((n, i) => (
-                <div key={i} style={{ display:'flex', gap:12, padding:'12px 20px', borderBottom:'1px solid #1e2030', alignItems:'flex-start' }}>
-                  <div style={{ width:8, height:8, borderRadius:'50%', background:n.color, marginTop:5, flexShrink:0 }} />
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, color:'#c8cfe0' }}>{n.msg}</div>
-                    <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>{n.tiempo}</div>
-                  </div>
-                </div>
-              ))
-            }
-          </div>
-        </div>
+      {/* TAB SOLICITUDES */}
+      {tabDash === 'solicitudes' && (
+        <SolicitudesInline
+          clubId={perfil?.club_id}
+          onUpdate={() => cargarDatos(perfil?.club_id)}
+        />
       )}
 
-      {/* Modal drilldown */}
+      {/* TAB DASHBOARD */}
+      {tabDash === 'dashboard' && (
+        <>
+          {/* KPIs */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
+              <div style={{ fontSize:22 }}>🏓</div>
+              <div style={{ fontSize:26, fontWeight:700, color:'#a78bfa', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.activos || 0}</div>
+              <div style={{ fontSize:12, color:'#6c7280' }}>Jugadores activos</div>
+            </div>
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
+              <div style={{ fontSize:22 }}>🎯</div>
+              <div style={{ fontSize:26, fontWeight:700, color:'#fbbf24', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.torneos || 0}</div>
+              <div style={{ fontSize:12, color:'#6c7280' }}>Torneos activos</div>
+            </div>
+            <div onClick={() => { setDdOpen('morosidad'); setDdData(kpis.morosos || []) }}
+              style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer' }}>
+              <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ fontSize:22 }}>⚠️</span><span style={{ fontSize:10, color:'#4b5063' }}>↗</span></div>
+              <div style={{ fontSize:26, fontWeight:700, color:(kpis.tm||0) > 25 ? '#f87171' : (kpis.tm||0) > 10 ? '#fbbf24' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.tm || 0}%</div>
+              <div style={{ fontSize:12, color:'#6c7280' }}>Tasa de morosidad</div>
+            </div>
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
+              <div style={{ fontSize:22 }}>📈</div>
+              <div style={{ fontSize:26, fontWeight:700, color:'#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.ingresos || 0)}</div>
+              <div style={{ fontSize:12, color:'#6c7280' }}>Ingresos este mes</div>
+            </div>
+          </div>
+
+          {/* Asistencia + Solicitudes */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
+            {/* Asistencia hoy */}
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>📱 Asistencia hoy</div>
+                <span style={{ background:'#34d39922', color:'#34d399', padding:'2px 8px', borderRadius:20, fontSize:11 }}>{asistenciasHoy.length} registros</span>
+              </div>
+              <div style={{ position:'relative' }}>
+                <input
+                  style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'9px 12px', color:'#e8e8f0', fontSize:13, outline:'none', boxSizing:'border-box' }}
+                  placeholder="Buscar jugador para registrar..."
+                  value={busquedaAsist}
+                  onChange={e => setBusquedaAsist(e.target.value)}
+                />
+                {jugadoresFiltrados.length > 0 && (
+                  <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden' }}>
+                    {jugadoresFiltrados.map(j => {
+                      const yaRegistro = registradosHoy.has(j.id)
+                      return (
+                        <div key={j.id} onClick={() => !yaRegistro && registrarAsistencia(j)}
+                          style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', borderBottom:'1px solid #1e2030', cursor: yaRegistro ? 'default' : 'pointer', opacity: yaRegistro ? 0.6 : 1 }}>
+                          <div>
+                            <div style={{ fontSize:13, color:'#c8cfe0' }}>{j.nombre}</div>
+                            <div style={{ fontSize:10, color:'#6c7280' }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones</div>
+                          </div>
+                          {yaRegistro
+                            ? <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 8px', borderRadius:20, fontSize:10 }}>✓ Ya registrado</span>
+                            : registrando === j.id
+                            ? <span style={{ color:'#6c7280', fontSize:11 }}>...</span>
+                            : <button style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✓</button>
+                          }
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+              <div style={{ marginTop:12, maxHeight:120, overflowY:'auto' }}>
+                {asistenciasHoy.slice(0,4).map(a => (
+                  <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
+                    <span style={{ color:'#c8cfe0' }}>{(a as any).jugadores?.nombre || '—'}</span>
+                    <span style={{ color:'#6c7280' }}>{a.hora?.slice(0,5)}</span>
+                  </div>
+                ))}
+                {asistenciasHoy.length === 0 && <p style={{ fontSize:12, color:'#4b5063', marginTop:8 }}>Sin registros hoy</p>}
+              </div>
+            </div>
+
+            {/* Solicitudes pendientes */}
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>📨 Solicitudes pendientes</div>
+                {solicitudes.length > 0 && (
+                  <span style={{ background:'#6c63ff22', color:'#a78bfa', padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{solicitudes.length} nuevas</span>
+                )}
+              </div>
+              {solicitudes.length === 0
+                ? <p style={{ fontSize:13, color:'#4b5063', textAlign:'center', padding:'20px 0' }}>Sin solicitudes pendientes</p>
+                : solicitudes.slice(0,3).map(sol => (
+                  <div key={sol.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #1a1d2e' }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>{sol.nombre}</div>
+                      <div style={{ fontSize:11, color:'#6c7280' }}>{new Date(sol.creado_en).toLocaleDateString('es-CL')}</div>
+                    </div>
+                    <button onClick={() => setTabDash('solicitudes')}
+                      style={{ background:'#6c63ff22', color:'#a78bfa', border:'none', borderRadius:6, padding:'4px 8px', fontSize:11, cursor:'pointer' }}>
+                      Ver →
+                    </button>
+                  </div>
+                ))
+              }
+              {solicitudes.length > 3 && (
+                <button onClick={() => setTabDash('solicitudes')}
+                  style={{ width:'100%', marginTop:10, background:'transparent', border:'1px solid #1e2030', borderRadius:8, padding:'7px', color:'#6c7280', fontSize:12, cursor:'pointer' }}>
+                  Ver todas ({solicitudes.length}) →
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Últimas asistencias + COA */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
+            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>📅 Últimas asistencias</div>
+              {ultimasAsist.length === 0
+                ? <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'20px 0' }}>Sin asistencias</p>
+                : ultimasAsist.map(a => (
+                  <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #1a1d2e', fontSize:13 }}>
+                    <span style={{ color:'#c8cfe0' }}>{(a as any).jugadores?.nombre || '—'}</span>
+                    <span style={{ color:'#6c7280', fontSize:12 }}>{a.fecha}</span>
+                  </div>
+                ))
+              }
+            </div>
+
+            <div style={{ display:'grid', gridTemplateRows:'1fr 1fr', gap:14 }}>
+              <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
+                <div style={{ fontSize:22 }}>💰</div>
+                <div style={{ fontSize:24, fontWeight:700, color: (kpis.coa||0) > (kpis.mensualidadBase||25000) ? '#f87171' : '#34d399', fontFamily:'monospace', margin:'6px 0 4px' }}>{fmt(kpis.coa || 0)}</div>
+                <div style={{ fontSize:12, color:'#6c7280' }}>COA — Costo por alumno</div>
+                <div style={{ fontSize:11, marginTop:4, color: (kpis.coa||0) > (kpis.mensualidadBase||25000) ? '#f87171' : '#34d399' }}>
+                  {(kpis.coa||0) > (kpis.mensualidadBase||25000) ? '🔴 Pérdida por alumno' : '✓ Margen saludable'}
+                </div>
+              </div>
+              <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
+                <div style={{ fontSize:22 }}>📉</div>
+                <div style={{ fontSize:24, fontWeight:700, color:'#f87171', fontFamily:'monospace', margin:'6px 0 4px' }}>{fmt(kpis.gastos || 0)}</div>
+                <div style={{ fontSize:12, color:'#6c7280' }}>Gastos este mes</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal drilldown morosidad */}
       {ddOpen && (
         <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:24, width:'100%', maxWidth:520, maxHeight:'80vh', overflowY:'auto' }}>
@@ -311,7 +293,10 @@ export default function DashboardPage() {
                     <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>{item.estado}</div>
                   </div>
                   {kpis.jugadores?.find((j:any) => j.id === item.jugador_id)?.telefono && (
-                    <a href={`https://wa.me/${kpis.jugadores.find((j:any) => j.id === item.jugador_id).telefono.replace(/[^0-9]/g,'')}`} target="_blank" style={{ background:'#0a2d1a', color:'#34d399', padding:'5px 10px', borderRadius:8, fontSize:11, textDecoration:'none' }}>💬 WA</a>
+                    <a href={`https://wa.me/${kpis.jugadores.find((j:any) => j.id === item.jugador_id).telefono.replace(/[^0-9]/g,'')}`} target="_blank"
+                      style={{ background:'#0a2d1a', color:'#34d399', padding:'5px 10px', borderRadius:8, fontSize:11, textDecoration:'none' }}>
+                      💬 WA
+                    </a>
                   )}
                 </div>
               ))
@@ -320,5 +305,101 @@ export default function DashboardPage() {
         </div>
       )}
     </AppLayout>
+  )
+}
+
+function SolicitudesInline({ clubId, onUpdate }: { clubId: string, onUpdate: () => void }) {
+  const [solicitudes, setSolicitudes] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (clubId) cargar()
+  }, [clubId])
+
+  async function cargar() {
+    const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
+    setSolicitudes(data || [])
+    setLoading(false)
+  }
+
+  async function aprobar(sol: any) {
+    await supabase.from('jugadores').insert({
+      club_id: clubId, nombre: sol.nombre, rut: sol.rut, email: sol.email,
+      telefono: sol.telefono, categoria: 'principiante', sesiones_limite: 12,
+      elo: 1200, estado: 'activo', es_externo: false
+    })
+    await supabase.from('solicitudes_jugador').update({ estado: 'aprobado' }).eq('id', sol.id)
+    await cargar()
+    onUpdate()
+  }
+
+  async function rechazar(id: string) {
+    await supabase.from('solicitudes_jugador').update({ estado: 'rechazado' }).eq('id', id)
+    await cargar()
+    onUpdate()
+  }
+
+  const pendientes = solicitudes.filter(s => s.estado === 'pendiente')
+  const historial = solicitudes.filter(s => s.estado !== 'pendiente')
+
+  if (loading) return <div style={{ padding:30, textAlign:'center', color:'#6c7280' }}>Cargando...</div>
+
+  return (
+    <div>
+      {pendientes.length === 0
+        ? (
+          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:40, textAlign:'center' }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>📨</div>
+            <div style={{ fontSize:14, color:'#c8cfe0' }}>Sin solicitudes pendientes</div>
+          </div>
+        )
+        : pendientes.map(sol => (
+          <div key={sol.id} style={{ background:'#14161f', border:'1px solid #6c63ff44', borderRadius:14, padding:20, marginBottom:12 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:10 }}>
+              <div>
+                <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:6 }}>{sol.nombre}</div>
+                <div style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
+                  {sol.rut && <span style={{ fontSize:12, color:'#6c7280' }}>RUT: {sol.rut}</span>}
+                  {sol.email && <span style={{ fontSize:12, color:'#6c7280' }}>{sol.email}</span>}
+                  {sol.telefono && <span style={{ fontSize:12, color:'#6c7280' }}>{sol.telefono}</span>}
+                </div>
+                <div style={{ fontSize:11, color:'#4b5063', marginTop:6 }}>
+                  {new Date(sol.creado_en).toLocaleDateString('es-CL', { day:'numeric', month:'long', year:'numeric' })}
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                {sol.telefono && (
+                  <a href={`https://wa.me/${sol.telefono.replace(/[^0-9]/g,'')}`} target="_blank"
+                    style={{ background:'#34d39922', color:'#34d399', border:'1px solid #34d39944', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, textDecoration:'none' }}>
+                    💬 WhatsApp
+                  </a>
+                )}
+                <button onClick={() => rechazar(sol.id)}
+                  style={{ background:'#f8717122', color:'#f87171', border:'none', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                  ✕ Rechazar
+                </button>
+                <button onClick={() => aprobar(sol)}
+                  style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                  ✓ Aprobar
+                </button>
+              </div>
+            </div>
+          </div>
+        ))
+      }
+      {historial.length > 0 && (
+        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginTop:16 }}>
+          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Historial</div>
+          {historial.slice(0,5).map(sol => (
+            <div key={sol.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid #1e2030', fontSize:13 }}>
+              <span style={{ color:'#c8cfe0' }}>{sol.nombre}</span>
+              <span style={{ background: sol.estado==='aprobado'?'#34d39922':'#f8717122', color: sol.estado==='aprobado'?'#34d399':'#f87171', padding:'2px 8px', borderRadius:20, fontSize:11 }}>
+                {sol.estado === 'aprobado' ? '✓ Aprobado' : '✕ Rechazado'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
