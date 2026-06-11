@@ -737,11 +737,45 @@ export default function TorneoDetallePage() {
             </div>
 
             {/* Input inscripción */}
+            {/* Búsqueda con autocompletado de jugadores del club */}
+            <div style={{ position:'relative', marginBottom:10 }}>
+              <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+                placeholder="Buscar jugador del club o escribir nombre nuevo..."
+                value={busquedaMesa}
+                onChange={async e => {
+                  setBusquedaMesa(e.target.value)
+                  setRutMesa('')
+                  if (e.target.value.length > 1 && perfil?.club_id) {
+                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,elo,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
+                    // guardar en estado temporal
+                    ;(window as any).__jugSuggestions = data || []
+                    setBusquedaMesa(e.target.value) // forzar re-render
+                  } else {
+                    ;(window as any).__jugSuggestions = []
+                  }
+                }}
+                onKeyDown={e => e.key === 'Enter' && inscribirEnMesa()}
+              />
+              {busquedaMesa.length > 1 && (window as any).__jugSuggestions?.length > 0 && (
+                <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden' }}>
+                  {((window as any).__jugSuggestions || []).map((j: any) => (
+                    <div key={j.id} onClick={() => {
+                      setBusquedaMesa(j.nombre)
+                      setRutMesa(j.rut || '')
+                      ;(window as any).__jugSuggestions = []
+                    }} style={{ padding:'10px 12px', borderBottom:'1px solid #1e2030', cursor:'pointer', fontSize:13 }}>
+                      <span style={{ color:'#c8cfe0' }}>{j.nombre}</span>
+                      <span style={{ color:'#6c7280', fontSize:11, marginLeft:8 }}>ELO {j.elo} · {j.categoria}</span>
+                      <span style={{ background:'#34d39922', color:'#34d399', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
+                    </div>
+                  ))}
+                  <div style={{ padding:'8px 12px', fontSize:11, color:'#4b5063', borderTop:'1px solid #1e2030' }}>
+                    O presiona Enter para inscribir como participante externo
+                  </div>
+                </div>
+              )}
+            </div>
             <div style={{ display:'flex', gap:8, marginBottom:10 }}>
-              <input style={{ flex:2, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
-                placeholder="Nombre del participante" value={busquedaMesa}
-                onChange={e => setBusquedaMesa(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && inscribirEnMesa()} />
               <input style={{ flex:1, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
                 placeholder="RUT sin puntos ni guion" value={rutMesa} onChange={e => setRutMesa(e.target.value.replace(/[^0-9kK]/g,''))} maxLength={9} />
             </div>

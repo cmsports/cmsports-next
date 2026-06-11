@@ -15,6 +15,7 @@ const navAdmin = [
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
+  { label:'Asistencia', icon:'📈', href:'/asistencia-stats' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
   { label:'Clases', icon:'📚', href:'/clases' },
   { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
@@ -156,7 +157,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             {[
               { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
               { label:'Ranking', icon:'🏆', href:'/ranking' },
-              { label:'Calendario', icon:'📅', href:'/calendario' },
+              { label:'Asistencia', icon:'📈', href:'/asistencia-stats' },
               { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
               { label:'Clases', icon:'📚', href:'/clases' },
               { label:'Reportes', icon:'📄', href:'/reportes' },
