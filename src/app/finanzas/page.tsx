@@ -177,7 +177,6 @@ export default function FinanzasPage() {
       <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:20 }}>
         {[
           { key:'movimientos', label:'💰 Movimientos' },
-          { key:'historial', label:'📋 Historial jugador' },
           { key:'reportes', label:'📄 Reportes' },
         ].map(t => (
           <div key={t.key} onClick={() => setTabActivo(t.key as any)}
@@ -187,20 +186,7 @@ export default function FinanzasPage() {
         ))}
       </div>
 
-      {tabActivo !== 'reportes' && <>
-      {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:10 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={() => cambiarMes(-1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>◀</button>
-          <span style={{ fontSize:16, fontWeight:600, color:'#fff', minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
-          <button onClick={() => cambiarMes(1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>▶</button>
-        </div>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={exportarExcel} style={{ background:'#14161f', color:'#34d399', border:'1px solid #1e2030', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📥 Excel</button>
-          <button onClick={() => setModalOpen(true)} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>+ Movimiento</button>
-        </div>
-      </div>
-      </>}
+
 
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
