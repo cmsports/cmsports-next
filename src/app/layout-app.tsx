@@ -14,21 +14,21 @@ const navAdmin = [
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
-  { label:'QR Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
   { label:'Clases', icon:'📚', href:'/clases' },
   { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
   { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
   { label:'Finanzas', icon:'💰', href:'/finanzas' },
+  { label:'Reportes', icon:'📄', href:'/reportes' },
 ]
 
 const navProfesor = [
-  { label:'Dashboard', icon:'📊', href:'/dashboard' },
+  { label:'Dashboard', icon:'📊', href:'/dashboard-profesor' },
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
   { label:'Mis clases', icon:'📚', href:'/clases' },
-  { label:'QR Asistencia', icon:'📱', href:'/asistencia' },
+  { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
 ]
 
@@ -36,23 +36,22 @@ const navJugador = [
   { label:'Mi perfil', icon:'👤', href:'/perfil' },
   { label:'Mis clases', icon:'📚', href:'/mis-clases' },
   { label:'Mi Estado de Cuenta', icon:'💳', href:'/estado-cuenta' },
-  { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Torneos externos', icon:'🌎', href:'/torneos-externos' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
+  { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
 ]
 
-// Nav móvil por rol
 const mobileNavAdmin = [
   { label:'Inicio', icon:'📊', href:'/dashboard' },
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
-  { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
+  { label:'Finanzas', icon:'💰', href:'/finanzas' },
   { label:'Más', icon:'☰', href:'#mas' },
 ]
 
 const mobileNavProfesor = [
-  { label:'Inicio', icon:'📊', href:'/dashboard' },
+  { label:'Inicio', icon:'📊', href:'/dashboard-profesor' },
   { label:'Clases', icon:'📚', href:'/clases' },
   { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Alumnos', icon:'👥', href:'/jugadores' },
@@ -62,8 +61,8 @@ const mobileNavProfesor = [
 const mobileNavJugador = [
   { label:'Perfil', icon:'👤', href:'/perfil' },
   { label:'Mis clases', icon:'📚', href:'/mis-clases' },
-  { label:'Ranking', icon:'🏆', href:'/ranking' },
   { label:'Mi cuenta', icon:'💳', href:'/estado-cuenta' },
+  { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
 ]
 
@@ -82,7 +81,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
 
   return (
     <div style={{ display:'flex', minHeight:'100vh', background:'#0f1117' }}>
-      {/* SIDEBAR — solo desktop */}
+      {/* SIDEBAR desktop */}
       <div className="sidebar" style={{ width:220, background:'#0a0c12', borderRight:'1px solid #1e2030', display:'flex', flexDirection:'column', position:'fixed', height:'100vh', zIndex:10 }}>
         <div style={{ padding:'20px 16px', borderBottom:'1px solid #1e2030' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
@@ -108,10 +107,14 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             </div>
             <div>
               <div style={{ fontSize:12, color:'#c8cfe0', fontWeight:500 }}>{perfil?.email}</div>
-              <div style={{ fontSize:11, color:'#6c7280' }}>{perfil?.rol === 'admin' ? '👑 Administrador' : perfil?.rol === 'profesor' ? '👨‍🏫 Profesor' : '🏓 Jugador'}</div>
+              <div style={{ fontSize:11, color:'#6c7280' }}>
+                {perfil?.rol === 'admin' ? '👑 Administrador' : perfil?.rol === 'profesor' ? '👨‍🏫 Profesor' : '🏓 Jugador'}
+              </div>
             </div>
           </div>
-          <button onClick={cerrarSesion} style={{ width:'100%', padding:'7px', background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:12, cursor:'pointer' }}>↩ Cerrar sesión</button>
+          <button onClick={cerrarSesion} style={{ width:'100%', padding:'7px', background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:12, cursor:'pointer' }}>
+            ↩ Cerrar sesión
+          </button>
         </div>
       </div>
 
@@ -146,11 +149,11 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
             {[
               { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
-              { label:'Finanzas', icon:'💰', href:'/finanzas' },
               { label:'Ranking', icon:'🏆', href:'/ranking' },
               { label:'Calendario', icon:'📅', href:'/calendario' },
               { label:'Solicitudes', icon:'📨', href:'/solicitudes' },
               { label:'Clases', icon:'📚', href:'/clases' },
+              { label:'Reportes', icon:'📄', href:'/reportes' },
             ].map(item => (
               <div key={item.href} onClick={() => { router.push(item.href); setMasOpen(false) }}
                 style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:10, padding:14, textAlign:'center', cursor:'pointer' }}>
