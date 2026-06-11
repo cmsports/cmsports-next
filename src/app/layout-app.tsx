@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter, usePathname } from 'next/navigation'
+import CampanaNotificaciones from '@/components/campana-notificaciones'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -101,6 +102,11 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
           ))}
         </nav>
         <div style={{ padding:'12px 16px', borderTop:'1px solid #1e2030' }}>
+          {(perfil?.rol === 'jugador' || perfil?.rol === 'profesor') && (
+            <div style={{ marginBottom:10 }}>
+              <CampanaNotificaciones perfil={perfil} />
+            </div>
+          )}
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
             <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#6c63ff,#a78bfa)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white' }}>
               {perfil?.nombre?.split(' ').map((n:string)=>n[0]).join('').slice(0,2) || 'U'}

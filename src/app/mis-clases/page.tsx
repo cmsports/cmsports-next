@@ -59,7 +59,12 @@ export default function MisClasesPage() {
       supabase.from('profesores').select('*').eq('club_id', perfil.club_id)
     ])
 
-    setClases(cl || [])
+    // Cargar cantidad de confirmaciones por clase
+    const clasesConAsistentes = await Promise.all((cl || []).map(async (clase: any) => {
+      const { count } = await supabase.from('reservas').select('*', { count:'exact', head:true }).eq('clase_id', clase.id).eq('estado', 'confirmado')
+      return { ...clase, _asistentes: count || 0 }
+    }))
+    setClases(clasesConAsistentes)
     setProfesores(pr || [])
 
     if (perfil?.jugador_id) {
@@ -116,7 +121,7 @@ export default function MisClasesPage() {
         <div>
           <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:4 }}>Mis clases</h1>
           <p style={{ fontSize:13, color:'#6c7280' }}>
-            {misReservasCount > 0 ? `✅ Tienes ${misReservasCount} clase${misReservasCount>1?'s':''} reservada${misReservasCount>1?'s':''} esta semana` : 'No tienes clases reservadas esta semana'}
+            {misReservasCount > 0 ? `✅ Confirmaste asistencia a ${misReservasCount} clase${misReservasCount>1?'s':''} esta semana` : 'No has confirmado asistencia a ninguna clase esta semana'}
           </p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -165,20 +170,21 @@ export default function MisClasesPage() {
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:14, fontWeight:600, color:'#c8cfe0', marginBottom:4 }}>{clase.contenido}</div>
-                      <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+                      <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
                         <span style={{ fontSize:12, color:'#6c7280' }}>🕐 {clase.hora_inicio?.slice(0,5)} - {clase.hora_fin?.slice(0,5)}</span>
                         {prof && <span style={{ fontSize:12, color:'#6c7280' }}>👤 {prof.nombre}</span>}
                         {clase.grupo && <span style={{ fontSize:11, background:'#1e1b4b', color:'#a78bfa', padding:'2px 8px', borderRadius:10 }}>{clase.grupo}</span>}
+                        {clase._asistentes > 0 && <span style={{ fontSize:11, background:'#34d39922', color:'#34d399', padding:'2px 8px', borderRadius:10 }}>👥 {clase._asistentes} confirman</span>}
                       </div>
                       {prof?.especialidad && <div style={{ fontSize:11, color:'#4b5063', marginTop:4 }}>{prof.especialidad}</div>}
                     </div>
                     {!esPasado && (
                       <button onClick={() => toggleReserva(clase)}
-                        style={{ background: reservado ? '#6c63ff' : '#0a0c12', color: reservado ? 'white' : '#8890a4', border: `1px solid ${reservado ? '#6c63ff' : '#1e2030'}`, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}>
-                        {reservado ? '✓ Voy a ir' : 'Me apunto'}
+                        style={{ background: reservado ? '#34d39922' : '#0a0c12', color: reservado ? '#34d399' : '#8890a4', border: `1px solid ${reservado ? '#34d39944' : '#1e2030'}`, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}>
+                        {reservado ? '✓ Asisto' : 'Asisto'}
                       </button>
                     )}
-                    {esPasado && reservado && <span style={{ fontSize:11, color:'#34d399', marginLeft:12 }}>✓ Asistí</span>}
+                    {esPasado && reservado && <span style={{ fontSize:11, color:'#34d399', marginLeft:12 }}>✓ Confirmé asistencia</span>}
                   </div>
                 </div>
               )
