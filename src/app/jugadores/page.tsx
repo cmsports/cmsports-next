@@ -4,17 +4,20 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Badge } from '@/components/ui/Badge'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { Plus, Download, UserPlus, Pencil, Lock, Unlock, Trash2, Eye, Users, Trophy } from 'lucide-react'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
-const badgeCategoria: Record<string, string> = {
-  principiante: '#fbbf24',
-  intermedio: '#60a5fa',
-  avanzado: '#a78bfa'
-}
 
 const categorias = ['principiante', 'intermedio', 'avanzado']
 
@@ -80,28 +83,18 @@ export default function JugadoresPage() {
 
     if (editando) {
       const { error } = await supabase.from('jugadores').update({
-        nombre: form.nombre.trim(),
-        rut: form.rut || null,
-        email: form.email || null,
-        telefono: form.telefono || null,
-        categoria: form.categoria,
+        nombre: form.nombre.trim(), rut: form.rut || null, email: form.email || null,
+        telefono: form.telefono || null, categoria: form.categoria,
         sesiones_limite: parseInt(form.sesiones_limite) || 12
       }).eq('id', editando.id)
       if (error) { mostrarToast('Error al editar: ' + error.message); setGuardando(false); return }
       mostrarToast('Jugador actualizado')
     } else {
       const { error } = await supabase.from('jugadores').insert({
-        club_id: clubId,
-        nombre: form.nombre.trim(),
-        rut: form.rut || null,
-        email: form.email || null,
-        telefono: form.telefono || null,
-        categoria: form.categoria,
-        sesiones_limite: parseInt(form.sesiones_limite) || 12,
-        elo: 1200,
-        sesiones_usadas: 0,
-        estado: 'activo',
-        es_externo: false
+        club_id: clubId, nombre: form.nombre.trim(), rut: form.rut || null,
+        email: form.email || null, telefono: form.telefono || null, categoria: form.categoria,
+        sesiones_limite: parseInt(form.sesiones_limite) || 12, elo: 1200,
+        sesiones_usadas: 0, estado: 'activo', es_externo: false
       })
       if (error) { mostrarToast('Error al crear: ' + error.message); setGuardando(false); return }
       mostrarToast('Jugador creado exitosamente')
@@ -130,15 +123,10 @@ export default function JugadoresPage() {
   async function exportarExcel() {
     const { utils, writeFile } = await import('xlsx')
     const datos = filtrados.map(j => ({
-      'Nombre': j.nombre,
-      'RUT': j.rut || '',
-      'Email': j.email || '',
-      'Teléfono': j.telefono || '',
-      'Categoría': j.categoria,
-      'ELO': j.elo,
-      'Sesiones usadas': j.sesiones_usadas,
-      'Sesiones límite': j.sesiones_limite,
-      'Estado': j.estado
+      'Nombre': j.nombre, 'RUT': j.rut || '', 'Email': j.email || '',
+      'Teléfono': j.telefono || '', 'Categoría': j.categoria,
+      'ELO': j.elo, 'Sesiones usadas': j.sesiones_usadas,
+      'Sesiones límite': j.sesiones_limite, 'Estado': j.estado
     }))
     const ws = utils.json_to_sheet(datos)
     const wb = utils.book_new()
@@ -150,32 +138,28 @@ export default function JugadoresPage() {
   const esAdmin = perfil?.rol === 'admin'
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+      <Skeleton width="200px" height="1.5rem" />
     </div>
   )
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Jugadores</h1>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={exportarExcel} style={{ background:'#14161f', color:'#34d399', border:'1px solid #1e2030', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
-            📥 Excel
-          </button>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2.5">
+        <h1 className="text-[22px] font-bold text-[var(--text)]">Jugadores</h1>
+        <div className="flex gap-2">
+          <Button variant="secondary" icon={Download} onClick={exportarExcel} size="sm">Excel</Button>
           {esAdmin && tabJug === 'jugadores' && (
-            <button onClick={abrirNuevo} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-              + Nuevo jugador
-            </button>
+            <Button icon={Plus} onClick={abrirNuevo}>Nuevo jugador</Button>
           )}
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:16 }}>
-        {[{key:'jugadores',label:'👥 Jugadores'},{key:'ranking',label:'🏆 Ranking ELO'}].map(t => (
+      <div className="flex bg-[var(--bg-dark)] rounded-[10px] p-1 mb-4">
+        {[{key:'jugadores',label:'Jugadores',icon:Users},{key:'ranking',label:'Ranking ELO',icon:Trophy}].map(t => (
           <div key={t.key} onClick={() => setTabJug(t.key as any)}
-            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#14161f':'transparent', color:tabJug===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+            className={`flex-1 py-2 text-center rounded-lg cursor-pointer text-sm font-medium transition-all ${tabJug===t.key ? 'bg-[var(--bg-card)] text-[var(--purple-light)]' : 'text-[var(--text-muted)]'}`}>
             {t.label}
           </div>
         ))}
@@ -184,147 +168,114 @@ export default function JugadoresPage() {
       {/* TAB RANKING */}
       {tabJug === 'ranking' && (
         <div>
-          <div style={{ marginBottom:12 }}>
-            <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
-              placeholder="🔍 Buscar jugador en el ranking..."
-              value={busquedaRanking} onChange={e => setBusquedaRanking(e.target.value)} />
+          <div className="mb-3">
+            <Input placeholder="Buscar jugador en el ranking..." value={busquedaRanking} onChange={e => setBusquedaRanking(e.target.value)} />
           </div>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
+          <Card noPadding>
             {jugadores.filter(j => !busquedaRanking || j.nombre.toLowerCase().includes(busquedaRanking.toLowerCase()))
               .sort((a,b) => b.elo - a.elo)
               .map((j, i) => {
                 const cols = ['#f59e0b','#6c63ff','#059669','#0891b2','#7c3aed','#ec4899','#14b8a6','#f97316']
                 const posicion = jugadores.sort((a,b) => b.elo-a.elo).findIndex(x => x.id === j.id) + 1
                 return (
-                  <div key={j.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', borderBottom:'1px solid #1e2030' }}>
-                    <div style={{ width:32, textAlign:'center', fontSize:14, fontWeight:700, color: posicion===1?'#fbbf24':posicion===2?'#94a3b8':posicion===3?'#f97316':'#6c7280' }}>
+                  <div key={j.id} className="flex items-center gap-3.5 px-4 py-3 border-b border-[var(--border)]/50">
+                    <div className={`w-8 text-center text-sm font-bold ${posicion===1?'text-[var(--yellow)]':posicion===2?'text-gray-400':posicion===3?'text-orange-400':'text-[var(--text-muted)]'}`}>
                       {posicion<=3 ? ['🥇','🥈','🥉'][posicion-1] : posicion}
                     </div>
-                    <div style={{ width:36, height:36, borderRadius:'50%', background:`linear-gradient(135deg,${cols[i%cols.length]},${cols[i%cols.length]}88)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white', flexShrink:0 }}>
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                      style={{ background: `linear-gradient(135deg,${cols[i%cols.length]},${cols[i%cols.length]}88)` }}>
                       {j.nombre.split(' ').map((n:string)=>n[0]).join('').slice(0,2)}
                     </div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>{j.nombre}</div>
-                      <div style={{ fontSize:11, color:'#6c7280' }}>{j.categoria}</div>
+                    <div className="flex-1">
+                      <div className="text-sm text-[var(--text)] font-medium">{j.nombre}</div>
+                      <div className="text-xs text-[var(--text-muted)]">{j.categoria}</div>
                     </div>
-                    <div style={{ fontSize:18, fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</div>
+                    <div className="text-lg font-bold text-[var(--purple-light)] font-mono">{j.elo}</div>
                   </div>
                 )
               })
             }
-          </div>
+          </Card>
         </div>
       )}
 
       {/* TAB JUGADORES */}
       {tabJug === 'jugadores' && <>
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:12, marginBottom:16 }}>
-        <input
-          style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-          placeholder="Buscar jugador..."
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-        />
-      </div>
+        <Card className="mb-4 p-3">
+          <Input placeholder="Buscar jugador..." value={busqueda} onChange={e => setBusqueda(e.target.value)} />
+        </Card>
 
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, overflow:'hidden' }}>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
-            <thead>
-              <tr style={{ borderBottom:'1px solid #1e2030' }}>
-                {['#','Nombre','RUT','Categoría','Sesiones','ELO','Estado',''].map(h => (
-                  <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtrados.map((j, i) => (
-                <tr key={j.id} style={{ borderBottom:'1px solid #1e2030' }}>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{String(i+1).padStart(3,'0')}</td>
-                  <td style={{ padding:'12px 16px', fontWeight:600, color:'#c8cfe0', whiteSpace:'nowrap' }}>{j.nombre}</td>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{j.rut || '—'}</td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <span style={{ background: badgeCategoria[j.categoria] + '22', color: badgeCategoria[j.categoria], padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                      {j.categoria}
-                    </span>
-                  </td>
-                  <td style={{ padding:'12px 16px', fontSize:13, color:'#c8cfe0' }}>{j.sesiones_usadas}/{j.sesiones_limite}</td>
-                  <td style={{ padding:'12px 16px', fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <span style={{ background: j.estado === 'activo' ? '#34d39922' : '#f8717122', color: j.estado === 'activo' ? '#34d399' : '#f87171', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                      {j.estado}
-                    </span>
-                  </td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <div style={{ display:'flex', gap:6, whiteSpace:'nowrap' }}>
-                      <button onClick={() => router.push(`/jugadores/${j.id}`)} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Ver perfil</button>
-                      {esAdmin && <>
-                        <button onClick={() => abrirEditar(j)} style={{ background:'#1e1b4b', color:'#a78bfa', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✏️</button>
-                        <button onClick={() => toggleEstado(j)} style={{ background: j.estado==='activo'?'#f8717122':'#34d39922', color: j.estado==='activo'?'#f87171':'#34d399', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
-                          {j.estado==='activo'?'🔒':'✅'}
-                        </button>
-                        <button onClick={() => eliminar(j.id)} style={{ background:'#f8717122', color:'#f87171', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
-                      </>}
-                    </div>
-                  </td>
+        <Card noPadding>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
+              <thead>
+                <tr className="border-b border-[var(--border)]">
+                  {['#','Nombre','RUT','Categoría','Sesiones','ELO','Estado',''].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs text-[var(--text-muted)] font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {filtrados.length === 0 && (
-          <div style={{ padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>
-            {busqueda ? 'No se encontraron jugadores' : 'Sin jugadores registrados'}
+              </thead>
+              <tbody>
+                {filtrados.map((j, i) => (
+                  <tr key={j.id} className="border-b border-[var(--border)]/50">
+                    <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{String(i+1).padStart(3,'0')}</td>
+                    <td className="px-4 py-3 font-semibold text-[var(--text)] whitespace-nowrap">{j.nombre}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--text-muted)]">{j.rut || '—'}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={j.categoria === 'avanzado' ? 'info' : j.categoria === 'intermedio' ? 'info' : 'warning'}>
+                        {j.categoria}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-[var(--text)]">{j.sesiones_usadas}/{j.sesiones_limite}</td>
+                    <td className="px-4 py-3 font-bold text-[var(--purple-light)] font-mono">{j.elo}</td>
+                    <td className="px-4 py-3">
+                      <Badge variant={j.estado === 'activo' ? 'success' : 'danger'}>{j.estado}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1.5 whitespace-nowrap">
+                        <Button variant="primary" size="sm" icon={Eye} onClick={() => router.push(`/jugadores/${j.id}`)}>Ver perfil</Button>
+                        {esAdmin && <>
+                          <Button variant="ghost" size="sm" icon={Pencil} onClick={() => abrirEditar(j)} />
+                          <Button variant="ghost" size="sm" icon={j.estado==='activo' ? Lock : Unlock} onClick={() => toggleEstado(j)} />
+                          <Button variant="danger" size="sm" icon={Trash2} onClick={() => eliminar(j.id)} />
+                        </>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </div>
+          {filtrados.length === 0 && (
+            <EmptyState
+              icon={Users}
+              title={busqueda ? 'No se encontraron jugadores' : 'Sin jugadores registrados'}
+            />
+          )}
+        </Card>
       </>}
 
       {/* Modal crear/editar */}
-      {modalOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto' }}>
-            <div style={{ fontSize:17, fontWeight:600, color:'#fff', marginBottom:20 }}>
-              {editando ? 'Editar jugador' : 'Nuevo jugador'}
-            </div>
-            {[
-              { label:'Nombre completo *', key:'nombre', type:'text', placeholder:'Ej: Carlos Muñoz' },
-              { label:'RUT', key:'rut', type:'text', placeholder:'12345678K' },
-              { label:'Email', key:'email', type:'email', placeholder:'tu@email.com' },
-              { label:'Teléfono', key:'telefono', type:'tel', placeholder:'+56 9 1234 5678' },
-              { label:'Sesiones por mes', key:'sesiones_limite', type:'number', placeholder:'12' },
-            ].map(f => (
-              <div key={f.key} style={{ marginBottom:14 }}>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>{f.label}</label>
-                <input
-                  style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-                  type={f.type} placeholder={f.placeholder}
-                  value={(form as any)[f.key]}
-                  onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                />
-              </div>
-            ))}
-            <div style={{ marginBottom:20 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Categoría</label>
-              <select
-                style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-                value={form.categoria} onChange={e => setForm(prev => ({ ...prev, categoria: e.target.value }))}>
-                {categorias.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={guardar} disabled={guardando} style={{ flex:1, padding:11, background:'#6c63ff', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
-                {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear jugador'}
-              </button>
-            </div>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editando ? 'Editar jugador' : 'Nuevo jugador'}>
+        <div className="space-y-3.5">
+          <Input label="Nombre completo *" placeholder="Ej: Carlos Muñoz" value={form.nombre} onChange={e => setForm(prev => ({ ...prev, nombre: e.target.value }))} />
+          <Input label="RUT" placeholder="12345678K" value={form.rut} onChange={e => setForm(prev => ({ ...prev, rut: e.target.value }))} />
+          <Input label="Email" type="email" placeholder="tu@email.com" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} />
+          <Input label="Teléfono" type="tel" placeholder="+56 9 1234 5678" value={form.telefono} onChange={e => setForm(prev => ({ ...prev, telefono: e.target.value }))} />
+          <Input label="Sesiones por mes" type="number" placeholder="12" value={form.sesiones_limite} onChange={e => setForm(prev => ({ ...prev, sesiones_limite: e.target.value }))} />
+          <Select label="Categoría" options={categorias.map(c => ({ value: c, label: c }))} value={form.categoria} onChange={e => setForm(prev => ({ ...prev, categoria: e.target.value }))} />
+          <div className="flex gap-2.5 pt-2">
+            <Button variant="secondary" onClick={() => setModalOpen(false)} className="flex-1">Cancelar</Button>
+            <Button onClick={guardar} loading={guardando} className="flex-1">
+              {editando ? 'Guardar cambios' : 'Crear jugador'}
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Toast */}
       {toast && (
-        <div style={{ position:'fixed', bottom:24, right:24, background:'#1e2030', border:'1px solid #34d39944', borderRadius:10, padding:'12px 18px', fontSize:13, color:'#34d399', zIndex:200 }}>
+        <div className="fixed bottom-6 right-6 bg-[var(--bg-card)] border border-[var(--green)]/30 rounded-[10px] px-4 py-3 text-sm text-[var(--green)] z-[200]">
           {toast}
         </div>
       )}
