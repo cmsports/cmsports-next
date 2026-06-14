@@ -62,8 +62,8 @@ El plan de mejora está en `PLAN-15-PASOS.md`. Léelo al inicio de cada sesión.
 - [x] Paso 5 — Refactor del layout y navegación
 - [x] Paso 6 — Refactor de login + onboarding
 - [x] Paso 7 — Capa de dominio (lógica de negocio pura)
-- [ ] Paso 8 — Refactor del Dashboard admin
-- [ ] Paso 9 — Refactor de Mensualidades y Finanzas
+- [~] Paso 8 — Refactor del Dashboard admin (parcial: Server Actions, WhatsApp, tendencias; sin Server Component)
+- [~] Paso 9 — Refactor de Mensualidades y Finanzas (parcial: pago unificado + SQL generar mensualidades)
 - [ ] Paso 10 — Refactor de Torneos
 - [ ] Paso 11 — Refactor de Jugadores, Clases y Asistencia
 - [ ] Paso 12 — Automatizaciones (cron, alertas, WhatsApp)
