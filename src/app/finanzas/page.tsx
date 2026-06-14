@@ -188,6 +188,7 @@ export default function FinanzasPage() {
 
 
 
+      {tabActivo === 'movimientos' && (<>
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
         {[
@@ -356,6 +357,7 @@ export default function FinanzasPage() {
           <div style={{ padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>Sin movimientos este mes</div>
         )}
       </div>
+      </>)}
 
       {/* TAB REPORTES */}
       {tabActivo === 'reportes' && <ReportesTab clubId={clubId} />}
@@ -481,9 +483,12 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     setGenerando(true)
     const { inicio, fin } = getRango()
     const supabaseR = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-    const [{ data: jugadores }, { data: movimientos }] = await Promise.all([
+    const [{ data: jugadores }, { data: movimientos }, { data: asistencias }, { data: torneos }, { data: mensualidades }] = await Promise.all([
       supabaseR.from('jugadores').select('*').eq('club_id', clubId).neq('es_externo', true),
-      supabaseR.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
+      supabaseR.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+      supabaseR.from('asistencia').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+      supabaseR.from('torneos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+      supabaseR.from('mensualidades').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
     ])
     const activos = (jugadores||[]).filter(j => j.estado==='activo')
     const ingresos = (movimientos||[]).filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+m.monto,0)
@@ -494,7 +499,15 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       if (m.tipo==='ingreso') desgloseI[m.categoria]=(desgloseI[m.categoria]||0)+m.monto
       else desgloseG[m.categoria]=(desgloseG[m.categoria]||0)+m.monto
     })
-    setPreview({ activos, ingresos, gastos, desgloseI, desgloseG })
+    const asistPorDia: Record<string,number> = {}
+    ;(asistencias||[]).forEach(a => { asistPorDia[a.fecha]=(asistPorDia[a.fecha]||0)+1 })
+    const diasConAsist = Object.keys(asistPorDia).length
+    const promedioAsist = diasConAsist>0 ? Math.round((asistencias||[]).length/diasConAsist) : 0
+    const morosos = activos.filter(j => {
+      const mens = (mensualidades||[]).find(m => m.jugador_id===j.id)
+      return mens?.estado==='pendiente' || mens?.estado==='atrasado'
+    })
+    setPreview({ activos, ingresos, gastos, desgloseI, desgloseG, asistencias: asistencias||[], promedioAsist, torneos: torneos||[], morosos })
     setGenerando(false)
   }
 
@@ -519,6 +532,24 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     autoTable(doc,{ startY:y, head:[['Categoría Ingreso','Monto']], body:Object.entries(preview.desgloseI).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[52,211,153]}, margin:{left:14,right:14} })
     y=(doc as any).lastAutoTable.finalY+10
     autoTable(doc,{ startY:y, head:[['Categoría Gasto','Monto']], body:Object.entries(preview.desgloseG).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[248,113,113]}, margin:{left:14,right:14} })
+    y=(doc as any).lastAutoTable.finalY+10
+    doc.addPage(); y=20
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.text('Jugadores Activos',14,y); y+=8
+    autoTable(doc,{ startY:y, head:[['Nombre','Categoría','ELO','Sesiones','Estado']], body:preview.activos.sort((a:any,b:any)=>b.elo-a.elo).map((j:any)=>[j.nombre,j.categoria,j.elo,`${j.sesiones_usadas}/${j.sesiones_limite}`,j.estado]), theme:'striped', headStyles:{fillColor:[108,99,255]}, margin:{left:14,right:14} })
+    y=(doc as any).lastAutoTable.finalY+10
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.text('Asistencia y Morosidad',14,y); y+=8
+    autoTable(doc,{ startY:y, head:[['Concepto','Valor']], body:[
+      ['Total asistencias',String(preview.asistencias.length)],
+      ['Promedio por día',String(preview.promedioAsist)],
+      ['Jugadores activos',String(preview.activos.length)],
+      ['Jugadores morosos',String(preview.morosos.length)],
+      ['Tasa de morosidad',preview.activos.length>0?`${Math.round((preview.morosos.length/preview.activos.length)*100)}%`:'0%'],
+    ], theme:'striped', headStyles:{fillColor:[108,99,255]}, margin:{left:14,right:14} })
+    y=(doc as any).lastAutoTable.finalY+10
+    if (preview.torneos.length>0) {
+      doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.text('Torneos del Período',14,y); y+=8
+      autoTable(doc,{ startY:y, head:[['Nombre','Fecha','Estado','Fase']], body:preview.torneos.map((t:any)=>[t.nombre,t.fecha_inicio||'—',t.estado,t.fase]), theme:'striped', headStyles:{fillColor:[167,139,250]}, margin:{left:14,right:14} })
+    }
     const pc=doc.getNumberOfPages()
     for(let i=1;i<=pc;i++){doc.setPage(i);doc.setFontSize(9);doc.setTextColor(150);doc.text(`CmSports — ${titulo} — Pág ${i} de ${pc}`,W/2,doc.internal.pageSize.getHeight()-8,{align:'center'})}
     doc.save(`reporte_${titulo.replace(/ /g,'_')}.pdf`)
@@ -589,7 +620,20 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               </div>
             ))}
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
+            {[
+              { label:'Jugadores activos', value:preview.activos.length, color:'#c8cfe0' },
+              { label:'Total asistencias', value:preview.asistencias.length, color:'#34d399' },
+              { label:'Torneos', value:preview.torneos.length, color:'#fbbf24' },
+              { label:'Morosos', value:preview.morosos.length, color:'#f87171' },
+            ].map(s => (
+              <div key={s.label} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16, textAlign:'center' }}>
+                <div style={{ fontSize:24, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
+                <div style={{ fontSize:11, color:'#6c7280', marginTop:4 }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:16 }}>
             <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
               <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Ingresos por categoría</div>
               {Object.entries(preview.desgloseI).map(([cat,total])=>(
@@ -608,6 +652,16 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
                 </div>
               ))}
             </div>
+          </div>
+          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Top 5 ELO</div>
+            {preview.activos.sort((a:any,b:any)=>b.elo-a.elo).slice(0,5).map((j:any,i:number)=>(
+              <div key={j.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #1a1d2e' }}>
+                <span style={{ fontSize:16 }}>{i<3?['🥇','🥈','🥉'][i]:i+1}</span>
+                <span style={{ flex:1, fontSize:13, color:'#c8cfe0' }}>{j.nombre}</span>
+                <span style={{ fontSize:15, fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
