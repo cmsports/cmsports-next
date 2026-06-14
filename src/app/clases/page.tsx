@@ -4,16 +4,20 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Badge } from '@/components/ui/Badge'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { Plus, Megaphone, Trash2, BookOpen } from 'lucide-react'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
-const diasLabel: Record<string, string> = {
-  lunes:'Lunes', martes:'Martes', miercoles:'Miércoles',
-  jueves:'Jueves', viernes:'Viernes', sabado:'Sábado', domingo:'Domingo'
-}
 
 export default function ClasesPage() {
   const [perfil, setPerfil] = useState<any>(null)
@@ -84,7 +88,6 @@ export default function ClasesPage() {
   const esAdmin = perfil?.rol === 'admin'
   const puedeCrear = esProfesor || esAdmin
 
-  // Agrupar por fecha
   const porFecha: Record<string, any[]> = {}
   clases.forEach(c => {
     const f = c.fecha || 'Sin fecha'
@@ -93,116 +96,102 @@ export default function ClasesPage() {
   })
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+      <Skeleton width="200px" height="1.5rem" />
     </div>
   )
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Programación de clases</h1>
+      <div className="flex justify-between items-center mb-5">
+        <h1 className="text-[22px] font-bold text-[var(--text)]">Programación de clases</h1>
         {puedeCrear && (
-          <button onClick={() => { setModalOpen(true); setForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
-            style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-            + Nueva clase
-          </button>
+          <Button
+            icon={Plus}
+            onClick={() => { setModalOpen(true); setForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
+          >
+            Nueva clase
+          </Button>
         )}
       </div>
 
       {Object.keys(porFecha).length === 0 ? (
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>
-          Sin clases programadas
-        </div>
+        <Card>
+          <EmptyState icon={BookOpen} title="Sin clases programadas" />
+        </Card>
       ) : Object.entries(porFecha).map(([fecha, clasesF]) => {
         let fechaLabel = fecha
-        try { if (fecha.includes('-')) fechaLabel = new Date(fecha+'T12:00:00').toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long' }) } catch(e) {}
+        try { if (fecha.includes('-')) fechaLabel = new Date(fecha+'T12:00:00').toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long' }) } catch {}
         const todasPublicadas = clasesF.every(c => c.publicada)
         return (
-          <div key={fecha} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, marginBottom:12, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #1e2030', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div style={{ fontSize:14, fontWeight:600, color:'#fff', textTransform:'capitalize' }}>{fechaLabel}</div>
+          <Card key={fecha} noPadding className="mb-3 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-[var(--border)] flex justify-between items-center">
+              <div className="text-sm font-semibold text-[var(--text)] capitalize">{fechaLabel}</div>
               {puedeCrear && !todasPublicadas && (
-                <button onClick={async () => {
+                <Button variant="ghost" size="sm" icon={Megaphone} onClick={async () => {
                   await supabase.from('clases').update({ publicada: true }).eq('club_id', clubId!).eq('fecha', fecha).eq('publicada', false)
                   cargarClases()
-                }} style={{ background:'#6c63ff22', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', fontWeight:600 }}>
-                  📢 Publicar día
-                </button>
+                }}>
+                  Publicar día
+                </Button>
               )}
-              {todasPublicadas && <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Publicado</span>}
+              {todasPublicadas && <Badge variant="success">Publicado</Badge>}
             </div>
             {clasesF.map(c => {
               const prof = profesores.find(p => p.id === c.profesor_id)
               const confirmados = reservas.filter(r => r.clase_id === c.id && r.estado === 'confirmado').length
               return (
-                <div key={c.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 20px', borderBottom:'1px solid #1e2030', borderLeft:`3px solid ${c.publicada ? '#34d399' : '#1e2030'}` }}>
-                  <div style={{ background:'#1e1b4b', color:'#a78bfa', padding:'8px 12px', borderRadius:8, fontSize:12, fontWeight:600, minWidth:90, textAlign:'center', flexShrink:0 }}>
+                <div key={c.id} className={`flex items-center gap-3.5 px-5 py-3 border-b border-[var(--border)]/50 border-l-[3px] ${c.publicada ? 'border-l-[var(--green)]' : 'border-l-[var(--border)]'}`}>
+                  <div className="bg-[#1e1b4b] text-[var(--purple-light)] px-3 py-2 rounded-lg text-xs font-semibold min-w-[90px] text-center shrink-0">
                     {c.hora_inicio?.slice(0,5) || '—'}<br />
-                    <span style={{ fontSize:10, color:'#6c7280', fontWeight:400 }}>{c.hora_fin?.slice(0,5) || ''}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] font-normal">{c.hora_fin?.slice(0,5) || ''}</span>
                   </div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:'#c8cfe0' }}>{c.contenido}</div>
-                    <div style={{ fontSize:11, color:'#6c7280', marginTop:3 }}>
-                      {prof ? `👤 ${prof.nombre}` : ''}{c.grupo ? ` · ${c.grupo}` : ''}
-                      {' · '}<span style={{ color:'#34d399' }}>✓ {confirmados} van</span>
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold text-[var(--text)]">{c.contenido}</div>
+                    <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                      {prof ? `${prof.nombre}` : ''}{c.grupo ? ` · ${c.grupo}` : ''}
+                      {' · '}<span className="text-[var(--green)]">{confirmados} van</span>
                     </div>
                   </div>
                   {puedeCrear && (
-                    <div style={{ display:'flex', gap:6 }}>
+                    <div className="flex gap-1.5">
                       {!c.publicada && (
-                        <button onClick={() => publicarClase(c.id)} style={{ background:'#34d39922', color:'#34d399', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Publicar</button>
+                        <Button variant="ghost" size="sm" onClick={() => publicarClase(c.id)}>Publicar</Button>
                       )}
-                      <button onClick={() => eliminarClase(c.id)} style={{ background:'#f8717122', color:'#f87171', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
+                      <Button variant="danger" size="sm" icon={Trash2} onClick={() => eliminarClase(c.id)} />
                     </div>
                   )}
                 </div>
               )
             })}
-          </div>
+          </Card>
         )
       })}
 
       {/* Modal nueva clase */}
-      {modalOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:440 }}>
-            <div style={{ fontSize:17, fontWeight:600, color:'#fff', marginBottom:20 }}>Nueva clase</div>
-            {[
-              { label:'Fecha', type:'date', key:'fecha' },
-              { label:'Hora inicio', type:'time', key:'inicio' },
-              { label:'Hora fin', type:'time', key:'fin' },
-              { label:'Tipo de entrenamiento', type:'text', key:'contenido', placeholder:'Ej: Técnica de saque' },
-              { label:'Descripción (opcional)', type:'text', key:'grupo', placeholder:'Detalles del entrenamiento' },
-            ].map(f => (
-              <div key={f.key} style={{ marginBottom:14 }}>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>{f.label}</label>
-                <input
-                  style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-                  type={f.type} placeholder={f.placeholder}
-                  value={(form as any)[f.key]}
-                  onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-                />
-              </div>
-            ))}
-            <div style={{ marginBottom:20 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Profesor</label>
-              <select
-                style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-                value={form.profesorId} onChange={e => setForm(prev => ({ ...prev, profesorId: e.target.value }))}
-              >
-                <option value="">— Seleccionar —</option>
-                {profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
-            </div>
-            <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={() => guardarClase(false)} style={{ flex:1, padding:11, background:'#1e1b4b', border:'none', borderRadius:8, color:'#a78bfa', fontSize:13, cursor:'pointer' }}>Borrador</button>
-              <button onClick={() => guardarClase(true)} style={{ flex:1, padding:11, background:'#6c63ff', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>Publicar</button>
-            </div>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nueva clase">
+        <div className="space-y-3.5">
+          <Input label="Fecha" type="date" value={form.fecha} onChange={e => setForm(prev => ({ ...prev, fecha: e.target.value }))} />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Hora inicio" type="time" value={form.inicio} onChange={e => setForm(prev => ({ ...prev, inicio: e.target.value }))} />
+            <Input label="Hora fin" type="time" value={form.fin} onChange={e => setForm(prev => ({ ...prev, fin: e.target.value }))} />
+          </div>
+          <Input label="Tipo de entrenamiento" placeholder="Ej: Técnica de saque" value={form.contenido} onChange={e => setForm(prev => ({ ...prev, contenido: e.target.value }))} />
+          <Input label="Descripción (opcional)" placeholder="Detalles del entrenamiento" value={form.grupo} onChange={e => setForm(prev => ({ ...prev, grupo: e.target.value }))} />
+          <Select
+            label="Profesor"
+            placeholder="— Seleccionar —"
+            options={profesores.map(p => ({ value: p.id, label: p.nombre }))}
+            value={form.profesorId}
+            onChange={e => setForm(prev => ({ ...prev, profesorId: e.target.value }))}
+          />
+          <div className="flex gap-2.5 pt-2">
+            <Button variant="secondary" onClick={() => setModalOpen(false)} className="flex-1">Cancelar</Button>
+            <Button variant="ghost" onClick={() => guardarClase(false)} className="flex-1">Borrador</Button>
+            <Button onClick={() => guardarClase(true)} className="flex-1">Publicar</Button>
           </div>
         </div>
-      )}
+      </Modal>
     </AppLayout>
   )
 }

@@ -3,20 +3,37 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Card } from '@/components/ui/Card'
+import { loginSchema } from '@/lib/validations/auth'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [serverError, setServerError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
   async function handleLogin() {
+    setErrors({})
+    setServerError('')
+
+    const parsed = loginSchema.safeParse({ email, password })
+    if (!parsed.success) {
+      const fieldErrors: Record<string, string> = {}
+      parsed.error.issues.forEach(issue => {
+        if (issue.path[0]) fieldErrors[issue.path[0] as string] = issue.message
+      })
+      setErrors(fieldErrors)
+      return
+    }
+
     setLoading(true)
-    setError('')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setError('Email o contraseña incorrectos')
+      setServerError('Email o contraseña incorrectos')
       setLoading(false)
       return
     }
@@ -24,40 +41,47 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ width:'100%', maxWidth:400, padding:24 }}>
-        <div style={{ textAlign:'center', marginBottom:32 }}>
-          <div style={{ width:64, height:64, background:'linear-gradient(135deg,#6c63ff,#a78bfa)', borderRadius:18, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:22, color:'white', margin:'0 auto 16px' }}>CM</div>
-          <div style={{ fontSize:28, fontWeight:800, color:'#fff' }}>CmSports</div>
-          <div style={{ fontSize:13, color:'#6c7280', marginTop:6 }}>Club Unión San Bernardo</div>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
+      <div className="w-full max-w-[400px] px-6">
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-gradient-to-br from-[var(--purple)] to-[var(--purple-light)] rounded-2xl flex items-center justify-center font-extrabold text-[22px] text-white mx-auto mb-4">CM</div>
+          <div className="text-[28px] font-extrabold text-[var(--text)]">CmSports</div>
+          <div className="text-sm text-[var(--text-muted)] mt-1.5">Club Unión San Bernardo</div>
         </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:24 }}>
-          {error && <div style={{ background:'#2d0a0a', border:'1px solid #f8717144', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#f87171', marginBottom:14 }}>{error}</div>}
-          <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Email</label>
-            <input
-              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-              type="email" placeholder="tu@email.com"
-              value={email} onChange={e => setEmail(e.target.value)}
+        <Card>
+          {serverError && (
+            <div className="bg-[var(--red)]/10 border border-[var(--red)]/30 rounded-lg px-3.5 py-2.5 text-sm text-[var(--red)] mb-3.5">
+              {serverError}
+            </div>
+          )}
+          <div className="space-y-3.5">
+            <Input
+              label="Email"
+              type="email"
+              placeholder="tu@email.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              error={errors.email}
             />
-          </div>
-          <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Contraseña</label>
-            <input
-              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-              type="password" placeholder="••••••••"
-              value={password} onChange={e => setPassword(e.target.value)}
+            <Input
+              label="Contraseña"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              error={errors.password}
             />
+            <Button
+              onClick={handleLogin}
+              loading={loading}
+              className="w-full"
+              size="lg"
+            >
+              {loading ? 'Ingresando...' : 'Ingresar →'}
+            </Button>
           </div>
-          <button
-            onClick={handleLogin}
-            disabled={loading}
-            style={{ width:'100%', padding:12, background:'#6c63ff', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer' }}
-          >
-            {loading ? 'Ingresando...' : 'Ingresar →'}
-          </button>
-        </div>
+        </Card>
       </div>
     </div>
   )
