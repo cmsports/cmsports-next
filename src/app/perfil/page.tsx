@@ -4,11 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
-import { Card, CardHeader } from '@/components/ui/Card'
-import { StatCard } from '@/components/ui/StatCard'
-import { EmptyState } from '@/components/ui/EmptyState'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { User } from 'lucide-react'
+import dynamic from 'next/dynamic'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,20 +36,18 @@ export default function PerfilPage() {
   }, [])
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]">
-      <Skeleton width="200px" height="1.5rem" />
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
+      <div style={{ color:'#6c7280' }}>Cargando...</div>
     </div>
   )
 
   if (!jugador) return (
     <AppLayout perfil={perfil}>
-      <Card className="text-center py-10">
-        <EmptyState
-          icon={User}
-          title="Perfil no vinculado"
-          description="Contacta al administrador del club"
-        />
-      </Card>
+      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:40, textAlign:'center' }}>
+        <div style={{ fontSize:40, marginBottom:12 }}>🏓</div>
+        <div style={{ fontSize:16, color:'#c8cfe0', marginBottom:8 }}>Perfil no vinculado</div>
+        <div style={{ fontSize:13, color:'#6c7280' }}>Contacta al administrador del club</div>
+      </div>
     </AppLayout>
   )
 
@@ -62,36 +56,43 @@ export default function PerfilPage() {
   return (
     <AppLayout perfil={perfil}>
       {/* Hero */}
-      <div className="bg-gradient-to-br from-[#1e1b4b] to-[var(--bg-card)] border border-[var(--border)] rounded-2xl p-6 mb-4">
-        <div className="flex items-center gap-4 mb-5">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[var(--purple)] to-[var(--purple-light)] flex items-center justify-center text-[22px] font-extrabold text-white shrink-0">
+      <div style={{ background:'linear-gradient(135deg,#1e1b4b,#14161f)', border:'1px solid #1e2030', borderRadius:16, padding:24, marginBottom:16 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:20 }}>
+          <div style={{ width:64, height:64, borderRadius:'50%', background:'linear-gradient(135deg,#6c63ff,#a78bfa)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:800, color:'white', flexShrink:0 }}>
             {iniciales}
           </div>
           <div>
-            <div className="text-[22px] font-bold text-[var(--text)] mb-1">{jugador.nombre}</div>
-            <div className="text-sm text-[var(--text-muted)]">{jugador.categoria}</div>
+            <div style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:4 }}>{jugador.nombre}</div>
+            <div style={{ fontSize:13, color:'#6c7280' }}>{jugador.categoria}</div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard label="ELO" value={jugador.elo} className="bg-[#1e1b4b] border-0" />
-          <StatCard label="Sesiones" value={`${jugador.sesiones_usadas}/${jugador.sesiones_limite}`} className="bg-[#1e1b4b] border-0" />
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:12 }}>
+          <div style={{ background:'#1e1b4b', borderRadius:10, padding:'12px 16px', textAlign:'center' }}>
+            <div style={{ fontSize:28, fontWeight:800, color:'#a78bfa', fontFamily:'monospace' }}>{jugador.elo}</div>
+            <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>ELO</div>
+          </div>
+          <div style={{ background:'#1e1b4b', borderRadius:10, padding:'12px 16px', textAlign:'center' }}>
+            <div style={{ fontSize:28, fontWeight:800, color:'#c8cfe0', fontFamily:'monospace' }}>{jugador.sesiones_usadas}/{jugador.sesiones_limite}</div>
+            <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>Sesiones</div>
+          </div>
         </div>
       </div>
 
+
       {/* Últimas asistencias */}
-      <Card noPadding>
-        <CardHeader title="Últimas asistencias" />
-        <div className="px-5 pb-5">
-          {asistencias.length === 0 ? (
-            <EmptyState title="Sin asistencias registradas" />
-          ) : asistencias.map(a => (
-            <div key={a.id} className="flex justify-between py-3 border-b border-[var(--border)]/50 last:border-0">
-              <span className="text-sm text-[var(--text)]">{a.fecha}</span>
-              <span className="text-sm text-[var(--text-muted)]">{a.hora?.slice(0,5)}</span>
-            </div>
-          ))}
+      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
+        <div style={{ padding:'14px 20px', borderBottom:'1px solid #1e2030', fontSize:13, fontWeight:600, color:'#fff' }}>
+          Últimas asistencias
         </div>
-      </Card>
+        {asistencias.length === 0 ? (
+          <div style={{ padding:30, textAlign:'center', color:'#6c7280', fontSize:13 }}>Sin asistencias registradas</div>
+        ) : asistencias.map(a => (
+          <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'12px 20px', borderBottom:'1px solid #1e2030' }}>
+            <span style={{ fontSize:13, color:'#c8cfe0' }}>{a.fecha}</span>
+            <span style={{ fontSize:13, color:'#6c7280' }}>{a.hora?.slice(0,5)}</span>
+          </div>
+        ))}
+      </div>
     </AppLayout>
   )
 }
