@@ -5,11 +5,6 @@ import { createClient } from '@supabase/supabase-js'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
 const navAdmin = [
   { label:'Dashboard', icon:'📊', href:'/dashboard' },
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
@@ -74,6 +69,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const mobileNav = perfil?.rol === 'admin' ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
 
   async function cerrarSesion() {
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
     await supabase.auth.signOut()
     router.push('/login')
   }

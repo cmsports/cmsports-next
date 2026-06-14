@@ -26,19 +26,18 @@ export async function proxy(request: NextRequest) {
         .select('rol')
         .eq('id', user.id)
         .single()
+
       const url = request.nextUrl.clone()
       url.pathname = getRolRedirect(perfil?.rol ?? null)
       return NextResponse.redirect(url)
     }
+
     return supabaseResponse
   }
 
-  // Not authenticated — redirect to login
+  // No cookie session — let client-side auth handle it
   if (!user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    url.searchParams.set('next', pathname)
-    return NextResponse.redirect(url)
+    return supabaseResponse
   }
 
   // Get user role for route protection
@@ -57,13 +56,20 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (profesorRoutes.some((r) => pathname.startsWith(r)) && rol !== 'profesor' && rol !== 'admin') {
+  if (
+    profesorRoutes.some((r) => pathname.startsWith(r)) &&
+    rol !== 'profesor' &&
+    rol !== 'admin'
+  ) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)
     return NextResponse.redirect(url)
   }
 
-  if (jugadorRoutes.some((r) => pathname.startsWith(r)) && rol !== 'jugador') {
+  if (
+    jugadorRoutes.some((r) => pathname.startsWith(r)) &&
+    rol !== 'jugador'
+  ) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)
     return NextResponse.redirect(url)
