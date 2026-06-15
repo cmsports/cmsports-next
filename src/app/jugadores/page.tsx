@@ -135,7 +135,7 @@ export default function JugadoresPage() {
       'Email': j.email || '',
       'Teléfono': j.telefono || '',
       'Categoría': j.categoria,
-      'ELO': j.elo,
+      'Ranking': j.elo,
       'Sesiones usadas': j.sesiones_usadas,
       'Sesiones límite': j.sesiones_limite,
       'Estado': j.estado
@@ -173,7 +173,7 @@ export default function JugadoresPage() {
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:16 }}>
-        {[{key:'jugadores',label:'👥 Jugadores'},{key:'ranking',label:'🏆 Ranking ELO'}].map(t => (
+        {[{key:'jugadores',label:'👥 Jugadores'},{key:'ranking',label:'🏆 Ranking'}].map(t => (
           <div key={t.key} onClick={() => setTabJug(t.key as any)}
             style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#14161f':'transparent', color:tabJug===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
             {t.label}
@@ -232,7 +232,7 @@ export default function JugadoresPage() {
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
               <tr style={{ borderBottom:'1px solid #1e2030' }}>
-                {['#','Nombre','RUT','Categoría','Sesiones','ELO','Estado',''].map(h => (
+                {['#','Nombre','RUT','Categoría','Sesiones','Ranking','Estado',''].map(h => (
                   <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>

@@ -1,21 +1,26 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import {
+  marcarGanadorPartido,
+  cerrarInscripcionYGenerarGrupos,
+  generarPlayoffs as generarPlayoffsAction,
+  avanzarSiguienteFase as avanzarSiguienteFaseAction,
+  finalizarTorneo as finalizarTorneoAction,
+  enviarRecaudacionAFinanzas,
+  inscribirJugadorTardio,
+  actualizarEstadoPago,
+  limpiarGruposHuerfanos,
+} from '@/app/actions/torneos'
+import { CONFIG, type FaseOrden } from '@/lib/config'
+import { calcularNumGrupos } from '@/lib/domain/torneos'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
-
-const fasesOrden = ['16vos','8vos','cuartos','semis','final']
-const faseLabel: Record<string,string> = {
-  inscripcion:'Inscripción', grupos:'Fase de grupos',
-  '16vos':'16vos de final', '8vos':'8vos de final',
-  cuartos:'Cuartos de final', semis:'Semifinal', final:'Final', finalizado:'Finalizado'
-}
+const supabase = createClient()
+const fasesOrden = CONFIG.FASES_ORDEN
+const faseLabel: Record<string, string> = CONFIG.FASE_LABELS
 
 export default function TorneoDetallePage() {
   const [perfil, setPerfil] = useState<any>(null)
@@ -35,6 +40,7 @@ export default function TorneoDetallePage() {
   const [modalEmpate, setModalEmpate] = useState<any>(null)
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({}) // grupoId -> {primero, segundo}
   const [pagosPorJugador, setPagosPorJugador] = useState<Record<string, 'pagado'|'pendiente'>>({}) // jugadorId -> estado
+  const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -80,37 +86,17 @@ export default function TorneoDetallePage() {
       setLoading(false)
     }
     init()
-  }, [torneoId, cargarTorneo])
+  }, [torneoId, cargarTorneo, router])
 
-  async function actualizarElo(ganadorId: string, perdedorId: string) {
-    const [{ data: g }, { data: p }] = await Promise.all([
-      supabase.from('jugadores').select('elo').eq('id', ganadorId).single(),
-      supabase.from('jugadores').select('elo').eq('id', perdedorId).single()
-    ])
-    if (!g || !p) return
-    const K = 32
-    const eG = 1 / (1 + Math.pow(10, (p.elo - g.elo) / 400))
-    await Promise.all([
-      supabase.from('jugadores').update({ elo: Math.round(g.elo + K * (1 - eG)) }).eq('id', ganadorId),
-      supabase.from('jugadores').update({ elo: Math.round(p.elo + K * (0 - (1 - eG))) }).eq('id', perdedorId)
-    ])
-  }
+  useEffect(() => {
+    if (torneo?.fase && (fasesOrden as readonly string[]).includes(torneo.fase)) {
+      setTabActiva('bracket')
+    }
+  }, [torneo?.fase])
 
   async function marcarGanador(partidoId: string, ganadorId: string) {
-    const partido = partidos.find(p => p.id === partidoId)
-    if (!partido) return
-    await supabase.from('torneo_partidos').update({ ganador: ganadorId }).eq('id', partidoId)
-    const perdedorId = partido.jugador_a === ganadorId ? partido.jugador_b : partido.jugador_a
-    if (perdedorId) await actualizarElo(ganadorId, perdedorId)
-
-    // Actualizar partidos ganados en grupo_jugadores
-    if (partido.grupo_id) {
-      const { data: gjG } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', ganadorId).single()
-      const { data: gjP } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', perdedorId).maybeSingle()
-      if (gjG) await supabase.from('grupo_jugadores').update({ partidos_ganados: (gjG.partidos_ganados||0)+1, partidos_jugados: (gjG.partidos_jugados||0)+1 }).eq('id', gjG.id)
-      if (gjP) await supabase.from('grupo_jugadores').update({ partidos_jugados: (gjP.partidos_jugados||0)+1 }).eq('id', gjP.id)
-    }
-
+    const res = await marcarGanadorPartido({ partidoId, ganadorId })
+    if (res.error) { alert(res.error); return }
     await cargarTorneo()
   }
 
@@ -127,8 +113,8 @@ export default function TorneoDetallePage() {
     if (jugsExistentes?.length) {
       const jug = jugsExistentes[0]
       jugadorId = jug.id
-      jugadorElo = jug.elo
-      jugadorNombre = jug.nombre
+      jugadorElo = jug.elo ?? 1200
+      jugadorNombre = jug.nombre ?? jugadorNombre
     } else {
       const { data: nuevo } = await supabase.from('jugadores').insert({
         club_id: perfil?.club_id, nombre: busquedaMesa.trim(),
@@ -143,13 +129,28 @@ export default function TorneoDetallePage() {
     const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
     if (yaInscrito) { alert('Este jugador ya está inscrito'); return }
 
-    // Obtener o crear grupo MESA
+    // Inscripción tardía: si el torneo ya pasó de inscripción, ubicar directo en grupo más apto
+    if (faseActual !== 'inscripcion') {
+      const res = await inscribirJugadorTardio({ torneoId, jugadorId, jugadorElo })
+      if (res.error) { alert(res.error); return }
+      if (torneo?.cuota_inscripcion > 0) {
+        await actualizarEstadoPago({ torneoId, jugadorId, estado: 'pendiente', metodoPago })
+      }
+      alert(`Jugador agregado al Grupo ${res.grupoNombre}`)
+      setBusquedaMesa('')
+      setRutMesa('')
+      await cargarTorneo()
+      return
+    }
+
+    // Obtener o crear grupo MESA (solo en fase de inscripción)
     let { data: grupoMesa } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
     if (!grupoMesa) {
       const { data: ng } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: 'MESA' }).select().single()
       grupoMesa = ng
     }
 
+    if (!grupoMesa) return
     await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
 
     // Crear registro de pago como pendiente — se marca pagado manualmente
@@ -174,62 +175,13 @@ export default function TorneoDetallePage() {
     })
   }
 
-  function calcularGruposEstimados(numJugadores: number) {
-    return Math.max(2, Math.round(numJugadores / 3))
-  }
-
   async function cerrarInscripcion() {
     if (!confirm('¿Cerrar inscripción y generar grupos con seeding ELO?')) return
-
-    const grupoIds = grupos.map((g: any) => g.id)
-    const { data: inscritos } = await supabase.from('grupo_jugadores').select('*,jugadores(id,nombre,elo)').in('grupo_id', grupoIds)
-    if (!inscritos?.length) { alert('No hay inscritos'); return }
-
-    // Eliminar grupos anteriores
-    for (const gid of grupoIds) {
-      await supabase.from('grupo_jugadores').delete().eq('grupo_id', gid)
-      await supabase.from('torneo_grupos').delete().eq('id', gid)
-    }
-
-    // Los cabezas de serie van primero, luego el resto por ELO
-    let jugs = inscritos.map((i: any) => i.jugadores).filter(Boolean)
-    const cabezas = jugs.filter((j: any) => cabezasSerie.has(j.id))
-    const resto = jugs.filter((j: any) => !cabezasSerie.has(j.id))
-    resto.sort((a: any, b: any) => (b.elo||1200) - (a.elo||1200))
-    jugs = [...cabezas, ...resto]
-
-    const numGrupos = calcularGruposEstimados(jugs.length)
-    const nuevosGrupos: any[] = []
-    for (let i = 0; i < numGrupos; i++) {
-      const { data: g } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: String.fromCharCode(65+i) }).select().single()
-      nuevosGrupos.push(g)
-    }
-
-    // Serpenteo: 1→G1, 2→G2, ..., N→GN, N→GN, N-1→G(N-1)...
-    const asignaciones: any[] = []
-    let dir = 1, gi = 0
-    for (let i = 0; i < jugs.length; i++) {
-      asignaciones.push({ grupo_id: nuevosGrupos[gi].id, jugador_id: jugs[i].id })
-      if (i < jugs.length - 1) {
-        gi += dir
-        if (gi >= numGrupos) { gi = numGrupos - 1; dir = -1 }
-        else if (gi < 0) { gi = 0; dir = 1 }
-      }
-    }
-    await supabase.from('grupo_jugadores').insert(asignaciones)
-
-    // Generar partidos todos vs todos dentro de cada grupo
-    const pts: any[] = []
-    for (const g of nuevosGrupos) {
-      const jugsG = asignaciones.filter(a => a.grupo_id === g.id)
-      for (let i = 0; i < jugsG.length; i++) {
-        for (let j = i+1; j < jugsG.length; j++) {
-          pts.push({ torneo_id: torneoId, grupo_id: g.id, fase:'grupos', jugador_a: jugsG[i].jugador_id, jugador_b: jugsG[j].jugador_id, orden: pts.length })
-        }
-      }
-    }
-    if (pts.length) await supabase.from('torneo_partidos').insert(pts)
-    await supabase.from('torneos').update({ fase:'grupos', inscripcion_abierta:false }).eq('id', torneoId)
+    const res = await cerrarInscripcionYGenerarGrupos({
+      torneoId,
+      cabezasDeSerie: Array.from(cabezasSerie),
+    })
+    if (res.error) { alert(res.error); return }
     setMesaOpen(false)
     setCabezasSerie(new Set())
     await cargarTorneo()
@@ -273,118 +225,53 @@ export default function TorneoDetallePage() {
     if (!confirm('¿Generar playoffs con regla espejo y BYEs automáticos?')) return
 
     const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
-    const clasificados: any[] = []
+    const primeros: { id: string; nombre: string; elo: number }[] = []
+    const segundos: { id: string; nombre: string; elo: number }[] = []
 
     for (const grupo of gruposReales) {
       const { ordenados, hayTripleEmpate } = calcularStats(grupo.id)
-      
-      // Si hay triple empate y el admin eligió manualmente
-      if (hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo) {
-        const manualPrimero = { jugador: empateManual[grupo.id].primero, pts: 0 }
-        const manualSegundo = { jugador: empateManual[grupo.id].segundo, pts: 0 }
-        clasificados.push({ ...manualPrimero, posicion: 1, grupo_nombre: grupo.nombre })
-        clasificados.push({ ...manualSegundo, posicion: 2, grupo_nombre: grupo.nombre })
-        await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('grupo_id', grupo.id).eq('jugador_id', empateManual[grupo.id].primero.id)
-      } else if (hayTripleEmpate && (!empateManual[grupo.id]?.primero || !empateManual[grupo.id]?.segundo || empateManual[grupo.id].primero.id === empateManual[grupo.id].segundo.id)) {
-        alert(`Grupo ${grupo.nombre} tiene triple empate. Debes elegir tanto el 1° como el 2° antes de continuar.`)
-        return
+
+      if (hayTripleEmpate) {
+        const m = empateManual[grupo.id]
+        if (!m?.primero || !m?.segundo || m.primero.id === m.segundo.id) {
+          alert(`Grupo ${grupo.nombre} tiene triple empate. Debes elegir tanto el 1° como el 2° antes de continuar.`)
+          return
+        }
+        primeros.push({ id: m.primero.id, nombre: m.primero.nombre, elo: m.primero.elo ?? CONFIG.ELO_INICIAL })
+        segundos.push({ id: m.segundo.id, nombre: m.segundo.nombre, elo: m.segundo.elo ?? CONFIG.ELO_INICIAL })
       } else {
-        if (ordenados[0]) {
-          clasificados.push({ ...ordenados[0], posicion: 1, grupo_nombre: grupo.nombre })
-          await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('grupo_id', grupo.id).eq('jugador_id', ordenados[0].jugador.id)
-        }
-        if (ordenados[1]) {
-          clasificados.push({ ...ordenados[1], posicion: 2, grupo_nombre: grupo.nombre })
-        }
+        if (ordenados[0]?.jugador) primeros.push({ id: ordenados[0].jugador.id, nombre: ordenados[0].jugador.nombre, elo: ordenados[0].jugador.elo ?? CONFIG.ELO_INICIAL })
+        if (ordenados[1]?.jugador) segundos.push({ id: ordenados[1].jugador.id, nombre: ordenados[1].jugador.nombre, elo: ordenados[1].jugador.elo ?? CONFIG.ELO_INICIAL })
       }
     }
 
-    if (clasificados.length < 2) { alert('No hay suficientes clasificados'); return }
+    primeros.sort((a, b) => b.elo - a.elo)
+    segundos.sort((a, b) => b.elo - a.elo)
 
-    // Separar 1ros y 2dos
-    const primeros = clasificados.filter(c => c.posicion === 1).sort((a,b) => (b.jugador?.elo||0) - (a.jugador?.elo||0))
-    const segundos = clasificados.filter(c => c.posicion === 2).sort((a,b) => (b.jugador?.elo||0) - (a.jugador?.elo||0))
-
-    // Semillas: 1ros polo norte, 2dos polo sur invertidos (cabezas de serie separados)
-    const semillas = [...primeros, ...segundos.slice().reverse()]
-    const n = semillas.length
-
-    let tamBracket = 2
-    while (tamBracket < n) tamBracket *= 2
-    const numByes = tamBracket - n
-
-    // BYEs aleatorios entre los mejores
-    const mejores = semillas.slice(0, Math.max(numByes * 2, numByes))
-    const shuffled = mejores.sort(() => Math.random() - 0.5)
-    const conBye = shuffled.slice(0, numByes)
-    const sinBye = semillas.filter(s => !conBye.find(b => b.jugador.id === s.jugador.id))
-
-    let faseInicial = 'final'
-    if (tamBracket <= 4) faseInicial = 'semis'
-    else if (tamBracket <= 8) faseInicial = 'cuartos'
-    else if (tamBracket <= 16) faseInicial = '8vos'
-    else faseInicial = '16vos'
-
-    const nuevosPartidos: any[] = []
-    const mid = Math.floor(sinBye.length / 2)
-
-    // Regla espejo — cabezas de serie en polos opuestos
-    for (let i = 0; i < mid; i++) {
-      const jugA = sinBye[i]
-      const jugB = sinBye[sinBye.length - 1 - i]
-      if (jugA?.jugador?.id && jugB?.jugador?.id && jugA.jugador.id !== jugB.jugador.id) {
-        nuevosPartidos.push({ torneo_id: torneoId, fase: faseInicial, jugador_a: jugA.jugador.id, jugador_b: jugB.jugador.id, orden: i })
-      }
-    }
-
-    // BYEs — pasan directo (aleatorios)
-    for (let i = 0; i < conBye.length; i++) {
-      nuevosPartidos.push({ torneo_id: torneoId, fase: faseInicial, jugador_a: conBye[i].jugador.id, jugador_b: null, ganador: conBye[i].jugador.id, orden: mid + i })
-    }
-
-    if (nuevosPartidos.length) await supabase.from('torneo_partidos').insert(nuevosPartidos)
-    await supabase.from('torneos').update({ fase: faseInicial, estado:'en_curso' }).eq('id', torneoId)
-
-    const byeMsg = numByes > 0 ? ` (${numByes} BYE${numByes>1?'s':''} aleatorios)` : ''
+    const res = await generarPlayoffsAction({ torneoId, clasificadosPrimeros: primeros, clasificadosSegundos: segundos })
+    if (res.error) { alert(res.error); return }
+    const byeMsg = res.byes && res.byes > 0 ? ` (${res.byes} BYE${res.byes > 1 ? 's' : ''})` : ''
     alert(`Playoffs generados con regla espejo${byeMsg}`)
+    setTabActiva('bracket')
     await cargarTorneo()
   }
 
   async function avanzarSiguienteFase(faseActual: string) {
-    const idx = fasesOrden.indexOf(faseActual)
-    if (idx < 0 || idx >= fasesOrden.length - 1) return
-    const siguienteFase = fasesOrden[idx + 1]
-
     const partidosFase = partidos.filter(p => p.fase === faseActual && p.ganador && p.jugador_b !== null)
     const ganadores = partidosFase.map(p => (p as any).jg).filter(Boolean)
-
-    // También incluir los BYEs de esta fase que pasan directo
     const byesFase = partidos.filter(p => p.fase === faseActual && p.jugador_b === null && p.ganador)
     const ganByes = byesFase.map(p => (p as any).ja).filter(Boolean)
-    const todosGanadores = [...ganadores, ...ganByes]
+    const todos = [...ganadores, ...ganByes].map((j: any) => ({ id: j.id, nombre: j.nombre, elo: j.elo ?? CONFIG.ELO_INICIAL }))
 
-    todosGanadores.sort((a: any, b: any) => (b.elo||0) - (a.elo||0))
-
-    const mid = Math.floor(todosGanadores.length / 2)
-    const nuevosPartidos: any[] = []
-    for (let i = 0; i < mid; i++) {
-      nuevosPartidos.push({ torneo_id: torneoId, fase: siguienteFase, jugador_a: todosGanadores[i].id, jugador_b: todosGanadores[todosGanadores.length-1-i].id, orden: i })
-    }
-
-    // Si número impar, uno pasa con BYE
-    if (todosGanadores.length % 2 !== 0) {
-      const bye = todosGanadores[Math.floor(todosGanadores.length / 2)]
-      nuevosPartidos.push({ torneo_id: torneoId, fase: siguienteFase, jugador_a: bye.id, jugador_b: null, ganador: bye.id, orden: mid })
-    }
-
-    await supabase.from('torneo_partidos').insert(nuevosPartidos)
-    await supabase.from('torneos').update({ fase: siguienteFase }).eq('id', torneoId)
+    const res = await avanzarSiguienteFaseAction({ torneoId, faseActual: faseActual as FaseOrden, ganadores: todos })
+    if (res.error) { alert(res.error); return }
     await cargarTorneo()
   }
 
   async function finalizarTorneo() {
     if (!confirm('¿Finalizar el torneo?')) return
-    await supabase.from('torneos').update({ estado:'finalizado', fase:'finalizado' }).eq('id', torneoId)
+    const res = await finalizarTorneoAction({ torneoId })
+    if (res.error) { alert(res.error); return }
     await cargarTorneo()
   }
 
@@ -409,7 +296,7 @@ export default function TorneoDetallePage() {
   const partidosGrupos = partidos.filter(p => p.fase === 'grupos')
   const todosGruposJugados = partidosGrupos.length > 0 && partidosGrupos.every(p => p.ganador !== null && p.ganador !== undefined)
 
-  const numGruposEstimados = calcularGruposEstimados(jugadoresInscritos.length)
+  const numGruposEstimados = calcularNumGrupos(jugadoresInscritos.length)
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
@@ -446,8 +333,8 @@ export default function TorneoDetallePage() {
             {!torneo?.contabilidad_enviada ? (
               <button onClick={async () => {
                 if (!confirm(`¿Enviar ${fmt(recaudado)} a Finanzas?`)) return
-                await supabase.from('movimientos').insert({ club_id: perfil?.club_id, tipo:'ingreso', categoria:'inscripcion_torneo', descripcion:`Ingreso Torneo — ${torneo.nombre}`, monto: recaudado, fecha: new Date().toISOString().slice(0,10), registrado_por_nombre: perfil?.nombre||'Admin' })
-                await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', torneoId)
+                const res = await enviarRecaudacionAFinanzas({ torneoId, torneoNombre: torneo.nombre, monto: recaudado })
+                if (res.error) { alert(res.error); return }
                 await cargarTorneo()
               }} style={{ background:'#1e1b4b', color:'#a78bfa', border:'none', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>📤 Enviar a Finanzas</button>
             ) : <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Enviado</span>}
@@ -479,16 +366,35 @@ export default function TorneoDetallePage() {
 
       {/* BOTÓN INSCRIPCIÓN TARDÍA — disponible en grupos y playoffs */}
       {esAdmin && (faseActual === 'grupos' || fasesOrden.includes(faseActual)) && (
-        <div style={{ marginBottom:16 }}>
+        <div style={{ marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           <button onClick={() => setMesaOpen(true)} style={{ background:'#14161f', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
             + Inscribir jugador adicional
           </button>
-          <span style={{ fontSize:11, color:'#4b5063', marginLeft:10 }}>El jugador se puede agregar a un grupo manualmente</span>
+          {gruposReales.some((g: any) => !jugadores.some((j: any) => j.grupo_id === g.id)) && (
+            <button onClick={async () => {
+              if (!confirm('¿Eliminar grupos vacíos y sus partidos sin jugar?')) return
+              const res = await limpiarGruposHuerfanos({ torneoId })
+              if (res.error) { alert(res.error); return }
+              alert(`Se eliminaron ${res.eliminados} grupo(s) vacío(s)`)
+              await cargarTorneo()
+            }} style={{ background:'#f8717122', color:'#f87171', border:'1px solid #f8717144', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
+              🗑️ Limpiar grupos vacíos
+            </button>
+          )}
+          <span style={{ fontSize:11, color:'#4b5063' }}>El jugador se ubica automáticamente en el grupo más adecuado</span>
+        </div>
+      )}
+
+      {/* Tabs cuando estamos en playoffs o finalizado */}
+      {esPlayoffs && (
+        <div style={{ display:'flex', gap:8, marginBottom:16, borderBottom:'1px solid #1e2030' }}>
+          <button onClick={() => setTabActiva('grupos')} style={{ background:'transparent', border:'none', color: tabActiva==='grupos'?'#a78bfa':'#6c7280', borderBottom: tabActiva==='grupos'?'2px solid #a78bfa':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Fase de grupos</button>
+          <button onClick={() => setTabActiva('bracket')} style={{ background:'transparent', border:'none', color: tabActiva==='bracket'?'#a78bfa':'#6c7280', borderBottom: tabActiva==='bracket'?'2px solid #a78bfa':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Bracket</button>
         </div>
       )}
 
       {/* FASE GRUPOS */}
-      {faseActual === 'grupos' && (
+      {(faseActual === 'grupos' || (esPlayoffs && tabActiva === 'grupos')) && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16, marginBottom:16 }}>
           {grupos.filter((g: any) => g.nombre !== 'MESA').map(grupo => {
             const { ordenados, hayTripleEmpate, empatados } = calcularStats(grupo.id)
@@ -620,7 +526,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* PLAYOFFS BRACKET */}
-      {esPlayoffs && (
+      {esPlayoffs && tabActiva === 'bracket' && (
         <div>
           <div style={{ background:'#1e1b4b', border:'1px solid #6c63ff44', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#a78bfa', marginBottom:16 }}>
             💡 Haz clic en el nombre del ganador para registrar el resultado
@@ -724,11 +630,15 @@ export default function TorneoDetallePage() {
 
             {/* Stats en tiempo real */}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:16 }}>
-              {[
+              {(faseActual === 'inscripcion' ? [
                 { label:'Inscritos', value:jugadoresInscritos.length, color:'#c8cfe0' },
                 { label:'Grupos estimados', value:numGruposEstimados, color:'#a78bfa' },
                 { label:'Recaudado', value:fmt(recaudado), color:'#34d399' },
-              ].map(s => (
+              ] : [
+                { label:'Inscritos', value:totalInscritos, color:'#c8cfe0' },
+                { label:'Grupos', value:gruposReales.length, color:'#a78bfa' },
+                { label:'Recaudado', value:fmt(recaudado), color:'#34d399' },
+              ]).map(s => (
                 <div key={s.label} style={{ background:'#0a0c12', borderRadius:8, padding:10, textAlign:'center' }}>
                   <div style={{ fontSize:16, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
                   <div style={{ fontSize:10, color:'#6c7280' }}>{s.label}</div>
@@ -790,8 +700,8 @@ export default function TorneoDetallePage() {
               </button>
             </div>
 
-            {/* Lista inscritos en tiempo real */}
-            {jugadoresInscritos.length > 0 && (
+            {/* Lista inscritos en tiempo real (solo durante fase de inscripción) */}
+            {faseActual === 'inscripcion' && jugadoresInscritos.length > 0 && (
               <div style={{ background:'#0a0c12', borderRadius:10, overflow:'hidden', marginBottom:16 }}>
                 <div style={{ padding:'8px 14px', fontSize:11, color:'#6c7280', textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'1px solid #1e2030' }}>
                   Jugadores inscritos
@@ -811,12 +721,25 @@ export default function TorneoDetallePage() {
                       {cabezasSerie.has(j.jugador_id) ? '⭐ Cabeza de serie' : 'Cabeza de serie'}
                     </button>
                     {/* Estado pago */}
-                    {(torneo?.cuota_inscripcion > 0) && (
-                      <button onClick={() => setPagosPorJugador(prev => ({ ...prev, [j.jugador_id]: prev[j.jugador_id] === 'pagado' ? 'pendiente' : 'pagado' }))}
-                        style={{ background: pagosPorJugador[j.jugador_id] === 'pagado' ? '#34d39922' : '#f8717122', color: pagosPorJugador[j.jugador_id] === 'pagado' ? '#34d399' : '#f87171', border:`1px solid ${pagosPorJugador[j.jugador_id] === 'pagado' ? '#34d39944' : '#f8717144'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}>
-                        {pagosPorJugador[j.jugador_id] === 'pagado' ? '✓ Pagado' : 'Pendiente'}
-                      </button>
-                    )}
+                    {(torneo?.cuota_inscripcion > 0) && (() => {
+                      const pagoActual = pagos.find(p => p.jugador_id === j.jugador_id)
+                      const esPagado = pagoActual?.estado === 'pagado'
+                      return (
+                        <button onClick={async () => {
+                          const res = await actualizarEstadoPago({
+                            torneoId,
+                            jugadorId: j.jugador_id,
+                            estado: esPagado ? 'pendiente' : 'pagado',
+                            metodoPago,
+                          })
+                          if (res.error) { alert(res.error); return }
+                          await cargarTorneo()
+                        }}
+                          style={{ background: esPagado ? '#34d39922' : '#f8717122', color: esPagado ? '#34d399' : '#f87171', border:`1px solid ${esPagado ? '#34d39944' : '#f8717144'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}>
+                          {esPagado ? '✓ Pagado' : 'Pendiente'}
+                        </button>
+                      )
+                    })()}
                     {/* Quitar */}
                     <button onClick={async () => {
                       await supabase.from('grupo_jugadores').delete().eq('jugador_id', j.jugador_id).in('grupo_id', grupos.map((g:any)=>g.id))
@@ -827,10 +750,16 @@ export default function TorneoDetallePage() {
               </div>
             )}
 
-            <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < 4}
-              style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4?'#34d39922':'#1e2030', color: jugadoresInscritos.length >= 4?'#34d399':'#4b5063', border:`1px solid ${jugadoresInscritos.length >= 4?'#34d39944':'#1e2030'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4?'pointer':'not-allowed' }}>
-              {jugadoresInscritos.length < 4 ? `Mínimo 4 jugadores (faltan ${4-jugadoresInscritos.length})` : `✓ Cerrar inscripción y generar ${numGruposEstimados} grupos`}
-            </button>
+            {faseActual === 'inscripcion' ? (
+              <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < 4}
+                style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4?'#34d39922':'#1e2030', color: jugadoresInscritos.length >= 4?'#34d399':'#4b5063', border:`1px solid ${jugadoresInscritos.length >= 4?'#34d39944':'#1e2030'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4?'pointer':'not-allowed' }}>
+                {jugadoresInscritos.length < 4 ? `Mínimo 4 jugadores (faltan ${4-jugadoresInscritos.length})` : `✓ Cerrar inscripción y generar ${numGruposEstimados} grupos`}
+              </button>
+            ) : (
+              <div style={{ background:'#1e1b4b', border:'1px solid #6c63ff44', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#a78bfa', textAlign:'center' }}>
+                💡 Cada jugador se agrega al grupo con menos integrantes (ELO más cercano).
+              </div>
+            )}
           </div>
         </div>
       )}

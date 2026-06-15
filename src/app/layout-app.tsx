@@ -20,7 +20,7 @@ const navProfesor = [
   { label:'Dashboard', icon:'📊', href:'/dashboard-profesor' },
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
-  { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
+  { label:'Ranking', icon:'🏆', href:'/ranking' },
   { label:'Mis clases', icon:'📚', href:'/clases' },
   { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
@@ -33,7 +33,7 @@ const navJugador = [
   { label:'Torneos', icon:'🎯', href:'/torneos' },
   { label:'Torneos externos', icon:'🌎', href:'/torneos-externos' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
-  { label:'Ranking ELO', icon:'🏆', href:'/ranking' },
+  { label:'Ranking', icon:'🏆', href:'/ranking' },
 ]
 
 const mobileNavAdmin = [

@@ -30,7 +30,7 @@ const navProfesor: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard-profesor' },
   { label: 'Jugadores', icon: Users, href: '/jugadores' },
   { label: 'Torneos', icon: Trophy, href: '/torneos' },
-  { label: 'Ranking ELO', icon: Award, href: '/ranking' },
+  { label: 'Ranking', icon: Award, href: '/ranking' },
   { label: 'Mis clases', icon: BookOpen, href: '/clases' },
   { label: 'Asistencia', icon: Smartphone, href: '/asistencia' },
   { label: 'Calendario', icon: Calendar, href: '/calendario' },
@@ -43,7 +43,7 @@ const navJugador: NavItem[] = [
   { label: 'Torneos', icon: Trophy, href: '/torneos' },
   { label: 'Torneos externos', icon: Globe, href: '/torneos-externos' },
   { label: 'Calendario', icon: Calendar, href: '/calendario' },
-  { label: 'Ranking ELO', icon: Award, href: '/ranking' },
+  { label: 'Ranking', icon: Award, href: '/ranking' },
 ]
 
 export function getNavItems(rol: string | undefined): NavItem[] {

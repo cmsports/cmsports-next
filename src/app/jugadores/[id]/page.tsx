@@ -100,7 +100,7 @@ export default function JugadorDetallePage() {
   // Datos gráfico ELO
   const eloLabels = [...historialElo.map(h => h.fecha?.slice(0,10) || ''), 'Hoy']
   const eloData = [...historialElo.map(h => h.elo_despues), jugador?.elo || 1200]
-  const eloTooltips = [...historialElo.map(h => h.posicion || '—'), 'ELO actual']
+  const eloTooltips = [...historialElo.map(h => h.posicion || '—'), 'Ranking actual']
 
   // Datos asistencia por mes para superposición
   const asistPorMes: Record<string, number> = {}
@@ -198,7 +198,7 @@ export default function JugadorDetallePage() {
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
           {[
-            { label:'ELO', value:jugador.elo, color:'#a78bfa' },
+            { label:'Ranking', value:jugador.elo, color:'#a78bfa' },
             { label:'Victorias', value:victorias, color:'#34d399' },
             { label:'Derrotas', value:derrotas, color:'#f87171' },
           ].map(s => (
@@ -267,7 +267,7 @@ export default function JugadorDetallePage() {
           {/* Gráfico ELO */}
           <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginBottom:16 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>Curva de ELO</div>
+              <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>Curva de ranking</div>
               {puedeEditar && eloLabels.length > 1 && (
                 <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:12, color:'#8890a4' }}>
                   <input type="checkbox" checked={mostrarAsistencia} onChange={e => setMostrarAsistencia(e.target.checked)} style={{ accentColor:'#6c63ff' }} />
@@ -281,7 +281,7 @@ export default function JugadorDetallePage() {
                   labels: eloLabels,
                   datasets: (() => {
                     const ds: any[] = [{
-                      label: 'ELO',
+                      label: 'Ranking',
                       data: eloData,
                       borderColor: '#6c63ff',
                       backgroundColor: '#6c63ff22',
@@ -314,7 +314,7 @@ export default function JugadorDetallePage() {
                       bodyColor: '#c8cfe0',
                       callbacks: {
                         title: (items) => eloTooltips[items[0].dataIndex] || '',
-                        label: (item) => item.dataset.label === 'ELO' ? `ELO: ${item.raw}` : `Asistencias: ${item.raw}`
+                        label: (item) => item.dataset.label === 'Ranking' ? `Ranking: ${item.raw}` : `Asistencias: ${item.raw}`
                       }
                     }
                   },
@@ -327,7 +327,7 @@ export default function JugadorDetallePage() {
               />
             ) : (
               <div style={{ textAlign:'center', padding:20 }}>
-                <div style={{ fontSize:13, color:'#6c7280' }}>ELO inicial: <strong style={{ color:'#a78bfa' }}>{jugador.elo}</strong></div>
+                <div style={{ fontSize:13, color:'#6c7280' }}>Ranking inicial: <strong style={{ color:'#a78bfa' }}>{jugador.elo}</strong></div>
                 <div style={{ fontSize:12, color:'#4b5063', marginTop:6 }}>El gráfico se completará con los torneos</div>
               </div>
             )}

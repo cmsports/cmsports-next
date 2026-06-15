@@ -57,7 +57,8 @@ export default function SolicitudesPage() {
     await supabase.from('jugadores').insert({
       club_id: clubId, nombre: s.nombre, rut: s.rut || null,
       email: s.email || null, telefono: s.telefono || null,
-      categoria: 'principiante', sesiones_limite: 12
+      categoria: 'principiante', sesiones_limite: 12,
+      elo: 1200, sesiones_usadas: 0, estado: 'activo', es_externo: false
     })
     await supabase.from('solicitudes_jugador').update({ estado: 'aprobado' }).eq('id', s.id)
     cargarSolicitudes()

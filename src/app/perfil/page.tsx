@@ -69,7 +69,7 @@ export default function PerfilPage() {
         <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:12 }}>
           <div style={{ background:'#1e1b4b', borderRadius:10, padding:'12px 16px', textAlign:'center' }}>
             <div style={{ fontSize:28, fontWeight:800, color:'#a78bfa', fontFamily:'monospace' }}>{jugador.elo}</div>
-            <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>ELO</div>
+            <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>Ranking</div>
           </div>
           <div style={{ background:'#1e1b4b', borderRadius:10, padding:'12px 16px', textAlign:'center' }}>
             <div style={{ fontSize:28, fontWeight:800, color:'#c8cfe0', fontFamily:'monospace' }}>{jugador.sesiones_usadas}/{jugador.sesiones_limite}</div>

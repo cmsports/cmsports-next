@@ -111,6 +111,9 @@ export interface Database {
           foto_url: string | null
           creado_en: string | null
           es_externo: boolean | null
+          mensualidad: number | null
+          tipo_plan: string | null
+          entrenamientos_por_semana: number | null
         }
         Insert: {
           id?: string
@@ -127,6 +130,9 @@ export interface Database {
           foto_url?: string | null
           creado_en?: string | null
           es_externo?: boolean | null
+          mensualidad?: number | null
+          tipo_plan?: string | null
+          entrenamientos_por_semana?: number | null
         }
         Update: {
           id?: string
@@ -143,6 +149,9 @@ export interface Database {
           foto_url?: string | null
           creado_en?: string | null
           es_externo?: boolean | null
+          mensualidad?: number | null
+          tipo_plan?: string | null
+          entrenamientos_por_semana?: number | null
         }
         Relationships: [
           { foreignKeyName: 'jugadores_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
