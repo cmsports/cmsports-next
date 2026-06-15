@@ -1,0 +1,380 @@
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { calculateEloChange } from '@/lib/domain/elo'
+import {
+  seedingSerpenteo,
+  generarRoundRobin,
+  generarBracketEspejo,
+  generarSiguienteFase,
+  calcularNumGrupos,
+  type JugadorTorneo,
+} from '@/lib/domain/torneos'
+import { CONFIG, type FaseOrden } from '@/lib/config'
+
+async function requireAdmin() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' as const, supabase: null, perfil: null }
+  const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,nombre').eq('id', user.id).single()
+  if (!perfil || perfil.rol !== 'admin') return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
+  return { error: null, supabase, perfil }
+}
+
+export async function marcarGanadorPartido(params: { partidoId: string; ganadorId: string }) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { partidoId, ganadorId } = params
+
+  const { data: partido } = await supabase.from('torneo_partidos').select('*').eq('id', partidoId).single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (partido.ganador) return { error: 'El partido ya tiene ganador' }
+
+  const perdedorId = partido.jugador_a === ganadorId ? partido.jugador_b : partido.jugador_a
+
+  await supabase.from('torneo_partidos').update({ ganador: ganadorId }).eq('id', partidoId)
+
+  if (perdedorId && perdedorId !== ganadorId) {
+    const [{ data: g }, { data: p }] = await Promise.all([
+      supabase.from('jugadores').select('elo').eq('id', ganadorId).single(),
+      supabase.from('jugadores').select('elo').eq('id', perdedorId).single(),
+    ])
+    if (g && p) {
+      const eloGanador = g.elo ?? CONFIG.ELO_INICIAL
+      const eloPerdedor = p.elo ?? CONFIG.ELO_INICIAL
+      const { newWinnerElo, newLoserElo } = calculateEloChange(eloGanador, eloPerdedor)
+
+      await Promise.all([
+        supabase.from('jugadores').update({ elo: newWinnerElo }).eq('id', ganadorId),
+        supabase.from('jugadores').update({ elo: newLoserElo }).eq('id', perdedorId),
+        supabase.from('historial_elo').insert([
+          { jugador_id: ganadorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, elo_antes: eloGanador, elo_despues: newWinnerElo, fecha: new Date().toISOString().slice(0, 10) },
+          { jugador_id: perdedorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, elo_antes: eloPerdedor, elo_despues: newLoserElo, fecha: new Date().toISOString().slice(0, 10) },
+        ]),
+      ])
+    }
+  }
+
+  if (partido.grupo_id) {
+    const { data: gjG } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', ganadorId).maybeSingle()
+    if (gjG) {
+      await supabase.from('grupo_jugadores').update({
+        partidos_ganados: (gjG.partidos_ganados || 0) + 1,
+        partidos_jugados: (gjG.partidos_jugados || 0) + 1,
+      }).eq('id', gjG.id)
+    }
+    if (perdedorId) {
+      const { data: gjP } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', perdedorId).maybeSingle()
+      if (gjP) {
+        await supabase.from('grupo_jugadores').update({
+          partidos_jugados: (gjP.partidos_jugados || 0) + 1,
+        }).eq('id', gjP.id)
+      }
+    }
+  }
+
+  return { success: true }
+}
+
+export async function cerrarInscripcionYGenerarGrupos(params: {
+  torneoId: string
+  cabezasDeSerie: string[]
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, cabezasDeSerie } = params
+
+  const { data: gruposPrev } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  const grupoIds = (gruposPrev || []).map(g => g.id)
+
+  const { data: inscritos } = await supabase
+    .from('grupo_jugadores')
+    .select('jugador_id, jugadores(id,nombre,elo)')
+    .in('grupo_id', grupoIds.length ? grupoIds : ['00000000-0000-0000-0000-000000000000'])
+
+  const jugadores: JugadorTorneo[] = (inscritos || [])
+    .map(i => {
+      const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
+      return j ? { id: j.id, nombre: j.nombre ?? '', elo: j.elo ?? CONFIG.ELO_INICIAL } : null
+    })
+    .filter((x): x is JugadorTorneo => x !== null)
+
+  if (jugadores.length < CONFIG.TORNEO_MIN_JUGADORES) {
+    return { error: `Se requieren al menos ${CONFIG.TORNEO_MIN_JUGADORES} jugadores` }
+  }
+
+  // Limpiar partidos viejos del torneo (evita FK orphans y duplicación de grupos)
+  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
+  for (const gid of grupoIds) {
+    await supabase.from('grupo_jugadores').delete().eq('grupo_id', gid)
+    await supabase.from('torneo_grupos').delete().eq('id', gid)
+  }
+
+  const numGrupos = calcularNumGrupos(jugadores.length)
+  const nuevosGrupos: { id: string; nombre: string }[] = []
+  for (let i = 0; i < numGrupos; i++) {
+    const { data: g } = await supabase
+      .from('torneo_grupos')
+      .insert({ torneo_id: torneoId, nombre: String.fromCharCode(65 + i) })
+      .select('id, nombre')
+      .single()
+    if (g) nuevosGrupos.push({ id: g.id, nombre: g.nombre ?? '' })
+  }
+
+  const asignaciones = seedingSerpenteo(jugadores, numGrupos, new Set(cabezasDeSerie))
+  const inserts = asignaciones.map(a => ({
+    grupo_id: nuevosGrupos[a.grupoIndex].id,
+    jugador_id: a.jugadorId,
+  }))
+  await supabase.from('grupo_jugadores').insert(inserts)
+
+  const partidos: Array<{ torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }> = []
+  for (const g of nuevosGrupos) {
+    const jugadoresGrupo = inserts.filter(a => a.grupo_id === g.id).map(a => a.jugador_id)
+    const parejas = generarRoundRobin(jugadoresGrupo)
+    for (const [a, b] of parejas) {
+      partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: a, jugador_b: b, orden: partidos.length })
+    }
+  }
+  if (partidos.length) await supabase.from('torneo_partidos').insert(partidos)
+
+  await supabase.from('torneos').update({ fase: 'grupos', inscripcion_abierta: false }).eq('id', torneoId)
+
+  return { success: true, numGrupos }
+}
+
+export async function generarPlayoffs(params: {
+  torneoId: string
+  clasificadosPrimeros: { id: string; nombre: string; elo: number }[]
+  clasificadosSegundos: { id: string; nombre: string; elo: number }[]
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, clasificadosPrimeros, clasificadosSegundos } = params
+
+  if (clasificadosPrimeros.length + clasificadosSegundos.length < 2) {
+    return { error: 'No hay suficientes clasificados' }
+  }
+
+  for (const j of clasificadosPrimeros) {
+    await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('jugador_id', j.id)
+  }
+
+  const partidosBracket = generarBracketEspejo(clasificadosPrimeros, clasificadosSegundos)
+  if (!partidosBracket.length) return { error: 'No se pudo generar el bracket' }
+
+  const faseInicial = partidosBracket[0].fase as FaseOrden
+
+  const partidosInsert = partidosBracket.map(p => ({
+    torneo_id: torneoId,
+    fase: p.fase,
+    jugador_a: p.jugadorA,
+    jugador_b: p.jugadorB,
+    ganador: p.ganador ?? null,
+    orden: p.orden,
+  }))
+  await supabase.from('torneo_partidos').insert(partidosInsert)
+
+  await supabase.from('torneos').update({ fase: faseInicial, estado: 'en_curso' }).eq('id', torneoId)
+
+  return { success: true, fase: faseInicial, byes: partidosBracket.filter(p => !p.jugadorB).length }
+}
+
+export async function avanzarSiguienteFase(params: {
+  torneoId: string
+  faseActual: FaseOrden
+  ganadores: { id: string; nombre: string; elo: number }[]
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, faseActual, ganadores } = params
+
+  const partidosNuevos = generarSiguienteFase(ganadores, faseActual)
+  if (!partidosNuevos.length) return { error: 'No se pudo generar la siguiente fase' }
+
+  const fase = partidosNuevos[0].fase
+  const inserts = partidosNuevos.map(p => ({
+    torneo_id: torneoId,
+    fase: p.fase,
+    jugador_a: p.jugadorA,
+    jugador_b: p.jugadorB,
+    ganador: p.ganador ?? null,
+    orden: p.orden,
+  }))
+  await supabase.from('torneo_partidos').insert(inserts)
+  await supabase.from('torneos').update({ fase }).eq('id', torneoId)
+
+  return { success: true, fase }
+}
+
+export async function finalizarTorneo(params: { torneoId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  await supabase.from('torneos').update({ estado: 'finalizado', fase: 'finalizado' }).eq('id', params.torneoId)
+  return { success: true }
+}
+
+export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId } = params
+
+  const { data: grupos } = await supabase
+    .from('torneo_grupos')
+    .select('id, nombre')
+    .eq('torneo_id', torneoId)
+    .neq('nombre', 'MESA')
+
+  if (!grupos?.length) return { success: true, eliminados: 0 }
+
+  let eliminados = 0
+  for (const g of grupos) {
+    const { count } = await supabase
+      .from('grupo_jugadores')
+      .select('jugador_id', { count: 'exact', head: true })
+      .eq('grupo_id', g.id)
+    if ((count ?? 0) === 0) {
+      await supabase.from('torneo_partidos').delete().eq('grupo_id', g.id)
+      await supabase.from('torneo_grupos').delete().eq('id', g.id)
+      eliminados++
+    }
+  }
+
+  return { success: true, eliminados }
+}
+
+export async function inscribirJugadorTardio(params: {
+  torneoId: string
+  jugadorId: string
+  jugadorElo: number
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, jugadorId, jugadorElo } = params
+
+  const { data: gruposReales } = await supabase
+    .from('torneo_grupos')
+    .select('id, nombre')
+    .eq('torneo_id', torneoId)
+    .neq('nombre', 'MESA')
+
+  if (!gruposReales?.length) return { error: 'No hay grupos generados todavía' }
+
+  const groupsInfo = await Promise.all(
+    gruposReales.map(async g => {
+      const { data: gjs } = await supabase
+        .from('grupo_jugadores')
+        .select('jugador_id, jugadores(elo)')
+        .eq('grupo_id', g.id)
+      const lista = gjs || []
+      const elos = lista.map(gj => {
+        const j = Array.isArray(gj.jugadores) ? gj.jugadores[0] : gj.jugadores
+        return j?.elo ?? CONFIG.ELO_INICIAL
+      })
+      const avgElo = elos.length ? elos.reduce((a, b) => a + b, 0) / elos.length : CONFIG.ELO_INICIAL
+      const playerIds = lista.map(gj => gj.jugador_id).filter((id): id is string => !!id)
+      return { id: g.id, nombre: g.nombre ?? '', count: lista.length, avgElo, playerIds }
+    }),
+  )
+
+  if (groupsInfo.some(g => g.playerIds.includes(jugadorId))) {
+    return { error: 'El jugador ya está inscrito en este torneo' }
+  }
+
+  const disponibles = groupsInfo.filter(g => g.count < 4)
+  if (!disponibles.length) return { error: 'Todos los grupos están llenos (máx 4 jugadores)' }
+
+  disponibles.sort((a, b) => {
+    if (a.count !== b.count) return a.count - b.count
+    return Math.abs(a.avgElo - jugadorElo) - Math.abs(b.avgElo - jugadorElo)
+  })
+  const target = disponibles[0]
+
+  await supabase.from('grupo_jugadores').insert({ grupo_id: target.id, jugador_id: jugadorId })
+
+  const { data: partidosExistentes } = await supabase
+    .from('torneo_partidos')
+    .select('orden')
+    .eq('torneo_id', torneoId)
+  const maxOrden = (partidosExistentes || []).reduce((m, p) => Math.max(m, p.orden ?? 0), 0)
+
+  const nuevosPartidos = target.playerIds.map((pid, i) => ({
+    torneo_id: torneoId,
+    grupo_id: target.id,
+    fase: 'grupos',
+    jugador_a: jugadorId,
+    jugador_b: pid,
+    orden: maxOrden + 1 + i,
+  }))
+  if (nuevosPartidos.length) await supabase.from('torneo_partidos').insert(nuevosPartidos)
+
+  return { success: true, grupoNombre: target.nombre }
+}
+
+export async function actualizarEstadoPago(params: {
+  torneoId: string
+  jugadorId: string
+  estado: 'pagado' | 'pendiente'
+  metodoPago?: string
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, jugadorId, estado, metodoPago } = params
+  const fechaPago = estado === 'pagado' ? new Date().toISOString().slice(0, 10) : null
+
+  const { data: existing } = await supabase
+    .from('torneo_pagos')
+    .select('id')
+    .eq('torneo_id', torneoId)
+    .eq('jugador_id', jugadorId)
+    .maybeSingle()
+
+  if (existing) {
+    const update: { estado: string; fecha_pago: string | null; metodo_pago?: string } = {
+      estado,
+      fecha_pago: fechaPago,
+    }
+    if (metodoPago) update.metodo_pago = metodoPago
+    await supabase.from('torneo_pagos').update(update).eq('id', existing.id)
+  } else {
+    await supabase.from('torneo_pagos').insert({
+      torneo_id: torneoId,
+      jugador_id: jugadorId,
+      estado,
+      metodo_pago: metodoPago || 'efectivo',
+      fecha_pago: fechaPago,
+    })
+  }
+
+  return { success: true }
+}
+
+export async function enviarRecaudacionAFinanzas(params: {
+  torneoId: string
+  torneoNombre: string
+  monto: number
+}) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  await supabase.from('movimientos').insert({
+    club_id: perfil.club_id,
+    tipo: 'ingreso',
+    categoria: 'inscripcion_torneo',
+    descripcion: `Ingreso Torneo — ${params.torneoNombre}`,
+    monto: params.monto,
+    fecha: new Date().toISOString().slice(0, 10),
+    registrado_por_nombre: perfil.nombre || 'Admin',
+  })
+  await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
+
+  return { success: true }
+}

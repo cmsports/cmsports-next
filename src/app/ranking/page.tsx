@@ -43,7 +43,7 @@ export default function RankingPage() {
   return (
     <AppLayout perfil={perfil}>
       <div style={{ marginBottom:24 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:4 }}>Ranking ELO</h1>
+        <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:4 }}>Ranking</h1>
         <p style={{ fontSize:13, color:'#6c7280' }}>{jugadores.length} jugadores clasificados</p>
       </div>
 
@@ -75,7 +75,7 @@ export default function RankingPage() {
             </div>
             <div style={{ textAlign:'right' }}>
               <div style={{ fontSize:22, fontWeight:800, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</div>
-              <div style={{ fontSize:10, color:'#6c7280' }}>ELO</div>
+              <div style={{ fontSize:10, color:'#6c7280' }}>Ranking</div>
             </div>
           </div>
         ))}

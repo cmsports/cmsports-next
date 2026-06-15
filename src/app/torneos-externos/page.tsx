@@ -110,7 +110,7 @@ export default function TorneosExternosPage() {
 
       {/* Total ELO */}
       <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, marginBottom:16, textAlign:'center' }}>
-        <div style={{ fontSize:12, color:'#6c7280', marginBottom:4 }}>ELO ganado en torneos externos</div>
+        <div style={{ fontSize:12, color:'#6c7280', marginBottom:4 }}>Ranking ganado en torneos externos</div>
         <div style={{ fontSize:36, fontWeight:800, color:'#a78bfa', fontFamily:'monospace' }}>+{totalElo}</div>
       </div>
 
@@ -119,7 +119,7 @@ export default function TorneosExternosPage() {
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:40, textAlign:'center' }}>
           <div style={{ fontSize:40, marginBottom:12 }}>🌎</div>
           <div style={{ fontSize:14, color:'#c8cfe0', marginBottom:8 }}>Sin torneos externos aún</div>
-          <div style={{ fontSize:13, color:'#6c7280' }}>Registra tus torneos fuera del club para sumar puntos ELO</div>
+          <div style={{ fontSize:13, color:'#6c7280' }}>Registra tus torneos fuera del club para sumar puntos de ranking</div>
         </div>
       ) : externos.map(t => (
         <div key={t.id} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16, marginBottom:10 }}>
@@ -133,7 +133,7 @@ export default function TorneosExternosPage() {
             </div>
             <div style={{ textAlign:'right' }}>
               <div style={{ fontSize:24, fontWeight:800, color:'#a78bfa', fontFamily:'monospace' }}>+{t.puntos_elo}</div>
-              <div style={{ fontSize:10, color:'#6c7280' }}>ELO</div>
+              <div style={{ fontSize:10, color:'#6c7280' }}>Ranking</div>
             </div>
           </div>
         </div>
