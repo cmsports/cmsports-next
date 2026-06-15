@@ -38,6 +38,18 @@ export default function JugadorDetallePage() {
   const [mostrarAsistencia, setMostrarAsistencia] = useState(false)
   const [guardandoFeedback, setGuardandoFeedback] = useState(false)
   const [feedbackForm, setFeedbackForm] = useState({ feedback:'', meta:'' })
+  const [editContacto, setEditContacto] = useState(false)
+  const [editPlan, setEditPlan] = useState(false)
+  const [contactoForm, setContactoForm] = useState({ email:'', telefono:'', categoria:'' })
+  const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+  const [guardandoDatos, setGuardandoDatos] = useState(false)
+
+  const PRESETS = [
+    { label:'$15.000', valor:15000, ent:1 },
+    { label:'$25.000', valor:25000, ent:2 },
+    { label:'$30.000', valor:30000, ent:3 },
+    { label:'$40.000', valor:40000, ent:4 },
+  ]
   const router = useRouter()
   const params = useParams()
   const jugadorId = params.id as string
@@ -132,6 +144,48 @@ export default function JugadorDetallePage() {
     setGuardandoFeedback(false)
   }
 
+  function abrirEditContacto() {
+    setContactoForm({ email: jugador?.email || '', telefono: jugador?.telefono || '', categoria: jugador?.categoria || 'principiante' })
+    setEditContacto(true)
+  }
+
+  async function guardarContacto() {
+    setGuardandoDatos(true)
+    await supabase.from('jugadores').update({
+      email: contactoForm.email || null,
+      telefono: contactoForm.telefono || null,
+      categoria: contactoForm.categoria,
+    }).eq('id', jugadorId)
+    setJugador({ ...jugador, email: contactoForm.email || null, telefono: contactoForm.telefono || null, categoria: contactoForm.categoria })
+    setEditContacto(false)
+    setGuardandoDatos(false)
+  }
+
+  function abrirEditPlan() {
+    setPlanFormState({
+      tipo_plan: jugador?.tipo_plan || 'mensual',
+      entrenamientos_por_semana: String(jugador?.entrenamientos_por_semana || 3),
+      mensualidad: String(jugador?.mensualidad || 30000),
+    })
+    setEditPlan(true)
+  }
+
+  async function guardarPlan() {
+    setGuardandoDatos(true)
+    const ent = planFormState.tipo_plan === 'libre' ? null : parseInt(planFormState.entrenamientos_por_semana) || 3
+    const sesLimite = planFormState.tipo_plan === 'libre' ? 99 : (ent || 3) * 4
+    const datos = {
+      tipo_plan: planFormState.tipo_plan,
+      entrenamientos_por_semana: ent,
+      mensualidad: parseInt(planFormState.mensualidad) || 0,
+      sesiones_limite: sesLimite,
+    }
+    await supabase.from('jugadores').update(datos).eq('id', jugadorId)
+    setJugador({ ...jugador, ...datos })
+    setEditPlan(false)
+    setGuardandoDatos(false)
+  }
+
   async function aceptarCompromiso() {
     if (!evalActual) return
     await supabase.from('evaluaciones_trimestrales').update({ firmado_alumno: true }).eq('id', evalActual.id)
@@ -210,40 +264,130 @@ export default function JugadorDetallePage() {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:12 }}>
           {/* Contacto */}
           <div style={{ background:'#0a0c12', borderRadius:10, padding:12 }}>
-            <div style={{ fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>Contacto</div>
-            {jugador.rut && <div style={{ fontSize:12, color:'#c8cfe0', marginBottom:4 }}>🪪 {jugador.rut}</div>}
-            {jugador.email && <div style={{ fontSize:12, color:'#c8cfe0', marginBottom:4 }}>✉️ {jugador.email}</div>}
-            {jugador.telefono
-              ? <a href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} target="_blank"
-                  style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:12, color:'#34d399', textDecoration:'none', marginTop:4 }}>
-                  💬 {jugador.telefono}
-                </a>
-              : <div style={{ fontSize:12, color:'#4b5063' }}>Sin teléfono</div>
-            }
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+              <div style={{ fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Contacto</div>
+              {puedeEditar && !editContacto && (
+                <button onClick={abrirEditContacto} style={{ background:'transparent', border:'1px solid #1e2030', borderRadius:6, padding:'2px 8px', fontSize:11, color:'#a78bfa', cursor:'pointer' }}>Editar</button>
+              )}
+            </div>
+            {editContacto ? (
+              <div>
+                <div style={{ marginBottom:8 }}>
+                  <label style={{ fontSize:11, color:'#6c7280', display:'block', marginBottom:3 }}>Categoría</label>
+                  <select style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:6, padding:'6px 8px', color:'#e8e8f0', fontSize:12, outline:'none' }}
+                    value={contactoForm.categoria} onChange={e => setContactoForm(f => ({ ...f, categoria: e.target.value }))}>
+                    <option value="principiante">Principiante</option>
+                    <option value="intermedio">Intermedio</option>
+                    <option value="avanzado">Avanzado</option>
+                  </select>
+                </div>
+                <div style={{ marginBottom:8 }}>
+                  <label style={{ fontSize:11, color:'#6c7280', display:'block', marginBottom:3 }}>Email</label>
+                  <input style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:6, padding:'6px 8px', color:'#e8e8f0', fontSize:12, outline:'none' }}
+                    type="email" value={contactoForm.email} onChange={e => setContactoForm(f => ({ ...f, email: e.target.value }))} />
+                </div>
+                <div style={{ marginBottom:8 }}>
+                  <label style={{ fontSize:11, color:'#6c7280', display:'block', marginBottom:3 }}>Teléfono</label>
+                  <input style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:6, padding:'6px 8px', color:'#e8e8f0', fontSize:12, outline:'none' }}
+                    type="tel" placeholder="+56975235780" value={contactoForm.telefono} onChange={e => setContactoForm(f => ({ ...f, telefono: e.target.value }))} />
+                </div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={() => setEditContacto(false)} style={{ flex:1, padding:'5px 0', background:'transparent', border:'1px solid #1e2030', borderRadius:6, color:'#6c7280', fontSize:11, cursor:'pointer' }}>Cancelar</button>
+                  <button onClick={guardarContacto} disabled={guardandoDatos} style={{ flex:1, padding:'5px 0', background:'#6c63ff', border:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                    {guardandoDatos ? '...' : 'Guardar'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {jugador.rut && <div style={{ fontSize:12, color:'#c8cfe0', marginBottom:4 }}>🪪 {jugador.rut}</div>}
+                {jugador.email && <div style={{ fontSize:12, color:'#c8cfe0', marginBottom:4 }}>✉️ {jugador.email}</div>}
+                {jugador.telefono
+                  ? <a href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} target="_blank"
+                      style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:12, color:'#34d399', textDecoration:'none', marginTop:4 }}>
+                      💬 {jugador.telefono}
+                    </a>
+                  : <div style={{ fontSize:12, color:'#4b5063' }}>Sin teléfono</div>
+                }
+              </>
+            )}
           </div>
 
           {/* Plan */}
           <div style={{ background:'#0a0c12', borderRadius:10, padding:12 }}>
-            <div style={{ fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:8 }}>Plan</div>
-            <div style={{ fontSize:13, color:'#a78bfa', fontWeight:700, marginBottom:4 }}>
-              {jugador.sesiones_limite === 16 ? '$40.000/mes — 16 sesiones' :
-               jugador.sesiones_limite === 12 ? '$30.000/mes — 12 sesiones' :
-               jugador.sesiones_limite === 8  ? '$25.000/mes — 8 sesiones' :
-               jugador.sesiones_limite === 4  ? '$15.000/mes — 4 sesiones' :
-               `${jugador.sesiones_limite} sesiones`}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+              <div style={{ fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Plan</div>
+              {puedeEditar && !editPlan && (
+                <button onClick={abrirEditPlan} style={{ background:'transparent', border:'1px solid #1e2030', borderRadius:6, padding:'2px 8px', fontSize:11, color:'#a78bfa', cursor:'pointer' }}>Editar</button>
+              )}
             </div>
-            <div style={{ fontSize:12, color:'#6c7280', marginBottom:6 }}>
-              Usadas: <strong style={{ color:'#c8cfe0' }}>{jugador.sesiones_usadas}/{jugador.sesiones_limite}</strong>
-            </div>
-            <div style={{ background:'#1e2030', borderRadius:4, height:6 }}>
-              <div style={{ width:`${Math.min((jugador.sesiones_usadas/jugador.sesiones_limite)*100,100)}%`, background: jugador.sesiones_usadas >= jugador.sesiones_limite ? '#f87171' : '#6c63ff', borderRadius:4, height:'100%', transition:'width 0.3s' }} />
-            </div>
-            {mensualidadActual && (
-              <div style={{ marginTop:8 }}>
-                <span style={{ background: mensualidadActual.estado==='pagado'?'#34d39922':mensualidadActual.estado==='atrasado'?'#f8717122':'#fbbf2422', color: mensualidadActual.estado==='pagado'?'#34d399':mensualidadActual.estado==='atrasado'?'#f87171':'#fbbf24', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                  {mensualidadActual.estado==='pagado'?'✅ Mes pagado':mensualidadActual.estado==='atrasado'?'🔴 Mes atrasado':'⏳ Mes pendiente'}
-                </span>
+            {editPlan ? (
+              <div>
+                <div style={{ marginBottom:8 }}>
+                  <label style={{ fontSize:11, color:'#6c7280', display:'block', marginBottom:3 }}>Tipo de plan</label>
+                  <div style={{ display:'flex', gap:0, borderRadius:6, overflow:'hidden', border:'1px solid #1e2030' }}>
+                    {(['mensual','semanal','libre'] as const).map(t => (
+                      <button key={t} onClick={() => setPlanFormState(f => ({ ...f, tipo_plan: t }))}
+                        style={{ flex:1, padding:'6px 0', background: planFormState.tipo_plan === t ? '#6c63ff' : '#14161f', color: planFormState.tipo_plan === t ? '#fff' : '#6c7280', border:'none', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                        {t === 'libre' ? 'Libre' : t.charAt(0).toUpperCase() + t.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {planFormState.tipo_plan !== 'libre' && (
+                  <div style={{ marginBottom:8 }}>
+                    <label style={{ fontSize:11, color:'#6c7280', display:'block', marginBottom:3 }}>Entrenamientos/semana</label>
+                    <input type="number" min={1} max={7}
+                      style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:6, padding:'6px 8px', color:'#e8e8f0', fontSize:12, outline:'none' }}
+                      value={planFormState.entrenamientos_por_semana}
+                      onChange={e => setPlanFormState(f => ({ ...f, entrenamientos_por_semana: e.target.value }))} />
+                  </div>
+                )}
+                <div style={{ marginBottom:8 }}>
+                  <label style={{ fontSize:11, color:'#6c7280', display:'block', marginBottom:3 }}>Mensualidad</label>
+                  <div style={{ display:'flex', gap:4, marginBottom:6, flexWrap:'wrap' }}>
+                    {PRESETS.map(p => (
+                      <button key={p.valor} onClick={() => setPlanFormState(f => ({ ...f, mensualidad: String(p.valor), entrenamientos_por_semana: String(p.ent) }))}
+                        style={{ padding:'3px 8px', borderRadius:12, border: parseInt(planFormState.mensualidad) === p.valor ? '1px solid #6c63ff' : '1px solid #1e2030', background: parseInt(planFormState.mensualidad) === p.valor ? '#6c63ff22' : 'transparent', color: parseInt(planFormState.mensualidad) === p.valor ? '#a78bfa' : '#6c7280', fontSize:10, fontWeight:600, cursor:'pointer' }}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="number" placeholder="Monto personalizado"
+                    style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:6, padding:'6px 8px', color:'#e8e8f0', fontSize:12, outline:'none' }}
+                    value={planFormState.mensualidad}
+                    onChange={e => setPlanFormState(f => ({ ...f, mensualidad: e.target.value }))} />
+                </div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={() => setEditPlan(false)} style={{ flex:1, padding:'5px 0', background:'transparent', border:'1px solid #1e2030', borderRadius:6, color:'#6c7280', fontSize:11, cursor:'pointer' }}>Cancelar</button>
+                  <button onClick={guardarPlan} disabled={guardandoDatos} style={{ flex:1, padding:'5px 0', background:'#6c63ff', border:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                    {guardandoDatos ? '...' : 'Guardar'}
+                  </button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div style={{ fontSize:13, color:'#a78bfa', fontWeight:700, marginBottom:4 }}>
+                  ${(jugador.mensualidad || 0).toLocaleString('es-CL')}/mes
+                  {jugador.tipo_plan === 'libre' ? ' — Libre acceso' : jugador.entrenamientos_por_semana ? ` — ${jugador.entrenamientos_por_semana} ent/sem` : ''}
+                </div>
+                <div style={{ fontSize:11, color:'#6c7280', marginBottom:6 }}>
+                  {jugador.tipo_plan ? jugador.tipo_plan.charAt(0).toUpperCase() + jugador.tipo_plan.slice(1) : 'Mensual'}
+                  {jugador.tipo_plan !== 'libre' && <> · Usadas: <strong style={{ color:'#c8cfe0' }}>{jugador.sesiones_usadas}/{jugador.sesiones_limite}</strong></>}
+                </div>
+                {jugador.tipo_plan !== 'libre' && (
+                  <div style={{ background:'#1e2030', borderRadius:4, height:6 }}>
+                    <div style={{ width:`${Math.min(((jugador.sesiones_usadas||0)/(jugador.sesiones_limite||1))*100,100)}%`, background: (jugador.sesiones_usadas||0) >= (jugador.sesiones_limite||1) ? '#f87171' : '#6c63ff', borderRadius:4, height:'100%', transition:'width 0.3s' }} />
+                  </div>
+                )}
+                {mensualidadActual && (
+                  <div style={{ marginTop:8 }}>
+                    <span style={{ background: mensualidadActual.estado==='pagado'?'#34d39922':mensualidadActual.estado==='atrasado'?'#f8717122':'#fbbf2422', color: mensualidadActual.estado==='pagado'?'#34d399':mensualidadActual.estado==='atrasado'?'#f87171':'#fbbf24', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                      {mensualidadActual.estado==='pagado'?'Mes pagado':mensualidadActual.estado==='atrasado'?'Mes atrasado':'Mes pendiente'}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
