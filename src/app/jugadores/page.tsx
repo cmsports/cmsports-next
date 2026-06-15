@@ -1,14 +1,11 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient()
 
 const badgeCategoria: Record<string, string> = {
   principiante: '#fbbf24',
@@ -26,7 +23,13 @@ export default function JugadoresPage() {
   const [clubId, setClubId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<any>(null)
-  const [form, setForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', sesiones_limite:'12' })
+  const [form, setForm] = useState({
+    nombre:'', rut:'', email:'', telefono:'',
+    categoria:'principiante',
+    tipo_plan:'mensual',
+    entrenamientos_por_semana:'3',
+    mensualidad:'30000'
+  })
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
   const [tabJug, setTabJug] = useState<'jugadores'|'ranking'>('jugadores')
@@ -63,13 +66,28 @@ export default function JugadoresPage() {
 
   function abrirNuevo() {
     setEditando(null)
-    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', sesiones_limite:'12' })
+    setForm({
+      nombre:'', rut:'', email:'', telefono:'',
+      categoria:'principiante',
+      tipo_plan:'mensual',
+      entrenamientos_por_semana:'3',
+      mensualidad:'30000'
+    })
     setModalOpen(true)
   }
 
   function abrirEditar(j: any) {
     setEditando(j)
-    setForm({ nombre:j.nombre||'', rut:j.rut||'', email:j.email||'', telefono:j.telefono||'', categoria:j.categoria||'principiante', sesiones_limite:String(j.sesiones_limite||12) })
+    setForm({
+      nombre:j.nombre||'',
+      rut:j.rut||'',
+      email:j.email||'',
+      telefono:j.telefono||'',
+      categoria:j.categoria||'principiante',
+      tipo_plan:j.tipo_plan||'mensual',
+      entrenamientos_por_semana:String(j.entrenamientos_por_semana||3),
+      mensualidad:String(j.mensualidad||30000)
+    })
     setModalOpen(true)
   }
 
@@ -78,14 +96,28 @@ export default function JugadoresPage() {
     if (!clubId) { mostrarToast('Error: no hay club activo'); return }
     setGuardando(true)
 
+    const esLibre = form.tipo_plan === 'libre'
+    const entSemana = esLibre ? null : (parseInt(form.entrenamientos_por_semana) || 3)
+    const mensualidad = parseInt(form.mensualidad) || 25000
+    // sesiones_limite se mantiene derivado del plan para que las vistas legacy
+    // ("X/Y sesiones" en perfil, lista y mensualidades viejas) sigan funcionando.
+    const sesionesLimite = esLibre ? 99 : (entSemana || 3) * 4
+
+    const planFields = {
+      categoria: form.categoria,
+      tipo_plan: form.tipo_plan,
+      entrenamientos_por_semana: entSemana,
+      mensualidad: mensualidad,
+      sesiones_limite: sesionesLimite
+    }
+
     if (editando) {
       const { error } = await supabase.from('jugadores').update({
         nombre: form.nombre.trim(),
         rut: form.rut || null,
         email: form.email || null,
         telefono: form.telefono || null,
-        categoria: form.categoria,
-        sesiones_limite: parseInt(form.sesiones_limite) || 12
+        ...planFields
       }).eq('id', editando.id)
       if (error) { mostrarToast('Error al editar: ' + error.message); setGuardando(false); return }
       mostrarToast('Jugador actualizado')
@@ -96,8 +128,7 @@ export default function JugadoresPage() {
         rut: form.rut || null,
         email: form.email || null,
         telefono: form.telefono || null,
-        categoria: form.categoria,
-        sesiones_limite: parseInt(form.sesiones_limite) || 12,
+        ...planFields,
         elo: 1200,
         sesiones_usadas: 0,
         estado: 'activo',
@@ -109,7 +140,13 @@ export default function JugadoresPage() {
 
     setGuardando(false)
     setModalOpen(false)
-    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', sesiones_limite:'12' })
+    setForm({
+      nombre:'', rut:'', email:'', telefono:'',
+      categoria:'principiante',
+      tipo_plan:'mensual',
+      entrenamientos_por_semana:'3',
+      mensualidad:'30000'
+    })
     await cargarJugadores()
   }
 
@@ -292,7 +329,6 @@ export default function JugadoresPage() {
               { label:'RUT', key:'rut', type:'text', placeholder:'12345678K' },
               { label:'Email', key:'email', type:'email', placeholder:'tu@email.com' },
               { label:'Teléfono', key:'telefono', type:'tel', placeholder:'+56 9 1234 5678' },
-              { label:'Sesiones por mes', key:'sesiones_limite', type:'number', placeholder:'12' },
             ].map(f => (
               <div key={f.key} style={{ marginBottom:14 }}>
                 <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>{f.label}</label>
@@ -304,13 +340,81 @@ export default function JugadoresPage() {
                 />
               </div>
             ))}
-            <div style={{ marginBottom:20 }}>
+
+            <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Categoría</label>
               <select
                 style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
                 value={form.categoria} onChange={e => setForm(prev => ({ ...prev, categoria: e.target.value }))}>
                 {categorias.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
+            </div>
+
+            {/* Plan */}
+            <div style={{ background:'#0a0c12', border:'1px solid #1e2030', borderRadius:10, padding:14, marginBottom:20 }}>
+              <div style={{ fontSize:11, color:'#a78bfa', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:10 }}>Plan del jugador</div>
+
+              {/* Tipo de plan */}
+              <div style={{ marginBottom:12 }}>
+                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Tipo de plan</label>
+                <div style={{ display:'flex', background:'#14161f', borderRadius:8, padding:3 }}>
+                  {[
+                    {key:'mensual', label:'Mensual'},
+                    {key:'semanal', label:'Semanal'},
+                    {key:'libre', label:'Libre acceso'}
+                  ].map(t => (
+                    <div key={t.key} onClick={() => setForm(prev => ({ ...prev, tipo_plan: t.key }))}
+                      style={{ flex:1, padding:'7px', textAlign:'center', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:500, background: form.tipo_plan===t.key ? '#1e1b4b':'transparent', color: form.tipo_plan===t.key ? '#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+                      {t.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Entrenamientos por semana — oculto en libre */}
+              {form.tipo_plan !== 'libre' && (
+                <div style={{ marginBottom:12 }}>
+                  <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Entrenamientos por semana</label>
+                  <input
+                    style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                    type="number" min="1" max="7" placeholder="3"
+                    value={form.entrenamientos_por_semana}
+                    onChange={e => setForm(prev => ({ ...prev, entrenamientos_por_semana: e.target.value }))}
+                  />
+                </div>
+              )}
+
+              {/* Mensualidad: presets + custom */}
+              <div>
+                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Mensualidad (CLP)</label>
+                <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap' }}>
+                  {[
+                    {monto:15000, ent:1, label:'$15.000'},
+                    {monto:25000, ent:2, label:'$25.000'},
+                    {monto:30000, ent:3, label:'$30.000'},
+                    {monto:40000, ent:4, label:'$40.000'}
+                  ].map(p => {
+                    const seleccionado = parseInt(form.mensualidad) === p.monto
+                    return (
+                      <button key={p.monto} type="button"
+                        onClick={() => setForm(prev => ({
+                          ...prev,
+                          mensualidad: String(p.monto),
+                          entrenamientos_por_semana: prev.tipo_plan === 'libre' ? prev.entrenamientos_por_semana : String(p.ent)
+                        }))}
+                        style={{ flex:'1 1 calc(50% - 3px)', padding:'8px 10px', background: seleccionado ? '#1e1b4b':'#14161f', border: `1px solid ${seleccionado ? '#a78bfa':'#1e2030'}`, borderRadius:8, color: seleccionado ? '#a78bfa':'#8890a4', fontSize:12, fontWeight:600, cursor:'pointer', transition:'all 0.15s' }}>
+                        {p.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <input
+                  style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                  type="number" placeholder="Monto personalizado"
+                  value={form.mensualidad}
+                  onChange={e => setForm(prev => ({ ...prev, mensualidad: e.target.value }))}
+                />
+              </div>
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>

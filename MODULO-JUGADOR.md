@@ -49,13 +49,14 @@ Cada sub-paso es una sesión. Al iniciar una sesión decir: **"Ejecuta el sub-pa
 - Lo que NO se tocó (queda para módulo Torneo): `torneos/[id]/page.tsx`, `reportes/page.tsx`, `lib/domain/elo.ts`, columnas/tablas BD (`elo`, `historial_elo`, `puntos_elo`).
 - `npx tsc --noEmit` ✅.
 
-### J3 — Form crear/editar jugador con plan  ⬜ Pendiente
-- En `jugadores/page.tsx`, modal:
-  - Agregar `mensualidad` (input numérico CLP).
-  - Agregar `tipo_plan` (select: mensual / semanal / libre).
-  - Reemplazar `sesiones_limite` por `entrenamientos_por_semana` (interpretado según tipo de plan).
-- Default al crear: mensual / 3 ent. semana / mensualidad sugerida (configurable global).
-- **Validación**: crear y editar jugador escribe los nuevos campos.
+### J3 — Form crear/editar jugador con plan  ✅ Hecho (2026-06-15)
+- `src/app/jugadores/page.tsx` — modal con sección "Plan del jugador":
+  - **Tipo de plan**: segmented control (Mensual / Semanal / Libre acceso).
+  - **Entrenamientos por semana**: input numérico (oculto cuando tipo = libre).
+  - **Mensualidad**: 4 chips preset ($15k / $25k / $30k / $40k, cada uno setea también ent./sem) + input "Monto personalizado".
+- `guardar()` escribe `tipo_plan`, `entrenamientos_por_semana`, `mensualidad` y mantiene `sesiones_limite` derivado (ent×4, o 99 si libre) para no romper vistas legacy.
+- Default al crear: mensual, 3 ent./sem, $30.000.
+- `npx tsc --noEmit` ✅.
 
 ### J4 — Modal de aprobación de solicitud  ⬜ Pendiente
 - En `dashboard/solicitudes/page.tsx` y `solicitudes/page.tsx`, el botón "Aprobar" abre un modal:
@@ -102,13 +103,15 @@ Resueltas el **2026-06-15**:
 
 ## Historial de sesiones
 
-### Sesión 2026-06-15 — Alcance inicial + J1 + J2
+### Sesión 2026-06-15 — Alcance inicial + J1 + J2 + J3
 - **Qué hice**:
   - Leí la Revisión 12, comparé contra `Plan de mejora.md`, diseñé este documento con 6 sub-pasos.
   - **J1**: creé y apliqué `supabase/migrations/004_plan_jugador.sql` (3 columnas nuevas + backfill + refactor de `generar_mensualidades`); tipos TS sincronizados; backfill verificado con SELECT.
-  - **J2**: renombré "ELO" → "Ranking" en 7 archivos de UI (jugadores, ranking, perfil, nav, torneos-externos); BD y módulo Torneo intactos. `tsc` ✅.
+  - **J2**: renombré "ELO" → "Ranking" en 7 archivos de UI; BD y módulo Torneo intactos.
+  - **J3**: agregué sección "Plan del jugador" al modal crear/editar (tipo, entrenamientos/sem, mensualidad con presets + manual). `guardar()` escribe los 3 campos nuevos y mantiene `sesiones_limite` derivado para no romper vistas legacy.
 - **Qué mejoré**:
-  - `jugadores` tiene plan personalizado por persona, sin romper el sistema viejo.
-  - Toda la UI orientada al jugador habla de "Ranking", no de "ELO".
-- **Dónde quedé**: J1 y J2 cerrados. Listo para arrancar J3 en la próxima sesión.
-- **Qué sigue**: **J3** — form crear/editar jugador con campos de plan (mensualidad con presets + manual, tipo_plan, entrenamientos_por_semana). Es el primer sub-paso donde se usan los campos nuevos de BD.
+  - `jugadores` tiene plan personalizado por persona, editable desde el form.
+  - UI habla de "Ranking" en todo el módulo.
+  - Admin ya puede crear un jugador eligiendo plan preset o monto custom.
+- **Dónde quedé**: J1, J2 y J3 cerrados. `tsc` limpio.
+- **Qué sigue**: **J4** — modal de aprobación de solicitud que pida plan + categoría al aceptar (en `dashboard/solicitudes/page.tsx` y `solicitudes/page.tsx`), reemplazando los valores hardcodeados (`categoria:'principiante', sesiones_limite:12`).
