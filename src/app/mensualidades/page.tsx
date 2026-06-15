@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
-import { registrarPago, revertirPago } from '@/app/actions/mensualidades'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -76,20 +75,29 @@ export default function MensualidadesPage() {
   async function marcarPagado(jugadorId: string, mensId: string) {
     const jugador = jugadores.find(j => j.id === jugadorId)
     const monto = parseInt(montoPago) || 25000
-    const result = await registrarPago({
-      clubId: clubId!,
-      jugadorId,
-      jugadorNombre: jugador?.nombre || '',
-      mensualidadId: mensId || null,
-      mes,
-      anio,
-      monto,
-      metodo: metodoPago,
-      registradoPor: perfil?.nombre || 'Admin',
-    })
-    if (result.error) { alert(result.error); return }
+    if (!mensId) {
+      const { data: nueva } = await supabase.from('mensualidades').insert({
+        club_id: clubId, jugador_id: jugadorId, mes, anio,
+        estado: 'pagado', fecha_pago: new Date().toISOString().slice(0,10), monto
+      }).select().single()
+      if (nueva) await registrarMovimiento(jugador, monto)
+    } else {
+      await supabase.from('mensualidades').update({
+        estado: 'pagado', fecha_pago: new Date().toISOString().slice(0,10), monto
+      }).eq('id', mensId)
+      await registrarMovimiento(jugador, monto)
+    }
     setModalPago(null)
     cargarMensualidades()
+  }
+
+  async function registrarMovimiento(jugador: any, monto: number) {
+    await supabase.from('movimientos').insert({
+      club_id: clubId, tipo: 'ingreso', categoria: 'mensualidad',
+      descripcion: `Mensualidad ${jugador?.nombre} — ${mesesN[mes-1]} ${anio}`,
+      monto, fecha: new Date().toISOString().slice(0,10),
+      registrado_por_nombre: perfil?.nombre || 'Admin'
+    })
   }
 
   async function marcarAtrasado(mensId: string) {
@@ -97,15 +105,8 @@ export default function MensualidadesPage() {
     cargarMensualidades()
   }
 
-  async function marcarPendiente(mensId: string, jugadorId: string) {
-    const result = await revertirPago({
-      clubId: clubId!,
-      mensualidadId: mensId,
-      jugadorId,
-      mes,
-      anio,
-    })
-    if (result.error) { alert(result.error); return }
+  async function marcarPendiente(mensId: string) {
+    await supabase.from('mensualidades').update({ estado: 'pendiente', fecha_pago: null, monto: null }).eq('id', mensId)
     cargarMensualidades()
   }
 
@@ -299,7 +300,7 @@ export default function MensualidadesPage() {
                           </button>
                         )}
                         {estado === 'pagado' && mens?.id && (
-                          <button onClick={() => marcarPendiente(mens.id, j.id)}
+                          <button onClick={() => marcarPendiente(mens.id)}
                             style={{ background:'#fbbf2422', color:'#fbbf24', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
                             Revertir
                           </button>
