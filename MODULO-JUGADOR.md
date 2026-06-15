@@ -58,14 +58,10 @@ Cada sub-paso es una sesión. Al iniciar una sesión decir: **"Ejecuta el sub-pa
 - Default al crear: mensual, 3 ent./sem, $30.000.
 - `npx tsc --noEmit` ✅.
 
-### J4 — Modal de aprobación de solicitud  ⬜ Pendiente
-- En `dashboard/solicitudes/page.tsx` y `solicitudes/page.tsx`, el botón "Aprobar" abre un modal:
-  - Categoría (principiante / intermedio / avanzado)
-  - Tipo de plan
-  - Entrenamientos por semana
-  - Mensualidad
-- Al confirmar crea el jugador con esos valores.
-- **Validación**: aprobar una solicitud nueva crea el jugador con plan personalizado, no con los valores hardcodeados.
+### J4 — Modal de aprobación + validación registro  ✅ Hecho (2026-06-15)
+- **Registro** (`registro/page.tsx`): validación de RUT (formato `12345678-9`, sin puntos, con guión) y teléfono (`+56975235780`). Hints visuales + borde rojo en tiempo real.
+- **Aprobación** (`dashboard/solicitudes/page.tsx` y `solicitudes/page.tsx`): botón "Aprobar" abre modal con categoría, tipo de plan (mensual/semanal/libre), entrenamientos/semana, mensualidad (4 presets + monto personalizado). Crea jugador con plan real, no hardcodeado.
+- **Fix adicional**: migración de 23 archivos de `@supabase/supabase-js` a `@/lib/supabase/client` (cliente SSR) para resolver bug de login (sesión en cookies vs localStorage).
 
 ### J5 — Edición inline del perfil (admin / entrenador)  ⬜ Pendiente
 - En `jugadores/[id]/page.tsx`:
@@ -114,4 +110,15 @@ Resueltas el **2026-06-15**:
   - UI habla de "Ranking" en todo el módulo.
   - Admin ya puede crear un jugador eligiendo plan preset o monto custom.
 - **Dónde quedé**: J1, J2 y J3 cerrados. `tsc` limpio.
-- **Qué sigue**: **J4** — modal de aprobación de solicitud que pida plan + categoría al aceptar (en `dashboard/solicitudes/page.tsx` y `solicitudes/page.tsx`), reemplazando los valores hardcodeados (`categoria:'principiante', sesiones_limite:12`).
+- **Qué sigue**: **J4** — modal de aprobación de solicitud que pida plan + categoría al aceptar.
+
+### Sesión 2026-06-15 (cont.) — Fix login + J4
+- **Qué hice**:
+  - **Fix login crítico**: todas las páginas usaban `createClient` de `@supabase/supabase-js` (localStorage) en vez del cliente SSR (cookies). Migré 23 archivos a `@/lib/supabase/client`. Probado en localhost.
+  - **J4**: validación en registro (RUT con guión, teléfono con +56) + modal de aprobación con plan personalizado (categoría, tipo plan, entrenamientos/sem, mensualidad presets + custom).
+- **Qué mejoré**:
+  - Login funciona correctamente (sesión compartida entre login y todas las páginas).
+  - Datos de registro vienen limpios (RUT y teléfono con formato correcto).
+  - Admin asigna plan real al aprobar solicitud, no valores hardcodeados.
+- **Dónde quedé**: J1-J4 cerrados. `tsc` limpio.
+- **Qué sigue**: **J5** — edición inline del perfil del jugador (contacto, plan, categoría) desde `jugadores/[id]/page.tsx`.
