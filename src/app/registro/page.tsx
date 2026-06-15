@@ -18,6 +18,10 @@ function RegistroForm() {
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+
+  const rutValido = /^\d{7,8}-[\dkK]$/.test(form.rut)
+  const telValido = form.telefono === '' || /^\+56\d{9}$/.test(form.telefono)
 
   useEffect(() => {
     async function verificar() {
@@ -32,7 +36,10 @@ function RegistroForm() {
   }, [clubId, codigo])
 
   async function enviar() {
+    setTouched({ nombre: true, rut: true, telefono: true })
     if (!form.nombre || !form.rut) { setError('Nombre y RUT son obligatorios'); return }
+    if (!rutValido) { setError('El RUT debe tener formato 12345678-9 (sin puntos, con guión)'); return }
+    if (form.telefono && !telValido) { setError('El teléfono debe tener formato +56912345678'); return }
     setEnviando(true)
     setError('')
     const { error: err } = await supabase.from('solicitudes_jugador').insert({
@@ -85,22 +92,54 @@ function RegistroForm() {
 
           {error && <div style={{ background:'#2d0a0a', border:'1px solid #f8717144', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#f87171', marginBottom:14 }}>{error}</div>}
 
-          {[
-            { label:'Nombre completo *', key:'nombre', placeholder:'Ej: Carlos Muñoz', type:'text' },
-            { label:'RUT *', key:'rut', placeholder:'12.345.678-9', type:'text' },
-            { label:'Email', key:'email', placeholder:'tu@email.com', type:'email' },
-            { label:'Teléfono', key:'telefono', placeholder:'+56 9 1234 5678', type:'tel' },
-          ].map(f => (
-            <div key={f.key} style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>{f.label}</label>
-              <input
-                style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
-                type={f.type} placeholder={f.placeholder}
-                value={(form as any)[f.key]}
-                onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
-              />
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Nombre completo *</label>
+            <input
+              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              type="text" placeholder="Ej: Carlos Muñoz"
+              value={form.nombre}
+              onChange={e => setForm(prev => ({ ...prev, nombre: e.target.value }))}
+              onBlur={() => setTouched(t => ({ ...t, nombre: true }))}
+            />
+          </div>
+
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>RUT *</label>
+            <input
+              style={{ width:'100%', background:'#0a0c12', border: touched.rut && !rutValido && form.rut ? '1px solid #f87171' : '1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              type="text" placeholder="21716788-4"
+              value={form.rut}
+              onChange={e => setForm(prev => ({ ...prev, rut: e.target.value }))}
+              onBlur={() => setTouched(t => ({ ...t, rut: true }))}
+            />
+            <div style={{ fontSize:11, color: touched.rut && !rutValido && form.rut ? '#f87171' : '#4b5063', marginTop:4 }}>
+              Sin puntos, con guión. Ej: 21716788-4
             </div>
-          ))}
+          </div>
+
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Email</label>
+            <input
+              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              type="email" placeholder="tu@email.com"
+              value={form.email}
+              onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
+            />
+          </div>
+
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Teléfono</label>
+            <input
+              style={{ width:'100%', background:'#0a0c12', border: touched.telefono && !telValido ? '1px solid #f87171' : '1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              type="tel" placeholder="+56975235780"
+              value={form.telefono}
+              onChange={e => setForm(prev => ({ ...prev, telefono: e.target.value }))}
+              onBlur={() => setTouched(t => ({ ...t, telefono: true }))}
+            />
+            <div style={{ fontSize:11, color: touched.telefono && !telValido ? '#f87171' : '#4b5063', marginTop:4 }}>
+              Con código país. Ej: +56975235780
+            </div>
+          </div>
 
           <button
             onClick={enviar}
