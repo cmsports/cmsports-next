@@ -92,6 +92,6 @@ export function montoPorPlan(sesionesLimite: number): number {
   return plan?.monto ?? CONFIG.MENSUALIDAD_BASE
 }
 
-export function formatCLP(monto: number): string {
-  return '$' + monto.toLocaleString('es-CL')
+export function formatCLP(monto: number | null | undefined): string {
+  return '$' + (monto ?? 0).toLocaleString('es-CL')
 }
