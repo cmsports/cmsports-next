@@ -1,7 +1,7 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 
 interface Notificacion {
   id: string
@@ -28,7 +28,7 @@ export default function CampanaNotificaciones({ perfil }: { perfil: any }) {
   }, [perfil])
 
   async function cargarNotificaciones() {
-    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+    const supabase = createClient()
     const notificaciones: Notificacion[] = []
     const rol = perfil?.rol
 

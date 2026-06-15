@@ -1,14 +1,11 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient()
 
 const medallas = ['🥇', '🥈', '🥉']
 const cols = ['#f59e0b', '#6c63ff', '#059669', '#0891b2', '#7c3aed']

@@ -1,14 +1,11 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+const supabase = createClient()
 
 const catLabel: Record<string, string> = {
   mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo',
@@ -482,7 +479,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     if (!clubId) return
     setGenerando(true)
     const { inicio, fin } = getRango()
-    const supabaseR = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+    const supabaseR = createClient()
     const [{ data: jugadores }, { data: movimientos }] = await Promise.all([
       supabaseR.from('jugadores').select('*').eq('club_id', clubId).neq('es_externo', true),
       supabaseR.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
