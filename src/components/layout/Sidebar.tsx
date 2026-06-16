@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, Trophy, BarChart3, Calendar, BookOpen,
@@ -70,9 +71,7 @@ export default function Sidebar({ perfil, onLogout }: { perfil: any; onLogout: (
       {/* Logo */}
       <div className="p-4 border-b border-[var(--border)]">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 bg-gradient-to-br from-[var(--purple)] to-[var(--purple-light)] rounded-[10px] flex items-center justify-center font-extrabold text-sm text-white">
-            CM
-          </div>
+          <Image src="/logo.png" alt="CmSports" width={36} height={36} />
           <div>
             <div className="text-[15px] font-bold text-[var(--text)]">CmSports</div>
             <div className="text-[11px] text-[var(--text-muted)]">Club Unión San Bernardo</div>
