@@ -97,11 +97,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
           ))}
         </nav>
         <div style={{ padding:'12px 16px', borderTop:'1px solid #1e2030' }}>
-          {(perfil?.rol === 'jugador' || perfil?.rol === 'profesor') && (
-            <div style={{ marginBottom:10 }}>
-              <CampanaNotificaciones perfil={perfil} placement="top" />
-            </div>
-          )}
+          <div style={{ marginBottom:10 }}>
+            <CampanaNotificaciones perfil={perfil} placement="top" />
+          </div>
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
             <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#6c63ff,#a78bfa)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white' }}>
               {perfil?.nombre?.split(' ').map((n:string)=>n[0]).join('').slice(0,2) || 'U'}
@@ -166,12 +164,10 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         </div>
       )}
 
-      {/* Campana flotante móvil — solo jugador y profesor */}
-      {(perfil?.rol === 'jugador' || perfil?.rol === 'profesor') && (
-        <div className="mobile-bell" style={{ position:'fixed', top:12, right:12, zIndex:30, display:'none' }}>
-          <CampanaNotificaciones perfil={perfil} />
-        </div>
-      )}
+      {/* Campana flotante móvil */}
+      <div className="mobile-bell" style={{ position:'fixed', top:12, right:12, zIndex:30, display:'none' }}>
+        <CampanaNotificaciones perfil={perfil} />
+      </div>
 
       <style>{`
         @media (max-width: 768px) {
