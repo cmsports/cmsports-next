@@ -136,14 +136,14 @@ export default function TorneosPage() {
   const esAdmin = perfil?.rol === 'admin'
   const puedeCrear = esAdmin || perfil?.rol === 'profesor'
 
-  const estadoConfig: Record<string, { color: string; bg: string }> = {
-    en_curso: { color: '#16a34a', bg: '#f0fdf4' },
-    finalizado: { color: '#64748b', bg: '#f8fafc' },
-    cancelado: { color: '#dc2626', bg: '#fef2f2' }
+  const estadoConfig: Record<string, { color: string; bg: string; emoji: string }> = {
+    en_curso: { color: '#16a34a', bg: '#f0fdf4', emoji: '🟢' },
+    finalizado: { color: '#64748b', bg: '#f8fafc', emoji: '✅' },
+    cancelado: { color: '#dc2626', bg: '#fef2f2', emoji: '❌' }
   }
   const faseLabel: Record<string, string> = {
-    inscripcion: 'Inscripción', grupos: 'Fase de grupos',
-    llaves: 'Playoffs', semis: 'Semifinal', final: 'Final', finalizado: 'Finalizado'
+    inscripcion: '📋 Inscripción', grupos: '👥 Fase de grupos',
+    llaves: '🥊 Playoffs', semis: '🏅 Semifinal', final: '🏆 Final', finalizado: '🎉 Finalizado'
   }
 
   if (loading) return (
@@ -161,7 +161,7 @@ export default function TorneosPage() {
             onClick={() => setModalOpen(true)}
             style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}
           >
-            + Nuevo torneo
+            🏆 Nuevo torneo
           </button>
         )}
       </div>
@@ -181,7 +181,7 @@ export default function TorneosPage() {
               </div>
               <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap', marginBottom:10 }}>
                 <span style={{ background: est.bg, color: est.color, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                  {t.estado}
+                  {est.emoji} {t.estado === 'en_curso' ? 'En curso' : t.estado === 'finalizado' ? 'Finalizado' : 'Cancelado'}
                 </span>
                 <span style={{ background:'#ede9fe', color:'#3730a3', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
                   {faseLabel[t.fase] || t.fase}
@@ -190,7 +190,7 @@ export default function TorneosPage() {
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                 <div style={{ display:'flex', gap:14, alignItems:'center' }}>
-                  <span style={{ fontSize:13, color: muted }}><strong style={{ color: text }}>{t.inscritos || 0}</strong> inscritos</span>
+                  <span style={{ fontSize:13, color: muted }}>👥 <strong style={{ color: text }}>{t.inscritos || 0}</strong> inscritos</span>
                   {t.cuota_inscripcion > 0 && (
                     <span style={{ fontSize:13, color: muted }}>Cuota: <strong style={{ color:'#16a34a' }}>${t.cuota_inscripcion?.toLocaleString('es-CL')}</strong></span>
                   )}

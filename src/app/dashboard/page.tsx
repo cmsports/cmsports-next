@@ -174,7 +174,7 @@ export default function DashboardPage() {
         <KpiCard
           icon={<Users size={18} color={C.sky} />}
           iconBg={C.skyL}
-          label="Jugadores activos"
+          label="👥 Jugadores activos"
           value={kpis.activos || 0}
           valueColor={C.text}
           tooltip={tooltip} tooltipId="activos" setTooltip={setTooltip}
@@ -185,7 +185,7 @@ export default function DashboardPage() {
         <KpiCard
           icon={<TrendingUp size={18} color={(kpis.utilidadPorAlumno || 0) >= 0 ? C.green : C.red} />}
           iconBg={(kpis.utilidadPorAlumno || 0) >= 0 ? C.greenL : C.redL}
-          label="Utilidad por alumno"
+          label="📈 Utilidad por alumno"
           value={fmt(kpis.utilidadPorAlumno || 0)}
           valueColor={(kpis.utilidadPorAlumno || 0) >= 0 ? C.green : C.red}
           tooltip={tooltip} tooltipId="utilidad" setTooltip={setTooltip}
@@ -223,7 +223,7 @@ export default function DashboardPage() {
           <div style={{ fontSize: 26, fontWeight: 600, color: tmColor, fontVariantNumeric: 'tabular-nums' }}>
             {kpis.tm || 0}%
           </div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Tasa de morosidad</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>⚠️ Tasa de morosidad</div>
           <div style={{ marginTop: 6, fontSize: 11, color: tmColor, fontWeight: 500 }}>
             {(kpis.morosos?.length || 0)} deudores · ver lista →
           </div>
@@ -233,7 +233,7 @@ export default function DashboardPage() {
         <KpiCard
           icon={<DollarSign size={18} color={C.green} />}
           iconBg={C.greenL}
-          label="Ingresos este mes"
+          label="💰 Ingresos este mes"
           value={fmt(kpis.ingresos || 0)}
           valueColor={C.green}
           tooltip={tooltip} tooltipId="ingresos" setTooltip={setTooltip}
@@ -248,7 +248,7 @@ export default function DashboardPage() {
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Link2 size={15} color={C.sky} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Link de inscripción</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔗 Link de inscripción</span>
           </div>
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
             Comparte este link para que los jugadores soliciten unirse al club
@@ -261,7 +261,7 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Mail size={15} color={C.orange} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Solicitudes pendientes</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📬 Solicitudes pendientes</span>
             </div>
             {solicitudes.length > 0 && (
               <span style={{ background: C.orangeL, color: C.orangeD, padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
@@ -299,7 +299,7 @@ export default function DashboardPage() {
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <Calendar size={15} color={C.sky} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Últimas asistencias</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📅 Últimas asistencias</span>
           </div>
           {ultimasAsist.length === 0
             ? <p style={{ fontSize: 13, color: C.hint, textAlign: 'center', padding: '20px 0' }}>Sin asistencias este mes</p>
@@ -319,7 +319,7 @@ export default function DashboardPage() {
               <div style={{ width: 32, height: 32, borderRadius: 8, background: coaOk ? C.greenL : C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Wallet size={16} color={coaOk ? C.green : C.red} />
               </div>
-              <span style={{ fontSize: 12, color: C.muted }}>COA — Costo por alumno</span>
+              <span style={{ fontSize: 12, color: C.muted }}>📊 COA — Costo por alumno</span>
             </div>
             <div style={{ fontSize: 22, fontWeight: 600, color: coaOk ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>
               {fmt(kpis.coa || 0)}
@@ -333,7 +333,7 @@ export default function DashboardPage() {
               <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <DollarSign size={16} color={C.red} />
               </div>
-              <span style={{ fontSize: 12, color: C.muted }}>Gastos este mes</span>
+              <span style={{ fontSize: 12, color: C.muted }}>💸 Gastos este mes</span>
             </div>
             <div style={{ fontSize: 22, fontWeight: 600, color: C.red, fontVariantNumeric: 'tabular-nums' }}>
               {fmt(kpis.gastos || 0)}

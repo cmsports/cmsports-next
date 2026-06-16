@@ -199,8 +199,8 @@ export default function AsistenciaPage() {
   return (
     <AppLayout perfil={perfil}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: text, marginBottom: 4 }}>Asistencia</h1>
-        <p style={{ fontSize: 13, color: muted }}>Hoy {hoy} · {asistencias.length} registros</p>
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: text, marginBottom: 4 }}>📋 Asistencia</h1>
+        <p style={{ fontSize: 13, color: muted }}>Hoy {hoy} · ✅ {asistencias.length} registros</p>
       </div>
 
       {mensaje && (
@@ -251,7 +251,7 @@ export default function AsistenciaPage() {
       {/* REGISTRO MANUAL (Admin/Profesor) */}
       {esAdminOProfesor && (
         <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 12 }}>Registro manual</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 12 }}>✏️ Registro manual</div>
           <input
             style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 10 }}
             placeholder="Buscar jugador para registrar..."
@@ -268,10 +268,10 @@ export default function AsistenciaPage() {
                       <div style={{ fontSize: 11, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}</div>
                     </div>
                     {ya
-                      ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✓ Registrado</span>
+                      ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>
                       : registrando === j.id
                         ? <span style={{ color: muted, fontSize: 12 }}>Registrando...</span>
-                        : <button style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✓ Registrar</button>
+                        : <button style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Registrar</button>
                     }
                   </div>
                 )

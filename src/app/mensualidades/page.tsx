@@ -185,16 +185,16 @@ export default function MensualidadesPage() {
           <span style={{ fontSize:16, fontWeight:600, color: text, minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
           <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
         </div>
-        <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>Exportar Excel</button>
+        <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📊 Exportar Excel</button>
       </div>
 
       {/* KPIs */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
         {[
-          { label:'Pagados', value:pagados, color:'#16a34a', bg:'#f0fdf4' },
-          { label:'Pendientes', value:pendientes, color:'#d97706', bg:'#fffbeb' },
-          { label:'Atrasados', value:atrasados, color:'#dc2626', bg:'#fef2f2' },
-          { label:'Recaudado', value:fmt(totalRecaudado), color:'#3730a3', bg:'#ede9fe' },
+          { label:'✅ Pagados', value:pagados, color:'#16a34a', bg:'#f0fdf4' },
+          { label:'⏳ Pendientes', value:pendientes, color:'#d97706', bg:'#fffbeb' },
+          { label:'⚠️ Atrasados', value:atrasados, color:'#dc2626', bg:'#fef2f2' },
+          { label:'💰 Recaudado', value:fmt(totalRecaudado), color:'#3730a3', bg:'#ede9fe' },
         ].map(s => (
           <div key={s.label} style={{ background: s.bg, border:`1px solid ${s.color}33`, borderRadius:14, padding:16, boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
             <div style={{ fontSize:22, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
@@ -211,7 +211,7 @@ export default function MensualidadesPage() {
         {(['todos','pagado','pendiente','atrasado'] as const).map(e => (
           <button key={e} onClick={() => setFiltroEstado(e)}
             style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #e2e8f0', background: filtroEstado===e?'#ede9fe':'#ffffff', color: filtroEstado===e?'#3730a3': muted, fontSize:12, cursor:'pointer', textTransform:'capitalize', boxShadow: filtroEstado===e ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
-            {e === 'todos' ? 'Todos' : e === 'pagado' ? 'Pagados' : e === 'pendiente' ? 'Pendientes' : 'Atrasados'}
+            {e === 'todos' ? '🔍 Todos' : e === 'pagado' ? '✅ Pagados' : e === 'pendiente' ? '⏳ Pendientes' : '⚠️ Atrasados'}
           </button>
         ))}
       </div>
@@ -245,7 +245,7 @@ export default function MensualidadesPage() {
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{j.sesiones_limite} ses.</td>
                     <td style={{ padding:'12px 16px' }}>
                       <span style={{ background: colBg, color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                        {estado === 'pagado' ? 'Pagado' : estado === 'atrasado' ? 'Atrasado' : 'Pendiente'}
+                        {estado === 'pagado' ? '✅ Pagado' : estado === 'atrasado' ? '⚠️ Atrasado' : '⏳ Pendiente'}
                       </span>
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{mens?.fecha_pago || '—'}</td>
@@ -257,19 +257,19 @@ export default function MensualidadesPage() {
                         {estado !== 'pagado' && (
                           <button onClick={() => { setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre }); setMontoPago(String(j.sesiones_limite === 16 ? 40000 : j.sesiones_limite === 12 ? 30000 : j.sesiones_limite === 8 ? 25000 : 15000)) }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
-                            Marcar pagado
+                            ✅ Marcar pagado
                           </button>
                         )}
                         {estado === 'pendiente' && mens?.id && (
                           <button onClick={() => marcarAtrasado(mens.id)}
                             style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
-                            Atrasar
+                            ⚠️ Atrasar
                           </button>
                         )}
                         {estado === 'pagado' && mens?.id && (
                           <button onClick={() => marcarPendiente(mens.id)}
                             style={{ background:'#fffbeb', color:'#d97706', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
-                            Revertir
+                            ↩️ Revertir
                           </button>
                         )}
                       </div>
@@ -291,7 +291,7 @@ export default function MensualidadesPage() {
       {modalPago && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:360, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
-            <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:6 }}>Confirmar pago</div>
+            <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:6 }}>💳 Confirmar pago</div>
             <div style={{ fontSize:13, color: muted, marginBottom:20 }}>{modalPago.nombre}</div>
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Monto (CLP)</label>
