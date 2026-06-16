@@ -59,44 +59,74 @@ export default function DashboardPage() {
   }, [])
 
   async function cargarDatos(cid: string) {
-    const { data, error } = await supabase.rpc('dashboard_kpis', { p_club_id: cid })
-    if (error || !data) return
+    const { data: rpc, error: rpcError } = await supabase.rpc('dashboard_kpis', { p_club_id: cid })
 
-    const activos    = data.jugadores_activos  || 0
-    const ingresos   = data.ingresos           || 0
-    const gastos     = data.gastos             || 0
-    const ingresosPrev = data.ingresos_anterior || 0
-    const gastosPrev   = data.gastos_anterior  || 0
+    if (!rpcError && rpc) {
+      const activos      = rpc.jugadores_activos   || 0
+      const ingresos     = rpc.ingresos            || 0
+      const gastos       = rpc.gastos              || 0
+      const ingresosPrev = rpc.ingresos_anterior   || 0
+      const gastosPrev   = rpc.gastos_anterior     || 0
 
-    const utilidadPorAlumno     = activos > 0 ? Math.round((ingresos - gastos)       / activos) : 0
-    const ingresoPorAlumno      = activos > 0 ? Math.round(ingresos                  / activos) : 0
-    const costoPorAlumno        = activos > 0 ? Math.round(gastos                    / activos) : 0
-    const utilidadPrevPorAlumno = activos > 0 ? Math.round((ingresosPrev - gastosPrev) / activos) : 0
-    const variacionUtilidad     = utilidadPrevPorAlumno !== 0
+      const utilidadPorAlumno     = activos > 0 ? Math.round((ingresos - gastos)         / activos) : 0
+      const ingresoPorAlumno      = activos > 0 ? Math.round(ingresos                    / activos) : 0
+      const costoPorAlumno        = activos > 0 ? Math.round(gastos                      / activos) : 0
+      const utilidadPrevPorAlumno = activos > 0 ? Math.round((ingresosPrev - gastosPrev) / activos) : 0
+      const variacionUtilidad     = utilidadPrevPorAlumno !== 0
+        ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
+        : null
+
+      setKpis({ activos, tm: rpc.tasa_morosidad || 0, coa: rpc.coa || 0, ingresos, gastos, morosos: rpc.morosos_lista || [], mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
+      setSolicitudes(rpc.solicitudes_lista || [])
+      setUltimasAsist((rpc.ultimas_asistencias || []).map((a: any) => ({ id: a.id, fecha: a.fecha, jugadores: { nombre: a.jugador_nombre } })))
+      return
+    }
+
+    // Fallback: queries directos si el RPC no está disponible
+    const mesActual     = new Date().getMonth() + 1
+    const anioActual    = new Date().getFullYear()
+    const mesInicio     = `${anioActual}-${String(mesActual).padStart(2,'0')}-01`
+    const mesPrev       = mesActual === 1 ? 12 : mesActual - 1
+    const anioPrev      = mesActual === 1 ? anioActual - 1 : anioActual
+    const mesInicioPrev = `${anioPrev}-${String(mesPrev).padStart(2,'0')}-01`
+
+    const [
+      { data: jugsData },
+      { data: mensualidades },
+      { data: movimientos },
+      { data: solicitudesData },
+      { data: movimientosPrev },
+      { data: asistMes },
+    ] = await Promise.all([
+      supabase.from('jugadores').select('*').eq('club_id', cid).neq('es_externo', true),
+      supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
+      supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicio),
+      supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).eq('estado', 'pendiente'),
+      supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicioPrev).lt('fecha', mesInicio),
+      supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).gte('fecha', mesInicio).order('fecha', { ascending: false }).limit(5),
+    ])
+
+    const activos      = (jugsData || []).filter(j => j.estado === 'activo')
+    const morosos      = (mensualidades || []).filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
+    const gastos       = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
+    const ingresos     = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
+    const gastosPrev   = (movimientosPrev || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
+    const ingresosPrev = (movimientosPrev || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
+
+    const coa                = activos.length > 0 ? Math.round(gastos / activos.length) : 0
+    const tm                 = activos.length > 0 ? Math.round((morosos.length / activos.length) * 100) : 0
+    const utilidadPorAlumno  = activos.length > 0 ? Math.round((ingresos - gastos) / activos.length) : 0
+    const ingresoPorAlumno   = activos.length > 0 ? Math.round(ingresos / activos.length) : 0
+    const costoPorAlumno     = activos.length > 0 ? Math.round(gastos / activos.length) : 0
+    const utilidadPrevPorAlumno = activos.length > 0 ? Math.round((ingresosPrev - gastosPrev) / activos.length) : 0
+    const variacionUtilidad  = utilidadPrevPorAlumno !== 0
       ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
       : null
 
-    setKpis({
-      activos,
-      tm:              data.tasa_morosidad || 0,
-      coa:             data.coa            || 0,
-      ingresos,
-      gastos,
-      morosos:         data.morosos_lista  || [],
-      mensualidadBase: 25000,
-      utilidadPorAlumno,
-      ingresoPorAlumno,
-      costoPorAlumno,
-      variacionUtilidad,
-    })
-    setSolicitudes(data.solicitudes_lista || [])
-    setUltimasAsist(
-      (data.ultimas_asistencias || []).map((a: any) => ({
-        id:       a.id,
-        fecha:    a.fecha,
-        jugadores: { nombre: a.jugador_nombre },
-      }))
-    )
+    const morosasConNombre = morosos.map(m => ({ ...m, nombre: activos.find(j => j.id === m.jugador_id)?.nombre || '—', telefono: activos.find(j => j.id === m.jugador_id)?.telefono || '' }))
+    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos: morosasConNombre, mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
+    setSolicitudes(solicitudesData || [])
+    setUltimasAsist(asistMes || [])
   }
 
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
