@@ -38,7 +38,7 @@ export default function LoginPage() {
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
       <div style={{ width:'100%', maxWidth:400, padding:24 }}>
         <div style={{ textAlign:'center', marginBottom:32 }}>
-          <div style={{ width:64, height:64, background:'linear-gradient(135deg,#6c63ff,#a78bfa)', borderRadius:18, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:22, color:'white', margin:'0 auto 16px' }}>CM</div>
+          <img src="/logo.png" alt="CmSports" style={{ width:64, height:64, objectFit:'contain', margin:'0 auto 16px', display:'block' }} />
           <div style={{ fontSize:28, fontWeight:800, color:'#fff' }}>CmSports</div>
           <div style={{ fontSize:13, color:'#6c7280', marginTop:6 }}>Club Unión San Bernardo</div>
         </div>
