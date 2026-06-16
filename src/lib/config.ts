@@ -17,11 +17,13 @@ export const CONFIG = {
   TORNEO_MIN_JUGADORES: 4,
   TORNEO_JUGADORES_POR_GRUPO: 3,
 
-  FASES_ORDEN: ['16vos', '8vos', 'cuartos', 'semis', 'final'] as const,
+  FASES_ORDEN: ['avance', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'final'] as const,
 
   FASE_LABELS: {
     inscripcion: 'Inscripcion',
     grupos: 'Fase de grupos',
+    avance: 'Llave de avance',
+    '32vos': '32vos de final',
     '16vos': '16vos de final',
     '8vos': '8vos de final',
     cuartos: 'Cuartos de final',

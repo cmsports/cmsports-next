@@ -141,7 +141,8 @@ export function determinarFaseInicial(tamanoBracket: number): FaseOrden {
   if (tamanoBracket <= 4) return 'semis'
   if (tamanoBracket <= 8) return 'cuartos'
   if (tamanoBracket <= 16) return '8vos'
-  return '16vos'
+  if (tamanoBracket <= 32) return '16vos'
+  return '32vos'
 }
 
 export function siguienteFase(faseActual: FaseOrden): FaseOrden | null {
@@ -189,6 +190,43 @@ export function generarBracketEspejo(
       fase: faseInicial,
       orden: mid + i,
     })
+  }
+
+  return partidos
+}
+
+export function generarBracketConAvance(
+  primeros: JugadorTorneo[],
+  segundos: JugadorTorneo[],
+): PartidoGenerado[] {
+  const todos = [...primeros, ...segundos].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
+  const n = todos.length
+  if (n < 2) return []
+
+  const potencia2 = calcularTamanoBracket(n)
+  const numByes = potencia2 - n
+
+  // Para brackets pequeños (≤32) o sin byes, usar lógica con byes inline
+  if (potencia2 <= 32 || numByes === 0) {
+    return generarBracketEspejo(primeros, segundos)
+  }
+
+  // Avance: top numByes (mejor ELO) reciben bye, el resto juega
+  const conBye = todos.slice(0, numByes)
+  const sinBye = todos.slice(numByes)
+  const mid = Math.floor(sinBye.length / 2)
+  const partidos: PartidoGenerado[] = []
+
+  for (let i = 0; i < mid; i++) {
+    const jugA = sinBye[i]
+    const jugB = sinBye[sinBye.length - 1 - i]
+    if (jugA && jugB && jugA.id !== jugB.id) {
+      partidos.push({ jugadorA: jugA.id, jugadorB: jugB.id, fase: 'avance', orden: i })
+    }
+  }
+
+  for (let i = 0; i < conBye.length; i++) {
+    partidos.push({ jugadorA: conBye[i].id, jugadorB: null, ganador: conBye[i].id, fase: 'avance', orden: mid + i })
   }
 
   return partidos

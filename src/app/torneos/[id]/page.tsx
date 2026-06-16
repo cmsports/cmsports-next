@@ -1,11 +1,12 @@
 ﻿'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import {
   marcarGanadorPartido,
+  corregirResultadoGrupos,
   cerrarInscripcionYGenerarGrupos,
   generarPlayoffs as generarPlayoffsAction,
   avanzarSiguienteFase as avanzarSiguienteFaseAction,
@@ -14,6 +15,8 @@ import {
   inscribirJugadorTardio,
   actualizarEstadoPago,
   limpiarGruposHuerfanos,
+  volverAGrupos as volverAGruposAction,
+  corregirResultadoPlayoff,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
@@ -46,6 +49,8 @@ export default function TorneoDetallePage() {
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [pagosPorJugador, setPagosPorJugador] = useState<Record<string, 'pagado'|'pendiente'>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
+  const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
+  const [partidoPlayoffEditando, setPartidoPlayoffEditando] = useState<string|null>(null)
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -265,6 +270,21 @@ export default function TorneoDetallePage() {
     await cargarTorneo()
   }
 
+  async function corregirPlayoff(partidoId: string, nuevoGanadorId: string) {
+    const res = await corregirResultadoPlayoff({ partidoId, nuevoGanadorId })
+    if (res.error) { alert(res.error); return }
+    setPartidoPlayoffEditando(null)
+    await cargarTorneo()
+  }
+
+  async function volverAGrupos() {
+    if (!confirm('⚠️ ¿Volver a la fase de grupos?\n\nSe borrarán todos los partidos de playoffs. Los resultados de grupos se conservan.')) return
+    const res = await volverAGruposAction({ torneoId })
+    if (res.error) { alert(res.error); return }
+    setTabActiva('grupos')
+    await cargarTorneo()
+  }
+
   async function finalizarTorneo() {
     if (!confirm('¿Finalizar el torneo?')) return
     const res = await finalizarTorneoAction({ torneoId })
@@ -478,7 +498,36 @@ export default function TorneoDetallePage() {
                             <button onClick={() => marcarGanador(p.id, p.jugador_b)} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>✓ B</button>
                           </div>
                         )}
-                        {p.ganador && <span style={{ color:'#16a34a', fontSize:10 }}>✓</span>}
+                        {p.ganador && partidoEditando !== p.id && (
+                          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                            <span style={{ color:'#16a34a', fontSize:10 }}>✓</span>
+                            {esAdmin && faseActual === 'grupos' && (
+                              <button onClick={() => setPartidoEditando(p.id)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'2px 4px' }} title="Corregir resultado">✏️</button>
+                            )}
+                          </div>
+                        )}
+                        {p.ganador && partidoEditando === p.id && (
+                          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                            <span style={{ fontSize:10, color:'#94a3b8' }}>¿Quién ganó?</span>
+                            <button onClick={async () => {
+                              const res = await corregirResultadoGrupos({ partidoId: p.id, nuevoGanadorId: p.jugador_a })
+                              if (res.error) { alert(res.error); return }
+                              setPartidoEditando(null)
+                              await cargarTorneo()
+                            }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
+                              {jugA?.jugador?.nombre?.split(' ')[0] || 'A'}
+                            </button>
+                            <button onClick={async () => {
+                              const res = await corregirResultadoGrupos({ partidoId: p.id, nuevoGanadorId: p.jugador_b })
+                              if (res.error) { alert(res.error); return }
+                              setPartidoEditando(null)
+                              await cargarTorneo()
+                            }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
+                              {jugB?.jugador?.nombre?.split(' ')[0] || 'B'}
+                            </button>
+                            <button onClick={() => setPartidoEditando(null)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:12, cursor:'pointer' }}>✕</button>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -492,51 +541,134 @@ export default function TorneoDetallePage() {
       {/* PLAYOFFS BRACKET */}
       {esPlayoffs && tabActiva === 'bracket' && (
         <div>
-          <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#3730a3', marginBottom:16 }}>
-            💡 Haz clic en el nombre del ganador para registrar el resultado
-          </div>
-          <div style={{ overflowX:'auto', paddingBottom:12 }}>
-            <div style={{ display:'flex', gap:20, minWidth:'max-content' }}>
-              {fasesOrden.slice(0, faseActual === 'finalizado' ? fasesOrden.length : fasesOrden.indexOf(faseActual)+1).map(fase => {
-                const ps = partidos.filter(p => p.fase === fase)
-                if (!ps.length) return null
-                return (
-                  <div key={fase} style={{ minWidth:180 }}>
-                    <div style={{ fontSize:11, color: muted, textTransform:'uppercase', letterSpacing:'1px', textAlign:'center', marginBottom:10, padding:'4px 8px', background:'#f4f7fa', borderRadius:6 }}>
-                      {faseLabel[fase]}
-                    </div>
-                    {ps.map((p, i) => {
-                      const isBye = p.jugador_b === null
-                      return (
-                        <div key={p.id} style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, overflow:'hidden', marginBottom:8, boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
-                          <div onClick={() => esAdmin && !p.ganador && !isBye && marcarGanador(p.id, p.jugador_a)}
-                            style={{ padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #e2e8f0', cursor: esAdmin&&!p.ganador&&!isBye?'pointer':'default', background: p.ganador===p.jugador_a?'#f0fdf4':'transparent' }}>
-                            <span style={{ fontSize:12, color: p.ganador===p.jugador_a?'#16a34a': text }}>
-                              <span style={{ fontSize:9, background:'#ede9fe', color:'#3730a3', padding:'1px 4px', borderRadius:3, marginRight:4 }}>{i*2+1}</span>
-                              {(p as any).ja?.nombre||'TBD'}
-                            </span>
-                            {p.ganador===p.jugador_a && <span style={{ color:'#16a34a', fontSize:12 }}>✓</span>}
-                          </div>
-                          {isBye ? (
-                            <div style={{ padding:'10px 12px', fontSize:11, color: hint, fontStyle:'italic' }}>BYE — pasa directo</div>
-                          ) : (
-                            <div onClick={() => esAdmin && !p.ganador && marcarGanador(p.id, p.jugador_b)}
-                              style={{ padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor: esAdmin&&!p.ganador?'pointer':'default', background: p.ganador===p.jugador_b?'#f0fdf4':'transparent' }}>
-                              <span style={{ fontSize:12, color: p.ganador===p.jugador_b?'#16a34a': text }}>
-                                <span style={{ fontSize:9, background:'#ede9fe', color:'#3730a3', padding:'1px 4px', borderRadius:3, marginRight:4 }}>{i*2+2}</span>
-                                {(p as any).jb?.nombre||'TBD'}
-                              </span>
-                              {p.ganador===p.jugador_b && <span style={{ color:'#16a34a', fontSize:12 }}>✓</span>}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })}
+          <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16, flexWrap:'wrap' }}>
+            <div style={{ flex:1, background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#3730a3' }}>
+              💡 Haz clic en el nombre del ganador para registrar el resultado
             </div>
+            {esAdmin && faseActual !== 'finalizado' && (
+              <button onClick={volverAGrupos} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
+                ⚠️ Volver a grupos
+              </button>
+            )}
           </div>
+          {/* SVG Bracket */}
+          {(() => {
+            const CARD_H = 80
+            const SLOT_H = 96
+            const COL_W = 190
+            const CONN_W = 22
+
+            const fasesVis = fasesOrden
+              .slice(0, faseActual === 'finalizado' ? fasesOrden.length : fasesOrden.indexOf(faseActual) + 1)
+              .filter(f => partidos.some(p => p.fase === f))
+
+            if (!fasesVis.length) return null
+
+            const byFase: Record<string, any[]> = {}
+            for (const f of fasesVis) {
+              byFase[f] = partidos.filter(p => p.fase === f).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+            }
+
+            const N0 = byFase[fasesVis[0]].length
+            const totalH = N0 * SLOT_H
+            const cy = (j: number, N: number) => ((j + 0.5) / N) * totalH
+
+            return (
+              <div style={{ overflowX: 'auto', paddingBottom: 16, paddingTop: 44 }}>
+                <div style={{ display: 'flex', minWidth: 'max-content' }}>
+                  {fasesVis.flatMap((fase, pi) => {
+                    const ps = byFase[fase]
+                    const N = ps.length
+                    const isLast = pi === fasesVis.length - 1
+
+                    const col = (
+                      <div key={fase} style={{ width: COL_W, position: 'relative', height: totalH }}>
+                        <div style={{ position: 'absolute', top: -36, left: 0, right: 0, fontSize: 10, color: muted, textTransform: 'uppercase', letterSpacing: '1px', textAlign: 'center', background: '#f4f7fa', padding: '3px 6px', borderRadius: 5 }}>
+                          {faseLabel[fase]}
+                        </div>
+                        {ps.map((p, i) => {
+                          const top = cy(i, N) - CARD_H / 2
+                          const isBye = p.jugador_b === null
+                          const editandoEste = partidoPlayoffEditando === p.id
+                          const showEdit = !!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado'
+                          const rowH = showEdit ? `${Math.floor((CARD_H - 20) / 2)}px` : '50%'
+
+                          return (
+                            <div key={p.id} style={{ position: 'absolute', left: 0, right: 0, top, height: CARD_H, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,0.07)' }}>
+                              {editandoEste ? (
+                                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, padding: '8px 10px', background: '#fafafa' }}>
+                                  <span style={{ fontSize: 10, color: '#94a3b8', textAlign: 'center' }}>¿Quién ganó?</span>
+                                  <div style={{ display: 'flex', gap: 5 }}>
+                                    <button onClick={() => corregirPlayoff(p.id, p.jugador_a)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 5, padding: '5px 2px', fontSize: 11, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {(p as any).ja?.nombre?.split(' ')[0] || 'A'}
+                                    </button>
+                                    <button onClick={() => corregirPlayoff(p.id, p.jugador_b)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 5, padding: '5px 2px', fontSize: 11, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {(p as any).jb?.nombre?.split(' ')[0] || 'B'}
+                                    </button>
+                                    <button onClick={() => setPartidoPlayoffEditando(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 14, cursor: 'pointer', padding: '0 4px' }}>✕</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div onClick={() => esAdmin && !p.ganador && !isBye && marcarGanador(p.id, p.jugador_a)}
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye ? 'pointer' : 'default', background: p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent' }}>
+                                    <span style={{ fontSize: 12, color: p.ganador === p.jugador_a ? '#16a34a' : text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                      <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
+                                      {(p as any).ja?.nombre || 'TBD'}
+                                    </span>
+                                    {p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
+                                  </div>
+                                  {isBye ? (
+                                    <div style={{ height: rowH, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 11, color: hint, fontStyle: 'italic' }}>BYE</div>
+                                  ) : (
+                                    <div onClick={() => esAdmin && !p.ganador && marcarGanador(p.id, p.jugador_b)}
+                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador ? 'pointer' : 'default', background: p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent' }}>
+                                      <span style={{ fontSize: 12, color: p.ganador === p.jugador_b ? '#16a34a' : text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                        <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
+                                        {(p as any).jb?.nombre || 'TBD'}
+                                      </span>
+                                      {p.ganador === p.jugador_b && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
+                                    </div>
+                                  )}
+                                  {showEdit && (
+                                    <div style={{ height: 20, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 6px', borderTop: '1px solid #f1f5f9' }}>
+                                      <button onClick={() => setPartidoPlayoffEditando(p.id)} style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: 10, cursor: 'pointer', padding: '0 2px' }} title="Corregir resultado">✏️</button>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+
+                    if (isLast) return [col]
+
+                    const nextFase = fasesVis[pi + 1]
+                    const N2 = byFase[nextFase].length
+                    const connector = (
+                      <svg key={`conn-${pi}`} width={CONN_W} height={totalH} style={{ flexShrink: 0, display: 'block' }}>
+                        {Array.from({ length: N2 }, (_, j) => {
+                          const a = Math.round(j * N / N2)
+                          const b = Math.round((j + 1) * N / N2) - 1
+                          const y1 = cy(a, N)
+                          const y2 = cy(b, N)
+                          const ym = cy(j, N2)
+                          const mx = CONN_W / 2
+                          return a === b
+                            ? <path key={j} d={`M 0,${y1} H ${CONN_W}`} stroke="#c4b5fd" strokeWidth={1.5} fill="none" />
+                            : <path key={j} d={`M 0,${y1} H ${mx} V ${y2} M 0,${y2} H ${mx} M ${mx},${ym} H ${CONN_W}`} stroke="#c4b5fd" strokeWidth={1.5} fill="none" />
+                        })}
+                      </svg>
+                    )
+
+                    return [col, connector]
+                  })}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Campeón */}
           {faseActual === 'finalizado' && (() => {
