@@ -20,6 +20,7 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
 
   const hoy = new Date().toISOString().slice(0,10)
   const en7dias = new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0,10)
+  const en14dias = new Date(Date.now() + 14*24*60*60*1000).toISOString().slice(0,10)
   const hace3dias = new Date(Date.now() - 3*24*60*60*1000).toISOString().slice(0,10)
 
   useEffect(() => {
@@ -64,28 +65,47 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         })
       }
 
-      // 2. Clases próximas esta semana
-      const { data: clases } = await supabase.from('clases')
-        .select('*,profesores(nombre)').eq('club_id', perfil.club_id)
-        .eq('publicada', true).gte('fecha', hoy).lte('fecha', en7dias)
-        .order('fecha').limit(3)
+      // 2. Feedback del trimestre actual
+      const trimestreActual = `Q${Math.ceil((new Date().getMonth()+1)/3)}-${new Date().getFullYear()}`
+      const { data: evaluacion } = await supabase.from('evaluaciones_trimestrales')
+        .select('*').eq('jugador_id', perfil.jugador_id).eq('periodo_trimestre', trimestreActual).maybeSingle()
 
-      if (clases?.length) {
-        clases.forEach((c: any) => {
+      if (evaluacion?.feedback_profesor) {
+        const texto = evaluacion.feedback_profesor
+        notificaciones.push({
+          id: `feedback-${trimestreActual}`,
+          tipo: 'aviso',
+          titulo: '📋 Tienes feedback nuevo',
+          mensaje: texto.length > 90 ? texto.slice(0, 90) + '…' : texto,
+          fecha: hoy,
+          leida: false,
+          color: '#a78bfa',
+          icono: '📋'
+        })
+      }
+
+      // 3. Eventos próximos del club
+      const { data: eventosProximos } = await supabase.from('eventos')
+        .select('*').eq('club_id', perfil.club_id)
+        .gte('fecha_inicio', hoy).lte('fecha_inicio', en14dias)
+        .order('fecha_inicio').limit(4)
+
+      if (eventosProximos?.length) {
+        eventosProximos.forEach((ev: any) => {
           notificaciones.push({
-            id: `clase-${c.id}`,
-            tipo: 'clase',
-            titulo: '📚 Clase próxima',
-            mensaje: `${c.contenido} — ${new Date(c.fecha).toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'short' })} ${c.hora_inicio?.slice(0,5)} · ${(c as any).profesores?.nombre || ''}`,
-            fecha: c.fecha,
+            id: `evento-${ev.id}`,
+            tipo: 'aviso',
+            titulo: `📅 ${ev.titulo}`,
+            mensaje: `${ev.descripcion ? ev.descripcion + ' · ' : ''}${new Date(ev.fecha_inicio).toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'short' })}${ev.hora_inicio ? ' ' + ev.hora_inicio.slice(0,5) : ''}`,
+            fecha: ev.fecha_inicio,
             leida: false,
-            color: '#60a5fa',
-            icono: '📚'
+            color: '#34d399',
+            icono: '📅'
           })
         })
       }
 
-      // 3. Torneos próximos
+      // 4. Torneos próximos
       const { data: torneos } = await supabase.from('torneos')
         .select('*').eq('club_id', perfil.club_id)
         .in('estado', ['programado','en_curso']).gte('fecha_inicio', hoy).limit(2)
