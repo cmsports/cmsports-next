@@ -72,9 +72,11 @@ export default function FinanzasPage() {
     const ultimoDia = new Date(anio, mes, 0).getDate()
     const inicio = `${anio}-${mesStr}-01`
     const fin = `${anio}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`
-    const { data: jugs } = await supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', clubId).neq('es_externo', true).order('nombre')
+    const [{ data: jugs }, { data }] = await Promise.all([
+      supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', clubId).neq('es_externo', true).order('nombre'),
+      supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false }),
+    ])
     setJugadoresFinanzas(jugs || [])
-    const { data } = await supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
     setMovimientos(data || [])
   }
 
