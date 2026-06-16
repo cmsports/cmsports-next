@@ -14,7 +14,7 @@ interface Notificacion {
   icono: string
 }
 
-export default function CampanaNotificaciones({ perfil }: { perfil: any }) {
+export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: { perfil: any, placement?: 'bottom' | 'top' }) {
   const [open, setOpen] = useState(false)
   const [notifs, setNotifs] = useState<Notificacion[]>([])
 
@@ -214,7 +214,7 @@ export default function CampanaNotificaciones({ perfil }: { perfil: any }) {
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position:'fixed', inset:0, zIndex:98 }} />
-          <div style={{ position:'absolute', top:'calc(100% + 8px)', right:0, background:'#14161f', border:'1px solid #1e2030', borderRadius:14, width:340, maxHeight:'70vh', overflowY:'auto', zIndex:99, boxShadow:'0 8px 32px #00000088' }}>
+          <div style={{ position:'absolute', ...(placement === 'top' ? { bottom:'calc(100% + 8px)', left:0 } : { top:'calc(100% + 8px)', right:0 }), background:'#14161f', border:'1px solid #1e2030', borderRadius:14, width:300, maxHeight:'70vh', overflowY:'auto', zIndex:99, boxShadow:'0 8px 32px #00000088' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 18px', borderBottom:'1px solid #1e2030' }}>
               <div style={{ fontSize:14, fontWeight:600, color:'#fff' }}>Notificaciones</div>
               {sinLeer > 0 && (

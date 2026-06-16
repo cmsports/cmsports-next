@@ -99,7 +99,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         <div style={{ padding:'12px 16px', borderTop:'1px solid #1e2030' }}>
           {(perfil?.rol === 'jugador' || perfil?.rol === 'profesor') && (
             <div style={{ marginBottom:10 }}>
-              <CampanaNotificaciones perfil={perfil} />
+              <CampanaNotificaciones perfil={perfil} placement="top" />
             </div>
           )}
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>

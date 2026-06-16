@@ -268,7 +268,7 @@ function TooltipBtn({ id, texto, tooltip, setTooltip }: {
         style={{ background:'transparent', border:'1px solid #2a2d3e', borderRadius:'50%', color:'#4b5063', cursor:'help', fontSize:10, width:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, padding:0 }}
       >?</button>
       {tooltip === id && (
-        <div style={{ position:'absolute', bottom:22, right:0, background:'#1a1d2e', border:'1px solid #2a2d3e', borderRadius:8, padding:'10px 12px', fontSize:11, color:'#c8cfe0', zIndex:50, width:230, lineHeight:1.6, boxShadow:'0 4px 20px #00000099', whiteSpace:'pre-line' }}>
+        <div style={{ position:'absolute', top:22, right:0, background:'#1a1d2e', border:'1px solid #2a2d3e', borderRadius:8, padding:'10px 12px', fontSize:11, color:'#c8cfe0', zIndex:50, width:230, lineHeight:1.6, boxShadow:'0 4px 20px #00000099', whiteSpace:'pre-line' }}>
           {texto}
         </div>
       )}
