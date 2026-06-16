@@ -69,7 +69,7 @@ export default function FinanzasPage() {
     const fin = `${anio}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`
     const { data: jugs } = await supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', clubId).neq('es_externo', true).order('nombre')
     setJugadoresFinanzas(jugs || [])
-    const { data } = await supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha', { ascending: false })
+    const { data } = await supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
     setMovimientos(data || [])
   }
 

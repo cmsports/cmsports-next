@@ -111,6 +111,7 @@ export default function CalendarioPage() {
   const hoy = new Date().toISOString().slice(0,10)
   const esAdmin = perfil?.rol === 'admin'
   const esJugador = perfil?.rol === 'jugador'
+  const puedeEditarEventos = esAdmin || perfil?.rol === 'profesor'
 
   const diasConItems: Record<string, any[]> = {}
   eventos.forEach(e => {
@@ -212,7 +213,7 @@ export default function CalendarioPage() {
                     </div>
                     {ev.descripcion && <div style={{ fontSize:11, color:'#8890a4', marginTop:4 }}>{ev.descripcion}</div>}
                   </div>
-                  {esAdmin && <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#f87171', cursor:'pointer', fontSize:14 }}>✕</button>}
+                  {puedeEditarEventos && <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#f87171', cursor:'pointer', fontSize:14 }}>✕</button>}
                 </div>
               </div>
             ))}
@@ -221,7 +222,7 @@ export default function CalendarioPage() {
               <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'20px 0' }}>Sin eventos este día</p>
             )}
 
-            {esAdmin && (
+            {puedeEditarEventos && (
               <button onClick={() => setModalEvento(true)} style={{ width:'100%', padding:10, background:'#6c63ff', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', marginTop:8 }}>
                 + Agregar evento
               </button>

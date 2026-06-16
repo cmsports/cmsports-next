@@ -12,6 +12,20 @@ const diasLabel: Record<string, string> = {
   jueves:'Jueves', viernes:'Viernes', sabado:'Sábado', domingo:'Domingo'
 }
 
+function getInicioSemana(offset: number): Date {
+  const hoy = new Date()
+  const dia = hoy.getDay()
+  const diff = dia === 0 ? 6 : dia - 1
+  const lunes = new Date(hoy)
+  lunes.setDate(hoy.getDate() - diff + offset * 7)
+  lunes.setHours(0, 0, 0, 0)
+  return lunes
+}
+
+function fmtISO(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
 export default function ClasesPage() {
   const [perfil, setPerfil] = useState<any>(null)
   const [clubId, setClubId] = useState<string | null>(null)
@@ -21,7 +35,11 @@ export default function ClasesPage() {
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ fecha:'', profesorId:'', inicio:'', fin:'', contenido:'', grupo:'' })
+  const [semanaOffset, setSemanaOffset] = useState(0)
   const router = useRouter()
+
+  const mesesLargo = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
+  const mesesCorto = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
 
   useEffect(() => {
     async function cargar() {
@@ -37,12 +55,18 @@ export default function ClasesPage() {
 
   useEffect(() => {
     if (!clubId) return
-    cargarClases()
-  }, [clubId])
+    cargarClases(semanaOffset)
+  }, [clubId, semanaOffset])
 
-  async function cargarClases() {
+  async function cargarClases(offset: number) {
+    const lunes = getInicioSemana(offset)
+    const domingo = new Date(lunes)
+    domingo.setDate(lunes.getDate() + 6)
     const [{ data: cl }, { data: pr }, { data: res }] = await Promise.all([
-      supabase.from('clases').select('*').eq('club_id', clubId).order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
+      supabase.from('clases').select('*').eq('club_id', clubId)
+        .gte('fecha', fmtISO(lunes))
+        .lte('fecha', fmtISO(domingo))
+        .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
       supabase.from('profesores').select('*').eq('club_id', clubId).eq('activo', true),
       supabase.from('reservas').select('clase_id,estado')
     ])
@@ -50,6 +74,14 @@ export default function ClasesPage() {
     setProfesores(pr || [])
     setReservas(res || [])
   }
+
+  const lunes = getInicioSemana(semanaOffset)
+  const domingo = new Date(lunes)
+  domingo.setDate(lunes.getDate() + 6)
+  const esMismoMes = lunes.getMonth() === domingo.getMonth()
+  const labelSemana = esMismoMes
+    ? `${lunes.getDate()} – ${domingo.getDate()} ${mesesLargo[domingo.getMonth()]}`
+    : `${lunes.getDate()} ${mesesCorto[lunes.getMonth()]} – ${domingo.getDate()} ${mesesCorto[domingo.getMonth()]}`
 
   async function guardarClase(publicar: boolean) {
     if (!form.fecha || !form.inicio || !form.contenido) return
@@ -63,18 +95,18 @@ export default function ClasesPage() {
     })
     setModalOpen(false)
     setForm({ fecha:'', profesorId:'', inicio:'', fin:'', contenido:'', grupo:'' })
-    cargarClases()
+    cargarClases(semanaOffset)
   }
 
   async function publicarClase(id: string) {
     await supabase.from('clases').update({ publicada: true }).eq('id', id)
-    cargarClases()
+    cargarClases(semanaOffset)
   }
 
   async function eliminarClase(id: string) {
     if (!confirm('¿Eliminar esta clase?')) return
     await supabase.from('clases').delete().eq('id', id)
-    cargarClases()
+    cargarClases(semanaOffset)
   }
 
   const esProfesor = perfil?.rol === 'profesor'
@@ -97,7 +129,7 @@ export default function ClasesPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
         <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Programación de clases</h1>
         {puedeCrear && (
           <button onClick={() => { setModalOpen(true); setForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
@@ -107,7 +139,22 @@ export default function ClasesPage() {
         )}
       </div>
 
-      {Object.keys(porFecha).length === 0 ? (
+      {/* Navegación semanal */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, marginBottom:20 }}>
+        <button onClick={() => setSemanaOffset(o => o - 1)}
+          style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, color:'#a78bfa', width:32, height:32, cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
+        <span style={{ fontSize:14, color:'#c8cfe0', fontWeight:600, minWidth:180, textAlign:'center' }}>{labelSemana}</span>
+        <button onClick={() => setSemanaOffset(o => o + 1)}
+          style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, color:'#a78bfa', width:32, height:32, cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+        {semanaOffset !== 0 && (
+          <button onClick={() => setSemanaOffset(0)}
+            style={{ background:'transparent', border:'none', color:'#6c7280', fontSize:12, cursor:'pointer', textDecoration:'underline' }}>
+            Hoy
+          </button>
+        )}
+      </div>
+
+{Object.keys(porFecha).length === 0 ? (
         <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>
           Sin clases programadas
         </div>
@@ -122,7 +169,7 @@ export default function ClasesPage() {
               {puedeCrear && !todasPublicadas && (
                 <button onClick={async () => {
                   await supabase.from('clases').update({ publicada: true }).eq('club_id', clubId!).eq('fecha', fecha).eq('publicada', false)
-                  cargarClases()
+                  cargarClases(semanaOffset)
                 }} style={{ background:'#6c63ff22', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', fontWeight:600 }}>
                   📢 Publicar día
                 </button>
