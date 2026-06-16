@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -19,10 +19,16 @@ export default function DashboardProfesorPage() {
   const router = useRouter()
 
   const hoy = new Date()
-  const diasMap: Record<number,string> = { 0:'domingo',1:'lunes',2:'martes',3:'miercoles',4:'jueves',5:'viernes',6:'sabado' }
-  const diaHoy = diasMap[hoy.getDay()]
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
   const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
+
+  // Rango: hoy → domingo de esta semana
+  const hoyISO = hoy.toISOString().slice(0, 10)
+  const diaSemana = hoy.getDay() // 0=dom, 1=lun...
+  const diasHastaDom = diaSemana === 0 ? 0 : 7 - diaSemana
+  const domingo = new Date(hoy)
+  domingo.setDate(hoy.getDate() + diasHastaDom)
+  const domingoISO = domingo.toISOString().slice(0, 10)
 
   useEffect(() => {
     async function cargar() {
@@ -40,8 +46,10 @@ export default function DashboardProfesorPage() {
     const trimestre = `Q${Math.ceil((hoy.getMonth()+1)/3)}-${hoy.getFullYear()}`
 
     const [{ data: jugadores }, { data: clasesHoy }, { data: evals }, { data: asist5 }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', p.club_id).eq('estado', 'activo'),
-      supabase.from('clases').select('*').eq('club_id', p.club_id).eq('dia_semana', diaHoy).order('hora_inicio'),
+      supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', p.club_id).eq('estado', 'activo').neq('es_externo', true),
+      supabase.from('clases').select('*').eq('club_id', p.club_id)
+        .gte('fecha', hoyISO).lte('fecha', domingoISO)
+        .order('fecha').order('hora_inicio'),
       supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', p.club_id).eq('periodo_trimestre', trimestre),
       supabase.from('asistencia').select('jugador_id').eq('club_id', p.club_id).gte('fecha', new Date(Date.now()-5*24*60*60*1000).toISOString().slice(0,10))
     ])
@@ -93,24 +101,39 @@ export default function DashboardProfesorPage() {
         </div>
       </div>
 
-      {/* Clases de hoy */}
+      {/* Clases de la semana (desde hoy) */}
       <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginBottom:16 }}>
-        <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Clases de hoy</div>
+        <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Clases esta semana</div>
         {clases.length === 0
-          ? <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'16px 0' }}>Sin clases programadas hoy</p>
-          : clases.map(c => (
-            <div key={c.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px', background:'#0a0c12', borderRadius:10, marginBottom:8 }}>
-              <div style={{ background:'#1e1b4b', color:'#a78bfa', padding:'8px 12px', borderRadius:8, fontSize:12, fontWeight:600, minWidth:90, textAlign:'center', flexShrink:0 }}>
-                {c.hora_inicio?.slice(0,5) || '—'}<br/>
-                <span style={{ fontSize:10, color:'#6c7280', fontWeight:400 }}>{c.hora_fin?.slice(0,5) || ''}</span>
-              </div>
-              <div>
-                <div style={{ fontSize:14, color:'#c8cfe0', fontWeight:600 }}>{c.contenido || 'Clase'}</div>
-                <div style={{ fontSize:11, color:'#6c7280' }}>{c.grupo || 'Grupo general'}</div>
-              </div>
-              <span style={{ marginLeft:'auto', background:'#34d39922', color:'#34d399', padding:'3px 8px', borderRadius:20, fontSize:10, fontWeight:600 }}>Hoy</span>
-            </div>
-          ))
+          ? <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'16px 0' }}>Sin clases programadas</p>
+          : (() => {
+              const porFecha: Record<string, any[]> = {}
+              clases.forEach(c => { const f = c.fecha || ''; if (!porFecha[f]) porFecha[f] = []; porFecha[f].push(c) })
+              return Object.keys(porFecha).sort().map(fecha => {
+                const d = new Date(fecha + 'T00:00:00')
+                const esHoy = fecha === hoyISO
+                return (
+                  <div key={fecha} style={{ marginBottom:12 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color: esHoy ? '#a78bfa' : '#6c7280', textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
+                      {diasSemana[d.getDay()]} {d.getDate()}
+                      {esHoy && <span style={{ background:'#1e1b4b', color:'#a78bfa', padding:'1px 6px', borderRadius:10, fontSize:9, fontWeight:700 }}>HOY</span>}
+                    </div>
+                    {porFecha[fecha].map(c => (
+                      <div key={c.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 12px', background:'#0a0c12', borderRadius:10, marginBottom:6 }}>
+                        <div style={{ background:'#1e1b4b', color:'#a78bfa', padding:'6px 10px', borderRadius:8, fontSize:11, fontWeight:600, minWidth:80, textAlign:'center', flexShrink:0 }}>
+                          {c.hora_inicio?.slice(0,5) || '—'}<br/>
+                          <span style={{ fontSize:10, color:'#6c7280', fontWeight:400 }}>{c.hora_fin?.slice(0,5) || ''}</span>
+                        </div>
+                        <div>
+                          <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:600 }}>{c.contenido || 'Clase'}</div>
+                          <div style={{ fontSize:11, color:'#6c7280' }}>{c.grupo || 'Grupo general'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })
+            })()
         }
       </div>
 

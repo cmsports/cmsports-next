@@ -101,6 +101,7 @@ export default function TorneosPage() {
   }
 
   const esAdmin = perfil?.rol === 'admin'
+  const puedeCrear = esAdmin || perfil?.rol === 'profesor'
   const estadoColor: Record<string, string> = {
     en_curso: '#34d399', finalizado: '#6c7280', cancelado: '#f87171'
   }
@@ -119,7 +120,7 @@ export default function TorneosPage() {
     <AppLayout perfil={perfil}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
         <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Torneos</h1>
-        {esAdmin && (
+        {puedeCrear && (
           <button
             onClick={() => setModalOpen(true)}
             style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}

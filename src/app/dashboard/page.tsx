@@ -16,6 +16,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [ddOpen, setDdOpen] = useState<string | null>(null)
   const [ddData, setDdData] = useState<any[]>([])
+  const [tooltip, setTooltip] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -36,20 +37,22 @@ export default function DashboardPage() {
     const mesActual = new Date().getMonth() + 1
     const anioActual = new Date().getFullYear()
     const mesInicio = `${anioActual}-${String(mesActual).padStart(2,'0')}-01`
-    const hoy = new Date().toISOString().slice(0,10)
+    const mesPrev = mesActual === 1 ? 12 : mesActual - 1
+    const anioPrev = mesActual === 1 ? anioActual - 1 : anioActual
+    const mesInicioPrev = `${anioPrev}-${String(mesPrev).padStart(2,'0')}-01`
 
     const [
       { data: jugsData },
-      { data: torneos },
       { data: mensualidades },
       { data: movimientos },
       { data: solicitudesData },
+      { data: movimientosPrev },
     ] = await Promise.all([
       supabase.from('jugadores').select('*').eq('club_id', cid).neq('es_externo', true),
-      supabase.from('torneos').select('*').eq('club_id', cid).eq('estado', 'en_curso'),
       supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
       supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicio),
       supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).eq('estado', 'pendiente'),
+      supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicioPrev).lt('fecha', mesInicio),
     ])
 
     const activos = (jugsData || []).filter(j => j.estado === 'activo')
@@ -59,7 +62,17 @@ export default function DashboardPage() {
     const coa = activos.length > 0 ? Math.round(gastos / activos.length) : 0
     const tm = activos.length > 0 ? Math.round((morosos.length / activos.length) * 100) : 0
 
-    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, torneos: torneos?.length || 0, morosos, jugadores: activos, mensualidadBase: 25000 })
+    const gastosPrev = (movimientosPrev || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
+    const ingresosPrev = (movimientosPrev || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
+    const utilidadPorAlumno = activos.length > 0 ? Math.round((ingresos - gastos) / activos.length) : 0
+    const ingresoPorAlumno = activos.length > 0 ? Math.round(ingresos / activos.length) : 0
+    const costoPorAlumno = activos.length > 0 ? Math.round(gastos / activos.length) : 0
+    const utilidadPrevPorAlumno = activos.length > 0 ? Math.round((ingresosPrev - gastosPrev) / activos.length) : 0
+    const variacionUtilidad = utilidadPrevPorAlumno !== 0
+      ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
+      : null
+
+    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos, jugadores: activos, mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
     setJugadores(activos)
     setSolicitudes(solicitudesData || [])
 
@@ -81,24 +94,58 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>🏓</div>
+        {/* Jugadores activos */}
+        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, position:'relative' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            <div style={{ fontSize:22 }}>🏓</div>
+            <TooltipBtn id="activos" tooltip={tooltip} setTooltip={setTooltip}
+              texto="Jugadores con estado activo en el club. No incluye externos ni suspendidos. Es la base de cálculo para todos los demás indicadores por alumno." />
+          </div>
           <div style={{ fontSize:26, fontWeight:700, color:'#a78bfa', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.activos || 0}</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>Jugadores activos</div>
         </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>🎯</div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#fbbf24', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.torneos || 0}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Torneos activos</div>
+
+        {/* Utilidad por alumno */}
+        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, position:'relative' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            <div style={{ fontSize:22 }}>💡</div>
+            <TooltipBtn id="utilidad" tooltip={tooltip} setTooltip={setTooltip}
+              texto={'Beneficio económico promedio por alumno activo este mes.\n\nFórmula: (Ingresos − Gastos) ÷ Alumnos Activos\n\n↑ Sube cuando los ingresos crecen sin aumento proporcional de gastos, o cuando los gastos disminuyen.\n\n↓ Baja cuando los gastos aumentan sin respaldo en ingresos, o cuando ingresan nuevos alumnos sin generar ingresos adicionales.'} />
+          </div>
+          <div style={{ fontSize:26, fontWeight:700, color:(kpis.utilidadPorAlumno||0) >= 0 ? '#34d399' : '#f87171', fontFamily:'monospace', margin:'8px 0 2px' }}>
+            {fmt(kpis.utilidadPorAlumno || 0)}
+          </div>
+          {kpis.variacionUtilidad !== null && kpis.variacionUtilidad !== undefined && (
+            <div style={{ fontSize:11, color: kpis.variacionUtilidad >= 0 ? '#34d399' : '#f87171', marginBottom:4 }}>
+              {kpis.variacionUtilidad >= 0 ? '▲' : '▼'} {Math.abs(kpis.variacionUtilidad)}% vs mes anterior
+            </div>
+          )}
+          <div style={{ fontSize:12, color:'#6c7280', marginBottom:8 }}>Utilidad por alumno</div>
+          <div style={{ borderTop:'1px solid #1e2030', paddingTop:6, display:'flex', flexDirection:'column', gap:3 }}>
+            <div style={{ fontSize:10, color:'#4b5063' }}>Ingreso prom: <span style={{ color:'#a78bfa', fontFamily:'monospace' }}>{fmt(kpis.ingresoPorAlumno || 0)}</span></div>
+            <div style={{ fontSize:10, color:'#4b5063' }}>Costo prom: <span style={{ color:'#f87171', fontFamily:'monospace' }}>{fmt(kpis.costoPorAlumno || 0)}</span></div>
+          </div>
         </div>
+
+        {/* Tasa de morosidad */}
         <div onClick={() => { setDdOpen('morosidad'); setDdData(kpis.morosos || []) }}
-          style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer' }}>
-          <div style={{ display:'flex', justifyContent:'space-between' }}><span style={{ fontSize:22 }}>⚠️</span><span style={{ fontSize:10, color:'#4b5063' }}>↗</span></div>
+          style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer', position:'relative' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            <span style={{ fontSize:22 }}>⚠️</span>
+            <TooltipBtn id="morosidad" tooltip={tooltip} setTooltip={setTooltip}
+              texto="% de alumnos activos con mensualidad pendiente o atrasada este mes. Bajo 10% = saludable (verde). Entre 10-25% = requiere atención (amarillo). Sobre 25% = crítico (rojo). Haz clic para ver el listado de deudores." />
+          </div>
           <div style={{ fontSize:26, fontWeight:700, color:(kpis.tm||0) > 25 ? '#f87171' : (kpis.tm||0) > 10 ? '#fbbf24' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.tm || 0}%</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>Tasa de morosidad</div>
         </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:22 }}>📈</div>
+
+        {/* Ingresos este mes */}
+        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, position:'relative' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            <div style={{ fontSize:22 }}>📈</div>
+            <TooltipBtn id="ingresos" tooltip={tooltip} setTooltip={setTooltip}
+              texto="Suma de todos los movimientos de tipo ingreso registrados en el mes actual. Incluye mensualidades, inscripciones y cualquier otro ingreso manual. No incluye meses anteriores." />
+          </div>
           <div style={{ fontSize:26, fontWeight:700, color:'#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.ingresos || 0)}</div>
           <div style={{ fontSize:12, color:'#6c7280' }}>Ingresos este mes</div>
         </div>
@@ -203,6 +250,29 @@ export default function DashboardPage() {
         </div>
       )}
     </AppLayout>
+  )
+}
+
+function TooltipBtn({ id, texto, tooltip, setTooltip }: {
+  id: string
+  texto: string
+  tooltip: string | null
+  setTooltip: (v: string | null) => void
+}) {
+  return (
+    <div style={{ position:'relative', display:'inline-block', flexShrink:0 }}>
+      <button
+        onClick={e => e.stopPropagation()}
+        onMouseEnter={() => setTooltip(id)}
+        onMouseLeave={() => setTooltip(null)}
+        style={{ background:'transparent', border:'1px solid #2a2d3e', borderRadius:'50%', color:'#4b5063', cursor:'help', fontSize:10, width:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, padding:0 }}
+      >?</button>
+      {tooltip === id && (
+        <div style={{ position:'absolute', bottom:22, right:0, background:'#1a1d2e', border:'1px solid #2a2d3e', borderRadius:8, padding:'10px 12px', fontSize:11, color:'#c8cfe0', zIndex:50, width:230, lineHeight:1.6, boxShadow:'0 4px 20px #00000099', whiteSpace:'pre-line' }}>
+          {texto}
+        </div>
+      )}
+    </div>
   )
 }
 

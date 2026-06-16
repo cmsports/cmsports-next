@@ -28,12 +28,12 @@ const navAdmin: NavItem[] = [
 
 const navProfesor: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard-profesor' },
-  { label: 'Jugadores', icon: Users, href: '/jugadores' },
-  { label: 'Torneos', icon: Trophy, href: '/torneos' },
-  { label: 'Ranking', icon: Award, href: '/ranking' },
   { label: 'Mis clases', icon: BookOpen, href: '/clases' },
   { label: 'Asistencia', icon: Smartphone, href: '/asistencia' },
   { label: 'Calendario', icon: Calendar, href: '/calendario' },
+  { label: 'Jugadores', icon: Users, href: '/jugadores' },
+  { label: 'Ranking', icon: Award, href: '/ranking' },
+  { label: 'Torneos', icon: Trophy, href: '/torneos' },
 ]
 
 const navJugador: NavItem[] = [

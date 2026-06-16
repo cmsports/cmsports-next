@@ -9,7 +9,7 @@ const navAdmin = [
   { label:'Dashboard', icon:'📊', href:'/dashboard' },
   { label:'Jugadores', icon:'👥', href:'/jugadores' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
-  { label:'Asistencia', icon:'📈', href:'/asistencia-stats' },
+  { label:'Asistencia', icon:'📈', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
   { label:'Clases', icon:'📚', href:'/clases' },
   { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
@@ -18,16 +18,17 @@ const navAdmin = [
 
 const navProfesor = [
   { label:'Dashboard', icon:'📊', href:'/dashboard-profesor' },
-  { label:'Jugadores', icon:'👥', href:'/jugadores' },
-  { label:'Torneos', icon:'🎯', href:'/torneos' },
-  { label:'Ranking', icon:'🏆', href:'/ranking' },
   { label:'Mis clases', icon:'📚', href:'/clases' },
   { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Calendario', icon:'📅', href:'/calendario' },
+  { label:'Jugadores', icon:'👥', href:'/jugadores' },
+  { label:'Ranking', icon:'🏆', href:'/ranking' },
+  { label:'Torneos', icon:'🎯', href:'/torneos' },
 ]
 
 const navJugador = [
   { label:'Mi perfil', icon:'👤', href:'/perfil' },
+  { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Mis clases', icon:'📚', href:'/mis-clases' },
   { label:'Mi Estado de Cuenta', icon:'💳', href:'/estado-cuenta' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
@@ -54,10 +55,10 @@ const mobileNavProfesor = [
 
 const mobileNavJugador = [
   { label:'Perfil', icon:'👤', href:'/perfil' },
+  { label:'Asistencia', icon:'📱', href:'/asistencia' },
   { label:'Mis clases', icon:'📚', href:'/mis-clases' },
   { label:'Mi cuenta', icon:'💳', href:'/estado-cuenta' },
   { label:'Torneos', icon:'🎯', href:'/torneos' },
-  { label:'Calendario', icon:'📅', href:'/calendario' },
 ]
 
 export default function AppLayout({ children, perfil }: { children: React.ReactNode, perfil: any }) {
@@ -150,7 +151,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             {[
               { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
               { label:'Ranking', icon:'🏆', href:'/ranking' },
-              { label:'Asistencia', icon:'📈', href:'/asistencia-stats' },
+              { label:'Asistencia', icon:'📈', href:'/asistencia' },
               { label:'Clases', icon:'📚', href:'/clases' },
               { label:'Calendario', icon:'📅', href:'/calendario' },
               { label:'Finanzas', icon:'💰', href:'/finanzas' },

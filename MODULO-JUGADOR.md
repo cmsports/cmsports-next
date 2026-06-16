@@ -63,13 +63,9 @@ Cada sub-paso es una sesión. Al iniciar una sesión decir: **"Ejecuta el sub-pa
 - **Aprobación** (`dashboard/solicitudes/page.tsx` y `solicitudes/page.tsx`): botón "Aprobar" abre modal con categoría, tipo de plan (mensual/semanal/libre), entrenamientos/semana, mensualidad (4 presets + monto personalizado). Crea jugador con plan real, no hardcodeado.
 - **Fix adicional**: migración de 23 archivos de `@supabase/supabase-js` a `@/lib/supabase/client` (cliente SSR) para resolver bug de login (sesión en cookies vs localStorage).
 
-### J5 — Edición inline del perfil (admin / entrenador)  ⬜ Pendiente
-- En `jugadores/[id]/page.tsx`:
-  - Tarjeta de Contacto editable (email, teléfono).
-  - Tarjeta de Plan editable (mensualidad, tipo, entrenamientos/sem).
-  - Categoría editable.
-- Cambios vía Server Action (no insert directo desde cliente — alinea con feedback de seguridad).
-- **Validación**: admin y entrenador pueden cambiar email/teléfono/categoría/plan desde el detalle.
+### J5 — Edición inline del perfil (admin / entrenador)  ✅ Hecho (2026-06-15)
+- `jugadores/[id]/page.tsx`: botón "Editar" en tarjetas Contacto (email, teléfono, categoría) y Plan (tipo, entrenamientos/sem, mensualidad con presets). Solo para admin/entrenador.
+- Display de Plan actualizado para usar `mensualidad`, `tipo_plan`, `entrenamientos_por_semana` en vez del viejo `sesiones_limite`.
 
 ### J6 — Gráfico de evolución por posición en torneos  ⬜ Pendiente
 - Reemplazar `Curva de ELO` por `Curva de avance`.
@@ -120,5 +116,6 @@ Resueltas el **2026-06-15**:
   - Login funciona correctamente (sesión compartida entre login y todas las páginas).
   - Datos de registro vienen limpios (RUT y teléfono con formato correcto).
   - Admin asigna plan real al aprobar solicitud, no valores hardcodeados.
-- **Dónde quedé**: J1-J4 cerrados. `tsc` limpio.
-- **Qué sigue**: **J5** — edición inline del perfil del jugador (contacto, plan, categoría) desde `jugadores/[id]/page.tsx`.
+- **J5**: edición inline en ficha del jugador — tarjetas Contacto y Plan con botón "Editar", presets de mensualidad, categoría editable. Display de Plan actualizado a campos nuevos.
+- **Dónde quedé**: J1-J5 cerrados. `tsc` limpio.
+- **Qué sigue**: **J6** — gráfico de evolución por posición en torneos (reemplazar curva ELO numérica por eje ordinal).
