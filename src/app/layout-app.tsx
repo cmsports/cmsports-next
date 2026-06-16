@@ -81,7 +81,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
       <div className="sidebar" style={{ width:220, background:'#0a0c12', borderRight:'1px solid #1e2030', display:'flex', flexDirection:'column', position:'fixed', height:'100vh', zIndex:10 }}>
         <div style={{ padding:'20px 16px', borderBottom:'1px solid #1e2030' }}>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <div style={{ width:36, height:36, background:'linear-gradient(135deg,#6c63ff,#a78bfa)', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:14, color:'white' }}>CM</div>
+            <img src="/logo.png" alt="CmSports" style={{ width:36, height:36, objectFit:'contain' }} />
             <div>
               <div style={{ fontSize:15, fontWeight:700, color:'#fff' }}>CmSports</div>
               <div style={{ fontSize:11, color:'#6c7280' }}>Club Unión San Bernardo</div>
