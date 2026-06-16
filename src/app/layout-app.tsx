@@ -96,7 +96,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#a9bac8' }}>
 
       {/* ── SIDEBAR DESKTOP ── */}
       <aside className="sidebar" style={{
@@ -267,7 +267,6 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               { label: 'Asistencia',    icon: ClipboardCheck,href: '/asistencia' },
               { label: 'Clases',        icon: BookOpen,      href: '/clases' },
               { label: 'Calendario',    icon: Calendar,      href: '/calendario' },
-              { label: 'Finanzas',      icon: DollarSign,    href: '/finanzas' },
             ].map(item => {
               const Icon = item.icon
               return (
