@@ -4,19 +4,45 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
+import {
+  Users, TrendingUp, AlertTriangle, DollarSign,
+  Link2, Mail, Calendar, Wallet, X, HelpCircle, Copy, Check,
+} from 'lucide-react'
 
 const supabase = createClient()
 
+/* ── colores del nuevo tema ── */
+const C = {
+  bg:      '#f1f5f9',
+  card:    '#ffffff',
+  border:  '#e2e8f0',
+  text:    '#0f172a',
+  muted:   '#64748b',
+  hint:    '#94a3b8',
+  sky:     '#4f46e5',
+  skyL:    '#ede9fe',
+  skyD:    '#3730a3',
+  orange:  '#f43f5e',
+  orangeL: '#fff7ed',
+  orangeD: '#c2410c',
+  green:   '#16a34a',
+  greenL:  '#f0fdf4',
+  red:     '#dc2626',
+  redL:    '#fef2f2',
+  yellow:  '#d97706',
+  yellowL: '#fffbeb',
+  divider: '#1e2030',
+}
+
 export default function DashboardPage() {
-  const [perfil, setPerfil] = useState<any>(null)
-  const [kpis, setKpis] = useState<any>({})
+  const [perfil, setPerfil]         = useState<any>(null)
+  const [kpis, setKpis]             = useState<any>({})
   const [ultimasAsist, setUltimasAsist] = useState<any[]>([])
-  const [jugadores, setJugadores] = useState<any[]>([])
+  const [jugadores, setJugadores]   = useState<any[]>([])
   const [solicitudes, setSolicitudes] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [ddOpen, setDdOpen] = useState<string | null>(null)
-  const [ddData, setDdData] = useState<any[]>([])
-  const [tooltip, setTooltip] = useState<string | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [ddOpen, setDdOpen]         = useState(false)
+  const [tooltip, setTooltip]       = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -25,7 +51,7 @@ export default function DashboardPage() {
       if (!session) { router.push('/login'); return }
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
-      if (p?.rol === 'jugador') { router.push('/perfil'); return }
+      if (p?.rol === 'jugador')  { router.push('/perfil'); return }
       if (p?.rol === 'profesor') { router.push('/dashboard-profesor'); return }
       if (p?.club_id) await cargarDatos(p.club_id)
       setLoading(false)
@@ -34,11 +60,11 @@ export default function DashboardPage() {
   }, [])
 
   async function cargarDatos(cid: string) {
-    const mesActual = new Date().getMonth() + 1
-    const anioActual = new Date().getFullYear()
-    const mesInicio = `${anioActual}-${String(mesActual).padStart(2,'0')}-01`
-    const mesPrev = mesActual === 1 ? 12 : mesActual - 1
-    const anioPrev = mesActual === 1 ? anioActual - 1 : anioActual
+    const mesActual   = new Date().getMonth() + 1
+    const anioActual  = new Date().getFullYear()
+    const mesInicio   = `${anioActual}-${String(mesActual).padStart(2,'0')}-01`
+    const mesPrev     = mesActual === 1 ? 12 : mesActual - 1
+    const anioPrev    = mesActual === 1 ? anioActual - 1 : anioActual
     const mesInicioPrev = `${anioPrev}-${String(mesPrev).padStart(2,'0')}-01`
 
     const [
@@ -57,20 +83,20 @@ export default function DashboardPage() {
       supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).gte('fecha', mesInicio).order('fecha', { ascending: false }).limit(5),
     ])
 
-    const activos = (jugsData || []).filter(j => j.estado === 'activo')
-    const morosos = (mensualidades || []).filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
-    const gastos = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
-    const ingresos = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
-    const coa = activos.length > 0 ? Math.round(gastos / activos.length) : 0
-    const tm = activos.length > 0 ? Math.round((morosos.length / activos.length) * 100) : 0
-
+    const activos    = (jugsData || []).filter(j => j.estado === 'activo')
+    const morosos    = (mensualidades || []).filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
+    const gastos     = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0)    || 0
+    const ingresos   = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)  || 0
     const gastosPrev = (movimientosPrev || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
     const ingresosPrev = (movimientosPrev || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
-    const utilidadPorAlumno = activos.length > 0 ? Math.round((ingresos - gastos) / activos.length) : 0
-    const ingresoPorAlumno = activos.length > 0 ? Math.round(ingresos / activos.length) : 0
-    const costoPorAlumno = activos.length > 0 ? Math.round(gastos / activos.length) : 0
+
+    const coa                = activos.length > 0 ? Math.round(gastos   / activos.length) : 0
+    const tm                 = activos.length > 0 ? Math.round((morosos.length / activos.length) * 100) : 0
+    const utilidadPorAlumno  = activos.length > 0 ? Math.round((ingresos - gastos) / activos.length)  : 0
+    const ingresoPorAlumno   = activos.length > 0 ? Math.round(ingresos / activos.length) : 0
+    const costoPorAlumno     = activos.length > 0 ? Math.round(gastos   / activos.length) : 0
     const utilidadPrevPorAlumno = activos.length > 0 ? Math.round((ingresosPrev - gastosPrev) / activos.length) : 0
-    const variacionUtilidad = utilidadPrevPorAlumno !== 0
+    const variacionUtilidad  = utilidadPrevPorAlumno !== 0
       ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
       : null
 
@@ -83,168 +109,253 @@ export default function DashboardPage() {
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
+      <div style={{ color: C.hint, fontSize: 14 }}>Cargando...</div>
     </div>
   )
 
+  const tmColor = (kpis.tm || 0) > 25 ? C.red : (kpis.tm || 0) > 10 ? C.yellow : C.green
+  const tmBg    = (kpis.tm || 0) > 25 ? C.redL : (kpis.tm || 0) > 10 ? C.yellowL : C.greenL
+  const coaOk   = (kpis.coa || 0) <= (kpis.mensualidadBase || 25000)
+
   return (
     <AppLayout perfil={perfil}>
-      <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:20 }}>Dashboard</h1>
-
-      {/* KPIs */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        {/* Jugadores activos */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, position:'relative' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-            <div style={{ fontSize:22 }}>🏓</div>
-            <TooltipBtn id="activos" tooltip={tooltip} setTooltip={setTooltip}
-              texto="Jugadores con estado activo en el club. No incluye externos ni suspendidos. Es la base de cálculo para todos los demás indicadores por alumno." />
-          </div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#a78bfa', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.activos || 0}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Jugadores activos</div>
+      {/* ── Cabecera ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>Dashboard</h1>
+          <p style={{ fontSize: 12, color: C.hint }}>
+            {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })} — Club Unión San Bernardo
+          </p>
         </div>
-
-        {/* Utilidad por alumno */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, position:'relative' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-            <div style={{ fontSize:22 }}>💡</div>
-            <TooltipBtn id="utilidad" tooltip={tooltip} setTooltip={setTooltip}
-              texto={'Beneficio económico promedio por alumno activo este mes.\n\nFórmula: (Ingresos − Gastos) ÷ Alumnos Activos\n\n↑ Sube cuando los ingresos crecen sin aumento proporcional de gastos, o cuando los gastos disminuyen.\n\n↓ Baja cuando los gastos aumentan sin respaldo en ingresos, o cuando ingresan nuevos alumnos sin generar ingresos adicionales.'} />
-          </div>
-          <div style={{ fontSize:26, fontWeight:700, color:(kpis.utilidadPorAlumno||0) >= 0 ? '#34d399' : '#f87171', fontFamily:'monospace', margin:'8px 0 2px' }}>
-            {fmt(kpis.utilidadPorAlumno || 0)}
-          </div>
-          {kpis.variacionUtilidad !== null && kpis.variacionUtilidad !== undefined && (
-            <div style={{ fontSize:11, color: kpis.variacionUtilidad >= 0 ? '#34d399' : '#f87171', marginBottom:4 }}>
-              {kpis.variacionUtilidad >= 0 ? '▲' : '▼'} {Math.abs(kpis.variacionUtilidad)}% vs mes anterior
-            </div>
+        <a href="/solicitudes" style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          background: C.orange, color: 'white', borderRadius: 8,
+          padding: '8px 14px', fontSize: 13, fontWeight: 500,
+          textDecoration: 'none',
+        }}>
+          <Mail size={14} />
+          Solicitudes
+          {solicitudes.length > 0 && (
+            <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 7px', fontSize: 11 }}>
+              {solicitudes.length}
+            </span>
           )}
-          <div style={{ fontSize:12, color:'#6c7280', marginBottom:8 }}>Utilidad por alumno</div>
-          <div style={{ borderTop:'1px solid #1e2030', paddingTop:6, display:'flex', flexDirection:'column', gap:3 }}>
-            <div style={{ fontSize:10, color:'#4b5063' }}>Ingreso prom: <span style={{ color:'#a78bfa', fontFamily:'monospace' }}>{fmt(kpis.ingresoPorAlumno || 0)}</span></div>
-            <div style={{ fontSize:10, color:'#4b5063' }}>Costo prom: <span style={{ color:'#f87171', fontFamily:'monospace' }}>{fmt(kpis.costoPorAlumno || 0)}</span></div>
-          </div>
-        </div>
-
-        {/* Tasa de morosidad */}
-        <div onClick={() => { setDdOpen('morosidad'); setDdData(kpis.morosos || []) }}
-          style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, cursor:'pointer', position:'relative' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-            <span style={{ fontSize:22 }}>⚠️</span>
-            <TooltipBtn id="morosidad" tooltip={tooltip} setTooltip={setTooltip}
-              texto="% de alumnos activos con mensualidad pendiente o atrasada este mes. Bajo 10% = saludable (verde). Entre 10-25% = requiere atención (amarillo). Sobre 25% = crítico (rojo). Haz clic para ver el listado de deudores." />
-          </div>
-          <div style={{ fontSize:26, fontWeight:700, color:(kpis.tm||0) > 25 ? '#f87171' : (kpis.tm||0) > 10 ? '#fbbf24' : '#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{kpis.tm || 0}%</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Tasa de morosidad</div>
-        </div>
-
-        {/* Ingresos este mes */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18, position:'relative' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-            <div style={{ fontSize:22 }}>📈</div>
-            <TooltipBtn id="ingresos" tooltip={tooltip} setTooltip={setTooltip}
-              texto="Suma de todos los movimientos de tipo ingreso registrados en el mes actual. Incluye mensualidades, inscripciones y cualquier otro ingreso manual. No incluye meses anteriores." />
-          </div>
-          <div style={{ fontSize:26, fontWeight:700, color:'#34d399', fontFamily:'monospace', margin:'8px 0 4px' }}>{fmt(kpis.ingresos || 0)}</div>
-          <div style={{ fontSize:12, color:'#6c7280' }}>Ingresos este mes</div>
-        </div>
+        </a>
       </div>
 
-      {/* Link inscripción + Solicitudes */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
-        {/* Link invitación */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:8 }}>🔗 Link de inscripción</div>
-          <div style={{ fontSize:12, color:'#6c7280', marginBottom:12 }}>Comparte este link para que los jugadores soliciten unirse al club</div>
+      {/* ── KPIs ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
+
+        {/* Jugadores activos */}
+        <KpiCard
+          icon={<Users size={18} color={C.sky} />}
+          iconBg={C.skyL}
+          label="Jugadores activos"
+          value={kpis.activos || 0}
+          valueColor={C.text}
+          tooltip={tooltip} tooltipId="activos" setTooltip={setTooltip}
+          tooltipText="Jugadores con estado activo en el club. No incluye externos ni suspendidos."
+        />
+
+        {/* Utilidad por alumno */}
+        <KpiCard
+          icon={<TrendingUp size={18} color={(kpis.utilidadPorAlumno || 0) >= 0 ? C.green : C.red} />}
+          iconBg={(kpis.utilidadPorAlumno || 0) >= 0 ? C.greenL : C.redL}
+          label="Utilidad por alumno"
+          value={fmt(kpis.utilidadPorAlumno || 0)}
+          valueColor={(kpis.utilidadPorAlumno || 0) >= 0 ? C.green : C.red}
+          tooltip={tooltip} tooltipId="utilidad" setTooltip={setTooltip}
+          tooltipText={'(Ingresos − Gastos) ÷ Alumnos activos\n\n↑ Sube cuando los ingresos crecen sin aumento proporcional de gastos.\n↓ Baja cuando los gastos aumentan o ingresan alumnos sin generar ingresos.'}
+          sub={kpis.variacionUtilidad !== null && kpis.variacionUtilidad !== undefined ? (
+            <span style={{ fontSize: 11, color: kpis.variacionUtilidad >= 0 ? C.green : C.red, fontWeight: 500 }}>
+              {kpis.variacionUtilidad >= 0 ? '▲' : '▼'} {Math.abs(kpis.variacionUtilidad)}% vs mes anterior
+            </span>
+          ) : null}
+          footer={
+            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ fontSize: 11, color: C.hint }}>
+                Ingreso prom: <span style={{ color: C.sky, fontWeight: 500 }}>{fmt(kpis.ingresoPorAlumno || 0)}</span>
+              </div>
+              <div style={{ fontSize: 11, color: C.hint }}>
+                Costo prom: <span style={{ color: C.red, fontWeight: 500 }}>{fmt(kpis.costoPorAlumno || 0)}</span>
+              </div>
+            </div>
+          }
+        />
+
+        {/* Morosidad */}
+        <div onClick={() => setDdOpen(true)} style={{
+          background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
+          padding: 18, cursor: 'pointer', position: 'relative',
+          boxShadow: '0 4px 16px rgba(15,23,42,0.18)', transition: 'box-shadow 0.15s',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: tmBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertTriangle size={18} color={tmColor} />
+            </div>
+            <TooltipBtn id="morosidad" tooltip={tooltip} setTooltip={setTooltip}
+              texto="% de alumnos activos con mensualidad pendiente o atrasada. <10% saludable, 10–25% atención, >25% crítico. Haz clic para ver deudores." />
+          </div>
+          <div style={{ fontSize: 26, fontWeight: 600, color: tmColor, fontVariantNumeric: 'tabular-nums' }}>
+            {kpis.tm || 0}%
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Tasa de morosidad</div>
+          <div style={{ marginTop: 6, fontSize: 11, color: tmColor, fontWeight: 500 }}>
+            {(kpis.morosos?.length || 0)} deudores · ver lista →
+          </div>
+        </div>
+
+        {/* Ingresos */}
+        <KpiCard
+          icon={<DollarSign size={18} color={C.green} />}
+          iconBg={C.greenL}
+          label="Ingresos este mes"
+          value={fmt(kpis.ingresos || 0)}
+          valueColor={C.green}
+          tooltip={tooltip} tooltipId="ingresos" setTooltip={setTooltip}
+          tooltipText="Suma de todos los movimientos de tipo ingreso del mes actual."
+        />
+      </div>
+
+      {/* ── Fila 2 ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+
+        {/* Link de inscripción */}
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <Link2 size={15} color={C.sky} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Link de inscripción</span>
+          </div>
+          <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+            Comparte este link para que los jugadores soliciten unirse al club
+          </p>
           <LinkInvitacion clubId={perfil?.club_id} />
         </div>
 
         {/* Solicitudes pendientes */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>📨 Solicitudes pendientes</div>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Mail size={15} color={C.orange} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Solicitudes pendientes</span>
+            </div>
             {solicitudes.length > 0 && (
-              <span style={{ background:'#6c63ff22', color:'#a78bfa', padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{solicitudes.length} nuevas</span>
+              <span style={{ background: C.orangeL, color: C.orangeD, padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
+                {solicitudes.length} nuevas
+              </span>
             )}
           </div>
           {solicitudes.length === 0
-            ? <p style={{ fontSize:13, color:'#4b5063', textAlign:'center', padding:'20px 0' }}>Sin solicitudes pendientes</p>
-            : solicitudes.slice(0,3).map(sol => (
-              <div key={sol.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #1a1d2e' }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>{sol.nombre}</div>
-                  <div style={{ fontSize:11, color:'#6c7280' }}>{new Date(sol.creado_en).toLocaleDateString('es-CL')}</div>
+            ? <p style={{ fontSize: 13, color: C.hint, textAlign: 'center', padding: '20px 0' }}>Sin solicitudes pendientes</p>
+            : solicitudes.slice(0, 3).map(sol => (
+              <div key={sol.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.skyL, color: C.skyD, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                  {sol.nombre?.charAt(0) || '?'}
                 </div>
-                <a href="/solicitudes" style={{ background:'#6c63ff22', color:'#a78bfa', border:'none', borderRadius:6, padding:'4px 8px', fontSize:11, textDecoration:'none' }}>Ver →</a>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{sol.nombre}</div>
+                  <div style={{ fontSize: 11, color: C.hint }}>{new Date(sol.creado_en).toLocaleDateString('es-CL')}</div>
+                </div>
+                <a href="/solicitudes" style={{ background: C.skyL, color: C.skyD, borderRadius: 6, padding: '4px 10px', fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>Ver →</a>
               </div>
             ))
           }
           {solicitudes.length > 0 && (
-            <a href="/solicitudes" style={{ display:'block', marginTop:10, background:'transparent', border:'1px solid #1e2030', borderRadius:8, padding:'7px', color:'#6c7280', fontSize:12, textAlign:'center', textDecoration:'none' }}>
-              Ver todas en Solicitudes →
+            <a href="/solicitudes" style={{ display: 'block', marginTop: 12, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px', color: C.muted, fontSize: 12, textAlign: 'center', textDecoration: 'none' }}>
+              Ver todas →
             </a>
           )}
         </div>
       </div>
 
-      {/* Últimas asistencias + COA/Gastos */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:16 }}>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>📅 Últimas asistencias</div>
+      {/* ── Fila 3 ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+
+        {/* Últimas asistencias */}
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <Calendar size={15} color={C.sky} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Últimas asistencias</span>
+          </div>
           {ultimasAsist.length === 0
-            ? <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'20px 0' }}>Sin asistencias</p>
+            ? <p style={{ fontSize: 13, color: C.hint, textAlign: 'center', padding: '20px 0' }}>Sin asistencias este mes</p>
             : ultimasAsist.map(a => (
-              <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #1a1d2e', fontSize:13 }}>
-                <span style={{ color:'#c8cfe0' }}>{(a as any).jugadores?.nombre || '—'}</span>
-                <span style={{ color:'#6c7280', fontSize:12 }}>{a.fecha}</span>
+              <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
+                <span style={{ color: C.text }}>{(a as any).jugadores?.nombre || '—'}</span>
+                <span style={{ color: C.hint, fontSize: 12 }}>{a.fecha}</span>
               </div>
             ))
           }
         </div>
-        <div style={{ display:'grid', gridTemplateRows:'1fr 1fr', gap:14 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-            <div style={{ fontSize:22 }}>💰</div>
-            <div style={{ fontSize:24, fontWeight:700, color:(kpis.coa||0) > (kpis.mensualidadBase||25000) ? '#f87171' : '#34d399', fontFamily:'monospace', margin:'6px 0 4px' }}>{fmt(kpis.coa || 0)}</div>
-            <div style={{ fontSize:12, color:'#6c7280' }}>COA — Costo por alumno</div>
-            <div style={{ fontSize:11, marginTop:4, color:(kpis.coa||0) > (kpis.mensualidadBase||25000) ? '#f87171' : '#34d399' }}>
-              {(kpis.coa||0) > (kpis.mensualidadBase||25000) ? '🔴 Pérdida por alumno' : '✓ Margen saludable'}
+
+        {/* COA + Gastos */}
+        <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', gap: 14 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: coaOk ? C.greenL : C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Wallet size={16} color={coaOk ? C.green : C.red} />
+              </div>
+              <span style={{ fontSize: 12, color: C.muted }}>COA — Costo por alumno</span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: coaOk ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>
+              {fmt(kpis.coa || 0)}
+            </div>
+            <div style={{ fontSize: 11, marginTop: 4, color: coaOk ? C.green : C.red, fontWeight: 500 }}>
+              {coaOk ? '✓ Margen saludable' : '⚠ Pérdida por alumno'}
             </div>
           </div>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:18 }}>
-            <div style={{ fontSize:22 }}>📉</div>
-            <div style={{ fontSize:24, fontWeight:700, color:'#f87171', fontFamily:'monospace', margin:'6px 0 4px' }}>{fmt(kpis.gastos || 0)}</div>
-            <div style={{ fontSize:12, color:'#6c7280' }}>Gastos este mes</div>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <DollarSign size={16} color={C.red} />
+              </div>
+              <span style={{ fontSize: 12, color: C.muted }}>Gastos este mes</span>
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: C.red, fontVariantNumeric: 'tabular-nums' }}>
+              {fmt(kpis.gastos || 0)}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Modal morosidad */}
+      {/* ── Modal deudores ── */}
       {ddOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:24, width:'100%', maxWidth:520, maxHeight:'80vh', overflowY:'auto' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <div style={{ fontSize:16, fontWeight:600, color:'#fff' }}>⚠️ Deudores</div>
-              <button onClick={() => setDdOpen(null)} style={{ background:'transparent', border:'none', color:'#6c7280', cursor:'pointer', fontSize:20 }}>✕</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, width: '100%', maxWidth: 500, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertTriangle size={16} color={tmColor} />
+                <span style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Deudores</span>
+              </div>
+              <button onClick={() => setDdOpen(false)} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 4, borderRadius: 6 }}>
+                <X size={18} />
+              </button>
             </div>
-            {ddData.length === 0
-              ? <p style={{ color:'#34d399', textAlign:'center', padding:20 }}>✓ Sin deudores</p>
-              : ddData.map((item: any) => (
-                <div key={item.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #1e2030' }}>
-                  <div>
-                    <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>
-                      {kpis.jugadores?.find((j:any) => j.id === item.jugador_id)?.nombre || '—'}
+            {(kpis.morosos?.length || 0) === 0
+              ? <p style={{ color: C.green, textAlign: 'center', padding: 20, fontSize: 14 }}>✓ Sin deudores este mes</p>
+              : kpis.morosos.map((item: any) => {
+                const jug = kpis.jugadores?.find((j: any) => j.id === item.jugador_id)
+                return (
+                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.redL, color: C.red, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
+                        {jug?.nombre?.charAt(0) || '?'}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{jug?.nombre || '—'}</div>
+                        <div style={{ fontSize: 11, color: C.hint, marginTop: 1 }}>{item.estado}</div>
+                      </div>
                     </div>
-                    <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>{item.estado}</div>
+                    {jug?.telefono && (
+                      <a href={`https://wa.me/${jug.telefono.replace(/[^0-9]/g, '')}`} target="_blank"
+                        style={{ background: C.greenL, color: C.green, padding: '5px 10px', borderRadius: 8, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
+                        WA →
+                      </a>
+                    )}
                   </div>
-                  {kpis.jugadores?.find((j:any) => j.id === item.jugador_id)?.telefono && (
-                    <a href={`https://wa.me/${kpis.jugadores.find((j:any) => j.id === item.jugador_id).telefono.replace(/[^0-9]/g,'')}`} target="_blank"
-                      style={{ background:'#0a2d1a', color:'#34d399', padding:'5px 10px', borderRadius:8, fontSize:11, textDecoration:'none' }}>
-                      💬 WA
-                    </a>
-                  )}
-                </div>
-              ))
+                )
+              })
             }
           </div>
         </div>
@@ -253,6 +364,39 @@ export default function DashboardPage() {
   )
 }
 
+/* ── KpiCard ── */
+function KpiCard({ icon, iconBg, label, value, valueColor, tooltip, tooltipId, setTooltip, tooltipText, sub, footer }: {
+  icon: React.ReactNode
+  iconBg: string
+  label: string
+  value: string | number
+  valueColor: string
+  tooltip: string | null
+  tooltipId: string
+  setTooltip: (v: string | null) => void
+  tooltipText: string
+  sub?: React.ReactNode
+  footer?: React.ReactNode
+}) {
+  return (
+    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 18, position: 'relative', boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 8, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {icon}
+        </div>
+        <TooltipBtn id={tooltipId} tooltip={tooltip} setTooltip={setTooltip} texto={tooltipText} />
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 600, color: valueColor, fontVariantNumeric: 'tabular-nums' }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{label}</div>
+      {sub && <div style={{ marginTop: 4 }}>{sub}</div>}
+      {footer && <div style={{ marginTop: 8 }}>{footer}</div>}
+    </div>
+  )
+}
+
+/* ── TooltipBtn ── */
 function TooltipBtn({ id, texto, tooltip, setTooltip }: {
   id: string
   texto: string
@@ -260,15 +404,17 @@ function TooltipBtn({ id, texto, tooltip, setTooltip }: {
   setTooltip: (v: string | null) => void
 }) {
   return (
-    <div style={{ position:'relative', display:'inline-block', flexShrink:0 }}>
+    <div style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
       <button
         onClick={e => e.stopPropagation()}
         onMouseEnter={() => setTooltip(id)}
         onMouseLeave={() => setTooltip(null)}
-        style={{ background:'transparent', border:'1px solid #2a2d3e', borderRadius:'50%', color:'#4b5063', cursor:'help', fontSize:10, width:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', lineHeight:1, padding:0 }}
-      >?</button>
+        style={{ background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '50%', color: '#94a3b8', cursor: 'help', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+      >
+        <HelpCircle size={12} />
+      </button>
       {tooltip === id && (
-        <div style={{ position:'absolute', top:22, right:0, background:'#1a1d2e', border:'1px solid #2a2d3e', borderRadius:8, padding:'10px 12px', fontSize:11, color:'#c8cfe0', zIndex:50, width:230, lineHeight:1.6, boxShadow:'0 4px 20px #00000099', whiteSpace:'pre-line' }}>
+        <div style={{ position: 'absolute', top: 24, right: 0, background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: '#e2e8f0', zIndex: 50, width: 230, lineHeight: 1.6, boxShadow: '0 4px 20px rgba(0,0,0,0.2)', whiteSpace: 'pre-line' }}>
           {texto}
         </div>
       )}
@@ -276,8 +422,9 @@ function TooltipBtn({ id, texto, tooltip, setTooltip }: {
   )
 }
 
+/* ── LinkInvitacion ── */
 function LinkInvitacion({ clubId }: { clubId: string }) {
-  const [link, setLink] = useState('')
+  const [link, setLink]     = useState('')
   const [copiado, setCopiado] = useState(false)
 
   useEffect(() => {
@@ -290,7 +437,7 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
         inv = newInv
       }
       const codigo = inv?.[0]?.codigo || ''
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://cmsports-next.vercel.app'
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
       setLink(`${origin}/registro?club=${clubId}&code=${codigo}`)
     }
     cargar()
@@ -305,67 +452,21 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
 
   return (
     <div>
-      <div style={{ background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 14px', fontSize:11, color:'#a78bfa', wordBreak:'break-all', marginBottom:8 }}>
-        {link || 'Cargando...'}
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px', fontSize: 11, color: '#3730a3', wordBreak: 'break-all', marginBottom: 10 }}>
+        {link || 'Generando enlace...'}
       </div>
-      <button onClick={copiar} style={{ width:'100%', background: copiado ? '#34d39922' : '#1e1b4b', color: copiado ? '#34d399' : '#a78bfa', border:'1px solid #1e2030', borderRadius:8, padding:'9px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
-        {copiado ? '✓ Copiado!' : '📋 Copiar link'}
+      <button onClick={copiar} style={{
+        width: '100%',
+        background: copiado ? '#f0fdf4' : '#ede9fe',
+        color: copiado ? '#16a34a' : '#3730a3',
+        border: `1px solid ${copiado ? '#bbf7d0' : '#c4b5fd'}`,
+        borderRadius: 8, padding: '9px',
+        fontSize: 12, cursor: 'pointer', fontWeight: 500,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        transition: 'all 0.2s',
+      }}>
+        {copiado ? <><Check size={14} /> Copiado!</> : <><Copy size={14} /> Copiar link</>}
       </button>
-    </div>
-  )
-}
-
-function SolicitudesInline({ clubId, onUpdate }: { clubId: string, onUpdate: () => void }) {
-  const [solicitudes, setSolicitudes] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => { if (clubId) cargar() }, [clubId])
-
-  async function cargar() {
-    const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
-    setSolicitudes(data || [])
-    setLoading(false)
-  }
-
-  async function aprobar(sol: any) {
-    await supabase.from('jugadores').insert({
-      club_id: clubId, nombre: sol.nombre, rut: sol.rut, email: sol.email,
-      telefono: sol.telefono, categoria: 'principiante', sesiones_limite: 12,
-      elo: 1200, estado: 'activo', es_externo: false
-    })
-    await supabase.from('solicitudes_jugador').update({ estado: 'aprobado' }).eq('id', sol.id)
-    await cargar()
-    onUpdate()
-  }
-
-  async function rechazar(id: string) {
-    await supabase.from('solicitudes_jugador').update({ estado: 'rechazado' }).eq('id', id)
-    await cargar()
-    onUpdate()
-  }
-
-  if (loading) return <div style={{ padding:30, textAlign:'center', color:'#6c7280' }}>Cargando...</div>
-
-  return (
-    <div>
-      {solicitudes.filter(s => s.estado === 'pendiente').map(sol => (
-        <div key={sol.id} style={{ background:'#14161f', border:'1px solid #6c63ff44', borderRadius:14, padding:20, marginBottom:12 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:10 }}>
-            <div>
-              <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:6 }}>{sol.nombre}</div>
-              <div style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
-                {sol.rut && <span style={{ fontSize:12, color:'#6c7280' }}>RUT: {sol.rut}</span>}
-                {sol.email && <span style={{ fontSize:12, color:'#6c7280' }}>{sol.email}</span>}
-                {sol.telefono && <span style={{ fontSize:12, color:'#6c7280' }}>{sol.telefono}</span>}
-              </div>
-            </div>
-            <div style={{ display:'flex', gap:8 }}>
-              <button onClick={() => rechazar(sol.id)} style={{ background:'#f8717122', color:'#f87171', border:'none', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>✕ Rechazar</button>
-              <button onClick={() => aprobar(sol)} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>✓ Aprobar</button>
-            </div>
-          </div>
-        </div>
-      ))}
     </div>
   )
 }

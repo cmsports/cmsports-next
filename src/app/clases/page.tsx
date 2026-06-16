@@ -7,6 +7,11 @@ import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
 
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 const diasLabel: Record<string, string> = {
   lunes:'Lunes', martes:'Martes', miercoles:'Miércoles',
   jueves:'Jueves', viernes:'Viernes', sabado:'Sábado', domingo:'Domingo'
@@ -64,8 +69,7 @@ export default function ClasesPage() {
     domingo.setDate(lunes.getDate() + 6)
     const [{ data: cl }, { data: pr }, { data: res }] = await Promise.all([
       supabase.from('clases').select('*').eq('club_id', clubId)
-        .gte('fecha', fmtISO(lunes))
-        .lte('fecha', fmtISO(domingo))
+        .gte('fecha', fmtISO(lunes)).lte('fecha', fmtISO(domingo))
         .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
       supabase.from('profesores').select('*').eq('club_id', clubId).eq('activo', true),
       supabase.from('reservas').select('clase_id,estado')
@@ -113,7 +117,6 @@ export default function ClasesPage() {
   const esAdmin = perfil?.rol === 'admin'
   const puedeCrear = esProfesor || esAdmin
 
-  // Agrupar por fecha
   const porFecha: Record<string, any[]> = {}
   clases.forEach(c => {
     const f = c.fecha || 'Sin fecha'
@@ -122,18 +125,18 @@ export default function ClasesPage() {
   })
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
   return (
     <AppLayout perfil={perfil}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Programación de clases</h1>
+        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Programación de clases</h1>
         {puedeCrear && (
           <button onClick={() => { setModalOpen(true); setForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
-            style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
             + Nueva clase
           </button>
         )}
@@ -142,20 +145,20 @@ export default function ClasesPage() {
       {/* Navegación semanal */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:10, marginBottom:20 }}>
         <button onClick={() => setSemanaOffset(o => o - 1)}
-          style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, color:'#a78bfa', width:32, height:32, cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
-        <span style={{ fontSize:14, color:'#c8cfe0', fontWeight:600, minWidth:180, textAlign:'center' }}>{labelSemana}</span>
+          style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, color:'#4f46e5', width:32, height:32, cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
+        <span style={{ fontSize:14, color: text, fontWeight:600, minWidth:180, textAlign:'center' }}>{labelSemana}</span>
         <button onClick={() => setSemanaOffset(o => o + 1)}
-          style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, color:'#a78bfa', width:32, height:32, cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+          style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, color:'#4f46e5', width:32, height:32, cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
         {semanaOffset !== 0 && (
           <button onClick={() => setSemanaOffset(0)}
-            style={{ background:'transparent', border:'none', color:'#6c7280', fontSize:12, cursor:'pointer', textDecoration:'underline' }}>
+            style={{ background:'transparent', border:'none', color: muted, fontSize:12, cursor:'pointer', textDecoration:'underline' }}>
             Hoy
           </button>
         )}
       </div>
 
-{Object.keys(porFecha).length === 0 ? (
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>
+      {Object.keys(porFecha).length === 0 ? (
+        <div style={{ ...card, padding:40, textAlign:'center', color: hint, fontSize:13 }}>
           Sin clases programadas
         </div>
       ) : Object.entries(porFecha).map(([fecha, clasesF]) => {
@@ -163,41 +166,41 @@ export default function ClasesPage() {
         try { if (fecha.includes('-')) fechaLabel = new Date(fecha+'T12:00:00').toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long' }) } catch(e) {}
         const todasPublicadas = clasesF.every(c => c.publicada)
         return (
-          <div key={fecha} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, marginBottom:12, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #1e2030', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div style={{ fontSize:14, fontWeight:600, color:'#fff', textTransform:'capitalize' }}>{fechaLabel}</div>
+          <div key={fecha} style={{ ...card, marginBottom:12, overflow:'hidden' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ fontSize:14, fontWeight:600, color: text, textTransform:'capitalize' }}>{fechaLabel}</div>
               {puedeCrear && !todasPublicadas && (
                 <button onClick={async () => {
                   await supabase.from('clases').update({ publicada: true }).eq('club_id', clubId!).eq('fecha', fecha).eq('publicada', false)
                   cargarClases(semanaOffset)
-                }} style={{ background:'#6c63ff22', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', fontWeight:600 }}>
-                  📢 Publicar día
+                }} style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', fontWeight:600 }}>
+                  Publicar día
                 </button>
               )}
-              {todasPublicadas && <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Publicado</span>}
+              {todasPublicadas && <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Publicado</span>}
             </div>
             {clasesF.map(c => {
               const prof = profesores.find(p => p.id === c.profesor_id)
               const confirmados = reservas.filter(r => r.clase_id === c.id && r.estado === 'confirmado').length
               return (
-                <div key={c.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 20px', borderBottom:'1px solid #1e2030', borderLeft:`3px solid ${c.publicada ? '#34d399' : '#1e2030'}` }}>
-                  <div style={{ background:'#1e1b4b', color:'#a78bfa', padding:'8px 12px', borderRadius:8, fontSize:12, fontWeight:600, minWidth:90, textAlign:'center', flexShrink:0 }}>
+                <div key={c.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 20px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${c.publicada ? '#16a34a' : '#e2e8f0'}` }}>
+                  <div style={{ background: c.publicada ? '#f0fdf4' : '#f4f7fa', color: c.publicada ? '#16a34a' : muted, padding:'8px 12px', borderRadius:8, fontSize:12, fontWeight:600, minWidth:90, textAlign:'center', flexShrink:0, border:`1px solid ${c.publicada ? '#bbf7d0' : '#e2e8f0'}` }}>
                     {c.hora_inicio?.slice(0,5) || '—'}<br />
-                    <span style={{ fontSize:10, color:'#6c7280', fontWeight:400 }}>{c.hora_fin?.slice(0,5) || ''}</span>
+                    <span style={{ fontSize:10, color: hint, fontWeight:400 }}>{c.hora_fin?.slice(0,5) || ''}</span>
                   </div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:13, fontWeight:600, color:'#c8cfe0' }}>{c.contenido}</div>
-                    <div style={{ fontSize:11, color:'#6c7280', marginTop:3 }}>
-                      {prof ? `👤 ${prof.nombre}` : ''}{c.grupo ? ` · ${c.grupo}` : ''}
-                      {' · '}<span style={{ color:'#34d399' }}>✓ {confirmados} van</span>
+                    <div style={{ fontSize:13, fontWeight:600, color: text }}>{c.contenido}</div>
+                    <div style={{ fontSize:11, color: muted, marginTop:3 }}>
+                      {prof ? `${prof.nombre}` : ''}{c.grupo ? ` · ${c.grupo}` : ''}
+                      {' · '}<span style={{ color:'#16a34a' }}>✓ {confirmados} van</span>
                     </div>
                   </div>
                   {puedeCrear && (
                     <div style={{ display:'flex', gap:6 }}>
                       {!c.publicada && (
-                        <button onClick={() => publicarClase(c.id)} style={{ background:'#34d39922', color:'#34d399', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Publicar</button>
+                        <button onClick={() => publicarClase(c.id)} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Publicar</button>
                       )}
-                      <button onClick={() => eliminarClase(c.id)} style={{ background:'#f8717122', color:'#f87171', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
+                      <button onClick={() => eliminarClase(c.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
                     </div>
                   )}
                 </div>
@@ -209,9 +212,9 @@ export default function ClasesPage() {
 
       {/* Modal nueva clase */}
       {modalOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:440 }}>
-            <div style={{ fontSize:17, fontWeight:600, color:'#fff', marginBottom:20 }}>Nueva clase</div>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>Nueva clase</div>
             {[
               { label:'Fecha', type:'date', key:'fecha' },
               { label:'Hora inicio', type:'time', key:'inicio' },
@@ -220,9 +223,9 @@ export default function ClasesPage() {
               { label:'Descripción (opcional)', type:'text', key:'grupo', placeholder:'Detalles del entrenamiento' },
             ].map(f => (
               <div key={f.key} style={{ marginBottom:14 }}>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>{f.label}</label>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>{f.label}</label>
                 <input
-                  style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   type={f.type} placeholder={f.placeholder}
                   value={(form as any)[f.key]}
                   onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
@@ -230,9 +233,9 @@ export default function ClasesPage() {
               </div>
             ))}
             <div style={{ marginBottom:20 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Profesor</label>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Profesor</label>
               <select
-                style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 value={form.profesorId} onChange={e => setForm(prev => ({ ...prev, profesorId: e.target.value }))}
               >
                 <option value="">— Seleccionar —</option>
@@ -240,9 +243,9 @@ export default function ClasesPage() {
               </select>
             </div>
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={() => guardarClase(false)} style={{ flex:1, padding:11, background:'#1e1b4b', border:'none', borderRadius:8, color:'#a78bfa', fontSize:13, cursor:'pointer' }}>Borrador</button>
-              <button onClick={() => guardarClase(true)} style={{ flex:1, padding:11, background:'#6c63ff', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>Publicar</button>
+              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={() => guardarClase(false)} style={{ flex:1, padding:11, background:'#ede9fe', border:'none', borderRadius:8, color:'#3730a3', fontSize:13, cursor:'pointer', fontWeight:500 }}>Borrador</button>
+              <button onClick={() => guardarClase(true)} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>Publicar</button>
             </div>
           </div>
         </div>

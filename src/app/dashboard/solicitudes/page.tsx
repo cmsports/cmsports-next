@@ -7,6 +7,11 @@ import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
 
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 export default function SolicitudesPage() {
   const [perfil, setPerfil] = useState<any>(null)
   const [solicitudes, setSolicitudes] = useState<any[]>([])
@@ -44,7 +49,6 @@ export default function SolicitudesPage() {
   }, [clubId])
 
   async function cargarSolicitudes() {
-    // Obtener o crear link de invitación
     let { data: inv } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
     if (!inv?.length) {
       await supabase.from('invitaciones').insert({ club_id: clubId })
@@ -54,7 +58,6 @@ export default function SolicitudesPage() {
     const codigo = inv?.[0]?.codigo || ''
     setLinkInvitacion(`${window.location.origin}/registro?code=${codigo}`)
 
-    // Cargar solicitudes
     const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
     setSolicitudes(data || [])
   }
@@ -98,90 +101,97 @@ export default function SolicitudesPage() {
     setTimeout(() => setCopiado(false), 2000)
   }
 
-  const estadoColor: Record<string, string> = {
-    pendiente: '#fbbf24', aprobado: '#34d399', rechazado: '#f87171'
+  const estadoConfig: Record<string, { color: string; bg: string }> = {
+    pendiente: { color:'#d97706', bg:'#fffbeb' },
+    aprobado:  { color:'#16a34a', bg:'#f0fdf4' },
+    rechazado: { color:'#dc2626', bg:'#fef2f2' },
   }
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
   return (
     <AppLayout perfil={perfil}>
-      <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:20 }}>Solicitudes de jugadores</h1>
+      <h1 style={{ fontSize:20, fontWeight:600, color: text, marginBottom:20 }}>Solicitudes de jugadores</h1>
 
       {/* Link de invitación */}
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, marginBottom:20 }}>
-        <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Link de invitación</div>
+      <div style={{ ...card, padding:20, marginBottom:20 }}>
+        <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Link de invitación</div>
         <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-          <div style={{ flex:1, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#a78bfa', wordBreak:'break-all' }}>
+          <div style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#3730a3', wordBreak:'break-all' }}>
             {linkInvitacion}
           </div>
           <button
             onClick={copiarLink}
-            style={{ background: copiado ? '#34d39922' : '#1e1b4b', color: copiado ? '#34d399' : '#a78bfa', border:'1px solid #1e2030', borderRadius:8, padding:'10px 16px', fontSize:12, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}
+            style={{ background: copiado ? '#f0fdf4' : '#ede9fe', color: copiado ? '#16a34a' : '#3730a3', border:`1px solid ${copiado ? '#bbf7d0' : '#c4b5fd'}`, borderRadius:8, padding:'10px 16px', fontSize:12, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}
           >
             {copiado ? '✓ Copiado' : '📋 Copiar'}
           </button>
         </div>
-        <div style={{ fontSize:12, color:'#6c7280', marginTop:8 }}>Comparte este link con los jugadores que quieran unirse al club</div>
+        <div style={{ fontSize:12, color: muted, marginTop:8 }}>Comparte este link con los jugadores que quieran unirse al club</div>
       </div>
 
       {/* Solicitudes */}
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
-        <div style={{ padding:'14px 20px', borderBottom:'1px solid #1e2030', fontSize:13, fontWeight:600, color:'#fff' }}>
+      <div style={{ ...card, overflow:'hidden' }}>
+        <div style={{ padding:'14px 20px', borderBottom:'1px solid #e2e8f0', fontSize:13, fontWeight:600, color: text }}>
           Solicitudes pendientes
         </div>
-        <table style={{ width:'100%', borderCollapse:'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom:'1px solid #1e2030' }}>
-              {['Nombre','RUT','Email','Teléfono','Fecha','Estado','Acciones'].map(h => (
-                <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {solicitudes.map(s => (
-              <tr key={s.id} style={{ borderBottom:'1px solid #1e2030' }}>
-                <td style={{ padding:'12px 16px', fontWeight:600, color:'#c8cfe0' }}>{s.nombre}</td>
-                <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{s.rut || '—'}</td>
-                <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{s.email || '—'}</td>
-                <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{s.telefono || '—'}</td>
-                <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{new Date(s.creado_en).toLocaleDateString('es-CL')}</td>
-                <td style={{ padding:'12px 16px' }}>
-                  <span style={{ background: estadoColor[s.estado] + '22', color: estadoColor[s.estado], padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                    {s.estado}
-                  </span>
-                </td>
-                <td style={{ padding:'12px 16px' }}>
-                  {s.estado === 'pendiente' && (
-                    <div style={{ display:'flex', gap:6 }}>
-                      <button onClick={() => abrirAprobar(s)} style={{ background:'#34d39922', color:'#34d399', border:'1px solid #34d39944', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer', fontWeight:600 }}>✓ Aprobar</button>
-                      <button onClick={() => rechazar(s.id)} style={{ background:'#f8717122', color:'#f87171', border:'1px solid #f8717144', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
-                    </div>
-                  )}
-                </td>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom:'1px solid #e2e8f0', background:'#f8fafc' }}>
+                {['Nombre','RUT','Email','Teléfono','Fecha','Estado','Acciones'].map(h => (
+                  <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase' }}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {solicitudes.map(s => {
+                const cfg = estadoConfig[s.estado] || estadoConfig.pendiente
+                return (
+                  <tr key={s.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                    <td style={{ padding:'12px 16px', fontWeight:600, color: text }}>{s.nombre}</td>
+                    <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{s.rut || '—'}</td>
+                    <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{s.email || '—'}</td>
+                    <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{s.telefono || '—'}</td>
+                    <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{new Date(s.creado_en).toLocaleDateString('es-CL')}</td>
+                    <td style={{ padding:'12px 16px' }}>
+                      <span style={{ background: cfg.bg, color: cfg.color, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                        {s.estado}
+                      </span>
+                    </td>
+                    <td style={{ padding:'12px 16px' }}>
+                      {s.estado === 'pendiente' && (
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => abrirAprobar(s)} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer', fontWeight:600 }}>✓ Aprobar</button>
+                          <button onClick={() => rechazar(s.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
         {solicitudes.length === 0 && (
-          <div style={{ padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>No hay solicitudes aún</div>
+          <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>No hay solicitudes aún</div>
         )}
       </div>
+
       {/* Modal aprobar con plan */}
       {modalAprobar && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto' }}>
-            <div style={{ fontSize:17, fontWeight:600, color:'#fff', marginBottom:6 }}>Aprobar solicitud</div>
-            <div style={{ fontSize:13, color:'#6c7280', marginBottom:20 }}>{modalAprobar.nombre} — {modalAprobar.rut || 'Sin RUT'}</div>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:6 }}>Aprobar solicitud</div>
+            <div style={{ fontSize:13, color: muted, marginBottom:20 }}>{modalAprobar.nombre} — {modalAprobar.rut || 'Sin RUT'}</div>
 
-            {/* Categoría */}
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Categoría</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 value={planForm.categoria} onChange={e => setPlanForm(f => ({ ...f, categoria: e.target.value }))}>
                 <option value="principiante">Principiante</option>
                 <option value="intermedio">Intermedio</option>
@@ -189,50 +199,47 @@ export default function SolicitudesPage() {
               </select>
             </div>
 
-            {/* Tipo de plan */}
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Tipo de plan</label>
-              <div style={{ display:'flex', gap:0, borderRadius:8, overflow:'hidden', border:'1px solid #1e2030' }}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Tipo de plan</label>
+              <div style={{ display:'flex', gap:0, borderRadius:8, overflow:'hidden', border:'1px solid #e2e8f0' }}>
                 {(['mensual','semanal','libre'] as const).map(t => (
                   <button key={t} onClick={() => setPlanForm(f => ({ ...f, tipo_plan: t }))}
-                    style={{ flex:1, padding:'9px 0', background: planForm.tipo_plan === t ? '#6c63ff' : '#0a0c12', color: planForm.tipo_plan === t ? '#fff' : '#6c7280', border:'none', fontSize:12, fontWeight:600, cursor:'pointer', textTransform:'capitalize' }}>
+                    style={{ flex:1, padding:'9px 0', background: planForm.tipo_plan === t ? '#4f46e5' : '#f4f7fa', color: planForm.tipo_plan === t ? '#fff' : muted, border:'none', fontSize:12, fontWeight:600, cursor:'pointer', textTransform:'capitalize' }}>
                     {t === 'libre' ? 'Libre acceso' : t.charAt(0).toUpperCase() + t.slice(1)}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Entrenamientos por semana */}
             {planForm.tipo_plan !== 'libre' && (
               <div style={{ marginBottom:14 }}>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Entrenamientos por semana</label>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Entrenamientos por semana</label>
                 <input type="number" min={1} max={7}
-                  style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   value={planForm.entrenamientos_por_semana}
                   onChange={e => setPlanForm(f => ({ ...f, entrenamientos_por_semana: e.target.value }))} />
               </div>
             )}
 
-            {/* Mensualidad */}
             <div style={{ marginBottom:20 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Mensualidad</label>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mensualidad</label>
               <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap' }}>
                 {PRESETS.map(p => (
                   <button key={p.valor} onClick={() => setPlanForm(f => ({ ...f, mensualidad: String(p.valor), entrenamientos_por_semana: String(p.ent) }))}
-                    style={{ padding:'6px 12px', borderRadius:20, border: parseInt(planForm.mensualidad) === p.valor ? '1px solid #6c63ff' : '1px solid #1e2030', background: parseInt(planForm.mensualidad) === p.valor ? '#6c63ff22' : '#0a0c12', color: parseInt(planForm.mensualidad) === p.valor ? '#a78bfa' : '#6c7280', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                    style={{ padding:'6px 12px', borderRadius:20, border: parseInt(planForm.mensualidad) === p.valor ? '1px solid #4f46e5' : '1px solid #e2e8f0', background: parseInt(planForm.mensualidad) === p.valor ? '#ede9fe' : '#f4f7fa', color: parseInt(planForm.mensualidad) === p.valor ? '#3730a3' : muted, fontSize:12, fontWeight:600, cursor:'pointer' }}>
                     {p.label} ({p.ent} ent/sem)
                   </button>
                 ))}
               </div>
               <input type="number" placeholder="Monto personalizado"
-                style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 value={planForm.mensualidad}
                 onChange={e => setPlanForm(f => ({ ...f, mensualidad: e.target.value }))} />
             </div>
 
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalAprobar(null)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={confirmarAprobar} disabled={aprobando} style={{ flex:1, padding:11, background:'#34d399', border:'none', borderRadius:8, color:'#0f1117', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={() => setModalAprobar(null)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={confirmarAprobar} disabled={aprobando} style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
                 {aprobando ? 'Aprobando...' : 'Aprobar jugador'}
               </button>
             </div>

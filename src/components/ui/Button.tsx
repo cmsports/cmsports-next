@@ -14,10 +14,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<Variant, string> = {
-  primary: 'bg-[var(--purple)] hover:bg-[#5b54e6] text-white',
-  secondary: 'bg-transparent border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--purple-light)]',
-  danger: 'bg-[var(--red)]/10 border border-[var(--red)]/30 text-[var(--red)] hover:bg-[var(--red)]/20',
-  ghost: 'bg-transparent text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-white/5',
+  primary:   'bg-[var(--orange)] hover:bg-[var(--orange-dark)] text-white border border-transparent',
+  secondary: 'bg-transparent border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--sky)]',
+  danger:    'bg-[var(--red-light)] border border-red-200 text-[var(--red)] hover:bg-red-100',
+  ghost:     'bg-transparent text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-slate-100',
 }
 
 const sizeStyles: Record<Size, string> = {

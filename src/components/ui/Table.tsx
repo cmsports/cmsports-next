@@ -24,9 +24,9 @@ export function Table<T>({ columns, data, rowKey, onRowClick, emptyMessage = 'Si
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-[var(--border)]">
+          <tr className="border-b border-[var(--border)] bg-slate-50">
             {columns.map((col) => (
-              <th key={col.key} className={`text-left text-xs text-[var(--text-muted)] uppercase tracking-wider px-3 py-2 ${col.className ?? ''}`}>
+              <th key={col.key} className={`text-left text-xs text-[var(--text-muted)] font-medium uppercase tracking-wider px-3 py-2.5 ${col.className ?? ''}`}>
                 {col.header}
               </th>
             ))}
@@ -37,7 +37,7 @@ export function Table<T>({ columns, data, rowKey, onRowClick, emptyMessage = 'Si
             <tr
               key={rowKey(row)}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
-              className={`border-b border-[var(--border)]/50 ${onRowClick ? 'cursor-pointer hover:bg-white/5' : ''}`}
+              className={`border-b border-[var(--border)] ${onRowClick ? 'cursor-pointer hover:bg-slate-50' : ''}`}
             >
               {columns.map((col) => (
                 <td key={col.key} className={`px-3 py-3 text-[var(--text)] ${col.className ?? ''}`}>

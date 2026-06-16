@@ -9,11 +9,11 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  default: 'bg-white/10 text-[var(--text-muted)]',
-  success: 'bg-[var(--green)]/15 text-[var(--green)]',
-  danger: 'bg-[var(--red)]/15 text-[var(--red)]',
-  warning: 'bg-[var(--yellow)]/15 text-[var(--yellow)]',
-  info: 'bg-[var(--purple)]/15 text-[var(--purple-light)]',
+  default: 'bg-slate-100 text-slate-600',
+  success: 'bg-[var(--green-light)] text-[var(--green)]',
+  danger:  'bg-[var(--red-light)] text-[var(--red)]',
+  warning: 'bg-[var(--yellow-light)] text-[var(--yellow)]',
+  info:    'bg-[var(--sky-light)] text-[var(--sky-dark)]',
 }
 
 export function Badge({ children, variant = 'default', className = '' }: BadgeProps) {

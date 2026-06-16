@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { Bell } from 'lucide-react'
 
 interface Notificacion {
   id: string
@@ -11,17 +12,14 @@ interface Notificacion {
   fecha: string
   leida: boolean
   color: string
-  icono: string
 }
 
-export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: { perfil: any, placement?: 'bottom' | 'top' }) {
-  const [open, setOpen] = useState(false)
+export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: { perfil: any; placement?: 'bottom' | 'top' }) {
+  const [open, setOpen]   = useState(false)
   const [notifs, setNotifs] = useState<Notificacion[]>([])
 
-  const hoy = new Date().toISOString().slice(0,10)
-  const en7dias = new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0,10)
-  const en14dias = new Date(Date.now() + 14*24*60*60*1000).toISOString().slice(0,10)
-  const hace3dias = new Date(Date.now() - 3*24*60*60*1000).toISOString().slice(0,10)
+  const hoy      = new Date().toISOString().slice(0, 10)
+  const en14dias = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   useEffect(() => {
     if (!perfil?.club_id) return
@@ -34,198 +32,95 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
     const rol = perfil?.rol
 
     if (rol === 'jugador' && perfil?.jugador_id) {
-      // 1. Mensualidad pendiente o atrasada
-      const mesActual = new Date().getMonth() + 1
+      const mesActual  = new Date().getMonth() + 1
       const anioActual = new Date().getFullYear()
       const { data: mens } = await supabase.from('mensualidades')
         .select('*').eq('jugador_id', perfil.jugador_id)
         .eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
 
       if (mens?.estado === 'pendiente') {
-        notificaciones.push({
-          id: 'mens-pendiente',
-          tipo: 'mensualidad',
-          titulo: '💳 Mensualidad pendiente',
-          mensaje: `Tu mensualidad de ${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][mesActual-1]} está pendiente de pago.`,
-          fecha: hoy,
-          leida: false,
-          color: '#fbbf24',
-          icono: '💳'
-        })
+        notificaciones.push({ id: 'mens-pendiente', tipo: 'mensualidad', titulo: 'Mensualidad pendiente', mensaje: `Tu mensualidad de este mes está pendiente de pago.`, fecha: hoy, leida: false, color: '#d97706' })
       } else if (mens?.estado === 'atrasado') {
-        notificaciones.push({
-          id: 'mens-atrasada',
-          tipo: 'mensualidad',
-          titulo: '⚠️ Mensualidad atrasada',
-          mensaje: `Tienes una mensualidad atrasada. Contáctate con el administrador.`,
-          fecha: hoy,
-          leida: false,
-          color: '#f87171',
-          icono: '⚠️'
-        })
+        notificaciones.push({ id: 'mens-atrasada', tipo: 'mensualidad', titulo: 'Mensualidad atrasada', mensaje: 'Tienes una mensualidad atrasada. Contacta al administrador.', fecha: hoy, leida: false, color: '#dc2626' })
       }
 
-      // 2. Feedback del trimestre actual
-      const trimestreActual = `Q${Math.ceil((new Date().getMonth()+1)/3)}-${new Date().getFullYear()}`
+      const trimestreActual = `Q${Math.ceil((new Date().getMonth() + 1) / 3)}-${new Date().getFullYear()}`
       const { data: evaluacion } = await supabase.from('evaluaciones_trimestrales')
         .select('*').eq('jugador_id', perfil.jugador_id).eq('periodo_trimestre', trimestreActual).maybeSingle()
-
       if (evaluacion?.feedback_profesor) {
         const texto = evaluacion.feedback_profesor
-        notificaciones.push({
-          id: `feedback-${trimestreActual}`,
-          tipo: 'aviso',
-          titulo: '📋 Tienes feedback nuevo',
-          mensaje: texto.length > 90 ? texto.slice(0, 90) + '…' : texto,
-          fecha: hoy,
-          leida: false,
-          color: '#a78bfa',
-          icono: '📋'
-        })
+        notificaciones.push({ id: `feedback-${trimestreActual}`, tipo: 'aviso', titulo: 'Tienes feedback nuevo', mensaje: texto.length > 90 ? texto.slice(0, 90) + '…' : texto, fecha: hoy, leida: false, color: '#4f46e5' })
       }
 
-      // 3. Eventos próximos del club
       const { data: eventosProximos } = await supabase.from('eventos')
-        .select('*').eq('club_id', perfil.club_id)
-        .gte('fecha_inicio', hoy).lte('fecha_inicio', en14dias)
-        .order('fecha_inicio').limit(4)
+        .select('*').eq('club_id', perfil.club_id).gte('fecha_inicio', hoy).lte('fecha_inicio', en14dias).order('fecha_inicio').limit(4)
+      eventosProximos?.forEach((ev: any) => {
+        notificaciones.push({ id: `evento-${ev.id}`, tipo: 'aviso', titulo: ev.titulo, mensaje: `${new Date(ev.fecha_inicio).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'short' })}${ev.hora_inicio ? ' · ' + ev.hora_inicio.slice(0, 5) : ''}`, fecha: ev.fecha_inicio, leida: false, color: '#16a34a' })
+      })
 
-      if (eventosProximos?.length) {
-        eventosProximos.forEach((ev: any) => {
-          notificaciones.push({
-            id: `evento-${ev.id}`,
-            tipo: 'aviso',
-            titulo: `📅 ${ev.titulo}`,
-            mensaje: `${ev.descripcion ? ev.descripcion + ' · ' : ''}${new Date(ev.fecha_inicio).toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'short' })}${ev.hora_inicio ? ' ' + ev.hora_inicio.slice(0,5) : ''}`,
-            fecha: ev.fecha_inicio,
-            leida: false,
-            color: '#34d399',
-            icono: '📅'
-          })
-        })
-      }
-
-      // 4. Torneos próximos
       const { data: torneos } = await supabase.from('torneos')
-        .select('*').eq('club_id', perfil.club_id)
-        .in('estado', ['programado','en_curso']).gte('fecha_inicio', hoy).limit(2)
-
-      if (torneos?.length) {
-        torneos.forEach((t: any) => {
-          notificaciones.push({
-            id: `torneo-${t.id}`,
-            tipo: 'torneo',
-            titulo: '🎯 Torneo próximo',
-            mensaje: `${t.nombre} — ${t.fecha_inicio ? new Date(t.fecha_inicio).toLocaleDateString('es-CL') : 'Fecha por confirmar'}`,
-            fecha: t.fecha_inicio || hoy,
-            leida: false,
-            color: '#a78bfa',
-            icono: '🎯'
-          })
-        })
-      }
+        .select('*').eq('club_id', perfil.club_id).in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy).limit(2)
+      torneos?.forEach((t: any) => {
+        notificaciones.push({ id: `torneo-${t.id}`, tipo: 'torneo', titulo: 'Torneo próximo', mensaje: `${t.nombre} — ${t.fecha_inicio ? new Date(t.fecha_inicio).toLocaleDateString('es-CL') : 'Fecha por confirmar'}`, fecha: t.fecha_inicio || hoy, leida: false, color: '#f43f5e' })
+      })
     }
 
     if (rol === 'profesor') {
-      // 1. Clases del día
       const { data: clasesHoy } = await supabase.from('clases')
-        .select('*').eq('club_id', perfil.club_id)
-        .eq('publicada', true).eq('fecha', hoy)
-        .order('hora_inicio')
-
+        .select('*').eq('club_id', perfil.club_id).eq('publicada', true).eq('fecha', hoy).order('hora_inicio')
       if (clasesHoy?.length) {
-        notificaciones.push({
-          id: 'clases-hoy',
-          tipo: 'clase',
-          titulo: `📚 Tienes ${clasesHoy.length} clase${clasesHoy.length>1?'s':''} hoy`,
-          mensaje: clasesHoy.map((c:any) => `${c.hora_inicio?.slice(0,5)} ${c.contenido}`).join(' · '),
-          fecha: hoy,
-          leida: false,
-          color: '#60a5fa',
-          icono: '📚'
-        })
+        notificaciones.push({ id: 'clases-hoy', tipo: 'clase', titulo: `${clasesHoy.length} clase${clasesHoy.length > 1 ? 's' : ''} hoy`, mensaje: clasesHoy.map((c: any) => `${c.hora_inicio?.slice(0, 5)} ${c.contenido}`).join(' · '), fecha: hoy, leida: false, color: '#4f46e5' })
       }
 
-      // 2. Alumnos sin evaluar este trimestre
-      const trimestre = Math.ceil((new Date().getMonth()+1)/3)
-      const periodo = `Q${trimestre}-${new Date().getFullYear()}`
-      const { data: jugadores } = await supabase.from('jugadores')
-        .select('id').eq('club_id', perfil.club_id).eq('estado','activo').neq('es_externo',true)
-      const { data: evaluados } = await supabase.from('evaluaciones_trimestrales')
-        .select('jugador_id').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo)
-
+      const trimestre = Math.ceil((new Date().getMonth() + 1) / 3)
+      const periodo   = `Q${trimestre}-${new Date().getFullYear()}`
+      const { data: jugadores } = await supabase.from('jugadores').select('id').eq('club_id', perfil.club_id).eq('estado', 'activo').neq('es_externo', true)
+      const { data: evaluados }  = await supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo)
       const sinEvaluar = (jugadores?.length || 0) - (evaluados?.length || 0)
       if (sinEvaluar > 0) {
-        notificaciones.push({
-          id: 'sin-evaluar',
-          tipo: 'aviso',
-          titulo: '📋 Evaluaciones pendientes',
-          mensaje: `${sinEvaluar} alumno${sinEvaluar>1?'s':''} sin evaluación ${periodo}.`,
-          fecha: hoy,
-          leida: false,
-          color: '#fbbf24',
-          icono: '📋'
-        })
+        notificaciones.push({ id: 'sin-evaluar', tipo: 'aviso', titulo: 'Evaluaciones pendientes', mensaje: `${sinEvaluar} alumno${sinEvaluar > 1 ? 's' : ''} sin evaluación ${periodo}.`, fecha: hoy, leida: false, color: '#d97706' })
       }
 
-      // 3. Alumnos que confirmaron asistencia hoy
-      const { data: clasesConConfirm } = await supabase.from('clases')
-        .select('id,contenido,hora_inicio').eq('club_id', perfil.club_id).eq('fecha', hoy)
-      
-      if (clasesConConfirm?.length) {
-        for (const c of clasesConConfirm) {
-          const { count } = await supabase.from('reservas')
-            .select('*', { count:'exact', head:true }).eq('clase_id', c.id).eq('estado','confirmado')
-          if (count && count > 0) {
-            notificaciones.push({
-              id: `confirm-${c.id}`,
-              tipo: 'clase',
-              titulo: `👥 ${count} alumno${count>1?'s':''} confirman asistencia`,
-              mensaje: `${c.contenido} — ${c.hora_inicio?.slice(0,5)}`,
-              fecha: hoy,
-              leida: false,
-              color: '#34d399',
-              icono: '👥'
-            })
-          }
-        }
-      }
-
-      // 4. Torneos próximos
       const { data: torneos } = await supabase.from('torneos')
-        .select('*').eq('club_id', perfil.club_id)
-        .in('estado', ['programado','en_curso']).gte('fecha_inicio', hoy).limit(2)
-
-      if (torneos?.length) {
-        torneos.forEach((t: any) => {
-          notificaciones.push({
-            id: `torneo-${t.id}`,
-            tipo: 'torneo',
-            titulo: '🎯 Torneo próximo',
-            mensaje: `${t.nombre} — ${t.fecha_inicio ? new Date(t.fecha_inicio).toLocaleDateString('es-CL') : 'Fecha por confirmar'}`,
-            fecha: t.fecha_inicio || hoy,
-            leida: false,
-            color: '#a78bfa',
-            icono: '🎯'
-          })
-        })
-      }
+        .select('*').eq('club_id', perfil.club_id).in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy).limit(2)
+      torneos?.forEach((t: any) => {
+        notificaciones.push({ id: `torneo-${t.id}`, tipo: 'torneo', titulo: 'Torneo próximo', mensaje: `${t.nombre} — ${t.fecha_inicio ? new Date(t.fecha_inicio).toLocaleDateString('es-CL') : 'Fecha por confirmar'}`, fecha: t.fecha_inicio || hoy, leida: false, color: '#f43f5e' })
+      })
     }
 
-    // Ordenar por fecha
-    notificaciones.sort((a,b) => a.fecha > b.fecha ? 1 : -1)
+    notificaciones.sort((a, b) => (a.fecha > b.fecha ? 1 : -1))
     setNotifs(notificaciones)
   }
 
   const sinLeer = notifs.filter(n => !n.leida).length
 
   return (
-    <div style={{ position:'relative' }}>
-      <button onClick={() => setOpen(!open)}
-        style={{ position:'relative', background:'#14161f', border:'1px solid #1e2030', borderRadius:10, padding:'7px 12px', color:'#c8cfe0', cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontSize:18 }}>
-        🔔
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          position: 'relative',
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: 8,
+          padding: '7px 10px',
+          color: '#64748b',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          boxShadow: '0 1px 2px rgba(15,23,42,0.05)',
+        }}
+      >
+        <Bell size={16} />
         {sinLeer > 0 && (
-          <span style={{ position:'absolute', top:-4, right:-4, background:'#f87171', color:'white', borderRadius:'50%', width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700 }}>
+          <span style={{
+            position: 'absolute', top: -4, right: -4,
+            background: '#f43f5e', color: 'white',
+            borderRadius: '50%', width: 17, height: 17,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 9, fontWeight: 700, border: '2px solid white',
+          }}>
             {sinLeer > 9 ? '9+' : sinLeer}
           </span>
         )}
@@ -233,26 +128,50 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
 
       {open && (
         <>
-          <div onClick={() => setOpen(false)} style={{ position:'fixed', inset:0, zIndex:98 }} />
-          <div style={{ position:'absolute', ...(placement === 'top' ? { bottom:'calc(100% + 8px)', left:0 } : { top:'calc(100% + 8px)', right:0 }), background:'#14161f', border:'1px solid #1e2030', borderRadius:14, width:300, maxHeight:'70vh', overflowY:'auto', zIndex:99, boxShadow:'0 8px 32px #00000088' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 18px', borderBottom:'1px solid #1e2030' }}>
-              <div style={{ fontSize:14, fontWeight:600, color:'#fff' }}>Notificaciones</div>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 98 }} />
+          <div style={{
+            position: 'absolute',
+            ...(placement === 'top' ? { bottom: 'calc(100% + 8px)', left: 0 } : { top: 'calc(100% + 8px)', right: 0 }),
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 12,
+            width: 300,
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            zIndex: 99,
+            boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Notificaciones</div>
               {sinLeer > 0 && (
-                <button onClick={() => setNotifs(prev => prev.map(n => ({ ...n, leida:true })))}
-                  style={{ background:'transparent', border:'none', color:'#6c7280', fontSize:11, cursor:'pointer' }}>
+                <button
+                  onClick={() => setNotifs(prev => prev.map(n => ({ ...n, leida: true })))}
+                  style={{ background: 'transparent', border: 'none', color: '#4f46e5', fontSize: 11, cursor: 'pointer', fontWeight: 500 }}
+                >
                   Marcar todo leído
                 </button>
               )}
             </div>
             {notifs.length === 0
-              ? <div style={{ padding:30, textAlign:'center', color:'#6c7280', fontSize:13 }}>Sin notificaciones</div>
+              ? <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Sin notificaciones</div>
               : notifs.map(n => (
-                <div key={n.id} onClick={() => setNotifs(prev => prev.map(x => x.id===n.id ? {...x,leida:true} : x))}
-                  style={{ padding:'12px 18px', borderBottom:'1px solid #1e2030', cursor:'pointer', background: n.leida ? 'transparent' : '#1a1d2e', display:'flex', gap:10, alignItems:'flex-start' }}>
-                  <div style={{ width:8, height:8, borderRadius:'50%', background: n.leida ? 'transparent' : n.color, marginTop:5, flexShrink:0 }} />
+                <div
+                  key={n.id}
+                  onClick={() => setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, leida: true } : x))}
+                  style={{
+                    padding: '11px 16px',
+                    borderBottom: '1px solid #f1f5f9',
+                    cursor: 'pointer',
+                    background: n.leida ? '#ffffff' : '#f8fafc',
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'flex-start',
+                  }}
+                >
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: n.leida ? '#e2e8f0' : n.color, marginTop: 5, flexShrink: 0 }} />
                   <div>
-                    <div style={{ fontSize:12, fontWeight:600, color: n.leida ? '#6c7280' : '#c8cfe0', marginBottom:3 }}>{n.titulo}</div>
-                    <div style={{ fontSize:11, color:'#6c7280', lineHeight:1.4 }}>{n.mensaje}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: n.leida ? '#94a3b8' : '#0f172a', marginBottom: 2 }}>{n.titulo}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>{n.mensaje}</div>
                   </div>
                 </div>
               ))

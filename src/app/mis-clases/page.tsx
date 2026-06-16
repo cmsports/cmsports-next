@@ -7,6 +7,11 @@ import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
 
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
 
 export default function MisClasesPage() {
@@ -21,7 +26,6 @@ export default function MisClasesPage() {
   const hoy = new Date()
   hoy.setHours(0,0,0,0)
 
-  // Calcular inicio y fin de semana
   const inicioSemana = new Date(hoy)
   const diaSemana = hoy.getDay()
   inicioSemana.setDate(hoy.getDate() - diaSemana + semanaOffset * 7)
@@ -56,7 +60,6 @@ export default function MisClasesPage() {
       supabase.from('profesores').select('*').eq('club_id', perfil.club_id)
     ])
 
-    // Cargar cantidad de confirmaciones por clase
     const clasesConAsistentes = await Promise.all((cl || []).map(async (clase: any) => {
       const { count } = await supabase.from('reservas').select('*', { count:'exact', head:true }).eq('clase_id', clase.id).eq('estado', 'confirmado')
       return { ...clase, _asistentes: count || 0 }
@@ -78,7 +81,6 @@ export default function MisClasesPage() {
       await supabase.from('reservas').update({ estado: 'cancelado' }).eq('clase_id', clase.id).eq('jugador_id', perfil.jugador_id)
       setReservas(prev => { const s = new Set(prev); s.delete(clase.id); return s })
     } else {
-      // Verificar sesiones disponibles
       const { data: jug } = await supabase.from('jugadores').select('sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single()
       if (jug && jug.sesiones_usadas >= jug.sesiones_limite) {
         alert('No tienes sesiones disponibles este mes'); return
@@ -88,7 +90,6 @@ export default function MisClasesPage() {
     }
   }
 
-  // Agrupar clases por día
   const clasesPorDia: Record<string, any[]> = {}
   clases.forEach(c => {
     const f = c.fecha
@@ -96,7 +97,6 @@ export default function MisClasesPage() {
     clasesPorDia[f].push(c)
   })
 
-  // Generar días de la semana
   const diasSemanaFechas = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(inicioSemana)
     d.setDate(inicioSemana.getDate() + i)
@@ -106,8 +106,8 @@ export default function MisClasesPage() {
   const misReservasCount = clases.filter(c => reservas.has(c.id)).length
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
@@ -116,20 +116,25 @@ export default function MisClasesPage() {
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
         <div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:4 }}>Mis clases</h1>
-          <p style={{ fontSize:13, color:'#6c7280' }}>
-            {misReservasCount > 0 ? `✅ Confirmaste asistencia a ${misReservasCount} clase${misReservasCount>1?'s':''} esta semana` : 'No has confirmado asistencia a ninguna clase esta semana'}
+          <h1 style={{ fontSize:20, fontWeight:600, color: text, marginBottom:4 }}>Mis clases</h1>
+          <p style={{ fontSize:13, color: muted }}>
+            {misReservasCount > 0 ? `Confirmaste asistencia a ${misReservasCount} clase${misReservasCount>1?'s':''} esta semana` : 'No has confirmado asistencia a ninguna clase esta semana'}
           </p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <button onClick={() => setSemanaOffset(prev => prev - 1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>◀</button>
-          <button onClick={() => setSemanaOffset(0)} style={{ background: semanaOffset===0?'#6c63ff':'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color: semanaOffset===0?'white':'#c8cfe0', cursor:'pointer', fontSize:12 }}>Hoy</button>
-          <button onClick={() => setSemanaOffset(prev => prev + 1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>▶</button>
+          <button onClick={() => setSemanaOffset(prev => prev - 1)}
+            style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, width:32, height:32, cursor:'pointer', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', color:'#4f46e5' }}>◀</button>
+          <button onClick={() => setSemanaOffset(0)}
+            style={{ background: semanaOffset===0 ? '#4f46e5' : '#ffffff', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: semanaOffset===0 ? 'white' : muted, cursor:'pointer', fontSize:12, fontWeight:600, boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
+            Hoy
+          </button>
+          <button onClick={() => setSemanaOffset(prev => prev + 1)}
+            style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, width:32, height:32, cursor:'pointer', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', color:'#4f46e5' }}>▶</button>
         </div>
       </div>
 
       {/* Fecha de la semana */}
-      <div style={{ fontSize:13, color:'#6c7280', marginBottom:20, textAlign:'center' }}>
+      <div style={{ fontSize:13, color: muted, marginBottom:20, textAlign:'center' }}>
         {inicioSemana.toLocaleDateString('es-CL', { day:'numeric', month:'long' })} — {finSemana.toLocaleDateString('es-CL', { day:'numeric', month:'long', year:'numeric' })}
       </div>
 
@@ -140,48 +145,45 @@ export default function MisClasesPage() {
         const esPasado = dia < hoy
         const clasesDelDia = clasesPorDia[fecha] || []
 
-        // Ocultar días pasados sin clases
         if (esPasado && clasesDelDia.length === 0) return null
 
         return (
           <div key={fecha} style={{ marginBottom:12, opacity: esPasado ? 0.6 : 1 }}>
-            {/* Header del día */}
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-              <div style={{ width:36, height:36, borderRadius:'50%', background: esHoy ? '#6c63ff' : esPasado ? '#1e2030' : '#14161f', border: esHoy ? 'none' : '1px solid #1e2030', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color: esHoy ? 'white' : '#c8cfe0', flexShrink:0 }}>
+              <div style={{ width:36, height:36, borderRadius:'50%', background: esHoy ? '#f43f5e' : esPasado ? '#e2e8f0' : '#f1f5f9', border: esHoy ? 'none' : '1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color: esHoy ? 'white' : text, flexShrink:0 }}>
                 {dia.getDate()}
               </div>
               <div>
-                <div style={{ fontSize:13, fontWeight:600, color: esHoy ? '#a78bfa' : '#c8cfe0' }}>
+                <div style={{ fontSize:13, fontWeight:600, color: esHoy ? '#4f46e5' : text }}>
                   {diasSemana[dia.getDay()]} {esHoy && '— Hoy'}
                 </div>
-                {clasesDelDia.length === 0 && <div style={{ fontSize:11, color:'#4b5063' }}>Sin clases</div>}
+                {clasesDelDia.length === 0 && <div style={{ fontSize:11, color: hint }}>Sin clases</div>}
               </div>
             </div>
 
-            {/* Clases del día */}
             {clasesDelDia.map(clase => {
               const prof = profesores.find(p => p.id === clase.profesor_id)
               const reservado = reservas.has(clase.id)
               return (
-                <div key={clase.id} style={{ background:'#14161f', border:`1px solid ${reservado ? '#6c63ff44' : '#1e2030'}`, borderLeft:`3px solid ${reservado ? '#6c63ff' : '#1e2030'}`, borderRadius:10, padding:'12px 16px', marginBottom:8, marginLeft:46 }}>
+                <div key={clase.id} style={{ background:'#ffffff', border:`1px solid ${reservado ? '#c4b5fd' : '#e2e8f0'}`, borderLeft:`3px solid ${reservado ? '#4f46e5' : '#e2e8f0'}`, borderRadius:10, padding:'12px 16px', marginBottom:8, marginLeft:46, boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:14, fontWeight:600, color:'#c8cfe0', marginBottom:4 }}>{clase.contenido}</div>
+                      <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:4 }}>{clase.contenido}</div>
                       <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-                        <span style={{ fontSize:12, color:'#6c7280' }}>🕐 {clase.hora_inicio?.slice(0,5)} - {clase.hora_fin?.slice(0,5)}</span>
-                        {prof && <span style={{ fontSize:12, color:'#6c7280' }}>👤 {prof.nombre}</span>}
-                        {clase.grupo && <span style={{ fontSize:11, background:'#1e1b4b', color:'#a78bfa', padding:'2px 8px', borderRadius:10 }}>{clase.grupo}</span>}
-                        {clase._asistentes > 0 && <span style={{ fontSize:11, background:'#34d39922', color:'#34d399', padding:'2px 8px', borderRadius:10 }}>👥 {clase._asistentes} confirman</span>}
+                        <span style={{ fontSize:12, color: muted }}>🕐 {clase.hora_inicio?.slice(0,5)} - {clase.hora_fin?.slice(0,5)}</span>
+                        {prof && <span style={{ fontSize:12, color: muted }}>👤 {prof.nombre}</span>}
+                        {clase.grupo && <span style={{ fontSize:11, background:'#ede9fe', color:'#3730a3', padding:'2px 8px', borderRadius:10 }}>{clase.grupo}</span>}
+                        {clase._asistentes > 0 && <span style={{ fontSize:11, background:'#f0fdf4', color:'#16a34a', padding:'2px 8px', borderRadius:10 }}>👥 {clase._asistentes} confirman</span>}
                       </div>
-                      {prof?.especialidad && <div style={{ fontSize:11, color:'#4b5063', marginTop:4 }}>{prof.especialidad}</div>}
+                      {prof?.especialidad && <div style={{ fontSize:11, color: hint, marginTop:4 }}>{prof.especialidad}</div>}
                     </div>
                     {!esPasado && (
                       <button onClick={() => toggleReserva(clase)}
-                        style={{ background: reservado ? '#34d39922' : '#0a0c12', color: reservado ? '#34d399' : '#8890a4', border: `1px solid ${reservado ? '#34d39944' : '#1e2030'}`, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}>
+                        style={{ background: reservado ? '#f0fdf4' : '#f4f7fa', color: reservado ? '#16a34a' : muted, border: `1px solid ${reservado ? '#bbf7d0' : '#e2e8f0'}`, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}>
                         {reservado ? '✓ Asisto' : 'Asisto'}
                       </button>
                     )}
-                    {esPasado && reservado && <span style={{ fontSize:11, color:'#34d399', marginLeft:12 }}>✓ Confirmé asistencia</span>}
+                    {esPasado && reservado && <span style={{ fontSize:11, color:'#16a34a', marginLeft:12 }}>✓ Asistí</span>}
                   </div>
                 </div>
               )
@@ -191,10 +193,10 @@ export default function MisClasesPage() {
       })}
 
       {Object.keys(clasesPorDia).length === 0 && (
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:40, textAlign:'center' }}>
+        <div style={{ ...card, padding:40, textAlign:'center' }}>
           <div style={{ fontSize:40, marginBottom:12 }}>📚</div>
-          <div style={{ fontSize:14, color:'#c8cfe0', marginBottom:8 }}>Sin clases esta semana</div>
-          <div style={{ fontSize:13, color:'#6c7280' }}>Navega a la semana siguiente para ver próximas clases</div>
+          <div style={{ fontSize:14, color: text, marginBottom:8 }}>Sin clases esta semana</div>
+          <div style={{ fontSize:13, color: muted }}>Navega a la semana siguiente para ver próximas clases</div>
         </div>
       )}
     </AppLayout>

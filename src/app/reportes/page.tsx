@@ -7,6 +7,11 @@ import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
 
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 const catLabel: Record<string, string> = {
@@ -101,7 +106,6 @@ export default function ReportesPage() {
     const ingresos = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
     const gastos = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0)
 
-    // Desglose por categoría
     const desgloseIngresos: Record<string, number> = {}
     const desgloseGastos: Record<string, number> = {}
     ;(movimientos || []).forEach(m => {
@@ -109,13 +113,11 @@ export default function ReportesPage() {
       else desgloseGastos[m.categoria] = (desgloseGastos[m.categoria] || 0) + m.monto
     })
 
-    // Asistencia promedio
     const asistPorDia: Record<string, number> = {}
     ;(asistencias || []).forEach(a => { asistPorDia[a.fecha] = (asistPorDia[a.fecha] || 0) + 1 })
     const diasConAsist = Object.keys(asistPorDia).length
     const promedioAsist = diasConAsist > 0 ? Math.round((asistencias || []).length / diasConAsist) : 0
 
-    // Morosidad
     const morosos = activos.filter(j => {
       const mens = (mensualidades || []).find(m => m.jugador_id === j.id)
       return mens?.estado === 'pendiente' || mens?.estado === 'atrasado'
@@ -148,7 +150,6 @@ export default function ReportesPage() {
   async function exportarPDF() {
     if (!preview) return
     setGenerando(true)
-    const { rango } = { rango: getRango() }
     const { titulo } = getRango()
     const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
@@ -158,8 +159,7 @@ export default function ReportesPage() {
     const doc = new jsPDF()
     const W = doc.internal.pageSize.getWidth()
 
-    // Header
-    doc.setFillColor(108, 99, 255)
+    doc.setFillColor(79, 70, 229)
     doc.rect(0, 0, W, 32, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(20)
@@ -172,7 +172,6 @@ export default function ReportesPage() {
 
     let y = 42
 
-    // Resumen financiero
     doc.setTextColor(40, 40, 40)
     doc.setFontSize(13)
     doc.setFont('helvetica', 'bold')
@@ -189,12 +188,11 @@ export default function ReportesPage() {
         ['COA (Costo por alumno)', preview.activos.length > 0 ? fmt(Math.round(preview.gastos / preview.activos.length)) : '$0'],
       ],
       theme: 'striped',
-      headStyles: { fillColor: [108, 99, 255] },
+      headStyles: { fillColor: [14, 165, 233] },
       margin: { left: 14, right: 14 }
     })
     y = (doc as any).lastAutoTable.finalY + 10
 
-    // Ingresos por categoría
     doc.setFontSize(13)
     doc.setFont('helvetica', 'bold')
     doc.text('Ingresos por Categoría', 14, y)
@@ -205,12 +203,11 @@ export default function ReportesPage() {
       head: [['Categoría', 'Monto']],
       body: Object.entries(preview.desgloseIngresos).map(([cat, total]) => [catLabel[cat] || cat, fmt(total as number)]),
       theme: 'striped',
-      headStyles: { fillColor: [52, 211, 153] },
+      headStyles: { fillColor: [22, 163, 74] },
       margin: { left: 14, right: 14 }
     })
     y = (doc as any).lastAutoTable.finalY + 10
 
-    // Gastos por categoría
     doc.setFontSize(13)
     doc.setFont('helvetica', 'bold')
     doc.text('Gastos por Categoría', 14, y)
@@ -221,12 +218,11 @@ export default function ReportesPage() {
       head: [['Categoría', 'Monto']],
       body: Object.entries(preview.desgloseGastos).map(([cat, total]) => [catLabel[cat] || cat, fmt(total as number)]),
       theme: 'striped',
-      headStyles: { fillColor: [248, 113, 113] },
+      headStyles: { fillColor: [220, 38, 38] },
       margin: { left: 14, right: 14 }
     })
     y = (doc as any).lastAutoTable.finalY + 10
 
-    // Nueva página — Jugadores
     doc.addPage()
     y = 20
 
@@ -242,12 +238,11 @@ export default function ReportesPage() {
         j.nombre, j.categoria, j.elo, `${j.sesiones_usadas}/${j.sesiones_limite}`, j.estado
       ]),
       theme: 'striped',
-      headStyles: { fillColor: [108, 99, 255] },
+      headStyles: { fillColor: [14, 165, 233] },
       margin: { left: 14, right: 14 }
     })
     y = (doc as any).lastAutoTable.finalY + 10
 
-    // Asistencia
     doc.setFontSize(13)
     doc.setFont('helvetica', 'bold')
     doc.text('Asistencia', 14, y)
@@ -264,12 +259,11 @@ export default function ReportesPage() {
         ['Tasa de morosidad', preview.activos.length > 0 ? `${Math.round((preview.morosos.length / preview.activos.length) * 100)}%` : '0%'],
       ],
       theme: 'striped',
-      headStyles: { fillColor: [108, 99, 255] },
+      headStyles: { fillColor: [14, 165, 233] },
       margin: { left: 14, right: 14 }
     })
     y = (doc as any).lastAutoTable.finalY + 10
 
-    // Torneos
     if (preview.torneos.length > 0) {
       doc.setFontSize(13)
       doc.setFont('helvetica', 'bold')
@@ -281,12 +275,11 @@ export default function ReportesPage() {
         head: [['Nombre', 'Fecha', 'Estado', 'Fase']],
         body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado, t.fase]),
         theme: 'striped',
-        headStyles: { fillColor: [167, 139, 250] },
+        headStyles: { fillColor: [249, 115, 22] },
         margin: { left: 14, right: 14 }
       })
     }
 
-    // Footer en cada página
     const pageCount = doc.getNumberOfPages()
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i)
@@ -303,35 +296,33 @@ export default function ReportesPage() {
   const { titulo } = getRango()
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
   return (
     <AppLayout perfil={perfil}>
-      <h1 style={{ fontSize:22, fontWeight:700, color:'#fff', marginBottom:20 }}>Reportes</h1>
+      <h1 style={{ fontSize:20, fontWeight:600, color: text, marginBottom:20 }}>Reportes</h1>
 
       {/* Configuración */}
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, marginBottom:20 }}>
-        <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:16 }}>Configurar reporte</div>
+      <div style={{ ...card, padding:20, marginBottom:20 }}>
+        <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:16 }}>Configurar reporte</div>
 
-        {/* Tipo */}
         <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
           {(['mensual','trimestral','semestral','anual'] as TipoReporte[]).map(t => (
             <button key={t} onClick={() => setTipo(t)}
-              style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #1e2030', background: tipo===t?'#6c63ff':'#0a0c12', color: tipo===t?'white':'#8890a4', fontSize:13, cursor:'pointer', fontWeight: tipo===t?600:400, textTransform:'capitalize' }}>
+              style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #e2e8f0', background: tipo===t ? '#4f46e5' : '#f4f7fa', color: tipo===t ? 'white' : muted, fontSize:13, cursor:'pointer', fontWeight: tipo===t ? 600 : 400, textTransform:'capitalize' }}>
               {t}
             </button>
           ))}
         </div>
 
-        {/* Selectores según tipo */}
         <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
           {tipo === 'mensual' && (
             <div style={{ flex:1, minWidth:140 }}>
-              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Mes</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mes</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 value={mes} onChange={e => setMes(parseInt(e.target.value))}>
                 {mesesN.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
               </select>
@@ -339,8 +330,8 @@ export default function ReportesPage() {
           )}
           {tipo === 'trimestral' && (
             <div style={{ flex:1, minWidth:140 }}>
-              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Trimestre</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Trimestre</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 value={trimestre} onChange={e => setTrimestre(parseInt(e.target.value))}>
                 <option value={1}>Q1 — Ene, Feb, Mar</option>
                 <option value={2}>Q2 — Abr, May, Jun</option>
@@ -351,8 +342,8 @@ export default function ReportesPage() {
           )}
           {tipo === 'semestral' && (
             <div style={{ flex:1, minWidth:140 }}>
-              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Semestre</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Semestre</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 value={semestre} onChange={e => setSemestre(parseInt(e.target.value))}>
                 <option value={1}>1er Semestre (Ene - Jun)</option>
                 <option value={2}>2do Semestre (Jul - Dic)</option>
@@ -360,8 +351,8 @@ export default function ReportesPage() {
             </div>
           )}
           <div style={{ flex:1, minWidth:120 }}>
-            <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Año</label>
-            <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Año</label>
+            <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
               value={anio} onChange={e => setAnio(parseInt(e.target.value))}>
               {[2024, 2025, 2026, 2027].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
@@ -370,11 +361,11 @@ export default function ReportesPage() {
 
         <div style={{ marginTop:16, display:'flex', gap:10 }}>
           <button onClick={generarPreview} disabled={generando}
-            style={{ flex:1, padding:12, background:'#1e1b4b', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            style={{ flex:1, padding:12, background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
             {generando ? 'Cargando...' : '👁 Vista previa'}
           </button>
           <button onClick={exportarPDF} disabled={generando || !preview}
-            style={{ flex:1, padding:12, background: preview ? '#6c63ff' : '#1e2030', color: preview ? 'white' : '#4b5063', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: preview ? 'pointer' : 'not-allowed' }}>
+            style={{ flex:1, padding:12, background: preview ? '#f43f5e' : '#e2e8f0', color: preview ? 'white' : hint, border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: preview ? 'pointer' : 'not-allowed' }}>
             {generando ? 'Generando...' : '📄 Exportar PDF'}
           </button>
         </div>
@@ -383,68 +374,65 @@ export default function ReportesPage() {
       {/* Preview */}
       {preview && (
         <div>
-          <div style={{ fontSize:14, fontWeight:600, color:'#fff', marginBottom:12 }}>Vista previa — {titulo}</div>
+          <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — {titulo}</div>
 
-          {/* Stats principales */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
             {[
-              { label:'Ingresos', value:fmt(preview.ingresos), color:'#34d399' },
-              { label:'Gastos', value:fmt(preview.gastos), color:'#f87171' },
-              { label:'Balance', value:fmt(preview.ingresos - preview.gastos), color:'#a78bfa' },
+              { label:'Ingresos', value:fmt(preview.ingresos), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' },
+              { label:'Gastos', value:fmt(preview.gastos), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' },
+              { label:'Balance', value:fmt(preview.ingresos - preview.gastos), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' },
             ].map(s => (
-              <div key={s.label} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
+              <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:16 }}>
                 <div style={{ fontSize:20, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
-                <div style={{ fontSize:12, color:'#6c7280', marginTop:4 }}>{s.label}</div>
+                <div style={{ fontSize:12, color:s.color, marginTop:4 }}>{s.label}</div>
               </div>
             ))}
           </div>
 
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
             {[
-              { label:'Jugadores activos', value:preview.activos.length, color:'#c8cfe0' },
-              { label:'Total asistencias', value:preview.asistencias.length, color:'#34d399' },
-              { label:'Torneos', value:preview.torneos.length, color:'#fbbf24' },
-              { label:'Morosos', value:preview.morosos.length, color:'#f87171' },
+              { label:'Jugadores activos', value:preview.activos.length, color: text },
+              { label:'Total asistencias', value:preview.asistencias.length, color:'#16a34a' },
+              { label:'Torneos', value:preview.torneos.length, color:'#d97706' },
+              { label:'Morosos', value:preview.morosos.length, color:'#dc2626' },
             ].map(s => (
-              <div key={s.label} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16, textAlign:'center' }}>
+              <div key={s.label} style={{ ...card, padding:16, textAlign:'center' }}>
                 <div style={{ fontSize:24, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
-                <div style={{ fontSize:11, color:'#6c7280', marginTop:4 }}>{s.label}</div>
+                <div style={{ fontSize:11, color: muted, marginTop:4 }}>{s.label}</div>
               </div>
             ))}
           </div>
 
-          {/* Desglose ingresos */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:16 }}>
-            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Ingresos por categoría</div>
+            <div style={{ ...card, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Ingresos por categoría</div>
               {Object.entries(preview.desgloseIngresos).map(([cat, total]) => (
-                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
-                  <span style={{ color:'#8890a4' }}>{catLabel[cat] || cat}</span>
-                  <span style={{ color:'#34d399', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
+                  <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
+                  <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmt(total as number)}</span>
                 </div>
               ))}
-              {Object.keys(preview.desgloseIngresos).length === 0 && <p style={{ fontSize:12, color:'#4b5063' }}>Sin ingresos</p>}
+              {Object.keys(preview.desgloseIngresos).length === 0 && <p style={{ fontSize:12, color: hint }}>Sin ingresos</p>}
             </div>
-            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Gastos por categoría</div>
+            <div style={{ ...card, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Gastos por categoría</div>
               {Object.entries(preview.desgloseGastos).map(([cat, total]) => (
-                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
-                  <span style={{ color:'#8890a4' }}>{catLabel[cat] || cat}</span>
-                  <span style={{ color:'#f87171', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
+                  <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
+                  <span style={{ color:'#dc2626', fontFamily:'monospace' }}>{fmt(total as number)}</span>
                 </div>
               ))}
-              {Object.keys(preview.desgloseGastos).length === 0 && <p style={{ fontSize:12, color:'#4b5063' }}>Sin gastos</p>}
+              {Object.keys(preview.desgloseGastos).length === 0 && <p style={{ fontSize:12, color: hint }}>Sin gastos</p>}
             </div>
           </div>
 
-          {/* Top jugadores */}
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Top 5 ELO</div>
+          <div style={{ ...card, padding:16 }}>
+            <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Top 5 ELO</div>
             {preview.activos.sort((a: any, b: any) => b.elo - a.elo).slice(0,5).map((j: any, i: number) => (
-              <div key={j.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #1a1d2e' }}>
+              <div key={j.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #f1f5f9' }}>
                 <span style={{ fontSize:16 }}>{i < 3 ? ['🥇','🥈','🥉'][i] : i+1}</span>
-                <span style={{ flex:1, fontSize:13, color:'#c8cfe0' }}>{j.nombre}</span>
-                <span style={{ fontSize:15, fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</span>
+                <span style={{ flex:1, fontSize:13, color: text }}>{j.nombre}</span>
+                <span style={{ fontSize:15, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</span>
               </div>
             ))}
           </div>

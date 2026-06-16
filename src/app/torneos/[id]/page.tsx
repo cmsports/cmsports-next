@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -22,6 +22,11 @@ const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
 const faseLabel: Record<string, string> = CONFIG.FASE_LABELS
 
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 export default function TorneoDetallePage() {
   const [perfil, setPerfil] = useState<any>(null)
   const [torneo, setTorneo] = useState<any>(null)
@@ -38,8 +43,8 @@ export default function TorneoDetallePage() {
   const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
   const [criterioEmpate, setCriterioEmpate] = useState<'sets'|'puntos'>('sets')
   const [modalEmpate, setModalEmpate] = useState<any>(null)
-  const [empateManual, setEmpateManual] = useState<Record<string, any>>({}) // grupoId -> {primero, segundo}
-  const [pagosPorJugador, setPagosPorJugador] = useState<Record<string, 'pagado'|'pendiente'>>({}) // jugadorId -> estado
+  const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
+  const [pagosPorJugador, setPagosPorJugador] = useState<Record<string, 'pagado'|'pendiente'>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const router = useRouter()
   const params = useParams()
@@ -66,7 +71,6 @@ export default function TorneoDetallePage() {
     const { data: pgs } = await supabase.from('torneo_pagos').select('*').eq('torneo_id', torneoId)
     setPagos(pgs || [])
 
-    // Cargar inscritos para mesa
     if (t?.fase === 'inscripcion') {
       const { data: gMesa } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
       if (gMesa) {
@@ -102,10 +106,9 @@ export default function TorneoDetallePage() {
 
   async function inscribirEnMesa() {
     if (!busquedaMesa.trim()) return
-    
-    // Buscar jugador existente
+
     const { data: jugsExistentes } = await supabase.from('jugadores').select('id,nombre,elo').ilike('nombre', `%${busquedaMesa.trim()}%`).eq('club_id', perfil?.club_id)
-    
+
     let jugadorId: string
     let jugadorElo = 1200
     let jugadorNombre = busquedaMesa.trim()
@@ -125,11 +128,9 @@ export default function TorneoDetallePage() {
       jugadorId = nuevo.id
     }
 
-    // Verificar si ya está inscrito
     const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
     if (yaInscrito) { alert('Este jugador ya está inscrito'); return }
 
-    // Inscripción tardía: si el torneo ya pasó de inscripción, ubicar directo en grupo más apto
     if (faseActual !== 'inscripcion') {
       const res = await inscribirJugadorTardio({ torneoId, jugadorId, jugadorElo })
       if (res.error) { alert(res.error); return }
@@ -143,7 +144,6 @@ export default function TorneoDetallePage() {
       return
     }
 
-    // Obtener o crear grupo MESA (solo en fase de inscripción)
     let { data: grupoMesa } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
     if (!grupoMesa) {
       const { data: ng } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: 'MESA' }).select().single()
@@ -153,15 +153,12 @@ export default function TorneoDetallePage() {
     if (!grupoMesa) return
     await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
 
-    // Crear registro de pago como pendiente — se marca pagado manualmente
     if (torneo?.cuota_inscripcion > 0) {
       await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: jugadorId, estado: 'pendiente', metodo_pago: metodoPago })
     }
 
     setBusquedaMesa('')
     setRutMesa('')
-
-    // Actualizar lista inscritos inmediatamente
     setJugadoresInscritos(prev => [...prev, { jugador_id: jugadorId, jugadores: { id: jugadorId, nombre: jugadorNombre, elo: jugadorElo } }])
     await cargarTorneo()
   }
@@ -187,7 +184,6 @@ export default function TorneoDetallePage() {
     await cargarTorneo()
   }
 
-  // Calcular estadísticas de grupos con manejo de empates
   function calcularStats(grupoId: string) {
     const jugsGrupo = jugadores.filter((j: any) => j.grupo_id === grupoId)
     const partidosGrupo = partidos.filter(p => p.grupo_id === grupoId)
@@ -201,19 +197,16 @@ export default function TorneoDetallePage() {
       if (stats[p.ganador]) { stats[p.ganador].pts += 2; stats[p.ganador].pg += 1 }
       const perd = p.jugador_a === p.ganador ? p.jugador_b : p.jugador_a
       if (stats[perd]) stats[perd].pp += 1
-      // Sets y puntos si están registrados
       if (p.sets_ganador) stats[p.ganador] && (stats[p.ganador].sets += p.sets_ganador)
       if (p.puntos_ganador) stats[p.ganador] && (stats[p.ganador].puntos += p.puntos_ganador)
     })
 
     let ordenados = Object.values(stats).sort((a: any, b: any) => {
       if (b.pts !== a.pts) return b.pts - a.pts
-      // Empate — usar criterio elegido
       if (criterioEmpate === 'sets') return b.sets - a.sets
       return b.puntos - a.puntos
     })
 
-    // Detectar triple empate
     const primerPts = ordenados[0]?.pts
     const empatados = ordenados.filter(j => j.pts === primerPts)
     const hayTripleEmpate = empatados.length >= 3
@@ -277,7 +270,6 @@ export default function TorneoDetallePage() {
 
   const esAdmin = perfil?.rol === 'admin'
   const cuota = torneo?.cuota_inscripcion || 0
-  // Contar inscritos reales desde grupo_jugadores (excluyendo grupo MESA)
   const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
   const inscritosReales = jugadores.filter((j: any) => gruposReales.some((g: any) => g.id === j.grupo_id))
   const totalInscritos = inscritosReales.length || jugadoresInscritos.length
@@ -289,7 +281,6 @@ export default function TorneoDetallePage() {
   const faseActual = torneo?.fase
   const esPlayoffs = faseActual && (fasesOrden.includes(faseActual) || faseActual === 'finalizado')
 
-  // Fix: verificar todos jugados correctamente incluyendo BYEs
   const partidosFaseActual = partidos.filter(p => p.fase === faseActual)
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
 
@@ -299,8 +290,8 @@ export default function TorneoDetallePage() {
   const numGruposEstimados = calcularNumGrupos(jugadoresInscritos.length)
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
@@ -308,47 +299,47 @@ export default function TorneoDetallePage() {
     <AppLayout perfil={perfil}>
       {/* Header */}
       <div style={{ display:'flex', gap:10, marginBottom:20, alignItems:'center', flexWrap:'wrap' }}>
-        <button onClick={() => router.push('/torneos')} style={{ background:'transparent', border:'1px solid #1e2030', borderRadius:8, padding:'6px 14px', color:'#8890a4', fontSize:13, cursor:'pointer' }}>← Volver</button>
-        <h1 style={{ fontSize:20, fontWeight:700, color:'#fff', margin:0 }}>{torneo?.nombre}</h1>
-        <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseLabel[faseActual] || faseActual}</span>
+        <button onClick={() => router.push('/torneos')} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer' }}>← Volver</button>
+        <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0 }}>{torneo?.nombre}</h1>
+        <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseLabel[faseActual] || faseActual}</span>
         {esAdmin && torneo?.inscripcion_abierta && (
-          <button onClick={() => setMesaOpen(true)} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
+          <button onClick={() => setMesaOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
         )}
         {esAdmin && faseActual === 'grupos' && todosGruposJugados && (
-          <button onClick={avanzarALlaves} style={{ background:'#a78bfa', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Generar playoffs →</button>
+          <button onClick={avanzarALlaves} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Generar playoffs →</button>
         )}
         {esAdmin && esPlayoffs && todosJugadosFase && faseActual !== 'final' && faseActual !== 'finalizado' && (
-          <button onClick={() => avanzarSiguienteFase(faseActual)} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Siguiente fase →</button>
+          <button onClick={() => avanzarSiguienteFase(faseActual)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Siguiente fase →</button>
         )}
         {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && (
-          <button onClick={finalizarTorneo} style={{ background:'#34d399', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
+          <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
         )}
       </div>
 
       {/* Control financiero */}
       {esAdmin && cuota > 0 && (
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginBottom:16 }}>
+        <div style={{ ...card, padding:16, marginBottom:16 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-            <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>💰 Control financiero</div>
+            <div style={{ fontSize:13, fontWeight:600, color: text }}>💰 Control financiero</div>
             {!torneo?.contabilidad_enviada ? (
               <button onClick={async () => {
                 if (!confirm(`¿Enviar ${fmt(recaudado)} a Finanzas?`)) return
                 const res = await enviarRecaudacionAFinanzas({ torneoId, torneoNombre: torneo.nombre, monto: recaudado })
                 if (res.error) { alert(res.error); return }
                 await cargarTorneo()
-              }} style={{ background:'#1e1b4b', color:'#a78bfa', border:'none', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>📤 Enviar a Finanzas</button>
-            ) : <span style={{ background:'#34d39922', color:'#34d399', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Enviado</span>}
+              }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>📤 Enviar a Finanzas</button>
+            ) : <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Enviado</span>}
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
             {[
-              { label:'Inscritos', value:totalInscritos, color:'#c8cfe0' },
-              { label:'Meta', value:fmt(proyectado), color:'#6c7280' },
-              { label:'Recaudado', value:fmt(recaudado), color:'#34d399' },
-              { label:'Pendiente', value:fmt(proyectado-recaudado), color: proyectado-recaudado>0?'#f87171':'#34d399' },
+              { label:'Inscritos', value:totalInscritos, color: text },
+              { label:'Meta', value:fmt(proyectado), color: muted },
+              { label:'Recaudado', value:fmt(recaudado), color:'#16a34a' },
+              { label:'Pendiente', value:fmt(proyectado-recaudado), color: proyectado-recaudado>0?'#dc2626':'#16a34a' },
             ].map(s => (
-              <div key={s.label} style={{ background:'#0a0c12', borderRadius:10, padding:10, textAlign:'center' }}>
+              <div key={s.label} style={{ background:'#f4f7fa', borderRadius:10, padding:10, textAlign:'center' }}>
                 <div style={{ fontSize:14, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
-                <div style={{ fontSize:10, color:'#6c7280' }}>{s.label}</div>
+                <div style={{ fontSize:10, color: muted }}>{s.label}</div>
               </div>
             ))}
           </div>
@@ -357,17 +348,17 @@ export default function TorneoDetallePage() {
 
       {/* Criterio empate */}
       {faseActual === 'grupos' && esAdmin && (
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:10, padding:'10px 16px', marginBottom:16, display:'flex', alignItems:'center', gap:12 }}>
-          <span style={{ fontSize:12, color:'#6c7280' }}>Criterio de desempate:</span>
-          <button onClick={() => setCriterioEmpate('sets')} style={{ background: criterioEmpate==='sets'?'#6c63ff':'#0a0c12', color: criterioEmpate==='sets'?'white':'#8890a4', border:'1px solid #1e2030', borderRadius:6, padding:'4px 12px', fontSize:12, cursor:'pointer' }}>Sets ganados</button>
-          <button onClick={() => setCriterioEmpate('puntos')} style={{ background: criterioEmpate==='puntos'?'#6c63ff':'#0a0c12', color: criterioEmpate==='puntos'?'white':'#8890a4', border:'1px solid #1e2030', borderRadius:6, padding:'4px 12px', fontSize:12, cursor:'pointer' }}>Puntos</button>
+        <div style={{ ...card, padding:'10px 16px', marginBottom:16, display:'flex', alignItems:'center', gap:12 }}>
+          <span style={{ fontSize:12, color: muted }}>Criterio de desempate:</span>
+          <button onClick={() => setCriterioEmpate('sets')} style={{ background: criterioEmpate==='sets'?'#4f46e5':'#f4f7fa', color: criterioEmpate==='sets'?'white': muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 12px', fontSize:12, cursor:'pointer' }}>Sets ganados</button>
+          <button onClick={() => setCriterioEmpate('puntos')} style={{ background: criterioEmpate==='puntos'?'#4f46e5':'#f4f7fa', color: criterioEmpate==='puntos'?'white': muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 12px', fontSize:12, cursor:'pointer' }}>Puntos</button>
         </div>
       )}
 
-      {/* BOTÓN INSCRIPCIÓN TARDÍA — disponible en grupos y playoffs */}
+      {/* BOTÓN INSCRIPCIÓN TARDÍA */}
       {esAdmin && (faseActual === 'grupos' || fasesOrden.includes(faseActual)) && (
         <div style={{ marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-          <button onClick={() => setMesaOpen(true)} style={{ background:'#14161f', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
+          <button onClick={() => setMesaOpen(true)} style={{ background:'#ffffff', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
             + Inscribir jugador adicional
           </button>
           {gruposReales.some((g: any) => !jugadores.some((j: any) => j.grupo_id === g.id)) && (
@@ -377,19 +368,19 @@ export default function TorneoDetallePage() {
               if (res.error) { alert(res.error); return }
               alert(`Se eliminaron ${res.eliminados} grupo(s) vacío(s)`)
               await cargarTorneo()
-            }} style={{ background:'#f8717122', color:'#f87171', border:'1px solid #f8717144', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
+            }} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
               🗑️ Limpiar grupos vacíos
             </button>
           )}
-          <span style={{ fontSize:11, color:'#4b5063' }}>El jugador se ubica automáticamente en el grupo más adecuado</span>
+          <span style={{ fontSize:11, color: hint }}>El jugador se ubica automáticamente en el grupo más adecuado</span>
         </div>
       )}
 
-      {/* Tabs cuando estamos en playoffs o finalizado */}
+      {/* Tabs */}
       {esPlayoffs && (
-        <div style={{ display:'flex', gap:8, marginBottom:16, borderBottom:'1px solid #1e2030' }}>
-          <button onClick={() => setTabActiva('grupos')} style={{ background:'transparent', border:'none', color: tabActiva==='grupos'?'#a78bfa':'#6c7280', borderBottom: tabActiva==='grupos'?'2px solid #a78bfa':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Fase de grupos</button>
-          <button onClick={() => setTabActiva('bracket')} style={{ background:'transparent', border:'none', color: tabActiva==='bracket'?'#a78bfa':'#6c7280', borderBottom: tabActiva==='bracket'?'2px solid #a78bfa':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Bracket</button>
+        <div style={{ display:'flex', gap:8, marginBottom:16, borderBottom:'1px solid #e2e8f0' }}>
+          <button onClick={() => setTabActiva('grupos')} style={{ background:'transparent', border:'none', color: tabActiva==='grupos'?'#4f46e5': muted, borderBottom: tabActiva==='grupos'?'2px solid #4f46e5':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Fase de grupos</button>
+          <button onClick={() => setTabActiva('bracket')} style={{ background:'transparent', border:'none', color: tabActiva==='bracket'?'#4f46e5': muted, borderBottom: tabActiva==='bracket'?'2px solid #4f46e5':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Bracket</button>
         </div>
       )}
 
@@ -401,69 +392,68 @@ export default function TorneoDetallePage() {
             const partidosGrupo = partidos.filter(p => p.grupo_id === grupo.id)
 
             return (
-              <div key={grupo.id} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
-                <div style={{ padding:'12px 16px', borderBottom:'1px solid #1e2030', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <span style={{ fontSize:14, fontWeight:600, color:'#fff' }}>Grupo {grupo.nombre}</span>
-                  {hayTripleEmpate && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && partidosGrupo.some((p:any) => p.ganador) && <span style={{ background:'#f8717122', color:'#f87171', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
-                {hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && <span style={{ background:'#34d39922', color:'#34d399', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto</span>}
+              <div key={grupo.id} style={{ ...card, overflow:'hidden' }}>
+                <div style={{ padding:'12px 16px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontSize:14, fontWeight:600, color: text }}>Grupo {grupo.nombre}</span>
+                  {hayTripleEmpate && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && partidosGrupo.some((p:any) => p.ganador) && <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
+                  {hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto</span>}
                 </div>
                 {ordenados.map((j: any, i: number) => (
-                  <div key={j.jugador?.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #1e2030', borderLeft:`3px solid ${i===0?'#fbbf24':i===1?'#94a3b8':'transparent'}` }}>
+                  <div key={j.jugador?.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}` }}>
                     <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, color:'#c8cfe0' }}>{j.jugador?.nombre||'—'}</div>
-                      <div style={{ fontSize:10, color:'#6c7280' }}>{j.pg}G {j.pp}P · {j.pts}pts</div>
+                      <div style={{ fontSize:13, color: text }}>{j.jugador?.nombre||'—'}</div>
+                      <div style={{ fontSize:10, color: muted }}>{j.pg}G {j.pp}P · {j.pts}pts</div>
                     </div>
                     {esAdmin && cuota > 0 && (() => {
                       const pago = pagos.find(p => p.jugador_id === j.jugador?.id)
                       return pago?.estado === 'pagado'
-                        ? <span style={{ background:'#34d39922', color:'#34d399', padding:'2px 6px', borderRadius:10, fontSize:10 }}>✓</span>
+                        ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 6px', borderRadius:10, fontSize:10 }}>✓</span>
                         : <span onClick={async () => {
                             const ex = pagos.find(p => p.jugador_id === j.jugador?.id)
                             if (ex) await supabase.from('torneo_pagos').update({ estado:'pagado' }).eq('id', ex.id)
                             else await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: j.jugador?.id, estado:'pagado', metodo_pago:'efectivo' })
                             await cargarTorneo()
-                          }} style={{ background:'#f8717122', color:'#f87171', padding:'2px 6px', borderRadius:10, fontSize:10, cursor:'pointer' }}>Pend.</span>
+                          }} style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10, cursor:'pointer' }}>Pend.</span>
                     })()}
                   </div>
                 ))}
-                {/* PANEL TRIPLE EMPATE - solo cuando hay partidos jugados y empate real */}
+                {/* PANEL TRIPLE EMPATE */}
                 {hayTripleEmpate && partidosGrupo.some((p:any) => p.ganador) && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && esAdmin && (
-                  <div style={{ background:'#2d1500', borderTop:'1px solid #f9731633', padding:'12px 16px' }}>
-                    <div style={{ fontSize:12, color:'#f97316', fontWeight:600, marginBottom:8 }}>⚠️ Triple empate — elige el orden manualmente</div>
-                    <div style={{ fontSize:11, color:'#8890a4', marginBottom:10 }}>Revisa las papeletas y marca quién queda 1° y quién queda 2°</div>
+                  <div style={{ background:'#fff7ed', borderTop:'1px solid #fed7aa', padding:'12px 16px' }}>
+                    <div style={{ fontSize:12, color:'#f43f5e', fontWeight:600, marginBottom:8 }}>⚠️ Triple empate — elige el orden manualmente</div>
+                    <div style={{ fontSize:11, color: muted, marginBottom:10 }}>Revisa las papeletas y marca quién queda 1° y quién queda 2°</div>
                     {empatados.map((j: any, idx: number) => (
                       <div key={j.jugador?.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-                        <span style={{ fontSize:12, color:'#c8cfe0', flex:1 }}>{j.jugador?.nombre}</span>
+                        <span style={{ fontSize:12, color: text, flex:1 }}>{j.jugador?.nombre}</span>
                         <button
                           onClick={() => setEmpateManual((prev: any) => {
                             const actual = prev[grupo.id] || {}
                             return { ...prev, [grupo.id]: { ...actual, primero: j.jugador } }
                           })}
-                          style={{ background: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#fbbf24' : '#1e2030', color: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#0f1117' : '#8890a4', border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                          style={{ background: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#fbbf24' : '#f4f7fa', color: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#0f172a' : muted, border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
                           🥇 1°
                         </button>
                         <button
                           disabled={empateManual[grupo.id]?.primero?.id === j.jugador?.id}
                           onClick={() => setEmpateManual((prev: any) => {
                             const actual = prev[grupo.id] || {}
-                            if (actual.primero?.id === j.jugador?.id) return prev // no puede ser 1° y 2°
+                            if (actual.primero?.id === j.jugador?.id) return prev
                             return { ...prev, [grupo.id]: { ...actual, segundo: j.jugador } }
                           })}
-                          style={{ background: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#94a3b8' : '#1e2030', color: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#0f1117' : empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#2e3148' : '#8890a4', border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? 'not-allowed' : 'pointer', fontWeight:600 }}>
+                          style={{ background: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#94a3b8' : '#f4f7fa', color: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#0f172a' : empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#cbd5e1' : muted, border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? 'not-allowed' : 'pointer', fontWeight:600 }}>
                           🥈 2°
                         </button>
                       </div>
                     ))}
-                    {/* Confirmación solo cuando AMBOS están elegidos y son distintos */}
                     {empateManual[grupo.id]?.primero && !empateManual[grupo.id]?.segundo && (
-                      <div style={{ marginTop:8, padding:'8px', background:'#1e1b4b', borderRadius:8, fontSize:11, color:'#a78bfa', textAlign:'center' }}>
+                      <div style={{ marginTop:8, padding:'8px', background:'#ede9fe', borderRadius:8, fontSize:11, color:'#3730a3', textAlign:'center' }}>
                         ✓ 1°: {empateManual[grupo.id].primero.nombre} — Ahora elige quién queda 2°
                       </div>
                     )}
                     {empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo &&
                       empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && (
-                      <div style={{ marginTop:8, padding:'8px', background:'#052e16', borderRadius:8, fontSize:12, color:'#34d399', textAlign:'center' }}>
+                      <div style={{ marginTop:8, padding:'8px', background:'#f0fdf4', borderRadius:8, fontSize:12, color:'#16a34a', textAlign:'center' }}>
                         ✓ Resuelto — 1°: {empateManual[grupo.id].primero.nombre} · 2°: {empateManual[grupo.id].segundo.nombre}
                       </div>
                     )}
@@ -474,17 +464,17 @@ export default function TorneoDetallePage() {
                     const jugA = ordenados.find((j: any) => j.jugador?.id === p.jugador_a)
                     const jugB = ordenados.find((j: any) => j.jugador?.id === p.jugador_b)
                     return (
-                      <div key={p.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
-                        <span style={{ flex:1, color: p.ganador===p.jugador_a?'#34d399':'#c8cfe0', textAlign:'right' }}>{jugA?.jugador?.nombre||'—'}</span>
-                        <span style={{ color:'#4b5063', fontSize:10 }}>vs</span>
-                        <span style={{ flex:1, color: p.ganador===p.jugador_b?'#34d399':'#c8cfe0' }}>{jugB?.jugador?.nombre||'—'}</span>
+                      <div key={p.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
+                        <span style={{ flex:1, color: p.ganador===p.jugador_a?'#16a34a': text, textAlign:'right' }}>{jugA?.jugador?.nombre||'—'}</span>
+                        <span style={{ color: hint, fontSize:10 }}>vs</span>
+                        <span style={{ flex:1, color: p.ganador===p.jugador_b?'#16a34a': text }}>{jugB?.jugador?.nombre||'—'}</span>
                         {esAdmin && !p.ganador && (
                           <div style={{ display:'flex', gap:4 }}>
-                            <button onClick={() => marcarGanador(p.id, p.jugador_a)} style={{ background:'#6c63ff22', color:'#a78bfa', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>A ✓</button>
-                            <button onClick={() => marcarGanador(p.id, p.jugador_b)} style={{ background:'#6c63ff22', color:'#a78bfa', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>✓ B</button>
+                            <button onClick={() => marcarGanador(p.id, p.jugador_a)} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>A ✓</button>
+                            <button onClick={() => marcarGanador(p.id, p.jugador_b)} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>✓ B</button>
                           </div>
                         )}
-                        {p.ganador && <span style={{ color:'#34d399', fontSize:10 }}>✓</span>}
+                        {p.ganador && <span style={{ color:'#16a34a', fontSize:10 }}>✓</span>}
                       </div>
                     )
                   })}
@@ -495,40 +485,10 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
-      {/* PAGOS TARDÍOS — al final, después del bracket */}
-      {esAdmin && cuota > 0 && false && (
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginBottom:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>💳 Pagos pendientes</div>
-          {jugadores.filter((j: any) => {
-            const pago = pagos.find(p => p.jugador_id === j.jugador_id)
-            return !pago || pago.estado !== 'pagado'
-          }).length === 0
-            ? <p style={{ fontSize:13, color:'#34d399' }}>✓ Todos han pagado</p>
-            : jugadores.filter((j: any) => {
-                const pago = pagos.find(p => p.jugador_id === j.jugador_id)
-                return !pago || pago.estado !== 'pagado'
-              }).map((j: any) => (
-              <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #1e2030' }}>
-                <div style={{ flex:1, fontSize:13, color:'#c8cfe0' }}>{j.jugadores?.nombre||'—'}</div>
-                <span style={{ background:'#f8717122', color:'#f87171', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
-                <button onClick={async () => {
-                  const ex = pagos.find(p => p.jugador_id === j.jugador_id)
-                  if (ex) await supabase.from('torneo_pagos').update({ estado:'pagado', metodo_pago:'efectivo' }).eq('id', ex.id)
-                  else await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: j.jugador_id, estado:'pagado', metodo_pago:'efectivo', fecha_pago: new Date().toISOString().slice(0,10) })
-                  await cargarTorneo()
-                }} style={{ background:'#34d39922', color:'#34d399', border:'1px solid #34d39944', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
-                  ✓ Marcar pagado
-                </button>
-              </div>
-            ))
-          }
-        </div>
-      )}
-
       {/* PLAYOFFS BRACKET */}
       {esPlayoffs && tabActiva === 'bracket' && (
         <div>
-          <div style={{ background:'#1e1b4b', border:'1px solid #6c63ff44', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#a78bfa', marginBottom:16 }}>
+          <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#3730a3', marginBottom:16 }}>
             💡 Haz clic en el nombre del ganador para registrar el resultado
           </div>
           <div style={{ overflowX:'auto', paddingBottom:12 }}>
@@ -538,31 +498,31 @@ export default function TorneoDetallePage() {
                 if (!ps.length) return null
                 return (
                   <div key={fase} style={{ minWidth:180 }}>
-                    <div style={{ fontSize:11, color:'#4b5063', textTransform:'uppercase', letterSpacing:'1px', textAlign:'center', marginBottom:10, padding:'4px 8px', background:'#0a0c12', borderRadius:6 }}>
+                    <div style={{ fontSize:11, color: muted, textTransform:'uppercase', letterSpacing:'1px', textAlign:'center', marginBottom:10, padding:'4px 8px', background:'#f4f7fa', borderRadius:6 }}>
                       {faseLabel[fase]}
                     </div>
                     {ps.map((p, i) => {
                       const isBye = p.jugador_b === null
                       return (
-                        <div key={p.id} style={{ background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, overflow:'hidden', marginBottom:8 }}>
+                        <div key={p.id} style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, overflow:'hidden', marginBottom:8, boxShadow:'0 1px 3px rgba(15,23,42,0.05)' }}>
                           <div onClick={() => esAdmin && !p.ganador && !isBye && marcarGanador(p.id, p.jugador_a)}
-                            style={{ padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #1e2030', cursor: esAdmin&&!p.ganador&&!isBye?'pointer':'default', background: p.ganador===p.jugador_a?'#052e16':'transparent' }}>
-                            <span style={{ fontSize:12, color: p.ganador===p.jugador_a?'#34d399':'#c8cfe0' }}>
-                              <span style={{ fontSize:9, background:'#1e1b4b', color:'#a78bfa', padding:'1px 4px', borderRadius:3, marginRight:4 }}>{i*2+1}</span>
+                            style={{ padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #e2e8f0', cursor: esAdmin&&!p.ganador&&!isBye?'pointer':'default', background: p.ganador===p.jugador_a?'#f0fdf4':'transparent' }}>
+                            <span style={{ fontSize:12, color: p.ganador===p.jugador_a?'#16a34a': text }}>
+                              <span style={{ fontSize:9, background:'#ede9fe', color:'#3730a3', padding:'1px 4px', borderRadius:3, marginRight:4 }}>{i*2+1}</span>
                               {(p as any).ja?.nombre||'TBD'}
                             </span>
-                            {p.ganador===p.jugador_a && <span style={{ color:'#34d399', fontSize:12 }}>✓</span>}
+                            {p.ganador===p.jugador_a && <span style={{ color:'#16a34a', fontSize:12 }}>✓</span>}
                           </div>
                           {isBye ? (
-                            <div style={{ padding:'10px 12px', fontSize:11, color:'#4b5063', fontStyle:'italic' }}>BYE — pasa directo</div>
+                            <div style={{ padding:'10px 12px', fontSize:11, color: hint, fontStyle:'italic' }}>BYE — pasa directo</div>
                           ) : (
                             <div onClick={() => esAdmin && !p.ganador && marcarGanador(p.id, p.jugador_b)}
-                              style={{ padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor: esAdmin&&!p.ganador?'pointer':'default', background: p.ganador===p.jugador_b?'#052e16':'transparent' }}>
-                              <span style={{ fontSize:12, color: p.ganador===p.jugador_b?'#34d399':'#c8cfe0' }}>
-                                <span style={{ fontSize:9, background:'#1e1b4b', color:'#a78bfa', padding:'1px 4px', borderRadius:3, marginRight:4 }}>{i*2+2}</span>
+                              style={{ padding:'10px 12px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor: esAdmin&&!p.ganador?'pointer':'default', background: p.ganador===p.jugador_b?'#f0fdf4':'transparent' }}>
+                              <span style={{ fontSize:12, color: p.ganador===p.jugador_b?'#16a34a': text }}>
+                                <span style={{ fontSize:9, background:'#ede9fe', color:'#3730a3', padding:'1px 4px', borderRadius:3, marginRight:4 }}>{i*2+2}</span>
                                 {(p as any).jb?.nombre||'TBD'}
                               </span>
-                              {p.ganador===p.jugador_b && <span style={{ color:'#34d399', fontSize:12 }}>✓</span>}
+                              {p.ganador===p.jugador_b && <span style={{ color:'#16a34a', fontSize:12 }}>✓</span>}
                             </div>
                           )}
                         </div>
@@ -579,38 +539,38 @@ export default function TorneoDetallePage() {
             const pFinal = partidos.find(p => p.fase === 'final' && p.ganador)
             const campeon = pFinal ? ((pFinal as any).jg) : null
             return campeon ? (
-              <div style={{ background:'linear-gradient(135deg,#fbbf2422,#14161f)', border:'1px solid #fbbf2444', borderRadius:16, padding:24, textAlign:'center', marginBottom:16 }}>
+              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:16, padding:24, textAlign:'center', marginBottom:16 }}>
                 <div style={{ fontSize:48, marginBottom:8 }}>🏆</div>
-                <div style={{ fontSize:22, fontWeight:800, color:'#fbbf24' }}>¡Campeón!</div>
-                <div style={{ fontSize:18, color:'#fff', marginTop:4 }}>{campeon.nombre}</div>
+                <div style={{ fontSize:22, fontWeight:800, color:'#d97706' }}>¡Campeón!</div>
+                <div style={{ fontSize:18, color: text, marginTop:4 }}>{campeon.nombre}</div>
               </div>
             ) : null
           })()}
         </div>
       )}
 
-      {/* PAGOS PENDIENTES — siempre al final */}
+      {/* PAGOS PENDIENTES */}
       {esAdmin && cuota > 0 && (faseActual === 'grupos' || fasesOrden.includes(faseActual) || faseActual === 'finalizado') && (
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, marginBottom:16, marginTop:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>💳 Pagos pendientes</div>
+        <div style={{ ...card, padding:16, marginBottom:16, marginTop:16 }}>
+          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💳 Pagos pendientes</div>
           {jugadores.filter((j: any) => {
             const pago = pagos.find(p => p.jugador_id === j.jugador_id)
             return !pago || pago.estado !== 'pagado'
           }).length === 0
-            ? <p style={{ fontSize:13, color:'#34d399' }}>✓ Todos han pagado</p>
+            ? <p style={{ fontSize:13, color:'#16a34a' }}>✓ Todos han pagado</p>
             : jugadores.filter((j: any) => {
                 const pago = pagos.find(p => p.jugador_id === j.jugador_id)
                 return !pago || pago.estado !== 'pagado'
               }).map((j: any) => (
-              <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #1e2030' }}>
-                <div style={{ flex:1, fontSize:13, color:'#c8cfe0' }}>{j.jugadores?.nombre||'—'}</div>
-                <span style={{ background:'#f8717122', color:'#f87171', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
+              <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
+                <div style={{ flex:1, fontSize:13, color: text }}>{j.jugadores?.nombre||'—'}</div>
+                <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
                 <button onClick={async () => {
                   const ex = pagos.find(p => p.jugador_id === j.jugador_id)
                   if (ex) await supabase.from('torneo_pagos').update({ estado:'pagado', metodo_pago:'efectivo', fecha_pago: new Date().toISOString().slice(0,10) }).eq('id', ex.id)
                   else await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: j.jugador_id, estado:'pagado', metodo_pago:'efectivo', fecha_pago: new Date().toISOString().slice(0,10) })
                   await cargarTorneo()
-                }} style={{ background:'#34d39922', color:'#34d399', border:'1px solid #34d39944', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
+                }} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
                   ✓ Marcar pagado
                 </button>
               </div>
@@ -621,35 +581,34 @@ export default function TorneoDetallePage() {
 
       {/* MESA DE INSCRIPCIÓN */}
       {mesaOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:24, width:'100%', maxWidth:560, maxHeight:'90vh', overflowY:'auto' }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:24, width:'100%', maxWidth:560, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <div style={{ fontSize:16, fontWeight:600, color:'#fff' }}>🪑 Mesa de inscripción</div>
-              <button onClick={() => setMesaOpen(false)} style={{ background:'transparent', border:'none', color:'#6c7280', cursor:'pointer', fontSize:20 }}>✕</button>
+              <div style={{ fontSize:16, fontWeight:600, color: text }}>🪑 Mesa de inscripción</div>
+              <button onClick={() => setMesaOpen(false)} style={{ background:'transparent', border:'none', color: muted, cursor:'pointer', fontSize:20 }}>✕</button>
             </div>
 
             {/* Stats en tiempo real */}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:16 }}>
               {(faseActual === 'inscripcion' ? [
-                { label:'Inscritos', value:jugadoresInscritos.length, color:'#c8cfe0' },
-                { label:'Grupos estimados', value:numGruposEstimados, color:'#a78bfa' },
-                { label:'Recaudado', value:fmt(recaudado), color:'#34d399' },
+                { label:'Inscritos', value:jugadoresInscritos.length, color: text },
+                { label:'Grupos estimados', value:numGruposEstimados, color:'#3730a3' },
+                { label:'Recaudado', value:fmt(recaudado), color:'#16a34a' },
               ] : [
-                { label:'Inscritos', value:totalInscritos, color:'#c8cfe0' },
-                { label:'Grupos', value:gruposReales.length, color:'#a78bfa' },
-                { label:'Recaudado', value:fmt(recaudado), color:'#34d399' },
+                { label:'Inscritos', value:totalInscritos, color: text },
+                { label:'Grupos', value:gruposReales.length, color:'#3730a3' },
+                { label:'Recaudado', value:fmt(recaudado), color:'#16a34a' },
               ]).map(s => (
-                <div key={s.label} style={{ background:'#0a0c12', borderRadius:8, padding:10, textAlign:'center' }}>
+                <div key={s.label} style={{ background:'#f4f7fa', borderRadius:8, padding:10, textAlign:'center' }}>
                   <div style={{ fontSize:16, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
-                  <div style={{ fontSize:10, color:'#6c7280' }}>{s.label}</div>
+                  <div style={{ fontSize:10, color: muted }}>{s.label}</div>
                 </div>
               ))}
             </div>
 
             {/* Input inscripción */}
-            {/* Búsqueda con autocompletado de jugadores del club */}
             <div style={{ position:'relative', marginBottom:10 }}>
-              <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 placeholder="Buscar jugador del club o escribir nombre nuevo..."
                 value={busquedaMesa}
                 onChange={async e => {
@@ -657,9 +616,8 @@ export default function TorneoDetallePage() {
                   setRutMesa('')
                   if (e.target.value.length > 1 && perfil?.club_id) {
                     const { data } = await supabase.from('jugadores').select('id,nombre,rut,elo,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
-                    // guardar en estado temporal
                     ;(window as any).__jugSuggestions = data || []
-                    setBusquedaMesa(e.target.value) // forzar re-render
+                    setBusquedaMesa(e.target.value)
                   } else {
                     ;(window as any).__jugSuggestions = []
                   }
@@ -667,56 +625,56 @@ export default function TorneoDetallePage() {
                 onKeyDown={e => e.key === 'Enter' && inscribirEnMesa()}
               />
               {busquedaMesa.length > 1 && (window as any).__jugSuggestions?.length > 0 && (
-                <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden' }}>
+                <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden', boxShadow:'0 4px 12px rgba(15,23,42,0.1)' }}>
                   {((window as any).__jugSuggestions || []).map((j: any) => (
                     <div key={j.id} onClick={() => {
                       setBusquedaMesa(j.nombre)
                       setRutMesa(j.rut || '')
                       ;(window as any).__jugSuggestions = []
-                    }} style={{ padding:'10px 12px', borderBottom:'1px solid #1e2030', cursor:'pointer', fontSize:13 }}>
-                      <span style={{ color:'#c8cfe0' }}>{j.nombre}</span>
-                      <span style={{ color:'#6c7280', fontSize:11, marginLeft:8 }}>ELO {j.elo} · {j.categoria}</span>
-                      <span style={{ background:'#34d39922', color:'#34d399', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
+                    }} style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:13 }}>
+                      <span style={{ color: text }}>{j.nombre}</span>
+                      <span style={{ color: muted, fontSize:11, marginLeft:8 }}>ELO {j.elo} · {j.categoria}</span>
+                      <span style={{ background:'#f0fdf4', color:'#16a34a', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
                     </div>
                   ))}
-                  <div style={{ padding:'8px 12px', fontSize:11, color:'#4b5063', borderTop:'1px solid #1e2030' }}>
+                  <div style={{ padding:'8px 12px', fontSize:11, color: hint, borderTop:'1px solid #f1f5f9' }}>
                     O presiona Enter para inscribir como participante externo
                   </div>
                 </div>
               )}
             </div>
             <div style={{ display:'flex', gap:8, marginBottom:10 }}>
-              <input style={{ flex:1, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+              <input style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 placeholder="RUT sin puntos ni guion" value={rutMesa} onChange={e => setRutMesa(e.target.value.replace(/[^0-9kK]/g,''))} maxLength={9} />
             </div>
             <div style={{ display:'flex', gap:8, marginBottom:16 }}>
-              <select style={{ flex:1, background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
+              <select style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
                 <option value="efectivo">💵 Efectivo</option>
                 <option value="transferencia">💳 Transferencia</option>
               </select>
-              <button onClick={inscribirEnMesa} style={{ flex:1, background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={inscribirEnMesa} style={{ flex:1, background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 + Inscribir
               </button>
             </div>
 
-            {/* Lista inscritos en tiempo real (solo durante fase de inscripción) */}
+            {/* Lista inscritos en tiempo real */}
             {faseActual === 'inscripcion' && jugadoresInscritos.length > 0 && (
-              <div style={{ background:'#0a0c12', borderRadius:10, overflow:'hidden', marginBottom:16 }}>
-                <div style={{ padding:'8px 14px', fontSize:11, color:'#6c7280', textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'1px solid #1e2030' }}>
+              <div style={{ background:'#f4f7fa', borderRadius:10, overflow:'hidden', marginBottom:16 }}>
+                <div style={{ padding:'8px 14px', fontSize:11, color: muted, textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'1px solid #e2e8f0' }}>
                   Jugadores inscritos
                 </div>
                 {jugadoresInscritos.sort((a: any, b: any) => (b.jugadores?.elo||0) - (a.jugadores?.elo||0)).map((j: any, i: number) => (
-                  <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderBottom:'1px solid #1e2030' }}>
-                    <span style={{ fontSize:12, color:'#6c7280', width:20 }}>{i+1}</span>
+                  <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderBottom:'1px solid #e2e8f0', background:'#ffffff' }}>
+                    <span style={{ fontSize:12, color: muted, width:20 }}>{i+1}</span>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>{j.jugadores?.nombre||'—'}</div>
-                      <div style={{ fontSize:11, color:'#6c7280' }}>ELO: {j.jugadores?.elo||1200}</div>
+                      <div style={{ fontSize:13, color: text, fontWeight:500 }}>{j.jugadores?.nombre||'—'}</div>
+                      <div style={{ fontSize:11, color: muted }}>ELO: {j.jugadores?.elo||1200}</div>
                     </div>
                     {/* Cabeza de serie */}
                     <button
                       onClick={() => toggleCabezaSerie(j.jugador_id)}
-                      style={{ background: cabezasSerie.has(j.jugador_id)?'#fbbf2422':'transparent', color: cabezasSerie.has(j.jugador_id)?'#fbbf24':'#4b5063', border:`1px solid ${cabezasSerie.has(j.jugador_id)?'#fbbf2444':'#1e2030'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}
+                      style={{ background: cabezasSerie.has(j.jugador_id)?'#fffbeb':'transparent', color: cabezasSerie.has(j.jugador_id)?'#d97706': hint, border:`1px solid ${cabezasSerie.has(j.jugador_id)?'#fde68a':'#e2e8f0'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}
                     >
                       {cabezasSerie.has(j.jugador_id) ? '⭐ Cabeza de serie' : 'Cabeza de serie'}
                     </button>
@@ -735,7 +693,7 @@ export default function TorneoDetallePage() {
                           if (res.error) { alert(res.error); return }
                           await cargarTorneo()
                         }}
-                          style={{ background: esPagado ? '#34d39922' : '#f8717122', color: esPagado ? '#34d399' : '#f87171', border:`1px solid ${esPagado ? '#34d39944' : '#f8717144'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}>
+                          style={{ background: esPagado ? '#f0fdf4' : '#fef2f2', color: esPagado ? '#16a34a' : '#dc2626', border:`1px solid ${esPagado ? '#bbf7d0' : '#fecaca'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}>
                           {esPagado ? '✓ Pagado' : 'Pendiente'}
                         </button>
                       )
@@ -744,7 +702,7 @@ export default function TorneoDetallePage() {
                     <button onClick={async () => {
                       await supabase.from('grupo_jugadores').delete().eq('jugador_id', j.jugador_id).in('grupo_id', grupos.map((g:any)=>g.id))
                       setJugadoresInscritos(prev => prev.filter((x:any) => x.jugador_id !== j.jugador_id))
-                    }} style={{ background:'transparent', border:'none', color:'#f87171', cursor:'pointer', fontSize:14 }}>✕</button>
+                    }} style={{ background:'transparent', border:'none', color:'#dc2626', cursor:'pointer', fontSize:14 }}>✕</button>
                   </div>
                 ))}
               </div>
@@ -752,11 +710,11 @@ export default function TorneoDetallePage() {
 
             {faseActual === 'inscripcion' ? (
               <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < 4}
-                style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4?'#34d39922':'#1e2030', color: jugadoresInscritos.length >= 4?'#34d399':'#4b5063', border:`1px solid ${jugadoresInscritos.length >= 4?'#34d39944':'#1e2030'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4?'pointer':'not-allowed' }}>
+                style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= 4?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= 4?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4?'pointer':'not-allowed' }}>
                 {jugadoresInscritos.length < 4 ? `Mínimo 4 jugadores (faltan ${4-jugadoresInscritos.length})` : `✓ Cerrar inscripción y generar ${numGruposEstimados} grupos`}
               </button>
             ) : (
-              <div style={{ background:'#1e1b4b', border:'1px solid #6c63ff44', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#a78bfa', textAlign:'center' }}>
+              <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#3730a3', textAlign:'center' }}>
                 💡 Cada jugador se agrega al grupo con menos integrantes (ELO más cercano).
               </div>
             )}

@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react'
+﻿import type { HTMLAttributes, ReactNode } from 'react'
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode
@@ -8,7 +8,8 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export function Card({ children, noPadding, className = '', ...props }: CardProps) {
   return (
     <div
-      className={`bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl ${noPadding ? '' : 'p-5'} ${className}`}
+      className={`bg-white border border-[var(--border)] rounded-xl ${noPadding ? '' : 'p-5'} ${className}`}
+      style={{ boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}
       {...props}
     >
       {children}
