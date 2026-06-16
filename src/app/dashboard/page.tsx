@@ -35,11 +35,10 @@ const C = {
 }
 
 export default function DashboardPage() {
-  const [perfil, setPerfil]         = useState<any>(null)
-  const [kpis, setKpis]             = useState<any>({})
+  const [perfil, setPerfil]             = useState<any>(null)
+  const [kpis, setKpis]                 = useState<any>({})
   const [ultimasAsist, setUltimasAsist] = useState<any[]>([])
-  const [jugadores, setJugadores]   = useState<any[]>([])
-  const [solicitudes, setSolicitudes] = useState<any[]>([])
+  const [solicitudes, setSolicitudes]   = useState<any[]>([])
   const [loading, setLoading]       = useState(true)
   const [ddOpen, setDdOpen]         = useState(false)
   const [tooltip, setTooltip]       = useState<string | null>(null)
@@ -60,50 +59,44 @@ export default function DashboardPage() {
   }, [])
 
   async function cargarDatos(cid: string) {
-    const mesActual   = new Date().getMonth() + 1
-    const anioActual  = new Date().getFullYear()
-    const mesInicio   = `${anioActual}-${String(mesActual).padStart(2,'0')}-01`
-    const mesPrev     = mesActual === 1 ? 12 : mesActual - 1
-    const anioPrev    = mesActual === 1 ? anioActual - 1 : anioActual
-    const mesInicioPrev = `${anioPrev}-${String(mesPrev).padStart(2,'0')}-01`
+    const { data, error } = await supabase.rpc('dashboard_kpis', { p_club_id: cid })
+    if (error || !data) return
 
-    const [
-      { data: jugsData },
-      { data: mensualidades },
-      { data: movimientos },
-      { data: solicitudesData },
-      { data: movimientosPrev },
-      { data: asistMes },
-    ] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', cid).neq('es_externo', true),
-      supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
-      supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicio),
-      supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).eq('estado', 'pendiente'),
-      supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicioPrev).lt('fecha', mesInicio),
-      supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).gte('fecha', mesInicio).order('fecha', { ascending: false }).limit(5),
-    ])
+    const activos    = data.jugadores_activos  || 0
+    const ingresos   = data.ingresos           || 0
+    const gastos     = data.gastos             || 0
+    const ingresosPrev = data.ingresos_anterior || 0
+    const gastosPrev   = data.gastos_anterior  || 0
 
-    const activos    = (jugsData || []).filter(j => j.estado === 'activo')
-    const morosos    = (mensualidades || []).filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
-    const gastos     = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0)    || 0
-    const ingresos   = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)  || 0
-    const gastosPrev = (movimientosPrev || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
-    const ingresosPrev = (movimientosPrev || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
-
-    const coa                = activos.length > 0 ? Math.round(gastos   / activos.length) : 0
-    const tm                 = activos.length > 0 ? Math.round((morosos.length / activos.length) * 100) : 0
-    const utilidadPorAlumno  = activos.length > 0 ? Math.round((ingresos - gastos) / activos.length)  : 0
-    const ingresoPorAlumno   = activos.length > 0 ? Math.round(ingresos / activos.length) : 0
-    const costoPorAlumno     = activos.length > 0 ? Math.round(gastos   / activos.length) : 0
-    const utilidadPrevPorAlumno = activos.length > 0 ? Math.round((ingresosPrev - gastosPrev) / activos.length) : 0
-    const variacionUtilidad  = utilidadPrevPorAlumno !== 0
+    const utilidadPorAlumno     = activos > 0 ? Math.round((ingresos - gastos)       / activos) : 0
+    const ingresoPorAlumno      = activos > 0 ? Math.round(ingresos                  / activos) : 0
+    const costoPorAlumno        = activos > 0 ? Math.round(gastos                    / activos) : 0
+    const utilidadPrevPorAlumno = activos > 0 ? Math.round((ingresosPrev - gastosPrev) / activos) : 0
+    const variacionUtilidad     = utilidadPrevPorAlumno !== 0
       ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
       : null
 
-    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos, jugadores: activos, mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
-    setJugadores(activos)
-    setSolicitudes(solicitudesData || [])
-    setUltimasAsist(asistMes || [])
+    setKpis({
+      activos,
+      tm:              data.tasa_morosidad || 0,
+      coa:             data.coa            || 0,
+      ingresos,
+      gastos,
+      morosos:         data.morosos_lista  || [],
+      mensualidadBase: 25000,
+      utilidadPorAlumno,
+      ingresoPorAlumno,
+      costoPorAlumno,
+      variacionUtilidad,
+    })
+    setSolicitudes(data.solicitudes_lista || [])
+    setUltimasAsist(
+      (data.ultimas_asistencias || []).map((a: any) => ({
+        id:       a.id,
+        fecha:    a.fecha,
+        jugadores: { nombre: a.jugador_nombre },
+      }))
+    )
   }
 
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
@@ -334,28 +327,25 @@ export default function DashboardPage() {
             </div>
             {(kpis.morosos?.length || 0) === 0
               ? <p style={{ color: C.green, textAlign: 'center', padding: 20, fontSize: 14 }}>✓ Sin deudores este mes</p>
-              : kpis.morosos.map((item: any) => {
-                const jug = kpis.jugadores?.find((j: any) => j.id === item.jugador_id)
-                return (
+              : kpis.morosos.map((item: any) => (
                   <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.redL, color: C.red, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600 }}>
-                        {jug?.nombre?.charAt(0) || '?'}
+                        {item.nombre?.charAt(0) || '?'}
                       </div>
                       <div>
-                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{jug?.nombre || '—'}</div>
+                        <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{item.nombre || '—'}</div>
                         <div style={{ fontSize: 11, color: C.hint, marginTop: 1 }}>{item.estado}</div>
                       </div>
                     </div>
-                    {jug?.telefono && (
-                      <a href={`https://wa.me/${jug.telefono.replace(/[^0-9]/g, '')}`} target="_blank"
+                    {item.telefono && (
+                      <a href={`https://wa.me/${item.telefono.replace(/[^0-9]/g, '')}`} target="_blank"
                         style={{ background: C.greenL, color: C.green, padding: '5px 10px', borderRadius: 8, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
                         WA →
                       </a>
                     )}
                   </div>
-                )
-              })
+                ))
             }
           </div>
         </div>
