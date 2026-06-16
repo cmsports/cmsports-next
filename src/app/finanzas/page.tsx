@@ -172,16 +172,16 @@ export default function FinanzasPage() {
           <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>Exportar Excel</button>
-          <button onClick={() => setModalOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>+ Movimiento</button>
+          <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📊 Exportar Excel</button>
+          <button onClick={() => setModalOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>➕ Movimiento</button>
         </div>
       </div>
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:20 }}>
         {[
-          { key:'movimientos', label:'Movimientos' },
-          { key:'reportes', label:'Reportes' },
+          { key:'movimientos', label:'📋 Movimientos' },
+          { key:'reportes', label:'📈 Reportes' },
         ].map(t => (
           <div key={t.key} onClick={() => setTabActivo(t.key as any)}
             style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabActivo===t.key?'#ffffff':'transparent', color:tabActivo===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabActivo===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
@@ -194,9 +194,9 @@ export default function FinanzasPage() {
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
         {[
-          { label:'Ingresos', value:fmt(ingresos), color:'#16a34a', bg:'#f0fdf4' },
-          { label:'Gastos', value:fmt(gastos), color:'#dc2626', bg:'#fef2f2' },
-          { label:'Balance neto', value:fmt(ingresos-gastos), color:'#3730a3', bg:'#ede9fe' },
+          { label:'💰 Ingresos', value:fmt(ingresos), color:'#16a34a', bg:'#f0fdf4' },
+          { label:'💸 Gastos', value:fmt(gastos), color:'#dc2626', bg:'#fef2f2' },
+          { label:'📊 Balance neto', value:fmt(ingresos-gastos), color:'#3730a3', bg:'#ede9fe' },
         ].map(s => (
           <div key={s.label} style={{ ...card, padding:20, background: s.bg, border: `1px solid ${s.color}22` }}>
             <div style={{ fontSize:22, fontWeight:700, color:s.color, fontFamily:'monospace', marginBottom:4 }}>{s.value}</div>
@@ -208,7 +208,7 @@ export default function FinanzasPage() {
       {/* Desglose */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ ...card, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Ingresos por categoría</div>
+          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💰 Ingresos por categoría</div>
           {Object.entries(desgloseIngresos).length === 0
             ? <p style={{ fontSize:12, color: hint }}>Sin ingresos</p>
             : Object.entries(desgloseIngresos).map(([cat, total]) => (
@@ -220,7 +220,7 @@ export default function FinanzasPage() {
           }
         </div>
         <div style={{ ...card, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Gastos por categoría</div>
+          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💸 Gastos por categoría</div>
           {Object.entries(desgloseGastos).length === 0
             ? <p style={{ fontSize:12, color: hint }}>Sin gastos</p>
             : Object.entries(desgloseGastos).map(([cat, total]) => (
@@ -322,9 +322,9 @@ export default function FinanzasPage() {
           <select
             style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', color: text, fontSize:12, outline:'none' }}
             value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
-            <option value="">Todos</option>
-            <option value="ingreso">Ingresos</option>
-            <option value="gasto">Gastos</option>
+            <option value="">🔍 Todos</option>
+            <option value="ingreso">💰 Ingresos</option>
+            <option value="gasto">💸 Gastos</option>
           </select>
         </div>
         <div style={{ overflowX:'auto' }}>
@@ -342,7 +342,7 @@ export default function FinanzasPage() {
                   <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{m.fecha || '—'}</td>
                   <td style={{ padding:'12px 16px' }}>
                     <span style={{ background: m.tipo === 'ingreso' ? '#f0fdf4' : '#fef2f2', color: m.tipo === 'ingreso' ? '#16a34a' : '#dc2626', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
-                      {catLabel[m.categoria] || m.categoria || '—'}
+                      {m.tipo === 'ingreso' ? '💰' : '💸'} {catLabel[m.categoria] || m.categoria || '—'}
                     </span>
                   </td>
                   <td style={{ padding:'12px 16px', fontSize:13, color: text }}>{m.descripcion}</td>
@@ -368,15 +368,15 @@ export default function FinanzasPage() {
       {modalOpen && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
-            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>Nuevo movimiento</div>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>💳 Nuevo movimiento</div>
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
               <div>
                 <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Tipo</label>
                 <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value, categoria: e.target.value === 'ingreso' ? 'mensualidad' : 'sueldo_profesor' }))}>
-                  <option value="ingreso">Ingreso</option>
-                  <option value="gasto">Gasto</option>
+                  <option value="ingreso">💰 Ingreso</option>
+                  <option value="gasto">💸 Gasto</option>
                 </select>
               </div>
               <div>
@@ -580,10 +580,10 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         </div>
         <div style={{ display:'flex', gap:10 }}>
           <button onClick={generarPreview} disabled={generando} style={{ flex:1, padding:12, background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
-            {generando?'Cargando...':'Vista previa'}
+            {generando?'Cargando...':'🔍 Vista previa'}
           </button>
           <button onClick={exportarPDF} disabled={generando||!preview} style={{ flex:1, padding:12, background:preview?'#f43f5e':'#f4f7fa', color:preview?'white': hint, border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:preview?'pointer':'not-allowed' }}>
-            {generando?'Generando...':'Exportar PDF'}
+            {generando?'Generando...':'📄 Exportar PDF'}
           </button>
         </div>
       </div>

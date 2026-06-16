@@ -68,13 +68,17 @@ export default function JugadorDetallePage() {
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
 
-      const [{ data: j }, { data: h }, { data: e }, { data: ext }, { data: evs }, { data: asist }] = await Promise.all([
+      const mesActual = new Date().getMonth() + 1
+      const anioActual = new Date().getFullYear()
+
+      const [{ data: j }, { data: h }, { data: e }, { data: ext }, { data: evs }, { data: asist }, { data: mens }] = await Promise.all([
         supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
         supabase.from('historial_elo').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
         supabase.from('torneo_partidos').select('*,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
         supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
         supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
-        supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).order('fecha', { ascending: true })
+        supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
+        supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
       ])
 
       setJugador(j)
@@ -83,10 +87,6 @@ export default function JugadorDetallePage() {
       setExternos(ext || [])
       setEvaluaciones(evs || [])
       setAsistencias(asist || [])
-
-      const mesActual = new Date().getMonth() + 1
-      const anioActual = new Date().getFullYear()
-      const { data: mens } = await supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
       setMensualidadActual(mens)
 
       const evalActual = evs?.find((ev: any) => ev.periodo_trimestre === trimestre)

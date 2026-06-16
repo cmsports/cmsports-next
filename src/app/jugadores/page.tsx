@@ -252,7 +252,7 @@ export default function JugadoresPage() {
                     <td style={{ padding:'12px 16px', fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</td>
                     <td style={{ padding:'12px 16px' }}>
                       <span style={{ background: j.estado === 'activo' ? '#f0fdf4' : '#fef2f2', color: j.estado === 'activo' ? '#16a34a' : '#dc2626', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                        {j.estado}
+                        {j.estado === 'activo' ? '✅ Activo' : '🚫 Bloqueado'}
                       </span>
                     </td>
                     <td style={{ padding:'12px 16px' }}>
@@ -261,7 +261,7 @@ export default function JugadoresPage() {
                         {esAdmin && <>
                           <button onClick={() => abrirEditar(j)} style={{ background:'#f4f7fa', color: muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Editar</button>
                           <button onClick={() => toggleEstado(j)} style={{ background: j.estado==='activo'?'#fef2f2':'#f0fdf4', color: j.estado==='activo'?'#dc2626':'#16a34a', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
-                            {j.estado==='activo'?'Bloquear':'Activar'}
+                            {j.estado==='activo'?'🚫 Bloquear':'✅ Activar'}
                           </button>
                           <button onClick={() => eliminar(j.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
                         </>}

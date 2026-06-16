@@ -51,32 +51,36 @@ export default function TorneoDetallePage() {
   const torneoId = params.id as string
 
   const cargarTorneo = useCallback(async () => {
-    const { data: t } = await supabase.from('torneos').select('*').eq('id', torneoId).single()
+    // Tanda 1: 4 queries en paralelo (todas solo necesitan torneoId)
+    const [
+      { data: t },
+      { data: g },
+      { data: pts },
+      { data: pgs },
+    ] = await Promise.all([
+      supabase.from('torneos').select('*').eq('id', torneoId).single(),
+      supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).order('nombre'),
+      supabase.from('torneo_partidos').select('*,ja:jugador_a(id,nombre,elo),jb:jugador_b(id,nombre,elo),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
+      supabase.from('torneo_pagos').select('*').eq('torneo_id', torneoId),
+    ])
+
     setTorneo(t)
-
-    const { data: g } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).order('nombre')
     setGrupos(g || [])
-
-    if (g?.length) {
-      const grupoIds = g.map((gr: any) => gr.id)
-      const { data: gj } = await supabase.from('grupo_jugadores').select('*,jugadores(id,nombre,elo)').in('grupo_id', grupoIds)
-      setJugadores(gj || [])
-    } else {
-      setJugadores([])
-    }
-
-    const { data: pts } = await supabase.from('torneo_partidos').select('*,ja:jugador_a(id,nombre,elo),jb:jugador_b(id,nombre,elo),jg:ganador(id,nombre)').eq('torneo_id', torneoId)
     setPartidos(pts || [])
-
-    const { data: pgs } = await supabase.from('torneo_pagos').select('*').eq('torneo_id', torneoId)
     setPagos(pgs || [])
 
-    if (t?.fase === 'inscripcion') {
-      const { data: gMesa } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
-      if (gMesa) {
-        const { data: ins } = await supabase.from('grupo_jugadores').select('*,jugadores(id,nombre,elo)').eq('grupo_id', gMesa.id)
-        setJugadoresInscritos(ins || [])
+    // Tanda 2: grupo_jugadores para todos los grupos (real + MESA) en una sola query
+    const todosGrupoIds = (g || []).map((gr: any) => gr.id)
+    if (todosGrupoIds.length) {
+      const { data: gj } = await supabase.from('grupo_jugadores').select('*,jugadores(id,nombre,elo)').in('grupo_id', todosGrupoIds)
+      const todos = gj || []
+      const grupoMesaId = (g || []).find((gr: any) => gr.nombre === 'MESA')?.id
+      setJugadores(grupoMesaId ? todos.filter((j: any) => j.grupo_id !== grupoMesaId) : todos)
+      if (t?.fase === 'inscripcion' && grupoMesaId) {
+        setJugadoresInscritos(todos.filter((j: any) => j.grupo_id === grupoMesaId))
       }
+    } else {
+      setJugadores([])
     }
   }, [torneoId])
 
