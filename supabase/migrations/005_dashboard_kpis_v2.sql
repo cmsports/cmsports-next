@@ -71,21 +71,21 @@ begin
   -- Movimientos
   select coalesce(sum(monto), 0) into v_ingresos
   from movimientos
-  where club_id = p_club_id and tipo = 'ingreso' and fecha >= v_inicio_mes::text;
+  where club_id = p_club_id and tipo = 'ingreso' and fecha >= v_inicio_mes;
 
   select coalesce(sum(monto), 0) into v_ingresos_anterior
   from movimientos
   where club_id = p_club_id and tipo = 'ingreso'
-    and fecha >= v_inicio_mes_anterior::text and fecha < v_inicio_mes::text;
+    and fecha >= v_inicio_mes_anterior and fecha < v_inicio_mes;
 
   select coalesce(sum(monto), 0) into v_gastos
   from movimientos
-  where club_id = p_club_id and tipo = 'gasto' and fecha >= v_inicio_mes::text;
+  where club_id = p_club_id and tipo = 'gasto' and fecha >= v_inicio_mes;
 
   select coalesce(sum(monto), 0) into v_gastos_anterior
   from movimientos
   where club_id = p_club_id and tipo = 'gasto'
-    and fecha >= v_inicio_mes_anterior::text and fecha < v_inicio_mes::text;
+    and fecha >= v_inicio_mes_anterior and fecha < v_inicio_mes;
 
   select count(*) into v_solicitudes_pendientes
   from solicitudes_jugador
@@ -116,7 +116,7 @@ begin
     select a.id, a.fecha, j.nombre as jugador_nombre
     from asistencia a
     join jugadores j on j.id = a.jugador_id
-    where a.club_id = p_club_id and a.fecha >= v_inicio_mes::text
+    where a.club_id = p_club_id and a.fecha >= v_inicio_mes
     order by a.fecha desc
     limit 5
   ) a;
