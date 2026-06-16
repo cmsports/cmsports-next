@@ -226,8 +226,8 @@ export default function MensualidadesPage() {
           { label:'Atrasados', value:atrasados, color:'#f87171', bg:'#f8717122' },
           { label:'Recaudado', value:fmt(totalRecaudado), color:'#a78bfa', bg:'#a78bfa22' },
         ].map(s => (
-          <div key={s.label} onClick={() => setFiltroEstado(s.label.toLowerCase() as any)}
-            style={{ background:'#14161f', border:`1px solid ${s.bg}`, borderRadius:14, padding:16, cursor:'pointer', transition:'all 0.15s' }}>
+          <div key={s.label}
+            style={{ background:'#14161f', border:`1px solid ${s.bg}`, borderRadius:14, padding:16 }}>
             <div style={{ fontSize:22, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
             <div style={{ fontSize:12, color:'#6c7280', marginTop:4 }}>{s.label}</div>
           </div>

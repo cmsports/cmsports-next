@@ -52,7 +52,7 @@ export default function SolicitudesPage() {
       inv = newInv
     }
     const codigo = inv?.[0]?.codigo || ''
-    setLinkInvitacion(`${window.location.origin}/registro?club=${clubId}&code=${codigo}`)
+    setLinkInvitacion(`${window.location.origin}/registro?code=${codigo}`)
 
     // Cargar solicitudes
     const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })

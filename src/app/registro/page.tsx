@@ -9,10 +9,11 @@ const supabase = createClient()
 
 function RegistroForm() {
   const searchParams = useSearchParams()
-  const clubId = searchParams.get('club')
+  const clubIdParam = searchParams.get('club')
   const codigo = searchParams.get('code')
 
   const [clubNombre, setClubNombre] = useState('')
+  const [resolvedClubId, setResolvedClubId] = useState<string | null>(null)
   const [valido, setValido] = useState<boolean | null>(null)
   const [form, setForm] = useState({ nombre:'', rut:'', email:'', telefono:'' })
   const [enviado, setEnviado] = useState(false)
@@ -25,15 +26,24 @@ function RegistroForm() {
 
   useEffect(() => {
     async function verificar() {
-      if (!clubId || !codigo) { setValido(false); return }
-      const { data: inv } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('codigo', codigo).eq('activa', true).single()
-      if (!inv) { setValido(false); return }
+      if (!codigo) { setValido(false); return }
+      let clubId = clubIdParam
+      if (!clubId) {
+        // Link corto: obtener club desde el código
+        const { data: inv } = await supabase.from('invitaciones').select('club_id').eq('codigo', codigo).eq('activa', true).single()
+        if (!inv) { setValido(false); return }
+        clubId = inv.club_id
+      } else {
+        const { data: inv } = await supabase.from('invitaciones').select('id').eq('club_id', clubId).eq('codigo', codigo).eq('activa', true).single()
+        if (!inv) { setValido(false); return }
+      }
+      setResolvedClubId(clubId)
       setValido(true)
       const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
       if (club) setClubNombre(club.nombre)
     }
     verificar()
-  }, [clubId, codigo])
+  }, [clubIdParam, codigo])
 
   async function enviar() {
     setTouched({ nombre: true, rut: true, telefono: true })
@@ -43,7 +53,7 @@ function RegistroForm() {
     setEnviando(true)
     setError('')
     const { error: err } = await supabase.from('solicitudes_jugador').insert({
-      club_id: clubId, nombre: form.nombre, rut: form.rut,
+      club_id: resolvedClubId, nombre: form.nombre, rut: form.rut,
       email: form.email || null, telefono: form.telefono || null
     })
     if (err) { setError('Error al enviar. Intenta de nuevo.'); setEnviando(false); return }
