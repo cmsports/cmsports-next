@@ -7,11 +7,16 @@ import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
 
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 const diasSemana = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const tiposEvento = ['entrenamiento','torneo','feriado','pago','otro']
 const coloresEvento: Record<string, string> = {
-  entrenamiento:'#34d399', torneo:'#a78bfa', feriado:'#f87171', pago:'#fbbf24', otro:'#8890a4', clase:'#6c63ff'
+  entrenamiento:'#16a34a', torneo:'#4f46e5', feriado:'#dc2626', pago:'#d97706', otro:'#64748b', clase:'#f43f5e'
 }
 
 export default function CalendarioPage() {
@@ -126,8 +131,8 @@ export default function CalendarioPage() {
   const itemsDelDia = diaSeleccionado ? (diasConItems[diaSeleccionado] || []) : []
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
@@ -135,23 +140,23 @@ export default function CalendarioPage() {
     <AppLayout perfil={perfil}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={() => cambiarMes(-1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>◀</button>
-          <span style={{ fontSize:18, fontWeight:700, color:'#fff', minWidth:180, textAlign:'center' }}>{mesesN[mes]} {anio}</span>
-          <button onClick={() => cambiarMes(1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>▶</button>
+          <button onClick={() => cambiarMes(-1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>◀</button>
+          <span style={{ fontSize:18, fontWeight:600, color: text, minWidth:180, textAlign:'center' }}>{mesesN[mes]} {anio}</span>
+          <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
         </div>
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns: diaSeleccionado ? '1fr 320px' : '1fr', gap:20 }}>
         {/* Calendario */}
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'1px solid #1e2030' }}>
+        <div style={{ ...card, overflow:'hidden' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'1px solid #e2e8f0' }}>
             {diasSemana.map(d => (
-              <div key={d} style={{ padding:'10px', textAlign:'center', fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase' }}>{d}</div>
+              <div key={d} style={{ padding:'10px', textAlign:'center', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase' }}>{d}</div>
             ))}
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)' }}>
             {Array.from({ length: primerDia }).map((_, i) => (
-              <div key={`e-${i}`} style={{ minHeight:70, borderRight:'1px solid #1e2030', borderBottom:'1px solid #1e2030' }} />
+              <div key={`e-${i}`} style={{ minHeight:70, borderRight:'1px solid #f1f5f9', borderBottom:'1px solid #f1f5f9' }} />
             ))}
             {Array.from({ length: diasEnMes }).map((_, i) => {
               const dia = i + 1
@@ -161,16 +166,16 @@ export default function CalendarioPage() {
               const seleccionado = diaSeleccionado === fecha
               return (
                 <div key={dia} onClick={() => setDiaSeleccionado(seleccionado ? null : fecha)}
-                  style={{ minHeight:70, padding:6, borderRight:'1px solid #1e2030', borderBottom:'1px solid #1e2030', cursor:'pointer', background: seleccionado ? '#1e1b4b' : 'transparent' }}>
-                  <div style={{ width:26, height:26, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight: esHoy ? 700 : 400, background: esHoy ? '#6c63ff' : 'transparent', color: esHoy ? 'white' : seleccionado ? '#a78bfa' : '#c8cfe0', marginBottom:4 }}>
+                  style={{ minHeight:70, padding:6, borderRight:'1px solid #f1f5f9', borderBottom:'1px solid #f1f5f9', cursor:'pointer', background: seleccionado ? '#ede9fe' : 'transparent' }}>
+                  <div style={{ width:26, height:26, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight: esHoy ? 700 : 400, background: esHoy ? '#4f46e5' : 'transparent', color: esHoy ? 'white' : seleccionado ? '#3730a3' : text, marginBottom:4 }}>
                     {dia}
                   </div>
                   {items.slice(0,2).map((item, idx) => (
-                    <div key={idx} style={{ fontSize:9, padding:'1px 4px', borderRadius:3, marginBottom:2, background: (coloresEvento[item.tipo_item === 'clase' ? 'clase' : item.tipo] || '#8890a4') + '44', color: coloresEvento[item.tipo_item === 'clase' ? 'clase' : item.tipo] || '#8890a4', overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
-                      {item.tipo_item === 'clase' ? '🏓 ' + item.contenido : item.titulo}
+                    <div key={idx} style={{ fontSize:9, padding:'1px 4px', borderRadius:3, marginBottom:2, background: (coloresEvento[item.tipo_item === 'clase' ? 'clase' : item.tipo] || '#64748b') + '22', color: coloresEvento[item.tipo_item === 'clase' ? 'clase' : item.tipo] || '#64748b', overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
+                      {item.tipo_item === 'clase' ? item.contenido : item.titulo}
                     </div>
                   ))}
-                  {items.length > 2 && <div style={{ fontSize:9, color:'#6c7280' }}>+{items.length-2}</div>}
+                  {items.length > 2 && <div style={{ fontSize:9, color: hint }}>+{items.length-2}</div>}
                 </div>
               )
             })}
@@ -179,51 +184,49 @@ export default function CalendarioPage() {
 
         {/* Panel día */}
         {diaSeleccionado && (
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16, alignSelf:'start' }}>
+          <div style={{ ...card, padding:16, alignSelf:'start' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>
+              <div style={{ fontSize:13, fontWeight:600, color: text }}>
                 {new Date(diaSeleccionado+'T12:00:00').toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long' })}
               </div>
-              <button onClick={() => setDiaSeleccionado(null)} style={{ background:'transparent', border:'none', color:'#6c7280', cursor:'pointer', fontSize:18 }}>✕</button>
+              <button onClick={() => setDiaSeleccionado(null)} style={{ background:'transparent', border:'none', color: muted, cursor:'pointer', fontSize:18 }}>✕</button>
             </div>
 
-            {/* Clases publicadas */}
             {itemsDelDia.filter(i => i.tipo_item === 'clase').map((c, i) => (
-              <div key={i} style={{ background:'#0a0c12', borderRadius:10, padding:12, marginBottom:10, borderLeft:'3px solid #6c63ff' }}>
-                <div style={{ fontSize:13, fontWeight:600, color:'#c8cfe0', marginBottom:4 }}>🏓 {c.contenido}</div>
-                <div style={{ fontSize:11, color:'#6c7280', marginBottom:8 }}>
+              <div key={i} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:'3px solid #f43f5e' }}>
+                <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:4 }}>🏓 {c.contenido}</div>
+                <div style={{ fontSize:11, color: muted, marginBottom:8 }}>
                   {c.hora_inicio?.slice(0,5)}{c.hora_fin ? ' - '+c.hora_fin.slice(0,5) : ''}
                 </div>
                 {esJugador && (
                   reservasJugador.has(c.id)
-                    ? <button onClick={() => cancelarReserva(c.id)} style={{ background:'#2d0a0a', color:'#f87171', border:'none', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', width:'100%' }}>✕ Cancelar reserva</button>
-                    : <button onClick={() => reservarClase(c.id)} style={{ background:'#1e1b4b', color:'#a78bfa', border:'none', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', width:'100%' }}>✓ Voy a ir</button>
+                    ? <button onClick={() => cancelarReserva(c.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', width:'100%' }}>✕ Cancelar reserva</button>
+                    : <button onClick={() => reservarClase(c.id)} style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', width:'100%' }}>✓ Voy a ir</button>
                 )}
               </div>
             ))}
 
-            {/* Eventos */}
             {itemsDelDia.filter(i => i.tipo_item === 'evento').map((ev, i) => (
-              <div key={i} style={{ background:'#0a0c12', borderRadius:10, padding:12, marginBottom:10, borderLeft:`3px solid ${coloresEvento[ev.tipo] || '#8890a4'}` }}>
+              <div key={i} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:`3px solid ${coloresEvento[ev.tipo] || '#64748b'}` }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
                   <div>
-                    <div style={{ fontSize:13, fontWeight:600, color:'#c8cfe0' }}>{ev.titulo}</div>
-                    <div style={{ fontSize:11, color:'#6c7280', marginTop:2 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color: text }}>{ev.titulo}</div>
+                    <div style={{ fontSize:11, color: muted, marginTop:2 }}>
                       {ev.hora_inicio?.slice(0,5)}{ev.hora_fin ? ' - '+ev.hora_fin.slice(0,5) : ''}{ev.hora_inicio ? ' · ' : ''}{ev.tipo}
                     </div>
-                    {ev.descripcion && <div style={{ fontSize:11, color:'#8890a4', marginTop:4 }}>{ev.descripcion}</div>}
+                    {ev.descripcion && <div style={{ fontSize:11, color: muted, marginTop:4 }}>{ev.descripcion}</div>}
                   </div>
-                  {puedeEditarEventos && <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#f87171', cursor:'pointer', fontSize:14 }}>✕</button>}
+                  {puedeEditarEventos && <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#dc2626', cursor:'pointer', fontSize:14 }}>✕</button>}
                 </div>
               </div>
             ))}
 
             {itemsDelDia.length === 0 && (
-              <p style={{ fontSize:13, color:'#6c7280', textAlign:'center', padding:'20px 0' }}>Sin eventos este día</p>
+              <p style={{ fontSize:13, color: hint, textAlign:'center', padding:'20px 0' }}>Sin eventos este día</p>
             )}
 
             {puedeEditarEventos && (
-              <button onClick={() => setModalEvento(true)} style={{ width:'100%', padding:10, background:'#6c63ff', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', marginTop:8 }}>
+              <button onClick={() => setModalEvento(true)} style={{ width:'100%', padding:10, background:'#f43f5e', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', marginTop:8 }}>
                 + Agregar evento
               </button>
             )}
@@ -233,43 +236,43 @@ export default function CalendarioPage() {
 
       {/* Modal nuevo evento */}
       {modalEvento && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:400 }}>
-            <div style={{ fontSize:17, fontWeight:600, color:'#fff', marginBottom:20 }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:400, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>
               Nuevo evento — {diaSeleccionado && new Date(diaSeleccionado+'T12:00:00').toLocaleDateString('es-CL')}
             </div>
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Título</label>
-              <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Título</label>
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 placeholder="Nombre del evento" value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} />
             </div>
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Tipo</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Tipo</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}>
                 {tiposEvento.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
               <div>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Hora inicio</label>
-                <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Hora inicio</label>
+                <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   type="time" value={form.horaInicio} onChange={e => setForm(f => ({ ...f, horaInicio: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Hora fin</label>
-                <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Hora fin</label>
+                <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   type="time" value={form.horaFin} onChange={e => setForm(f => ({ ...f, horaFin: e.target.value }))} />
               </div>
             </div>
             <div style={{ marginBottom:20 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Descripción (opcional)</label>
-              <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Descripción (opcional)</label>
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 placeholder="Detalles del evento" value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
             </div>
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalEvento(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={agregarEvento} style={{ flex:1, padding:11, background:'#6c63ff', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>Guardar</button>
+              <button onClick={() => setModalEvento(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={agregarEvento} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>Guardar</button>
             </div>
           </div>
         </div>

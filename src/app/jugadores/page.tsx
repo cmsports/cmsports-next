@@ -7,10 +7,15 @@ import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
 
-const badgeCategoria: Record<string, string> = {
-  principiante: '#fbbf24',
-  intermedio: '#60a5fa',
-  avanzado: '#a78bfa'
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
+const badgeCategoria: Record<string, { bg: string; color: string }> = {
+  principiante: { bg: '#fffbeb', color: '#d97706' },
+  intermedio:   { bg: '#ede9fe', color: '#3730a3' },
+  avanzado:     { bg: '#f0fdf4', color: '#16a34a' },
 }
 
 const categorias = ['principiante', 'intermedio', 'avanzado']
@@ -66,25 +71,15 @@ export default function JugadoresPage() {
 
   function abrirNuevo() {
     setEditando(null)
-    setForm({
-      nombre:'', rut:'', email:'', telefono:'',
-      categoria:'principiante',
-      tipo_plan:'mensual',
-      entrenamientos_por_semana:'3',
-      mensualidad:'30000'
-    })
+    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
     setModalOpen(true)
   }
 
   function abrirEditar(j: any) {
     setEditando(j)
     setForm({
-      nombre:j.nombre||'',
-      rut:j.rut||'',
-      email:j.email||'',
-      telefono:j.telefono||'',
-      categoria:j.categoria||'principiante',
-      tipo_plan:j.tipo_plan||'mensual',
+      nombre:j.nombre||'', rut:j.rut||'', email:j.email||'', telefono:j.telefono||'',
+      categoria:j.categoria||'principiante', tipo_plan:j.tipo_plan||'mensual',
       entrenamientos_por_semana:String(j.entrenamientos_por_semana||3),
       mensualidad:String(j.mensualidad||30000)
     })
@@ -99,54 +94,27 @@ export default function JugadoresPage() {
     const esLibre = form.tipo_plan === 'libre'
     const entSemana = esLibre ? null : (parseInt(form.entrenamientos_por_semana) || 3)
     const mensualidad = parseInt(form.mensualidad) || 25000
-    // sesiones_limite se mantiene derivado del plan para que las vistas legacy
-    // ("X/Y sesiones" en perfil, lista y mensualidades viejas) sigan funcionando.
     const sesionesLimite = esLibre ? 99 : (entSemana || 3) * 4
 
     const planFields = {
-      categoria: form.categoria,
-      tipo_plan: form.tipo_plan,
-      entrenamientos_por_semana: entSemana,
-      mensualidad: mensualidad,
+      categoria: form.categoria, tipo_plan: form.tipo_plan,
+      entrenamientos_por_semana: entSemana, mensualidad,
       sesiones_limite: sesionesLimite
     }
 
     if (editando) {
-      const { error } = await supabase.from('jugadores').update({
-        nombre: form.nombre.trim(),
-        rut: form.rut || null,
-        email: form.email || null,
-        telefono: form.telefono || null,
-        ...planFields
-      }).eq('id', editando.id)
+      const { error } = await supabase.from('jugadores').update({ nombre: form.nombre.trim(), rut: form.rut || null, email: form.email || null, telefono: form.telefono || null, ...planFields }).eq('id', editando.id)
       if (error) { mostrarToast('Error al editar: ' + error.message); setGuardando(false); return }
       mostrarToast('Jugador actualizado')
     } else {
-      const { error } = await supabase.from('jugadores').insert({
-        club_id: clubId,
-        nombre: form.nombre.trim(),
-        rut: form.rut || null,
-        email: form.email || null,
-        telefono: form.telefono || null,
-        ...planFields,
-        elo: 1200,
-        sesiones_usadas: 0,
-        estado: 'activo',
-        es_externo: false
-      })
+      const { error } = await supabase.from('jugadores').insert({ club_id: clubId, nombre: form.nombre.trim(), rut: form.rut || null, email: form.email || null, telefono: form.telefono || null, ...planFields, elo: 1200, sesiones_usadas: 0, estado: 'activo', es_externo: false })
       if (error) { mostrarToast('Error al crear: ' + error.message); setGuardando(false); return }
       mostrarToast('Jugador creado exitosamente')
     }
 
     setGuardando(false)
     setModalOpen(false)
-    setForm({
-      nombre:'', rut:'', email:'', telefono:'',
-      categoria:'principiante',
-      tipo_plan:'mensual',
-      entrenamientos_por_semana:'3',
-      mensualidad:'30000'
-    })
+    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
     await cargarJugadores()
   }
 
@@ -167,15 +135,9 @@ export default function JugadoresPage() {
   async function exportarExcel() {
     const { utils, writeFile } = await import('xlsx')
     const datos = filtrados.map(j => ({
-      'Nombre': j.nombre,
-      'RUT': j.rut || '',
-      'Email': j.email || '',
-      'Teléfono': j.telefono || '',
-      'Categoría': j.categoria,
-      'Ranking': j.elo,
-      'Sesiones usadas': j.sesiones_usadas,
-      'Sesiones límite': j.sesiones_limite,
-      'Estado': j.estado
+      'Nombre': j.nombre, 'RUT': j.rut || '', 'Email': j.email || '', 'Teléfono': j.telefono || '',
+      'Categoría': j.categoria, 'Ranking': j.elo, 'Sesiones usadas': j.sesiones_usadas,
+      'Sesiones límite': j.sesiones_limite, 'Estado': j.estado
     }))
     const ws = utils.json_to_sheet(datos)
     const wb = utils.book_new()
@@ -187,21 +149,21 @@ export default function JugadoresPage() {
   const esAdmin = perfil?.rol === 'admin'
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
   return (
     <AppLayout perfil={perfil}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:'#fff' }}>Jugadores</h1>
+        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Jugadores</h1>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={exportarExcel} style={{ background:'#14161f', color:'#34d399', border:'1px solid #1e2030', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
-            📥 Excel
+          <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
+            Exportar Excel
           </button>
           {esAdmin && tabJug === 'jugadores' && (
-            <button onClick={abrirNuevo} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            <button onClick={abrirNuevo} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
               + Nuevo jugador
             </button>
           )}
@@ -209,10 +171,10 @@ export default function JugadoresPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:16 }}>
-        {[{key:'jugadores',label:'👥 Jugadores'},{key:'ranking',label:'🏆 Ranking'}].map(t => (
+      <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:16 }}>
+        {[{key:'jugadores',label:'Jugadores'},{key:'ranking',label:'Ranking'}].map(t => (
           <div key={t.key} onClick={() => setTabJug(t.key as any)}
-            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#14161f':'transparent', color:tabJug===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#ffffff':'transparent', color:tabJug===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabJug===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {t.label}
           </div>
         ))}
@@ -222,29 +184,28 @@ export default function JugadoresPage() {
       {tabJug === 'ranking' && (
         <div>
           <div style={{ marginBottom:12 }}>
-            <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
-              placeholder="🔍 Buscar jugador en el ranking..."
+            <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
+              placeholder="Buscar jugador en el ranking..."
               value={busquedaRanking} onChange={e => setBusquedaRanking(e.target.value)} />
           </div>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
+          <div style={{ ...card, overflow:'hidden' }}>
             {jugadores.filter(j => !busquedaRanking || j.nombre.toLowerCase().includes(busquedaRanking.toLowerCase()))
               .sort((a,b) => b.elo - a.elo)
               .map((j, i) => {
-                const cols = ['#f59e0b','#6c63ff','#059669','#0891b2','#7c3aed','#ec4899','#14b8a6','#f97316']
                 const posicion = jugadores.sort((a,b) => b.elo-a.elo).findIndex(x => x.id === j.id) + 1
                 return (
-                  <div key={j.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', borderBottom:'1px solid #1e2030' }}>
-                    <div style={{ width:32, textAlign:'center', fontSize:14, fontWeight:700, color: posicion===1?'#fbbf24':posicion===2?'#94a3b8':posicion===3?'#f97316':'#6c7280' }}>
+                  <div key={j.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', borderBottom:'1px solid #f1f5f9' }}>
+                    <div style={{ width:32, textAlign:'center', fontSize:14, fontWeight:700, color: posicion===1?'#d97706':posicion===2?'#64748b':posicion===3?'#f43f5e': hint }}>
                       {posicion<=3 ? ['🥇','🥈','🥉'][posicion-1] : posicion}
                     </div>
-                    <div style={{ width:36, height:36, borderRadius:'50%', background:`linear-gradient(135deg,${cols[i%cols.length]},${cols[i%cols.length]}88)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white', flexShrink:0 }}>
+                    <div style={{ width:36, height:36, borderRadius:'50%', background:'#ede9fe', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'#3730a3', flexShrink:0 }}>
                       {j.nombre.split(' ').map((n:string)=>n[0]).join('').slice(0,2)}
                     </div>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, color:'#c8cfe0', fontWeight:500 }}>{j.nombre}</div>
-                      <div style={{ fontSize:11, color:'#6c7280' }}>{j.categoria}</div>
+                      <div style={{ fontSize:13, color: text, fontWeight:500 }}>{j.nombre}</div>
+                      <div style={{ fontSize:11, color: muted }}>{j.categoria}</div>
                     </div>
-                    <div style={{ fontSize:18, fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</div>
+                    <div style={{ fontSize:18, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</div>
                   </div>
                 )
               })
@@ -255,62 +216,65 @@ export default function JugadoresPage() {
 
       {/* TAB JUGADORES */}
       {tabJug === 'jugadores' && <>
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:12, marginBottom:16 }}>
+      <div style={{ ...card, padding:12, marginBottom:16 }}>
         <input
-          style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+          style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
           placeholder="Buscar jugador..."
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
         />
       </div>
 
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, overflow:'hidden' }}>
+      <div style={{ ...card, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
-              <tr style={{ borderBottom:'1px solid #1e2030' }}>
+              <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
                 {['#','Nombre','RUT','Categoría','Sesiones','Ranking','Estado',''].map(h => (
-                  <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((j, i) => (
-                <tr key={j.id} style={{ borderBottom:'1px solid #1e2030' }}>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{String(i+1).padStart(3,'0')}</td>
-                  <td style={{ padding:'12px 16px', fontWeight:600, color:'#c8cfe0', whiteSpace:'nowrap' }}>{j.nombre}</td>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280' }}>{j.rut || '—'}</td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <span style={{ background: badgeCategoria[j.categoria] + '22', color: badgeCategoria[j.categoria], padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                      {j.categoria}
-                    </span>
-                  </td>
-                  <td style={{ padding:'12px 16px', fontSize:13, color:'#c8cfe0' }}>{j.sesiones_usadas}/{j.sesiones_limite}</td>
-                  <td style={{ padding:'12px 16px', fontWeight:700, color:'#a78bfa', fontFamily:'monospace' }}>{j.elo}</td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <span style={{ background: j.estado === 'activo' ? '#34d39922' : '#f8717122', color: j.estado === 'activo' ? '#34d399' : '#f87171', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                      {j.estado}
-                    </span>
-                  </td>
-                  <td style={{ padding:'12px 16px' }}>
-                    <div style={{ display:'flex', gap:6, whiteSpace:'nowrap' }}>
-                      <button onClick={() => router.push(`/jugadores/${j.id}`)} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Ver perfil</button>
-                      {esAdmin && <>
-                        <button onClick={() => abrirEditar(j)} style={{ background:'#1e1b4b', color:'#a78bfa', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✏️</button>
-                        <button onClick={() => toggleEstado(j)} style={{ background: j.estado==='activo'?'#f8717122':'#34d39922', color: j.estado==='activo'?'#f87171':'#34d399', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
-                          {j.estado==='activo'?'🔒':'✅'}
-                        </button>
-                        <button onClick={() => eliminar(j.id)} style={{ background:'#f8717122', color:'#f87171', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
-                      </>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filtrados.map((j, i) => {
+                const cat = badgeCategoria[j.categoria] || { bg: '#f4f7fa', color: muted }
+                return (
+                  <tr key={j.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                    <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{String(i+1).padStart(3,'0')}</td>
+                    <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>{j.nombre}</td>
+                    <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{j.rut || '—'}</td>
+                    <td style={{ padding:'12px 16px' }}>
+                      <span style={{ background: cat.bg, color: cat.color, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                        {j.categoria}
+                      </span>
+                    </td>
+                    <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite}</td>
+                    <td style={{ padding:'12px 16px', fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</td>
+                    <td style={{ padding:'12px 16px' }}>
+                      <span style={{ background: j.estado === 'activo' ? '#f0fdf4' : '#fef2f2', color: j.estado === 'activo' ? '#16a34a' : '#dc2626', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                        {j.estado}
+                      </span>
+                    </td>
+                    <td style={{ padding:'12px 16px' }}>
+                      <div style={{ display:'flex', gap:6, whiteSpace:'nowrap' }}>
+                        <button onClick={() => router.push(`/jugadores/${j.id}`)} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Ver perfil</button>
+                        {esAdmin && <>
+                          <button onClick={() => abrirEditar(j)} style={{ background:'#f4f7fa', color: muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Editar</button>
+                          <button onClick={() => toggleEstado(j)} style={{ background: j.estado==='activo'?'#fef2f2':'#f0fdf4', color: j.estado==='activo'?'#dc2626':'#16a34a', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
+                            {j.estado==='activo'?'Bloquear':'Activar'}
+                          </button>
+                          <button onClick={() => eliminar(j.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
+                        </>}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
         {filtrados.length === 0 && (
-          <div style={{ padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>
+          <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>
             {busqueda ? 'No se encontraron jugadores' : 'Sin jugadores registrados'}
           </div>
         )}
@@ -319,9 +283,9 @@ export default function JugadoresPage() {
 
       {/* Modal crear/editar */}
       {modalOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto' }}>
-            <div style={{ fontSize:17, fontWeight:600, color:'#fff', marginBottom:20 }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>
               {editando ? 'Editar jugador' : 'Nuevo jugador'}
             </div>
             {[
@@ -331,9 +295,9 @@ export default function JugadoresPage() {
               { label:'Teléfono', key:'telefono', type:'tel', placeholder:'+56 9 1234 5678' },
             ].map(f => (
               <div key={f.key} style={{ marginBottom:14 }}>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>{f.label}</label>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>{f.label}</label>
                 <input
-                  style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   type={f.type} placeholder={f.placeholder}
                   value={(form as any)[f.key]}
                   onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
@@ -342,41 +306,35 @@ export default function JugadoresPage() {
             ))}
 
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Categoría</label>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>
               <select
-                style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 value={form.categoria} onChange={e => setForm(prev => ({ ...prev, categoria: e.target.value }))}>
                 {categorias.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
 
             {/* Plan */}
-            <div style={{ background:'#0a0c12', border:'1px solid #1e2030', borderRadius:10, padding:14, marginBottom:20 }}>
-              <div style={{ fontSize:11, color:'#a78bfa', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:10 }}>Plan del jugador</div>
+            <div style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:10, padding:14, marginBottom:20 }}>
+              <div style={{ fontSize:11, color:'#3730a3', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:10 }}>Plan del jugador</div>
 
-              {/* Tipo de plan */}
               <div style={{ marginBottom:12 }}>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Tipo de plan</label>
-                <div style={{ display:'flex', background:'#14161f', borderRadius:8, padding:3 }}>
-                  {[
-                    {key:'mensual', label:'Mensual'},
-                    {key:'semanal', label:'Semanal'},
-                    {key:'libre', label:'Libre acceso'}
-                  ].map(t => (
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Tipo de plan</label>
+                <div style={{ display:'flex', background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, overflow:'hidden' }}>
+                  {[{key:'mensual', label:'Mensual'},{key:'semanal', label:'Semanal'},{key:'libre', label:'Libre acceso'}].map(t => (
                     <div key={t.key} onClick={() => setForm(prev => ({ ...prev, tipo_plan: t.key }))}
-                      style={{ flex:1, padding:'7px', textAlign:'center', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:500, background: form.tipo_plan===t.key ? '#1e1b4b':'transparent', color: form.tipo_plan===t.key ? '#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+                      style={{ flex:1, padding:'8px', textAlign:'center', cursor:'pointer', fontSize:12, fontWeight:500, background: form.tipo_plan===t.key ? '#ede9fe':'transparent', color: form.tipo_plan===t.key ? '#3730a3': muted, transition:'all 0.15s' }}>
                       {t.label}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Entrenamientos por semana — oculto en libre */}
               {form.tipo_plan !== 'libre' && (
                 <div style={{ marginBottom:12 }}>
-                  <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Entrenamientos por semana</label>
+                  <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Entrenamientos por semana</label>
                   <input
-                    style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                    style={{ width:'100%', background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                     type="number" min="1" max="7" placeholder="3"
                     value={form.entrenamientos_por_semana}
                     onChange={e => setForm(prev => ({ ...prev, entrenamientos_por_semana: e.target.value }))}
@@ -384,32 +342,22 @@ export default function JugadoresPage() {
                 </div>
               )}
 
-              {/* Mensualidad: presets + custom */}
               <div>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Mensualidad (CLP)</label>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mensualidad (CLP)</label>
                 <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap' }}>
-                  {[
-                    {monto:15000, ent:1, label:'$15.000'},
-                    {monto:25000, ent:2, label:'$25.000'},
-                    {monto:30000, ent:3, label:'$30.000'},
-                    {monto:40000, ent:4, label:'$40.000'}
-                  ].map(p => {
+                  {[{monto:15000, ent:1, label:'$15.000'},{monto:25000, ent:2, label:'$25.000'},{monto:30000, ent:3, label:'$30.000'},{monto:40000, ent:4, label:'$40.000'}].map(p => {
                     const seleccionado = parseInt(form.mensualidad) === p.monto
                     return (
                       <button key={p.monto} type="button"
-                        onClick={() => setForm(prev => ({
-                          ...prev,
-                          mensualidad: String(p.monto),
-                          entrenamientos_por_semana: prev.tipo_plan === 'libre' ? prev.entrenamientos_por_semana : String(p.ent)
-                        }))}
-                        style={{ flex:'1 1 calc(50% - 3px)', padding:'8px 10px', background: seleccionado ? '#1e1b4b':'#14161f', border: `1px solid ${seleccionado ? '#a78bfa':'#1e2030'}`, borderRadius:8, color: seleccionado ? '#a78bfa':'#8890a4', fontSize:12, fontWeight:600, cursor:'pointer', transition:'all 0.15s' }}>
+                        onClick={() => setForm(prev => ({ ...prev, mensualidad: String(p.monto), entrenamientos_por_semana: prev.tipo_plan === 'libre' ? prev.entrenamientos_por_semana : String(p.ent) }))}
+                        style={{ flex:'1 1 calc(50% - 3px)', padding:'8px 10px', background: seleccionado ? '#ede9fe':'#ffffff', border: `1px solid ${seleccionado ? '#4f46e5':'#e2e8f0'}`, borderRadius:8, color: seleccionado ? '#3730a3': muted, fontSize:12, fontWeight:600, cursor:'pointer', transition:'all 0.15s' }}>
                         {p.label}
                       </button>
                     )
                   })}
                 </div>
                 <input
-                  style={{ width:'100%', background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                  style={{ width:'100%', background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   type="number" placeholder="Monto personalizado"
                   value={form.mensualidad}
                   onChange={e => setForm(prev => ({ ...prev, mensualidad: e.target.value }))}
@@ -417,8 +365,8 @@ export default function JugadoresPage() {
               </div>
             </div>
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={guardar} disabled={guardando} style={{ flex:1, padding:11, background:'#6c63ff', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={guardar} disabled={guardando} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
                 {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear jugador'}
               </button>
             </div>
@@ -428,7 +376,7 @@ export default function JugadoresPage() {
 
       {/* Toast */}
       {toast && (
-        <div style={{ position:'fixed', bottom:24, right:24, background:'#1e2030', border:'1px solid #34d39944', borderRadius:10, padding:'12px 18px', fontSize:13, color:'#34d399', zIndex:200 }}>
+        <div style={{ position:'fixed', bottom:24, right:24, background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:'12px 18px', fontSize:13, color:'#16a34a', zIndex:200, boxShadow:'0 4px 12px rgba(15,23,42,0.12)' }}>
           {toast}
         </div>
       )}

@@ -7,6 +7,11 @@ import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
 
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 const catLabel: Record<string, string> = {
   mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo',
   arriendo_cancha:'Arriendo cancha', donacion:'Donación', otro_ingreso:'Otro ingreso',
@@ -31,7 +36,7 @@ export default function FinanzasPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
-  const [tabActivo, setTabActivo] = useState<'movimientos'|'reportes'|'historial'>('movimientos')
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'reportes'>('movimientos')
   const [jugadoresFinanzas, setJugadoresFinanzas] = useState<any[]>([])
   const [jugadorSeleccionado, setJugadorSeleccionado] = useState<any>(null)
   const [historialJugador, setHistorialJugador] = useState<any[]>([])
@@ -150,8 +155,8 @@ export default function FinanzasPage() {
   )
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Cargando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
@@ -160,68 +165,66 @@ export default function FinanzasPage() {
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:10 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={() => cambiarMes(-1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>◀</button>
-          <span style={{ fontSize:16, fontWeight:600, color:'#fff', minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
-          <button onClick={() => cambiarMes(1)} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:8, padding:'6px 12px', color:'#c8cfe0', cursor:'pointer' }}>▶</button>
+          <button onClick={() => cambiarMes(-1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>◀</button>
+          <span style={{ fontSize:16, fontWeight:600, color: text, minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
+          <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
         </div>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={exportarExcel} style={{ background:'#14161f', color:'#34d399', border:'1px solid #1e2030', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📥 Excel</button>
-          <button onClick={() => setModalOpen(true)} style={{ background:'#6c63ff', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>+ Movimiento</button>
+          <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>Exportar Excel</button>
+          <button onClick={() => setModalOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>+ Movimiento</button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display:'flex', background:'#0a0c12', borderRadius:10, padding:4, marginBottom:20 }}>
+      <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:20 }}>
         {[
-          { key:'movimientos', label:'💰 Movimientos' },
-          { key:'reportes', label:'📄 Reportes' },
+          { key:'movimientos', label:'Movimientos' },
+          { key:'reportes', label:'Reportes' },
         ].map(t => (
           <div key={t.key} onClick={() => setTabActivo(t.key as any)}
-            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabActivo===t.key?'#14161f':'transparent', color:tabActivo===t.key?'#a78bfa':'#6c7280', transition:'all 0.15s' }}>
+            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabActivo===t.key?'#ffffff':'transparent', color:tabActivo===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabActivo===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {t.label}
           </div>
         ))}
       </div>
 
-
-
       {tabActivo === 'movimientos' && (<>
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
         {[
-          { label:'Ingresos', value:fmt(ingresos), color:'#34d399' },
-          { label:'Gastos', value:fmt(gastos), color:'#f87171' },
-          { label:'Balance neto', value:fmt(ingresos-gastos), color:'#a78bfa' },
+          { label:'Ingresos', value:fmt(ingresos), color:'#16a34a', bg:'#f0fdf4' },
+          { label:'Gastos', value:fmt(gastos), color:'#dc2626', bg:'#fef2f2' },
+          { label:'Balance neto', value:fmt(ingresos-gastos), color:'#3730a3', bg:'#ede9fe' },
         ].map(s => (
-          <div key={s.label} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20 }}>
-            <div style={{ fontSize:24, fontWeight:700, color:s.color, fontFamily:'monospace', marginBottom:4 }}>{s.value}</div>
-            <div style={{ fontSize:12, color:'#6c7280' }}>{s.label}</div>
+          <div key={s.label} style={{ ...card, padding:20, background: s.bg, border: `1px solid ${s.color}22` }}>
+            <div style={{ fontSize:22, fontWeight:700, color:s.color, fontFamily:'monospace', marginBottom:4 }}>{s.value}</div>
+            <div style={{ fontSize:12, color: muted }}>{s.label}</div>
           </div>
         ))}
       </div>
 
       {/* Desglose */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Ingresos por categoría</div>
+        <div style={{ ...card, padding:16 }}>
+          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Ingresos por categoría</div>
           {Object.entries(desgloseIngresos).length === 0
-            ? <p style={{ fontSize:12, color:'#4b5063' }}>Sin ingresos</p>
+            ? <p style={{ fontSize:12, color: hint }}>Sin ingresos</p>
             : Object.entries(desgloseIngresos).map(([cat, total]) => (
-              <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #1a1d2e', fontSize:13 }}>
-                <span style={{ color:'#8890a4' }}>{catLabel[cat] || cat}</span>
-                <span style={{ color:'#34d399', fontWeight:600, fontFamily:'monospace' }}>{fmt(total)}</span>
+              <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #f1f5f9', fontSize:13 }}>
+                <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
+                <span style={{ color:'#16a34a', fontWeight:600, fontFamily:'monospace' }}>{fmt(total)}</span>
               </div>
             ))
           }
         </div>
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Gastos por categoría</div>
+        <div style={{ ...card, padding:16 }}>
+          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Gastos por categoría</div>
           {Object.entries(desgloseGastos).length === 0
-            ? <p style={{ fontSize:12, color:'#4b5063' }}>Sin gastos</p>
+            ? <p style={{ fontSize:12, color: hint }}>Sin gastos</p>
             : Object.entries(desgloseGastos).map(([cat, total]) => (
-              <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #1a1d2e', fontSize:13 }}>
-                <span style={{ color:'#8890a4' }}>{catLabel[cat] || cat}</span>
-                <span style={{ color:'#f87171', fontWeight:600, fontFamily:'monospace' }}>{fmt(total)}</span>
+              <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid #f1f5f9', fontSize:13 }}>
+                <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
+                <span style={{ color:'#dc2626', fontWeight:600, fontFamily:'monospace' }}>{fmt(total)}</span>
               </div>
             ))
           }
@@ -230,28 +233,28 @@ export default function FinanzasPage() {
 
       {/* Buscador movimientos */}
       <div style={{ marginBottom:12 }}>
-        <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }}
-          placeholder="🔍 Buscar por descripción o categoría..."
+        <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
+          placeholder="Buscar por descripción o categoría..."
           value={busqueda} onChange={e => setBusqueda(e.target.value)} />
       </div>
 
-      {/* Tab historial pagos */}
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16, marginBottom:16 }}>
+      {/* Historial pagos por jugador */}
+      <div style={{ ...card, padding:16, marginBottom:16 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>📋 Historial de pagos por jugador</div>
+          <div style={{ fontSize:13, fontWeight:600, color: text }}>Historial de pagos por jugador</div>
         </div>
-        <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none', marginBottom: busquedaJugador.length > 1 ? 8 : 0 }}
+        <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none', marginBottom: busquedaJugador.length > 1 ? 8 : 0 }}
           placeholder="Buscar jugador para ver su historial..."
           value={busquedaJugador} onChange={e => setBusquedaJugador(e.target.value)} />
         {busquedaJugador.length > 1 && !jugadorSeleccionado && (
-          <div style={{ background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, overflow:'hidden' }}>
+          <div style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, overflow:'hidden' }}>
             {jugadoresFinanzas.filter(j => j.nombre.toLowerCase().includes(busquedaJugador.toLowerCase())).slice(0,5).map(j => (
               <div key={j.id} onClick={async () => {
                 setJugadorSeleccionado(j)
                 setBusquedaJugador(j.nombre)
                 const { data: mens } = await supabase.from('mensualidades').select('*').eq('jugador_id', j.id).order('anio').order('mes')
                 setHistorialJugador(mens || [])
-              }} style={{ padding:'10px 14px', borderBottom:'1px solid #1e2030', cursor:'pointer', fontSize:13, color:'#c8cfe0' }}>
+              }} style={{ padding:'10px 14px', borderBottom:'1px solid #e2e8f0', cursor:'pointer', fontSize:13, color: text }}>
                 {j.nombre}
               </div>
             ))}
@@ -260,38 +263,38 @@ export default function FinanzasPage() {
         {jugadorSeleccionado && (
           <div>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
-              <div style={{ fontSize:14, fontWeight:600, color:'#fff' }}>{jugadorSeleccionado.nombre}</div>
+              <div style={{ fontSize:14, fontWeight:600, color: text }}>{jugadorSeleccionado.nombre}</div>
               <div style={{ display:'flex', gap:10, alignItems:'center' }}>
-                <span style={{ color:'#34d399', fontSize:12 }}>✅ {historialJugador.filter(m=>m.estado==='pagado').length} pagados</span>
-                <span style={{ color:'#fbbf24', fontSize:12 }}>⏳ {historialJugador.filter(m=>m.estado==='pendiente').length} pendientes</span>
-                <span style={{ color:'#f87171', fontSize:12 }}>🔴 {historialJugador.filter(m=>m.estado==='atrasado').length} atrasados</span>
+                <span style={{ color:'#16a34a', fontSize:12 }}>✅ {historialJugador.filter(m=>m.estado==='pagado').length} pagados</span>
+                <span style={{ color:'#d97706', fontSize:12 }}>⏳ {historialJugador.filter(m=>m.estado==='pendiente').length} pendientes</span>
+                <span style={{ color:'#dc2626', fontSize:12 }}>🔴 {historialJugador.filter(m=>m.estado==='atrasado').length} atrasados</span>
                 <button onClick={() => { setJugadorSeleccionado(null); setBusquedaJugador('') }}
-                  style={{ background:'transparent', border:'1px solid #1e2030', borderRadius:6, padding:'3px 8px', color:'#6c7280', fontSize:11, cursor:'pointer' }}>✕ Cerrar</button>
+                  style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:6, padding:'3px 8px', color: muted, fontSize:11, cursor:'pointer' }}>✕ Cerrar</button>
               </div>
             </div>
             <div style={{ overflowX:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse', minWidth:400 }}>
                 <thead>
-                  <tr style={{ borderBottom:'1px solid #1e2030' }}>
+                  <tr style={{ borderBottom:'1px solid #e2e8f0' }}>
                     {['Mes','Año','Estado','Fecha pago','Monto'].map(h => (
-                      <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase' }}>{h}</th>
+                      <th key={h} style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {historialJugador.map((m,i) => {
-                    const col = m.estado==='pagado'?'#34d399':m.estado==='atrasado'?'#f87171':'#fbbf24'
+                    const col = m.estado==='pagado'?'#16a34a':m.estado==='atrasado'?'#dc2626':'#d97706'
                     return (
-                      <tr key={i} style={{ borderBottom:'1px solid #1e2030' }}>
-                        <td style={{ padding:'8px 12px', fontSize:13, color:'#c8cfe0' }}>{mesesN[m.mes-1]}</td>
-                        <td style={{ padding:'8px 12px', fontSize:13, color:'#6c7280' }}>{m.anio}</td>
+                      <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                        <td style={{ padding:'8px 12px', fontSize:13, color: text }}>{mesesN[m.mes-1]}</td>
+                        <td style={{ padding:'8px 12px', fontSize:13, color: muted }}>{m.anio}</td>
                         <td style={{ padding:'8px 12px' }}>
                           <span style={{ background:col+'22', color:col, padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                            {m.estado==='pagado'?'✅ Pagado':m.estado==='atrasado'?'🔴 Atrasado':'⏳ Pendiente'}
+                            {m.estado==='pagado'?'Pagado':m.estado==='atrasado'?'Atrasado':'Pendiente'}
                           </span>
                         </td>
-                        <td style={{ padding:'8px 12px', fontSize:12, color:'#6c7280' }}>{m.fecha_pago||'—'}</td>
-                        <td style={{ padding:'8px 12px', fontSize:13, color:'#a78bfa', fontFamily:'monospace' }}>{m.monto?'$'+m.monto.toLocaleString('es-CL'):'—'}</td>
+                        <td style={{ padding:'8px 12px', fontSize:12, color: muted }}>{m.fecha_pago||'—'}</td>
+                        <td style={{ padding:'8px 12px', fontSize:13, color:'#3730a3', fontFamily:'monospace' }}>{m.monto?'$'+m.monto.toLocaleString('es-CL'):'—'}</td>
                       </tr>
                     )
                   })}
@@ -301,8 +304,8 @@ export default function FinanzasPage() {
             {jugadorSeleccionado.telefono && (
               <div style={{ marginTop:12 }}>
                 <a href={`https://wa.me/${jugadorSeleccionado.telefono.replace(/[^0-9]/g,'')}`} target="_blank"
-                  style={{ display:'inline-flex', alignItems:'center', gap:6, background:'#34d39922', color:'#34d399', border:'1px solid #34d39944', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, textDecoration:'none' }}>
-                  💬 Contactar por WhatsApp
+                  style={{ display:'inline-flex', alignItems:'center', gap:6, background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, textDecoration:'none' }}>
+                  Contactar por WhatsApp
                 </a>
               </div>
             )}
@@ -311,11 +314,11 @@ export default function FinanzasPage() {
       </div>
 
       {/* Tabla */}
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, overflow:'hidden' }}>
-        <div style={{ padding:'14px 20px', borderBottom:'1px solid #1e2030', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'#fff' }}>Todos los movimientos</div>
+      <div style={{ ...card, overflow:'hidden' }}>
+        <div style={{ padding:'14px 20px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div style={{ fontSize:13, fontWeight:600, color: text }}>Todos los movimientos</div>
           <select
-            style={{ background:'#0a0c12', border:'1px solid #1e2030', borderRadius:6, padding:'5px 10px', color:'#c8cfe0', fontSize:12, outline:'none' }}
+            style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', color: text, fontSize:12, outline:'none' }}
             value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}>
             <option value="">Todos</option>
             <option value="ingreso">Ingresos</option>
@@ -325,24 +328,24 @@ export default function FinanzasPage() {
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:500 }}>
             <thead>
-              <tr style={{ borderBottom:'1px solid #1e2030' }}>
+              <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
                 {['Fecha','Categoría','Descripción','Registrado por','Monto'].map(h => (
-                  <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, color:'#6c7280', fontWeight:600, textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {movimientosFiltrados.map(m => (
-                <tr key={m.id} style={{ borderBottom:'1px solid #1e2030' }}>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280', whiteSpace:'nowrap' }}>{m.fecha || '—'}</td>
+                <tr key={m.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                  <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{m.fecha || '—'}</td>
                   <td style={{ padding:'12px 16px' }}>
-                    <span style={{ background: m.tipo === 'ingreso' ? '#34d39922' : '#f8717122', color: m.tipo === 'ingreso' ? '#34d399' : '#f87171', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
+                    <span style={{ background: m.tipo === 'ingreso' ? '#f0fdf4' : '#fef2f2', color: m.tipo === 'ingreso' ? '#16a34a' : '#dc2626', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
                       {catLabel[m.categoria] || m.categoria || '—'}
                     </span>
                   </td>
-                  <td style={{ padding:'12px 16px', fontSize:13, color:'#c8cfe0' }}>{m.descripcion}</td>
-                  <td style={{ padding:'12px 16px', fontSize:12, color:'#6c7280', whiteSpace:'nowrap' }}>{m.registrado_por_nombre || 'Admin'}</td>
-                  <td style={{ padding:'12px 16px', fontWeight:700, fontFamily:'monospace', whiteSpace:'nowrap', color: m.tipo === 'ingreso' ? '#34d399' : '#f87171' }}>
+                  <td style={{ padding:'12px 16px', fontSize:13, color: text }}>{m.descripcion}</td>
+                  <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{m.registrado_por_nombre || 'Admin'}</td>
+                  <td style={{ padding:'12px 16px', fontWeight:700, fontFamily:'monospace', whiteSpace:'nowrap', color: m.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>
                     {m.tipo === 'ingreso' ? '+' : '-'}{fmt(m.monto)}
                   </td>
                 </tr>
@@ -351,7 +354,7 @@ export default function FinanzasPage() {
           </table>
         </div>
         {movimientosFiltrados.length === 0 && (
-          <div style={{ padding:40, textAlign:'center', color:'#6c7280', fontSize:13 }}>Sin movimientos este mes</div>
+          <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>Sin movimientos este mes</div>
         )}
       </div>
       </>)}
@@ -361,29 +364,29 @@ export default function FinanzasPage() {
 
       {/* Modal nuevo movimiento */}
       {modalOpen && (
-        <div style={{ position:'fixed', inset:0, background:'#00000088', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto' }}>
-            <div style={{ fontSize:17, fontWeight:600, color:'#fff', marginBottom:20 }}>Nuevo movimiento</div>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>Nuevo movimiento</div>
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
               <div>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Tipo</label>
-                <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Tipo</label>
+                <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value, categoria: e.target.value === 'ingreso' ? 'mensualidad' : 'sueldo_profesor' }))}>
                   <option value="ingreso">Ingreso</option>
                   <option value="gasto">Gasto</option>
                 </select>
               </div>
               <div>
-                <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Fecha</label>
-                <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha</label>
+                <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   type="date" value={form.fecha} onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} />
               </div>
             </div>
 
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Categoría</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))}>
                 {categoriasActuales.map(c => <option key={c} value={c}>{catLabel[c]}</option>)}
               </select>
@@ -392,8 +395,8 @@ export default function FinanzasPage() {
             {esSueldo && (
               <>
                 <div style={{ marginBottom:14 }}>
-                  <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Profesor / Staff</label>
-                  <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                  <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Profesor / Staff</label>
+                  <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                     value={form.profesorId} onChange={e => setForm(f => ({ ...f, profesorId: e.target.value }))}>
                     <option value="">— Seleccionar —</option>
                     {profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
@@ -401,15 +404,15 @@ export default function FinanzasPage() {
                 </div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
                   <div>
-                    <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Mes correspondiente</label>
-                    <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                    <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mes correspondiente</label>
+                    <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                       value={form.mesCorr} onChange={e => setForm(f => ({ ...f, mesCorr: e.target.value }))}>
                       {mesesN.map((m, i) => <option key={i} value={String(i+1)}>{m}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Año</label>
-                    <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+                    <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Año</label>
+                    <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                       type="number" value={form.anioCorr} onChange={e => setForm(f => ({ ...f, anioCorr: e.target.value }))} />
                   </div>
                 </div>
@@ -417,20 +420,20 @@ export default function FinanzasPage() {
             )}
 
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Descripción</label>
-              <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Descripción</label>
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 placeholder="Descripción del movimiento" value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
             </div>
 
             <div style={{ marginBottom:20 }}>
-              <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Monto (CLP)</label>
-              <input style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Monto (CLP)</label>
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 type="number" placeholder="25000" value={form.monto} onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} />
             </div>
 
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={guardarMovimiento} disabled={guardando} style={{ flex:1, padding:11, background:'#6c63ff', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={guardarMovimiento} disabled={guardando} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
                 {guardando ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
@@ -449,6 +452,11 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [preview, setPreview] = useState<any>(null)
   const [generando, setGenerando] = useState(false)
+
+  const text = '#0f172a'
+  const muted = '#64748b'
+  const hint = '#94a3b8'
+  const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
 
   const mesesNR = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const catLabelR: Record<string,string> = {
@@ -505,7 +513,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     const { default: autoTable } = await import('jspdf-autotable')
     const doc = new jsPDF()
     const W = doc.internal.pageSize.getWidth()
-    doc.setFillColor(108,99,255); doc.rect(0,0,W,32,'F')
+    doc.setFillColor(14,165,233); doc.rect(0,0,W,32,'F')
     doc.setTextColor(255,255,255); doc.setFontSize(20); doc.setFont('helvetica','bold')
     doc.text('CmSports',14,14); doc.setFontSize(11); doc.setFont('helvetica','normal')
     doc.text(`Informe ${tipo} — ${titulo}`,14,24)
@@ -513,11 +521,11 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     let y = 42
     doc.setTextColor(40,40,40); doc.setFontSize(13); doc.setFont('helvetica','bold')
     doc.text('Resumen Financiero',14,y); y+=8
-    autoTable(doc,{ startY:y, head:[['Concepto','Monto']], body:[['Ingresos',fmt(preview.ingresos)],['Gastos',fmt(preview.gastos)],['Balance',fmt(preview.ingresos-preview.gastos)]], theme:'striped', headStyles:{fillColor:[108,99,255]}, margin:{left:14,right:14} })
+    autoTable(doc,{ startY:y, head:[['Concepto','Monto']], body:[['Ingresos',fmt(preview.ingresos)],['Gastos',fmt(preview.gastos)],['Balance',fmt(preview.ingresos-preview.gastos)]], theme:'striped', headStyles:{fillColor:[14,165,233]}, margin:{left:14,right:14} })
     y=(doc as any).lastAutoTable.finalY+10
-    autoTable(doc,{ startY:y, head:[['Categoría Ingreso','Monto']], body:Object.entries(preview.desgloseI).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[52,211,153]}, margin:{left:14,right:14} })
+    autoTable(doc,{ startY:y, head:[['Categoría Ingreso','Monto']], body:Object.entries(preview.desgloseI).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[22,163,74]}, margin:{left:14,right:14} })
     y=(doc as any).lastAutoTable.finalY+10
-    autoTable(doc,{ startY:y, head:[['Categoría Gasto','Monto']], body:Object.entries(preview.desgloseG).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[248,113,113]}, margin:{left:14,right:14} })
+    autoTable(doc,{ startY:y, head:[['Categoría Gasto','Monto']], body:Object.entries(preview.desgloseG).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[220,38,38]}, margin:{left:14,right:14} })
     const pc=doc.getNumberOfPages()
     for(let i=1;i<=pc;i++){doc.setPage(i);doc.setFontSize(9);doc.setTextColor(150);doc.text(`CmSports — ${titulo} — Pág ${i} de ${pc}`,W/2,doc.internal.pageSize.getHeight()-8,{align:'center'})}
     doc.save(`reporte_${titulo.replace(/ /g,'_')}.pdf`)
@@ -528,26 +536,26 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
 
   return (
     <div>
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:14, padding:20, marginBottom:16 }}>
-        <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:16 }}>Configurar reporte</div>
+      <div style={{ ...card, padding:20, marginBottom:16 }}>
+        <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:16 }}>Configurar reporte</div>
         <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
           {(['mensual','trimestral','semestral','anual'] as const).map(t => (
-            <button key={t} onClick={() => setTipo(t)} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #1e2030', background:tipo===t?'#6c63ff':'#0a0c12', color:tipo===t?'white':'#8890a4', fontSize:12, cursor:'pointer', textTransform:'capitalize' }}>{t}</button>
+            <button key={t} onClick={() => setTipo(t)} style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #e2e8f0', background:tipo===t?'#ede9fe':'#f4f7fa', color:tipo===t?'#3730a3': muted, fontSize:12, cursor:'pointer', textTransform:'capitalize' }}>{t}</button>
           ))}
         </div>
         <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:16 }}>
           {tipo==='mensual' && (
             <div style={{ flex:1, minWidth:140 }}>
-              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Mes</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={mes} onChange={e=>setMes(parseInt(e.target.value))}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mes</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }} value={mes} onChange={e=>setMes(parseInt(e.target.value))}>
                 {mesesNR.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
               </select>
             </div>
           )}
           {tipo==='trimestral' && (
             <div style={{ flex:1, minWidth:140 }}>
-              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Trimestre</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={trimestre} onChange={e=>setTrimestre(parseInt(e.target.value))}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Trimestre</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }} value={trimestre} onChange={e=>setTrimestre(parseInt(e.target.value))}>
                 <option value={1}>Q1 — Ene, Feb, Mar</option><option value={2}>Q2 — Abr, May, Jun</option>
                 <option value={3}>Q3 — Jul, Ago, Sep</option><option value={4}>Q4 — Oct, Nov, Dic</option>
               </select>
@@ -555,55 +563,55 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           )}
           {tipo==='semestral' && (
             <div style={{ flex:1, minWidth:140 }}>
-              <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Semestre</label>
-              <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={semestre} onChange={e=>setSemestre(parseInt(e.target.value))}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Semestre</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }} value={semestre} onChange={e=>setSemestre(parseInt(e.target.value))}>
                 <option value={1}>1er Semestre</option><option value={2}>2do Semestre</option>
               </select>
             </div>
           )}
           <div style={{ flex:1, minWidth:120 }}>
-            <label style={{ fontSize:12, color:'#6c7280', display:'block', marginBottom:5 }}>Año</label>
-            <select style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:13, outline:'none' }} value={anio} onChange={e=>setAnio(parseInt(e.target.value))}>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Año</label>
+            <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }} value={anio} onChange={e=>setAnio(parseInt(e.target.value))}>
               {[2024,2025,2026,2027].map(a=><option key={a} value={a}>{a}</option>)}
             </select>
           </div>
         </div>
         <div style={{ display:'flex', gap:10 }}>
-          <button onClick={generarPreview} disabled={generando} style={{ flex:1, padding:12, background:'#1e1b4b', color:'#a78bfa', border:'1px solid #6c63ff44', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
-            {generando?'Cargando...':'👁 Vista previa'}
+          <button onClick={generarPreview} disabled={generando} style={{ flex:1, padding:12, background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+            {generando?'Cargando...':'Vista previa'}
           </button>
-          <button onClick={exportarPDF} disabled={generando||!preview} style={{ flex:1, padding:12, background:preview?'#6c63ff':'#1e2030', color:preview?'white':'#4b5063', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:preview?'pointer':'not-allowed' }}>
-            {generando?'Generando...':'📄 Exportar PDF'}
+          <button onClick={exportarPDF} disabled={generando||!preview} style={{ flex:1, padding:12, background:preview?'#f43f5e':'#f4f7fa', color:preview?'white': hint, border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:preview?'pointer':'not-allowed' }}>
+            {generando?'Generando...':'Exportar PDF'}
           </button>
         </div>
       </div>
       {preview && (
         <div>
-          <div style={{ fontSize:14, fontWeight:600, color:'#fff', marginBottom:12 }}>Vista previa — {titulo}</div>
+          <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — {titulo}</div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
-            {[{label:'Ingresos',value:fmt(preview.ingresos),color:'#34d399'},{label:'Gastos',value:fmt(preview.gastos),color:'#f87171'},{label:'Balance',value:fmt(preview.ingresos-preview.gastos),color:'#a78bfa'}].map(s=>(
-              <div key={s.label} style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
+            {[{label:'Ingresos',value:fmt(preview.ingresos),color:'#16a34a',bg:'#f0fdf4'},{label:'Gastos',value:fmt(preview.gastos),color:'#dc2626',bg:'#fef2f2'},{label:'Balance',value:fmt(preview.ingresos-preview.gastos),color:'#3730a3',bg:'#ede9fe'}].map(s=>(
+              <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.color}22`, borderRadius:12, padding:16, boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
                 <div style={{ fontSize:20, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
-                <div style={{ fontSize:12, color:'#6c7280', marginTop:4 }}>{s.label}</div>
+                <div style={{ fontSize:12, color: muted, marginTop:4 }}>{s.label}</div>
               </div>
             ))}
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Ingresos por categoría</div>
+            <div style={{ ...card, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Ingresos por categoría</div>
               {Object.entries(preview.desgloseI).map(([cat,total])=>(
-                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
-                  <span style={{ color:'#8890a4' }}>{catLabelR[cat]||cat}</span>
-                  <span style={{ color:'#34d399', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
+                  <span style={{ color: muted }}>{catLabelR[cat]||cat}</span>
+                  <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmt(total as number)}</span>
                 </div>
               ))}
             </div>
-            <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:12, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:'#fff', marginBottom:12 }}>Gastos por categoría</div>
+            <div style={{ ...card, padding:16 }}>
+              <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Gastos por categoría</div>
               {Object.entries(preview.desgloseG).map(([cat,total])=>(
-                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #1a1d2e', fontSize:12 }}>
-                  <span style={{ color:'#8890a4' }}>{catLabelR[cat]||cat}</span>
-                  <span style={{ color:'#f87171', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
+                  <span style={{ color: muted }}>{catLabelR[cat]||cat}</span>
+                  <span style={{ color:'#dc2626', fontFamily:'monospace' }}>{fmt(total as number)}</span>
                 </div>
               ))}
             </div>

@@ -55,7 +55,7 @@ export default function RankingPage() {
               cursor:'pointer', transition:'all 0.15s'
             }}
           >
-            <div style={{ width:32, fontSize:18, textAlign:'center', fontWeight:700, color: i < 3 ? ['#fbbf24','#94a3b8','#f97316'][i] : '#6c7280' }}>
+            <div style={{ width:32, fontSize:18, textAlign:'center', fontWeight:700, color: i < 3 ? ['#fbbf24','#94a3b8','#f43f5e'][i] : '#6c7280' }}>
               {i < 3 ? medallas[i] : i + 1}
             </div>
             <div style={{

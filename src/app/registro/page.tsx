@@ -7,6 +7,10 @@ import { Suspense } from 'react'
 
 const supabase = createClient()
 
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
 function RegistroForm() {
   const searchParams = useSearchParams()
   const clubIdParam = searchParams.get('club')
@@ -29,7 +33,6 @@ function RegistroForm() {
       if (!codigo) { setValido(false); return }
       let clubId = clubIdParam
       if (!clubId) {
-        // Link corto: obtener club desde el código
         const { data: inv } = await supabase.from('invitaciones').select('club_id').eq('codigo', codigo).eq('activa', true).single()
         if (!inv) { setValido(false); return }
         clubId = inv.club_id
@@ -62,50 +65,50 @@ function RegistroForm() {
   }
 
   if (valido === null) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}>
-      <div style={{ color:'#6c7280' }}>Verificando...</div>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Verificando...</div>
     </div>
   )
 
   if (valido === false) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117', padding:20 }}>
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:20, padding:32, maxWidth:400, width:'100%', textAlign:'center' }}>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8', padding:20 }}>
+      <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:20, padding:32, maxWidth:400, width:'100%', textAlign:'center', boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
         <div style={{ fontSize:48, marginBottom:16 }}>❌</div>
-        <div style={{ fontSize:18, fontWeight:600, color:'#fff', marginBottom:8 }}>Link inválido</div>
-        <div style={{ fontSize:13, color:'#6c7280' }}>Este link de invitación no es válido o ha expirado. Contacta al administrador del club.</div>
+        <div style={{ fontSize:18, fontWeight:600, color: text, marginBottom:8 }}>Link inválido</div>
+        <div style={{ fontSize:13, color: muted }}>Este link de invitación no es válido o ha expirado. Contacta al administrador del club.</div>
       </div>
     </div>
   )
 
   if (enviado) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117', padding:20 }}>
-      <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:20, padding:32, maxWidth:400, width:'100%', textAlign:'center' }}>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8', padding:20 }}>
+      <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:20, padding:32, maxWidth:400, width:'100%', textAlign:'center', boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
         <div style={{ fontSize:48, marginBottom:16 }}>🎉</div>
-        <div style={{ fontSize:20, fontWeight:700, color:'#fff', marginBottom:8 }}>¡Solicitud enviada!</div>
-        <div style={{ fontSize:13, color:'#6c7280' }}>El administrador del club revisará tu solicitud y te contactará pronto.</div>
+        <div style={{ fontSize:20, fontWeight:700, color: text, marginBottom:8 }}>¡Solicitud enviada!</div>
+        <div style={{ fontSize:13, color: muted }}>El administrador del club revisará tu solicitud y te contactará pronto.</div>
       </div>
     </div>
   )
 
   return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117', padding:20 }}>
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8', padding:20 }}>
       <div style={{ width:'100%', maxWidth:420 }}>
         <div style={{ textAlign:'center', marginBottom:28 }}>
-          <div style={{ width:64, height:64, background:'linear-gradient(135deg,#6c63ff,#a78bfa)', borderRadius:18, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:22, color:'white', margin:'0 auto 16px' }}>CM</div>
-          <div style={{ fontSize:26, fontWeight:800, color:'#fff' }}>CmSports</div>
-          <div style={{ fontSize:13, color:'#6c7280', marginTop:6 }}>{clubNombre}</div>
+          <div style={{ width:64, height:64, background:'linear-gradient(135deg,#3730a3,#4f46e5)', borderRadius:18, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:800, fontSize:22, color:'white', margin:'0 auto 16px' }}>CM</div>
+          <div style={{ fontSize:26, fontWeight:800, color: text }}>CmSports</div>
+          <div style={{ fontSize:13, color: muted, marginTop:6 }}>{clubNombre}</div>
         </div>
 
-        <div style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:16, padding:24 }}>
-          <div style={{ fontSize:16, fontWeight:600, color:'#fff', marginBottom:4 }}>Solicitud de ingreso</div>
-          <div style={{ fontSize:13, color:'#6c7280', marginBottom:20 }}>Completa tus datos para unirte al club</div>
+        <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:24, boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
+          <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:4 }}>Solicitud de ingreso</div>
+          <div style={{ fontSize:13, color: muted, marginBottom:20 }}>Completa tus datos para unirte al club</div>
 
-          {error && <div style={{ background:'#2d0a0a', border:'1px solid #f8717144', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#f87171', marginBottom:14 }}>{error}</div>}
+          {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#dc2626', marginBottom:14 }}>{error}</div>}
 
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Nombre completo *</label>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nombre completo *</label>
             <input
-              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
               type="text" placeholder="Ej: Carlos Muñoz"
               value={form.nombre}
               onChange={e => setForm(prev => ({ ...prev, nombre: e.target.value }))}
@@ -114,23 +117,23 @@ function RegistroForm() {
           </div>
 
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>RUT *</label>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>RUT *</label>
             <input
-              style={{ width:'100%', background:'#0a0c12', border: touched.rut && !rutValido && form.rut ? '1px solid #f87171' : '1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              style={{ width:'100%', background:'#f4f7fa', border: touched.rut && !rutValido && form.rut ? '1px solid #dc2626' : '1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
               type="text" placeholder="21716788-4"
               value={form.rut}
               onChange={e => setForm(prev => ({ ...prev, rut: e.target.value }))}
               onBlur={() => setTouched(t => ({ ...t, rut: true }))}
             />
-            <div style={{ fontSize:11, color: touched.rut && !rutValido && form.rut ? '#f87171' : '#4b5063', marginTop:4 }}>
+            <div style={{ fontSize:11, color: touched.rut && !rutValido && form.rut ? '#dc2626' : hint, marginTop:4 }}>
               Sin puntos, con guión. Ej: 21716788-4
             </div>
           </div>
 
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Email</label>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Email</label>
             <input
-              style={{ width:'100%', background:'#0a0c12', border:'1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
               type="email" placeholder="tu@email.com"
               value={form.email}
               onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
@@ -138,15 +141,15 @@ function RegistroForm() {
           </div>
 
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12, color:'#8890a4', display:'block', marginBottom:5 }}>Teléfono</label>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Teléfono</label>
             <input
-              style={{ width:'100%', background:'#0a0c12', border: touched.telefono && !telValido ? '1px solid #f87171' : '1px solid #1e2030', borderRadius:8, padding:'10px 12px', color:'#e8e8f0', fontSize:14, outline:'none' }}
+              style={{ width:'100%', background:'#f4f7fa', border: touched.telefono && !telValido ? '1px solid #dc2626' : '1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
               type="tel" placeholder="+56975235780"
               value={form.telefono}
               onChange={e => setForm(prev => ({ ...prev, telefono: e.target.value }))}
               onBlur={() => setTouched(t => ({ ...t, telefono: true }))}
             />
-            <div style={{ fontSize:11, color: touched.telefono && !telValido ? '#f87171' : '#4b5063', marginTop:4 }}>
+            <div style={{ fontSize:11, color: touched.telefono && !telValido ? '#dc2626' : hint, marginTop:4 }}>
               Con código país. Ej: +56975235780
             </div>
           </div>
@@ -154,11 +157,11 @@ function RegistroForm() {
           <button
             onClick={enviar}
             disabled={enviando}
-            style={{ width:'100%', padding:12, background:'#6c63ff', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}
+            style={{ width:'100%', padding:12, background:'#f43f5e', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer', marginTop:4 }}
           >
             {enviando ? 'Enviando...' : 'Enviar solicitud →'}
           </button>
-          <div style={{ textAlign:'center', marginTop:14, fontSize:12, color:'#4b5063' }}>
+          <div style={{ textAlign:'center', marginTop:14, fontSize:12, color: hint }}>
             Tu solicitud será revisada por el administrador del club
           </div>
         </div>
@@ -169,7 +172,7 @@ function RegistroForm() {
 
 export default function RegistroPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1117' }}><div style={{ color:'#6c7280' }}>Cargando...</div></div>}>
+    <Suspense fallback={<div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}><div style={{ color:'#94a3b8' }}>Cargando...</div></div>}>
       <RegistroForm />
     </Suspense>
   )

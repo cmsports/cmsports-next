@@ -1,73 +1,89 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
+import {
+  LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
+  BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
+  Receipt, LogOut, Menu, X,
+} from 'lucide-react'
 
 const navAdmin = [
-  { label:'Dashboard', icon:'📊', href:'/dashboard' },
-  { label:'Jugadores', icon:'👥', href:'/jugadores' },
-  { label:'Torneos', icon:'🎯', href:'/torneos' },
-  { label:'Asistencia', icon:'📈', href:'/asistencia' },
-  { label:'Calendario', icon:'📅', href:'/calendario' },
-  { label:'Clases', icon:'📚', href:'/clases' },
-  { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
-  { label:'Finanzas', icon:'💰', href:'/finanzas' },
+  { section: 'Principal' },
+  { label: 'Dashboard',     icon: LayoutDashboard, href: '/dashboard' },
+  { label: 'Jugadores',     icon: Users,            href: '/jugadores' },
+  { label: 'Torneos',       icon: Trophy,           href: '/torneos' },
+  { label: 'Asistencia',    icon: ClipboardCheck,   href: '/asistencia' },
+  { section: 'Gestión' },
+  { label: 'Clases',        icon: BookOpen,         href: '/clases' },
+  { label: 'Calendario',    icon: Calendar,         href: '/calendario' },
+  { label: 'Mensualidades', icon: CreditCard,       href: '/mensualidades' },
+  { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas' },
 ]
 
 const navProfesor = [
-  { label:'Dashboard', icon:'📊', href:'/dashboard-profesor' },
-  { label:'Mis clases', icon:'📚', href:'/clases' },
-  { label:'Asistencia', icon:'📱', href:'/asistencia' },
-  { label:'Calendario', icon:'📅', href:'/calendario' },
-  { label:'Jugadores', icon:'👥', href:'/jugadores' },
-  { label:'Ranking', icon:'🏆', href:'/ranking' },
-  { label:'Torneos', icon:'🎯', href:'/torneos' },
+  { section: 'Principal' },
+  { label: 'Dashboard',  icon: LayoutDashboard, href: '/dashboard-profesor' },
+  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia' },
+  { label: 'Ranking',    icon: BarChart2,       href: '/ranking' },
+  { section: 'Gestión' },
+  { label: 'Mis clases', icon: BookOpen,        href: '/clases' },
+  { label: 'Calendario', icon: Calendar,        href: '/calendario' },
+  { label: 'Jugadores',  icon: Users,           href: '/jugadores' },
+  { label: 'Torneos',    icon: Trophy,          href: '/torneos' },
 ]
 
 const navJugador = [
-  { label:'Mi perfil', icon:'👤', href:'/perfil' },
-  { label:'Asistencia', icon:'📱', href:'/asistencia' },
-  { label:'Mis clases', icon:'📚', href:'/mis-clases' },
-  { label:'Mi Estado de Cuenta', icon:'💳', href:'/estado-cuenta' },
-  { label:'Torneos', icon:'🎯', href:'/torneos' },
-  { label:'Torneos externos', icon:'🌎', href:'/torneos-externos' },
-  { label:'Calendario', icon:'📅', href:'/calendario' },
-  { label:'Ranking', icon:'🏆', href:'/ranking' },
+  { section: 'Mi cuenta' },
+  { label: 'Mi perfil',           icon: User,          href: '/perfil' },
+  { label: 'Mi Estado de Cuenta', icon: Receipt,       href: '/estado-cuenta' },
+  { label: 'Asistencia',          icon: ClipboardCheck,href: '/asistencia' },
+  { section: 'Club' },
+  { label: 'Mis clases',          icon: BookOpen,      href: '/mis-clases' },
+  { label: 'Torneos',             icon: Trophy,        href: '/torneos' },
+  { label: 'Torneos externos',    icon: Globe,         href: '/torneos-externos' },
+  { label: 'Calendario',          icon: Calendar,      href: '/calendario' },
+  { label: 'Ranking',             icon: BarChart2,     href: '/ranking' },
 ]
 
 const mobileNavAdmin = [
-  { label:'Inicio', icon:'📊', href:'/dashboard' },
-  { label:'Jugadores', icon:'👥', href:'/jugadores' },
-  { label:'Torneos', icon:'🎯', href:'/torneos' },
-  { label:'Finanzas', icon:'💰', href:'/finanzas' },
-  { label:'Más', icon:'☰', href:'#mas' },
+  { label: 'Inicio',     icon: LayoutDashboard, href: '/dashboard' },
+  { label: 'Jugadores',  icon: Users,            href: '/jugadores' },
+  { label: 'Torneos',    icon: Trophy,           href: '/torneos' },
+  { label: 'Finanzas',   icon: DollarSign,       href: '/finanzas' },
+  { label: 'Más',        icon: Menu,             href: '#mas' },
 ]
 
 const mobileNavProfesor = [
-  { label:'Inicio', icon:'📊', href:'/dashboard-profesor' },
-  { label:'Clases', icon:'📚', href:'/clases' },
-  { label:'Asistencia', icon:'📱', href:'/asistencia' },
-  { label:'Alumnos', icon:'👥', href:'/jugadores' },
-  { label:'Calendario', icon:'📅', href:'/calendario' },
+  { label: 'Inicio',     icon: LayoutDashboard, href: '/dashboard-profesor' },
+  { label: 'Clases',     icon: BookOpen,        href: '/clases' },
+  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia' },
+  { label: 'Alumnos',    icon: Users,           href: '/jugadores' },
+  { label: 'Calendario', icon: Calendar,        href: '/calendario' },
 ]
 
 const mobileNavJugador = [
-  { label:'Perfil', icon:'👤', href:'/perfil' },
-  { label:'Asistencia', icon:'📱', href:'/asistencia' },
-  { label:'Mis clases', icon:'📚', href:'/mis-clases' },
-  { label:'Mi cuenta', icon:'💳', href:'/estado-cuenta' },
-  { label:'Torneos', icon:'🎯', href:'/torneos' },
+  { label: 'Perfil',     icon: User,          href: '/perfil' },
+  { label: 'Asistencia', icon: ClipboardCheck, href: '/asistencia' },
+  { label: 'Mis clases', icon: BookOpen,      href: '/mis-clases' },
+  { label: 'Mi cuenta',  icon: CreditCard,    href: '/estado-cuenta' },
+  { label: 'Torneos',    icon: Trophy,        href: '/torneos' },
 ]
 
-export default function AppLayout({ children, perfil }: { children: React.ReactNode, perfil: any }) {
+type NavItem = { section: string } | { label: string; icon: any; href: string }
+
+export default function AppLayout({ children, perfil }: { children: React.ReactNode; perfil: any }) {
   const router = useRouter()
   const pathname = usePathname()
   const [masOpen, setMasOpen] = useState(false)
 
-  const nav = perfil?.rol === 'admin' ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
+  const nav: NavItem[] = perfil?.rol === 'admin' ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
   const mobileNav = perfil?.rol === 'admin' ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
+
+  const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
+  const rolLabel = perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
 
   async function cerrarSesion() {
     const supabase = createClient()
@@ -75,97 +91,210 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
     router.push('/login')
   }
 
+  function isActive(href: string) {
+    return pathname.startsWith(href) && href !== '/' && href !== '#mas'
+  }
+
   return (
-    <div style={{ display:'flex', minHeight:'100vh', background:'#0f1117' }}>
-      {/* SIDEBAR desktop */}
-      <div className="sidebar" style={{ width:220, background:'#0a0c12', borderRight:'1px solid #1e2030', display:'flex', flexDirection:'column', position:'fixed', height:'100vh', zIndex:10 }}>
-        <div style={{ padding:'20px 16px', borderBottom:'1px solid #1e2030' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-            <img src="/logo.png" alt="CmSports" style={{ width:36, height:36, objectFit:'contain' }} />
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9' }}>
+
+      {/* ── SIDEBAR DESKTOP ── */}
+      <aside className="sidebar" style={{
+        width: 220,
+        background: '#ffffff',
+        borderRight: '1px solid #e2e8f0',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'fixed',
+        height: '100vh',
+        zIndex: 10,
+      }}>
+        {/* Logo */}
+        <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 8,
+              background: '#4f46e5',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <img src="/logo.png" alt="CmSports" style={{ width: 22, height: 22, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+            </div>
             <div>
-              <div style={{ fontSize:15, fontWeight:700, color:'#fff' }}>CmSports</div>
-              <div style={{ fontSize:11, color:'#6c7280' }}>Club Unión San Bernardo</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.2 }}>CmSports</div>
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>Club Unión San Bernardo</div>
             </div>
           </div>
         </div>
-        <nav style={{ flex:1, padding:'12px 8px', overflowY:'auto' }}>
-          {nav.map(item => (
-            <div key={item.href} onClick={() => router.push(item.href)}
-              style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px', borderRadius:8, cursor:'pointer', marginBottom:2, background: pathname.startsWith(item.href) && item.href !== '/' ? '#1e1b4b' : 'transparent', color: pathname.startsWith(item.href) && item.href !== '/' ? '#a78bfa' : '#8890a4', fontSize:13, fontWeight: pathname.startsWith(item.href) ? 600 : 400, transition:'all 0.15s' }}>
-              <span>{item.icon}</span><span>{item.label}</span>
-            </div>
-          ))}
-        </nav>
-        <div style={{ padding:'12px 16px', borderTop:'1px solid #1e2030' }}>
-          <div style={{ marginBottom:10 }}>
-            <CampanaNotificaciones perfil={perfil} placement="top" />
-          </div>
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-            <div style={{ width:32, height:32, borderRadius:'50%', background:'linear-gradient(135deg,#6c63ff,#a78bfa)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white' }}>
-              {perfil?.nombre?.split(' ').map((n:string)=>n[0]).join('').slice(0,2) || 'U'}
-            </div>
-            <div>
-              <div style={{ fontSize:12, color:'#c8cfe0', fontWeight:500 }}>{perfil?.email}</div>
-              <div style={{ fontSize:11, color:'#6c7280' }}>
-                {perfil?.rol === 'admin' ? '👑 Administrador' : perfil?.rol === 'profesor' ? '👨‍🏫 Profesor' : '🏓 Jugador'}
-              </div>
-            </div>
-          </div>
-          <button onClick={cerrarSesion} style={{ width:'100%', padding:'7px', background:'transparent', border:'1px solid #1e2030', borderRadius:8, color:'#6c7280', fontSize:12, cursor:'pointer' }}>
-            ↩ Cerrar sesión
-          </button>
-        </div>
-      </div>
 
-      {/* MAIN */}
-      <div style={{ marginLeft:220, flex:1, padding:24, paddingBottom:80 }} className="main-content">
-        {children}
-      </div>
-
-      {/* NAV MÓVIL */}
-      <div style={{ display:'none', position:'fixed', bottom:0, left:0, right:0, background:'#0a0c12', borderTop:'1px solid #1e2030', zIndex:20, padding:'8px 4px' }} className="mobile-nav">
-        <div style={{ display:'flex', justifyContent:'space-around' }}>
-          {mobileNav.map(item => {
-            const activo = pathname.startsWith(item.href) && item.href !== '#mas'
+        {/* Nav */}
+        <nav style={{ flex: 1, padding: '8px 8px', overflowY: 'auto' }}>
+          {nav.map((item, i) => {
+            if ('section' in item) {
+              return (
+                <div key={`s-${i}`} style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: '#64748b',
+                  letterSpacing: '0.07em',
+                  textTransform: 'uppercase',
+                  padding: '10px 10px 4px',
+                  marginTop: i === 0 ? 0 : 4,
+                }}>
+                  {item.section}
+                </div>
+              )
+            }
+            const active = isActive(item.href)
+            const Icon = item.icon
             return (
-              <div key={item.href} onClick={() => item.href === '#mas' ? setMasOpen(!masOpen) : router.push(item.href)}
-                style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'6px 8px', cursor:'pointer', color: activo ? '#a78bfa' : '#6c7280', fontSize:10, minWidth:50, textAlign:'center' }}>
-                <span style={{ fontSize:20 }}>{item.icon}</span>
+              <div key={item.href} onClick={() => router.push(item.href)} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
+                padding: '7px 10px',
+                paddingLeft: active ? 9 : 10,
+                borderRadius: 7,
+                cursor: 'pointer',
+                marginBottom: 1,
+                background: active ? '#4f46e5' : 'transparent',
+                color: active ? '#ffffff' : '#1e293b',
+                fontSize: 13,
+                fontWeight: active ? 600 : 400,
+                borderLeft: active ? '3px solid #3730a3' : '3px solid transparent',
+                transition: 'all 0.12s',
+              }}>
+                <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
                 <span>{item.label}</span>
               </div>
             )
           })}
-          <div onClick={cerrarSesion} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, padding:'6px 8px', cursor:'pointer', color:'#6c7280', fontSize:10, minWidth:50, textAlign:'center' }}>
-            <span style={{ fontSize:20 }}>↩️</span>
+        </nav>
+
+        {/* Footer */}
+        <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
+          <div style={{ marginBottom: 8 }}>
+            <CampanaNotificaciones perfil={perfil} placement="top" />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: '50%',
+              background: '#ede9fe',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 600, color: '#3730a3', flexShrink: 0,
+            }}>
+              {initials}
+            </div>
+            <div style={{ overflow: 'hidden', flex: 1 }}>
+              <div style={{ fontSize: 11, color: '#0f172a', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {perfil?.email}
+              </div>
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>{rolLabel}</div>
+            </div>
+          </div>
+          <button onClick={cerrarSesion} style={{
+            width: '100%',
+            padding: '6px 10px',
+            background: 'transparent',
+            border: '1px solid #e2e8f0',
+            borderRadius: 7,
+            color: '#64748b',
+            fontSize: 12,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+          }}>
+            <LogOut size={13} /> Cerrar sesión
+          </button>
+        </div>
+      </aside>
+
+      {/* ── CONTENIDO PRINCIPAL ── */}
+      <main style={{ marginLeft: 220, flex: 1, padding: 24, paddingBottom: 80 }} className="main-content">
+        {children}
+      </main>
+
+      {/* ── NAV MÓVIL ── */}
+      <div style={{
+        display: 'none',
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        background: '#ffffff',
+        borderTop: '1px solid #e2e8f0',
+        zIndex: 20,
+        padding: '6px 4px 8px',
+      }} className="mobile-nav">
+        <div style={{ display: 'flex', justifyContent: 'space-around' }}>
+          {mobileNav.map(item => {
+            const active = isActive(item.href)
+            const Icon = item.icon
+            return (
+              <div key={item.href}
+                onClick={() => item.href === '#mas' ? setMasOpen(!masOpen) : router.push(item.href)}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                  padding: '5px 8px', cursor: 'pointer',
+                  color: active ? '#4f46e5' : '#94a3b8',
+                  fontSize: 10, minWidth: 50, textAlign: 'center',
+                }}>
+                <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+                <span>{item.label}</span>
+              </div>
+            )
+          })}
+          <div onClick={cerrarSesion} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            padding: '5px 8px', cursor: 'pointer',
+            color: '#94a3b8', fontSize: 10, minWidth: 50, textAlign: 'center',
+          }}>
+            <LogOut size={20} strokeWidth={1.8} />
             <span>Salir</span>
           </div>
         </div>
       </div>
 
-      {/* MENÚ MÁS (admin móvil) */}
+      {/* ── MENÚ MÁS (admin móvil) ── */}
       {masOpen && (
-        <div style={{ position:'fixed', bottom:64, left:0, right:0, background:'#0a0c12', borderTop:'1px solid #1e2030', zIndex:19, padding:12 }}>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8 }}>
+        <div style={{
+          position: 'fixed', bottom: 64, left: 0, right: 0,
+          background: '#ffffff', borderTop: '1px solid #e2e8f0',
+          zIndex: 19, padding: 12,
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
             {[
-              { label:'Mensualidades', icon:'💳', href:'/mensualidades' },
-              { label:'Ranking', icon:'🏆', href:'/ranking' },
-              { label:'Asistencia', icon:'📈', href:'/asistencia' },
-              { label:'Clases', icon:'📚', href:'/clases' },
-              { label:'Calendario', icon:'📅', href:'/calendario' },
-              { label:'Finanzas', icon:'💰', href:'/finanzas' },
-            ].map(item => (
-              <div key={item.href} onClick={() => { router.push(item.href); setMasOpen(false) }}
-                style={{ background:'#14161f', border:'1px solid #1e2030', borderRadius:10, padding:14, textAlign:'center', cursor:'pointer' }}>
-                <div style={{ fontSize:22, marginBottom:4 }}>{item.icon}</div>
-                <div style={{ fontSize:11, color:'#8890a4' }}>{item.label}</div>
-              </div>
-            ))}
+              { label: 'Mensualidades', icon: CreditCard,    href: '/mensualidades' },
+              { label: 'Ranking',       icon: BarChart2,     href: '/ranking' },
+              { label: 'Asistencia',    icon: ClipboardCheck,href: '/asistencia' },
+              { label: 'Clases',        icon: BookOpen,      href: '/clases' },
+              { label: 'Calendario',    icon: Calendar,      href: '/calendario' },
+              { label: 'Finanzas',      icon: DollarSign,    href: '/finanzas' },
+            ].map(item => {
+              const Icon = item.icon
+              return (
+                <div key={item.href} onClick={() => { router.push(item.href); setMasOpen(false) }}
+                  style={{
+                    background: '#f8fafc', border: '1px solid #e2e8f0',
+                    borderRadius: 10, padding: 14, textAlign: 'center', cursor: 'pointer',
+                  }}>
+                  <Icon size={20} color="#4f46e5" style={{ margin: '0 auto 4px' }} />
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{item.label}</div>
+                </div>
+              )
+            })}
           </div>
+          <button onClick={() => setMasOpen(false)} style={{
+            width: '100%', marginTop: 8, padding: '8px',
+            background: 'transparent', border: '1px solid #e2e8f0',
+            borderRadius: 8, color: '#64748b', fontSize: 12, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+          }}>
+            <X size={13} /> Cerrar
+          </button>
         </div>
       )}
 
-      {/* Campana flotante móvil */}
-      <div className="mobile-bell" style={{ position:'fixed', top:12, right:12, zIndex:30, display:'none' }}>
+      {/* ── CAMPANA MÓVIL ── */}
+      <div className="mobile-bell" style={{ position: 'fixed', top: 12, right: 12, zIndex: 30, display: 'none' }}>
         <CampanaNotificaciones perfil={perfil} />
       </div>
 

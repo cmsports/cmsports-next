@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 * {
   margin: 0;
@@ -7,22 +7,41 @@
 }
 
 body {
-  font-family: 'Outfit', sans-serif;
-  background: #0f1117;
-  color: #e8e8f0;
+  font-family: 'Geist', 'Inter', sans-serif;
+  background: #a9bac8;
+  color: #0f172a;
   min-height: 100vh;
 }
 
 :root {
-  --purple: #6c63ff;
-  --purple-light: #a78bfa;
-  --bg: #0f1117;
-  --bg-card: #14161f;
-  --bg-dark: #0a0c12;
-  --border: #1e2030;
-  --text: #e8e8f0;
-  --text-muted: #6c7280;
-  --green: #34d399;
-  --red: #f87171;
-  --yellow: #fbbf24;
+  /* Paleta principal */
+  --sky: #4f46e5;
+  --sky-light: #ede9fe;
+  --sky-dark: #3730a3;
+  --orange: #f43f5e;
+  --orange-light: #fff7ed;
+  --orange-dark: #c2410c;
+
+  /* Backgrounds */
+  --bg: #a9bac8;
+  --bg-card: #ffffff;
+  --bg-dark: #f4f7fa;
+  --bg-sidebar: #ffffff;
+
+  /* Borders & text */
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
+
+  /* Semánticos */
+  --green: #16a34a;
+  --green-light: #f0fdf4;
+  --red: #dc2626;
+  --red-light: #fef2f2;
+  --yellow: #d97706;
+  --yellow-light: #fffbeb;
+
+  /* Alias para compatibilidad con componentes existentes */
+  --purple: #4f46e5;
+  --purple-light: #38bdf8;
 }

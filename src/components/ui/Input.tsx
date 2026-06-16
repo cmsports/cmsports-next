@@ -11,14 +11,14 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="flex flex-col gap-1">
         {label && (
-          <label htmlFor={inputId} className="text-xs text-[var(--text-muted)]">
+          <label htmlFor={inputId} className="text-xs font-medium text-[var(--text-muted)]">
             {label}
           </label>
         )}
         <input
           ref={ref}
           id={inputId}
-          className={`bg-[var(--bg-dark)] border ${error ? 'border-[var(--red)]' : 'border-[var(--border)]'} rounded-lg px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]/50 outline-none focus:border-[var(--purple)] transition-colors ${className}`}
+          className={`bg-[var(--bg-dark)] border ${error ? 'border-[var(--red)]' : 'border-[var(--border)]'} rounded-lg px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--text-muted)]/50 outline-none focus:border-[var(--sky)] transition-colors ${className}`}
           {...props}
         />
         {error && <span className="text-xs text-[var(--red)]">{error}</span>}
