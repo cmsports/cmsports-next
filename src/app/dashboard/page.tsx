@@ -47,12 +47,14 @@ export default function DashboardPage() {
       { data: movimientos },
       { data: solicitudesData },
       { data: movimientosPrev },
+      { data: asistMes },
     ] = await Promise.all([
       supabase.from('jugadores').select('*').eq('club_id', cid).neq('es_externo', true),
       supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
       supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicio),
       supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).eq('estado', 'pendiente'),
       supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicioPrev).lt('fecha', mesInicio),
+      supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).gte('fecha', mesInicio).order('fecha', { ascending: false }).limit(5),
     ])
 
     const activos = (jugsData || []).filter(j => j.estado === 'activo')
@@ -75,8 +77,6 @@ export default function DashboardPage() {
     setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos, jugadores: activos, mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
     setJugadores(activos)
     setSolicitudes(solicitudesData || [])
-
-    const { data: asistMes } = await supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).gte('fecha', mesInicio).order('fecha', { ascending: false }).limit(5)
     setUltimasAsist(asistMes || [])
   }
 
