@@ -6,6 +6,7 @@ import {
   seedingSerpenteo,
   generarRoundRobin,
   generarBracketEspejo,
+  generarBracketConAvance,
   generarSiguienteFase,
   calcularNumGrupos,
   type JugadorTorneo,
@@ -19,6 +20,59 @@ async function requireAdmin() {
   const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,nombre').eq('id', user.id).single()
   if (!perfil || perfil.rol !== 'admin') return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
   return { error: null, supabase, perfil }
+}
+
+export async function corregirResultadoGrupos(params: { partidoId: string; nuevoGanadorId: string }) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { partidoId, nuevoGanadorId } = params
+
+  const { data: partido } = await supabase.from('torneo_partidos').select('*').eq('id', partidoId).single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
+  if (partido.fase !== 'grupos') return { error: 'Solo se pueden corregir partidos de grupos' }
+  if (partido.ganador === nuevoGanadorId) return { success: true }
+
+  const anteriorGanadorId: string = partido.ganador
+  const anteriorPerdedorId: string | null = anteriorGanadorId === partido.jugador_a ? partido.jugador_b : partido.jugador_a
+  const torneoIdPartido: string = partido.torneo_id ?? partidoId
+
+  // Revertir ELO del resultado anterior usando historial
+  const jugadoresIds = [anteriorGanadorId, anteriorPerdedorId].filter((id): id is string => !!id)
+  const { data: historial } = await supabase
+    .from('historial_elo')
+    .select('*')
+    .eq('torneo_id', torneoIdPartido)
+    .in('jugador_id', jugadoresIds)
+    .order('created_at', { ascending: false })
+
+  if (historial?.length) {
+    const hGanador = historial.find(h => h.jugador_id === anteriorGanadorId)
+    const hPerdedor = anteriorPerdedorId ? historial.find(h => h.jugador_id === anteriorPerdedorId) : undefined
+    const revertir = []
+    if (hGanador) revertir.push(supabase.from('jugadores').update({ elo: hGanador.elo_antes }).eq('id', anteriorGanadorId))
+    if (hPerdedor && anteriorPerdedorId) revertir.push(supabase.from('jugadores').update({ elo: hPerdedor.elo_antes }).eq('id', anteriorPerdedorId))
+    if (revertir.length) await Promise.all(revertir)
+    const idsHistorial = [hGanador?.id, hPerdedor?.id].filter((id): id is string => !!id)
+    if (idsHistorial.length) await supabase.from('historial_elo').delete().in('id', idsHistorial)
+  }
+
+  // Revertir stats en grupo_jugadores
+  if (partido.grupo_id) {
+    const { data: gjG } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', anteriorGanadorId).maybeSingle()
+    if (gjG) await supabase.from('grupo_jugadores').update({ partidos_ganados: Math.max(0, (gjG.partidos_ganados || 0) - 1), partidos_jugados: Math.max(0, (gjG.partidos_jugados || 0) - 1) }).eq('id', gjG.id)
+    if (anteriorPerdedorId) {
+      const { data: gjP } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', anteriorPerdedorId).maybeSingle()
+      if (gjP) await supabase.from('grupo_jugadores').update({ partidos_jugados: Math.max(0, (gjP.partidos_jugados || 0) - 1) }).eq('id', gjP.id)
+    }
+  }
+
+  // Limpiar ganador actual antes de reusar marcarGanadorPartido
+  await supabase.from('torneo_partidos').update({ ganador: null }).eq('id', partidoId)
+
+  // Aplicar nuevo resultado (reutiliza la lógica existente)
+  return marcarGanadorPartido({ partidoId, ganadorId: nuevoGanadorId })
 }
 
 export async function marcarGanadorPartido(params: { partidoId: string; ganadorId: string }) {
@@ -163,7 +217,7 @@ export async function generarPlayoffs(params: {
     await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('jugador_id', j.id)
   }
 
-  const partidosBracket = generarBracketEspejo(clasificadosPrimeros, clasificadosSegundos)
+  const partidosBracket = generarBracketConAvance(clasificadosPrimeros, clasificadosSegundos)
   if (!partidosBracket.length) return { error: 'No se pudo generar el bracket' }
 
   const faseInicial = partidosBracket[0].fase as FaseOrden
@@ -209,6 +263,83 @@ export async function avanzarSiguienteFase(params: {
   await supabase.from('torneos').update({ fase }).eq('id', torneoId)
 
   return { success: true, fase }
+}
+
+export async function corregirResultadoPlayoff(params: { partidoId: string; nuevoGanadorId: string }) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { partidoId, nuevoGanadorId } = params
+
+  const { data: partido } = await supabase.from('torneo_partidos').select('*').eq('id', partidoId).single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
+  if (partido.fase === 'grupos') return { error: 'Usa corregirResultadoGrupos para partidos de grupos' }
+  if (partido.ganador === nuevoGanadorId) return { success: true }
+
+  const torneoId: string = partido.torneo_id ?? partidoId
+  const fasePartido = partido.fase as FaseOrden
+
+  // Borrar partidos de fases posteriores
+  const idxFase = CONFIG.FASES_ORDEN.indexOf(fasePartido)
+  const fasesPosterrores = CONFIG.FASES_ORDEN.slice(idxFase + 1)
+  if (fasesPosterrores.length) {
+    await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).in('fase', fasesPosterrores)
+  }
+
+  const anteriorGanadorId: string = partido.ganador
+  const anteriorPerdedorId: string | null = anteriorGanadorId === partido.jugador_a ? partido.jugador_b : partido.jugador_a
+
+  // Revertir ELO usando historial
+  const jugadoresIds = [anteriorGanadorId, anteriorPerdedorId].filter((id): id is string => !!id)
+  const { data: historial } = await supabase
+    .from('historial_elo')
+    .select('*')
+    .eq('torneo_id', torneoId)
+    .in('jugador_id', jugadoresIds)
+    .order('created_at', { ascending: false })
+
+  if (historial?.length) {
+    const hGanador = historial.find(h => h.jugador_id === anteriorGanadorId)
+    const hPerdedor = anteriorPerdedorId ? historial.find(h => h.jugador_id === anteriorPerdedorId) : undefined
+    const revertir = []
+    if (hGanador) revertir.push(supabase.from('jugadores').update({ elo: hGanador.elo_antes }).eq('id', anteriorGanadorId))
+    if (hPerdedor && anteriorPerdedorId) revertir.push(supabase.from('jugadores').update({ elo: hPerdedor.elo_antes }).eq('id', anteriorPerdedorId))
+    if (revertir.length) await Promise.all(revertir)
+    const idsHistorial = [hGanador?.id, hPerdedor?.id].filter((id): id is string => !!id)
+    if (idsHistorial.length) await supabase.from('historial_elo').delete().in('id', idsHistorial)
+  }
+
+  // Limpiar ganador actual y actualizar fase del torneo
+  await supabase.from('torneo_partidos').update({ ganador: null }).eq('id', partidoId)
+  await supabase.from('torneos').update({ fase: fasePartido }).eq('id', torneoId)
+
+  return marcarGanadorPartido({ partidoId, ganadorId: nuevoGanadorId })
+}
+
+export async function volverAGrupos(params: { torneoId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId } = params
+
+  const { data: torneo } = await supabase.from('torneos').select('fase').eq('id', torneoId).single()
+  if (!torneo) return { error: 'Torneo no encontrado' }
+  if (torneo.fase === 'grupos' || torneo.fase === 'inscripcion') {
+    return { error: 'El torneo ya está en fase de grupos' }
+  }
+
+  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
+
+  const { data: grupos } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  if (grupos?.length) {
+    const grupoIds = grupos.map(g => g.id)
+    await supabase.from('grupo_jugadores').update({ clasificado: false }).in('grupo_id', grupoIds)
+  }
+
+  await supabase.from('torneos').update({ fase: 'grupos' }).eq('id', torneoId)
+
+  return { success: true }
 }
 
 export async function finalizarTorneo(params: { torneoId: string }) {
