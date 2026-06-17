@@ -18,6 +18,8 @@ import {
   volverAGrupos as volverAGruposAction,
   corregirResultadoPlayoff,
   intercambiarJugadores,
+  eliminarTorneo,
+  guardarPremios,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
@@ -54,6 +56,12 @@ export default function TorneoDetallePage() {
   const [partidoPlayoffEditando, setPartidoPlayoffEditando] = useState<string|null>(null)
   const [dragSlot, setDragSlot] = useState<{partidoId:string; posicion:'jugador_a'|'jugador_b'; jugadorId:string}|null>(null)
   const [dragOver, setDragOver] = useState<{partidoId:string; posicion:'jugador_a'|'jugador_b'}|null>(null)
+  const [inscribiendo, setInscribiendo] = useState(false)
+  const [premio1, setPremio1] = useState('')
+  const [premio2, setPremio2] = useState('')
+  const [premio3, setPremio3] = useState('')
+  const [premioTerceroOpen, setPremioTerceroOpen] = useState(false)
+  const [guardandoPremios, setGuardandoPremios] = useState(false)
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -110,6 +118,16 @@ export default function TorneoDetallePage() {
     }
   }, [torneo?.fase])
 
+  useEffect(() => {
+    if (torneo?.id) {
+      setPremio1(torneo.premio_primero?.toString() ?? '')
+      setPremio2(torneo.premio_segundo?.toString() ?? '')
+      const p3 = torneo.premio_tercero?.toString() ?? ''
+      setPremio3(p3)
+      setPremioTerceroOpen(!!p3)
+    }
+  }, [torneo?.id])
+
   async function marcarGanador(partidoId: string, ganadorId: string) {
     const res = await marcarGanadorPartido({ partidoId, ganadorId })
     if (res.error) { alert(res.error); return }
@@ -117,62 +135,67 @@ export default function TorneoDetallePage() {
   }
 
   async function inscribirEnMesa() {
-    if (!busquedaMesa.trim()) return
+    if (inscribiendo || !busquedaMesa.trim()) return
+    setInscribiendo(true)
+    try {
+      const { data: jugsExistentes } = await supabase.from('jugadores').select('id,nombre,elo').ilike('nombre', `%${busquedaMesa.trim()}%`).eq('club_id', perfil?.club_id)
 
-    const { data: jugsExistentes } = await supabase.from('jugadores').select('id,nombre,elo').ilike('nombre', `%${busquedaMesa.trim()}%`).eq('club_id', perfil?.club_id)
+      let jugadorId: string
+      let jugadorElo = 1200
+      let jugadorNombre = busquedaMesa.trim()
 
-    let jugadorId: string
-    let jugadorElo = 1200
-    let jugadorNombre = busquedaMesa.trim()
-
-    if (jugsExistentes?.length) {
-      const jug = jugsExistentes[0]
-      jugadorId = jug.id
-      jugadorElo = jug.elo ?? 1200
-      jugadorNombre = jug.nombre ?? jugadorNombre
-    } else {
-      const { data: nuevo } = await supabase.from('jugadores').insert({
-        club_id: perfil?.club_id, nombre: busquedaMesa.trim(),
-        rut: rutMesa || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
-        es_externo: true
-      }).select().single()
-      if (!nuevo) return
-      jugadorId = nuevo.id
-    }
-
-    const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
-    if (yaInscrito) { alert('Este jugador ya está inscrito'); return }
-
-    if (faseActual !== 'inscripcion') {
-      const res = await inscribirJugadorTardio({ torneoId, jugadorId, jugadorElo })
-      if (res.error) { alert(res.error); return }
-      if (torneo?.cuota_inscripcion > 0) {
-        await actualizarEstadoPago({ torneoId, jugadorId, estado: 'pendiente', metodoPago })
+      if (jugsExistentes?.length) {
+        const jug = jugsExistentes[0]
+        jugadorId = jug.id
+        jugadorElo = jug.elo ?? 1200
+        jugadorNombre = jug.nombre ?? jugadorNombre
+      } else {
+        const { data: nuevo } = await supabase.from('jugadores').insert({
+          club_id: perfil?.club_id, nombre: busquedaMesa.trim(),
+          rut: rutMesa || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
+          es_externo: true
+        }).select().single()
+        if (!nuevo) return
+        jugadorId = nuevo.id
       }
-      alert(`Jugador agregado al Grupo ${res.grupoNombre}`)
+
+      const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
+        || jugadores.find((j: any) => j.jugador_id === jugadorId)
+      if (yaInscrito) { alert('Este jugador ya está inscrito en este torneo'); return }
+
+      if (faseActual !== 'inscripcion') {
+        const res = await inscribirJugadorTardio({ torneoId, jugadorId, jugadorElo })
+        if (res.error) { alert(res.error); return }
+        if (torneo?.cuota_inscripcion > 0) {
+          await actualizarEstadoPago({ torneoId, jugadorId, estado: 'pendiente', metodoPago })
+        }
+        alert(`Jugador agregado al Grupo ${res.grupoNombre}`)
+        setBusquedaMesa('')
+        setRutMesa('')
+        await cargarTorneo()
+        return
+      }
+
+      let { data: grupoMesa } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
+      if (!grupoMesa) {
+        const { data: ng } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: 'MESA' }).select().single()
+        grupoMesa = ng
+      }
+
+      if (!grupoMesa) return
+      await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
+
+      if (torneo?.cuota_inscripcion > 0) {
+        await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: jugadorId, estado: 'pendiente', metodo_pago: metodoPago })
+      }
+
       setBusquedaMesa('')
       setRutMesa('')
+      setJugadoresInscritos(prev => [...prev, { jugador_id: jugadorId, jugadores: { id: jugadorId, nombre: jugadorNombre, elo: jugadorElo } }])
       await cargarTorneo()
-      return
+    } finally {
+      setInscribiendo(false)
     }
-
-    let { data: grupoMesa } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
-    if (!grupoMesa) {
-      const { data: ng } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: 'MESA' }).select().single()
-      grupoMesa = ng
-    }
-
-    if (!grupoMesa) return
-    await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
-
-    if (torneo?.cuota_inscripcion > 0) {
-      await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: jugadorId, estado: 'pendiente', metodo_pago: metodoPago })
-    }
-
-    setBusquedaMesa('')
-    setRutMesa('')
-    setJugadoresInscritos(prev => [...prev, { jugador_id: jugadorId, jugadores: { id: jugadorId, nombre: jugadorNombre, elo: jugadorElo } }])
-    await cargarTorneo()
   }
 
   function toggleCabezaSerie(jugadorId: string) {
@@ -308,6 +331,7 @@ export default function TorneoDetallePage() {
 
   const esAdmin = perfil?.rol === 'admin'
   const cuota = torneo?.cuota_inscripcion || 0
+  const jugadoresUnicos: any[] = Array.from(new Map(jugadores.map((j: any) => [j.jugador_id, j])).values())
   const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
   const inscritosReales = jugadores.filter((j: any) => gruposReales.some((g: any) => g.id === j.grupo_id))
   const totalInscritos = inscritosReales.length || jugadoresInscritos.length
@@ -338,6 +362,16 @@ export default function TorneoDetallePage() {
       {/* Header */}
       <div style={{ display:'flex', gap:10, marginBottom:20, alignItems:'center', flexWrap:'wrap' }}>
         <button onClick={() => router.push('/torneos')} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer' }}>← Volver</button>
+        {esAdmin && (
+          <button onClick={async () => {
+            if (!confirm(`¿Eliminar "${torneo?.nombre}" y todos sus datos? Esta acción no se puede deshacer.`)) return
+            const res = await eliminarTorneo({ torneoId })
+            if (res.error) { alert(res.error); return }
+            router.push('/torneos')
+          }} style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'6px 14px', color:'#dc2626', fontSize:13, cursor:'pointer' }}>
+            🗑 Eliminar
+          </button>
+        )}
         <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0 }}>{torneo?.nombre}</h1>
         <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseLabel[faseActual] || faseActual}</span>
         {esAdmin && torneo?.inscripcion_abierta && (
@@ -437,7 +471,7 @@ export default function TorneoDetallePage() {
                   {hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto</span>}
                 </div>
                 {ordenados.map((j: any, i: number) => (
-                  <div key={j.jugador?.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}` }}>
+                  <div key={`${grupo.id}-${j.jugador?.id ?? i}`} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}` }}>
                     <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text }}>{j.jugador?.nombre||'—'}</div>
@@ -462,7 +496,7 @@ export default function TorneoDetallePage() {
                     <div style={{ fontSize:12, color:'#f43f5e', fontWeight:600, marginBottom:8 }}>⚠️ Triple empate — elige el orden manualmente</div>
                     <div style={{ fontSize:11, color: muted, marginBottom:10 }}>Revisa las papeletas y marca quién queda 1° y quién queda 2°</div>
                     {empatados.map((j: any, idx: number) => (
-                      <div key={j.jugador?.id} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                      <div key={`${grupo.id}-empate-${j.jugador?.id ?? idx}`} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
                         <span style={{ fontSize:12, color: text, flex:1 }}>{j.jugador?.nombre}</span>
                         <button
                           onClick={() => setEmpateManual((prev: any) => {
@@ -713,16 +747,116 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
+      {/* PANEL PREMIOS */}
+      {esAdmin && faseActual === 'finalizado' && (() => {
+        const pFinal = partidos.find(p => p.fase === 'final' && p.ganador)
+        const campeon1 = pFinal ? (pFinal as any).jg : null
+        const subcampeon = pFinal
+          ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja)
+          : null
+
+        const inputStyle = {
+          width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0',
+          borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none',
+          fontVariantNumeric: 'tabular-nums' as const,
+        }
+
+        return (
+          <div style={{ ...card, padding: 20, marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 16 }}>🏅 Premios del torneo</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 5 }}>
+                  🥇 Primer lugar{campeon1 ? ` — ${campeon1.nombre}` : ''}
+                </label>
+                <input
+                  type="number"
+                  placeholder="$ monto"
+                  value={premio1}
+                  onChange={e => setPremio1(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 5 }}>
+                  🥈 Segundo lugar{subcampeon ? ` — ${subcampeon.nombre}` : ''}
+                </label>
+                <input
+                  type="number"
+                  placeholder="$ monto"
+                  value={premio2}
+                  onChange={e => setPremio2(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            {!premioTerceroOpen ? (
+              <button
+                onClick={() => setPremioTerceroOpen(true)}
+                style={{ background: 'transparent', border: '1px dashed #e2e8f0', borderRadius: 8, padding: '8px 14px', color: muted, fontSize: 12, cursor: 'pointer', width: '100%', marginBottom: 12 }}
+              >
+                + Agregar premio 3° lugar
+              </button>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                  <label style={{ fontSize: 11, color: muted }}>🥉 Tercer lugar</label>
+                  <button onClick={() => { setPremioTerceroOpen(false); setPremio3('') }} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14, padding: 0 }}>✕</button>
+                </div>
+                <input
+                  type="number"
+                  placeholder="$ monto"
+                  value={premio3}
+                  onChange={e => setPremio3(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            )}
+
+            <button
+              onClick={async () => {
+                setGuardandoPremios(true)
+                const res = await guardarPremios({
+                  torneoId,
+                  primero:  premio1 ? parseInt(premio1)  : null,
+                  segundo:  premio2 ? parseInt(premio2)  : null,
+                  tercero:  premioTerceroOpen && premio3 ? parseInt(premio3) : null,
+                })
+                setGuardandoPremios(false)
+                if (res.error) { alert(res.error); return }
+                await cargarTorneo()
+              }}
+              disabled={guardandoPremios}
+              style={{ width: '100%', padding: '10px', background: guardandoPremios ? '#94a3b8' : '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: guardandoPremios ? 'not-allowed' : 'pointer' }}
+            >
+              {guardandoPremios ? 'Guardando...' : '✓ Guardar premios'}
+            </button>
+
+            {(torneo?.premio_primero || torneo?.premio_segundo || torneo?.premio_tercero) && (
+              <div style={{ marginTop: 12, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, fontSize: 12, color: '#16a34a' }}>
+                ✓ Premios guardados: {[
+                  torneo.premio_primero && `1° $${torneo.premio_primero.toLocaleString('es-CL')}`,
+                  torneo.premio_segundo && `2° $${torneo.premio_segundo.toLocaleString('es-CL')}`,
+                  torneo.premio_tercero && `3° $${torneo.premio_tercero.toLocaleString('es-CL')}`,
+                ].filter(Boolean).join(' · ')}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* PAGOS PENDIENTES */}
       {esAdmin && cuota > 0 && (faseActual === 'grupos' || fasesOrden.includes(faseActual) || faseActual === 'finalizado') && (
         <div style={{ ...card, padding:16, marginBottom:16, marginTop:16 }}>
           <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💳 Pagos pendientes</div>
-          {jugadores.filter((j: any) => {
+          {jugadoresUnicos.filter((j: any) => {
             const pago = pagos.find(p => p.jugador_id === j.jugador_id)
             return !pago || pago.estado !== 'pagado'
           }).length === 0
             ? <p style={{ fontSize:13, color:'#16a34a' }}>✓ Todos han pagado</p>
-            : jugadores.filter((j: any) => {
+            : jugadoresUnicos.filter((j: any) => {
                 const pago = pagos.find(p => p.jugador_id === j.jugador_id)
                 return !pago || pago.estado !== 'pagado'
               }).map((j: any) => (
@@ -817,8 +951,8 @@ export default function TorneoDetallePage() {
                 <option value="efectivo">💵 Efectivo</option>
                 <option value="transferencia">💳 Transferencia</option>
               </select>
-              <button onClick={inscribirEnMesa} style={{ flex:1, background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-                + Inscribir
+              <button onClick={inscribirEnMesa} disabled={inscribiendo} style={{ flex:1, background: inscribiendo ? '#94a3b8' : '#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor: inscribiendo ? 'not-allowed' : 'pointer' }}>
+                {inscribiendo ? 'Inscribiendo...' : '+ Inscribir'}
               </button>
             </div>
 

@@ -477,6 +477,9 @@ export interface Database {
           inscripcion_abierta: boolean | null
           cuota_inscripcion: number | null
           contabilidad_enviada: boolean | null
+          premio_primero: number | null
+          premio_segundo: number | null
+          premio_tercero: number | null
         }
         Insert: {
           id?: string
@@ -492,6 +495,9 @@ export interface Database {
           inscripcion_abierta?: boolean | null
           cuota_inscripcion?: number | null
           contabilidad_enviada?: boolean | null
+          premio_primero?: number | null
+          premio_segundo?: number | null
+          premio_tercero?: number | null
         }
         Update: {
           id?: string
@@ -507,6 +513,9 @@ export interface Database {
           inscripcion_abierta?: boolean | null
           cuota_inscripcion?: number | null
           contabilidad_enviada?: boolean | null
+          premio_primero?: number | null
+          premio_segundo?: number | null
+          premio_tercero?: number | null
         }
         Relationships: [
           { foreignKeyName: 'torneos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
