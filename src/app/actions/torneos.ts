@@ -583,11 +583,7 @@ export async function guardarPremios(params: {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  if (params.enviarRecaudacion) {
-    await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero, contabilidad_enviada: true }).eq('id', params.torneoId)
-  } else {
-    await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero }).eq('id', params.torneoId)
-  }
+  await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero, contabilidad_enviada: true }).eq('id', params.torneoId)
 
   const fecha = new Date().toISOString().slice(0, 10)
   type Mov = { club_id: string | null; tipo: string; categoria: string; descripcion: string; monto: number; fecha: string; registrado_por_nombre: string }

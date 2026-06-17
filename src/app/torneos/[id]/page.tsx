@@ -811,21 +811,17 @@ export default function TorneoDetallePage() {
               </div>
             )}
 
-            <button
-              onClick={() => setModalPremios(true)}
-              style={{ width: '100%', padding: '10px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-            >
-              Guardar premios →
-            </button>
-
-            {(torneo?.premio_primero || torneo?.premio_segundo || torneo?.premio_tercero) && (
-              <div style={{ marginTop: 12, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, fontSize: 12, color: '#16a34a' }}>
-                ✓ Enviado a Finanzas: {[
-                  torneo.premio_primero && `1° $${torneo.premio_primero.toLocaleString('es-CL')}`,
-                  torneo.premio_segundo && `2° $${torneo.premio_segundo.toLocaleString('es-CL')}`,
-                  torneo.premio_tercero && `3° $${torneo.premio_tercero.toLocaleString('es-CL')}`,
-                ].filter(Boolean).join(' · ')}
+            {torneo?.contabilidad_enviada ? (
+              <div style={{ width: '100%', padding: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#16a34a', textAlign: 'center' }}>
+                ✓ Enviado a Finanzas
               </div>
+            ) : (
+              <button
+                onClick={() => setModalPremios(true)}
+                style={{ width: '100%', padding: '10px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Guardar premios →
+              </button>
             )}
 
             {/* Modal confirmación premios + ingresos */}
