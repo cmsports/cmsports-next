@@ -62,6 +62,7 @@ export default function TorneoDetallePage() {
   const [premio3, setPremio3] = useState('')
   const [premioTerceroOpen, setPremioTerceroOpen] = useState(false)
   const [guardandoPremios, setGuardandoPremios] = useState(false)
+  const [modalPremios, setModalPremios] = useState(false)
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -816,33 +817,69 @@ export default function TorneoDetallePage() {
             )}
 
             <button
-              onClick={async () => {
-                setGuardandoPremios(true)
-                const res = await guardarPremios({
-                  torneoId,
-                  primero:  premio1 ? parseInt(premio1)  : null,
-                  segundo:  premio2 ? parseInt(premio2)  : null,
-                  tercero:  premioTerceroOpen && premio3 ? parseInt(premio3) : null,
-                })
-                setGuardandoPremios(false)
-                if (res.error) { alert(res.error); return }
-                await cargarTorneo()
-              }}
-              disabled={guardandoPremios}
-              style={{ width: '100%', padding: '10px', background: guardandoPremios ? '#94a3b8' : '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: guardandoPremios ? 'not-allowed' : 'pointer' }}
+              onClick={() => setModalPremios(true)}
+              disabled={!premio1 && !premio2}
+              style={{ width: '100%', padding: '10px', background: (!premio1 && !premio2) ? '#94a3b8' : '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (!premio1 && !premio2) ? 'not-allowed' : 'pointer' }}
             >
-              {guardandoPremios ? 'Guardando...' : '✓ Guardar premios'}
+              Guardar premios →
             </button>
 
             {(torneo?.premio_primero || torneo?.premio_segundo || torneo?.premio_tercero) && (
               <div style={{ marginTop: 12, padding: '10px 14px', background: '#f0fdf4', borderRadius: 8, fontSize: 12, color: '#16a34a' }}>
-                ✓ Premios guardados: {[
+                ✓ Enviado a Finanzas: {[
                   torneo.premio_primero && `1° $${torneo.premio_primero.toLocaleString('es-CL')}`,
                   torneo.premio_segundo && `2° $${torneo.premio_segundo.toLocaleString('es-CL')}`,
                   torneo.premio_tercero && `3° $${torneo.premio_tercero.toLocaleString('es-CL')}`,
                 ].filter(Boolean).join(' · ')}
               </div>
             )}
+
+            {/* Modal confirmación premios */}
+            {modalPremios && (() => {
+              const p1 = premio1 ? parseInt(premio1) : null
+              const p2 = premio2 ? parseInt(premio2) : null
+              const p3 = premioTerceroOpen && premio3 ? parseInt(premio3) : null
+              const total = (p1 || 0) + (p2 || 0) + (p3 || 0)
+              const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+              return (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+                  <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 6 }}>Confirmar premios</div>
+                    <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Esto registrará los premios como gastos en Finanzas.</div>
+
+                    <div style={{ background: '#f4f7fa', borderRadius: 10, padding: '14px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {p1 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: text }}>🥇 Primer lugar{campeon1 ? ` — ${campeon1.nombre}` : ''}</span><strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{fmt(p1)}</strong></div>}
+                      {p2 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: text }}>🥈 Segundo lugar{subcampeon ? ` — ${subcampeon.nombre}` : ''}</span><strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{fmt(p2)}</strong></div>}
+                      {p3 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: text }}>🥉 Tercer lugar</span><strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{fmt(p3)}</strong></div>}
+                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700 }}>
+                        <span style={{ color: '#dc2626' }}>Total gasto</span>
+                        <span style={{ color: '#dc2626', fontVariantNumeric: 'tabular-nums' }}>{fmt(total)}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={() => setModalPremios(false)} style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setGuardandoPremios(true)
+                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3 })
+                          setGuardandoPremios(false)
+                          setModalPremios(false)
+                          if (res.error) { alert(res.error); return }
+                          await cargarTorneo()
+                        }}
+                        disabled={guardandoPremios}
+                        style={{ flex: 1, padding: 11, background: guardandoPremios ? '#94a3b8' : '#4f46e5', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: guardandoPremios ? 'not-allowed' : 'pointer' }}
+                      >
+                        {guardandoPremios ? 'Enviando...' : 'Confirmar y enviar'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )
       })()}
