@@ -573,11 +573,12 @@ export async function eliminarTorneo(params: { torneoId: string }) {
 
 export async function guardarPremios(params: {
   torneoId: string
+  torneoNombre: string
   primero: number | null
   segundo: number | null
   tercero: number | null
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
 
   await supabase.from('torneos').update({
@@ -585,6 +586,15 @@ export async function guardarPremios(params: {
     premio_segundo: params.segundo,
     premio_tercero: params.tercero,
   }).eq('id', params.torneoId)
+
+  const fecha = new Date().toISOString().slice(0, 10)
+  const movimientos: { club_id: string | null; tipo: string; categoria: string; descripcion: string; monto: number; fecha: string; registrado_por_nombre: string }[] = []
+
+  if (params.primero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1° — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.segundo) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2° — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.tercero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3° — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+
+  if (movimientos.length) await supabase.from('movimientos').insert(movimientos)
 
   return { success: true }
 }
