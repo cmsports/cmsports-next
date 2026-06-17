@@ -488,6 +488,47 @@ export async function actualizarEstadoPago(params: {
   return { success: true }
 }
 
+export async function intercambiarJugadores(params: {
+  torneoId: string
+  slotA: { partidoId: string; posicion: 'jugador_a' | 'jugador_b' }
+  slotB: { partidoId: string; posicion: 'jugador_a' | 'jugador_b' }
+}): Promise<{ error?: string; success?: boolean }> {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, slotA, slotB } = params
+  if (slotA.partidoId === slotB.partidoId && slotA.posicion === slotB.posicion) return { success: true }
+
+  const ids = Array.from(new Set([slotA.partidoId, slotB.partidoId]))
+  const { data: ps } = await supabase
+    .from('torneo_partidos')
+    .select('id, torneo_id, jugador_a, jugador_b, ganador')
+    .in('id', ids)
+    .eq('torneo_id', torneoId)
+
+  if (!ps || ps.length !== ids.length) return { error: 'Partidos no encontrados' }
+  if (ps.some((p: any) => p.ganador)) return { error: 'No se puede mover jugadores en partidos ya jugados' }
+
+  const pa = ps.find((p: any) => p.id === slotA.partidoId)
+  const pb = ps.find((p: any) => p.id === slotB.partidoId)
+  if (!pa || !pb) return { error: 'Partidos no encontrados' }
+
+  const jugA: string | null = slotA.posicion === 'jugador_a' ? pa.jugador_a : pa.jugador_b
+  const jugB: string | null = slotB.posicion === 'jugador_a' ? pb.jugador_a : pb.jugador_b
+
+  if (!jugA || !jugB) return { error: 'Slot sin jugador, no se puede intercambiar' }
+
+  const updateA = slotA.posicion === 'jugador_a' ? { jugador_a: jugB } : { jugador_b: jugB }
+  const updateB = slotB.posicion === 'jugador_a' ? { jugador_a: jugA } : { jugador_b: jugA }
+
+  await Promise.all([
+    supabase.from('torneo_partidos').update(updateA).eq('id', slotA.partidoId),
+    supabase.from('torneo_partidos').update(updateB).eq('id', slotB.partidoId),
+  ])
+
+  return { success: true }
+}
+
 export async function enviarRecaudacionAFinanzas(params: {
   torneoId: string
   torneoNombre: string

@@ -17,6 +17,7 @@ import {
   limpiarGruposHuerfanos,
   volverAGrupos as volverAGruposAction,
   corregirResultadoPlayoff,
+  intercambiarJugadores,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
@@ -51,6 +52,8 @@ export default function TorneoDetallePage() {
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
   const [partidoPlayoffEditando, setPartidoPlayoffEditando] = useState<string|null>(null)
+  const [dragSlot, setDragSlot] = useState<{partidoId:string; posicion:'jugador_a'|'jugador_b'; jugadorId:string}|null>(null)
+  const [dragOver, setDragOver] = useState<{partidoId:string; posicion:'jugador_a'|'jugador_b'}|null>(null)
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -282,6 +285,17 @@ export default function TorneoDetallePage() {
     const res = await volverAGruposAction({ torneoId })
     if (res.error) { alert(res.error); return }
     setTabActiva('grupos')
+    await cargarTorneo()
+  }
+
+  async function handleSwap(targetPartidoId: string, targetPosicion: 'jugador_a' | 'jugador_b') {
+    if (!dragSlot) return
+    if (dragSlot.partidoId === targetPartidoId && dragSlot.posicion === targetPosicion) { setDragSlot(null); setDragOver(null); return }
+    const src = dragSlot
+    setDragSlot(null)
+    setDragOver(null)
+    const res = await intercambiarJugadores({ torneoId, slotA: { partidoId: src.partidoId, posicion: src.posicion }, slotB: { partidoId: targetPartidoId, posicion: targetPosicion } })
+    if (res.error) { alert(res.error); return }
     await cargarTorneo()
   }
 
@@ -610,8 +624,15 @@ export default function TorneoDetallePage() {
                                 </div>
                               ) : (
                                 <>
-                                  <div onClick={() => esAdmin && !p.ganador && !isBye && marcarGanador(p.id, p.jugador_a)}
-                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye ? 'pointer' : 'default', background: p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent' }}>
+                                  <div
+                                    onClick={() => esAdmin && !p.ganador && !isBye && marcarGanador(p.id, p.jugador_a)}
+                                    draggable={esAdmin && !p.ganador ? true : undefined}
+                                    onDragStart={esAdmin && !p.ganador ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_a', jugadorId: p.jugador_a }) : undefined}
+                                    onDragOver={esAdmin && !p.ganador ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_a' }) } : undefined}
+                                    onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_a') } : undefined}
+                                    onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
+                                    onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.4 : 1 }}>
                                     <span style={{ fontSize: 12, color: p.ganador === p.jugador_a ? '#16a34a' : text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                       <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
                                       {(p as any).ja?.nombre || 'TBD'}
@@ -621,8 +642,15 @@ export default function TorneoDetallePage() {
                                   {isBye ? (
                                     <div style={{ height: rowH, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 11, color: hint, fontStyle: 'italic' }}>BYE</div>
                                   ) : (
-                                    <div onClick={() => esAdmin && !p.ganador && marcarGanador(p.id, p.jugador_b)}
-                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador ? 'pointer' : 'default', background: p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent' }}>
+                                    <div
+                                      onClick={() => esAdmin && !p.ganador && marcarGanador(p.id, p.jugador_b)}
+                                      draggable={esAdmin && !p.ganador ? true : undefined}
+                                      onDragStart={esAdmin && !p.ganador ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_b', jugadorId: p.jugador_b }) : undefined}
+                                      onDragOver={esAdmin && !p.ganador ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_b' }) } : undefined}
+                                      onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_b') } : undefined}
+                                      onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
+                                      onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
+                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.4 : 1 }}>
                                       <span style={{ fontSize: 12, color: p.ganador === p.jugador_b ? '#16a34a' : text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                         <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
                                         {(p as any).jb?.nombre || 'TBD'}
