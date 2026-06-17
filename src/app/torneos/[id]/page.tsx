@@ -876,6 +876,27 @@ export default function TorneoDetallePage() {
                       )}
                     </div>
 
+                    {(() => {
+                      const pendientes = cuota > 0
+                        ? jugadoresUnicos.filter((j: any) => {
+                            const pago = pagos.find((p: any) => p.jugador_id === j.jugador_id)
+                            return !pago || pago.estado !== 'pagado'
+                          })
+                        : []
+                      if (!pendientes.length) return null
+                      return (
+                        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#d97706', marginBottom: 8 }}>⚠️ Pagos pendientes</div>
+                          {pendientes.map((j: any) => (
+                            <div key={j.jugador_id} style={{ fontSize: 12, color: '#92400e', padding: '3px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#d97706', flexShrink: 0, display: 'inline-block' }} />
+                              {j.jugadores?.nombre || '—'} — pendiente de pago
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button onClick={() => setModalPremios(false)} style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>
                         Cancelar
