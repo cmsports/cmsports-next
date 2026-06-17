@@ -11,7 +11,6 @@ import {
   generarPlayoffs as generarPlayoffsAction,
   avanzarSiguienteFase as avanzarSiguienteFaseAction,
   finalizarTorneo as finalizarTorneoAction,
-  enviarRecaudacionAFinanzas,
   inscribirJugadorTardio,
   actualizarEstadoPago,
   limpiarGruposHuerfanos,
@@ -394,14 +393,10 @@ export default function TorneoDetallePage() {
         <div style={{ ...card, padding:16, marginBottom:16 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
             <div style={{ fontSize:13, fontWeight:600, color: text }}>💰 Control financiero</div>
-            {!torneo?.contabilidad_enviada ? (
-              <button onClick={async () => {
-                if (!confirm(`¿Enviar ${fmt(recaudado)} a Finanzas?`)) return
-                const res = await enviarRecaudacionAFinanzas({ torneoId, torneoNombre: torneo.nombre, monto: recaudado })
-                if (res.error) { alert(res.error); return }
-                await cargarTorneo()
-              }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>📤 Enviar a Finanzas</button>
-            ) : <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Enviado</span>}
+            {torneo?.contabilidad_enviada
+              ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Enviado a Finanzas</span>
+              : <span style={{ background:'#fffbeb', color:'#d97706', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:500 }}>📤 Se enviará con los premios</span>
+            }
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
             {[
@@ -818,8 +813,7 @@ export default function TorneoDetallePage() {
 
             <button
               onClick={() => setModalPremios(true)}
-              disabled={!premio1 && !premio2}
-              style={{ width: '100%', padding: '10px', background: (!premio1 && !premio2) ? '#94a3b8' : '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (!premio1 && !premio2) ? 'not-allowed' : 'pointer' }}
+              style={{ width: '100%', padding: '10px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
             >
               Guardar premios →
             </button>
@@ -834,27 +828,52 @@ export default function TorneoDetallePage() {
               </div>
             )}
 
-            {/* Modal confirmación premios */}
+            {/* Modal confirmación premios + ingresos */}
             {modalPremios && (() => {
               const p1 = premio1 ? parseInt(premio1) : null
               const p2 = premio2 ? parseInt(premio2) : null
               const p3 = premioTerceroOpen && premio3 ? parseInt(premio3) : null
-              const total = (p1 || 0) + (p2 || 0) + (p3 || 0)
-              const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+              const totalPremios = (p1 || 0) + (p2 || 0) + (p3 || 0)
+              const enviarRec = !torneo?.contabilidad_enviada && recaudado > 0
+              const neto = recaudado - totalPremios
+              const fmtM = (n: number) => '$' + n.toLocaleString('es-CL')
               return (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-                  <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 6 }}>Confirmar premios</div>
-                    <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Esto registrará los premios como gastos en Finanzas.</div>
+                  <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 4 }}>Confirmar y enviar a Finanzas</div>
+                    <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Esto registrará los movimientos en Finanzas.</div>
 
-                    <div style={{ background: '#f4f7fa', borderRadius: 10, padding: '14px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {p1 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: text }}>🥇 Primer lugar{campeon1 ? ` — ${campeon1.nombre}` : ''}</span><strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{fmt(p1)}</strong></div>}
-                      {p2 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: text }}>🥈 Segundo lugar{subcampeon ? ` — ${subcampeon.nombre}` : ''}</span><strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{fmt(p2)}</strong></div>}
-                      {p3 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span style={{ color: text }}>🥉 Tercer lugar</span><strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{fmt(p3)}</strong></div>}
-                      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700 }}>
-                        <span style={{ color: '#dc2626' }}>Total gasto</span>
-                        <span style={{ color: '#dc2626', fontVariantNumeric: 'tabular-nums' }}>{fmt(total)}</span>
-                      </div>
+                    <div style={{ background: '#f4f7fa', borderRadius: 10, padding: '14px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      {enviarRec && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                          <span style={{ color: '#16a34a' }}>📥 Ingresos (cuotas)</span>
+                          <strong style={{ color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>{fmtM(recaudado)}</strong>
+                        </div>
+                      )}
+                      {(p1 !== null) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                          <span style={{ color: text }}>🥇 Premio 1°{campeon1 ? ` — ${campeon1.nombre}` : ''}</span>
+                          <strong style={{ color: p1 > 0 ? '#dc2626' : muted, fontVariantNumeric: 'tabular-nums' }}>{p1 > 0 ? `− ${fmtM(p1)}` : '$0'}</strong>
+                        </div>
+                      )}
+                      {(p2 !== null) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                          <span style={{ color: text }}>🥈 Premio 2°{subcampeon ? ` — ${subcampeon.nombre}` : ''}</span>
+                          <strong style={{ color: p2 > 0 ? '#dc2626' : muted, fontVariantNumeric: 'tabular-nums' }}>{p2 > 0 ? `− ${fmtM(p2)}` : '$0'}</strong>
+                        </div>
+                      )}
+                      {p3 !== null && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                          <span style={{ color: text }}>🥉 Premio 3°</span>
+                          <strong style={{ color: p3 > 0 ? '#dc2626' : muted, fontVariantNumeric: 'tabular-nums' }}>{p3 > 0 ? `− ${fmtM(p3)}` : '$0'}</strong>
+                        </div>
+                      )}
+                      {enviarRec && (
+                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 9, display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700 }}>
+                          <span style={{ color: neto >= 0 ? '#16a34a' : '#dc2626' }}>Queda para el club</span>
+                          <span style={{ color: neto >= 0 ? '#16a34a' : '#dc2626', fontVariantNumeric: 'tabular-nums' }}>{fmtM(neto)}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', gap: 10 }}>
@@ -864,7 +883,7 @@ export default function TorneoDetallePage() {
                       <button
                         onClick={async () => {
                           setGuardandoPremios(true)
-                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3 })
+                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, montoRecaudado: recaudado, enviarRecaudacion: enviarRec })
                           setGuardandoPremios(false)
                           setModalPremios(false)
                           if (res.error) { alert(res.error); return }
