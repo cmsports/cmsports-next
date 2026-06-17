@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
+import { eliminarTorneo } from '@/app/actions/torneos'
 
 const supabase = createClient()
 
@@ -195,12 +196,29 @@ export default function TorneosPage() {
                     <span style={{ fontSize:13, color: muted }}>Cuota: <strong style={{ color:'#16a34a' }}>${t.cuota_inscripcion?.toLocaleString('es-CL')}</strong></span>
                   )}
                 </div>
-                {t.campeon && (
-                  <div style={{ display:'flex', alignItems:'center', gap:6, background:'#fffbeb', border:'1px solid #fde68a', borderRadius:20, padding:'4px 12px' }}>
-                    <span style={{ fontSize:14 }}>🏆</span>
-                    <span style={{ fontSize:12, fontWeight:700, color:'#d97706' }}>{t.campeon}</span>
-                  </div>
-                )}
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  {t.campeon && (
+                    <div style={{ display:'flex', alignItems:'center', gap:6, background:'#fffbeb', border:'1px solid #fde68a', borderRadius:20, padding:'4px 12px' }}>
+                      <span style={{ fontSize:14 }}>🏆</span>
+                      <span style={{ fontSize:12, fontWeight:700, color:'#d97706' }}>{t.campeon}</span>
+                    </div>
+                  )}
+                  {esAdmin && (
+                    <button
+                      onClick={async e => {
+                        e.stopPropagation()
+                        if (!confirm(`¿Eliminar "${t.nombre}" y todos sus datos? Esta acción no se puede deshacer.`)) return
+                        const res = await eliminarTorneo({ torneoId: t.id })
+                        if (res.error) { alert(res.error); return }
+                        await cargarTorneos()
+                      }}
+                      style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer' }}
+                      title="Eliminar torneo"
+                    >
+                      🗑
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )

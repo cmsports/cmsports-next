@@ -550,3 +550,41 @@ export async function enviarRecaudacionAFinanzas(params: {
 
   return { success: true }
 }
+
+export async function eliminarTorneo(params: { torneoId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId } = params
+
+  const { data: grupos } = await supabase
+    .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  const grupoIds = (grupos || []).map(g => g.id)
+
+  await supabase.from('historial_elo').delete().eq('torneo_id', torneoId)
+  if (grupoIds.length) await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
+  await supabase.from('torneo_pagos').delete().eq('torneo_id', torneoId)
+  await supabase.from('torneo_grupos').delete().eq('torneo_id', torneoId)
+  await supabase.from('torneos').delete().eq('id', torneoId)
+
+  return { success: true }
+}
+
+export async function guardarPremios(params: {
+  torneoId: string
+  primero: number | null
+  segundo: number | null
+  tercero: number | null
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  await supabase.from('torneos').update({
+    premio_primero: params.primero,
+    premio_segundo: params.segundo,
+    premio_tercero: params.tercero,
+  }).eq('id', params.torneoId)
+
+  return { success: true }
+}
