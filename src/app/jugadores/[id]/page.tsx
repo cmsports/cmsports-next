@@ -66,6 +66,10 @@ export default function JugadorDetallePage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
+      if (p?.rol === 'jugador' && p?.jugador_id !== jugadorId) {
+        router.replace('/jugadores')
+        return
+      }
       setPerfil(p)
 
       const mesActual = new Date().getMonth() + 1
@@ -73,7 +77,7 @@ export default function JugadorDetallePage() {
 
       const [{ data: j }, { data: h }, { data: e }, { data: ext }, { data: evs }, { data: asist }, { data: mens }] = await Promise.all([
         supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
-        supabase.from('historial_elo').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
+        supabase.from('historial_elo').select('*,torneos(nombre)').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
         supabase.from('torneo_partidos').select('*,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
         supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
         supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
@@ -103,15 +107,27 @@ export default function JugadorDetallePage() {
   const puedeVerTodo = esAdmin || esProfesor || esPropio
   const puedeEditar = esAdmin || esProfesor
 
-  const victorias = partidos.filter(p => p.ganador === jugadorId).length
-  const derrotas = partidos.filter(p => p.ganador !== jugadorId).length
+  const torneosInternos = new Set(historialElo.filter(h => h.torneo_id).map(h => h.torneo_id)).size
+  const torneosTotal = torneosInternos + externos.length
+  const mensEstado = mensualidadActual?.estado
+  const mensLabel = mensEstado === 'pagado' ? '✅ Pagado' : mensEstado === 'atrasado' ? '❌ Atrasado' : mensEstado === 'pendiente' ? '⚠️ Pendiente' : '—'
+  const mensColor = mensEstado === 'pagado' ? '#86efac' : mensEstado === 'atrasado' ? '#fca5a5' : mensEstado === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
 
   const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
   const evalAnterior = evaluaciones.find(ev => ev.periodo_trimestre !== trimestre)
 
-  const eloLabels = [...historialElo.map(h => h.fecha?.slice(0,10) || ''), 'Hoy']
+  const eloLabels = [
+    ...historialElo.map(h => {
+      if (!h.fecha) return ''
+      const d = new Date(h.fecha)
+      return d.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })
+    }),
+    'Hoy'
+  ]
   const eloData = [...historialElo.map(h => h.elo_despues), jugador?.elo || 1200]
-  const eloTooltips = [...historialElo.map(h => h.posicion || '—'), 'Ranking actual']
+  const eloNombres = [...historialElo.map(h => (h as any).torneos?.nombre || 'Torneo externo'), 'ELO actual']
+  const eloTooltips = [...historialElo.map(h => h.posicion || ''), '']
+  const eloColores = [...historialElo.map(h => h.torneo_id ? '#3730a3' : '#0F6E56'), '#94a3b8']
 
   const asistPorMes: Record<string, number> = {}
   asistencias.forEach((a: any) => {
@@ -248,16 +264,18 @@ export default function JugadorDetallePage() {
           )}
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
-          {[
-            { label:'Ranking', value:jugador.elo, color:'#fff' },
-            { label:'Victorias', value:victorias, color:'#fff' },
-            { label:'Derrotas', value:derrotas, color:'#fff' },
-          ].map(s => (
-            <div key={s.label} style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
-              <div style={{ fontSize:22, fontWeight:800, color:'#fff', fontFamily:'monospace' }}>{s.value}</div>
-              <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>{s.label}</div>
-            </div>
-          ))}
+          <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
+            <div style={{ fontSize:22, fontWeight:800, color:'#fff', fontFamily:'monospace' }}>{jugador.elo}</div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Ranking</div>
+          </div>
+          <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
+            <div style={{ fontSize:22, fontWeight:800, color:'#fff', fontFamily:'monospace' }}>{torneosTotal}</div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Torneos</div>
+          </div>
+          <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
+            <div style={{ fontSize:13, fontWeight:800, color: mensColor, lineHeight:1.8 }}>{mensLabel}</div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Mensualidad</div>
+          </div>
         </div>
 
         {/* Info contacto + Plan */}
@@ -406,7 +424,7 @@ export default function JugadorDetallePage() {
       {tab === 0 && (
         <div>
           <div style={{ ...card, padding:16, marginBottom:16 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
               <div style={{ fontSize:13, fontWeight:600, color: text }}>Curva de ranking</div>
               {puedeEditar && eloLabels.length > 1 && (
                 <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:12, color: muted }}>
@@ -415,27 +433,41 @@ export default function JugadorDetallePage() {
                 </label>
               )}
             </div>
+            {eloLabels.length > 1 && (
+              <div style={{ display:'flex', gap:14, marginBottom:12 }}>
+                <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color: muted }}>
+                  <span style={{ width:9, height:9, borderRadius:'50%', background:'#3730a3', display:'inline-block' }} />
+                  Torneo interno
+                </span>
+                <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color: muted }}>
+                  <span style={{ width:9, height:9, borderRadius:'50%', background:'#0F6E56', display:'inline-block' }} />
+                  Torneo externo
+                </span>
+              </div>
+            )}
             {eloLabels.length > 1 ? (
               <Line
                 data={{
                   labels: eloLabels,
                   datasets: (() => {
                     const ds: any[] = [{
-                      label: 'Ranking',
+                      label: 'ELO',
                       data: eloData,
                       borderColor: '#4f46e5',
-                      backgroundColor: '#4f46e522',
-                      tension: 0.4,
-                      pointBackgroundColor: '#3730a3',
-                      pointRadius: 5,
-                      pointHoverRadius: 8,
+                      backgroundColor: '#4f46e518',
+                      tension: 0.3,
+                      fill: true,
+                      pointBackgroundColor: eloColores,
+                      pointBorderColor: eloColores,
+                      pointRadius: 6,
+                      pointHoverRadius: 9,
                       yAxisID: 'y'
                     }]
                     if (mostrarAsistencia) ds.push({
                       label: 'Asistencias',
                       data: asistData,
                       type: 'bar',
-                      backgroundColor: '#16a34a44',
+                      backgroundColor: '#16a34a33',
                       borderColor: '#16a34a',
                       borderWidth: 1,
                       yAxisID: 'y2'
@@ -455,13 +487,19 @@ export default function JugadorDetallePage() {
                       borderColor: '#e2e8f0',
                       borderWidth: 1,
                       callbacks: {
-                        title: (items) => eloTooltips[items[0].dataIndex] || '',
-                        label: (item) => item.dataset.label === 'Ranking' ? `Ranking: ${item.raw}` : `Asistencias: ${item.raw}`
+                        title: (items) => eloNombres[items[0].dataIndex] || '',
+                        label: (item) => {
+                          if (item.dataset.label !== 'ELO') return `Asistencias: ${item.raw}`
+                          const pos = eloTooltips[item.dataIndex]
+                          const lines = [`ELO: ${item.raw}`]
+                          if (pos) lines.push(`Posición: ${POSICION_LABEL[pos] || pos}`)
+                          return lines
+                        }
                       }
                     }
                   },
                   scales: {
-                    x: { ticks: { color: muted, maxTicksLimit: 6 }, grid: { color: '#f1f5f9' } },
+                    x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: '#f1f5f9' } },
                     y: { ticks: { color: muted }, grid: { color: '#f1f5f9' } },
                     ...(mostrarAsistencia ? { y2: { position: 'right' as const, ticks: { color: '#16a34a' }, grid: { display: false } } } : {})
                   }
