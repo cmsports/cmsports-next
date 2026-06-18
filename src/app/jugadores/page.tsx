@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
 
 const supabase = createClient()
@@ -193,8 +194,17 @@ export default function JugadoresPage() {
               .sort((a,b) => b.elo - a.elo)
               .map((j, i) => {
                 const posicion = jugadores.sort((a,b) => b.elo-a.elo).findIndex(x => x.id === j.id) + 1
+                const esAdmin = perfil?.rol === 'admin'
+                const esProfesor = perfil?.rol === 'profesor'
+                const esPropio = perfil?.jugador_id === j.id
+                const puedeVer = esAdmin || esProfesor || esPropio
                 return (
-                  <div key={j.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', borderBottom:'1px solid #f1f5f9' }}>
+                  <div key={j.id}
+                    onClick={() => puedeVer && router.push(`/jugadores/${j.id}`)}
+                    style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', borderBottom:'1px solid #f1f5f9', cursor: puedeVer ? 'pointer' : 'default', transition:'background 0.1s' }}
+                    onMouseEnter={e => { if (puedeVer) (e.currentTarget as HTMLDivElement).style.background = '#f8fafc' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
+                  >
                     <div style={{ width:32, textAlign:'center', fontSize:14, fontWeight:700, color: posicion===1?'#d97706':posicion===2?'#64748b':posicion===3?'#f43f5e': hint }}>
                       {posicion<=3 ? ['🥇','🥈','🥉'][posicion-1] : posicion}
                     </div>
@@ -206,6 +216,7 @@ export default function JugadoresPage() {
                       <div style={{ fontSize:11, color: muted }}>{j.categoria}</div>
                     </div>
                     <div style={{ fontSize:18, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</div>
+                    {puedeVer && <div style={{ fontSize:14, color: hint }}>›</div>}
                   </div>
                 )
               })
@@ -290,7 +301,7 @@ export default function JugadoresPage() {
             </div>
             {[
               { label:'Nombre completo *', key:'nombre', type:'text', placeholder:'Ej: Carlos Muñoz' },
-              { label:'RUT', key:'rut', type:'text', placeholder:'12345678K' },
+              { label:'RUT', key:'rut', type:'text', placeholder:'12345678-9' },
               { label:'Email', key:'email', type:'email', placeholder:'tu@email.com' },
               { label:'Teléfono', key:'telefono', type:'tel', placeholder:'+56 9 1234 5678' },
             ].map(f => (
@@ -300,7 +311,7 @@ export default function JugadoresPage() {
                   style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                   type={f.type} placeholder={f.placeholder}
                   value={(form as any)[f.key]}
-                  onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                  onChange={e => setForm(prev => ({ ...prev, [f.key]: f.key === 'rut' ? formatRut(e.target.value) : e.target.value }))}
                 />
               </div>
             ))}

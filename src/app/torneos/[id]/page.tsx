@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
+import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
 import {
   marcarGanadorPartido,
@@ -1016,7 +1017,7 @@ export default function TorneoDetallePage() {
             </div>
             <div style={{ display:'flex', gap:8, marginBottom:10 }}>
               <input style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                placeholder="RUT sin puntos ni guion" value={rutMesa} onChange={e => setRutMesa(e.target.value.replace(/[^0-9kK]/g,''))} maxLength={9} />
+                placeholder="12345678-9" value={rutMesa} onChange={e => setRutMesa(formatRut(e.target.value))} maxLength={10} />
             </div>
             <div style={{ display:'flex', gap:8, marginBottom:16 }}>
               <select style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}

@@ -42,7 +42,6 @@ const navJugador = [
   { label: 'Asistencia',          icon: ClipboardCheck,href: '/asistencia' },
   { section: 'Club' },
   { label: 'Mis clases',          icon: BookOpen,      href: '/mis-clases' },
-  { label: 'Torneos',             icon: Trophy,        href: '/torneos' },
   { label: 'Torneos externos',    icon: Globe,         href: '/torneos-externos' },
   { label: 'Calendario',          icon: Calendar,      href: '/calendario' },
   { label: 'Ranking',             icon: BarChart2,     href: '/ranking' },
@@ -69,7 +68,7 @@ const mobileNavJugador = [
   { label: 'Asistencia', icon: ClipboardCheck, href: '/asistencia' },
   { label: 'Mis clases', icon: BookOpen,      href: '/mis-clases' },
   { label: 'Mi cuenta',  icon: CreditCard,    href: '/estado-cuenta' },
-  { label: 'Torneos',    icon: Trophy,        href: '/torneos' },
+  { label: 'Ranking',    icon: BarChart2,     href: '/ranking' },
 ]
 
 type NavItem = { section: string } | { label: string; icon: any; href: string }

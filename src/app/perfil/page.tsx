@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -19,6 +19,8 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
+
+type Aviso = { id: string; tipo: 'jugar' | 'ganaste' | 'perdiste' | 'campeon'; texto: string }
 
 const POSICION_LABEL: Record<string, string> = {
   fase_grupos: 'Fase de grupos', octavos: 'Octavos de final', cuartos: 'Cuartos de final',
@@ -39,6 +41,17 @@ export default function PerfilPage() {
   const [registrando, setRegistrando] = useState(false)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const [aceptandoCompromiso, setAceptandoCompromiso] = useState(false)
+  const [torneoActivo, setTorneoActivo] = useState<any>(null)
+  const [miGrupo, setMiGrupo] = useState<any>(null)
+  const [gruposT, setGruposT] = useState<any[]>([])
+  const [misPartidosPendientes, setMisPartidosPendientes] = useState<any[]>([])
+  const [avisos, setAvisos] = useState<Aviso[]>([])
+  const [yaFelicite, setYaFelicite] = useState(false)
+  const [felicitacionesCount, setFelicitacionesCount] = useState(0)
+  const [esCampeon, setEsCampeon] = useState(false)
+  const prevPartidosRef = useRef<any[]>([])
+  const prevFaseRef = useRef<string | null>(null)
+  const esCampeonRef = useRef(false)
   const router = useRouter()
 
   const trimestre = `Q${Math.ceil((new Date().getMonth() + 1) / 3)}-${new Date().getFullYear()}`
@@ -56,6 +69,7 @@ export default function PerfilPage() {
         const mesActual = new Date().getMonth() + 1
         const anioActual = new Date().getFullYear()
 
+        // Ronda 1 — todo en paralelo, incluyendo el check de torneo activo
         const [
           { data: j },
           { data: a },
@@ -64,6 +78,7 @@ export default function PerfilPage() {
           { data: mens },
           { data: evs },
           { data: asistHoy },
+          { data: td },
         ] = await Promise.all([
           supabase.from('jugadores').select('*').eq('id', p.jugador_id).single(),
           supabase.from('asistencia').select('*').eq('jugador_id', p.jugador_id).order('fecha', { ascending: false }).limit(10),
@@ -72,6 +87,9 @@ export default function PerfilPage() {
           supabase.from('mensualidades').select('*').eq('jugador_id', p.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
           supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', p.jugador_id).order('creado_en', { ascending: false }).limit(2),
           supabase.from('asistencia').select('id').eq('jugador_id', p.jugador_id).eq('fecha', hoy),
+          p.club_id
+            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', p.club_id).eq('estado', 'en_curso').neq('fase', 'inscripcion').limit(1).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
         ])
 
         setJugador(j)
@@ -81,6 +99,47 @@ export default function PerfilPage() {
         setMensualidadActual(mens)
         setEvaluaciones(evs || [])
         setYaRegistroHoy((asistHoy || []).length > 0)
+
+        // Ronda 2 — solo si hay torneo activo: grupos + partidos en paralelo
+        if (td && j) {
+          setTorneoActivo(td)
+          const [{ data: gd }, { data: partidos }] = await Promise.all([
+            supabase.from('torneo_grupos').select('id, nombre').eq('torneo_id', td.id).order('nombre'),
+            supabase.from('torneo_partidos')
+              .select('id, jugador_a, jugador_b, ganador, ja:jugador_a(id,nombre), jb:jugador_b(id,nombre)')
+              .eq('torneo_id', td.id)
+              .is('ganador', null)
+              .or(`jugador_a.eq.${j.id},jugador_b.eq.${j.id}`)
+          ])
+          const gruposReales = (gd || []).filter((g: any) => g.nombre !== 'MESA')
+          const grupoIds = gruposReales.map((g: any) => g.id)
+
+          // Ronda 3 — jugadores de cada grupo (necesita los IDs de ronda 2)
+          if (grupoIds.length) {
+            const { data: gjData } = await supabase
+              .from('grupo_jugadores').select('grupo_id, jugador_id, jugadores(id, nombre, elo)').in('grupo_id', grupoIds)
+            const gruposConJ = gruposReales.map((g: any) => ({
+              ...g, miembros: (gjData || []).filter((x: any) => x.grupo_id === g.id)
+            }))
+            setGruposT(gruposConJ)
+            const miEntry = (gjData || []).find((x: any) => x.jugador_id === j.id)
+            setMiGrupo(miEntry ? (gruposConJ.find((g: any) => g.id === miEntry.grupo_id) ?? null) : null)
+            setMisPartidosPendientes(partidos || [])
+            prevPartidosRef.current = partidos || []
+            if (td) prevFaseRef.current = td.fase
+          }
+
+          if (td.fase === 'finalizado') {
+            const [{ data: misFeli }, { count }, { data: campeonRec }] = await Promise.all([
+              supabase.from('torneo_felicitaciones').select('id').eq('torneo_id', td.id).eq('jugador_id', j.id).maybeSingle(),
+              supabase.from('torneo_felicitaciones').select('id', { count: 'exact', head: true }).eq('torneo_id', td.id),
+              supabase.from('historial_elo').select('id').eq('torneo_id', td.id).eq('jugador_id', j.id).eq('posicion', 'campeon').maybeSingle(),
+            ])
+            setYaFelicite(!!misFeli)
+            setFelicitacionesCount(count || 0)
+            setEsCampeon(!!campeonRec)
+          }
+        }
       }
       setLoading(false)
     }
@@ -104,6 +163,108 @@ export default function PerfilPage() {
     setTimeout(() => setMensaje(null), 4000)
   }
 
+  useEffect(() => { esCampeonRef.current = esCampeon }, [esCampeon])
+
+  // Realtime — suscripción al torneo activo
+  useEffect(() => {
+    if (!torneoActivo?.id || !jugador?.id) return
+    const tId = torneoActivo.id
+    const jId = jugador.id
+
+    async function recargarTorneo() {
+      const [{ data: td }, { data: gd }, { data: partidos }] = await Promise.all([
+        supabase.from('torneos').select('id, nombre, fase, estado').eq('id', tId).single(),
+        supabase.from('torneo_grupos').select('id, nombre').eq('torneo_id', tId).order('nombre'),
+        supabase.from('torneo_partidos')
+          .select('id, jugador_a, jugador_b, ganador, ja:jugador_a(id,nombre), jb:jugador_b(id,nombre)')
+          .eq('torneo_id', tId)
+          .is('ganador', null)
+          .or(`jugador_a.eq.${jId},jugador_b.eq.${jId}`)
+      ])
+
+      // Detectar avisos comparando con estado anterior
+      const prevPartidos = prevPartidosRef.current
+      const prevFase = prevFaseRef.current
+      const nuevosPartidos_arr = partidos || []
+      const prevIds = new Set(prevPartidos.map((p: any) => p.id))
+      const newIds = new Set(nuevosPartidos_arr.map((p: any) => p.id))
+      const nuevosAvisos: Aviso[] = []
+
+      // Partidos nuevos pendientes → "jugar"
+      const partidosNuevos = nuevosPartidos_arr.filter((p: any) => !prevIds.has(p.id))
+      for (const p of partidosNuevos) {
+        const rival = (p.jugador_a === jId ? p.jb : p.ja) as any
+        nuevosAvisos.push({ id: `jugar-${p.id}`, tipo: 'jugar', texto: `⚡ ¡A jugar! vs ${rival?.nombre || '—'}` })
+      }
+
+      // Partidos que desaparecieron del pendiente → query resultado → "ganaste"/"perdiste"
+      const completados = prevPartidos.filter((p: any) => !newIds.has(p.id))
+      if (completados.length > 0) {
+        const { data: results } = await supabase
+          .from('torneo_partidos').select('id, ganador').in('id', completados.map((p: any) => p.id))
+        for (const r of (results || [])) {
+          if (r.ganador === jId) {
+            nuevosAvisos.push({ id: `ganaste-${r.id}`, tipo: 'ganaste', texto: '🎉 ¡Enhorabuena! ¡Ganaste el partido!' })
+          } else if (r.ganador) {
+            nuevosAvisos.push({ id: `perdiste-${r.id}`, tipo: 'perdiste', texto: '💪 Para la próxima será. ¡Buen partido!' })
+          }
+        }
+      }
+
+      // Fase cambió a 'finalizado' → "campeon"
+      if (td && td.fase === 'finalizado' && prevFase !== 'finalizado') {
+        nuevosAvisos.push({ id: `campeon-${td.id}`, tipo: 'campeon', texto: '🏆 ¡El torneo ha finalizado! Revisa los resultados.' })
+      }
+
+      // Actualizar refs antes de actualizar estado
+      prevPartidosRef.current = nuevosPartidos_arr
+      if (td) prevFaseRef.current = td.fase
+
+      // Actualizar estado
+      if (td) setTorneoActivo(td)
+      if (td?.fase === 'grupos') {
+        const gruposReales = (gd || []).filter((g: any) => g.nombre !== 'MESA')
+        const grupoIds = gruposReales.map((g: any) => g.id)
+        if (grupoIds.length) {
+          const { data: gjData } = await supabase
+            .from('grupo_jugadores').select('grupo_id, jugador_id, jugadores(id, nombre, elo)').in('grupo_id', grupoIds)
+          const gruposConJ = gruposReales.map((g: any) => ({
+            ...g, miembros: (gjData || []).filter((x: any) => x.grupo_id === g.id)
+          }))
+          setGruposT(gruposConJ)
+          const miEntry = (gjData || []).find((x: any) => x.jugador_id === jId)
+          setMiGrupo(miEntry ? (gruposConJ.find((g: any) => g.id === miEntry.grupo_id) ?? null) : null)
+        }
+      } else {
+        setGruposT([])
+        setMiGrupo(null)
+      }
+      setMisPartidosPendientes(nuevosPartidos_arr)
+
+      // Lanzar avisos con auto-remove a los 8 segundos
+      if (nuevosAvisos.length > 0) {
+        setAvisos(prev => [...prev, ...nuevosAvisos])
+        const ids = new Set(nuevosAvisos.map(a => a.id))
+        setTimeout(() => setAvisos(prev => prev.filter(a => !ids.has(a.id))), 8000)
+      }
+    }
+
+    const canal = supabase
+      .channel(`torneo-${tId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'torneo_partidos', filter: `torneo_id=eq.${tId}` }, recargarTorneo)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'torneos', filter: `id=eq.${tId}` }, recargarTorneo)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'torneo_felicitaciones', filter: `torneo_id=eq.${tId}` }, () => {
+        setFelicitacionesCount(c => c + 1)
+        if (esCampeonRef.current) {
+          const id = `felicita-${Date.now()}`
+          setAvisos(prev => [...prev, { id, tipo: 'ganaste', texto: '🎊 ¡Alguien te acaba de felicitar!' }])
+          setTimeout(() => setAvisos(prev => prev.filter(a => a.id !== id)), 8000)
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(canal) }
+  }, [torneoActivo?.id, jugador?.id])
+
   async function aceptarCompromiso() {
     const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
     if (!evalActual) return
@@ -112,6 +273,15 @@ export default function PerfilPage() {
     const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugador.id).order('creado_en', { ascending: false }).limit(2)
     setEvaluaciones(evs || [])
     setAceptandoCompromiso(false)
+  }
+
+  async function enviarFelicitaciones() {
+    if (!torneoActivo?.id || !jugador?.id || yaFelicite) return
+    const { error } = await supabase.from('torneo_felicitaciones').insert({ torneo_id: torneoActivo.id, jugador_id: jugador.id })
+    if (!error) {
+      setYaFelicite(true)
+      setFelicitacionesCount(c => c + 1)
+    }
   }
 
   if (loading) return (
@@ -200,6 +370,24 @@ export default function PerfilPage() {
           </div>
         )}
       </div>
+
+      {/* Avisos animados del torneo */}
+      <AvisoBanner avisos={avisos} />
+
+      {/* Torneo en vivo */}
+      {torneoActivo && (
+        <TorneoEnVivoBanner
+          torneo={torneoActivo}
+          miGrupo={miGrupo}
+          grupos={gruposT}
+          misPartidos={misPartidosPendientes}
+          jugadorId={jugador?.id}
+          yaFelicite={yaFelicite}
+          felicitacionesCount={felicitacionesCount}
+          onFelicitar={enviarFelicitaciones}
+          esCampeon={esCampeon}
+        />
+      )}
 
       {/* Marcar asistencia */}
       {mensaje && (
@@ -323,5 +511,233 @@ export default function PerfilPage() {
         ))}
       </div>
     </AppLayout>
+  )
+}
+
+function AvisoBanner({ avisos }: { avisos: Aviso[] }) {
+  if (avisos.length === 0) return null
+
+  const estilos: Record<string, { bg: string; border: string; color: string }> = {
+    jugar:   { bg: '#fef3c7', border: '#fde68a',  color: '#92400e' },
+    ganaste: { bg: '#f0fdf4', border: '#86efac',  color: '#166534' },
+    perdiste:{ bg: '#f8fafc', border: '#cbd5e1',  color: '#475569' },
+    campeon: { bg: '#fffbeb', border: '#fbbf24',  color: '#78350f' },
+  }
+
+  return (
+    <>
+      <style>{`
+        @keyframes toastSlide {
+          0%   { opacity: 0; transform: translateY(-10px) scale(0.96); }
+          8%   { opacity: 1; transform: translateY(0)    scale(1);    }
+          85%  { opacity: 1; transform: translateY(0)    scale(1);    }
+          100% { opacity: 0; transform: translateY(-6px) scale(0.98); }
+        }
+      `}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {avisos.map(aviso => {
+          const c = estilos[aviso.tipo] || estilos.jugar
+          const esCampeon = aviso.tipo === 'campeon'
+          return (
+            <div key={aviso.id} style={{
+              background: esCampeon ? 'linear-gradient(135deg,#fef9c3,#fef3c7)' : c.bg,
+              border: `1.5px solid ${c.border}`,
+              borderRadius: 12,
+              padding: '14px 18px',
+              fontSize: esCampeon ? 15 : 14,
+              fontWeight: 700,
+              color: c.color,
+              boxShadow: esCampeon
+                ? '0 4px 20px rgba(251,191,36,0.25)'
+                : '0 2px 12px rgba(15,23,42,0.08)',
+              animation: `toastSlide ${esCampeon ? '12s' : '8s'} forwards`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              letterSpacing: esCampeon ? '0.2px' : undefined,
+            }}>
+              {aviso.texto}
+            </div>
+          )
+        })}
+      </div>
+    </>
+  )
+}
+
+function TorneoEnVivoBanner({ torneo, miGrupo, grupos, misPartidos, jugadorId, yaFelicite, felicitacionesCount, onFelicitar, esCampeon }: {
+  torneo: any
+  miGrupo: any | null
+  grupos: any[]
+  misPartidos: any[]
+  jugadorId: string
+  yaFelicite: boolean
+  felicitacionesCount: number
+  onFelicitar: () => void
+  esCampeon: boolean
+}) {
+  const [verTodos, setVerTodos] = useState(false)
+
+  const faseLabel: Record<string, string> = {
+    grupos: 'Fase de grupos', llaves: 'Playoffs',
+    semis: 'Semifinal', final: 'Final', finalizado: 'Finalizado'
+  }
+
+  return (
+    <div style={{ marginBottom: 16, border: '2px solid #4f46e5', borderRadius: 14, overflow: 'hidden', background: '#ffffff', boxShadow: '0 4px 16px rgba(79,70,229,0.15)' }}>
+      {/* Header */}
+      <div style={{ background: torneo.fase === 'finalizado' ? 'linear-gradient(135deg,#78350f,#d97706)' : 'linear-gradient(135deg,#3730a3,#4f46e5)', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 18 }}>🏆</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'white', marginBottom: 2 }}>{torneo.nombre}</div>
+            <span style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: '2px 8px', fontSize: 10, color: 'rgba(255,255,255,0.9)' }}>
+              {faseLabel[torneo.fase] || torneo.fase}
+            </span>
+          </div>
+        </div>
+        {torneo.fase === 'finalizado' ? (
+          <div style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '4px 10px' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'white' }}>FINALIZADO</span>
+          </div>
+        ) : (
+          <div style={{ background: '#22c55e', borderRadius: 20, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'white' }} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'white' }}>EN VIVO</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: 16 }}>
+        {/* Partidos pendientes del jugador */}
+        {misPartidos.map((p: any) => {
+          const rival = p.jugador_a === jugadorId ? p.jb : p.ja
+          return (
+            <div key={p.id} style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 11, color: '#92400e', fontWeight: 800, marginBottom: 3, letterSpacing: '0.3px' }}>⚡ ¡A JUGAR!</div>
+                <div style={{ fontSize: 15, color: '#0f172a', fontWeight: 700 }}>vs {rival?.nombre || '—'}</div>
+              </div>
+              <span style={{ fontSize: 26 }}>🏓</span>
+            </div>
+          )
+        })}
+
+        {/* FASE GRUPOS — mi grupo + otros grupos */}
+        {torneo.fase === 'grupos' && (
+          <>
+            {miGrupo && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: '#4f46e5', letterSpacing: '0.5px', marginBottom: 8, textTransform: 'uppercase' }}>⭐ Tu grupo</div>
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: 14, marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 10 }}>Grupo {miGrupo.nombre}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {miGrupo.miembros.map((m: any) => (
+                      <div key={m.jugador_id} style={{
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8,
+                        background: m.jugador_id === jugadorId ? 'rgba(79,70,229,0.08)' : 'transparent',
+                        border: m.jugador_id === jugadorId ? '1px solid #c4b5fd' : '1px solid transparent'
+                      }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: m.jugador_id === jugadorId ? '#4f46e5' : '#e2e8f0', color: m.jugador_id === jugadorId ? 'white' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                          {m.jugadores?.nombre?.charAt(0) || '?'}
+                        </div>
+                        <span style={{ flex: 1, fontSize: 13, color: '#0f172a', fontWeight: m.jugador_id === jugadorId ? 700 : 400 }}>
+                          {m.jugadores?.nombre || '—'}
+                          {m.jugador_id === jugadorId && <span style={{ marginLeft: 6, fontSize: 10, color: '#4f46e5', fontWeight: 500 }}>(tú)</span>}
+                        </span>
+                        <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{m.jugadores?.elo || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {grupos.filter(g => g.id !== miGrupo?.id).length > 0 && (
+              <div>
+                <button
+                  onClick={() => setVerTodos(v => !v)}
+                  style={{ width: '100%', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', fontSize: 12, color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <span>Ver otros grupos ({grupos.filter(g => g.id !== miGrupo?.id).length})</span>
+                  <span>{verTodos ? '▲' : '▼'}</span>
+                </button>
+                {verTodos && (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {grupos.filter(g => g.id !== miGrupo?.id).map(g => (
+                      <div key={g.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>Grupo {g.nombre}</div>
+                        {g.miembros.map((m: any) => (
+                          <div key={m.jugador_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
+                            <span style={{ flex: 1, color: '#334155' }}>{m.jugadores?.nombre || '—'}</span>
+                            <span style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{m.jugadores?.elo || '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!miGrupo && misPartidos.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '10px 0', color: '#94a3b8', fontSize: 13 }}>
+                Aún no estás asignado a un grupo en este torneo
+              </div>
+            )}
+          </>
+        )}
+
+        {/* FASES PLAYOFF — contexto de ronda */}
+        {['llaves', 'semis', 'final'].includes(torneo.fase) && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', marginBottom: misPartidos.length > 0 ? 0 : 4 }}>
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Estás en</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{faseLabel[torneo.fase]}</div>
+            {misPartidos.length === 0 && (
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>Esperando rival confirmado</div>
+            )}
+          </div>
+        )}
+
+        {/* Finalizado — vista campeón o vista resto */}
+        {torneo.fase === 'finalizado' && (
+          esCampeon ? (
+            <div style={{ marginTop: 12, background: 'linear-gradient(135deg,#fef9c3,#fffbeb)', border: '2px solid #fbbf24', borderRadius: 12, padding: '20px 18px', textAlign: 'center', boxShadow: '0 4px 20px rgba(251,191,36,0.2)' }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>🏆</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#78350f', marginBottom: 4 }}>¡Eres el campeón!</div>
+              <div style={{ fontSize: 13, color: '#92400e', marginBottom: 12, fontWeight: 500 }}>{torneo.nombre}</div>
+              <div style={{ background: 'rgba(251,191,36,0.2)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#92400e' }}>
+                {felicitacionesCount > 0
+                  ? `🎊 ${felicitacionesCount} jugador${felicitacionesCount !== 1 ? 'es' : ''} te felicitaron`
+                  : '¡Disfruta tu premio!'}
+              </div>
+              <div style={{ fontSize: 12, color: '#a16207', marginTop: 10 }}>Te esperamos en el siguiente torneo 🏓</div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 12, background: 'linear-gradient(135deg,#fef9c3,#fef3c7)', border: '2px solid #fbbf24', borderRadius: 12, padding: '16px 18px', textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 6 }}>🏆</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#78350f', marginBottom: 4 }}>¡Torneo finalizado!</div>
+              <div style={{ fontSize: 12, color: '#92400e', marginBottom: 14 }}>
+                {felicitacionesCount > 0
+                  ? `${felicitacionesCount} jugador${felicitacionesCount !== 1 ? 'es' : ''} enviaron felicitaciones`
+                  : 'Sé el primero en felicitar al campeón'}
+              </div>
+              {yaFelicite ? (
+                <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 16px', fontSize: 13, fontWeight: 600, color: '#92400e' }}>
+                  🎊 ¡Ya enviaste tus felicitaciones!
+                </div>
+              ) : (
+                <button
+                  onClick={onFelicitar}
+                  style={{ width: '100%', padding: '12px 16px', background: 'linear-gradient(135deg,#d97706,#f59e0b)', border: 'none', borderRadius: 10, color: 'white', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 8px rgba(217,119,6,0.3)' }}
+                >
+                  🎊 Enviar felicitaciones al campeón
+                </button>
+              )}
+            </div>
+          )
+        )}
+      </div>
+    </div>
   )
 }
