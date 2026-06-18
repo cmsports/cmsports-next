@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
-  Link2, Mail, Calendar, Wallet, X, HelpCircle, Copy, Check,
+  Link2, Mail, Calendar, Wallet, X, HelpCircle, Copy, Check, UserX,
 } from 'lucide-react'
 
 const supabase = createClient()
@@ -35,12 +35,14 @@ const C = {
 }
 
 export default function DashboardPage() {
-  const [perfil, setPerfil]             = useState<any>(null)
-  const [kpis, setKpis]                 = useState<any>({})
-  const [ultimasAsist, setUltimasAsist] = useState<any[]>([])
-  const [solicitudes, setSolicitudes]   = useState<any[]>([])
+  const [perfil, setPerfil]                       = useState<any>(null)
+  const [kpis, setKpis]                           = useState<any>({})
+  const [ultimasAsist, setUltimasAsist]           = useState<any[]>([])
+  const [solicitudes, setSolicitudes]             = useState<any[]>([])
+  const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
   const [loading, setLoading]       = useState(true)
   const [ddOpen, setDdOpen]         = useState(false)
+  const [retencionOpen, setRetencionOpen] = useState(false)
   const [tooltip, setTooltip]       = useState<string | null>(null)
   const router = useRouter()
 
@@ -79,6 +81,7 @@ export default function DashboardPage() {
       setKpis({ activos, tm: rpc.tasa_morosidad || 0, coa: rpc.coa || 0, ingresos, gastos, morosos: rpc.morosos_lista || [], mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
       setSolicitudes(rpc.solicitudes_lista || [])
       setUltimasAsist((rpc.ultimas_asistencias || []).map((a: any) => ({ id: a.id, fecha: a.fecha, jugadores: { nombre: a.jugador_nombre } })))
+      await cargarInactivos(cid)
       return
     }
 
@@ -127,6 +130,46 @@ export default function DashboardPage() {
     setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos: morosasConNombre, mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
     setSolicitudes(solicitudesData || [])
     setUltimasAsist(asistMes || [])
+    await cargarInactivos(cid)
+  }
+
+  async function cargarInactivos(cid: string) {
+    const hoy   = new Date()
+    const limite = new Date(hoy)
+    limite.setDate(limite.getDate() - 14)
+    const limiteFecha = limite.toISOString().split('T')[0]
+
+    const [{ data: jugsActivos }, { data: asistencias }] = await Promise.all([
+      supabase.from('jugadores').select('id, nombre, telefono').eq('club_id', cid).eq('estado', 'activo').neq('es_externo', true),
+      supabase.from('asistencia').select('jugador_id, fecha').eq('club_id', cid).order('fecha', { ascending: false }),
+    ])
+
+    // última asistencia por jugador
+    const ultimaPor = new Map<string, string>()
+    for (const a of (asistencias || [])) {
+      if (!ultimaPor.has(a.jugador_id)) ultimaPor.set(a.jugador_id, a.fecha)
+    }
+
+    const inactivos = (jugsActivos || [])
+      .filter(j => {
+        const ultima = ultimaPor.get(j.id)
+        if (!ultima) return true                    // nunca asistió
+        return ultima < limiteFecha                 // última asistencia hace 14+ días
+      })
+      .map(j => {
+        const ultima = ultimaPor.get(j.id) || null
+        const dias   = ultima
+          ? Math.floor((hoy.getTime() - new Date(ultima).getTime()) / (1000 * 60 * 60 * 24))
+          : null
+        return { ...j, ultimaAsistencia: ultima, diasSinVenir: dias }
+      })
+      .sort((a, b) => {
+        if (a.diasSinVenir === null) return -1
+        if (b.diasSinVenir === null) return 1
+        return (b.diasSinVenir ?? 0) - (a.diasSinVenir ?? 0)
+      })
+
+    setJugadoresInactivos(inactivos)
   }
 
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
@@ -151,20 +194,36 @@ export default function DashboardPage() {
             {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })} — Club Unión San Bernardo
           </p>
         </div>
-        <a href="/solicitudes" style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          background: C.orange, color: 'white', borderRadius: 8,
-          padding: '8px 14px', fontSize: 13, fontWeight: 500,
-          textDecoration: 'none',
-        }}>
-          <Mail size={14} />
-          Solicitudes
-          {solicitudes.length > 0 && (
-            <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 7px', fontSize: 11 }}>
-              {solicitudes.length}
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {jugadoresInactivos.length > 0 && (
+            <button onClick={() => setRetencionOpen(true)} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: C.yellow, color: 'white', borderRadius: 8,
+              padding: '8px 14px', fontSize: 13, fontWeight: 500,
+              border: 'none', cursor: 'pointer',
+            }}>
+              <UserX size={14} />
+              Retención
+              <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 7px', fontSize: 11 }}>
+                {jugadoresInactivos.length}
+              </span>
+            </button>
           )}
-        </a>
+          <a href="/solicitudes" style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: C.orange, color: 'white', borderRadius: 8,
+            padding: '8px 14px', fontSize: 13, fontWeight: 500,
+            textDecoration: 'none',
+          }}>
+            <Mail size={14} />
+            Solicitudes
+            {solicitudes.length > 0 && (
+              <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '1px 7px', fontSize: 11 }}>
+                {solicitudes.length}
+              </span>
+            )}
+          </a>
+        </div>
       </div>
 
       {/* ── KPIs ── */}
@@ -341,6 +400,57 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal retención ── */}
+      {retencionOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, width: '100%', maxWidth: 500, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <UserX size={16} color={C.yellow} />
+                <span style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Alerta de retención</span>
+                <span style={{ background: C.yellowL, color: C.yellow, borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+                  {jugadoresInactivos.length} jugadores
+                </span>
+              </div>
+              <button onClick={() => setRetencionOpen(false)} style={{ background: 'transparent', border: 'none', color: C.muted, cursor: 'pointer', padding: 4, borderRadius: 6 }}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: C.hint, marginBottom: 14 }}>
+              Jugadores activos sin asistencia en los últimos 14 días.
+            </p>
+            {jugadoresInactivos.map((j: any) => (
+              <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.yellowL, color: C.yellow, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                    {j.nombre?.charAt(0) || '?'}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{j.nombre}</div>
+                    <div style={{ fontSize: 11, color: C.hint, marginTop: 1 }}>
+                      {j.ultimaAsistencia
+                        ? `Última: ${new Date(j.ultimaAsistencia + 'T12:00:00').toLocaleDateString('es-CL')}`
+                        : 'Sin asistencias registradas'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: C.yellow, fontWeight: 600, background: C.yellowL, borderRadius: 8, padding: '3px 8px' }}>
+                    {j.diasSinVenir !== null ? `${j.diasSinVenir}d` : 'nunca'}
+                  </span>
+                  {j.telefono && (
+                    <a href={`https://wa.me/${j.telefono.replace(/[^0-9]/g, '')}`} target="_blank"
+                      style={{ background: C.greenL, color: C.green, padding: '5px 10px', borderRadius: 8, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
+                      WA →
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Modal deudores ── */}
       {ddOpen && (

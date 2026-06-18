@@ -91,6 +91,15 @@ El plan de mejora está en `PLAN-15-PASOS.md`. Léelo al inicio de cada sesión.
 - `tabular-nums` para valores numéricos
 - Español en la UI, inglés en el código
 
+### Regla de continuidad entre sesiones
+
+Cuando una tarea tiene múltiples partes y se completa una de ellas, SIEMPRE terminar la respuesta con un bloque como este para que Marcela lo pueda copiar en la próxima sesión:
+
+```
+➡️ Próxima sesión — pega esta ruta:
+C:\ruta\completa\al\ARCHIVO-DE-PLAN.md
+```
+
 ### Sobre la usuaria
 
 - Se llama Marcela, es la desarrolladora del proyecto
