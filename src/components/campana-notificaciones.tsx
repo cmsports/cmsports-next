@@ -81,11 +81,38 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         notificaciones.push({ id: 'sin-evaluar', tipo: 'aviso', titulo: 'Evaluaciones pendientes', mensaje: `${sinEvaluar} alumno${sinEvaluar > 1 ? 's' : ''} sin evaluación ${periodo}.`, fecha: hoy, leida: false, color: '#d97706' })
       }
 
+      // Compromisos aceptados y pendientes
+      const { data: evsConFeedback } = await supabase.from('evaluaciones_trimestrales')
+        .select('*, jugadores(nombre)').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo).not('feedback_profesor', 'is', null)
+      const aceptados = (evsConFeedback || []).filter((ev: any) => ev.firmado_alumno)
+      const pendientesAceptar = (evsConFeedback || []).filter((ev: any) => !ev.firmado_alumno)
+      if (aceptados.length > 0) {
+        notificaciones.push({ id: `compromisos-aceptados-${periodo}`, tipo: 'aviso', titulo: `${aceptados.length} compromiso${aceptados.length > 1 ? 's' : ''} aceptado${aceptados.length > 1 ? 's' : ''}`, mensaje: aceptados.map((ev: any) => ev.jugadores?.nombre || '').filter(Boolean).join(', '), fecha: hoy, leida: false, color: '#16a34a' })
+      }
+      if (pendientesAceptar.length > 0) {
+        notificaciones.push({ id: `compromisos-pendientes-${periodo}`, tipo: 'aviso', titulo: `${pendientesAceptar.length} compromiso${pendientesAceptar.length > 1 ? 's' : ''} pendiente${pendientesAceptar.length > 1 ? 's' : ''} de firmar`, mensaje: pendientesAceptar.map((ev: any) => ev.jugadores?.nombre || '').filter(Boolean).join(', '), fecha: hoy, leida: false, color: '#d97706' })
+      }
+
       const { data: torneos } = await supabase.from('torneos')
         .select('*').eq('club_id', perfil.club_id).in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy).limit(2)
       torneos?.forEach((t: any) => {
         notificaciones.push({ id: `torneo-${t.id}`, tipo: 'torneo', titulo: 'Torneo próximo', mensaje: `${t.nombre} — ${t.fecha_inicio ? new Date(t.fecha_inicio).toLocaleDateString('es-CL') : 'Fecha por confirmar'}`, fecha: t.fecha_inicio || hoy, leida: false, color: '#f43f5e' })
       })
+    }
+
+    if (rol === 'admin') {
+      const trimestre = Math.ceil((new Date().getMonth() + 1) / 3)
+      const periodo   = `Q${trimestre}-${new Date().getFullYear()}`
+      const { data: evsConFeedback } = await supabase.from('evaluaciones_trimestrales')
+        .select('*, jugadores(nombre)').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo).not('feedback_profesor', 'is', null)
+      const aceptados = (evsConFeedback || []).filter((ev: any) => ev.firmado_alumno)
+      const pendientesAceptar = (evsConFeedback || []).filter((ev: any) => !ev.firmado_alumno)
+      if (aceptados.length > 0) {
+        notificaciones.push({ id: `compromisos-aceptados-admin-${periodo}`, tipo: 'aviso', titulo: `${aceptados.length} compromiso${aceptados.length > 1 ? 's' : ''} aceptado${aceptados.length > 1 ? 's' : ''}`, mensaje: aceptados.map((ev: any) => ev.jugadores?.nombre || '').filter(Boolean).join(', '), fecha: hoy, leida: false, color: '#16a34a' })
+      }
+      if (pendientesAceptar.length > 0) {
+        notificaciones.push({ id: `compromisos-pendientes-admin-${periodo}`, tipo: 'aviso', titulo: `${pendientesAceptar.length} compromiso${pendientesAceptar.length > 1 ? 's' : ''} pendiente${pendientesAceptar.length > 1 ? 's' : ''} de firmar`, mensaje: pendientesAceptar.map((ev: any) => ev.jugadores?.nombre || '').filter(Boolean).join(', '), fecha: hoy, leida: false, color: '#d97706' })
+      }
     }
 
     notificaciones.sort((a, b) => (a.fecha > b.fecha ? 1 : -1))
