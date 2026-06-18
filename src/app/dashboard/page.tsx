@@ -139,9 +139,13 @@ export default function DashboardPage() {
     limite.setDate(limite.getDate() - 14)
     const limiteFecha = limite.toISOString().split('T')[0]
 
+    const hace30 = new Date()
+    hace30.setDate(hace30.getDate() - 30)
+    const desde30 = hace30.toISOString().split('T')[0]
+
     const [{ data: jugsActivos }, { data: asistencias }] = await Promise.all([
       supabase.from('jugadores').select('id, nombre, telefono').eq('club_id', cid).eq('estado', 'activo').neq('es_externo', true),
-      supabase.from('asistencia').select('jugador_id, fecha').eq('club_id', cid).order('fecha', { ascending: false }),
+      supabase.from('asistencia').select('jugador_id, fecha').eq('club_id', cid).gte('fecha', desde30).order('fecha', { ascending: false }),
     ])
 
     // última asistencia por jugador

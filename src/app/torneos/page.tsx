@@ -31,15 +31,11 @@ export default function TorneosPage() {
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
       setClubId(p?.club_id)
+      if (p?.club_id) await cargarTorneos(p.club_id)
       setLoading(false)
     }
     cargar()
   }, [])
-
-  useEffect(() => {
-    if (!clubId) return
-    cargarTorneos()
-  }, [clubId])
 
   async function exportarTorneos() {
     const { utils, writeFile } = await import('xlsx')
@@ -54,10 +50,11 @@ export default function TorneosPage() {
     writeFile(wb, 'torneos.xlsx')
   }
 
-  async function cargarTorneos() {
+  async function cargarTorneos(cid?: string) {
+    const id = cid || clubId
     // Query 1: todos los torneos del club
     const { data: torneosData } = await supabase
-      .from('torneos').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
+      .from('torneos').select('*').eq('club_id', id).order('creado_en', { ascending: false })
     if (!torneosData?.length) { setTorneos([]); return }
 
     const ids = torneosData.map(t => t.id)
