@@ -63,6 +63,25 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
       torneos?.forEach((t: any) => {
         notificaciones.push({ id: `torneo-${t.id}`, tipo: 'torneo', titulo: 'Torneo próximo', mensaje: `${t.nombre} — ${t.fecha_inicio ? new Date(t.fecha_inicio).toLocaleDateString('es-CL') : 'Fecha por confirmar'}`, fecha: t.fecha_inicio || hoy, leida: false, color: '#f43f5e' })
       })
+
+      // Torneos ganados — premio + felicitaciones recibidas
+      const { data: torneosGanados } = await supabase
+        .from('historial_elo')
+        .select('torneo_id, torneos(nombre)')
+        .eq('jugador_id', perfil.jugador_id)
+        .eq('posicion', 'campeon')
+        .limit(3)
+      await Promise.all((torneosGanados || []).map(async (tg: any) => {
+        const nombre = tg.torneos?.nombre || 'un torneo'
+        const { count: fCount } = await supabase
+          .from('torneo_felicitaciones')
+          .select('id', { count: 'exact', head: true })
+          .eq('torneo_id', tg.torneo_id)
+        const msg = fCount && fCount > 0
+          ? `${fCount} jugador${fCount !== 1 ? 'es' : ''} te felicitaron. ¡Disfruta tu premio! Te esperamos en el siguiente torneo.`
+          : '¡Disfruta tu premio! Te esperamos en el siguiente torneo.'
+        notificaciones.push({ id: `campeon-${tg.torneo_id}`, tipo: 'torneo', titulo: `🏆 ¡Campeón de ${nombre}!`, mensaje: msg, fecha: hoy, leida: false, color: '#d97706' })
+      }))
     }
 
     if (rol === 'profesor') {

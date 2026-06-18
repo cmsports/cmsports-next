@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
+import { formatRut } from '@/lib/rut'
 import { Suspense } from 'react'
 
 const supabase = createClient()
@@ -122,7 +123,7 @@ function RegistroForm() {
               style={{ width:'100%', background:'#f4f7fa', border: touched.rut && !rutValido && form.rut ? '1px solid #dc2626' : '1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
               type="text" placeholder="21716788-4"
               value={form.rut}
-              onChange={e => setForm(prev => ({ ...prev, rut: e.target.value }))}
+              onChange={e => setForm(prev => ({ ...prev, rut: formatRut(e.target.value) }))}
               onBlur={() => setTouched(t => ({ ...t, rut: true }))}
             />
             <div style={{ fontSize:11, color: touched.rut && !rutValido && form.rut ? '#dc2626' : hint, marginTop:4 }}>
