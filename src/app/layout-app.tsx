@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
@@ -77,16 +77,24 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const router = useRouter()
   const pathname = usePathname()
   const [masOpen, setMasOpen] = useState(false)
+  const [clubNombre, setClubNombre] = useState('')
 
-  const nav: NavItem[] = perfil?.rol === 'admin' ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
+  useEffect(() => {
+    if (!perfil?.club_id) return
+    const supabase = createClient()
+    supabase.from('clubes').select('nombre').eq('id', perfil.club_id).single()
+      .then(({ data }) => setClubNombre(data?.nombre || ''))
+  }, [perfil?.club_id])
+
+  const nav: NavItem[] = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
   const mobileNav = perfil?.rol === 'admin' ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
 
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
-  const rolLabel = perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
+  const rolLabel = perfil?.rol === 'superadmin' ? 'Superadmin' : perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
 
   async function cerrarSesion() {
     const supabase = createClient()
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     router.push('/login')
   }
 
@@ -120,7 +128,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.2 }}>CmSports</div>
-              <div style={{ fontSize: 10, color: '#94a3b8' }}>Club Unión San Bernardo</div>
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>{clubNombre || 'CmSports'}</div>
             </div>
           </div>
         </div>
@@ -190,6 +198,25 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               <div style={{ fontSize: 10, color: '#94a3b8' }}>{rolLabel}</div>
             </div>
           </div>
+          {perfil?.rol === 'superadmin' && (
+            <button onClick={() => router.push('/superadmin')} style={{
+              width: '100%',
+              padding: '6px 10px',
+              marginBottom: 6,
+              background: 'transparent',
+              border: '1px solid #e2e8f0',
+              borderRadius: 7,
+              color: '#4f46e5',
+              fontSize: 12,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}>
+              Volver a Superadmin
+            </button>
+          )}
           <button onClick={cerrarSesion} style={{
             width: '100%',
             padding: '6px 10px',

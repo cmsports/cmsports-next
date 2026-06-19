@@ -3,11 +3,13 @@ import { updateSession } from '@/lib/supabase/proxy'
 
 const publicRoutes = ['/login', '/registro']
 
+const superadminRoutes = ['/superadmin']
 const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/reportes', '/solicitudes']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
 
 function getRolRedirect(rol: string | null): string {
+  if (rol === 'superadmin') return '/superadmin'
   if (rol === 'admin') return '/dashboard'
   if (rol === 'profesor') return '/dashboard-profesor'
   return '/perfil'
@@ -50,7 +52,20 @@ export async function proxy(request: NextRequest) {
   const rol = perfil?.rol ?? 'jugador'
 
   // Route protection by role
-  if (adminRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) && rol !== 'admin') {
+  if (
+    superadminRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) &&
+    rol !== 'superadmin'
+  ) {
+    const url = request.nextUrl.clone()
+    url.pathname = getRolRedirect(rol)
+    return NextResponse.redirect(url)
+  }
+
+  if (
+    adminRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) &&
+    rol !== 'admin' &&
+    rol !== 'superadmin'
+  ) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)
     return NextResponse.redirect(url)
@@ -59,7 +74,8 @@ export async function proxy(request: NextRequest) {
   if (
     profesorRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) &&
     rol !== 'profesor' &&
-    rol !== 'admin'
+    rol !== 'admin' &&
+    rol !== 'superadmin'
   ) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)

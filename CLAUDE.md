@@ -4,7 +4,7 @@
 
 ## Qué es este proyecto
 
-CmSports es una plataforma de gestión para un club de tenis de mesa (Club Unión San Bernardo). Permite administrar jugadores, torneos, clases, asistencia, mensualidades y finanzas. Tiene 3 roles de usuario: admin, profesor, jugador.
+CmSports es una plataforma de gestión multi-club para clubes de tenis de mesa. El primer club activo es **Club Paine** (piloto en curso); **Club Unión San Bernardo** se sumará como segundo club. Permite administrar jugadores, torneos, clases, asistencia, mensualidades y finanzas. Tiene 4 roles de usuario: superadmin (gestiona todos los clubes), admin, profesor, jugador.
 
 ## Stack técnico
 
@@ -33,8 +33,7 @@ src/
 │   ├── finanzas/           # Movimientos financieros
 │   └── ...
 ├── components/
-│   ├── ui/                 # Componentes reutilizables (Button, Card, Modal, etc.)
-│   └── layout/             # Sidebar, MobileNav
+│   └── ui/                 # Componentes reutilizables (Button, Card, Modal, etc.)
 ├── lib/
 │   ├── supabase/           # Clientes SSR (server.ts, client.ts, proxy.ts)
 │   ├── domain/             # Lógica de negocio pura (elo.ts, finanzas.ts, torneos.ts)

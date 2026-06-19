@@ -195,7 +195,7 @@ export default function DashboardPage() {
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>Dashboard</h1>
           <p style={{ fontSize: 12, color: C.hint }}>
-            {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })} — Club Unión San Bernardo
+            {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
