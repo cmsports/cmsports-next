@@ -36,6 +36,7 @@ export default function MensualidadesPage() {
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
       setClubId(p?.club_id)
+      if (p?.club_id) await cargarMensualidades(p.club_id)
       setLoading(false)
     }
     cargar()
@@ -44,12 +45,13 @@ export default function MensualidadesPage() {
   useEffect(() => {
     if (!clubId) return
     cargarMensualidades()
-  }, [clubId, mes, anio])
+  }, [mes, anio])
 
-  async function cargarMensualidades() {
+  async function cargarMensualidades(cid?: string) {
+    const id = cid || clubId
     const [{ data: j }, { data: m }] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', clubId).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
-      supabase.from('mensualidades').select('*').eq('club_id', clubId).eq('mes', mes).eq('anio', anio)
+      supabase.from('jugadores').select('*').eq('club_id', id).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
+      supabase.from('mensualidades').select('*').eq('club_id', id).eq('mes', mes).eq('anio', anio)
     ])
     setJugadores(j || [])
     setMensualidades(m || [])
@@ -57,9 +59,9 @@ export default function MensualidadesPage() {
     const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
     if (sinMens.length > 0) {
       await supabase.from('mensualidades').insert(sinMens.map(jug => ({
-        club_id: clubId, jugador_id: jug.id, mes, anio, estado: 'pendiente'
+        club_id: id, jugador_id: jug.id, mes, anio, estado: 'pendiente'
       })))
-      const { data: mActual } = await supabase.from('mensualidades').select('*').eq('club_id', clubId).eq('mes', mes).eq('anio', anio)
+      const { data: mActual } = await supabase.from('mensualidades').select('*').eq('club_id', id).eq('mes', mes).eq('anio', anio)
       setMensualidades(mActual || [])
     }
   }

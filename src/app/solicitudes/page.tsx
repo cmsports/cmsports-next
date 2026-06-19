@@ -37,24 +37,26 @@ export default function SolicitudesPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p); setClubId(p?.club_id); setLoading(false)
+      setPerfil(p)
+      setClubId(p?.club_id)
+      if (p?.club_id) await cargarSolicitudes(p.club_id)
+      setLoading(false)
     }
     cargar()
   }, [])
 
-  useEffect(() => { if (clubId) cargarSolicitudes() }, [clubId])
-
-  async function cargarSolicitudes() {
-    let { data: inv } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
+  async function cargarSolicitudes(cid?: string) {
+    const id = cid || clubId
+    let { data: inv } = await supabase.from('invitaciones').select('*').eq('club_id', id).eq('activa', true).limit(1)
     if (!inv?.length) {
-      await supabase.from('invitaciones').insert({ club_id: clubId })
-      const { data: newInv } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
+      await supabase.from('invitaciones').insert({ club_id: id })
+      const { data: newInv } = await supabase.from('invitaciones').select('*').eq('club_id', id).eq('activa', true).limit(1)
       inv = newInv
     }
     const codigo = inv?.[0]?.codigo || ''
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    setLink(`${origin}/registro?club=${clubId}&code=${codigo}`)
-    const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
+    setLink(`${origin}/registro?club=${id}&code=${codigo}`)
+    const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', id).order('creado_en', { ascending: false })
     setSolicitudes(data || [])
   }
 
