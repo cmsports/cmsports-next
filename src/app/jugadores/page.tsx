@@ -49,18 +49,15 @@ export default function JugadoresPage() {
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
       setClubId(p?.club_id)
+      if (p?.club_id) await cargarJugadores(p.club_id)
       setLoading(false)
     }
     cargar()
   }, [])
 
-  useEffect(() => {
-    if (!clubId) return
-    cargarJugadores()
-  }, [clubId])
-
-  async function cargarJugadores() {
-    const { data, error } = await supabase.from('jugadores').select('*').eq('club_id', clubId).neq('es_externo', true).order('elo', { ascending: false })
+  async function cargarJugadores(cid?: string) {
+    const id = cid || clubId
+    const { data, error } = await supabase.from('jugadores').select('*').eq('club_id', id).neq('es_externo', true).order('elo', { ascending: false })
     if (error) { mostrarToast('Error al cargar jugadores'); return }
     setJugadores(data || [])
   }

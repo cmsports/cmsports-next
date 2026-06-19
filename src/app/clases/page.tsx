@@ -53,6 +53,7 @@ export default function ClasesPage() {
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
       setClubId(p?.club_id)
+      if (p?.club_id) await cargarClases(semanaOffset, p.club_id)
       setLoading(false)
     }
     cargar()
@@ -61,19 +62,23 @@ export default function ClasesPage() {
   useEffect(() => {
     if (!clubId) return
     cargarClases(semanaOffset)
-  }, [clubId, semanaOffset])
+  }, [semanaOffset])
 
-  async function cargarClases(offset: number) {
+  async function cargarClases(offset: number, cid?: string) {
+    const id = cid || clubId
     const lunes = getInicioSemana(offset)
     const domingo = new Date(lunes)
     domingo.setDate(lunes.getDate() + 6)
-    const [{ data: cl }, { data: pr }, { data: res }] = await Promise.all([
-      supabase.from('clases').select('*').eq('club_id', clubId)
+    const [{ data: cl }, { data: pr }] = await Promise.all([
+      supabase.from('clases').select('*').eq('club_id', id)
         .gte('fecha', fmtISO(lunes)).lte('fecha', fmtISO(domingo))
         .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
-      supabase.from('profesores').select('*').eq('club_id', clubId).eq('activo', true),
-      supabase.from('reservas').select('clase_id,estado')
+      supabase.from('profesores').select('*').eq('club_id', id).eq('activo', true),
     ])
+    const claseIds = (cl || []).map(c => c.id)
+    const { data: res } = claseIds.length > 0
+      ? await supabase.from('reservas').select('clase_id,estado').in('clase_id', claseIds)
+      : { data: [] }
     setClases(cl || [])
     setProfesores(pr || [])
     setReservas(res || [])

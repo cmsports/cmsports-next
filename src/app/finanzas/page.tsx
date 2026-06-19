@@ -56,6 +56,7 @@ export default function FinanzasPage() {
       const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
       setPerfil(p)
       setClubId(p?.club_id)
+      if (p?.club_id) await Promise.all([cargarMovimientos(p.club_id), cargarProfesores(p.club_id)])
       setLoading(false)
     }
     cargar()
@@ -64,24 +65,25 @@ export default function FinanzasPage() {
   useEffect(() => {
     if (!clubId) return
     cargarMovimientos()
-    cargarProfesores()
-  }, [clubId, mes, anio])
+  }, [mes, anio])
 
-  async function cargarMovimientos() {
+  async function cargarMovimientos(cid?: string) {
+    const id = cid || clubId
     const mesStr = String(mes).padStart(2, '0')
     const ultimoDia = new Date(anio, mes, 0).getDate()
     const inicio = `${anio}-${mesStr}-01`
     const fin = `${anio}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`
     const [{ data: jugs }, { data }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', clubId).neq('es_externo', true).order('nombre'),
-      supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false }),
+      supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', id).neq('es_externo', true).order('nombre'),
+      supabase.from('movimientos').select('*').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false }),
     ])
     setJugadoresFinanzas(jugs || [])
     setMovimientos(data || [])
   }
 
-  async function cargarProfesores() {
-    const { data } = await supabase.from('profesores').select('*').eq('club_id', clubId)
+  async function cargarProfesores(cid?: string) {
+    const id = cid || clubId
+    const { data } = await supabase.from('profesores').select('*').eq('club_id', id)
     setProfesores(data || [])
   }
 

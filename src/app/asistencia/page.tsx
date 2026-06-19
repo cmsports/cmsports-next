@@ -66,6 +66,7 @@ export default function AsistenciaPage() {
         const { data: j } = await supabase.from('jugadores').select('*').eq('id', p.jugador_id).single()
         setJugadorPropio(j)
       }
+      if (p?.club_id) await Promise.all([cargarDatos(p.club_id), cargarStats(p.club_id, 0)])
       setLoading(false)
     }
     cargar()
@@ -73,18 +74,14 @@ export default function AsistenciaPage() {
 
   useEffect(() => {
     if (!clubId) return
-    cargarDatos()
-  }, [clubId])
+    cargarStats(clubId, semanaOffset)
+  }, [semanaOffset])
 
-  useEffect(() => {
-    if (!clubId) return
-    cargarStats()
-  }, [clubId, semanaOffset])
-
-  async function cargarDatos() {
+  async function cargarDatos(cid?: string) {
+    const id = cid || clubId
     const [{ data: j }, { data: a }] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', clubId).eq('estado', 'activo').order('nombre'),
-      supabase.from('asistencia').select('*').eq('club_id', clubId).eq('fecha', hoy).order('hora', { ascending: false })
+      supabase.from('jugadores').select('*').eq('club_id', id).eq('estado', 'activo').order('nombre'),
+      supabase.from('asistencia').select('*').eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
     ])
     setJugadores(j || [])
     setAsistencias(a || [])
@@ -93,16 +90,18 @@ export default function AsistenciaPage() {
     }
   }
 
-  async function cargarStats() {
-    const lunes = getLunesDeSemana(semanaOffset)
+  async function cargarStats(cid?: string, offset?: number) {
+    const id = cid || clubId
+    const off = offset !== undefined ? offset : semanaOffset
+    const lunes = getLunesDeSemana(off)
     const domingo = new Date(lunes)
     domingo.setDate(lunes.getDate() + 6)
     const inicio = formatFecha(lunes)
     const fin = formatFecha(domingo)
 
     const [{ data: asist }, { data: jugs }] = await Promise.all([
-      supabase.from('asistencia').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
-      supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo').order('nombre')
+      supabase.from('asistencia').select('*').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin),
+      supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', id).eq('estado', 'activo').order('nombre')
     ])
 
     const a = asist || []
