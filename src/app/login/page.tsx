@@ -61,7 +61,7 @@ export default function LoginPage() {
           </div>
           <h1 style={{ fontSize: 32, fontWeight: 700, color: '#ffffff', marginBottom: 8 }}>CmSports</h1>
           <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
-            Plataforma de gestión deportiva del Club Unión San Bernardo
+            Plataforma de gestión deportiva para clubes
           </p>
 
           <div style={{ marginTop: 48, display: 'flex', flexDirection: 'column', gap: 16 }}>
