@@ -156,6 +156,12 @@ export default function LoginPage() {
             </div>
           </div>
 
+          <div style={{ textAlign: 'right', marginBottom: 16, marginTop: -12 }}>
+            <a href="/recuperar-contrasena" style={{ fontSize: 12, color: '#4f46e5', textDecoration: 'none' }}>
+              ¿Olvidaste tu contraseña?
+            </a>
+          </div>
+
           <button
             onClick={handleLogin}
             disabled={loading}

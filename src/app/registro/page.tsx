@@ -27,6 +27,7 @@ function RegistroForm() {
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
   const rutValido = /^\d{7,8}-[\dkK]$/.test(form.rut)
+  const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)
   const telValido = form.telefono === '' || /^\+56\d{9}$/.test(form.telefono)
 
   useEffect(() => {
@@ -50,15 +51,16 @@ function RegistroForm() {
   }, [clubIdParam, codigo])
 
   async function enviar() {
-    setTouched({ nombre: true, rut: true, telefono: true })
-    if (!form.nombre || !form.rut) { setError('Nombre y RUT son obligatorios'); return }
+    setTouched({ nombre: true, rut: true, email: true, telefono: true })
+    if (!form.nombre || !form.rut || !form.email) { setError('Nombre, RUT y email son obligatorios'); return }
     if (!rutValido) { setError('El RUT debe tener formato 12345678-9 (sin puntos, con guión)'); return }
+    if (!emailValido) { setError('El email no es válido'); return }
     if (form.telefono && !telValido) { setError('El teléfono debe tener formato +56912345678'); return }
     setEnviando(true)
     setError('')
     const { error: err } = await supabase.from('solicitudes_jugador').insert({
       club_id: resolvedClubId, nombre: form.nombre, rut: form.rut,
-      email: form.email || null, telefono: form.telefono || null
+      email: form.email, telefono: form.telefono || null
     })
     if (err) { setError('Error al enviar. Intenta de nuevo.'); setEnviando(false); return }
     setEnviado(true)
@@ -132,13 +134,17 @@ function RegistroForm() {
           </div>
 
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Email</label>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Email *</label>
             <input
-              style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+              style={{ width:'100%', background:'#f4f7fa', border: touched.email && !emailValido && form.email ? '1px solid #dc2626' : '1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
               type="email" placeholder="tu@email.com"
               value={form.email}
               onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))}
+              onBlur={() => setTouched(t => ({ ...t, email: true }))}
             />
+            <div style={{ fontSize:11, color: hint, marginTop:4 }}>
+              Te mandaremos aquí el link para crear tu contraseña
+            </div>
           </div>
 
           <div style={{ marginBottom:14 }}>
