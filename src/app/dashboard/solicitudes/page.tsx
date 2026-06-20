@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { aprobarSolicitud } from '@/app/actions/dashboard'
 
 const supabase = createClient()
 
@@ -22,6 +23,7 @@ export default function SolicitudesPage() {
   const [modalAprobar, setModalAprobar] = useState<any>(null)
   const [planForm, setPlanForm] = useState({ categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [aprobando, setAprobando] = useState(false)
+  const [aprobarMsg, setAprobarMsg] = useState('')
   const router = useRouter()
 
   const PRESETS = [
@@ -64,29 +66,35 @@ export default function SolicitudesPage() {
 
   function abrirAprobar(s: any) {
     setModalAprobar(s)
+    setAprobarMsg('')
     setPlanForm({ categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   }
 
   async function confirmarAprobar() {
-    if (!modalAprobar) return
+    if (!modalAprobar || !clubId) return
     setAprobando(true)
+    setAprobarMsg('')
     const s = modalAprobar
     const ent = planForm.tipo_plan === 'libre' ? null : parseInt(planForm.entrenamientos_por_semana) || 3
     const sesLimite = planForm.tipo_plan === 'libre' ? 99 : (ent || 3) * 4
-    await supabase.from('jugadores').insert({
-      club_id: clubId, nombre: s.nombre, rut: s.rut || null,
-      email: s.email || null, telefono: s.telefono || null,
+    const res = await aprobarSolicitud({
+      solicitudId: s.id,
+      clubId,
       categoria: planForm.categoria,
-      tipo_plan: planForm.tipo_plan,
-      entrenamientos_por_semana: ent,
+      tipoPlan: planForm.tipo_plan,
+      entrenamientosPorSemana: ent,
       mensualidad: parseInt(planForm.mensualidad) || 0,
-      sesiones_limite: sesLimite,
-      elo: 1200, sesiones_usadas: 0, estado: 'activo', es_externo: false
+      sesionesLimite: sesLimite,
+      origin: window.location.origin,
     })
-    await supabase.from('solicitudes_jugador').update({ estado: 'aprobado' }).eq('id', s.id)
-    setModalAprobar(null)
     setAprobando(false)
+    if (res.error) { setAprobarMsg(res.error); return }
     cargarSolicitudes()
+    if (res.inviteError) {
+      setAprobarMsg('Jugador creado, pero no se pudo invitar por email: ' + res.inviteError)
+      return
+    }
+    setModalAprobar(null)
   }
 
   async function rechazar(id: string) {
@@ -188,6 +196,12 @@ export default function SolicitudesPage() {
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:6 }}>Aprobar solicitud</div>
             <div style={{ fontSize:13, color: muted, marginBottom:20 }}>{modalAprobar.nombre} — {modalAprobar.rut || 'Sin RUT'}</div>
+
+            {aprobarMsg && (
+              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#92400e', marginBottom:14 }}>
+                {aprobarMsg}
+              </div>
+            )}
 
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>

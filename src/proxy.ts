@@ -2,6 +2,9 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 
 const publicRoutes = ['/login', '/registro']
+// Accesibles siempre, con o sin sesión — el link de invite/recovery crea sesión
+// justo al llegar y no debe redirigir antes de que el usuario fije su contraseña.
+const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
 const superadminRoutes = ['/superadmin']
 const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/reportes', '/solicitudes']
@@ -18,6 +21,11 @@ function getRolRedirect(rol: string | null): string {
 export async function proxy(request: NextRequest) {
   const { user, supabaseResponse, supabase } = await updateSession(request)
   const { pathname } = request.nextUrl
+
+  // Flujo de crear/recuperar contraseña — siempre accesible, no redirigir
+  if (authFlowRoutes.some((r) => pathname.startsWith(r))) {
+    return supabaseResponse
+  }
 
   // Public routes — allow without auth
   if (publicRoutes.some((r) => pathname.startsWith(r))) {
