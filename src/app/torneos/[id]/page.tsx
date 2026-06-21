@@ -23,6 +23,7 @@ import {
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -34,7 +35,7 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 export default function TorneoDetallePage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [torneo, setTorneo] = useState<any>(null)
   const [grupos, setGrupos] = useState<any[]>([])
   const [partidos, setPartidos] = useState<any[]>([])
@@ -103,15 +104,13 @@ export default function TorneoDetallePage() {
 
   useEffect(() => {
     async function init() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
       await cargarTorneo()
       setLoading(false)
     }
     init()
-  }, [torneoId, cargarTorneo, router])
+  }, [authLoading, perfil, torneoId, cargarTorneo, router])
 
   useEffect(() => {
     if (torneo?.fase && (fasesOrden as readonly string[]).includes(torneo.fase)) {

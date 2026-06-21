@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -20,8 +21,7 @@ const coloresEvento: Record<string, string> = {
 }
 
 export default function CalendarioPage() {
-  const [perfil, setPerfil] = useState<any>(null)
-  const [clubId, setClubId] = useState<string | null>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [mes, setMes] = useState(new Date().getMonth())
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [eventos, setEventos] = useState<any[]>([])
@@ -32,18 +32,13 @@ export default function CalendarioPage() {
   const [reservasJugador, setReservasJugador] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      setLoading(false)
-    }
-    cargar()
-  }, [])
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    setLoading(false)
+  }, [authLoading, perfil])
 
   useEffect(() => {
     if (!clubId) return

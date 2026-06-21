@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -15,32 +16,29 @@ const hint = '#94a3b8'
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 export default function MensualidadesPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [mensualidades, setMensualidades] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [mes, setMes] = useState(new Date().getMonth() + 1)
   const [anio, setAnio] = useState(new Date().getFullYear())
-  const [clubId, setClubId] = useState<string | null>(null)
   const [modalPago, setModalPago] = useState<any>(null)
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [montoPago, setMontoPago] = useState('25000')
   const [filtroEstado, setFiltroEstado] = useState<'todos'|'pagado'|'pendiente'|'atrasado'>('todos')
   const [busqueda, setBusqueda] = useState('')
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.club_id) await cargarMensualidades(p.club_id)
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.club_id) {
+      cargarMensualidades(perfil.club_id).then(() => setLoading(false))
+    } else {
       setLoading(false)
     }
-    cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   useEffect(() => {
     if (!clubId) return

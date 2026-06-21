@@ -3,37 +3,34 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import AppLayout from '@/app/layout-app'
-import { Building2, Plus, LogIn } from 'lucide-react'
+import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck } from 'lucide-react'
+import { usePerfilSuperadmin } from './layout'
+import { crearClub } from '@/app/actions/superadmin'
 
 const supabase = createClient()
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12 } as const
 
+function formatCLP(n: number) {
+  return n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 })
+}
+
 export default function SuperadminPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const perfil = usePerfilSuperadmin()
   const [clubes, setClubes] = useState<any[]>([])
   const [conteos, setConteos] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
-  const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa' })
+  const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
   const [guardando, setGuardando] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      if (p?.rol !== 'superadmin') { router.push('/login'); return }
-      setPerfil(p)
-      await cargarClubes()
-      setLoading(false)
-    }
-    cargar()
-  }, [])
+    if (perfil) cargarClubes()
+  }, [perfil])
 
   async function cargarClubes() {
+    setLoading(true)
     const { data } = await supabase.from('clubes').select('*').order('nombre')
     setClubes(data || [])
     const counts: Record<string, number> = {}
@@ -42,20 +39,22 @@ export default function SuperadminPage() {
       counts[c.id] = count || 0
     }
     setConteos(counts)
+    setLoading(false)
   }
 
-  async function crearClub() {
+  async function handleCrearClub() {
     if (!form.nombre.trim()) return
     setGuardando(true)
-    const { error } = await supabase.from('clubes').insert({
-      nombre: form.nombre.trim(),
-      ciudad: form.ciudad.trim() || null,
-      deporte: form.deporte.trim() || null,
+    const res = await crearClub({
+      nombre: form.nombre,
+      ciudad: form.ciudad,
+      deporte: form.deporte,
+      planMensual: Number(form.planMensual) || 0,
     })
     setGuardando(false)
-    if (error) return
+    if (res?.error) return
     setModalOpen(false)
-    setForm({ nombre: '', ciudad: '', deporte: 'tenis de mesa' })
+    setForm({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
     await cargarClubes()
   }
 
@@ -65,14 +64,16 @@ export default function SuperadminPage() {
   }
 
   if (loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9' }}>
-      <div style={{ color: '#94a3b8', fontSize: 14 }}>Cargando...</div>
-    </div>
+    <div style={{ color: '#94a3b8', fontSize: 14, padding: 24 }}>Cargando...</div>
   )
 
+  const totalJugadores = Object.values(conteos).reduce((a, b) => a + b, 0)
+  const mrr = clubes.reduce((a, c) => a + (c.plan_mensual || 0), 0)
+  const clubesAlDia = clubes.filter(c => c.estado_pago === 'pagado').length
+
   return (
-    <AppLayout perfil={perfil}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>Clubes</h1>
           <p style={{ fontSize: 12, color: '#94a3b8' }}>Gestiona todos los clubes de CmSports</p>
@@ -84,6 +85,23 @@ export default function SuperadminPage() {
         }}>
           <Plus size={15} /> Crear club nuevo
         </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 22 }}>
+        {[
+          { label: 'Clubes activos', value: clubes.length, icon: Building2, color: '#4f46e5' },
+          { label: 'Jugadores totales', value: totalJugadores, icon: Users, color: '#0891b2' },
+          { label: 'MRR (ingreso mensual)', value: formatCLP(mrr), icon: Wallet, color: '#16a34a' },
+          { label: 'Clubes al día', value: `${clubesAlDia}/${clubes.length}`, icon: ShieldCheck, color: '#d97706' },
+        ].map(m => (
+          <div key={m.label} style={{ ...card, padding: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <m.icon size={15} color={m.color} />
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>{m.label}</span>
+            </div>
+            <div style={{ fontSize: 19, fontWeight: 700, color: '#0f172a' }}>{m.value}</div>
+          </div>
+        ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
@@ -101,8 +119,11 @@ export default function SuperadminPage() {
                 <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.ciudad || 'Sin ciudad'}</div>
               </div>
             </div>
-            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
               {conteos[c.id] ?? 0} jugador{(conteos[c.id] ?? 0) === 1 ? '' : 'es'}
+            </div>
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
+              Plan: {formatCLP(c.plan_mensual || 0)}/mes
             </div>
             <button onClick={() => gestionarClub(c.id)} style={{
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -132,13 +153,16 @@ export default function SuperadminPage() {
               <input placeholder="Deporte" value={form.deporte}
                 onChange={e => setForm({ ...form, deporte: e.target.value })}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              <input placeholder="Plan mensual (CLP)" type="number" value={form.planMensual}
+                onChange={e => setForm({ ...form, planMensual: e.target.value })}
+                style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => setModalOpen(false)} style={{
                 flex: 1, padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
                 borderRadius: 7, fontSize: 12, color: '#64748b', cursor: 'pointer',
               }}>Cancelar</button>
-              <button onClick={crearClub} disabled={guardando} style={{
+              <button onClick={handleCrearClub} disabled={guardando} style={{
                 flex: 1, padding: '8px', background: '#4f46e5', border: 'none',
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardando ? 0.6 : 1,
               }}>{guardando ? 'Creando...' : 'Crear'}</button>
@@ -146,6 +170,6 @@ export default function SuperadminPage() {
           </div>
         </div>
       )}
-    </AppLayout>
+    </div>
   )
 }

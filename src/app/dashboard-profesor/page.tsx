@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -13,7 +14,7 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 export default function DashboardProfesorPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [clases, setClases] = useState<any[]>([])
   const [alertas, setAlertas] = useState<any[]>([])
   const [totalAlumnos, setTotalAlumnos] = useState(0)
@@ -36,15 +37,13 @@ export default function DashboardProfesorPage() {
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      if (p?.club_id) await cargarDatos(p)
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.club_id) await cargarDatos(perfil)
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   async function cargarDatos(p: any) {
     const trimestre = `Q${Math.ceil((hoy.getMonth()+1)/3)}-${hoy.getFullYear()}`

@@ -10,6 +10,7 @@ import {
   RadialLinearScale, Filler, Tooltip, Legend, BarElement
 } from 'chart.js'
 import { Line, Radar, Bar } from 'react-chartjs-2'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, RadialLinearScale, Filler, Tooltip, Legend, BarElement)
 
@@ -30,7 +31,7 @@ const CAT_LABEL: Record<string, string> = {
 }
 
 export default function JugadorDetallePage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
   const [historialElo, setHistorialElo] = useState<any[]>([])
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
@@ -63,14 +64,12 @@ export default function JugadorDetallePage() {
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      if (p?.rol === 'jugador' && p?.jugador_id !== jugadorId) {
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.rol === 'jugador' && perfil.jugador_id !== jugadorId) {
         router.replace('/jugadores')
         return
       }
-      setPerfil(p)
 
       const mesActual = new Date().getMonth() + 1
       const anioActual = new Date().getFullYear()
@@ -99,7 +98,7 @@ export default function JugadorDetallePage() {
       setLoading(false)
     }
     cargar()
-  }, [jugadorId])
+  }, [authLoading, perfil, jugadorId])
 
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'

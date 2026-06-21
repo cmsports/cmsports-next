@@ -7,7 +7,7 @@ import CampanaNotificaciones from '@/components/campana-notificaciones'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X,
+  Receipt, LogOut, Menu, X, Camera,
 } from 'lucide-react'
 
 const navAdmin = [
@@ -21,6 +21,8 @@ const navAdmin = [
   { label: 'Calendario',    icon: Calendar,         href: '/calendario' },
   { label: 'Mensualidades', icon: CreditCard,       href: '/mensualidades' },
   { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas' },
+  { section: 'Marketing' },
+  { label: 'Redes Sociales', icon: Camera,          href: '/redes-sociales' },
 ]
 
 const navProfesor = [

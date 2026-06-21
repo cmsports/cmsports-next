@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { Link2, Copy, Check, UserCheck, XCircle } from 'lucide-react'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -14,16 +15,16 @@ const text  = '#0f172a'
 const hint  = '#94a3b8'
 
 export default function SolicitudesPage() {
-  const [perfil, setPerfil]           = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [solicitudes, setSolicitudes] = useState<any[]>([])
   const [linkInvitacion, setLink]     = useState('')
   const [loading, setLoading]         = useState(true)
-  const [clubId, setClubId]           = useState<string | null>(null)
   const [copiado, setCopiado]         = useState(false)
   const [modalAprobar, setModalAprobar] = useState<any>(null)
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
   const [aprobando, setAprobando]     = useState(false)
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   const PRESETS = [
     { label: '$15.000', valor: 15000, ent: 1 },
@@ -33,17 +34,14 @@ export default function SolicitudesPage() {
   ]
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.club_id) await cargarSolicitudes(p.club_id)
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.club_id) {
+      cargarSolicitudes(perfil.club_id).then(() => setLoading(false))
+    } else {
       setLoading(false)
     }
-    cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   async function cargarSolicitudes(cid?: string) {
     const id = cid || clubId

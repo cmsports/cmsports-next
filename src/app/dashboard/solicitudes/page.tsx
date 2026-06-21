@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { aprobarSolicitud } from '@/app/actions/dashboard'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -14,17 +15,17 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 export default function SolicitudesPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [solicitudes, setSolicitudes] = useState<any[]>([])
   const [linkInvitacion, setLinkInvitacion] = useState('')
   const [loading, setLoading] = useState(true)
-  const [clubId, setClubId] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
   const [modalAprobar, setModalAprobar] = useState<any>(null)
   const [planForm, setPlanForm] = useState({ categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [aprobando, setAprobando] = useState(false)
   const [aprobarMsg, setAprobarMsg] = useState('')
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   const PRESETS = [
     { label:'$15.000', valor:15000, ent:1 },
@@ -35,15 +36,12 @@ export default function SolicitudesPage() {
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   useEffect(() => {
     if (!clubId) return
