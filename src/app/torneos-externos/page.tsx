@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -31,30 +32,27 @@ const CAT_LABEL: Record<string, string> = {
 const CLUBES = ['Club Nuevo Olimpo','Valentín Ramos','Club Deportivo La Florida','Club San Miguel','Club Maipú','Club Providencia','Otro']
 
 export default function TorneosExternosPage() {
-  const [perfil, setPerfil] = useState<any>(null)
-  const [clubId, setClubId] = useState<string | null>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [externos, setExternos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
   const [guardando, setGuardando] = useState(false)
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.jugador_id) {
-        const { data: e } = await supabase.from('torneos_externos').select('*').eq('jugador_id', p.jugador_id).order('fecha', { ascending: false })
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.jugador_id) {
+        const { data: e } = await supabase.from('torneos_externos').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false })
         setExternos(e || [])
       }
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   const puntosPreview = ELO_TABLA[form.categoria]?.[form.posicion] || 0
 
@@ -65,21 +63,21 @@ export default function TorneosExternosPage() {
 
     const puntos = ELO_TABLA[form.categoria]?.[form.posicion] || 0
     await supabase.from('torneos_externos').insert({
-      club_id: clubId, jugador_id: perfil.jugador_id,
+      club_id: clubId, jugador_id: perfil?.jugador_id,
       nombre_club: clubNombre, categoria: form.categoria,
       posicion: form.posicion, fecha: form.fecha, puntos_elo: puntos
     })
 
-    const { data: jug } = await supabase.from('jugadores').select('elo').eq('id', perfil.jugador_id).single()
+    const { data: jug } = await supabase.from('jugadores').select('elo').eq('id', perfil?.jugador_id).single()
     const nuevoElo = (jug?.elo || 1200) + puntos
-    await supabase.from('jugadores').update({ elo: nuevoElo }).eq('id', perfil.jugador_id)
+    await supabase.from('jugadores').update({ elo: nuevoElo }).eq('id', perfil?.jugador_id)
     await supabase.from('historial_elo').insert({
-      jugador_id: perfil.jugador_id, club_id: clubId,
+      jugador_id: perfil?.jugador_id, club_id: clubId,
       elo_antes: jug?.elo || 1200, elo_despues: nuevoElo,
       posicion: POSICION_LABEL[form.posicion], fecha: form.fecha
     })
 
-    const { data: e } = await supabase.from('torneos_externos').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false })
+    const { data: e } = await supabase.from('torneos_externos').select('*').eq('jugador_id', perfil?.jugador_id).order('fecha', { ascending: false })
     setExternos(e || [])
     setModalOpen(false)
     setForm({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })

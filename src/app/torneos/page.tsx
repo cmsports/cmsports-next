@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { eliminarTorneo } from '@/app/actions/torneos'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -14,28 +15,25 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 export default function TorneosPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [torneos, setTorneos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [clubId, setClubId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
   const [cuota, setCuota] = useState('0')
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.club_id) await cargarTorneos(p.club_id)
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.club_id) {
+      cargarTorneos(perfil.club_id).then(() => setLoading(false))
+    } else {
       setLoading(false)
     }
-    cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   async function exportarTorneos() {
     const { utils, writeFile } = await import('xlsx')

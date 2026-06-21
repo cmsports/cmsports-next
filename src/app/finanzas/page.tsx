@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -26,13 +27,12 @@ const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','mat
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 export default function FinanzasPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [movimientos, setMovimientos] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [mes, setMes] = useState(new Date().getMonth() + 1)
   const [anio, setAnio] = useState(new Date().getFullYear())
-  const [clubId, setClubId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
@@ -48,19 +48,17 @@ export default function FinanzasPage() {
   })
   const [guardando, setGuardando] = useState(false)
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.club_id) await Promise.all([cargarMovimientos(p.club_id), cargarProfesores(p.club_id)])
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.club_id) {
+      Promise.all([cargarMovimientos(perfil.club_id), cargarProfesores(perfil.club_id)]).then(() => setLoading(false))
+    } else {
       setLoading(false)
     }
-    cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   useEffect(() => {
     if (!clubId) return

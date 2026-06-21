@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -25,8 +26,7 @@ const catLabel: Record<string, string> = {
 type TipoReporte = 'mensual' | 'trimestral' | 'semestral' | 'anual'
 
 export default function ReportesPage() {
-  const [perfil, setPerfil] = useState<any>(null)
-  const [clubId, setClubId] = useState<string | null>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [loading, setLoading] = useState(true)
   const [generando, setGenerando] = useState(false)
   const [tipo, setTipo] = useState<TipoReporte>('mensual')
@@ -36,19 +36,17 @@ export default function ReportesPage() {
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [preview, setPreview] = useState<any>(null)
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      if (p?.rol !== 'admin') { router.push('/dashboard'); return }
-      setClubId(p?.club_id)
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.rol !== 'admin') { router.push('/dashboard'); return }
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   function getRango(): { inicio: string, fin: string, titulo: string } {
     if (tipo === 'mensual') {

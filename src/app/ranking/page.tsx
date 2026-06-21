@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -16,25 +17,23 @@ const medallas = ['🥇', '🥈', '🥉']
 const avatarColors = ['#4f46e5', '#059669', '#d97706', '#dc2626', '#7c3aed']
 
 export default function RankingPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      if (p?.club_id) {
-        const { data: j } = await supabase.from('jugadores').select('*').eq('club_id', p.club_id).eq('estado', 'activo').neq('es_externo', true).order('elo', { ascending: false })
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.club_id) {
+        const { data: j } = await supabase.from('jugadores').select('*').eq('club_id', perfil.club_id).eq('estado', 'activo').neq('es_externo', true).order('elo', { ascending: false })
         setJugadores(j || [])
       }
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9' }}>

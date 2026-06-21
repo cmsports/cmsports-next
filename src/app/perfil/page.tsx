@@ -10,6 +10,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { registrarAsistenciaAction } from '@/app/actions/asistencia'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -28,7 +29,7 @@ const POSICION_LABEL: Record<string, string> = {
 }
 
 export default function PerfilPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
   const [asistencias, setAsistencias] = useState<any[]>([])
   const [historialElo, setHistorialElo] = useState<any[]>([])
@@ -60,12 +61,10 @@ export default function PerfilPage() {
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
 
-      if (p?.jugador_id) {
+      if (perfil.jugador_id) {
         const mesActual = new Date().getMonth() + 1
         const anioActual = new Date().getFullYear()
 
@@ -80,15 +79,15 @@ export default function PerfilPage() {
           { data: asistHoy },
           { data: td },
         ] = await Promise.all([
-          supabase.from('jugadores').select('*').eq('id', p.jugador_id).single(),
-          supabase.from('asistencia').select('*').eq('jugador_id', p.jugador_id).order('fecha', { ascending: false }).limit(10),
-          supabase.from('historial_elo').select('*,torneos(nombre)').eq('jugador_id', p.jugador_id).order('fecha', { ascending: true }),
-          supabase.from('torneos_externos').select('*').eq('jugador_id', p.jugador_id).order('fecha', { ascending: false }),
-          supabase.from('mensualidades').select('*').eq('jugador_id', p.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
-          supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', p.jugador_id).order('creado_en', { ascending: false }).limit(2),
-          supabase.from('asistencia').select('id').eq('jugador_id', p.jugador_id).eq('fecha', hoy),
-          p.club_id
-            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', p.club_id).eq('estado', 'en_curso').neq('fase', 'inscripcion').limit(1).maybeSingle()
+          supabase.from('jugadores').select('*').eq('id', perfil.jugador_id).single(),
+          supabase.from('asistencia').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
+          supabase.from('historial_elo').select('*,torneos(nombre)').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: true }),
+          supabase.from('torneos_externos').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }),
+          supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
+          supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', perfil.jugador_id).order('creado_en', { ascending: false }).limit(2),
+          supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
+          perfil.club_id
+            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', perfil.club_id).eq('estado', 'en_curso').neq('fase', 'inscripcion').limit(1).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
         ])
 
@@ -144,7 +143,7 @@ export default function PerfilPage() {
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   async function handleMarcarAsistencia() {
     if (!jugador || !perfil?.club_id) return

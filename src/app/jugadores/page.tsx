@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -22,11 +23,10 @@ const badgeCategoria: Record<string, { bg: string; color: string }> = {
 const categorias = ['principiante', 'intermedio', 'avanzado']
 
 export default function JugadoresPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
-  const [clubId, setClubId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<any>(null)
   const [form, setForm] = useState({
@@ -41,19 +41,17 @@ export default function JugadoresPage() {
   const [tabJug, setTabJug] = useState<'jugadores'|'ranking'>('jugadores')
   const [busquedaRanking, setBusquedaRanking] = useState('')
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.club_id) await cargarJugadores(p.club_id)
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.club_id) {
+      cargarJugadores(perfil.club_id).then(() => setLoading(false))
+    } else {
       setLoading(false)
     }
-    cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   async function cargarJugadores(cid?: string) {
     const id = cid || clubId

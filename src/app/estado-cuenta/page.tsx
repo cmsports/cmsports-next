@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -15,7 +16,7 @@ const hint = '#94a3b8'
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 export default function EstadoCuentaPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [mensualidad, setMensualidad] = useState<any>(null)
   const [historial, setHistorial] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,14 +27,12 @@ export default function EstadoCuentaPage() {
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      if (p?.jugador_id) {
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.jugador_id) {
         const [{ data: m }, { data: h }] = await Promise.all([
-          supabase.from('mensualidades').select('*').eq('jugador_id', p.jugador_id).eq('mes', mesActual).eq('anio', anioActual).single(),
-          supabase.from('mensualidades').select('*').eq('jugador_id', p.jugador_id).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(12)
+          supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).single(),
+          supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(12)
         ])
         setMensualidad(m)
         setHistorial(h || [])
@@ -41,7 +40,7 @@ export default function EstadoCuentaPage() {
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   const estado = mensualidad?.estado || 'pendiente'
   const estadoConfig: Record<string, { color: string; bg: string; border: string; label: string }> = {

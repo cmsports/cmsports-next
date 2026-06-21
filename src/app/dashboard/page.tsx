@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
   Link2, Mail, Calendar, Wallet, X, HelpCircle, Copy, Check, UserX,
@@ -35,7 +36,7 @@ const C = {
 }
 
 export default function DashboardPage() {
-  const [perfil, setPerfil]                       = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [kpis, setKpis]                           = useState<any>({})
   const [ultimasAsist, setUltimasAsist]           = useState<any[]>([])
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
@@ -47,18 +48,16 @@ export default function DashboardPage() {
   const router = useRouter()
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      if (p?.rol === 'jugador')  { router.push('/perfil'); return }
-      if (p?.rol === 'profesor') { router.push('/dashboard-profesor'); return }
-      if (p?.club_id) await cargarDatos(p.club_id)
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.rol === 'jugador')  { router.push('/perfil'); return }
+    if (perfil.rol === 'profesor') { router.push('/dashboard-profesor'); return }
+    if (perfil.club_id) {
+      cargarDatos(perfil.club_id).then(() => setLoading(false))
+    } else {
       setLoading(false)
     }
-    cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   async function cargarDatos(cid: string) {
     const { data: rpc, error: rpcError } = await supabase.rpc('dashboard_kpis', { p_club_id: cid })
@@ -316,7 +315,7 @@ export default function DashboardPage() {
           <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
             Comparte este link para que los jugadores soliciten unirse al club
           </p>
-          <LinkInvitacion clubId={perfil?.club_id} />
+          <LinkInvitacion clubId={perfil?.club_id || ''} />
         </div>
 
         {/* Solicitudes pendientes */}

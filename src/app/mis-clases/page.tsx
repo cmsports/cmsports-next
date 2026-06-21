@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -15,7 +16,7 @@ const hint = '#94a3b8'
 const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
 
 export default function MisClasesPage() {
-  const [perfil, setPerfil] = useState<any>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [clases, setClases] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
   const [reservas, setReservas] = useState<Set<string>>(new Set())
@@ -35,15 +36,10 @@ export default function MisClasesPage() {
   const formatFecha = (d: Date) => d.toISOString().slice(0,10)
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setLoading(false)
-    }
-    cargar()
-  }, [])
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    setLoading(false)
+  }, [authLoading, perfil])
 
   useEffect(() => {
     if (!perfil?.club_id) return
@@ -55,9 +51,9 @@ export default function MisClasesPage() {
     const fin = formatFecha(finSemana)
 
     const [{ data: cl }, { data: pr }] = await Promise.all([
-      supabase.from('clases').select('*').eq('club_id', perfil.club_id).eq('publicada', true)
+      supabase.from('clases').select('*').eq('club_id', perfil?.club_id).eq('publicada', true)
         .gte('fecha', inicio).lte('fecha', fin).order('fecha').order('hora_inicio'),
-      supabase.from('profesores').select('*').eq('club_id', perfil.club_id)
+      supabase.from('profesores').select('*').eq('club_id', perfil?.club_id)
     ])
 
     const clasesConAsistentes = await Promise.all((cl || []).map(async (clase: any) => {

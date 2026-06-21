@@ -9,6 +9,8 @@ export interface Database {
           nombre: string
           ciudad: string | null
           deporte: string | null
+          plan_mensual: number
+          estado_pago: string
           creado_en: string | null
         }
         Insert: {
@@ -16,6 +18,8 @@ export interface Database {
           nombre: string
           ciudad?: string | null
           deporte?: string | null
+          plan_mensual?: number
+          estado_pago?: string
           creado_en?: string | null
         }
         Update: {
@@ -23,9 +27,49 @@ export interface Database {
           nombre?: string
           ciudad?: string | null
           deporte?: string | null
+          plan_mensual?: number
+          estado_pago?: string
           creado_en?: string | null
         }
         Relationships: []
+      }
+      pagos_clubes: {
+        Row: {
+          id: string
+          club_id: string
+          monto: number
+          periodo_mes: number
+          periodo_anio: number
+          fecha_pago: string
+          metodo: string | null
+          notas: string | null
+          creado_en: string | null
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          monto: number
+          periodo_mes: number
+          periodo_anio: number
+          fecha_pago?: string
+          metodo?: string | null
+          notas?: string | null
+          creado_en?: string | null
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          monto?: number
+          periodo_mes?: number
+          periodo_anio?: number
+          fecha_pago?: string
+          metodo?: string | null
+          notas?: string | null
+          creado_en?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: 'pagos_clubes_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+        ]
       }
       perfiles: {
         Row: {

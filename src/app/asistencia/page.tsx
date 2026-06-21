@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -29,8 +30,7 @@ function formatFecha(d: Date) { return d.toISOString().slice(0, 10) }
 function formatFechaCorta(d: Date) { return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) }
 
 export default function AsistenciaPage() {
-  const [perfil, setPerfil] = useState<any>(null)
-  const [clubId, setClubId] = useState<string | null>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [asistencias, setAsistencias] = useState<any[]>([])
   const [busqueda, setBusqueda] = useState('')
@@ -54,23 +54,24 @@ export default function AsistenciaPage() {
   const router = useRouter()
   const hoy = new Date().toISOString().slice(0, 10)
   const hora = new Date().toTimeString().slice(0, 5)
+  const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
     async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.rol === 'jugador' && p?.jugador_id) {
-        const { data: j } = await supabase.from('jugadores').select('*').eq('id', p.jugador_id).single()
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.rol === 'jugador' && perfil.jugador_id) {
+        const supabase = createClient()
+        const { data: j } = await supabase.from('jugadores').select('*').eq('id', perfil.jugador_id).single()
         setJugadorPropio(j)
       }
-      if (p?.club_id) await Promise.all([cargarDatos(p.club_id), cargarStats(p.club_id, 0)])
+      if (perfil.club_id) {
+        await Promise.all([cargarDatos(perfil.club_id), cargarStats(perfil.club_id, 0)])
+      }
       setLoading(false)
     }
     cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   useEffect(() => {
     if (!clubId) return

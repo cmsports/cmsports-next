@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -32,8 +33,7 @@ function fmtISO(d: Date): string {
 }
 
 export default function ClasesPage() {
-  const [perfil, setPerfil] = useState<any>(null)
-  const [clubId, setClubId] = useState<string | null>(null)
+  const { perfil, loading: authLoading } = usePerfil()
   const [clases, setClases] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
   const [reservas, setReservas] = useState<any[]>([])
@@ -42,22 +42,20 @@ export default function ClasesPage() {
   const [form, setForm] = useState({ fecha:'', profesorId:'', inicio:'', fin:'', contenido:'', grupo:'' })
   const [semanaOffset, setSemanaOffset] = useState(0)
   const router = useRouter()
+  const clubId = perfil?.club_id ?? null
 
   const mesesLargo = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
   const mesesCorto = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
 
   useEffect(() => {
-    async function cargar() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: p } = await supabase.from('perfiles').select('*').eq('id', session.user.id).single()
-      setPerfil(p)
-      setClubId(p?.club_id)
-      if (p?.club_id) await cargarClases(semanaOffset, p.club_id)
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.club_id) {
+      cargarClases(semanaOffset, perfil.club_id).then(() => setLoading(false))
+    } else {
       setLoading(false)
     }
-    cargar()
-  }, [])
+  }, [authLoading, perfil])
 
   useEffect(() => {
     if (!clubId) return
