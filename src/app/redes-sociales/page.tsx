@@ -467,26 +467,58 @@ async function renderVariante(canvas: HTMLCanvasElement, v: Variante, foto: HTML
 }
 
 // ── FlyrCard ────────────────────────────────────────────────────────────────
-function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect }: {
+function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI, generandoAI }: {
   variante: Variante; foto: HTMLImageElement | null; clubNombre: string
   seleccionada: boolean; onSelect: () => void
+  imagenAI: string | null; generandoAI: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const compositeRef = useRef<HTMLCanvasElement>(null)
 
+  // Render Canvas base siempre
   useEffect(() => {
     if (canvasRef.current) renderVariante(canvasRef.current, variante, foto, clubNombre)
   }, [variante, foto, clubNombre])
 
+  // Cuando llega la imagen AI, hacer composite: AI fondo + Canvas texto encima
+  useEffect(() => {
+    if (!imagenAI || !canvasRef.current || !compositeRef.current) return
+    const composite = compositeRef.current
+    const ctx = composite.getContext('2d')
+    if (!ctx) return
+    composite.width = CANVAS_SIZE
+    composite.height = CANVAS_SIZE
+
+    const aiImg = new Image()
+    aiImg.onload = async () => {
+      // 1. Fondo AI
+      ctx.drawImage(aiImg, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
+      // 2. Canvas con texto encima (solo el texto, no el fondo)
+      // Renderizamos variante con foto null para obtener solo overlays de texto
+      // pero sobre la AI image ya puesta
+      const tmpCanvas = document.createElement('canvas')
+      await renderVariante(tmpCanvas, variante, null, clubNombre)
+      // Modo "screen" para mezclar solo los textos claros
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = 1
+      ctx.drawImage(tmpCanvas, 0, 0)
+    }
+    aiImg.src = imagenAI
+  }, [imagenAI, variante, clubNombre])
+
   function descargar(e: React.MouseEvent) {
     e.stopPropagation()
-    if (!canvasRef.current) return
+    // Descargar el composite AI si está listo, sino el Canvas base
+    const target = (imagenAI && compositeRef.current) ? compositeRef.current : canvasRef.current
+    if (!target) return
     const a = document.createElement('a')
     a.download = `flyer-${variante.layout}-${Date.now()}.png`
-    a.href = canvasRef.current.toDataURL('image/png')
+    a.href = target.toDataURL('image/png')
     a.click()
   }
 
   const tonoLabel: Record<string, string> = { celebratorio: '🎉 Celebratorio', formal: '📋 Formal', hype: '🔥 Hype' }
+  const mostrarComposite = imagenAI && !generandoAI
 
   return (
     <div onClick={onSelect} style={{
@@ -496,7 +528,22 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect }: {
       boxShadow: seleccionada ? `0 0 0 4px ${C.primaryL}` : '0 1px 3px rgba(0,0,0,0.08)',
     }}>
       <div style={{ position: 'relative' }}>
-        <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: 'block' }} />
+        {/* Canvas base (visible si no hay AI todavía) */}
+        <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: mostrarComposite ? 'none' : 'block' }} />
+        {/* Canvas composite AI+texto (visible cuando llega la AI) */}
+        <canvas ref={compositeRef} style={{ width: '100%', aspectRatio: '1/1', display: mostrarComposite ? 'block' : 'none' }} />
+
+        {/* Badge AI generando */}
+        {generandoAI && (
+          <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.75)', color: '#22d3ee', borderRadius: 20, fontSize: 11, fontWeight: 600, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+            <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Generando con IA...
+          </div>
+        )}
+        {mostrarComposite && (
+          <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(6,182,212,0.9)', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '3px 10px' }}>
+            ✨ IA
+          </div>
+        )}
         {seleccionada && (
           <div style={{ position: 'absolute', top: 10, right: 10, background: C.primary, color: '#fff', borderRadius: 20, fontSize: 11, fontWeight: 600, padding: '3px 10px' }}>
             ✓ Seleccionada
@@ -538,6 +585,8 @@ export default function RedesSocialesPage() {
   const [seleccionada, setSeleccionada] = useState<number | null>(null)
   const [clubNombre, setClubNombre] = useState('Mi Club')
   const [clubContexto, setClubContexto] = useState<ClubContexto>({ nombre: 'Mi Club', deporte: 'Tenis de Mesa', colores: ['#1d4ed8', '#06b6d4'] })
+  const [imagenesAI, setImagenesAI] = useState<(string | null)[]>([null, null, null])
+  const [generandoAI, setGenerandoAI] = useState<boolean[]>([false, false, false])
 
   const ejemplos = [
     '¡Ganamos el torneo regional! Campeones 2026',
@@ -571,9 +620,28 @@ export default function RedesSocialesPage() {
     return () => URL.revokeObjectURL(url)
   }, [foto])
 
+  async function generarImagenAI(variante: Variante, idx: number) {
+    setGenerandoAI(prev => { const n = [...prev]; n[idx] = true; return n })
+    try {
+      const res = await fetch('/api/generar-imagen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout: variante.layout, tono: variante.tono, clubNombre }),
+      })
+      const data = await res.json()
+      if (data.imagen) {
+        setImagenesAI(prev => { const n = [...prev]; n[idx] = data.imagen; return n })
+      }
+    } catch (_) {}
+    finally {
+      setGenerandoAI(prev => { const n = [...prev]; n[idx] = false; return n })
+    }
+  }
+
   async function generar() {
     if (!prompt.trim()) return
     setGenerando(true); setError(''); setVariantes([]); setSeleccionada(null)
+    setImagenesAI([null, null, null]); setGenerandoAI([false, false, false])
     try {
       const res = await fetch('/api/generar-flyer', {
         method: 'POST',
@@ -583,6 +651,10 @@ export default function RedesSocialesPage() {
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       setVariantes(data.variantes)
+      // Generar imágenes AI en paralelo (sin bloquear UI)
+      data.variantes.forEach((v: Variante, i: number) => {
+        generarImagenAI(v, i)
+      })
     } catch (e: any) {
       setError(e.message || 'Error al generar. Intenta de nuevo.')
     } finally { setGenerando(false) }
@@ -690,7 +762,7 @@ export default function RedesSocialesPage() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
                   {variantes.map((v, i) => (
-                    <FlyrCard key={i} variante={v} foto={fotoImg} clubNombre={clubNombre} seleccionada={seleccionada === i} onSelect={() => setSeleccionada(i)} />
+                    <FlyrCard key={i} variante={v} foto={fotoImg} clubNombre={clubNombre} seleccionada={seleccionada === i} onSelect={() => setSeleccionada(i)} imagenAI={imagenesAI[i]} generandoAI={generandoAI[i]} />
                   ))}
                 </div>
               </div>
