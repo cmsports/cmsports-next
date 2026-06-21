@@ -46,8 +46,10 @@ Responde ÚNICAMENTE con un JSON array válido con exactamente 3 objetos. Sin te
 Reglas:
 - El layout de cada variante DEBE ser diferente. Usa exactamente: "hero", "split", "minimal" (uno por variante, en ese orden)
 - El tono de cada variante debe ser diferente: "celebratorio", "formal", "hype"
-- colorAcento debe ser un color hexadecimal vibrante que combine con el deporte
+- colorAcento debe ser un color hexadecimal vibrante y saturado que combine con el deporte (ej: #e11d48, #7c3aed, #06b6d4, #f59e0b, #10b981)
 - Los textos deben estar en español, ser concisos y poderosos
+- NUNCA uses emojis en ningún campo — los textos van directo a canvas HTML y los emojis no renderizan bien
+- titulo máximo 4 palabras, todo mayúsculas es mejor
 - Adapta el contenido al tipo de publicación (torneo, logro, aviso, convocatoria, etc.)`
 
     const response = await client.messages.create({
