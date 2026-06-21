@@ -16,6 +16,7 @@ interface Variante {
   colorAcento: string
   colorTexto: string
   tono: string
+  fecha?: string
 }
 
 interface ClubContexto {
@@ -32,310 +33,385 @@ const C = {
   primary: '#4f46e5', primaryL: '#ede9fe',
 }
 
-// ── Cargar fuentes en canvas ────────────────────────────────────────────────
+// Paleta USB
+const USB = {
+  azulOscuro: '#060e1e',
+  azulMedio:  '#0a2254',
+  azulVivo:   '#1d4ed8',
+  cyan:       '#06b6d4',
+  cyanBright: '#22d3ee',
+  amarillo:   '#fbbf24',
+  blanco:     '#ffffff',
+}
+
+// ── Cargar fuentes ──────────────────────────────────────────────────────────
+let fontesLoaded = false
 async function cargarFuentes() {
+  if (fontesLoaded) return
   try {
-    const fuentes = [
-      new FontFace('Inter', 'url(https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuGKZAZ9hiA.woff2)', { weight: '400' }),
-      new FontFace('Inter', 'url(https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuI13AZ9hiA.woff2)', { weight: '700' }),
-      new FontFace('Inter', 'url(https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuFuYAZ9hiA.woff2)', { weight: '900' }),
-    ]
-    await Promise.all(fuentes.map(async f => { await f.load(); document.fonts.add(f) }))
+    const link = document.createElement('link')
+    link.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Inter:wght@400;600;700&display=swap'
+    link.rel = 'stylesheet'
+    document.head.appendChild(link)
+    await document.fonts.ready
+    fontesLoaded = true
   } catch (_) {}
 }
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
-function hexToRgba(hex: string, alpha: number) {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},${alpha})`
+function rgba(hex: string, a: number) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
+  return `rgba(${r},${g},${b},${a})`
 }
 
-function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number): number {
+function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lh: number, align: CanvasTextAlign = 'left'): number {
+  ctx.textAlign = align
   const words = text.split(' ')
-  let line = ''
-  let cy = y
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word
-    if (ctx.measureText(test).width > maxWidth && line) {
-      ctx.fillText(line, x, cy)
-      line = word
-      cy += lineHeight
-    } else { line = test }
+  let line = '', cy = y
+  for (const w of words) {
+    const test = line ? `${line} ${w}` : w
+    if (ctx.measureText(test).width > maxW && line) {
+      ctx.fillText(line, x, cy); line = w; cy += lh
+    } else line = test
   }
   ctx.fillText(line, x, cy)
   return cy
 }
 
-function darken(hex: string, amount = 40): string {
-  const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - amount)
-  const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - amount)
-  const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - amount)
-  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`
+function pillBadge(ctx: CanvasRenderingContext2D, text: string, cx: number, cy: number, bg: string, color: string, fontSize: number) {
+  ctx.font = `700 ${fontSize}px Barlow Condensed, sans-serif`
+  const tw = ctx.measureText(text).width
+  const pw = tw + fontSize * 1.6, ph = fontSize * 1.8
+  const rx = cx - pw / 2, ry = cy - ph / 2, r = ph / 2
+  ctx.fillStyle = bg
+  ctx.beginPath()
+  ctx.moveTo(rx + r, ry)
+  ctx.lineTo(rx + pw - r, ry)
+  ctx.quadraticCurveTo(rx + pw, ry, rx + pw, ry + r)
+  ctx.lineTo(rx + pw, ry + ph - r)
+  ctx.quadraticCurveTo(rx + pw, ry + ph, rx + pw - r, ry + ph)
+  ctx.lineTo(rx + r, ry + ph)
+  ctx.quadraticCurveTo(rx, ry + ph, rx, ry + ph - r)
+  ctx.lineTo(rx, ry + r)
+  ctx.quadraticCurveTo(rx, ry, rx + r, ry)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = color
+  ctx.textAlign = 'center'
+  ctx.fillText(text, cx, cy + fontSize * 0.38)
 }
 
-// ── Renderizadores ──────────────────────────────────────────────────────────
+function drawFoto(ctx: CanvasRenderingContext2D, foto: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const ratio = Math.max(w / foto.width, h / foto.height)
+  const fw = foto.width * ratio, fh = foto.height * ratio
+  ctx.drawImage(foto, x + (w - fw) / 2, y + (h - fh) / 2, fw, fh)
+}
+
+// ── LAYOUT 1: GRAN TORNEO — fondo degradado + foto + título gigante ─────────
 async function renderHero(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
   const S = CANVAS_SIZE
-  const acento = v.colorAcento || '#e11d48'
 
-  // Fondo oscuro base
-  ctx.fillStyle = '#080c14'
+  // Fondo
+  ctx.fillStyle = USB.azulOscuro
   ctx.fillRect(0, 0, S, S)
 
-  // Foto de fondo
+  // Foto de fondo con overlay azul fuerte
   if (foto) {
-    const ratio = Math.max(S / foto.width, S / foto.height)
-    const fw = foto.width * ratio, fh = foto.height * ratio
-    ctx.drawImage(foto, (S - fw) / 2, (S - fh) / 2, fw, fh)
+    ctx.save()
+    ctx.globalAlpha = 0.45
+    drawFoto(ctx, foto, 0, 0, S, S)
+    ctx.globalAlpha = 1
+    ctx.restore()
   }
 
-  // Overlay degradado fuerte de abajo
+  // Gradient overlay
   const grad = ctx.createLinearGradient(0, 0, 0, S)
-  grad.addColorStop(0, 'rgba(8,12,20,0.15)')
-  grad.addColorStop(0.4, 'rgba(8,12,20,0.55)')
-  grad.addColorStop(1, 'rgba(8,12,20,0.97)')
+  grad.addColorStop(0, rgba(USB.azulOscuro, 0.5))
+  grad.addColorStop(0.35, rgba(USB.azulMedio, 0.6))
+  grad.addColorStop(1, rgba(USB.azulOscuro, 0.97))
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, S, S)
 
-  // Círculo decorativo top-right
-  const rg = ctx.createRadialGradient(S * 0.88, S * 0.1, 0, S * 0.88, S * 0.1, S * 0.38)
-  rg.addColorStop(0, hexToRgba(acento, 0.35))
-  rg.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = rg
-  ctx.fillRect(0, 0, S, S)
+  // Banda diagonal de color top-right
+  ctx.save()
+  ctx.fillStyle = rgba(USB.cyan, 0.18)
+  ctx.beginPath()
+  ctx.moveTo(S * 0.55, 0); ctx.lineTo(S, 0); ctx.lineTo(S, S * 0.55); ctx.closePath()
+  ctx.fill()
+  ctx.restore()
 
-  // Barra lateral izquierda
-  ctx.fillStyle = acento
-  ctx.fillRect(0, 0, 10, S)
+  // Línea cyan top
+  const lgTop = ctx.createLinearGradient(0, 0, S, 0)
+  lgTop.addColorStop(0, rgba(USB.cyan, 0))
+  lgTop.addColorStop(0.4, USB.cyan)
+  lgTop.addColorStop(1, rgba(USB.cyan, 0))
+  ctx.fillStyle = lgTop
+  ctx.fillRect(0, 0, S, 6)
 
-  // Nombre del club — arriba
-  ctx.font = `700 ${S * 0.026}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.55)'
+  // Puntos decorativos top-right
+  ctx.fillStyle = rgba(USB.cyanBright, 0.2)
+  for (let r = 0; r < 5; r++)
+    for (let c = 0; c < 5; c++)
+      { ctx.beginPath(); ctx.arc(S*0.76+c*S*0.045, S*0.06+r*S*0.045, 3, 0, Math.PI*2); ctx.fill() }
+
+  // Nombre club + deporte
+  ctx.font = `700 ${S*0.022}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.blanco, 0.6)
   ctx.textAlign = 'left'
-  ctx.fillText(club.toUpperCase(), S * 0.055, S * 0.072)
+  ctx.fillText(club.toUpperCase(), S*0.055, S*0.066)
+  ctx.font = `600 ${S*0.018}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.cyan, 0.8)
+  ctx.fillText('TENIS DE MESA', S*0.055, S*0.09)
 
   // Línea separadora
-  ctx.fillStyle = hexToRgba(acento, 0.6)
-  ctx.fillRect(S * 0.055, S * 0.085, S * 0.08, 2)
+  const lgLine = ctx.createLinearGradient(0, 0, S*0.5, 0)
+  lgLine.addColorStop(0, rgba(USB.cyan, 0.6))
+  lgLine.addColorStop(1, rgba(USB.cyan, 0))
+  ctx.fillStyle = lgLine
+  ctx.fillRect(S*0.055, S*0.1, S*0.35, 2)
 
-  // Título — grande y bold
-  ctx.font = `900 ${S * 0.105}px Inter, sans-serif`
-  ctx.fillStyle = '#ffffff'
+  // Título principal — GIGANTE
+  ctx.font = `900 ${S*0.132}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = USB.blanco
   ctx.textAlign = 'left'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S * 0.055, S * 0.66, S * 0.88, S * 0.115)
+  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.05, S*0.5, S*0.9, S*0.14, 'left')
 
-  // Subtítulo
-  ctx.font = `400 ${S * 0.042}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.8)'
-  wrapText(ctx, v.subtitulo, S * 0.055, tY + S * 0.07, S * 0.88, S * 0.05)
+  // Badge fecha/subtítulo
+  if (v.fecha || v.subtitulo) {
+    const badgeText = (v.fecha || v.subtitulo).toUpperCase()
+    pillBadge(ctx, badgeText, S*0.22, tY + S*0.075, USB.cyan, USB.azulOscuro, S*0.028)
+  }
+
+  // Descripción
+  if (v.descripcion) {
+    ctx.font = `600 ${S*0.032}px Inter, sans-serif`
+    ctx.fillStyle = rgba(USB.blanco, 0.7)
+    ctx.textAlign = 'left'
+    wrapText(ctx, v.descripcion, S*0.055, tY + S*0.16, S*0.88, S*0.042, 'left')
+  }
 
   // Hashtags
-  ctx.font = `700 ${S * 0.027}px Inter, sans-serif`
-  ctx.fillStyle = hexToRgba(acento, 0.95)
-  ctx.fillText(v.hashtags.split(' ').slice(0, 3).join(' '), S * 0.055, S * 0.945)
+  ctx.font = `700 ${S*0.026}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = rgba(USB.cyanBright, 0.85)
+  ctx.textAlign = 'left'
+  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.055, S*0.946)
 
-  // Línea inferior
-  ctx.fillStyle = hexToRgba(acento, 0.4)
-  ctx.fillRect(S * 0.055, S * 0.958, S * 0.9, 1.5)
+  // Línea bottom
+  const lgBot = ctx.createLinearGradient(0, 0, S, 0)
+  lgBot.addColorStop(0, USB.cyan); lgBot.addColorStop(1, rgba(USB.cyan,0))
+  ctx.fillStyle = lgBot
+  ctx.fillRect(0, S*0.958, S, 3)
 }
 
+// ── LAYOUT 2: SPLIT DINÁMICO — foto grande derecha, texto izquierda ─────────
 async function renderSplit(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
   const S = CANVAS_SIZE
-  const acento = v.colorAcento || '#7c3aed'
-  const oscuro = darken(acento, 60)
 
-  // Fondo claro lado derecho
-  ctx.fillStyle = '#f0f2f8'
+  // Fondo azul oscuro
+  ctx.fillStyle = USB.azulOscuro
   ctx.fillRect(0, 0, S, S)
 
-  // Panel izquierdo con gradiente
-  const panelGrad = ctx.createLinearGradient(0, 0, S * 0.52, S)
-  panelGrad.addColorStop(0, oscuro)
-  panelGrad.addColorStop(1, acento)
-  ctx.fillStyle = panelGrad
-  ctx.fillRect(0, 0, S * 0.52, S)
-
-  // Foto lado derecho con clip
+  // Foto derecha (60% del ancho)
   if (foto) {
     ctx.save()
     ctx.beginPath()
-    ctx.rect(S * 0.5, 0, S * 0.5, S)
+    ctx.rect(S*0.38, 0, S*0.62, S)
     ctx.clip()
-    const ratio = Math.max((S * 0.5) / foto.width, S / foto.height)
-    const fw = foto.width * ratio, fh = foto.height * ratio
-    ctx.drawImage(foto, S * 0.5 + ((S * 0.5) - fw) / 2, (S - fh) / 2, fw, fh)
+    ctx.globalAlpha = 0.7
+    drawFoto(ctx, foto, S*0.38, 0, S*0.62, S)
+    ctx.globalAlpha = 1
     ctx.restore()
-    // Overlay foto
-    const fGrad = ctx.createLinearGradient(S * 0.5, 0, S, 0)
-    fGrad.addColorStop(0, hexToRgba(oscuro, 0.5))
-    fGrad.addColorStop(1, 'rgba(0,0,0,0.1)')
+    // Overlay degradado sobre foto
+    const fGrad = ctx.createLinearGradient(S*0.38, 0, S, 0)
+    fGrad.addColorStop(0, rgba(USB.azulOscuro, 0.92))
+    fGrad.addColorStop(0.5, rgba(USB.azulOscuro, 0.3))
+    fGrad.addColorStop(1, rgba(USB.azulOscuro, 0.5))
     ctx.fillStyle = fGrad
-    ctx.fillRect(S * 0.5, 0, S * 0.5, S)
+    ctx.fillRect(S*0.38, 0, S*0.62, S)
   } else {
-    // Sin foto: patrón geométrico derecho
-    ctx.fillStyle = '#e8ecf5'
-    ctx.fillRect(S * 0.5, 0, S * 0.5, S)
-    ctx.strokeStyle = hexToRgba(acento, 0.12)
-    ctx.lineWidth = 1.5
-    for (let i = 0; i < 8; i++) {
+    // Sin foto: gradiente azul a cyan
+    const noFotoGrad = ctx.createLinearGradient(S*0.38, 0, S, S)
+    noFotoGrad.addColorStop(0, USB.azulMedio)
+    noFotoGrad.addColorStop(1, rgba(USB.azulVivo, 0.5))
+    ctx.fillStyle = noFotoGrad
+    ctx.fillRect(S*0.38, 0, S*0.62, S)
+    // Círculos concéntricos
+    ctx.strokeStyle = rgba(USB.cyan, 0.1)
+    ctx.lineWidth = 2
+    for (let i = 1; i <= 8; i++) {
       ctx.beginPath()
-      ctx.arc(S * 0.75, S * 0.5, S * (0.05 + i * 0.07), 0, Math.PI * 2)
+      ctx.arc(S*0.82, S*0.5, S*i*0.065, 0, Math.PI*2)
       ctx.stroke()
     }
   }
 
-  // Diagonal de separación
-  ctx.fillStyle = '#f0f2f8'
-  ctx.beginPath()
-  ctx.moveTo(S * 0.48, 0)
-  ctx.lineTo(S * 0.56, 0)
-  ctx.lineTo(S * 0.5, S)
-  ctx.lineTo(S * 0.42, S)
-  ctx.closePath()
-  ctx.fill()
+  // Panel izquierdo degradado
+  const panelGrad = ctx.createLinearGradient(0, 0, S*0.52, 0)
+  panelGrad.addColorStop(0, USB.azulOscuro)
+  panelGrad.addColorStop(0.8, rgba(USB.azulOscuro, 0.98))
+  panelGrad.addColorStop(1, rgba(USB.azulOscuro, 0.7))
+  ctx.fillStyle = panelGrad
+  ctx.fillRect(0, 0, S*0.52, S)
 
-  // Contenido panel izquierdo
+  // Barra vertical cyan izquierda
+  const barGrad = ctx.createLinearGradient(0, 0, 0, S)
+  barGrad.addColorStop(0, rgba(USB.cyan,0))
+  barGrad.addColorStop(0.3, USB.cyan)
+  barGrad.addColorStop(0.7, USB.cyan)
+  barGrad.addColorStop(1, rgba(USB.cyan,0))
+  ctx.fillStyle = barGrad
+  ctx.fillRect(0, 0, 7, S)
+
+  // Nombre club
+  ctx.font = `700 ${S*0.02}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.blanco, 0.5)
   ctx.textAlign = 'left'
+  ctx.fillText(club.toUpperCase(), S*0.06, S*0.1)
 
-  // Club nombre
-  ctx.font = `700 ${S * 0.024}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'
-  ctx.fillText(club.toUpperCase(), S * 0.07, S * 0.1)
+  // Línea cyan
+  ctx.fillStyle = USB.cyan
+  ctx.fillRect(S*0.06, S*0.115, S*0.1, 3)
 
-  // Línea decorativa
-  ctx.fillStyle = 'rgba(255,255,255,0.25)'
-  ctx.fillRect(S * 0.07, S * 0.115, S * 0.28, 1.5)
-
-  // Deporte tag
-  ctx.font = `700 ${S * 0.02}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.4)'
-  ctx.fillText('TENIS DE MESA', S * 0.07, S * 0.145)
+  // Deporte
+  ctx.font = `600 ${S*0.018}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.cyan, 0.7)
+  ctx.fillText('TENIS DE MESA', S*0.06, S*0.14)
 
   // Título
-  ctx.font = `900 ${S * 0.088}px Inter, sans-serif`
-  ctx.fillStyle = '#ffffff'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S * 0.07, S * 0.36, S * 0.4, S * 0.1)
+  ctx.font = `900 ${S*0.1}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = USB.blanco
+  ctx.textAlign = 'left'
+  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.06, S*0.36, S*0.44, S*0.11, 'left')
 
-  // Línea acento bajo título
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'
-  ctx.fillRect(S * 0.07, tY + S * 0.035, S * 0.2, 3)
-
-  // Subtítulo
-  ctx.font = `400 ${S * 0.036}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.85)'
-  wrapText(ctx, v.subtitulo, S * 0.07, tY + S * 0.085, S * 0.39, S * 0.046)
+  // Badge subtítulo/fecha
+  if (v.fecha || v.subtitulo) {
+    const bt = (v.fecha || v.subtitulo).toUpperCase()
+    pillBadge(ctx, bt, S*0.19, tY + S*0.075, USB.cyan, USB.azulOscuro, S*0.026)
+  }
 
   // Descripción
   if (v.descripcion) {
-    ctx.font = `400 ${S * 0.027}px Inter, sans-serif`
-    ctx.fillStyle = 'rgba(255,255,255,0.55)'
-    wrapText(ctx, v.descripcion, S * 0.07, tY + S * 0.185, S * 0.39, S * 0.036)
+    ctx.font = `400 ${S*0.03}px Inter, sans-serif`
+    ctx.fillStyle = rgba(USB.blanco, 0.65)
+    ctx.textAlign = 'left'
+    wrapText(ctx, v.descripcion, S*0.06, tY + S*0.165, S*0.43, S*0.04, 'left')
   }
 
-  // Hashtags
-  ctx.font = `700 ${S * 0.024}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'
-  ctx.fillText(v.hashtags.split(' ').slice(0, 3).join(' '), S * 0.07, S * 0.91)
+  // Hashtags bottom
+  ctx.font = `700 ${S*0.024}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = rgba(USB.cyanBright, 0.75)
+  ctx.textAlign = 'left'
+  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.06, S*0.925)
 }
 
+// ── LAYOUT 3: POSTER BOLD — tipografía dominante estilo "INTERCLUBES" ────────
 async function renderMinimal(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
   const S = CANVAS_SIZE
-  const acento = v.colorAcento || '#06b6d4'
 
-  // Fondo muy oscuro casi negro
-  ctx.fillStyle = '#05070d'
+  // Fondo azul vibrante degradado
+  const bgGrad = ctx.createLinearGradient(0, 0, S, S)
+  bgGrad.addColorStop(0, USB.azulMedio)
+  bgGrad.addColorStop(0.5, USB.azulVivo)
+  bgGrad.addColorStop(1, '#0c1a4a')
+  ctx.fillStyle = bgGrad
   ctx.fillRect(0, 0, S, S)
 
-  // Foto ultra oscura como textura
+  // Foto como fondo muy difuso
   if (foto) {
-    ctx.globalAlpha = 0.12
-    const ratio = Math.max(S / foto.width, S / foto.height)
-    const fw = foto.width * ratio, fh = foto.height * ratio
-    ctx.drawImage(foto, (S - fw) / 2, (S - fh) / 2, fw, fh)
+    ctx.save()
+    ctx.globalAlpha = 0.15
+    drawFoto(ctx, foto, 0, 0, S, S)
     ctx.globalAlpha = 1
+    ctx.restore()
+    // Overlay para mantener legibilidad
+    ctx.fillStyle = rgba(USB.azulMedio, 0.7)
+    ctx.fillRect(0, 0, S, S)
   }
 
-  // Dos círculos de luz de color
-  const c1 = ctx.createRadialGradient(S * 0.15, S * 0.85, 0, S * 0.15, S * 0.85, S * 0.55)
-  c1.addColorStop(0, hexToRgba(acento, 0.22))
-  c1.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = c1
-  ctx.fillRect(0, 0, S, S)
-
-  const c2 = ctx.createRadialGradient(S * 0.85, S * 0.15, 0, S * 0.85, S * 0.15, S * 0.4)
-  c2.addColorStop(0, hexToRgba(acento, 0.12))
-  c2.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = c2
-  ctx.fillRect(0, 0, S, S)
-
-  // Grid de puntos decorativo (top-right)
-  ctx.fillStyle = hexToRgba(acento, 0.15)
-  for (let row = 0; row < 6; row++) {
-    for (let col = 0; col < 6; col++) {
-      ctx.beginPath()
-      ctx.arc(S * 0.72 + col * S * 0.04, S * 0.08 + row * S * 0.04, 2.5, 0, Math.PI * 2)
-      ctx.fill()
-    }
-  }
-
-  // Línea horizontal top
-  ctx.strokeStyle = hexToRgba(acento, 0.3)
-  ctx.lineWidth = 1
+  // Forma diagonal decorativa
+  ctx.save()
+  ctx.fillStyle = rgba(USB.cyan, 0.12)
   ctx.beginPath()
-  ctx.moveTo(S * 0.06, S * 0.09)
-  ctx.lineTo(S * 0.94, S * 0.09)
-  ctx.stroke()
+  ctx.moveTo(0, S*0.6); ctx.lineTo(S, S*0.3); ctx.lineTo(S, S*0.55); ctx.lineTo(0, S*0.85)
+  ctx.closePath(); ctx.fill()
+  ctx.restore()
 
-  // Club nombre + deporte
-  ctx.font = `700 ${S * 0.024}px Inter, sans-serif`
-  ctx.fillStyle = hexToRgba(acento, 0.7)
+  // Forma diagonal 2
+  ctx.save()
+  ctx.fillStyle = rgba(USB.blanco, 0.04)
+  ctx.beginPath()
+  ctx.moveTo(0, S*0.75); ctx.lineTo(S, S*0.45); ctx.lineTo(S, S*0.58); ctx.lineTo(0, S*0.88)
+  ctx.closePath(); ctx.fill()
+  ctx.restore()
+
+  // Banda top con nombre
+  ctx.fillStyle = rgba(USB.azulOscuro, 0.6)
+  ctx.fillRect(0, 0, S, S*0.12)
+
+  // Logo area top-left
+  ctx.fillStyle = rgba(USB.blanco, 0.9)
+  ctx.beginPath()
+  ctx.arc(S*0.08, S*0.06, S*0.038, 0, Math.PI*2)
+  ctx.fill()
+  ctx.fillStyle = USB.azulVivo
+  ctx.font = `900 ${S*0.022}px 'Barlow Condensed', sans-serif`
+  ctx.textAlign = 'center'
+  ctx.fillText(club.split(' ').map((w:string)=>w[0]).join('').slice(0,3).toUpperCase(), S*0.08, S*0.068)
+
+  // Club nombre
+  ctx.font = `700 ${S*0.022}px Inter, sans-serif`
+  ctx.fillStyle = USB.blanco
   ctx.textAlign = 'left'
-  ctx.fillText(club.toUpperCase(), S * 0.06, S * 0.075)
+  ctx.fillText(club.toUpperCase(), S*0.15, S*0.055)
+  ctx.font = `400 ${S*0.016}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.blanco, 0.5)
+  ctx.fillText('CLUB DEPORTIVO · TENIS DE MESA', S*0.15, S*0.075)
 
-  ctx.font = `400 ${S * 0.018}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.25)'
+  // Año top-right
+  ctx.font = `700 ${S*0.018}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.cyanBright, 0.7)
   ctx.textAlign = 'right'
-  ctx.fillText('TENIS DE MESA', S * 0.94, S * 0.075)
+  ctx.fillText(new Date().getFullYear().toString(), S*0.95, S*0.065)
 
-  // Título — centrado vertical
+  // TÍTULO — ocupa toda la pantalla, stilo "INTERCLUBES RELÁMPAGO"
+  ctx.font = `900 ${S*0.145}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = USB.blanco
   ctx.textAlign = 'center'
-  ctx.font = `900 ${S * 0.112}px Inter, sans-serif`
-  ctx.fillStyle = '#ffffff'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S / 2, S * 0.44, S * 0.86, S * 0.122)
+  // Shadow/glow
+  ctx.shadowColor = rgba(USB.cyan, 0.5)
+  ctx.shadowBlur = 30
+  const tY = wrapText(ctx, v.titulo.toUpperCase(), S/2, S*0.38, S*0.92, S*0.155, 'center')
+  ctx.shadowBlur = 0
 
-  // Línea acento centrada
-  const lineW = S * 0.16
-  ctx.fillStyle = acento
-  ctx.fillRect(S / 2 - lineW / 2, tY + S * 0.045, lineW, 4)
+  // Línea cyan + línea blanca (como "rayos")
+  ctx.fillStyle = USB.cyan
+  ctx.fillRect(S*0.06, tY + S*0.04, S*0.88, 5)
+  ctx.fillStyle = rgba(USB.blanco, 0.15)
+  ctx.fillRect(S*0.06, tY + S*0.05, S*0.88, 2)
 
-  // Subtítulo
-  ctx.font = `300 ${S * 0.042}px Inter, sans-serif`
-  ctx.fillStyle = 'rgba(255,255,255,0.72)'
-  ctx.textAlign = 'center'
-  wrapText(ctx, v.subtitulo, S / 2, tY + S * 0.105, S * 0.8, S * 0.052)
+  // Badge fecha centrado
+  if (v.fecha || v.subtitulo) {
+    const bt = (v.fecha || v.subtitulo).toUpperCase()
+    pillBadge(ctx, bt, S/2, tY + S*0.1, USB.blanco, USB.azulVivo, S*0.03)
+  }
 
   // Descripción
   if (v.descripcion) {
-    ctx.font = `400 ${S * 0.028}px Inter, sans-serif`
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'
-    wrapText(ctx, v.descripcion, S / 2, tY + S * 0.2, S * 0.75, S * 0.038)
+    ctx.font = `600 ${S*0.034}px Inter, sans-serif`
+    ctx.fillStyle = rgba(USB.blanco, 0.85)
+    ctx.textAlign = 'center'
+    wrapText(ctx, v.descripcion, S/2, tY + S*0.185, S*0.82, S*0.044, 'center')
   }
 
-  // Línea horizontal bottom
-  ctx.strokeStyle = hexToRgba(acento, 0.2)
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.moveTo(S * 0.06, S * 0.916)
-  ctx.lineTo(S * 0.94, S * 0.916)
-  ctx.stroke()
-
-  // Hashtags
-  ctx.font = `700 ${S * 0.026}px Inter, sans-serif`
-  ctx.fillStyle = hexToRgba(acento, 0.75)
+  // Hashtags bottom
+  ctx.font = `700 ${S*0.026}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = rgba(USB.cyanBright, 0.8)
   ctx.textAlign = 'center'
-  ctx.fillText(v.hashtags.split(' ').slice(0, 3).join(' '), S / 2, S * 0.948)
+  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S/2, S*0.94)
+
+  // Línea bottom
+  ctx.fillStyle = rgba(USB.cyan, 0.5)
+  ctx.fillRect(S*0.06, S*0.955, S*0.88, 2)
 }
 
 // ── Render principal ────────────────────────────────────────────────────────
@@ -382,27 +458,21 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect }: {
       <div style={{ position: 'relative' }}>
         <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: 'block' }} />
         {seleccionada && (
-          <div style={{
-            position: 'absolute', top: 10, right: 10,
-            background: C.primary, color: '#fff', borderRadius: 20,
-            fontSize: 11, fontWeight: 600, padding: '3px 10px',
-          }}>✓ Seleccionada</div>
+          <div style={{ position: 'absolute', top: 10, right: 10, background: C.primary, color: '#fff', borderRadius: 20, fontSize: 11, fontWeight: 600, padding: '3px 10px' }}>
+            ✓ Seleccionada
+          </div>
         )}
       </div>
       <div style={{ padding: '12px 14px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-            {variante.layout}
-          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{variante.layout}</span>
           <span style={{ fontSize: 11, color: C.muted }}>{tonoLabel[variante.tono] || variante.tono}</span>
         </div>
         <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{variante.titulo}</div>
         <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>{variante.subtitulo}</div>
         <button onClick={descargar} style={{
-          width: '100%', padding: '8px',
-          background: seleccionada ? C.primary : 'transparent',
-          color: seleccionada ? '#fff' : C.primary,
-          border: `1px solid ${C.primary}`, borderRadius: 7,
+          width: '100%', padding: '8px', background: seleccionada ? C.primary : 'transparent',
+          color: seleccionada ? '#fff' : C.primary, border: `1px solid ${C.primary}`, borderRadius: 7,
           fontSize: 12, fontWeight: 600, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         }}>
@@ -427,13 +497,13 @@ export default function RedesSocialesPage() {
   const [error, setError] = useState('')
   const [seleccionada, setSeleccionada] = useState<number | null>(null)
   const [clubNombre, setClubNombre] = useState('Mi Club')
-  const [clubContexto, setClubContexto] = useState<ClubContexto>({ nombre: 'Mi Club', deporte: 'Tenis de Mesa', colores: ['#4f46e5'] })
+  const [clubContexto, setClubContexto] = useState<ClubContexto>({ nombre: 'Mi Club', deporte: 'Tenis de Mesa', colores: ['#1d4ed8', '#06b6d4'] })
 
   const ejemplos = [
     '¡Ganamos el torneo regional! Campeones 2026',
-    'Convocatoria: entrenamientos este sábado 10am',
-    'Nuevo récord personal de nuestro jugador estrella',
-    'Torneo interno este fin de semana, ¡inscríbete!',
+    'Gran Torneo este sábado 10am, ¡inscríbete!',
+    'Interclubes relámpago, domingo 29, Nogales 264',
+    'Torneo a beneficio, cupos limitados',
   ]
 
   useEffect(() => {
@@ -446,7 +516,7 @@ export default function RedesSocialesPage() {
         .then(({ data }) => {
           if (data?.nombre) {
             setClubNombre(data.nombre)
-            setClubContexto({ nombre: data.nombre, deporte: 'Tenis de Mesa', colores: ['#4f46e5', '#ffffff'] })
+            setClubContexto({ nombre: data.nombre, deporte: 'Tenis de Mesa', colores: ['#1d4ed8', '#06b6d4'] })
           }
         })
     }
@@ -483,107 +553,71 @@ export default function RedesSocialesPage() {
   return (
     <AppLayout perfil={perfil}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: 28 }}>
+        <div style={{ marginBottom: 24 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: '0 0 4px' }}>Redes Sociales</h1>
           <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>Genera flyers profesionales con IA en segundos</p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 24, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24, alignItems: 'start' }}>
           {/* Panel izquierdo */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-            {/* Prompt */}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
-              <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>
-                ¿Qué quieres publicar?
-              </label>
+              <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>¿Qué quieres publicar?</label>
               <textarea
-                value={prompt}
-                onChange={e => setPrompt(e.target.value)}
-                placeholder="Ej: ¡Ganamos el torneo regional! Campeones 2026"
+                value={prompt} onChange={e => setPrompt(e.target.value)}
+                placeholder="Ej: Gran torneo USB este sábado 21 de mayo, inscripción $1.500"
                 rows={4}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) generar() }}
-                style={{
-                  width: '100%', padding: '10px 12px',
-                  border: `1px solid ${C.border}`, borderRadius: 8,
-                  fontSize: 13, color: C.text, resize: 'vertical',
-                  fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
-                }}
+                style={{ width: '100%', padding: '10px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, resize: 'vertical', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
               />
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 11, color: C.hint, marginBottom: 5 }}>Ejemplos:</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   {ejemplos.map(ej => (
-                    <button key={ej} onClick={() => setPrompt(ej)} style={{
-                      textAlign: 'left', padding: '5px 8px', background: C.bg,
-                      border: `1px solid ${C.border}`, borderRadius: 6,
-                      fontSize: 11, color: C.muted, cursor: 'pointer',
-                    }}>{ej}</button>
+                    <button key={ej} onClick={() => setPrompt(ej)} style={{ textAlign: 'left', padding: '5px 8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 11, color: C.muted, cursor: 'pointer' }}>{ej}</button>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* Foto */}
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
               <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>
-                Foto <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span>
+                Foto del jugador o evento <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span>
               </label>
               {foto ? (
                 <div style={{ position: 'relative' }}>
-                  <img src={URL.createObjectURL(foto)} alt="foto"
-                    style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+                  <img src={URL.createObjectURL(foto)} alt="foto" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
                   <button onClick={() => { setFoto(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
-                    style={{
-                      position: 'absolute', top: 8, right: 8,
-                      background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none',
-                      borderRadius: '50%', width: 28, height: 28,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                    }}><X size={14} /></button>
+                    style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <X size={14} />
+                  </button>
                 </div>
               ) : (
-                <div onClick={() => fileInputRef.current?.click()} style={{
-                  border: `2px dashed ${C.border}`, borderRadius: 8,
-                  padding: '28px 20px', textAlign: 'center', cursor: 'pointer',
-                }}>
+                <div onClick={() => fileInputRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 8, padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}>
                   <Upload size={22} color={C.hint} style={{ margin: '0 auto 8px' }} />
-                  <div style={{ fontSize: 13, color: C.muted, marginBottom: 3 }}>Sube una foto del club</div>
-                  <div style={{ fontSize: 11, color: C.hint }}>JPG, PNG — se usa como fondo del flyer</div>
+                  <div style={{ fontSize: 13, color: C.muted, marginBottom: 3 }}>Sube una foto del club o jugador</div>
+                  <div style={{ fontSize: 11, color: C.hint }}>Se usa como fondo del flyer</div>
                 </div>
               )}
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) setFoto(f) }} />
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setFoto(f) }} />
             </div>
 
-            {/* Botones */}
             <button onClick={generar} disabled={!prompt.trim() || generando} style={{
-              width: '100%', padding: '13px',
-              background: !prompt.trim() || generando ? '#c7d2fe' : C.primary,
-              color: '#fff', border: 'none', borderRadius: 10,
-              fontSize: 14, fontWeight: 700, cursor: !prompt.trim() || generando ? 'not-allowed' : 'pointer',
+              width: '100%', padding: '13px', background: !prompt.trim() || generando ? '#c7d2fe' : C.primary,
+              color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700,
+              cursor: !prompt.trim() || generando ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}>
-              {generando
-                ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Generando variantes...</>
-                : <><Sparkles size={16} /> Generar 3 variantes</>
-              }
+              {generando ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Generando variantes...</> : <><Sparkles size={16} /> Generar 3 variantes</>}
             </button>
 
             {variantes.length > 0 && (
-              <button onClick={generar} style={{
-                width: '100%', padding: '10px', background: 'transparent',
-                color: C.primary, border: `1px solid ${C.primary}`, borderRadius: 10,
-                fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}><RefreshCw size={13} /> Regenerar</button>
+              <button onClick={generar} style={{ width: '100%', padding: '10px', background: 'transparent', color: C.primary, border: `1px solid ${C.primary}`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <RefreshCw size={13} /> Regenerar
+              </button>
             )}
 
-            {error && (
-              <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>{error}</div>}
           </div>
 
           {/* Panel derecho */}
@@ -599,12 +633,8 @@ export default function RedesSocialesPage() {
                 </div>
               </div>
             )}
-
             {!generando && variantes.length === 0 && (
-              <div style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                minHeight: 400, gap: 12, border: `2px dashed ${C.border}`, borderRadius: 12,
-              }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12, border: `2px dashed ${C.border}`, borderRadius: 12 }}>
                 <ImageIcon size={40} color={C.hint} />
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 15, fontWeight: 500, color: C.muted }}>Tus flyers aparecerán aquí</div>
@@ -612,7 +642,6 @@ export default function RedesSocialesPage() {
                 </div>
               </div>
             )}
-
             {!generando && variantes.length > 0 && (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -621,8 +650,7 @@ export default function RedesSocialesPage() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
                   {variantes.map((v, i) => (
-                    <FlyrCard key={i} variante={v} foto={fotoImg} clubNombre={clubNombre}
-                      seleccionada={seleccionada === i} onSelect={() => setSeleccionada(i)} />
+                    <FlyrCard key={i} variante={v} foto={fotoImg} clubNombre={clubNombre} seleccionada={seleccionada === i} onSelect={() => setSeleccionada(i)} />
                   ))}
                 </div>
               </div>
@@ -630,7 +658,7 @@ export default function RedesSocialesPage() {
           </div>
         </div>
       </div>
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } textarea:focus { border-color: #4f46e5 !important; }`}</style>
+      <style>{`@keyframes spin { from{transform:rotate(0deg)}to{transform:rotate(360deg)} } textarea:focus{border-color:#4f46e5!important;}`}</style>
     </AppLayout>
   )
 }
