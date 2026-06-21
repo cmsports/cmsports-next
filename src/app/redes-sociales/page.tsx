@@ -79,7 +79,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
 }
 
 function pillBadge(ctx: CanvasRenderingContext2D, text: string, cx: number, cy: number, bg: string, color: string, fontSize: number) {
-  ctx.font = `700 ${fontSize}px Barlow Condensed, sans-serif`
+  ctx.font = `700 ${fontSize}px 'Barlow Condensed', sans-serif`
   const tw = ctx.measureText(text).width
   const pw = tw + fontSize * 1.6, ph = fontSize * 1.8
   const rx = cx - pw / 2, ry = cy - ph / 2, r = ph / 2
@@ -101,317 +101,327 @@ function pillBadge(ctx: CanvasRenderingContext2D, text: string, cx: number, cy: 
   ctx.fillText(text, cx, cy + fontSize * 0.38)
 }
 
+// Badge alineado a la izquierda (calcula cx automáticamente)
+function pillBadgeLeft(ctx: CanvasRenderingContext2D, text: string, lx: number, cy: number, bg: string, color: string, fontSize: number) {
+  ctx.font = `700 ${fontSize}px 'Barlow Condensed', sans-serif`
+  const tw = ctx.measureText(text).width
+  const pw = tw + fontSize * 1.6
+  pillBadge(ctx, text, lx + pw / 2, cy, bg, color, fontSize)
+}
+
 function drawFoto(ctx: CanvasRenderingContext2D, foto: HTMLImageElement, x: number, y: number, w: number, h: number) {
   const ratio = Math.max(w / foto.width, h / foto.height)
   const fw = foto.width * ratio, fh = foto.height * ratio
   ctx.drawImage(foto, x + (w - fw) / 2, y + (h - fh) / 2, fw, fh)
 }
 
-// ── LAYOUT 1: GRAN TORNEO — fondo degradado + foto + título gigante ─────────
+// ── LAYOUT 1: SPOTLIGHT — foto full + backlight radial + badges centrados ────
 async function renderHero(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
   const S = CANVAS_SIZE
 
-  // Fondo
+  // 1. Fondo base oscuro
   ctx.fillStyle = USB.azulOscuro
   ctx.fillRect(0, 0, S, S)
 
-  // Foto de fondo con overlay azul fuerte
+  // 2. Foto full canvas al 82%
   if (foto) {
     ctx.save()
-    ctx.globalAlpha = 0.45
+    ctx.globalAlpha = 0.82
     drawFoto(ctx, foto, 0, 0, S, S)
     ctx.globalAlpha = 1
     ctx.restore()
+  } else {
+    const bg = ctx.createLinearGradient(0, 0, S, S)
+    bg.addColorStop(0, USB.azulMedio); bg.addColorStop(0.6, '#0f2a6e'); bg.addColorStop(1, USB.azulOscuro)
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, S, S)
+    ctx.strokeStyle = rgba(USB.cyan, 0.08); ctx.lineWidth = 2
+    for (let i = 1; i <= 9; i++) { ctx.beginPath(); ctx.arc(S*0.5, S*0.4, S*i*0.06, 0, Math.PI*2); ctx.stroke() }
   }
 
-  // Gradient overlay
-  const grad = ctx.createLinearGradient(0, 0, 0, S)
-  grad.addColorStop(0, rgba(USB.azulOscuro, 0.5))
-  grad.addColorStop(0.35, rgba(USB.azulMedio, 0.6))
-  grad.addColorStop(1, rgba(USB.azulOscuro, 0.97))
-  ctx.fillStyle = grad
-  ctx.fillRect(0, 0, S, S)
+  // 3. Backlight radial detrás del jugador (efecto Teletón USB)
+  const bl = ctx.createRadialGradient(S*0.5, S*0.38, 0, S*0.5, S*0.38, S*0.56)
+  bl.addColorStop(0, rgba(USB.cyanBright, 0.52))
+  bl.addColorStop(0.18, rgba(USB.azulVivo, 0.44))
+  bl.addColorStop(0.42, rgba(USB.azulVivo, 0.16))
+  bl.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = bl; ctx.fillRect(0, 0, S, S)
 
-  // Banda diagonal de color top-right
-  ctx.save()
-  ctx.fillStyle = rgba(USB.cyan, 0.18)
-  ctx.beginPath()
-  ctx.moveTo(S * 0.55, 0); ctx.lineTo(S, 0); ctx.lineTo(S, S * 0.55); ctx.closePath()
-  ctx.fill()
-  ctx.restore()
+  // 4. Vignette oscura en bordes
+  const vig = ctx.createRadialGradient(S*0.5, S*0.5, S*0.22, S*0.5, S*0.5, S*0.78)
+  vig.addColorStop(0, 'rgba(0,0,0,0)')
+  vig.addColorStop(1, rgba(USB.azulOscuro, 0.7))
+  ctx.fillStyle = vig; ctx.fillRect(0, 0, S, S)
 
-  // Línea cyan top
-  const lgTop = ctx.createLinearGradient(0, 0, S, 0)
-  lgTop.addColorStop(0, rgba(USB.cyan, 0))
-  lgTop.addColorStop(0.4, USB.cyan)
-  lgTop.addColorStop(1, rgba(USB.cyan, 0))
-  ctx.fillStyle = lgTop
-  ctx.fillRect(0, 0, S, 6)
+  // 5. Gradiente oscuro en bottom (área de texto)
+  const gBot = ctx.createLinearGradient(0, S*0.46, 0, S)
+  gBot.addColorStop(0, 'rgba(0,0,0,0)')
+  gBot.addColorStop(0.3, rgba(USB.azulOscuro, 0.78))
+  gBot.addColorStop(1, rgba(USB.azulOscuro, 0.97))
+  ctx.fillStyle = gBot; ctx.fillRect(0, S*0.46, S, S*0.54)
 
-  // Puntos decorativos top-right
-  ctx.fillStyle = rgba(USB.cyanBright, 0.2)
-  for (let r = 0; r < 5; r++)
-    for (let c = 0; c < 5; c++)
-      { ctx.beginPath(); ctx.arc(S*0.76+c*S*0.045, S*0.06+r*S*0.045, 3, 0, Math.PI*2); ctx.fill() }
+  // 6. Gradiente oscuro en top (área de club info)
+  const gTop = ctx.createLinearGradient(0, 0, 0, S*0.16)
+  gTop.addColorStop(0, rgba(USB.azulOscuro, 0.85)); gTop.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = gTop; ctx.fillRect(0, 0, S, S*0.16)
 
-  // Nombre club + deporte
+  // 7. Línea cyan top (gradiente horizontal)
+  const ltop = ctx.createLinearGradient(0, 0, S, 0)
+  ltop.addColorStop(0, rgba(USB.cyan, 0)); ltop.addColorStop(0.5, USB.cyan); ltop.addColorStop(1, rgba(USB.cyan, 0))
+  ctx.fillStyle = ltop; ctx.fillRect(0, 0, S, 5)
+
+  // 8. Club info top-left
   ctx.font = `700 ${S*0.022}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.6)
-  ctx.textAlign = 'left'
-  ctx.fillText(club.toUpperCase(), S*0.055, S*0.066)
-  ctx.font = `600 ${S*0.018}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.cyan, 0.8)
-  ctx.fillText('TENIS DE MESA', S*0.055, S*0.09)
+  ctx.fillStyle = rgba(USB.blanco, 0.9); ctx.textAlign = 'left'
+  ctx.fillText('· ' + club.toUpperCase() + ' ·', S*0.052, S*0.065)
+  ctx.fillStyle = rgba(USB.cyan, 0.75)
+  ctx.fillRect(S*0.052, S*0.078, S*0.25, 2)
+  ctx.font = `600 ${S*0.017}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.cyanBright, 0.7)
+  ctx.fillText('TENIS DE MESA', S*0.052, S*0.097)
 
-  // Línea separadora
-  const lgLine = ctx.createLinearGradient(0, 0, S*0.5, 0)
-  lgLine.addColorStop(0, rgba(USB.cyan, 0.6))
-  lgLine.addColorStop(1, rgba(USB.cyan, 0))
-  ctx.fillStyle = lgLine
-  ctx.fillRect(S*0.055, S*0.1, S*0.35, 2)
+  // Año top-right
+  ctx.font = `700 ${S*0.02}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.blanco, 0.4); ctx.textAlign = 'right'
+  ctx.fillText(new Date().getFullYear().toString(), S*0.95, S*0.065)
 
-  // Título principal — GIGANTE
-  ctx.font = `900 ${S*0.132}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = USB.blanco
-  ctx.textAlign = 'left'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.05, S*0.5, S*0.9, S*0.14, 'left')
+  // 9. TÍTULO — centrado, Barlow 900, sombra oscura
+  ctx.shadowColor = rgba(USB.azulOscuro, 0.95); ctx.shadowBlur = 22
+  ctx.font = `900 ${S*0.122}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = USB.blanco; ctx.textAlign = 'center'
+  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.5, S*0.6, S*0.9, S*0.128, 'center')
+  ctx.shadowBlur = 0
 
-  // Badge fecha/subtítulo
-  if (v.fecha || v.subtitulo) {
-    const badgeText = (v.fecha || v.subtitulo).toUpperCase()
-    pillBadge(ctx, badgeText, S*0.22, tY + S*0.075, USB.cyan, USB.azulOscuro, S*0.028)
+  // 10. Badge subtítulo (color acento)
+  if (v.subtitulo) {
+    pillBadge(ctx, v.subtitulo.toUpperCase(), S*0.5, tY + S*0.076, v.colorAcento || USB.cyan, USB.blanco, S*0.03)
   }
 
-  // Descripción
-  if (v.descripcion) {
-    ctx.font = `600 ${S*0.032}px Inter, sans-serif`
-    ctx.fillStyle = rgba(USB.blanco, 0.7)
-    ctx.textAlign = 'left'
-    wrapText(ctx, v.descripcion, S*0.055, tY + S*0.16, S*0.88, S*0.042, 'left')
+  // 11. Badge fecha (glass)
+  if (v.fecha) {
+    const fechaY = v.subtitulo ? tY + S*0.148 : tY + S*0.076
+    pillBadge(ctx, v.fecha.toUpperCase(), S*0.5, fechaY, rgba(USB.azulOscuro, 0.55), USB.blanco, S*0.026)
   }
 
-  // Hashtags
+  // 12. Hashtags
   ctx.font = `700 ${S*0.026}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.85)
-  ctx.textAlign = 'left'
-  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.055, S*0.946)
+  ctx.fillStyle = rgba(USB.cyanBright, 0.8); ctx.textAlign = 'center'
+  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.5, S*0.948)
 
   // Línea bottom
-  const lgBot = ctx.createLinearGradient(0, 0, S, 0)
-  lgBot.addColorStop(0, USB.cyan); lgBot.addColorStop(1, rgba(USB.cyan,0))
-  ctx.fillStyle = lgBot
-  ctx.fillRect(0, S*0.958, S, 3)
+  const lbot = ctx.createLinearGradient(0, 0, S, 0)
+  lbot.addColorStop(0, rgba(USB.cyan, 0)); lbot.addColorStop(0.5, USB.cyan); lbot.addColorStop(1, rgba(USB.cyan, 0))
+  ctx.fillStyle = lbot; ctx.fillRect(0, S*0.96, S, 4)
 }
 
-// ── LAYOUT 2: SPLIT DINÁMICO — foto grande derecha, texto izquierda ─────────
+// ── LAYOUT 2: CINEMATIC — corte diagonal + speed lines + jugador derecha ────
 async function renderSplit(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
   const S = CANVAS_SIZE
 
-  // Fondo azul oscuro
+  // 1. Fondo base oscuro
   ctx.fillStyle = USB.azulOscuro
   ctx.fillRect(0, 0, S, S)
 
-  // Foto derecha (60% del ancho)
+  // 2. Foto lado derecho (80%), corte diagonal
   if (foto) {
     ctx.save()
     ctx.beginPath()
-    ctx.rect(S*0.38, 0, S*0.62, S)
-    ctx.clip()
-    ctx.globalAlpha = 0.7
-    drawFoto(ctx, foto, S*0.38, 0, S*0.62, S)
+    ctx.moveTo(S*0.30, 0); ctx.lineTo(S, 0); ctx.lineTo(S, S); ctx.lineTo(S*0.18, S)
+    ctx.closePath(); ctx.clip()
+    ctx.globalAlpha = 0.82
+    drawFoto(ctx, foto, S*0.15, 0, S*0.85, S)
     ctx.globalAlpha = 1
     ctx.restore()
-    // Overlay degradado sobre foto
-    const fGrad = ctx.createLinearGradient(S*0.38, 0, S, 0)
-    fGrad.addColorStop(0, rgba(USB.azulOscuro, 0.92))
-    fGrad.addColorStop(0.5, rgba(USB.azulOscuro, 0.3))
-    fGrad.addColorStop(1, rgba(USB.azulOscuro, 0.5))
-    ctx.fillStyle = fGrad
-    ctx.fillRect(S*0.38, 0, S*0.62, S)
+    // Degradado de integración izquierdo sobre la foto
+    const fGrad = ctx.createLinearGradient(S*0.15, 0, S*0.7, 0)
+    fGrad.addColorStop(0, USB.azulOscuro)
+    fGrad.addColorStop(0.4, rgba(USB.azulOscuro, 0.6))
+    fGrad.addColorStop(0.7, rgba(USB.azulOscuro, 0.12))
+    fGrad.addColorStop(1, rgba(USB.azulOscuro, 0.3))
+    ctx.fillStyle = fGrad; ctx.fillRect(S*0.15, 0, S*0.85, S)
   } else {
-    // Sin foto: gradiente azul a cyan
-    const noFotoGrad = ctx.createLinearGradient(S*0.38, 0, S, S)
-    noFotoGrad.addColorStop(0, USB.azulMedio)
-    noFotoGrad.addColorStop(1, rgba(USB.azulVivo, 0.5))
-    ctx.fillStyle = noFotoGrad
-    ctx.fillRect(S*0.38, 0, S*0.62, S)
-    // Círculos concéntricos
-    ctx.strokeStyle = rgba(USB.cyan, 0.1)
-    ctx.lineWidth = 2
-    for (let i = 1; i <= 8; i++) {
-      ctx.beginPath()
-      ctx.arc(S*0.82, S*0.5, S*i*0.065, 0, Math.PI*2)
-      ctx.stroke()
-    }
+    const nf = ctx.createLinearGradient(S*0.28, 0, S, S)
+    nf.addColorStop(0, USB.azulMedio); nf.addColorStop(1, USB.azulVivo)
+    ctx.fillStyle = nf; ctx.fillRect(S*0.28, 0, S*0.72, S)
+    ctx.strokeStyle = rgba(USB.cyan, 0.07); ctx.lineWidth = 2
+    for (let i = 1; i <= 10; i++) { ctx.beginPath(); ctx.arc(S*0.72, S*0.5, S*i*0.055, 0, Math.PI*2); ctx.stroke() }
   }
 
-  // Panel izquierdo degradado
-  const panelGrad = ctx.createLinearGradient(0, 0, S*0.52, 0)
+  // 3. Panel izquierdo (oscuro con degradado)
+  const panelGrad = ctx.createLinearGradient(0, 0, S*0.58, 0)
   panelGrad.addColorStop(0, USB.azulOscuro)
-  panelGrad.addColorStop(0.8, rgba(USB.azulOscuro, 0.98))
-  panelGrad.addColorStop(1, rgba(USB.azulOscuro, 0.7))
-  ctx.fillStyle = panelGrad
-  ctx.fillRect(0, 0, S*0.52, S)
+  panelGrad.addColorStop(0.72, rgba(USB.azulOscuro, 0.96))
+  panelGrad.addColorStop(1, rgba(USB.azulOscuro, 0.55))
+  ctx.fillStyle = panelGrad; ctx.fillRect(0, 0, S*0.58, S)
 
-  // Barra vertical cyan izquierda
+  // 4. Barra vertical izquierda con glow cyan
   const barGrad = ctx.createLinearGradient(0, 0, 0, S)
-  barGrad.addColorStop(0, rgba(USB.cyan,0))
-  barGrad.addColorStop(0.3, USB.cyan)
-  barGrad.addColorStop(0.7, USB.cyan)
-  barGrad.addColorStop(1, rgba(USB.cyan,0))
-  ctx.fillStyle = barGrad
-  ctx.fillRect(0, 0, 7, S)
+  barGrad.addColorStop(0, rgba(USB.cyanBright, 0))
+  barGrad.addColorStop(0.2, USB.cyanBright); barGrad.addColorStop(0.8, USB.cyanBright)
+  barGrad.addColorStop(1, rgba(USB.cyanBright, 0))
+  ctx.fillStyle = barGrad; ctx.fillRect(0, 0, 6, S)
+  const glowGrad = ctx.createLinearGradient(0, 0, 32, 0)
+  glowGrad.addColorStop(0, rgba(USB.cyanBright, 0.3)); glowGrad.addColorStop(1, rgba(USB.cyanBright, 0))
+  ctx.fillStyle = glowGrad; ctx.fillRect(6, 0, 32, S)
 
-  // Nombre club
+  // 5. Speed lines (izquierda, efecto velocidad)
+  for (let i = 0; i < 24; i++) {
+    const yb = S * 0.035 + i * S * 0.04
+    const len = S * 0.08 + Math.sin(i * 1.3) * S * 0.055
+    const xOff = S * 0.042 + Math.sin(i * 0.6) * S * 0.018
+    const alpha = i % 5 === 0 ? 0.2 : 0.06
+    ctx.strokeStyle = rgba(USB.cyanBright, alpha)
+    ctx.lineWidth = i % 4 === 0 ? 2 : 1
+    ctx.beginPath(); ctx.moveTo(xOff, yb); ctx.lineTo(xOff + len, yb); ctx.stroke()
+  }
+
+  // 6. Franja diagonal decorativa (acento)
+  ctx.save()
+  ctx.fillStyle = rgba(v.colorAcento || USB.cyan, 0.14)
+  ctx.beginPath()
+  ctx.moveTo(S*0.05, S*0.38); ctx.lineTo(S*0.46, S*0.38); ctx.lineTo(S*0.42, S*0.415); ctx.lineTo(S*0.01, S*0.415)
+  ctx.closePath(); ctx.fill()
+  ctx.restore()
+
+  // 7. Club info top-left
   ctx.font = `700 ${S*0.02}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.5)
-  ctx.textAlign = 'left'
-  ctx.fillText(club.toUpperCase(), S*0.06, S*0.1)
+  ctx.fillStyle = rgba(USB.blanco, 0.85); ctx.textAlign = 'left'
+  ctx.fillText(club.toUpperCase(), S*0.065, S*0.082)
+  ctx.fillStyle = rgba(USB.cyan, 0.8)
+  ctx.fillRect(S*0.065, S*0.096, S*0.13, 2)
+  ctx.font = `400 ${S*0.016}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.blanco, 0.42)
+  ctx.fillText('TENIS DE MESA', S*0.065, S*0.116)
 
-  // Línea cyan
-  ctx.fillStyle = USB.cyan
-  ctx.fillRect(S*0.06, S*0.115, S*0.1, 3)
+  // 8. TÍTULO — izquierda, enorme
+  ctx.shadowColor = rgba(USB.azulOscuro, 0.9); ctx.shadowBlur = 16
+  ctx.font = `900 ${S*0.108}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = USB.blanco; ctx.textAlign = 'left'
+  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.065, S*0.35, S*0.48, S*0.115, 'left')
+  ctx.shadowBlur = 0
 
-  // Deporte
-  ctx.font = `600 ${S*0.018}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.cyan, 0.7)
-  ctx.fillText('TENIS DE MESA', S*0.06, S*0.14)
-
-  // Título
-  ctx.font = `900 ${S*0.1}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = USB.blanco
-  ctx.textAlign = 'left'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.06, S*0.36, S*0.44, S*0.11, 'left')
-
-  // Badge subtítulo/fecha
-  if (v.fecha || v.subtitulo) {
-    const bt = (v.fecha || v.subtitulo).toUpperCase()
-    pillBadge(ctx, bt, S*0.19, tY + S*0.075, USB.cyan, USB.azulOscuro, S*0.026)
+  // 9. Badge subtítulo (izq, alineado)
+  if (v.subtitulo) {
+    pillBadgeLeft(ctx, v.subtitulo.toUpperCase(), S*0.065, tY + S*0.078, v.colorAcento || USB.cyan, USB.blanco, S*0.026)
   }
 
-  // Descripción
-  if (v.descripcion) {
-    ctx.font = `400 ${S*0.03}px Inter, sans-serif`
-    ctx.fillStyle = rgba(USB.blanco, 0.65)
-    ctx.textAlign = 'left'
-    wrapText(ctx, v.descripcion, S*0.06, tY + S*0.165, S*0.43, S*0.04, 'left')
+  // 10. Badge fecha
+  if (v.fecha) {
+    const fy = v.subtitulo ? tY + S*0.148 : tY + S*0.078
+    pillBadgeLeft(ctx, v.fecha.toUpperCase(), S*0.065, fy, rgba(USB.azulOscuro, 0.65), USB.blanco, S*0.024)
   }
 
-  // Hashtags bottom
+  // 11. Hashtags bottom-left
   ctx.font = `700 ${S*0.024}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.75)
-  ctx.textAlign = 'left'
-  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.06, S*0.925)
+  ctx.fillStyle = rgba(USB.cyanBright, 0.72); ctx.textAlign = 'left'
+  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.065, S*0.938)
+
+  // Línea bottom
+  const lbot = ctx.createLinearGradient(0, 0, S, 0)
+  lbot.addColorStop(0, USB.cyan); lbot.addColorStop(0.6, rgba(USB.cyan, 0.15)); lbot.addColorStop(1, rgba(USB.cyan, 0))
+  ctx.fillStyle = lbot; ctx.fillRect(0, S*0.956, S, 4)
 }
 
-// ── LAYOUT 3: POSTER BOLD — tipografía dominante estilo "INTERCLUBES" ────────
+// ── LAYOUT 3: POSTER BOLD — foto full + backlight + franja torn CTA ─────────
 async function renderMinimal(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
   const S = CANVAS_SIZE
 
-  // Fondo azul vibrante degradado
-  const bgGrad = ctx.createLinearGradient(0, 0, S, S)
-  bgGrad.addColorStop(0, USB.azulMedio)
-  bgGrad.addColorStop(0.5, USB.azulVivo)
-  bgGrad.addColorStop(1, '#0c1a4a')
-  ctx.fillStyle = bgGrad
+  // 1. Fondo base
+  ctx.fillStyle = USB.azulOscuro
   ctx.fillRect(0, 0, S, S)
 
-  // Foto como fondo muy difuso
+  // 2. Foto full canvas al 85%
   if (foto) {
     ctx.save()
-    ctx.globalAlpha = 0.15
+    ctx.globalAlpha = 0.85
     drawFoto(ctx, foto, 0, 0, S, S)
     ctx.globalAlpha = 1
     ctx.restore()
-    // Overlay para mantener legibilidad
-    ctx.fillStyle = rgba(USB.azulMedio, 0.7)
-    ctx.fillRect(0, 0, S, S)
+  } else {
+    const bg = ctx.createLinearGradient(0, 0, S*0.8, S)
+    bg.addColorStop(0, '#0c1a4a'); bg.addColorStop(0.5, USB.azulVivo); bg.addColorStop(1, '#040b14')
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, S, S)
+    // Hexágonos decorativos (posiciones fijas)
+    const hexes = [[S*0.28, S*0.38], [S*0.72, S*0.62], [S*0.5, S*0.22], [S*0.14, S*0.68]]
+    hexes.forEach(([hx, hy]) => {
+      ctx.strokeStyle = rgba(USB.cyan, 0.09); ctx.lineWidth = 2; ctx.beginPath()
+      for (let j = 0; j < 6; j++) {
+        const a = (j * Math.PI) / 3 - Math.PI / 6, r = S*0.11
+        if (j === 0) ctx.moveTo(hx + r*Math.cos(a), hy + r*Math.sin(a))
+        else ctx.lineTo(hx + r*Math.cos(a), hy + r*Math.sin(a))
+      }
+      ctx.closePath(); ctx.stroke()
+    })
   }
 
-  // Forma diagonal decorativa
-  ctx.save()
-  ctx.fillStyle = rgba(USB.cyan, 0.12)
-  ctx.beginPath()
-  ctx.moveTo(0, S*0.6); ctx.lineTo(S, S*0.3); ctx.lineTo(S, S*0.55); ctx.lineTo(0, S*0.85)
-  ctx.closePath(); ctx.fill()
-  ctx.restore()
+  // 3. Backlight radial INTENSO (efecto Teletón)
+  const bl = ctx.createRadialGradient(S*0.5, S*0.34, 0, S*0.5, S*0.34, S*0.62)
+  bl.addColorStop(0, rgba(USB.cyanBright, 0.65))
+  bl.addColorStop(0.14, rgba(USB.azulVivo, 0.56))
+  bl.addColorStop(0.34, rgba(USB.azulVivo, 0.22))
+  bl.addColorStop(0.62, rgba(USB.azulOscuro, 0.08))
+  bl.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = bl; ctx.fillRect(0, 0, S, S)
 
-  // Forma diagonal 2
-  ctx.save()
-  ctx.fillStyle = rgba(USB.blanco, 0.04)
-  ctx.beginPath()
-  ctx.moveTo(0, S*0.75); ctx.lineTo(S, S*0.45); ctx.lineTo(S, S*0.58); ctx.lineTo(0, S*0.88)
-  ctx.closePath(); ctx.fill()
-  ctx.restore()
+  // 4. Gradiente oscuro top (club info)
+  const gTop = ctx.createLinearGradient(0, 0, 0, S*0.2)
+  gTop.addColorStop(0, rgba(USB.azulOscuro, 0.88)); gTop.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.fillStyle = gTop; ctx.fillRect(0, 0, S, S*0.2)
 
-  // Banda top con nombre
-  ctx.fillStyle = rgba(USB.azulOscuro, 0.6)
-  ctx.fillRect(0, 0, S, S*0.12)
-
-  // Logo area top-left
-  ctx.fillStyle = rgba(USB.blanco, 0.9)
-  ctx.beginPath()
-  ctx.arc(S*0.08, S*0.06, S*0.038, 0, Math.PI*2)
-  ctx.fill()
-  ctx.fillStyle = USB.azulVivo
-  ctx.font = `900 ${S*0.022}px 'Barlow Condensed', sans-serif`
-  ctx.textAlign = 'center'
-  ctx.fillText(club.split(' ').map((w:string)=>w[0]).join('').slice(0,3).toUpperCase(), S*0.08, S*0.068)
-
-  // Club nombre
-  ctx.font = `700 ${S*0.022}px Inter, sans-serif`
-  ctx.fillStyle = USB.blanco
-  ctx.textAlign = 'left'
-  ctx.fillText(club.toUpperCase(), S*0.15, S*0.055)
+  // 5. Club info top (centrado)
+  ctx.font = `700 ${S*0.02}px Inter, sans-serif`
+  ctx.fillStyle = rgba(USB.blanco, 0.88); ctx.textAlign = 'center'
+  ctx.fillText('· ' + club.toUpperCase() + ' ·', S*0.5, S*0.065)
+  const ltop = ctx.createLinearGradient(S*0.22, 0, S*0.78, 0)
+  ltop.addColorStop(0, rgba(USB.cyan, 0)); ltop.addColorStop(0.5, USB.cyan); ltop.addColorStop(1, rgba(USB.cyan, 0))
+  ctx.fillStyle = ltop; ctx.fillRect(S*0.22, S*0.079, S*0.56, 3)
   ctx.font = `400 ${S*0.016}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.5)
-  ctx.fillText('CLUB DEPORTIVO · TENIS DE MESA', S*0.15, S*0.075)
+  ctx.fillStyle = rgba(USB.cyanBright, 0.58); ctx.textAlign = 'center'
+  ctx.fillText('CLUB DEPORTIVO · TENIS DE MESA', S*0.5, S*0.1)
 
-  // Año top-right
-  ctx.font = `700 ${S*0.018}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.7)
-  ctx.textAlign = 'right'
-  ctx.fillText(new Date().getFullYear().toString(), S*0.95, S*0.065)
-
-  // TÍTULO — ocupa toda la pantalla, stilo "INTERCLUBES RELÁMPAGO"
-  ctx.font = `900 ${S*0.145}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = USB.blanco
-  ctx.textAlign = 'center'
-  // Shadow/glow
-  ctx.shadowColor = rgba(USB.cyan, 0.5)
-  ctx.shadowBlur = 30
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S/2, S*0.38, S*0.92, S*0.155, 'center')
+  // 6. TÍTULO — centrado, ENORME, con sombra oscura fuerte
+  ctx.shadowColor = rgba(USB.azulOscuro, 0.98); ctx.shadowBlur = 28
+  ctx.font = `900 ${S*0.138}px 'Barlow Condensed', sans-serif`
+  ctx.fillStyle = USB.blanco; ctx.textAlign = 'center'
+  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.5, S*0.46, S*0.93, S*0.146, 'center')
   ctx.shadowBlur = 0
 
-  // Línea cyan + línea blanca (como "rayos")
-  ctx.fillStyle = USB.cyan
-  ctx.fillRect(S*0.06, tY + S*0.04, S*0.88, 5)
-  ctx.fillStyle = rgba(USB.blanco, 0.15)
-  ctx.fillRect(S*0.06, tY + S*0.05, S*0.88, 2)
+  // 7. Franja CTA con borde torn (ondas sinusoidales deterministas)
+  const panelTop = tY + S * 0.062
+  ctx.save()
+  ctx.fillStyle = rgba(USB.azulOscuro, 0.92)
+  ctx.beginPath()
+  ctx.moveTo(0, panelTop)
+  for (let x = 0; x <= S + 16; x += 16) {
+    const wy = panelTop + Math.sin(x * 0.024) * 12 + Math.sin(x * 0.057) * 5
+    ctx.lineTo(x, wy)
+  }
+  ctx.lineTo(S, S); ctx.lineTo(0, S); ctx.closePath(); ctx.fill()
+  ctx.restore()
 
-  // Badge fecha centrado
-  if (v.fecha || v.subtitulo) {
-    const bt = (v.fecha || v.subtitulo).toUpperCase()
-    pillBadge(ctx, bt, S/2, tY + S*0.1, USB.blanco, USB.azulVivo, S*0.03)
+  // Línea cyan sobre la franja
+  const lline = ctx.createLinearGradient(0, 0, S, 0)
+  lline.addColorStop(0, rgba(USB.cyan, 0)); lline.addColorStop(0.12, USB.cyan)
+  lline.addColorStop(0.88, USB.cyan); lline.addColorStop(1, rgba(USB.cyan, 0))
+  ctx.fillStyle = lline; ctx.fillRect(0, panelTop + 2, S, 4)
+
+  // 8. Badges dentro de la franja
+  const badgeY = panelTop + S*0.058
+  if (v.subtitulo) {
+    pillBadge(ctx, v.subtitulo.toUpperCase(), S*0.5, badgeY, v.colorAcento || USB.cyan, USB.blanco, S*0.03)
+  }
+  if (v.fecha) {
+    const fy = v.subtitulo ? badgeY + S*0.07 : badgeY
+    pillBadge(ctx, v.fecha.toUpperCase(), S*0.5, fy, rgba(USB.blanco, 0.14), USB.blanco, S*0.025)
   }
 
-  // Descripción
-  if (v.descripcion) {
-    ctx.font = `600 ${S*0.034}px Inter, sans-serif`
-    ctx.fillStyle = rgba(USB.blanco, 0.85)
-    ctx.textAlign = 'center'
-    wrapText(ctx, v.descripcion, S/2, tY + S*0.185, S*0.82, S*0.044, 'center')
-  }
-
-  // Hashtags bottom
+  // 9. Hashtags bottom
   ctx.font = `700 ${S*0.026}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.8)
-  ctx.textAlign = 'center'
-  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S/2, S*0.94)
+  ctx.fillStyle = rgba(USB.cyanBright, 0.76); ctx.textAlign = 'center'
+  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.5, S*0.945)
 
   // Línea bottom
-  ctx.fillStyle = rgba(USB.cyan, 0.5)
-  ctx.fillRect(S*0.06, S*0.955, S*0.88, 2)
+  ctx.fillStyle = rgba(USB.cyan, 0.45)
+  ctx.fillRect(S*0.12, S*0.958, S*0.76, 3)
 }
 
 // ── Render principal ────────────────────────────────────────────────────────
