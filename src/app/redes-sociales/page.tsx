@@ -5,629 +5,80 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
-import { Sparkles, Upload, ImageIcon, Download, RefreshCw, Loader2, X } from 'lucide-react'
+import {
+  subirReferenciaAction, eliminarReferenciaAction,
+  subirFotoGaleriaAction, eliminarFotoGaleriaAction,
+  subirLogoAction,
+} from '@/app/actions/redes-sociales'
+import { Button, Card, EmptyState } from '@/components/ui'
+import { Sparkles, ImageIcon, Images, Download, RefreshCw, Loader2, Upload, Trash2, Check, Shield } from 'lucide-react'
 
-interface Variante {
-  titulo: string
-  subtitulo: string
-  descripcion: string
-  hashtags: string
-  layout: 'hero' | 'split' | 'minimal'
-  colorAcento: string
-  colorTexto: string
-  tono: string
-  fecha?: string
-}
+interface FlyerReferencia { id: string; url: string; nombre: string | null }
+interface FotoGaleria { id: string; url: string; tipo: string }
 
-interface ClubContexto {
-  nombre: string
-  deporte: string
-  colores: string[]
-}
-
-const CANVAS_SIZE = 1080
-
-const C = {
-  bg: '#f1f5f9', card: '#ffffff', border: '#e2e8f0',
-  text: '#0f172a', muted: '#64748b', hint: '#94a3b8',
-  primary: '#4f46e5', primaryL: '#ede9fe',
-}
-
-// Paleta USB
-const USB = {
-  azulOscuro: '#060e1e',
-  azulMedio:  '#0a2254',
-  azulVivo:   '#1d4ed8',
-  cyan:       '#06b6d4',
-  cyanBright: '#22d3ee',
-  amarillo:   '#fbbf24',
-  blanco:     '#ffffff',
-}
-
-// ── Stock fotos de tenis de mesa (Unsplash, gratis, CORS ok) ────────────────
-const STOCK_FOTOS = [
-  'https://images.unsplash.com/photo-1518928286447-dc161b7cd6fb?w=1080&q=85&auto=format&fit=crop', // jugador sirviendo
-  'https://images.unsplash.com/photo-1659303388076-de1535159d6c?w=1080&q=85&auto=format&fit=crop', // hombre jugando
-  'https://images.unsplash.com/photo-1461748659110-16121c049d52?w=1080&q=85&auto=format&fit=crop', // dos jugadores
-  'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?w=1080&q=85&auto=format&fit=crop', // mesa azul atmosférica
-  'https://images.unsplash.com/photo-1676827613262-5fba25cee5fd?w=1080&q=85&auto=format&fit=crop', // paletas en mesa azul
-  'https://images.unsplash.com/photo-1515773512591-dfaf9e052325?w=1080&q=85&auto=format&fit=crop', // raqueta y pelota
+const TIPOS_FOTO = [
+  { value: 'jugador', label: 'Jugador' },
+  { value: 'cancha', label: 'Cancha' },
+  { value: 'equipo', label: 'Equipo' },
+  { value: 'otro', label: 'Otro' },
 ]
-const stockImgCache: Record<string, HTMLImageElement> = {}
-async function loadStockFoto(url: string): Promise<HTMLImageElement> {
-  if (stockImgCache[url]) return stockImgCache[url]
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => { stockImgCache[url] = img; resolve(img) }
-    img.onerror = reject
-    img.src = url
-  })
-}
 
-// ── Cargar fuentes ──────────────────────────────────────────────────────────
-let fontesLoaded = false
-async function cargarFuentes() {
-  if (fontesLoaded) return
-  try {
-    const link = document.createElement('link')
-    link.href = 'https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=Inter:wght@400;600;700&display=swap'
-    link.rel = 'stylesheet'
-    document.head.appendChild(link)
-    await document.fonts.ready
-    fontesLoaded = true
-  } catch (_) {}
-}
-
-// ── Utilidades ──────────────────────────────────────────────────────────────
-function rgba(hex: string, a: number) {
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
-  return `rgba(${r},${g},${b},${a})`
-}
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, lh: number, align: CanvasTextAlign = 'left'): number {
-  ctx.textAlign = align
-  const words = text.split(' ')
-  let line = '', cy = y
-  for (const w of words) {
-    const test = line ? `${line} ${w}` : w
-    if (ctx.measureText(test).width > maxW && line) {
-      ctx.fillText(line, x, cy); line = w; cy += lh
-    } else line = test
+function GridSelector<T extends { id: string; url: string }>({
+  items, seleccionado, onSelect, vacio,
+}: { items: T[]; seleccionado: string | null; onSelect: (id: string) => void; vacio: string }) {
+  if (items.length === 0) {
+    return <div className="text-xs text-[var(--text-muted)] py-6 text-center border border-dashed border-[var(--border)] rounded-lg">{vacio}</div>
   }
-  ctx.fillText(line, x, cy)
-  return cy
-}
-
-function pillBadge(ctx: CanvasRenderingContext2D, text: string, cx: number, cy: number, bg: string, color: string, fontSize: number) {
-  ctx.font = `700 ${fontSize}px 'Barlow Condensed', sans-serif`
-  const tw = ctx.measureText(text).width
-  const pw = tw + fontSize * 1.6, ph = fontSize * 1.8
-  const rx = cx - pw / 2, ry = cy - ph / 2, r = ph / 2
-  ctx.fillStyle = bg
-  ctx.beginPath()
-  ctx.moveTo(rx + r, ry)
-  ctx.lineTo(rx + pw - r, ry)
-  ctx.quadraticCurveTo(rx + pw, ry, rx + pw, ry + r)
-  ctx.lineTo(rx + pw, ry + ph - r)
-  ctx.quadraticCurveTo(rx + pw, ry + ph, rx + pw - r, ry + ph)
-  ctx.lineTo(rx + r, ry + ph)
-  ctx.quadraticCurveTo(rx, ry + ph, rx, ry + ph - r)
-  ctx.lineTo(rx, ry + r)
-  ctx.quadraticCurveTo(rx, ry, rx + r, ry)
-  ctx.closePath()
-  ctx.fill()
-  ctx.fillStyle = color
-  ctx.textAlign = 'center'
-  ctx.fillText(text, cx, cy + fontSize * 0.38)
-}
-
-// Badge alineado a la izquierda (calcula cx automáticamente)
-function pillBadgeLeft(ctx: CanvasRenderingContext2D, text: string, lx: number, cy: number, bg: string, color: string, fontSize: number) {
-  ctx.font = `700 ${fontSize}px 'Barlow Condensed', sans-serif`
-  const tw = ctx.measureText(text).width
-  const pw = tw + fontSize * 1.6
-  pillBadge(ctx, text, lx + pw / 2, cy, bg, color, fontSize)
-}
-
-function drawFoto(ctx: CanvasRenderingContext2D, foto: HTMLImageElement, x: number, y: number, w: number, h: number) {
-  const ratio = Math.max(w / foto.width, h / foto.height)
-  const fw = foto.width * ratio, fh = foto.height * ratio
-  ctx.drawImage(foto, x + (w - fw) / 2, y + (h - fh) / 2, fw, fh)
-}
-
-// ── LAYOUT 1: SPOTLIGHT — foto full + backlight radial + badges centrados ────
-async function renderHero(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
-  const S = CANVAS_SIZE
-
-  // 1. Fondo base oscuro
-  ctx.fillStyle = USB.azulOscuro
-  ctx.fillRect(0, 0, S, S)
-
-  // 2. Foto full canvas al 82%
-  if (foto) {
-    ctx.save()
-    ctx.globalAlpha = 0.82
-    drawFoto(ctx, foto, 0, 0, S, S)
-    ctx.globalAlpha = 1
-    ctx.restore()
-  } else {
-    const bg = ctx.createLinearGradient(0, 0, S, S)
-    bg.addColorStop(0, USB.azulMedio); bg.addColorStop(0.6, '#0f2a6e'); bg.addColorStop(1, USB.azulOscuro)
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, S, S)
-    ctx.strokeStyle = rgba(USB.cyan, 0.08); ctx.lineWidth = 2
-    for (let i = 1; i <= 9; i++) { ctx.beginPath(); ctx.arc(S*0.5, S*0.4, S*i*0.06, 0, Math.PI*2); ctx.stroke() }
-  }
-
-  // 3. Backlight radial detrás del jugador (efecto Teletón USB)
-  const bl = ctx.createRadialGradient(S*0.5, S*0.38, 0, S*0.5, S*0.38, S*0.56)
-  bl.addColorStop(0, rgba(USB.cyanBright, 0.52))
-  bl.addColorStop(0.18, rgba(USB.azulVivo, 0.44))
-  bl.addColorStop(0.42, rgba(USB.azulVivo, 0.16))
-  bl.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = bl; ctx.fillRect(0, 0, S, S)
-
-  // 4. Vignette oscura en bordes
-  const vig = ctx.createRadialGradient(S*0.5, S*0.5, S*0.22, S*0.5, S*0.5, S*0.78)
-  vig.addColorStop(0, 'rgba(0,0,0,0)')
-  vig.addColorStop(1, rgba(USB.azulOscuro, 0.7))
-  ctx.fillStyle = vig; ctx.fillRect(0, 0, S, S)
-
-  // 5. Gradiente oscuro en bottom (área de texto)
-  const gBot = ctx.createLinearGradient(0, S*0.46, 0, S)
-  gBot.addColorStop(0, 'rgba(0,0,0,0)')
-  gBot.addColorStop(0.3, rgba(USB.azulOscuro, 0.62))
-  gBot.addColorStop(1, rgba(USB.azulOscuro, 0.88))
-  ctx.fillStyle = gBot; ctx.fillRect(0, S*0.46, S, S*0.54)
-
-  // 6. Gradiente oscuro en top (área de club info)
-  const gTop = ctx.createLinearGradient(0, 0, 0, S*0.16)
-  gTop.addColorStop(0, rgba(USB.azulOscuro, 0.85)); gTop.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = gTop; ctx.fillRect(0, 0, S, S*0.16)
-
-  // 7. Línea cyan top (gradiente horizontal)
-  const ltop = ctx.createLinearGradient(0, 0, S, 0)
-  ltop.addColorStop(0, rgba(USB.cyan, 0)); ltop.addColorStop(0.5, USB.cyan); ltop.addColorStop(1, rgba(USB.cyan, 0))
-  ctx.fillStyle = ltop; ctx.fillRect(0, 0, S, 5)
-
-  // 8. Club info top-left
-  ctx.font = `700 ${S*0.022}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.9); ctx.textAlign = 'left'
-  ctx.fillText('· ' + club.toUpperCase() + ' ·', S*0.052, S*0.065)
-  ctx.fillStyle = rgba(USB.cyan, 0.75)
-  ctx.fillRect(S*0.052, S*0.078, S*0.25, 2)
-  ctx.font = `600 ${S*0.017}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.7)
-  ctx.fillText('TENIS DE MESA', S*0.052, S*0.097)
-
-  // Año top-right
-  ctx.font = `700 ${S*0.02}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.4); ctx.textAlign = 'right'
-  ctx.fillText(new Date().getFullYear().toString(), S*0.95, S*0.065)
-
-  // 9. TÍTULO — centrado, Barlow 900, sombra oscura
-  ctx.shadowColor = rgba(USB.azulOscuro, 0.95); ctx.shadowBlur = 22
-  ctx.font = `900 ${S*0.122}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = USB.blanco; ctx.textAlign = 'center'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.5, S*0.6, S*0.9, S*0.128, 'center')
-  ctx.shadowBlur = 0
-
-  // 10. Badge subtítulo (color acento)
-  if (v.subtitulo) {
-    pillBadge(ctx, v.subtitulo.toUpperCase(), S*0.5, tY + S*0.076, v.colorAcento || USB.cyan, USB.blanco, S*0.03)
-  }
-
-  // 11. Badge fecha (glass)
-  if (v.fecha) {
-    const fechaY = v.subtitulo ? tY + S*0.148 : tY + S*0.076
-    pillBadge(ctx, v.fecha.toUpperCase(), S*0.5, fechaY, rgba(USB.azulOscuro, 0.55), USB.blanco, S*0.026)
-  }
-
-  // 12. Hashtags
-  ctx.font = `700 ${S*0.026}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.8); ctx.textAlign = 'center'
-  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.5, S*0.948)
-
-  // Línea bottom
-  const lbot = ctx.createLinearGradient(0, 0, S, 0)
-  lbot.addColorStop(0, rgba(USB.cyan, 0)); lbot.addColorStop(0.5, USB.cyan); lbot.addColorStop(1, rgba(USB.cyan, 0))
-  ctx.fillStyle = lbot; ctx.fillRect(0, S*0.96, S, 4)
-}
-
-// ── LAYOUT 2: CINEMATIC — corte diagonal + speed lines + jugador derecha ────
-async function renderSplit(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
-  const S = CANVAS_SIZE
-
-  // 1. Fondo base oscuro
-  ctx.fillStyle = USB.azulOscuro
-  ctx.fillRect(0, 0, S, S)
-
-  // 2. Foto lado derecho (80%), corte diagonal
-  if (foto) {
-    ctx.save()
-    ctx.beginPath()
-    ctx.moveTo(S*0.30, 0); ctx.lineTo(S, 0); ctx.lineTo(S, S); ctx.lineTo(S*0.18, S)
-    ctx.closePath(); ctx.clip()
-    ctx.globalAlpha = 0.82
-    drawFoto(ctx, foto, S*0.15, 0, S*0.85, S)
-    ctx.globalAlpha = 1
-    ctx.restore()
-    // Degradado de integración izquierdo sobre la foto
-    const fGrad = ctx.createLinearGradient(S*0.15, 0, S*0.7, 0)
-    fGrad.addColorStop(0, USB.azulOscuro)
-    fGrad.addColorStop(0.4, rgba(USB.azulOscuro, 0.6))
-    fGrad.addColorStop(0.7, rgba(USB.azulOscuro, 0.12))
-    fGrad.addColorStop(1, rgba(USB.azulOscuro, 0.3))
-    ctx.fillStyle = fGrad; ctx.fillRect(S*0.15, 0, S*0.85, S)
-  } else {
-    const nf = ctx.createLinearGradient(S*0.28, 0, S, S)
-    nf.addColorStop(0, USB.azulMedio); nf.addColorStop(1, USB.azulVivo)
-    ctx.fillStyle = nf; ctx.fillRect(S*0.28, 0, S*0.72, S)
-    ctx.strokeStyle = rgba(USB.cyan, 0.07); ctx.lineWidth = 2
-    for (let i = 1; i <= 10; i++) { ctx.beginPath(); ctx.arc(S*0.72, S*0.5, S*i*0.055, 0, Math.PI*2); ctx.stroke() }
-  }
-
-  // 3. Panel izquierdo (oscuro con degradado)
-  const panelGrad = ctx.createLinearGradient(0, 0, S*0.58, 0)
-  panelGrad.addColorStop(0, USB.azulOscuro)
-  panelGrad.addColorStop(0.72, rgba(USB.azulOscuro, 0.96))
-  panelGrad.addColorStop(1, rgba(USB.azulOscuro, 0.55))
-  ctx.fillStyle = panelGrad; ctx.fillRect(0, 0, S*0.58, S)
-
-  // 4. Barra vertical izquierda con glow cyan
-  const barGrad = ctx.createLinearGradient(0, 0, 0, S)
-  barGrad.addColorStop(0, rgba(USB.cyanBright, 0))
-  barGrad.addColorStop(0.2, USB.cyanBright); barGrad.addColorStop(0.8, USB.cyanBright)
-  barGrad.addColorStop(1, rgba(USB.cyanBright, 0))
-  ctx.fillStyle = barGrad; ctx.fillRect(0, 0, 6, S)
-  const glowGrad = ctx.createLinearGradient(0, 0, 32, 0)
-  glowGrad.addColorStop(0, rgba(USB.cyanBright, 0.3)); glowGrad.addColorStop(1, rgba(USB.cyanBright, 0))
-  ctx.fillStyle = glowGrad; ctx.fillRect(6, 0, 32, S)
-
-  // 5. Speed lines (izquierda, efecto velocidad)
-  for (let i = 0; i < 24; i++) {
-    const yb = S * 0.035 + i * S * 0.04
-    const len = S * 0.08 + Math.sin(i * 1.3) * S * 0.055
-    const xOff = S * 0.042 + Math.sin(i * 0.6) * S * 0.018
-    const alpha = i % 5 === 0 ? 0.2 : 0.06
-    ctx.strokeStyle = rgba(USB.cyanBright, alpha)
-    ctx.lineWidth = i % 4 === 0 ? 2 : 1
-    ctx.beginPath(); ctx.moveTo(xOff, yb); ctx.lineTo(xOff + len, yb); ctx.stroke()
-  }
-
-  // 6. Franja diagonal decorativa (acento)
-  ctx.save()
-  ctx.fillStyle = rgba(v.colorAcento || USB.cyan, 0.14)
-  ctx.beginPath()
-  ctx.moveTo(S*0.05, S*0.38); ctx.lineTo(S*0.46, S*0.38); ctx.lineTo(S*0.42, S*0.415); ctx.lineTo(S*0.01, S*0.415)
-  ctx.closePath(); ctx.fill()
-  ctx.restore()
-
-  // 7. Club info top-left
-  ctx.font = `700 ${S*0.02}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.85); ctx.textAlign = 'left'
-  ctx.fillText(club.toUpperCase(), S*0.065, S*0.082)
-  ctx.fillStyle = rgba(USB.cyan, 0.8)
-  ctx.fillRect(S*0.065, S*0.096, S*0.13, 2)
-  ctx.font = `400 ${S*0.016}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.42)
-  ctx.fillText('TENIS DE MESA', S*0.065, S*0.116)
-
-  // 8. TÍTULO — izquierda, enorme
-  ctx.shadowColor = rgba(USB.azulOscuro, 0.9); ctx.shadowBlur = 16
-  ctx.font = `900 ${S*0.108}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = USB.blanco; ctx.textAlign = 'left'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.065, S*0.35, S*0.48, S*0.115, 'left')
-  ctx.shadowBlur = 0
-
-  // 9. Badge subtítulo (izq, alineado)
-  if (v.subtitulo) {
-    pillBadgeLeft(ctx, v.subtitulo.toUpperCase(), S*0.065, tY + S*0.078, v.colorAcento || USB.cyan, USB.blanco, S*0.026)
-  }
-
-  // 10. Badge fecha
-  if (v.fecha) {
-    const fy = v.subtitulo ? tY + S*0.148 : tY + S*0.078
-    pillBadgeLeft(ctx, v.fecha.toUpperCase(), S*0.065, fy, rgba(USB.azulOscuro, 0.65), USB.blanco, S*0.024)
-  }
-
-  // 11. Hashtags bottom-left
-  ctx.font = `700 ${S*0.024}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.72); ctx.textAlign = 'left'
-  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.065, S*0.938)
-
-  // Línea bottom
-  const lbot = ctx.createLinearGradient(0, 0, S, 0)
-  lbot.addColorStop(0, USB.cyan); lbot.addColorStop(0.6, rgba(USB.cyan, 0.15)); lbot.addColorStop(1, rgba(USB.cyan, 0))
-  ctx.fillStyle = lbot; ctx.fillRect(0, S*0.956, S, 4)
-}
-
-// ── LAYOUT 3: POSTER BOLD — foto full + backlight + franja torn CTA ─────────
-async function renderMinimal(ctx: CanvasRenderingContext2D, v: Variante, foto: HTMLImageElement | null, club: string) {
-  const S = CANVAS_SIZE
-
-  // 1. Fondo base
-  ctx.fillStyle = USB.azulOscuro
-  ctx.fillRect(0, 0, S, S)
-
-  // 2. Foto full canvas al 85%
-  if (foto) {
-    ctx.save()
-    ctx.globalAlpha = 0.85
-    drawFoto(ctx, foto, 0, 0, S, S)
-    ctx.globalAlpha = 1
-    ctx.restore()
-  } else {
-    const bg = ctx.createLinearGradient(0, 0, S*0.8, S)
-    bg.addColorStop(0, '#0c1a4a'); bg.addColorStop(0.5, USB.azulVivo); bg.addColorStop(1, '#040b14')
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, S, S)
-    // Hexágonos decorativos (posiciones fijas)
-    const hexes = [[S*0.28, S*0.38], [S*0.72, S*0.62], [S*0.5, S*0.22], [S*0.14, S*0.68]]
-    hexes.forEach(([hx, hy]) => {
-      ctx.strokeStyle = rgba(USB.cyan, 0.09); ctx.lineWidth = 2; ctx.beginPath()
-      for (let j = 0; j < 6; j++) {
-        const a = (j * Math.PI) / 3 - Math.PI / 6, r = S*0.11
-        if (j === 0) ctx.moveTo(hx + r*Math.cos(a), hy + r*Math.sin(a))
-        else ctx.lineTo(hx + r*Math.cos(a), hy + r*Math.sin(a))
-      }
-      ctx.closePath(); ctx.stroke()
-    })
-  }
-
-  // 3. Backlight radial INTENSO (efecto Teletón)
-  const bl = ctx.createRadialGradient(S*0.5, S*0.34, 0, S*0.5, S*0.34, S*0.62)
-  bl.addColorStop(0, rgba(USB.cyanBright, 0.65))
-  bl.addColorStop(0.14, rgba(USB.azulVivo, 0.56))
-  bl.addColorStop(0.34, rgba(USB.azulVivo, 0.22))
-  bl.addColorStop(0.62, rgba(USB.azulOscuro, 0.08))
-  bl.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = bl; ctx.fillRect(0, 0, S, S)
-
-  // 4. Gradiente oscuro top (club info)
-  const gTop = ctx.createLinearGradient(0, 0, 0, S*0.2)
-  gTop.addColorStop(0, rgba(USB.azulOscuro, 0.88)); gTop.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.fillStyle = gTop; ctx.fillRect(0, 0, S, S*0.2)
-
-  // 5. Club info top (centrado)
-  ctx.font = `700 ${S*0.02}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.blanco, 0.88); ctx.textAlign = 'center'
-  ctx.fillText('· ' + club.toUpperCase() + ' ·', S*0.5, S*0.065)
-  const ltop = ctx.createLinearGradient(S*0.22, 0, S*0.78, 0)
-  ltop.addColorStop(0, rgba(USB.cyan, 0)); ltop.addColorStop(0.5, USB.cyan); ltop.addColorStop(1, rgba(USB.cyan, 0))
-  ctx.fillStyle = ltop; ctx.fillRect(S*0.22, S*0.079, S*0.56, 3)
-  ctx.font = `400 ${S*0.016}px Inter, sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.58); ctx.textAlign = 'center'
-  ctx.fillText('CLUB DEPORTIVO · TENIS DE MESA', S*0.5, S*0.1)
-
-  // 6. TÍTULO — centrado, ENORME, con sombra oscura fuerte
-  ctx.shadowColor = rgba(USB.azulOscuro, 0.98); ctx.shadowBlur = 28
-  ctx.font = `900 ${S*0.138}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = USB.blanco; ctx.textAlign = 'center'
-  const tY = wrapText(ctx, v.titulo.toUpperCase(), S*0.5, S*0.46, S*0.93, S*0.146, 'center')
-  ctx.shadowBlur = 0
-
-  // 7. Franja CTA con borde torn (ondas sinusoidales deterministas)
-  const panelTop = tY + S * 0.062
-  ctx.save()
-  ctx.fillStyle = rgba(USB.azulOscuro, 0.92)
-  ctx.beginPath()
-  ctx.moveTo(0, panelTop)
-  for (let x = 0; x <= S + 16; x += 16) {
-    const wy = panelTop + Math.sin(x * 0.024) * 12 + Math.sin(x * 0.057) * 5
-    ctx.lineTo(x, wy)
-  }
-  ctx.lineTo(S, S); ctx.lineTo(0, S); ctx.closePath(); ctx.fill()
-  ctx.restore()
-
-  // Línea cyan sobre la franja
-  const lline = ctx.createLinearGradient(0, 0, S, 0)
-  lline.addColorStop(0, rgba(USB.cyan, 0)); lline.addColorStop(0.12, USB.cyan)
-  lline.addColorStop(0.88, USB.cyan); lline.addColorStop(1, rgba(USB.cyan, 0))
-  ctx.fillStyle = lline; ctx.fillRect(0, panelTop + 2, S, 4)
-
-  // 8. Badges dentro de la franja
-  const badgeY = panelTop + S*0.058
-  if (v.subtitulo) {
-    pillBadge(ctx, v.subtitulo.toUpperCase(), S*0.5, badgeY, v.colorAcento || USB.cyan, USB.blanco, S*0.03)
-  }
-  if (v.fecha) {
-    const fy = v.subtitulo ? badgeY + S*0.07 : badgeY
-    pillBadge(ctx, v.fecha.toUpperCase(), S*0.5, fy, rgba(USB.blanco, 0.14), USB.blanco, S*0.025)
-  }
-
-  // 9. Hashtags bottom
-  ctx.font = `700 ${S*0.026}px 'Barlow Condensed', sans-serif`
-  ctx.fillStyle = rgba(USB.cyanBright, 0.76); ctx.textAlign = 'center'
-  ctx.fillText(v.hashtags.split(' ').slice(0,3).join('  '), S*0.5, S*0.945)
-
-  // Línea bottom
-  ctx.fillStyle = rgba(USB.cyan, 0.45)
-  ctx.fillRect(S*0.12, S*0.958, S*0.76, 3)
-}
-
-// ── Render principal ────────────────────────────────────────────────────────
-async function renderVariante(canvas: HTMLCanvasElement, v: Variante, foto: HTMLImageElement | null, club: string) {
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  canvas.width = CANVAS_SIZE
-  canvas.height = CANVAS_SIZE
-  await cargarFuentes()
-
-  // Si no hay foto del usuario, cargar stock foto de tenis de mesa
-  let fotoFinal = foto
-  if (!fotoFinal) {
-    const layoutIdx = ['hero', 'split', 'minimal'].indexOf(v.layout)
-    const stockUrl = STOCK_FOTOS[layoutIdx % STOCK_FOTOS.length]
-    try { fotoFinal = await loadStockFoto(stockUrl) } catch (_) {}
-  }
-
-  if (v.layout === 'hero') await renderHero(ctx, v, fotoFinal, club)
-  else if (v.layout === 'split') await renderSplit(ctx, v, fotoFinal, club)
-  else await renderMinimal(ctx, v, fotoFinal, club)
-}
-
-// ── BtnAnalizar ─────────────────────────────────────────────────────────────
-function BtnAnalizar({ onClick, disabled, loading }: { onClick: () => void; disabled: boolean; loading: boolean }) {
-  const off = disabled || loading
   return (
-    <button
-      onClick={onClick}
-      disabled={off}
-      style={{
-        width: '100%', padding: '10px', border: 'none', borderRadius: 8,
-        background: off ? '#e2e8f0' : '#0f172a',
-        color: off ? '#94a3b8' : '#ffffff',
-        fontSize: 13, fontWeight: 600,
-        cursor: off ? 'not-allowed' : 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-      }}
-    >
-      {loading
-        ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Analizando estilo...</>
-        : <><Sparkles size={14} /> Analizar estilo con IA</>}
-    </button>
-  )
-}
-
-// ── FlyrCard ────────────────────────────────────────────────────────────────
-function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI, generandoAI }: {
-  variante: Variante; foto: HTMLImageElement | null; clubNombre: string
-  seleccionada: boolean; onSelect: () => void
-  imagenAI: string | null; generandoAI: boolean
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  // Render Canvas base siempre
-  useEffect(() => {
-    if (canvasRef.current) renderVariante(canvasRef.current, variante, foto, clubNombre)
-  }, [variante, foto, clubNombre])
-
-  function descargar(e: React.MouseEvent) {
-    e.stopPropagation()
-    if (imagenAI && !generandoAI) {
-      // Descargar imagen AI directamente
-      const a = document.createElement('a')
-      a.download = `flyer-${variante.layout}-${Date.now()}.png`
-      a.href = imagenAI
-      a.click()
-    } else if (canvasRef.current) {
-      const a = document.createElement('a')
-      a.download = `flyer-${variante.layout}-${Date.now()}.png`
-      a.href = canvasRef.current.toDataURL('image/png')
-      a.click()
-    }
-  }
-
-  const tonoLabel: Record<string, string> = { celebratorio: '🎉 Celebratorio', formal: '📋 Formal', hype: '🔥 Hype' }
-  const mostrarAI = imagenAI && !generandoAI
-
-  return (
-    <div onClick={onSelect} style={{
-      border: seleccionada ? `2px solid ${C.primary}` : `2px solid ${C.border}`,
-      borderRadius: 12, overflow: 'hidden', cursor: 'pointer', background: C.card,
-      transition: 'all 0.15s',
-      boxShadow: seleccionada ? `0 0 0 4px ${C.primaryL}` : '0 1px 3px rgba(0,0,0,0.08)',
-    }}>
-      <div style={{ position: 'relative' }}>
-        {/* Canvas base (solo visible si no hay AI y no está generando) */}
-        <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: (mostrarAI || generandoAI) ? 'none' : 'block' }} />
-
-        {/* Loading placeholder mientras genera con IA */}
-        {generandoAI && (
-          <div style={{ width: '100%', aspectRatio: '1/1', background: 'linear-gradient(135deg, #060e1e 0%, #0a2254 50%, #060e1e 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(6,182,212,0.12)', border: '2px solid rgba(6,182,212,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Loader2 size={24} color="#22d3ee" style={{ animation: 'spin 1s linear infinite' }} />
+    <div className="grid grid-cols-4 gap-2">
+      {items.map(item => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onSelect(item.id)}
+          className="relative aspect-square rounded-lg overflow-hidden border-2 cursor-pointer"
+          style={{ borderColor: seleccionado === item.id ? 'var(--sky)' : 'var(--border)' }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={item.url} alt="" className="w-full h-full object-cover" />
+          {seleccionado === item.id && (
+            <div className="absolute top-1 right-1 bg-[var(--sky)] text-white rounded-full p-0.5">
+              <Check className="size-3" />
             </div>
-            <div style={{ textAlign: 'center', padding: '0 20px' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#22d3ee', marginBottom: 4 }}>Generando con IA...</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', lineHeight: 1.4 }}>{foto ? 'Integrando tu foto al diseño' : 'Creando flyer profesional'}</div>
-            </div>
-            <div style={{ display: 'flex', gap: 5 }}>
-              {[0, 1, 2].map(i => (
-                <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#22d3ee', animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Imagen IA directa — sin canvas encima */}
-        {mostrarAI && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={imagenAI!} alt="Flyer IA" style={{ width: '100%', aspectRatio: '1/1', display: 'block', objectFit: 'cover' }} />
-        )}
-
-        {mostrarAI && (
-          <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(6,182,212,0.9)', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '3px 10px' }}>
-            ✨ IA
-          </div>
-        )}
-        {seleccionada && (
-          <div style={{ position: 'absolute', top: 10, right: 10, background: C.primary, color: '#fff', borderRadius: 20, fontSize: 11, fontWeight: 600, padding: '3px 10px' }}>
-            ✓ Seleccionada
-          </div>
-        )}
-      </div>
-      <div style={{ padding: '12px 14px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: C.primary, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{variante.layout}</span>
-          <span style={{ fontSize: 11, color: C.muted }}>{tonoLabel[variante.tono] || variante.tono}</span>
-        </div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{variante.titulo}</div>
-        <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>{variante.subtitulo}</div>
-        <button onClick={descargar} style={{
-          width: '100%', padding: '8px', background: seleccionada ? C.primary : 'transparent',
-          color: seleccionada ? '#fff' : C.primary, border: `1px solid ${C.primary}`, borderRadius: 7,
-          fontSize: 12, fontWeight: 600, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        }}>
-          <Download size={13} /> Descargar PNG (1080×1080)
+          )}
         </button>
-      </div>
+      ))}
     </div>
   )
 }
 
-interface BrandKit {
-  colores: string[]
-  colorFondo: string
-  colorPrincipal: string
-  colorAcento: string
-  mood: string
-  estilo: string
-  tipografia: string
-  efectos: string
-  composicion: string
-  prompt_addition: string
-}
-
-// ── Página Principal ────────────────────────────────────────────────────────
 export default function RedesSocialesPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const brandRefInput = useRef<HTMLInputElement>(null)
+  const referenciaInputRef = useRef<HTMLInputElement>(null)
+  const fotoInputRef = useRef<HTMLInputElement>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
+
+  const [clubId, setClubId] = useState<string | null>(null)
+  const [clubNombre, setClubNombre] = useState('Mi Club')
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [subiendoLogo, setSubiendoLogo] = useState(false)
+  const [tab, setTab] = useState<'crear' | 'referencias' | 'galeria'>('crear')
+
+  const [referencias, setReferencias] = useState<FlyerReferencia[]>([])
+  const [fotos, setFotos] = useState<FotoGaleria[]>([])
+  const [cargandoDatos, setCargandoDatos] = useState(true)
 
   const [prompt, setPrompt] = useState('')
-  const [foto, setFoto] = useState<File | null>(null)
-  const [fotoImg, setFotoImg] = useState<HTMLImageElement | null>(null)
-  const [variantes, setVariantes] = useState<Variante[]>([])
+  const [referenciaSel, setReferenciaSel] = useState<string | null>(null)
+  const [fotoSel, setFotoSel] = useState<string | null>(null)
   const [generando, setGenerando] = useState(false)
+  const [resultado, setResultado] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [seleccionada, setSeleccionada] = useState<number | null>(null)
-  const [clubNombre, setClubNombre] = useState('Mi Club')
-  const [clubContexto, setClubContexto] = useState<ClubContexto>({ nombre: 'Mi Club', deporte: 'Tenis de Mesa', colores: ['#1d4ed8', '#06b6d4'] })
-  const [imagenesAI, setImagenesAI] = useState<(string | null)[]>([null, null, null])
-  const [generandoAI, setGenerandoAI] = useState<boolean[]>([false, false, false])
-  const [clubId, setClubId] = useState<string | null>(null)
 
-  // Brand Kit
-  const [tabActivo, setTabActivo] = useState<'crear' | 'marca'>('crear')
-  const [brandKit, setBrandKit] = useState<BrandKit | null>(null)
-  const [brandRef, setBrandRef] = useState<File | null>(null)
-  const [brandRefPreview, setBrandRefPreview] = useState<string | null>(null)
-  const [analizandoMarca, setAnalizandoMarca] = useState(false)
-  const [guardandoMarca, setGuardandoMarca] = useState(false)
-  const [marcaGuardada, setMarcaGuardada] = useState(false)
+  const [subiendoReferencia, setSubiendoReferencia] = useState(false)
+  const [subiendoFoto, setSubiendoFoto] = useState(false)
+  const [tipoFotoNueva, setTipoFotoNueva] = useState('jugador')
 
   const ejemplos = [
     '¡Ganamos el torneo regional! Campeones 2026',
@@ -636,367 +87,327 @@ export default function RedesSocialesPage() {
     'Torneo a beneficio, cupos limitados',
   ]
 
+  async function cargarDatos(club: string) {
+    setCargandoDatos(true)
+    const supabase = createClient()
+    const [{ data: refs }, { data: fts }] = await Promise.all([
+      supabase.from('flyer_referencias').select('id,url,nombre').eq('club_id', club).order('creado_en', { ascending: false }),
+      supabase.from('fotos_galeria').select('id,url,tipo').eq('club_id', club).order('creado_en', { ascending: false }),
+    ])
+    setReferencias(refs || [])
+    setFotos(fts || [])
+    setCargandoDatos(false)
+  }
+
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.rol === 'jugador') { router.push('/perfil'); return }
     if (perfil.club_id) {
-      const supabase = createClient()
-      supabase.from('clubes').select('nombre, brand_kit').eq('id', perfil.club_id).single()
-        .then(({ data }) => {
-          if (data?.nombre) {
-            setClubNombre(data.nombre)
-            setClubContexto({ nombre: data.nombre, deporte: 'Tenis de Mesa', colores: ['#1d4ed8', '#06b6d4'] })
-          }
-          if (data?.brand_kit && Object.keys(data.brand_kit).length > 0) {
-            setBrandKit(data.brand_kit as BrandKit)
-          }
-        })
       setClubId(perfil.club_id)
+      const supabase = createClient()
+      supabase.from('clubes').select('nombre,logo_url').eq('id', perfil.club_id).single()
+        .then(({ data }) => {
+          if (data?.nombre) setClubNombre(data.nombre)
+          if (data?.logo_url) setLogoUrl(data.logo_url)
+        })
+      cargarDatos(perfil.club_id)
     }
   }, [authLoading, perfil])
 
-  useEffect(() => {
-    if (!foto) { setFotoImg(null); return }
-    const url = URL.createObjectURL(foto)
-    const img = new Image()
-    img.onload = () => setFotoImg(img)
-    img.src = url
-    return () => URL.revokeObjectURL(url)
-  }, [foto])
-
-  async function analizarMarca() {
-    if (!brandRef) return
-    setAnalizandoMarca(true)
-    try {
-      const fd = new FormData()
-      fd.append('imagen', brandRef)
-      const res = await fetch('/api/analizar-marca', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (data.brand) {
-        setBrandKit(data.brand as BrandKit)
-        setMarcaGuardada(false)
-      }
-    } catch (_) {}
-    setAnalizandoMarca(false)
+  async function onSubirReferencia(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0]
+    if (!archivo || !clubId) return
+    setSubiendoReferencia(true)
+    const fd = new FormData()
+    fd.append('archivo', archivo)
+    const res = await subirReferenciaAction(fd)
+    if (res.error) setError(res.error)
+    else await cargarDatos(clubId)
+    setSubiendoReferencia(false)
+    if (referenciaInputRef.current) referenciaInputRef.current.value = ''
   }
 
-  async function guardarMarca() {
-    if (!brandKit || !clubId) return
-    setGuardandoMarca(true)
-    try {
+  async function onEliminarReferencia(id: string) {
+    if (!clubId) return
+    await eliminarReferenciaAction(id)
+    if (referenciaSel === id) setReferenciaSel(null)
+    await cargarDatos(clubId)
+  }
+
+  async function onSubirFoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0]
+    if (!archivo || !clubId) return
+    setSubiendoFoto(true)
+    const fd = new FormData()
+    fd.append('archivo', archivo)
+    fd.append('tipo', tipoFotoNueva)
+    const res = await subirFotoGaleriaAction(fd)
+    if (res.error) setError(res.error)
+    else await cargarDatos(clubId)
+    setSubiendoFoto(false)
+    if (fotoInputRef.current) fotoInputRef.current.value = ''
+  }
+
+  async function onEliminarFoto(id: string) {
+    if (!clubId) return
+    await eliminarFotoGaleriaAction(id)
+    if (fotoSel === id) setFotoSel(null)
+    await cargarDatos(clubId)
+  }
+
+  async function onSubirLogo(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0]
+    if (!archivo || !clubId) return
+    setSubiendoLogo(true)
+    const fd = new FormData()
+    fd.append('archivo', archivo)
+    const res = await subirLogoAction(fd)
+    if (res.error) setError(res.error)
+    else {
       const supabase = createClient()
-      await supabase.from('clubes').update({ brand_kit: brandKit }).eq('id', clubId)
-      setMarcaGuardada(true)
-    } catch (_) {}
-    setGuardandoMarca(false)
-  }
-
-  async function generarImagenAI(variante: Variante, idx: number) {
-    setGenerandoAI(prev => { const n = [...prev]; n[idx] = true; return n })
-    try {
-      let res: Response
-
-      const brandContext = brandKit?.prompt_addition || ''
-
-      if (foto) {
-        // Con foto propia: usar endpoint de edición de imagen
-        const fd = new FormData()
-        fd.append('foto', foto)
-        fd.append('layout', variante.layout)
-        fd.append('tono', variante.tono)
-        fd.append('clubNombre', clubNombre)
-        fd.append('titulo', variante.titulo)
-        fd.append('subtitulo', variante.subtitulo || '')
-        fd.append('fecha', variante.fecha || '')
-        fd.append('brandContext', brandContext)
-        res = await fetch('/api/editar-imagen', { method: 'POST', body: fd })
-      } else {
-        // Sin foto: generar imagen desde cero
-        res = await fetch('/api/generar-imagen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            layout: variante.layout,
-            tono: variante.tono,
-            clubNombre,
-            titulo: variante.titulo,
-            subtitulo: variante.subtitulo,
-            fecha: variante.fecha,
-            brandContext,
-          }),
-        })
-      }
-
-      const data = await res.json()
-      if (data.imagen) {
-        setImagenesAI(prev => { const n = [...prev]; n[idx] = data.imagen; return n })
-      }
-    } catch (_) {}
-    finally {
-      setGenerandoAI(prev => { const n = [...prev]; n[idx] = false; return n })
+      const { data } = await supabase.from('clubes').select('logo_url').eq('id', clubId).single()
+      if (data?.logo_url) setLogoUrl(data.logo_url)
     }
+    setSubiendoLogo(false)
+    if (logoInputRef.current) logoInputRef.current.value = ''
   }
 
   async function generar() {
-    if (!prompt.trim()) return
-    setGenerando(true); setError(''); setVariantes([]); setSeleccionada(null)
-    setImagenesAI([null, null, null]); setGenerandoAI([false, false, false])
+    if (!prompt.trim() || !referenciaSel || !fotoSel) return
+    setGenerando(true); setError(''); setResultado(null)
     try {
-      const res = await fetch('/api/generar-flyer', {
+      const referenciaUrl = referencias.find(r => r.id === referenciaSel)?.url
+      const fotoUrl = fotos.find(f => f.id === fotoSel)?.url
+      const res = await fetch('/api/generar-flyer-ia', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, clubContexto }),
+        body: JSON.stringify({ prompt, clubNombre, referenciaUrl, fotoUrl, logoUrl }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setVariantes(data.variantes)
-      // Generar imágenes AI en paralelo (sin bloquear UI)
-      data.variantes.forEach((v: Variante, i: number) => {
-        generarImagenAI(v, i)
-      })
+      setResultado(data.imagen)
     } catch (e: any) {
       setError(e.message || 'Error al generar. Intenta de nuevo.')
-    } finally { setGenerando(false) }
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  function descargar() {
+    if (!resultado) return
+    const a = document.createElement('a')
+    a.download = `flyer-${Date.now()}.png`
+    a.href = resultado
+    a.click()
   }
 
   if (authLoading) return null
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <div style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: '0 0 4px' }}>Redes Sociales</h1>
-          <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>Genera flyers profesionales con IA en segundos</p>
+      <div className="max-w-[1100px] mx-auto">
+        <div className="mb-6">
+          <h1 className="text-xl font-bold text-[var(--text)]">Redes Sociales</h1>
+          <p className="text-sm text-[var(--text-muted)]">Genera flyers profesionales usando tus propios diseños y fotos como referencia</p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24, alignItems: 'start' }}>
-          {/* Panel izquierdo */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="flex gap-1 bg-[var(--bg-dark)] rounded-lg p-1 border border-[var(--border)] mb-5 w-fit">
+          {([
+            { key: 'crear', label: 'Crear', icon: Sparkles },
+            { key: 'referencias', label: `Mis Referencias${referencias.length ? ` (${referencias.length})` : ''}`, icon: ImageIcon },
+            { key: 'galeria', label: `Galería de Fotos${fotos.length ? ` (${fotos.length})` : ''}`, icon: Images },
+          ] as const).map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors"
+              style={{
+                background: tab === t.key ? 'white' : 'transparent',
+                color: tab === t.key ? 'var(--sky)' : 'var(--text-muted)',
+                boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              }}
+            >
+              <t.icon className="size-3.5" /> {t.label}
+            </button>
+          ))}
+        </div>
 
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: 4, background: C.bg, borderRadius: 10, padding: 4, border: `1px solid ${C.border}` }}>
-              {(['crear', 'marca'] as const).map(tab => (
-                <button key={tab} onClick={() => setTabActivo(tab)} style={{
-                  flex: 1, padding: '8px', borderRadius: 7, border: 'none',
-                  background: tabActivo === tab ? C.card : 'transparent',
-                  color: tabActivo === tab ? C.primary : C.muted,
-                  fontWeight: tabActivo === tab ? 700 : 500, fontSize: 13,
-                  cursor: 'pointer',
-                  boxShadow: tabActivo === tab ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                  transition: 'all 0.15s',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                }}>
-                  {tab === 'crear' ? <><Sparkles size={13} /> Crear</> : <><ImageIcon size={13} /> Mi Marca{brandKit ? ' ✓' : ''}</>}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab: MI MARCA */}
-            {tabActivo === 'marca' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-                {/* Subir referencia */}
-                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 4 }}>
-                    Flyer de referencia
-                  </label>
-                  <div style={{ fontSize: 11, color: C.hint, marginBottom: 10 }}>
-                    Sube un flyer que te guste (de @tdm.usb u otro) y la IA aprenderá su estilo visual.
-                  </div>
-
-                  {brandRefPreview ? (
-                    <div style={{ position: 'relative', marginBottom: 10 }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={brandRefPreview} alt="Referencia" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
-                      <button onClick={() => { setBrandRef(null); setBrandRefPreview(null); if (brandRefInput.current) brandRefInput.current.value = '' }}
-                        style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div onClick={() => brandRefInput.current?.click()} style={{ border: '2px dashed ' + C.border, borderRadius: 8, padding: '24px 16px', textAlign: 'center', cursor: 'pointer', marginBottom: 10 }}>
-                      <Upload size={20} color={C.hint} style={{ margin: '0 auto 6px' }} />
-                      <div style={{ fontSize: 12, color: C.muted }}>Sube un flyer de referencia</div>
-                      <div style={{ fontSize: 10, color: C.hint, marginTop: 2 }}>JPG, PNG · El estilo se extrae automáticamente</div>
-                    </div>
-                  )}
-                  <input ref={brandRefInput} type="file" accept="image/*" style={{ display: 'none' }}
-                    onChange={e => {
-                      const f = e.target.files?.[0]
-                      if (f) {
-                        setBrandRef(f)
-                        setBrandRefPreview(URL.createObjectURL(f))
-                        setMarcaGuardada(false)
-                      }
-                    }}
-                  />
-
-                  <BtnAnalizar onClick={analizarMarca} disabled={!brandRef} loading={analizandoMarca} />
-                </div>
-
-                {/* Resultado del análisis */}
-                {brandKit && (
-                  <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 12, padding: 18 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Identidad visual extraída</span>
-                      <span style={{ fontSize: 11, padding: '3px 8px', background: '#dcfce7', color: '#16a34a', borderRadius: 20, fontWeight: 600 }}>
-                        {marcaGuardada ? '✓ Guardada' : 'Sin guardar'}
-                      </span>
-                    </div>
-
-                    <div style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Paleta</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {(brandKit.colores || []).map((c, i) => (
-                          <div key={i} title={c} style={{ width: 34, height: 34, borderRadius: 7, background: c, border: '2px solid rgba(255,255,255,0.8)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)' }} />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mood</div>
-                      <span style={{ fontSize: 12, padding: '4px 10px', background: C.primaryL, color: C.primary, borderRadius: 20, fontWeight: 700 }}>
-                        {'🎭'} {brandKit.mood}
-                      </span>
-                    </div>
-
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Estilo</div>
-                      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{brandKit.estilo}</div>
-                    </div>
-
-                    <div style={{ marginBottom: 14 }}>
-                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tipografia</div>
-                      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{brandKit.tipografia}</div>
-                    </div>
-
-                    <button onClick={guardarMarca} disabled={guardandoMarca || marcaGuardada} style={{
-                      width: '100%', padding: '10px', background: marcaGuardada ? '#dcfce7' : C.primary,
-                      color: marcaGuardada ? '#16a34a' : '#fff', border: 'none', borderRadius: 8,
-                      fontSize: 13, fontWeight: 600, cursor: guardandoMarca || marcaGuardada ? 'default' : 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                    }}>
-                      {guardandoMarca
-                        ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</>
-                        : marcaGuardada
-                        ? 'Marca guardada — se usara en todos los flyers'
-                        : <><Download size={14} /> Guardar marca del club</>}
-                    </button>
-                  </div>
-                )}
-
-                {brandKit && (
-                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', fontSize: 12, color: '#92400e' }}>
-                    Ve a <strong>Crear</strong> y genera un flyer — la IA usara la identidad visual de tu club automaticamente.
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Tab: CREAR */}
-            {tabActivo === 'crear' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 12, padding: 18 }}>
-              <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>Que quieres publicar?</label>
-              <textarea
-                value={prompt} onChange={e => setPrompt(e.target.value)}
-                placeholder="Ej: Gran torneo USB este sabado 21 de mayo, inscripcion $1.500"
-                rows={4}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) generar() }}
-                style={{ width: '100%', padding: '10px 12px', border: '1px solid ' + C.border, borderRadius: 8, fontSize: 13, color: C.text, resize: 'vertical', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
-              />
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 11, color: C.hint, marginBottom: 5 }}>Ejemplos:</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {tab === 'crear' && (
+          <div className="grid grid-cols-[360px_1fr] gap-6 items-start">
+            <div className="flex flex-col gap-4">
+              <Card>
+                <label className="text-sm font-semibold text-[var(--text)] block mb-2">¿Qué quieres publicar?</label>
+                <textarea
+                  value={prompt} onChange={e => setPrompt(e.target.value)}
+                  placeholder="Ej: Torneo épico de tenis de mesa, sábado 27 de junio a las 12pm, inscripción $5.000, premios 1er y 2do lugar"
+                  rows={4}
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm text-[var(--text)] resize-y outline-none focus:border-[var(--sky)]"
+                />
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <div className="text-xs text-[var(--text-muted)]">Ejemplos:</div>
                   {ejemplos.map(ej => (
-                    <button key={ej} onClick={() => setPrompt(ej)} style={{ textAlign: 'left', padding: '5px 8px', background: C.bg, border: '1px solid ' + C.border, borderRadius: 6, fontSize: 11, color: C.muted, cursor: 'pointer' }}>{ej}</button>
+                    <button key={ej} onClick={() => setPrompt(ej)} className="text-left px-2 py-1.5 bg-[var(--bg-dark)] border border-[var(--border)] rounded-md text-xs text-[var(--text-muted)] cursor-pointer hover:border-[var(--sky)]">
+                      {ej}
+                    </button>
                   ))}
                 </div>
-              </div>
+              </Card>
+
+              <Card>
+                <label className="text-sm font-semibold text-[var(--text)] block mb-2">Diseño de referencia</label>
+                {cargandoDatos ? (
+                  <div className="text-xs text-[var(--text-muted)]">Cargando...</div>
+                ) : (
+                  <GridSelector items={referencias} seleccionado={referenciaSel} onSelect={setReferenciaSel} vacio="Sube tus flyers favoritos en la pestaña 'Mis Referencias'" />
+                )}
+              </Card>
+
+              <Card>
+                <label className="text-sm font-semibold text-[var(--text)] block mb-2">Foto a usar</label>
+                {cargandoDatos ? (
+                  <div className="text-xs text-[var(--text-muted)]">Cargando...</div>
+                ) : (
+                  <GridSelector items={fotos} seleccionado={fotoSel} onSelect={setFotoSel} vacio="Sube fotos de jugadores o canchas en la pestaña 'Galería de Fotos'" />
+                )}
+              </Card>
+
+              <Button onClick={generar} disabled={!prompt.trim() || !referenciaSel || !fotoSel || generando} loading={generando} size="lg">
+                {generando ? 'Generando flyer...' : <><Sparkles className="size-4" /> Generar flyer</>}
+              </Button>
+
+              {resultado && (
+                <Button onClick={generar} variant="secondary">
+                  <RefreshCw className="size-3.5" /> Regenerar
+                </Button>
+              )}
+
+              {error && (
+                <div className="px-3 py-2.5 bg-[var(--red-light)] border border-red-200 rounded-lg text-sm text-[var(--red)]">{error}</div>
+              )}
             </div>
 
-            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 12, padding: 18 }}>
-              <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>
-                Foto del jugador o evento <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span>
-              </label>
-              {foto ? (
-                <div style={{ position: 'relative' }}>
-                  <img src={URL.createObjectURL(foto)} alt="foto" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, border: '1px solid ' + C.border }} />
-                  <button onClick={() => { setFoto(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
-                    style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <X size={14} />
-                  </button>
-                </div>
-              ) : (
-                <div onClick={() => fileInputRef.current?.click()} style={{ border: '2px dashed ' + C.border, borderRadius: 8, padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}>
-                  <Upload size={22} color={C.hint} style={{ margin: '0 auto 8px' }} />
-                  <div style={{ fontSize: 13, color: C.muted, marginBottom: 3 }}>Sube una foto del club o jugador</div>
-                  <div style={{ fontSize: 11, color: C.hint }}>Se usa como fondo del flyer</div>
+            <div>
+              {generando && (
+                <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
+                  <Loader2 className="size-8 text-[var(--sky)] animate-spin" />
+                  <div className="text-center">
+                    <div className="text-sm font-semibold text-[var(--text)]">Creando tu flyer...</div>
+                    <div className="text-xs text-[var(--text-muted)] mt-1">Combinando tu referencia y tu foto</div>
+                  </div>
                 </div>
               )}
-              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setFoto(f) }} />
+              {!generando && !resultado && (
+                <EmptyState icon={ImageIcon} title="Tu flyer aparecerá aquí" description="Escribe el prompt, elige referencia y foto, y haz click en Generar" />
+              )}
+              {!generando && resultado && (
+                <div className="max-w-[480px] mx-auto">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={resultado} alt="Flyer generado" className="w-full aspect-square object-cover rounded-xl border border-[var(--border)]" />
+                  <Button onClick={descargar} className="w-full mt-3">
+                    <Download className="size-4" /> Descargar PNG
+                  </Button>
+                </div>
+              )}
             </div>
-
-            <button onClick={generar} disabled={!prompt.trim() || generando} style={{
-              width: '100%', padding: '13px', background: !prompt.trim() || generando ? '#c7d2fe' : C.primary,
-              color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700,
-              cursor: !prompt.trim() || generando ? 'not-allowed' : 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}>
-              {generando ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Generando variantes...</> : <><Sparkles size={16} /> Generar 3 variantes</>}
-            </button>
-
-            {variantes.length > 0 && (
-              <button onClick={generar} style={{ width: '100%', padding: '10px', background: 'transparent', color: C.primary, border: '1px solid ' + C.primary, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <RefreshCw size={13} /> Regenerar
-              </button>
-            )}
-
-            {error && <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>{error}</div>}
-              </div>
-            )}
           </div>
+        )}
 
-          {/* Panel derecho */}
-          <div>
-            {generando && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 14 }}>
-                <div style={{ width: 52, height: 52, borderRadius: '50%', background: C.primaryL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Sparkles size={22} color={C.primary} />
+        {tab === 'referencias' && (
+          <div className="flex flex-col gap-4">
+            <Card>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="size-14 rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-dark)] flex items-center justify-center shrink-0">
+                    {logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={logoUrl} alt="Logo del club" className="w-full h-full object-contain" />
+                    ) : (
+                      <Shield className="size-6 text-[var(--text-muted)]" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--text)]">Logo del club</div>
+                    <div className="text-xs text-[var(--text-muted)]">Se incluye automáticamente en todos los flyers que generes</div>
+                  </div>
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Creando tus variantes...</div>
-                  <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>La IA esta disenando 3 flyers unicos para ti</div>
-                </div>
+                <Button onClick={() => logoInputRef.current?.click()} loading={subiendoLogo} size="sm" variant="secondary">
+                  <Upload className="size-3.5" /> {logoUrl ? 'Cambiar logo' : 'Subir logo'}
+                </Button>
+                <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={onSubirLogo} />
               </div>
-            )}
-            {!generando && variantes.length === 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12, border: '2px dashed ' + C.border, borderRadius: 12 }}>
-                <ImageIcon size={40} color={C.hint} />
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 15, fontWeight: 500, color: C.muted }}>Tus flyers apareceran aqui</div>
-                  <div style={{ fontSize: 13, color: C.hint, marginTop: 4 }}>Escribe un prompt y haz click en Generar</div>
-                </div>
-              </div>
-            )}
-            {!generando && variantes.length > 0 && (
+            </Card>
+
+            <Card>
+            <div className="flex items-center justify-between mb-4">
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>3 variantes generadas</div>
-                  <div style={{ fontSize: 12, color: C.muted }}>Haz click para seleccionar y descargar</div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
-                  {variantes.map((v, i) => (
-                    <FlyrCard key={i} variante={v} foto={fotoImg} clubNombre={clubNombre} seleccionada={seleccionada === i} onSelect={() => setSeleccionada(i)} imagenAI={imagenesAI[i]} generandoAI={generandoAI[i]} />
-                  ))}
-                </div>
+                <div className="text-sm font-semibold text-[var(--text)]">Tus flyers de referencia</div>
+                <div className="text-xs text-[var(--text-muted)]">Sube los diseños (de Canva u otra herramienta) que más te gustan — la IA los usará como plantilla</div>
+              </div>
+              <Button onClick={() => referenciaInputRef.current?.click()} loading={subiendoReferencia} size="sm">
+                <Upload className="size-3.5" /> Subir referencia
+              </Button>
+              <input ref={referenciaInputRef} type="file" accept="image/*" className="hidden" onChange={onSubirReferencia} />
+            </div>
+            {referencias.length === 0 ? (
+              <EmptyState icon={ImageIcon} title="Sin referencias aún" description="Sube tu primer flyer de referencia para empezar a generar" />
+            ) : (
+              <div className="grid grid-cols-5 gap-3">
+                {referencias.map(r => (
+                  <div key={r.id} className="relative group aspect-square rounded-lg overflow-hidden border border-[var(--border)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={r.url} alt="" className="w-full h-full object-cover" />
+                    <button onClick={() => onEliminarReferencia(r.id)} className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-1.5 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
+            </Card>
           </div>
-        </div>
+        )}
+
+        {tab === 'galeria' && (
+          <Card>
+            <div className="flex items-center justify-between mb-4 gap-3">
+              <div>
+                <div className="text-sm font-semibold text-[var(--text)]">Galería de fotos del club</div>
+                <div className="text-xs text-[var(--text-muted)]">Fotos reales de jugadores, canchas o equipo para usar en los flyers</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={tipoFotoNueva}
+                  onChange={e => setTipoFotoNueva(e.target.value)}
+                  className="border border-[var(--border)] rounded-lg text-sm px-2 py-1.5 text-[var(--text)] outline-none"
+                >
+                  {TIPOS_FOTO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+                <Button onClick={() => fotoInputRef.current?.click()} loading={subiendoFoto} size="sm">
+                  <Upload className="size-3.5" /> Subir foto
+                </Button>
+              </div>
+              <input ref={fotoInputRef} type="file" accept="image/*" className="hidden" onChange={onSubirFoto} />
+            </div>
+            {fotos.length === 0 ? (
+              <EmptyState icon={Images} title="Sin fotos aún" description="Sube fotos de jugadores, canchas o del equipo" />
+            ) : (
+              <div className="grid grid-cols-5 gap-3">
+                {fotos.map(f => (
+                  <div key={f.id} className="relative group aspect-square rounded-lg overflow-hidden border border-[var(--border)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={f.url} alt="" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-1.5 left-1.5 bg-black/60 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize">{f.tipo}</span>
+                    <button onClick={() => onEliminarFoto(f.id)} className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-1.5 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
       </div>
-      <style>{`@keyframes spin { from{transform:rotate(0deg)}to{transform:rotate(360deg)} } @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(0.8)} 50%{opacity:1;transform:scale(1.2)} } textarea:focus{border-color:#4f46e5!important;}`}</style>
     </AppLayout>
   )
 }

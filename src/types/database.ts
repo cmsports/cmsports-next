@@ -12,6 +12,7 @@ export interface Database {
           plan_mensual: number
           estado_pago: string
           creado_en: string | null
+          logo_url: string | null
         }
         Insert: {
           id?: string
@@ -21,6 +22,7 @@ export interface Database {
           plan_mensual?: number
           estado_pago?: string
           creado_en?: string | null
+          logo_url?: string | null
         }
         Update: {
           id?: string
@@ -30,6 +32,7 @@ export interface Database {
           plan_mensual?: number
           estado_pago?: string
           creado_en?: string | null
+          logo_url?: string | null
         }
         Relationships: []
       }
@@ -1052,6 +1055,62 @@ export interface Database {
           Categoria?: string
         }
         Relationships: []
+      }
+      flyer_referencias: {
+        Row: {
+          id: string
+          club_id: string
+          url: string
+          nombre: string | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          url: string
+          nombre?: string | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          url?: string
+          nombre?: string | null
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'flyer_referencias_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+        ]
+      }
+      fotos_galeria: {
+        Row: {
+          id: string
+          club_id: string
+          jugador_id: string | null
+          url: string
+          tipo: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          jugador_id?: string | null
+          url: string
+          tipo?: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          jugador_id?: string | null
+          url?: string
+          tipo?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'fotos_galeria_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+          { foreignKeyName: 'fotos_galeria_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
       }
     }
     Views: {}
