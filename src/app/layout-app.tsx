@@ -94,8 +94,11 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
 
   async function cerrarSesion() {
     const supabase = createClient()
-    await supabase.auth.signOut({ scope: 'local' })
-    router.push('/login')
+    try {
+      await supabase.auth.signOut({ scope: 'local' })
+    } finally {
+      window.location.href = '/login'
+    }
   }
 
   function isActive(href: string) {
