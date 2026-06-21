@@ -1,38 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// Prompts de fondo visual por layout (sin texto, Canvas lo agrega encima)
-const ESTILOS: Record<string, string> = {
-  hero: `Professional table tennis tournament sports photography background.
-    A male athlete in intense competition pose, mid-action serving or smashing,
-    wearing dark sports jersey, dramatic studio lighting with ELECTRIC CYAN and BLUE radial spotlight/backlight halo behind the player,
-    dark navy background (#060e1e), neon cyan-blue glow radiating from behind the player like a spotlight,
-    cinematic sports photography style, player centered slightly left,
-    dark gradient at bottom 40% of image for text overlay area,
-    photorealistic, high-end sports marketing quality,
-    no text, no watermarks, no logos.`,
-
-  split: `Professional table tennis action sports photography for poster background.
-    Dynamic player in full action shot, forehand attack motion with paddle extended,
-    dark navy blue background, player positioned on RIGHT side of frame,
-    LEFT side of frame is darker with blue atmospheric haze and diagonal speed lines/motion blur effect,
-    electric cyan accent lighting from left edge,
-    dramatic diagonal composition splitting dark left panel from player right side,
-    cinematic wide shot, professional sports event poster quality,
-    no text, no watermarks, no logos.`,
-
-  minimal: `Dramatic table tennis athlete full-body action shot for tournament poster.
-    Player in explosive forehand smash pose, fully visible from head to toe,
-    INTENSE RADIAL BACKLIGHT of electric blue and cyan creating a powerful halo/spotlight effect behind the player,
-    deep navy dark background with the bright backlight glow,
-    player is the hero of the composition centered in frame,
-    top 20% dark for header text, bottom 30% darker for info strip,
-    photorealistic cinematic quality like Red Bull or Nike sports marketing,
-    no text, no watermarks, no logos.`,
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const { layout, tono, clubNombre } = await req.json()
+    const { layout, tono, clubNombre, titulo, subtitulo, fecha } = await req.json()
 
     if (!layout) {
       return NextResponse.json({ error: 'Layout requerido' }, { status: 400 })
@@ -43,19 +13,78 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'OPENAI_API_KEY no configurada' }, { status: 500 })
     }
 
-    const estiloBase = ESTILOS[layout] || ESTILOS.hero
-    const tonoExtra = tono === 'hype'
-      ? 'Ultra high energy, explosive dynamic pose, aggressive competitive energy.'
-      : tono === 'celebratorio'
-      ? 'Triumphant celebratory energy, victorious atmosphere, confetti or winning moment.'
-      : 'Professional competitive atmosphere, focused intensity.'
+    const club = clubNombre || 'Club de Tenis de Mesa'
+    const titleText = titulo || 'TORNEO'
+    const subtitleText = subtitulo || ''
+    const fechaText = fecha || ''
 
-    const prompt = `${estiloBase}
-    Club sport: table tennis / ping pong.
-    Atmosphere: ${tonoExtra}
-    Color palette: Deep navy blue, electric cyan, bright white highlights.
-    Style reference: Top European sports club marketing, ESPN magazine quality.
-    Square 1:1 ratio composition optimized for Instagram post.`
+    const tonoExtra = tono === 'hype'
+      ? 'Ultra aggressive energy, fire and electric sparks, explosive action, neon glitch effects'
+      : tono === 'celebratorio'
+      ? 'Gold and confetti, triumphant mood, championship glory, radiant warm light'
+      : 'Professional, sharp, focused, competitive tension'
+
+    // 3 prompts muy distintos en composición
+    const prompts: Record<string, string> = {
+      hero: `Create a FULL professional sports tournament Instagram poster (1:1 square). This must look like a top-tier ESPN or Red Bull sports event graphic — not a template, but a designed poster.
+
+COMPOSITION: TWO table tennis players in explosive action, one on each side of the image, facing center in dramatic attack poses, paddles extended. Between them in the center, bold tournament title text.
+TITLE TEXT visible in the image: "${titleText}" — massive white bold condensed font with metallic or glowing effect, centered.
+${subtitleText ? `SUBTITLE TEXT: "${subtitleText}" — smaller, below title, cyan color.` : ''}
+${fechaText ? `DATE BADGE: "${fechaText}" — inside a dark rounded pill/badge element.` : ''}
+CLUB BADGE: "${club}" as a badge/emblem at the top center with a small table tennis paddle icon.
+INFO PANEL: A semi-transparent dark panel in the lower third showing the event info in organized layout with small icons (calendar, clock, location pin, trophy).
+
+VISUAL STYLE:
+- Dark background split: electric BLUE on left side, deep RED on right side, blending in the center with dramatic light rays
+- Photorealistic athletes, dynamic motion blur
+- Neon glow accents, particle effects, speed lines
+- Premium sports marketing quality — like UFC Fight Night or FIFA World Cup posters
+- ${tonoExtra}
+
+All text must be in Spanish. Square 1080x1080px format. No watermarks.`,
+
+      split: `Create a FULL professional sports event Instagram poster (1:1 square). Style: premium Latin American sports club marketing.
+
+COMPOSITION: Single powerful table tennis player in full-body explosive forehand smash, positioned center-right. LEFT SIDE: dark panel with all text information. TOP: club logo/badge area.
+MAIN TITLE in image: "${titleText}" — huge white Impact/Barlow Condensed font, bold, on the left dark panel, multiple lines if needed.
+${subtitleText ? `SUBTITLE: "${subtitleText}" — cyan colored text below title.` : ''}
+${fechaText ? `DATE: "${fechaText}" — cyan pill badge.` : ''}
+CLUB NAME: "${club}" — top left corner, small elegant text with underline.
+
+VISUAL DETAILS:
+- Deep navy blue/black background
+- Dramatic cyan and blue spotlight lighting on the player
+- Motion blur and speed trails behind the paddle
+- Left panel: subtle tech/grid texture, vertical cyan accent bar on far left
+- Small geometric design elements (hexagons, diagonal lines)
+- Bottom: hashtags in small cyan text
+- ${tonoExtra}
+- Professional, cinematic — like a boxing match promotion poster
+
+All text in Spanish. 1:1 square. No watermarks.`,
+
+      minimal: `Create a FULL stunning sports tournament poster for Instagram (1:1 square). Must look like a viral social media graphic — high contrast, bold, impossible to scroll past.
+
+COMPOSITION: Full-bleed table tennis player in DRAMATIC low-angle shot, arms extended mid-smash, ball visible in air. Player occupies most of the frame. Text overlaid.
+TOP: "${club}" club name small at top center with decorative line.
+CENTER-BOTTOM TITLE: "${titleText}" — MASSIVE white condensed font (largest element in design), bold, with subtle drop shadow or outline glow.
+${subtitleText ? `Below title: "${subtitleText}" — inside a bright cyan rounded badge.` : ''}
+${fechaText ? `Date line: "${fechaText}" — white text, smaller.` : ''}
+BOTTOM: decorative horizontal cyan line, hashtags.
+
+VISUAL STYLE:
+- Ultra dramatic backlight: intense cyan/electric blue radial glow BEHIND the player like a god ray
+- Dark vignette edges making the center pop
+- High contrast, cinematic color grading
+- Player silhouette partially glowing from backlight
+- Feels like a Red Bull athlete campaign or Nike sport ad
+- ${tonoExtra}
+
+All text in Spanish. Square 1:1. Photorealistic. No watermarks.`,
+    }
+
+    const prompt = prompts[layout] || prompts.hero
 
     const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',

@@ -473,37 +473,30 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI
   imagenAI: string | null; generandoAI: boolean
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const compositeRef = useRef<HTMLCanvasElement>(null)
 
   // Render Canvas base siempre
   useEffect(() => {
     if (canvasRef.current) renderVariante(canvasRef.current, variante, foto, clubNombre)
   }, [variante, foto, clubNombre])
 
-  // Cuando llega la imagen AI, renderizar con ella como foto de fondo
-  useEffect(() => {
-    if (!imagenAI || !compositeRef.current) return
-    const aiImg = new Image()
-    aiImg.onload = async () => {
-      // Pasamos la imagen AI como foto → renderVariante la usa como fondo
-      await renderVariante(compositeRef.current!, variante, aiImg, clubNombre)
-    }
-    aiImg.src = imagenAI
-  }, [imagenAI, variante, clubNombre])
-
   function descargar(e: React.MouseEvent) {
     e.stopPropagation()
-    // Descargar el composite AI si está listo, sino el Canvas base
-    const target = (imagenAI && compositeRef.current) ? compositeRef.current : canvasRef.current
-    if (!target) return
-    const a = document.createElement('a')
-    a.download = `flyer-${variante.layout}-${Date.now()}.png`
-    a.href = target.toDataURL('image/png')
-    a.click()
+    if (imagenAI && !generandoAI) {
+      // Descargar imagen AI directamente
+      const a = document.createElement('a')
+      a.download = `flyer-${variante.layout}-${Date.now()}.png`
+      a.href = imagenAI
+      a.click()
+    } else if (canvasRef.current) {
+      const a = document.createElement('a')
+      a.download = `flyer-${variante.layout}-${Date.now()}.png`
+      a.href = canvasRef.current.toDataURL('image/png')
+      a.click()
+    }
   }
 
   const tonoLabel: Record<string, string> = { celebratorio: '🎉 Celebratorio', formal: '📋 Formal', hype: '🔥 Hype' }
-  const mostrarComposite = imagenAI && !generandoAI
+  const mostrarAI = imagenAI && !generandoAI
 
   return (
     <div onClick={onSelect} style={{
@@ -514,9 +507,12 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI
     }}>
       <div style={{ position: 'relative' }}>
         {/* Canvas base (visible si no hay AI todavía) */}
-        <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: mostrarComposite ? 'none' : 'block' }} />
-        {/* Canvas composite AI+texto (visible cuando llega la AI) */}
-        <canvas ref={compositeRef} style={{ width: '100%', aspectRatio: '1/1', display: mostrarComposite ? 'block' : 'none' }} />
+        <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: mostrarAI ? 'none' : 'block' }} />
+        {/* Imagen IA directa — sin canvas encima */}
+        {mostrarAI && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imagenAI!} alt="Flyer IA" style={{ width: '100%', aspectRatio: '1/1', display: 'block', objectFit: 'cover' }} />
+        )}
 
         {/* Badge AI generando */}
         {generandoAI && (
@@ -524,7 +520,7 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI
             <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Generando con IA...
           </div>
         )}
-        {mostrarComposite && (
+        {mostrarAI && (
           <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(6,182,212,0.9)', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '3px 10px' }}>
             ✨ IA
           </div>
@@ -611,7 +607,14 @@ export default function RedesSocialesPage() {
       const res = await fetch('/api/generar-imagen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ layout: variante.layout, tono: variante.tono, clubNombre }),
+        body: JSON.stringify({
+          layout: variante.layout,
+          tono: variante.tono,
+          clubNombre,
+          titulo: variante.titulo,
+          subtitulo: variante.subtitulo,
+          fecha: variante.fecha,
+        }),
       })
       const data = await res.json()
       if (data.imagen) {
