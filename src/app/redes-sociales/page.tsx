@@ -604,18 +604,35 @@ export default function RedesSocialesPage() {
   async function generarImagenAI(variante: Variante, idx: number) {
     setGenerandoAI(prev => { const n = [...prev]; n[idx] = true; return n })
     try {
-      const res = await fetch('/api/generar-imagen', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          layout: variante.layout,
-          tono: variante.tono,
-          clubNombre,
-          titulo: variante.titulo,
-          subtitulo: variante.subtitulo,
-          fecha: variante.fecha,
-        }),
-      })
+      let res: Response
+
+      if (foto) {
+        // Con foto propia: usar endpoint de edición de imagen
+        const fd = new FormData()
+        fd.append('foto', foto)
+        fd.append('layout', variante.layout)
+        fd.append('tono', variante.tono)
+        fd.append('clubNombre', clubNombre)
+        fd.append('titulo', variante.titulo)
+        fd.append('subtitulo', variante.subtitulo || '')
+        fd.append('fecha', variante.fecha || '')
+        res = await fetch('/api/editar-imagen', { method: 'POST', body: fd })
+      } else {
+        // Sin foto: generar imagen desde cero
+        res = await fetch('/api/generar-imagen', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            layout: variante.layout,
+            tono: variante.tono,
+            clubNombre,
+            titulo: variante.titulo,
+            subtitulo: variante.subtitulo,
+            fecha: variante.fecha,
+          }),
+        })
+      }
+
       const data = await res.json()
       if (data.imagen) {
         setImagenesAI(prev => { const n = [...prev]; n[idx] = data.imagen; return n })
