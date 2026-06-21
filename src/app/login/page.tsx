@@ -17,9 +17,17 @@ export default function LoginPage() {
     try {
       setLoading(true)
       setError('')
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) { setError(error.message); return }
-      window.location.href = '/dashboard'
+      const { data: perfil } = await supabase
+        .from('perfiles')
+        .select('rol')
+        .eq('id', data.user.id)
+        .single()
+      if (perfil?.rol === 'superadmin') window.location.href = '/superadmin'
+      else if (perfil?.rol === 'profesor') window.location.href = '/dashboard-profesor'
+      else if (perfil?.rol === 'admin') window.location.href = '/dashboard'
+      else window.location.href = '/perfil'
     } catch {
       setError('Error inesperado')
     } finally {

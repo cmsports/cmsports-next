@@ -26,7 +26,8 @@ export default function CrearContrasenaPage() {
     if (err) { setError('No se pudo guardar la contraseña. El link puede haber expirado.'); return }
     const { data: { session } } = await supabase.auth.getSession()
     const { data: p } = await supabase.from('perfiles').select('rol').eq('id', session?.user.id).single()
-    if (p?.rol === 'admin' || p?.rol === 'superadmin') router.push('/dashboard')
+    if (p?.rol === 'superadmin') router.push('/superadmin')
+    else if (p?.rol === 'admin') router.push('/dashboard')
     else if (p?.rol === 'profesor') router.push('/dashboard-profesor')
     else router.push('/perfil')
   }
