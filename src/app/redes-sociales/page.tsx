@@ -466,6 +466,29 @@ async function renderVariante(canvas: HTMLCanvasElement, v: Variante, foto: HTML
   else await renderMinimal(ctx, v, fotoFinal, club)
 }
 
+// ── BtnAnalizar ─────────────────────────────────────────────────────────────
+function BtnAnalizar({ onClick, disabled, loading }: { onClick: () => void; disabled: boolean; loading: boolean }) {
+  const off = disabled || loading
+  return (
+    <button
+      onClick={onClick}
+      disabled={off}
+      style={{
+        width: '100%', padding: '10px', border: 'none', borderRadius: 8,
+        background: off ? '#e2e8f0' : '#0f172a',
+        color: off ? '#94a3b8' : '#ffffff',
+        fontSize: 13, fontWeight: 600,
+        cursor: off ? 'not-allowed' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+      }}
+    >
+      {loading
+        ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Analizando estilo...</>
+        : <><Sparkles size={14} /> Analizar estilo con IA</>}
+    </button>
+  )
+}
+
 // ── FlyrCard ────────────────────────────────────────────────────────────────
 function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI, generandoAI }: {
   variante: Variante; foto: HTMLImageElement | null; clubNombre: string
@@ -564,11 +587,25 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI
   )
 }
 
+interface BrandKit {
+  colores: string[]
+  colorFondo: string
+  colorPrincipal: string
+  colorAcento: string
+  mood: string
+  estilo: string
+  tipografia: string
+  efectos: string
+  composicion: string
+  prompt_addition: string
+}
+
 // ── Página Principal ────────────────────────────────────────────────────────
 export default function RedesSocialesPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const brandRefInput = useRef<HTMLInputElement>(null)
 
   const [prompt, setPrompt] = useState('')
   const [foto, setFoto] = useState<File | null>(null)
@@ -581,6 +618,16 @@ export default function RedesSocialesPage() {
   const [clubContexto, setClubContexto] = useState<ClubContexto>({ nombre: 'Mi Club', deporte: 'Tenis de Mesa', colores: ['#1d4ed8', '#06b6d4'] })
   const [imagenesAI, setImagenesAI] = useState<(string | null)[]>([null, null, null])
   const [generandoAI, setGenerandoAI] = useState<boolean[]>([false, false, false])
+  const [clubId, setClubId] = useState<string | null>(null)
+
+  // Brand Kit
+  const [tabActivo, setTabActivo] = useState<'crear' | 'marca'>('crear')
+  const [brandKit, setBrandKit] = useState<BrandKit | null>(null)
+  const [brandRef, setBrandRef] = useState<File | null>(null)
+  const [brandRefPreview, setBrandRefPreview] = useState<string | null>(null)
+  const [analizandoMarca, setAnalizandoMarca] = useState(false)
+  const [guardandoMarca, setGuardandoMarca] = useState(false)
+  const [marcaGuardada, setMarcaGuardada] = useState(false)
 
   const ejemplos = [
     '¡Ganamos el torneo regional! Campeones 2026',
@@ -595,13 +642,17 @@ export default function RedesSocialesPage() {
     if (perfil.rol === 'jugador') { router.push('/perfil'); return }
     if (perfil.club_id) {
       const supabase = createClient()
-      supabase.from('clubes').select('nombre').eq('id', perfil.club_id).single()
+      supabase.from('clubes').select('nombre, brand_kit').eq('id', perfil.club_id).single()
         .then(({ data }) => {
           if (data?.nombre) {
             setClubNombre(data.nombre)
             setClubContexto({ nombre: data.nombre, deporte: 'Tenis de Mesa', colores: ['#1d4ed8', '#06b6d4'] })
           }
+          if (data?.brand_kit && Object.keys(data.brand_kit).length > 0) {
+            setBrandKit(data.brand_kit as BrandKit)
+          }
         })
+      setClubId(perfil.club_id)
     }
   }, [authLoading, perfil])
 
@@ -614,10 +665,39 @@ export default function RedesSocialesPage() {
     return () => URL.revokeObjectURL(url)
   }, [foto])
 
+  async function analizarMarca() {
+    if (!brandRef) return
+    setAnalizandoMarca(true)
+    try {
+      const fd = new FormData()
+      fd.append('imagen', brandRef)
+      const res = await fetch('/api/analizar-marca', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (data.brand) {
+        setBrandKit(data.brand as BrandKit)
+        setMarcaGuardada(false)
+      }
+    } catch (_) {}
+    setAnalizandoMarca(false)
+  }
+
+  async function guardarMarca() {
+    if (!brandKit || !clubId) return
+    setGuardandoMarca(true)
+    try {
+      const supabase = createClient()
+      await supabase.from('clubes').update({ brand_kit: brandKit }).eq('id', clubId)
+      setMarcaGuardada(true)
+    } catch (_) {}
+    setGuardandoMarca(false)
+  }
+
   async function generarImagenAI(variante: Variante, idx: number) {
     setGenerandoAI(prev => { const n = [...prev]; n[idx] = true; return n })
     try {
       let res: Response
+
+      const brandContext = brandKit?.prompt_addition || ''
 
       if (foto) {
         // Con foto propia: usar endpoint de edición de imagen
@@ -629,6 +709,7 @@ export default function RedesSocialesPage() {
         fd.append('titulo', variante.titulo)
         fd.append('subtitulo', variante.subtitulo || '')
         fd.append('fecha', variante.fecha || '')
+        fd.append('brandContext', brandContext)
         res = await fetch('/api/editar-imagen', { method: 'POST', body: fd })
       } else {
         // Sin foto: generar imagen desde cero
@@ -642,6 +723,7 @@ export default function RedesSocialesPage() {
             titulo: variante.titulo,
             subtitulo: variante.subtitulo,
             fecha: variante.fecha,
+            brandContext,
           }),
         })
       }
@@ -691,39 +773,163 @@ export default function RedesSocialesPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24, alignItems: 'start' }}>
           {/* Panel izquierdo */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
-              <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>¿Qué quieres publicar?</label>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 4, background: C.bg, borderRadius: 10, padding: 4, border: `1px solid ${C.border}` }}>
+              {(['crear', 'marca'] as const).map(tab => (
+                <button key={tab} onClick={() => setTabActivo(tab)} style={{
+                  flex: 1, padding: '8px', borderRadius: 7, border: 'none',
+                  background: tabActivo === tab ? C.card : 'transparent',
+                  color: tabActivo === tab ? C.primary : C.muted,
+                  fontWeight: tabActivo === tab ? 700 : 500, fontSize: 13,
+                  cursor: 'pointer',
+                  boxShadow: tabActivo === tab ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  transition: 'all 0.15s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                }}>
+                  {tab === 'crear' ? <><Sparkles size={13} /> Crear</> : <><ImageIcon size={13} /> Mi Marca{brandKit ? ' ✓' : ''}</>}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab: MI MARCA */}
+            {tabActivo === 'marca' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+                {/* Subir referencia */}
+                <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 4 }}>
+                    Flyer de referencia
+                  </label>
+                  <div style={{ fontSize: 11, color: C.hint, marginBottom: 10 }}>
+                    Sube un flyer que te guste (de @tdm.usb u otro) y la IA aprenderá su estilo visual.
+                  </div>
+
+                  {brandRefPreview ? (
+                    <div style={{ position: 'relative', marginBottom: 10 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={brandRefPreview} alt="Referencia" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+                      <button onClick={() => { setBrandRef(null); setBrandRefPreview(null); if (brandRefInput.current) brandRefInput.current.value = '' }}
+                        style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div onClick={() => brandRefInput.current?.click()} style={{ border: '2px dashed ' + C.border, borderRadius: 8, padding: '24px 16px', textAlign: 'center', cursor: 'pointer', marginBottom: 10 }}>
+                      <Upload size={20} color={C.hint} style={{ margin: '0 auto 6px' }} />
+                      <div style={{ fontSize: 12, color: C.muted }}>Sube un flyer de referencia</div>
+                      <div style={{ fontSize: 10, color: C.hint, marginTop: 2 }}>JPG, PNG · El estilo se extrae automáticamente</div>
+                    </div>
+                  )}
+                  <input ref={brandRefInput} type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      if (f) {
+                        setBrandRef(f)
+                        setBrandRefPreview(URL.createObjectURL(f))
+                        setMarcaGuardada(false)
+                      }
+                    }}
+                  />
+
+                  <BtnAnalizar onClick={analizarMarca} disabled={!brandRef} loading={analizandoMarca} />
+                </div>
+
+                {/* Resultado del análisis */}
+                {brandKit && (
+                  <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 12, padding: 18 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Identidad visual extraída</span>
+                      <span style={{ fontSize: 11, padding: '3px 8px', background: '#dcfce7', color: '#16a34a', borderRadius: 20, fontWeight: 600 }}>
+                        {marcaGuardada ? '✓ Guardada' : 'Sin guardar'}
+                      </span>
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Paleta</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {(brandKit.colores || []).map((c, i) => (
+                          <div key={i} title={c} style={{ width: 34, height: 34, borderRadius: 7, background: c, border: '2px solid rgba(255,255,255,0.8)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)' }} />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mood</div>
+                      <span style={{ fontSize: 12, padding: '4px 10px', background: C.primaryL, color: C.primary, borderRadius: 20, fontWeight: 700 }}>
+                        {'🎭'} {brandKit.mood}
+                      </span>
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Estilo</div>
+                      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{brandKit.estilo}</div>
+                    </div>
+
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Tipografia</div>
+                      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{brandKit.tipografia}</div>
+                    </div>
+
+                    <button onClick={guardarMarca} disabled={guardandoMarca || marcaGuardada} style={{
+                      width: '100%', padding: '10px', background: marcaGuardada ? '#dcfce7' : C.primary,
+                      color: marcaGuardada ? '#16a34a' : '#fff', border: 'none', borderRadius: 8,
+                      fontSize: 13, fontWeight: 600, cursor: guardandoMarca || marcaGuardada ? 'default' : 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                    }}>
+                      {guardandoMarca
+                        ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Guardando...</>
+                        : marcaGuardada
+                        ? 'Marca guardada — se usara en todos los flyers'
+                        : <><Download size={14} /> Guardar marca del club</>}
+                    </button>
+                  </div>
+                )}
+
+                {brandKit && (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', fontSize: 12, color: '#92400e' }}>
+                    Ve a <strong>Crear</strong> y genera un flyer — la IA usara la identidad visual de tu club automaticamente.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: CREAR */}
+            {tabActivo === 'crear' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 12, padding: 18 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>Que quieres publicar?</label>
               <textarea
                 value={prompt} onChange={e => setPrompt(e.target.value)}
-                placeholder="Ej: Gran torneo USB este sábado 21 de mayo, inscripción $1.500"
+                placeholder="Ej: Gran torneo USB este sabado 21 de mayo, inscripcion $1.500"
                 rows={4}
                 onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) generar() }}
-                style={{ width: '100%', padding: '10px 12px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, resize: 'vertical', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid ' + C.border, borderRadius: 8, fontSize: 13, color: C.text, resize: 'vertical', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
               />
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 11, color: C.hint, marginBottom: 5 }}>Ejemplos:</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   {ejemplos.map(ej => (
-                    <button key={ej} onClick={() => setPrompt(ej)} style={{ textAlign: 'left', padding: '5px 8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 11, color: C.muted, cursor: 'pointer' }}>{ej}</button>
+                    <button key={ej} onClick={() => setPrompt(ej)} style={{ textAlign: 'left', padding: '5px 8px', background: C.bg, border: '1px solid ' + C.border, borderRadius: 6, fontSize: 11, color: C.muted, cursor: 'pointer' }}>{ej}</button>
                   ))}
                 </div>
               </div>
             </div>
 
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+            <div style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 12, padding: 18 }}>
               <label style={{ fontSize: 13, fontWeight: 600, color: C.text, display: 'block', marginBottom: 8 }}>
                 Foto del jugador o evento <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span>
               </label>
               {foto ? (
                 <div style={{ position: 'relative' }}>
-                  <img src={URL.createObjectURL(foto)} alt="foto" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, border: `1px solid ${C.border}` }} />
+                  <img src={URL.createObjectURL(foto)} alt="foto" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, border: '1px solid ' + C.border }} />
                   <button onClick={() => { setFoto(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
                     style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.65)', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <X size={14} />
                   </button>
                 </div>
               ) : (
-                <div onClick={() => fileInputRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 8, padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}>
+                <div onClick={() => fileInputRef.current?.click()} style={{ border: '2px dashed ' + C.border, borderRadius: 8, padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}>
                   <Upload size={22} color={C.hint} style={{ margin: '0 auto 8px' }} />
                   <div style={{ fontSize: 13, color: C.muted, marginBottom: 3 }}>Sube una foto del club o jugador</div>
                   <div style={{ fontSize: 11, color: C.hint }}>Se usa como fondo del flyer</div>
@@ -742,12 +948,14 @@ export default function RedesSocialesPage() {
             </button>
 
             {variantes.length > 0 && (
-              <button onClick={generar} style={{ width: '100%', padding: '10px', background: 'transparent', color: C.primary, border: `1px solid ${C.primary}`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <button onClick={generar} style={{ width: '100%', padding: '10px', background: 'transparent', color: C.primary, border: '1px solid ' + C.primary, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                 <RefreshCw size={13} /> Regenerar
               </button>
             )}
 
             {error && <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>{error}</div>}
+              </div>
+            )}
           </div>
 
           {/* Panel derecho */}
@@ -759,15 +967,15 @@ export default function RedesSocialesPage() {
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Creando tus variantes...</div>
-                  <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>La IA está diseñando 3 flyers únicos para ti</div>
+                  <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>La IA esta disenando 3 flyers unicos para ti</div>
                 </div>
               </div>
             )}
             {!generando && variantes.length === 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12, border: `2px dashed ${C.border}`, borderRadius: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12, border: '2px dashed ' + C.border, borderRadius: 12 }}>
                 <ImageIcon size={40} color={C.hint} />
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 15, fontWeight: 500, color: C.muted }}>Tus flyers aparecerán aquí</div>
+                  <div style={{ fontSize: 15, fontWeight: 500, color: C.muted }}>Tus flyers apareceran aqui</div>
                   <div style={{ fontSize: 13, color: C.hint, marginTop: 4 }}>Escribe un prompt y haz click en Generar</div>
                 </div>
               </div>
