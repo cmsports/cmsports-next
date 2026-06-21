@@ -176,8 +176,8 @@ async function renderHero(ctx: CanvasRenderingContext2D, v: Variante, foto: HTML
   // 5. Gradiente oscuro en bottom (área de texto)
   const gBot = ctx.createLinearGradient(0, S*0.46, 0, S)
   gBot.addColorStop(0, 'rgba(0,0,0,0)')
-  gBot.addColorStop(0.3, rgba(USB.azulOscuro, 0.78))
-  gBot.addColorStop(1, rgba(USB.azulOscuro, 0.97))
+  gBot.addColorStop(0.3, rgba(USB.azulOscuro, 0.62))
+  gBot.addColorStop(1, rgba(USB.azulOscuro, 0.88))
   ctx.fillStyle = gBot; ctx.fillRect(0, S*0.46, S, S*0.54)
 
   // 6. Gradiente oscuro en top (área de club info)
@@ -480,28 +480,13 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI
     if (canvasRef.current) renderVariante(canvasRef.current, variante, foto, clubNombre)
   }, [variante, foto, clubNombre])
 
-  // Cuando llega la imagen AI, hacer composite: AI fondo + Canvas texto encima
+  // Cuando llega la imagen AI, renderizar con ella como foto de fondo
   useEffect(() => {
-    if (!imagenAI || !canvasRef.current || !compositeRef.current) return
-    const composite = compositeRef.current
-    const ctx = composite.getContext('2d')
-    if (!ctx) return
-    composite.width = CANVAS_SIZE
-    composite.height = CANVAS_SIZE
-
+    if (!imagenAI || !compositeRef.current) return
     const aiImg = new Image()
     aiImg.onload = async () => {
-      // 1. Fondo AI
-      ctx.drawImage(aiImg, 0, 0, CANVAS_SIZE, CANVAS_SIZE)
-      // 2. Canvas con texto encima (solo el texto, no el fondo)
-      // Renderizamos variante con foto null para obtener solo overlays de texto
-      // pero sobre la AI image ya puesta
-      const tmpCanvas = document.createElement('canvas')
-      await renderVariante(tmpCanvas, variante, null, clubNombre)
-      // Modo "screen" para mezclar solo los textos claros
-      ctx.globalCompositeOperation = 'source-over'
-      ctx.globalAlpha = 1
-      ctx.drawImage(tmpCanvas, 0, 0)
+      // Pasamos la imagen AI como foto → renderVariante la usa como fondo
+      await renderVariante(compositeRef.current!, variante, aiImg, clubNombre)
     }
     aiImg.src = imagenAI
   }, [imagenAI, variante, clubNombre])
