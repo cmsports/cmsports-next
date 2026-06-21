@@ -44,6 +44,27 @@ const USB = {
   blanco:     '#ffffff',
 }
 
+// ── Stock fotos de tenis de mesa (Unsplash, gratis, CORS ok) ────────────────
+const STOCK_FOTOS = [
+  'https://images.unsplash.com/photo-1518928286447-dc161b7cd6fb?w=1080&q=85&auto=format&fit=crop', // jugador sirviendo
+  'https://images.unsplash.com/photo-1659303388076-de1535159d6c?w=1080&q=85&auto=format&fit=crop', // hombre jugando
+  'https://images.unsplash.com/photo-1461748659110-16121c049d52?w=1080&q=85&auto=format&fit=crop', // dos jugadores
+  'https://images.unsplash.com/photo-1511067007398-7e4b90cfa4bc?w=1080&q=85&auto=format&fit=crop', // mesa azul atmosférica
+  'https://images.unsplash.com/photo-1676827613262-5fba25cee5fd?w=1080&q=85&auto=format&fit=crop', // paletas en mesa azul
+  'https://images.unsplash.com/photo-1515773512591-dfaf9e052325?w=1080&q=85&auto=format&fit=crop', // raqueta y pelota
+]
+const stockImgCache: Record<string, HTMLImageElement> = {}
+async function loadStockFoto(url: string): Promise<HTMLImageElement> {
+  if (stockImgCache[url]) return stockImgCache[url]
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => { stockImgCache[url] = img; resolve(img) }
+    img.onerror = reject
+    img.src = url
+  })
+}
+
 // ── Cargar fuentes ──────────────────────────────────────────────────────────
 let fontesLoaded = false
 async function cargarFuentes() {
@@ -431,9 +452,18 @@ async function renderVariante(canvas: HTMLCanvasElement, v: Variante, foto: HTML
   canvas.width = CANVAS_SIZE
   canvas.height = CANVAS_SIZE
   await cargarFuentes()
-  if (v.layout === 'hero') await renderHero(ctx, v, foto, club)
-  else if (v.layout === 'split') await renderSplit(ctx, v, foto, club)
-  else await renderMinimal(ctx, v, foto, club)
+
+  // Si no hay foto del usuario, cargar stock foto de tenis de mesa
+  let fotoFinal = foto
+  if (!fotoFinal) {
+    const layoutIdx = ['hero', 'split', 'minimal'].indexOf(v.layout)
+    const stockUrl = STOCK_FOTOS[layoutIdx % STOCK_FOTOS.length]
+    try { fotoFinal = await loadStockFoto(stockUrl) } catch (_) {}
+  }
+
+  if (v.layout === 'hero') await renderHero(ctx, v, fotoFinal, club)
+  else if (v.layout === 'split') await renderSplit(ctx, v, fotoFinal, club)
+  else await renderMinimal(ctx, v, fotoFinal, club)
 }
 
 // ── FlyrCard ────────────────────────────────────────────────────────────────
