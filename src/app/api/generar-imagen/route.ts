@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   try {
-    const { layout, tono, clubNombre, titulo, subtitulo, fecha } = await req.json()
+    const { layout, tono, clubNombre, titulo, subtitulo, fecha, brandContext } = await req.json()
 
     if (!layout) {
       return NextResponse.json({ error: 'Layout requerido' }, { status: 400 })
@@ -84,7 +84,11 @@ VISUAL STYLE:
 All text in Spanish. Square 1:1. Photorealistic. No watermarks.`,
     }
 
-    const prompt = prompts[layout] || prompts.hero
+    const brandSuffix = brandContext
+      ? `\n\nCLUB BRAND IDENTITY (apply strictly): ${brandContext}`
+      : ''
+
+    const prompt = (prompts[layout] || prompts.hero) + brandSuffix
 
     const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',

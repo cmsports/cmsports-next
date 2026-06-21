@@ -10,6 +10,7 @@ export async function POST(req: NextRequest) {
     const titulo = formData.get('titulo') as string || 'TORNEO'
     const subtitulo = formData.get('subtitulo') as string || ''
     const fecha = formData.get('fecha') as string || ''
+    const brandContext = formData.get('brandContext') as string || ''
 
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
@@ -49,6 +50,7 @@ ${fecha ? `- Date badge: "${fecha}"` : ''}
 - ${tonoDesc}
 - Professional sports marketing quality — like Red Bull, UFC, ESPN
 - Square 1:1 format for Instagram
+${brandContext ? `\nCLUB BRAND IDENTITY (apply strictly): ${brandContext}` : ''}
 
 All text in Spanish. No watermarks. Photorealistic, cinematic quality.`
 
