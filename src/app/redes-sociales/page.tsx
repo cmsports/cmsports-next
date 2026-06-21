@@ -140,7 +140,11 @@ export default function RedesSocialesPage() {
       setClubId(perfil.club_id)
       const supabase = createClient()
       supabase.from('clubes').select('nombre,logo_url,direccion,telefono').eq('id', perfil.club_id).single()
-        .then(({ data }) => {
+        .then(({ data, error: clubError }) => {
+          if (clubError) {
+            setError('No se pudo cargar la información del club (revisa que las migraciones de la base de datos estén aplicadas): ' + clubError.message)
+            return
+          }
           if (data?.nombre) setClubNombre(data.nombre)
           if (data?.logo_url) setLogoUrl(data.logo_url)
           if (data?.direccion) setDireccion(data.direccion)
