@@ -49,6 +49,19 @@ export async function eliminarReferenciaAction(id: string) {
   return { ok: true }
 }
 
+export async function marcarReferenciaPredeterminadaAction(id: string) {
+  const { error, supabase, clubId } = await requireAdminClub()
+  if (error) return { error }
+
+  const { error: clearError } = await supabase!.from('flyer_referencias').update({ predeterminada: false }).eq('club_id', clubId!)
+  if (clearError) return { error: clearError.message }
+
+  const { error: setError } = await supabase!.from('flyer_referencias').update({ predeterminada: true }).eq('id', id)
+  if (setError) return { error: setError.message }
+
+  return { ok: true }
+}
+
 export async function subirFotoGaleriaAction(formData: FormData) {
   const { error, supabase, clubId } = await requireAdminClub()
   if (error) return { error }

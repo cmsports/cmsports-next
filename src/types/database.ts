@@ -1069,6 +1069,7 @@ export interface Database {
           url: string
           nombre: string | null
           creado_en: string
+          predeterminada: boolean
         }
         Insert: {
           id?: string
@@ -1076,6 +1077,7 @@ export interface Database {
           url: string
           nombre?: string | null
           creado_en?: string
+          predeterminada?: boolean
         }
         Update: {
           id?: string
@@ -1083,6 +1085,7 @@ export interface Database {
           url?: string
           nombre?: string | null
           creado_en?: string
+          predeterminada?: boolean
         }
         Relationships: [
           { foreignKeyName: 'flyer_referencias_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },

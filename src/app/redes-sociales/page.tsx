@@ -6,13 +6,13 @@ import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import {
-  subirReferenciaAction, eliminarReferenciaAction,
+  subirReferenciaAction, eliminarReferenciaAction, marcarReferenciaPredeterminadaAction,
   subirFotoGaleriaAction, eliminarFotoGaleriaAction,
   subirLogoAction, actualizarInfoClubAction,
 } from '@/app/actions/redes-sociales'
 import {
   Sparkles, ImageIcon, Images, Download, RefreshCw, Loader2, Upload, Trash2,
-  Check, Shield, Plus, X,
+  Check, Shield, Plus, X, Star,
 } from 'lucide-react'
 
 const C = {
@@ -35,7 +35,7 @@ function btn(variant: 'primary' | 'secondary' | 'danger' = 'primary', disabled =
   return { ...base, background: C.sky, color: 'white' }
 }
 
-interface FlyerReferencia { id: string; url: string; nombre: string | null }
+interface FlyerReferencia { id: string; url: string; nombre: string | null; predeterminada: boolean }
 interface FotoGaleria { id: string; url: string; tipo: string }
 interface Categoria { nombre: string; precio: string; hora: string }
 interface Premio { lugar: string; monto: string }
@@ -122,12 +122,14 @@ export default function RedesSocialesPage() {
     setCargandoDatos(true)
     const supabase = createClient()
     const [{ data: refs }, { data: fts }] = await Promise.all([
-      supabase.from('flyer_referencias').select('id,url,nombre').eq('club_id', club).order('creado_en', { ascending: false }),
+      supabase.from('flyer_referencias').select('id,url,nombre,predeterminada').eq('club_id', club).order('creado_en', { ascending: false }),
       supabase.from('fotos_galeria').select('id,url,tipo').eq('club_id', club).order('creado_en', { ascending: false }),
     ])
     setReferencias(refs || [])
     setFotos(fts || [])
     setCargandoDatos(false)
+    const predeterminada = (refs || []).find(r => r.predeterminada)
+    if (predeterminada) setReferenciaSel(prev => prev || predeterminada.id)
   }
 
   useEffect(() => {
@@ -194,6 +196,13 @@ export default function RedesSocialesPage() {
     if (!clubId) return
     await eliminarReferenciaAction(id)
     if (referenciaSel === id) setReferenciaSel(null)
+    await cargarDatos(clubId)
+  }
+
+  async function onMarcarPredeterminada(id: string) {
+    if (!clubId) return
+    await marcarReferenciaPredeterminadaAction(id)
+    setReferenciaSel(id)
     await cargarDatos(clubId)
   }
 
@@ -481,9 +490,19 @@ export default function RedesSocialesPage() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
                 {referencias.map(r => (
-                  <div key={r.id} style={{ position: 'relative', aspectRatio: '1/1', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                  <div key={r.id} style={{ position: 'relative', aspectRatio: '1/1', borderRadius: 8, overflow: 'hidden', border: `2px solid ${r.predeterminada ? C.sky : C.border}` }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={r.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {r.predeterminada && (
+                      <span style={{ position: 'absolute', bottom: 6, left: 6, background: C.sky, color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Star size={10} fill="white" /> Predeterminada
+                      </span>
+                    )}
+                    {!r.predeterminada && (
+                      <button onClick={() => onMarcarPredeterminada(r.id)} title="Usar como predeterminada" style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Star size={13} />
+                      </button>
+                    )}
                     <button onClick={() => onEliminarReferencia(r.id)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                       <Trash2 size={13} />
                     </button>
