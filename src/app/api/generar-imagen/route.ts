@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import OpenAI from 'openai'
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
 // Prompts de fondo visual por layout (sin texto, Canvas lo agrega encima)
 const ESTILOS: Record<string, string> = {
@@ -41,6 +38,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Layout requerido' }, { status: 400 })
     }
 
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      return NextResponse.json({ error: 'OPENAI_API_KEY no configurada' }, { status: 500 })
+    }
+
     const estiloBase = ESTILOS[layout] || ESTILOS.hero
     const tonoExtra = tono === 'hype'
       ? 'Ultra high energy, explosive dynamic pose, aggressive competitive energy.'
@@ -55,17 +57,32 @@ export async function POST(req: NextRequest) {
     Style reference: Top European sports club marketing, ESPN magazine quality.
     Square 1:1 ratio composition optimized for Instagram post.`
 
-    const response = await openai.images.generate({
-      model: 'gpt-image-1',
-      prompt,
-      size: '1024x1024',
-      quality: 'high',
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt,
+        size: '1024x1024',
+        quality: 'high',
+        n: 1,
+      }),
     })
 
-    const imageData = response.data[0]
-    const base64 = imageData.b64_json
+    if (!response.ok) {
+      const err = await response.text()
+      console.error('OpenAI error:', err)
+      return NextResponse.json({ error: 'Error de OpenAI: ' + err }, { status: response.status })
+    }
+
+    const data = await response.json()
+    const imageData = data.data?.[0]
+    const base64 = imageData?.b64_json
       ? `data:image/png;base64,${imageData.b64_json}`
-      : imageData.url || ''
+      : imageData?.url || ''
 
     return NextResponse.json({ imagen: base64 })
   } catch (error: any) {
