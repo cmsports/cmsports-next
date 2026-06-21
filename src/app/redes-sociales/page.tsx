@@ -8,13 +8,36 @@ import { createClient } from '@/lib/supabase/client'
 import {
   subirReferenciaAction, eliminarReferenciaAction,
   subirFotoGaleriaAction, eliminarFotoGaleriaAction,
-  subirLogoAction,
+  subirLogoAction, actualizarInfoClubAction,
 } from '@/app/actions/redes-sociales'
-import { Button, Card, EmptyState } from '@/components/ui'
-import { Sparkles, ImageIcon, Images, Download, RefreshCw, Loader2, Upload, Trash2, Check, Shield } from 'lucide-react'
+import {
+  Sparkles, ImageIcon, Images, Download, RefreshCw, Loader2, Upload, Trash2,
+  Check, Shield, Plus, X,
+} from 'lucide-react'
+
+const C = {
+  bg: '#f1f5f9', card: '#ffffff', border: '#e2e8f0',
+  text: '#0f172a', muted: '#64748b', hint: '#94a3b8',
+  sky: '#4f46e5', skyL: '#ede9fe', skyD: '#3730a3',
+  green: '#16a34a', greenL: '#f0fdf4',
+  red: '#dc2626', redL: '#fef2f2',
+}
+
+const cardStyle = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const labelStyle = { fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6, display: 'block' } as const
+const inputStyle = { width: '100%', padding: '8px 10px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, outline: 'none', boxSizing: 'border-box' } as const
+
+function btn(variant: 'primary' | 'secondary' | 'danger' = 'primary', disabled = false) {
+  const base = { borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 } as const
+  if (disabled) return { ...base, background: '#c7d2fe', color: 'white' }
+  if (variant === 'secondary') return { ...base, background: 'transparent', border: `1px solid ${C.border}`, color: C.muted }
+  if (variant === 'danger') return { ...base, background: C.redL, color: C.red, border: '1px solid #fecaca' }
+  return { ...base, background: C.sky, color: 'white' }
+}
 
 interface FlyerReferencia { id: string; url: string; nombre: string | null }
 interface FotoGaleria { id: string; url: string; tipo: string }
+interface Categoria { nombre: string; precio: string; hora: string }
 
 const TIPOS_FOTO = [
   { value: 'jugador', label: 'Jugador' },
@@ -23,27 +46,31 @@ const TIPOS_FOTO = [
   { value: 'otro', label: 'Otro' },
 ]
 
+const TIPOS_EVENTO = ['Torneo', 'Torneo Relámpago', 'Interclubes', 'Clase']
+
 function GridSelector<T extends { id: string; url: string }>({
   items, seleccionado, onSelect, vacio,
 }: { items: T[]; seleccionado: string | null; onSelect: (id: string) => void; vacio: string }) {
   if (items.length === 0) {
-    return <div className="text-xs text-[var(--text-muted)] py-6 text-center border border-dashed border-[var(--border)] rounded-lg">{vacio}</div>
+    return <div style={{ fontSize: 12, color: C.hint, padding: '20px 0', textAlign: 'center', border: `1px dashed ${C.border}`, borderRadius: 8 }}>{vacio}</div>
   }
   return (
-    <div className="grid grid-cols-4 gap-2">
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
       {items.map(item => (
         <button
           key={item.id}
           type="button"
           onClick={() => onSelect(item.id)}
-          className="relative aspect-square rounded-lg overflow-hidden border-2 cursor-pointer"
-          style={{ borderColor: seleccionado === item.id ? 'var(--sky)' : 'var(--border)' }}
+          style={{
+            position: 'relative', aspectRatio: '1/1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
+            border: `2px solid ${seleccionado === item.id ? C.sky : C.border}`, padding: 0, background: 'none',
+          }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={item.url} alt="" className="w-full h-full object-cover" />
+          <img src={item.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           {seleccionado === item.id && (
-            <div className="absolute top-1 right-1 bg-[var(--sky)] text-white rounded-full p-0.5">
-              <Check className="size-3" />
+            <div style={{ position: 'absolute', top: 4, right: 4, background: C.sky, color: 'white', borderRadius: '50%', padding: 2, display: 'flex' }}>
+              <Check size={11} />
             </div>
           )}
         </button>
@@ -63,13 +90,22 @@ export default function RedesSocialesPage() {
   const [clubNombre, setClubNombre] = useState('Mi Club')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [subiendoLogo, setSubiendoLogo] = useState(false)
+  const [direccion, setDireccion] = useState('')
+  const [telefono, setTelefono] = useState('')
+
   const [tab, setTab] = useState<'crear' | 'referencias' | 'galeria'>('crear')
 
   const [referencias, setReferencias] = useState<FlyerReferencia[]>([])
   const [fotos, setFotos] = useState<FotoGaleria[]>([])
   const [cargandoDatos, setCargandoDatos] = useState(true)
 
-  const [prompt, setPrompt] = useState('')
+  const [tipoEvento, setTipoEvento] = useState('Torneo')
+  const [nombreEvento, setNombreEvento] = useState('')
+  const [fecha, setFecha] = useState('')
+  const [categorias, setCategorias] = useState<Categoria[]>([{ nombre: 'Singles', precio: '', hora: '' }])
+  const [premios, setPremios] = useState('')
+  const [notas, setNotas] = useState('')
+
   const [referenciaSel, setReferenciaSel] = useState<string | null>(null)
   const [fotoSel, setFotoSel] = useState<string | null>(null)
   const [generando, setGenerando] = useState(false)
@@ -79,13 +115,6 @@ export default function RedesSocialesPage() {
   const [subiendoReferencia, setSubiendoReferencia] = useState(false)
   const [subiendoFoto, setSubiendoFoto] = useState(false)
   const [tipoFotoNueva, setTipoFotoNueva] = useState('jugador')
-
-  const ejemplos = [
-    '¡Ganamos el torneo regional! Campeones 2026',
-    'Gran Torneo este sábado 10am, ¡inscríbete!',
-    'Interclubes relámpago, domingo 29, Nogales 264',
-    'Torneo a beneficio, cupos limitados',
-  ]
 
   async function cargarDatos(club: string) {
     setCargandoDatos(true)
@@ -106,14 +135,32 @@ export default function RedesSocialesPage() {
     if (perfil.club_id) {
       setClubId(perfil.club_id)
       const supabase = createClient()
-      supabase.from('clubes').select('nombre,logo_url').eq('id', perfil.club_id).single()
+      supabase.from('clubes').select('nombre,logo_url,direccion,telefono').eq('id', perfil.club_id).single()
         .then(({ data }) => {
           if (data?.nombre) setClubNombre(data.nombre)
           if (data?.logo_url) setLogoUrl(data.logo_url)
+          if (data?.direccion) setDireccion(data.direccion)
+          if (data?.telefono) setTelefono(data.telefono)
         })
       cargarDatos(perfil.club_id)
     }
   }, [authLoading, perfil])
+
+  function guardarInfoClubSiCambio(nuevaDireccion: string, nuevoTelefono: string) {
+    actualizarInfoClubAction(nuevaDireccion, nuevoTelefono)
+  }
+
+  function actualizarCategoria(i: number, campo: keyof Categoria, valor: string) {
+    setCategorias(prev => prev.map((c, idx) => idx === i ? { ...c, [campo]: valor } : c))
+  }
+
+  function agregarCategoria() {
+    setCategorias(prev => [...prev, { nombre: '', precio: '', hora: '' }])
+  }
+
+  function quitarCategoria(i: number) {
+    setCategorias(prev => prev.filter((_, idx) => idx !== i))
+  }
 
   async function onSubirReferencia(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0]
@@ -173,8 +220,10 @@ export default function RedesSocialesPage() {
     if (logoInputRef.current) logoInputRef.current.value = ''
   }
 
+  const listo = !!nombreEvento.trim() && !!referenciaSel && !!fotoSel
+
   async function generar() {
-    if (!prompt.trim() || !referenciaSel || !fotoSel) return
+    if (!listo) return
     setGenerando(true); setError(''); setResultado(null)
     try {
       const referenciaUrl = referencias.find(r => r.id === referenciaSel)?.url
@@ -182,7 +231,10 @@ export default function RedesSocialesPage() {
       const res = await fetch('/api/generar-flyer-ia', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, clubNombre, referenciaUrl, fotoUrl, logoUrl }),
+        body: JSON.stringify({
+          tipoEvento, nombreEvento, fecha, categorias, premios, notas,
+          clubNombre, direccion, telefono, referenciaUrl, fotoUrl, logoUrl,
+        }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
@@ -206,13 +258,13 @@ export default function RedesSocialesPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <div className="max-w-[1100px] mx-auto">
-        <div className="mb-6">
-          <h1 className="text-xl font-bold text-[var(--text)]">Redes Sociales</h1>
-          <p className="text-sm text-[var(--text-muted)]">Genera flyers profesionales usando tus propios diseños y fotos como referencia</p>
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <div style={{ marginBottom: 20 }}>
+          <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, margin: '0 0 2px' }}>Redes Sociales</h1>
+          <p style={{ fontSize: 12, color: C.hint, margin: 0 }}>Genera flyers usando tus propios diseños y fotos como referencia</p>
         </div>
 
-        <div className="flex gap-1 bg-[var(--bg-dark)] rounded-lg p-1 border border-[var(--border)] mb-5 w-fit">
+        <div style={{ display: 'flex', gap: 4, background: C.bg, borderRadius: 10, padding: 4, border: `1px solid ${C.border}`, marginBottom: 18, width: 'fit-content' }}>
           {([
             { key: 'crear', label: 'Crear', icon: Sparkles },
             { key: 'referencias', label: `Mis Referencias${referencias.length ? ` (${referencias.length})` : ''}`, icon: ImageIcon },
@@ -221,92 +273,155 @@ export default function RedesSocialesPage() {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors"
               style={{
-                background: tab === t.key ? 'white' : 'transparent',
-                color: tab === t.key ? 'var(--sky)' : 'var(--text-muted)',
+                display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 7, border: 'none',
+                background: tab === t.key ? C.card : 'transparent',
+                color: tab === t.key ? C.sky : C.muted,
+                fontWeight: tab === t.key ? 700 : 500, fontSize: 13, cursor: 'pointer',
                 boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               }}
             >
-              <t.icon className="size-3.5" /> {t.label}
+              <t.icon size={13} /> {t.label}
             </button>
           ))}
         </div>
 
         {tab === 'crear' && (
-          <div className="grid grid-cols-[360px_1fr] gap-6 items-start">
-            <div className="flex flex-col gap-4">
-              <Card>
-                <label className="text-sm font-semibold text-[var(--text)] block mb-2">¿Qué quieres publicar?</label>
-                <textarea
-                  value={prompt} onChange={e => setPrompt(e.target.value)}
-                  placeholder="Ej: Torneo épico de tenis de mesa, sábado 27 de junio a las 12pm, inscripción $5.000, premios 1er y 2do lugar"
-                  rows={4}
-                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg text-sm text-[var(--text)] resize-y outline-none focus:border-[var(--sky)]"
-                />
-                <div className="mt-2 flex flex-col gap-1.5">
-                  <div className="text-xs text-[var(--text-muted)]">Ejemplos:</div>
-                  {ejemplos.map(ej => (
-                    <button key={ej} onClick={() => setPrompt(ej)} className="text-left px-2 py-1.5 bg-[var(--bg-dark)] border border-[var(--border)] rounded-md text-xs text-[var(--text-muted)] cursor-pointer hover:border-[var(--sky)]">
-                      {ej}
+          <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 20, alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+              <div style={cardStyle}>
+                <label style={labelStyle}>Datos fijos del club</label>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                  <div style={{ width: 48, height: 48, borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}`, background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {logoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    ) : <Shield size={18} color={C.hint} />}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{clubNombre}</div>
+                    <button onClick={() => logoInputRef.current?.click()} disabled={subiendoLogo} style={{ ...btn('secondary'), fontSize: 11, padding: '4px 8px', marginTop: 4 }}>
+                      {subiendoLogo ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={11} />} {logoUrl ? 'Cambiar logo' : 'Subir logo'}
                     </button>
+                    <input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onSubirLogo} />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, marginBottom: 3, display: 'block' }}>Dirección</label>
+                    <input value={direccion} onChange={e => setDireccion(e.target.value)} onBlur={e => guardarInfoClubSiCambio(e.target.value, telefono)} placeholder="Nogales 264, San Bernardo" style={{ ...inputStyle, fontSize: 12 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, marginBottom: 3, display: 'block' }}>Teléfono</label>
+                    <input value={telefono} onChange={e => setTelefono(e.target.value)} onBlur={e => guardarInfoClubSiCambio(direccion, e.target.value)} placeholder="+56 9 1234 5678" style={{ ...inputStyle, fontSize: 12 }} />
+                  </div>
+                </div>
+              </div>
+
+              <div style={cardStyle}>
+                <label style={labelStyle}>Evento</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, marginBottom: 3, display: 'block' }}>Tipo</label>
+                    <select value={tipoEvento} onChange={e => setTipoEvento(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
+                      {TIPOS_EVENTO.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, marginBottom: 3, display: 'block' }}>Fecha</label>
+                    <input value={fecha} onChange={e => setFecha(e.target.value)} placeholder="Sábado 27 de junio" style={inputStyle} />
+                  </div>
+                </div>
+                <label style={{ fontSize: 11, color: C.muted, marginBottom: 3, display: 'block' }}>Nombre del evento</label>
+                <input value={nombreEvento} onChange={e => setNombreEvento(e.target.value)} placeholder="Copa Verano" style={inputStyle} />
+              </div>
+
+              <div style={cardStyle}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Categorías</label>
+                  <button onClick={agregarCategoria} style={{ ...btn('secondary'), fontSize: 11, padding: '4px 8px' }}>
+                    <Plus size={11} /> Agregar
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {categorias.map((c, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 6, alignItems: 'center' }}>
+                      <input value={c.nombre} onChange={e => actualizarCategoria(i, 'nombre', e.target.value)} placeholder="Singles" style={{ ...inputStyle, fontSize: 12 }} />
+                      <input value={c.precio} onChange={e => actualizarCategoria(i, 'precio', e.target.value)} placeholder="$5.000" style={{ ...inputStyle, fontSize: 12 }} />
+                      <input value={c.hora} onChange={e => actualizarCategoria(i, 'hora', e.target.value)} placeholder="11:00 AM" style={{ ...inputStyle, fontSize: 12 }} />
+                      <button onClick={() => quitarCategoria(i)} style={{ background: 'none', border: 'none', color: C.hint, cursor: 'pointer', padding: 4 }}>
+                        <X size={14} />
+                      </button>
+                    </div>
                   ))}
                 </div>
-              </Card>
+              </div>
 
-              <Card>
-                <label className="text-sm font-semibold text-[var(--text)] block mb-2">Diseño de referencia</label>
-                {cargandoDatos ? (
-                  <div className="text-xs text-[var(--text-muted)]">Cargando...</div>
-                ) : (
-                  <GridSelector items={referencias} seleccionado={referenciaSel} onSelect={setReferenciaSel} vacio="Sube tus flyers favoritos en la pestaña 'Mis Referencias'" />
+              <div style={cardStyle}>
+                <label style={{ ...labelStyle, marginBottom: 8 }}>Premios <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span></label>
+                <input value={premios} onChange={e => setPremios(e.target.value)} placeholder="$20.000 y $10.000 para 1er y 2do lugar" style={{ ...inputStyle, marginBottom: 10 }} />
+                <label style={{ ...labelStyle, marginBottom: 8 }}>Información adicional <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span></label>
+                <textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Ej: Transmisión en vivo por YouTube" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+              </div>
+
+              <div style={cardStyle}>
+                <label style={labelStyle}>Diseño de referencia</label>
+                {cargandoDatos ? <div style={{ fontSize: 12, color: C.hint }}>Cargando...</div> : (
+                  <GridSelector items={referencias} seleccionado={referenciaSel} onSelect={setReferenciaSel} vacio="Sube tus flyers favoritos en 'Mis Referencias'" />
                 )}
-              </Card>
+              </div>
 
-              <Card>
-                <label className="text-sm font-semibold text-[var(--text)] block mb-2">Foto a usar</label>
-                {cargandoDatos ? (
-                  <div className="text-xs text-[var(--text-muted)]">Cargando...</div>
-                ) : (
-                  <GridSelector items={fotos} seleccionado={fotoSel} onSelect={setFotoSel} vacio="Sube fotos de jugadores o canchas en la pestaña 'Galería de Fotos'" />
+              <div style={cardStyle}>
+                <label style={labelStyle}>Foto a usar</label>
+                {cargandoDatos ? <div style={{ fontSize: 12, color: C.hint }}>Cargando...</div> : (
+                  <GridSelector items={fotos} seleccionado={fotoSel} onSelect={setFotoSel} vacio="Sube fotos en 'Galería de Fotos'" />
                 )}
-              </Card>
+              </div>
 
-              <Button onClick={generar} disabled={!prompt.trim() || !referenciaSel || !fotoSel || generando} loading={generando} size="lg">
-                {generando ? 'Generando flyer...' : <><Sparkles className="size-4" /> Generar flyer</>}
-              </Button>
+              <button onClick={generar} disabled={!listo || generando} style={{ ...btn('primary', !listo || generando), width: '100%', justifyContent: 'center', padding: '12px' }}>
+                {generando ? <><Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Generando flyer...</> : <><Sparkles size={15} /> Generar flyer</>}
+              </button>
 
               {resultado && (
-                <Button onClick={generar} variant="secondary">
-                  <RefreshCw className="size-3.5" /> Regenerar
-                </Button>
+                <button onClick={generar} style={{ ...btn('secondary'), width: '100%', justifyContent: 'center' }}>
+                  <RefreshCw size={13} /> Regenerar
+                </button>
               )}
 
               {error && (
-                <div className="px-3 py-2.5 bg-[var(--red-light)] border border-red-200 rounded-lg text-sm text-[var(--red)]">{error}</div>
+                <div style={{ padding: '10px 14px', background: C.redL, border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: C.red }}>{error}</div>
               )}
             </div>
 
             <div>
               {generando && (
-                <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-                  <Loader2 className="size-8 text-[var(--sky)] animate-spin" />
-                  <div className="text-center">
-                    <div className="text-sm font-semibold text-[var(--text)]">Creando tu flyer...</div>
-                    <div className="text-xs text-[var(--text-muted)] mt-1">Combinando tu referencia y tu foto</div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 14 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: C.skyL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Loader2 size={22} color={C.sky} style={{ animation: 'spin 1s linear infinite' }} />
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Creando tu flyer...</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Combinando tu referencia y tu foto</div>
                   </div>
                 </div>
               )}
               {!generando && !resultado && (
-                <EmptyState icon={ImageIcon} title="Tu flyer aparecerá aquí" description="Escribe el prompt, elige referencia y foto, y haz click en Generar" />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 400, gap: 12, border: `2px dashed ${C.border}`, borderRadius: 12 }}>
+                  <ImageIcon size={40} color={C.hint} />
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 15, fontWeight: 500, color: C.muted }}>Tu flyer aparecerá aquí</div>
+                    <div style={{ fontSize: 13, color: C.hint, marginTop: 4 }}>Completa los datos, elige referencia y foto, y dale a Generar</div>
+                  </div>
+                </div>
               )}
               {!generando && resultado && (
-                <div className="max-w-[480px] mx-auto">
+                <div style={{ maxWidth: 480, margin: '0 auto' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={resultado} alt="Flyer generado" className="w-full aspect-square object-cover rounded-xl border border-[var(--border)]" />
-                  <Button onClick={descargar} className="w-full mt-3">
-                    <Download className="size-4" /> Descargar PNG
-                  </Button>
+                  <img src={resultado} alt="Flyer generado" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 12, border: `1px solid ${C.border}` }} />
+                  <button onClick={descargar} style={{ ...btn('primary'), width: '100%', justifyContent: 'center', marginTop: 12 }}>
+                    <Download size={14} /> Descargar PNG
+                  </button>
                 </div>
               )}
             </div>
@@ -314,100 +429,72 @@ export default function RedesSocialesPage() {
         )}
 
         {tab === 'referencias' && (
-          <div className="flex flex-col gap-4">
-            <Card>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="size-14 rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--bg-dark)] flex items-center justify-center shrink-0">
-                    {logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={logoUrl} alt="Logo del club" className="w-full h-full object-contain" />
-                    ) : (
-                      <Shield className="size-6 text-[var(--text-muted)]" />
-                    )}
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-[var(--text)]">Logo del club</div>
-                    <div className="text-xs text-[var(--text-muted)]">Se incluye automáticamente en todos los flyers que generes</div>
-                  </div>
-                </div>
-                <Button onClick={() => logoInputRef.current?.click()} loading={subiendoLogo} size="sm" variant="secondary">
-                  <Upload className="size-3.5" /> {logoUrl ? 'Cambiar logo' : 'Subir logo'}
-                </Button>
-                <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={onSubirLogo} />
-              </div>
-            </Card>
-
-            <Card>
-            <div className="flex items-center justify-between mb-4">
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <div>
-                <div className="text-sm font-semibold text-[var(--text)]">Tus flyers de referencia</div>
-                <div className="text-xs text-[var(--text-muted)]">Sube los diseños (de Canva u otra herramienta) que más te gustan — la IA los usará como plantilla</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Tus flyers de referencia</div>
+                <div style={{ fontSize: 12, color: C.muted }}>Sube los diseños (de Canva u otra herramienta) que más te gustan — la IA los usará como plantilla</div>
               </div>
-              <Button onClick={() => referenciaInputRef.current?.click()} loading={subiendoReferencia} size="sm">
-                <Upload className="size-3.5" /> Subir referencia
-              </Button>
-              <input ref={referenciaInputRef} type="file" accept="image/*" className="hidden" onChange={onSubirReferencia} />
+              <button onClick={() => referenciaInputRef.current?.click()} disabled={subiendoReferencia} style={btn('primary')}>
+                {subiendoReferencia ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={13} />} Subir referencia
+              </button>
+              <input ref={referenciaInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onSubirReferencia} />
             </div>
             {referencias.length === 0 ? (
-              <EmptyState icon={ImageIcon} title="Sin referencias aún" description="Sube tu primer flyer de referencia para empezar a generar" />
+              <div style={{ textAlign: 'center', padding: '40px 0', color: C.hint, fontSize: 13 }}>Sin referencias aún — sube tu primer flyer para empezar</div>
             ) : (
-              <div className="grid grid-cols-5 gap-3">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
                 {referencias.map(r => (
-                  <div key={r.id} className="relative group aspect-square rounded-lg overflow-hidden border border-[var(--border)]">
+                  <div key={r.id} style={{ position: 'relative', aspectRatio: '1/1', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}` }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={r.url} alt="" className="w-full h-full object-cover" />
-                    <button onClick={() => onEliminarReferencia(r.id)} className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-1.5 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 className="size-3.5" />
+                    <img src={r.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button onClick={() => onEliminarReferencia(r.id)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 ))}
               </div>
             )}
-            </Card>
           </div>
         )}
 
         {tab === 'galeria' && (
-          <Card>
-            <div className="flex items-center justify-between mb-4 gap-3">
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10 }}>
               <div>
-                <div className="text-sm font-semibold text-[var(--text)]">Galería de fotos del club</div>
-                <div className="text-xs text-[var(--text-muted)]">Fotos reales de jugadores, canchas o equipo para usar en los flyers</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Galería de fotos del club</div>
+                <div style={{ fontSize: 12, color: C.muted }}>Fotos reales de jugadores, canchas o equipo para usar en los flyers</div>
               </div>
-              <div className="flex items-center gap-2">
-                <select
-                  value={tipoFotoNueva}
-                  onChange={e => setTipoFotoNueva(e.target.value)}
-                  className="border border-[var(--border)] rounded-lg text-sm px-2 py-1.5 text-[var(--text)] outline-none"
-                >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select value={tipoFotoNueva} onChange={e => setTipoFotoNueva(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}>
                   {TIPOS_FOTO.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
-                <Button onClick={() => fotoInputRef.current?.click()} loading={subiendoFoto} size="sm">
-                  <Upload className="size-3.5" /> Subir foto
-                </Button>
+                <button onClick={() => fotoInputRef.current?.click()} disabled={subiendoFoto} style={btn('primary')}>
+                  {subiendoFoto ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={13} />} Subir foto
+                </button>
               </div>
-              <input ref={fotoInputRef} type="file" accept="image/*" className="hidden" onChange={onSubirFoto} />
+              <input ref={fotoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onSubirFoto} />
             </div>
             {fotos.length === 0 ? (
-              <EmptyState icon={Images} title="Sin fotos aún" description="Sube fotos de jugadores, canchas o del equipo" />
+              <div style={{ textAlign: 'center', padding: '40px 0', color: C.hint, fontSize: 13 }}>Sin fotos aún — sube fotos de jugadores, canchas o equipo</div>
             ) : (
-              <div className="grid grid-cols-5 gap-3">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
                 {fotos.map(f => (
-                  <div key={f.id} className="relative group aspect-square rounded-lg overflow-hidden border border-[var(--border)]">
+                  <div key={f.id} style={{ position: 'relative', aspectRatio: '1/1', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}` }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={f.url} alt="" className="w-full h-full object-cover" />
-                    <span className="absolute bottom-1.5 left-1.5 bg-black/60 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize">{f.tipo}</span>
-                    <button onClick={() => onEliminarFoto(f.id)} className="absolute top-1.5 right-1.5 bg-black/60 text-white rounded-full p-1.5 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 className="size-3.5" />
+                    <img src={f.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <span style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,0.6)', color: 'white', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, textTransform: 'capitalize' }}>{f.tipo}</span>
+                    <button onClick={() => onEliminarFoto(f.id)} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 ))}
               </div>
             )}
-          </Card>
+          </div>
         )}
       </div>
+      <style>{`@keyframes spin { from{transform:rotate(0deg)}to{transform:rotate(360deg)} }`}</style>
     </AppLayout>
   )
 }
