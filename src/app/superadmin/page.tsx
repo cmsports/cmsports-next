@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck } from 'lucide-react'
-import { usePerfilSuperadmin } from './layout'
+import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
 import { crearClub } from '@/app/actions/superadmin'
 
 const supabase = createClient()
@@ -17,30 +17,11 @@ function formatCLP(n: number) {
 
 export default function SuperadminPage() {
   const perfil = usePerfilSuperadmin()
-  const [clubes, setClubes] = useState<any[]>([])
-  const [conteos, setConteos] = useState<Record<string, number>>({})
-  const [loading, setLoading] = useState(true)
+  const { clubes, conteos, loading, recargar } = useClubesSuperadmin()
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
   const [guardando, setGuardando] = useState(false)
   const router = useRouter()
-
-  useEffect(() => {
-    if (perfil) cargarClubes()
-  }, [perfil])
-
-  async function cargarClubes() {
-    setLoading(true)
-    const { data } = await supabase.from('clubes').select('*').order('nombre')
-    setClubes(data || [])
-    const counts: Record<string, number> = {}
-    for (const c of data || []) {
-      const { count } = await supabase.from('jugadores').select('id', { count: 'exact', head: true }).eq('club_id', c.id)
-      counts[c.id] = count || 0
-    }
-    setConteos(counts)
-    setLoading(false)
-  }
 
   async function handleCrearClub() {
     if (!form.nombre.trim()) return
@@ -55,7 +36,7 @@ export default function SuperadminPage() {
     if (res?.error) return
     setModalOpen(false)
     setForm({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
-    await cargarClubes()
+    await recargar()
   }
 
   async function gestionarClub(clubId: string) {

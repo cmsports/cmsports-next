@@ -10,9 +10,26 @@ const nav = [
   { label: 'Finanzas', icon: Wallet, href: '/superadmin/finanzas' },
 ]
 
-const PerfilContext = createContext<any>(null)
+type SuperadminContextValue = {
+  perfil: any
+  clubes: any[]
+  conteos: Record<string, number>
+  loadingClubes: boolean
+  recargarClubes: () => Promise<void>
+}
+
+const PerfilContext = createContext<SuperadminContextValue | null>(null)
 export function usePerfilSuperadmin() {
-  return useContext(PerfilContext)
+  return useContext(PerfilContext)?.perfil
+}
+export function useClubesSuperadmin() {
+  const ctx = useContext(PerfilContext)
+  return {
+    clubes: ctx?.clubes || [],
+    conteos: ctx?.conteos || {},
+    loading: ctx?.loadingClubes ?? true,
+    recargar: ctx?.recargarClubes ?? (async () => {}),
+  }
 }
 
 export default function SuperadminLayout({ children }: { children: React.ReactNode }) {
@@ -20,6 +37,25 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
   const pathname = usePathname()
   const [perfil, setPerfil] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [clubes, setClubes] = useState<any[]>([])
+  const [conteos, setConteos] = useState<Record<string, number>>({})
+  const [loadingClubes, setLoadingClubes] = useState(true)
+
+  async function recargarClubes() {
+    setLoadingClubes(true)
+    const supabase = createClient()
+    const [{ data: c }, { data: j }] = await Promise.all([
+      supabase.from('clubes').select('*').order('nombre'),
+      supabase.from('jugadores').select('club_id'),
+    ])
+    setClubes(c || [])
+    const counts: Record<string, number> = {}
+    for (const row of j || []) {
+      counts[row.club_id] = (counts[row.club_id] || 0) + 1
+    }
+    setConteos(counts)
+    setLoadingClubes(false)
+  }
 
   useEffect(() => {
     async function cargar() {
@@ -30,6 +66,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
       if (p?.rol !== 'superadmin') { router.push('/login'); return }
       setPerfil(p)
       setLoading(false)
+      recargarClubes()
     }
     cargar()
   }, [])
@@ -37,7 +74,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
   async function cerrarSesion() {
     const supabase = createClient()
     await supabase.auth.signOut({ scope: 'local' })
-    router.push('/login')
+    window.location.href = '/login'
   }
 
   function isActive(href: string) {
@@ -53,7 +90,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'SA'
 
   return (
-    <PerfilContext.Provider value={perfil}>
+    <PerfilContext.Provider value={{ perfil, clubes, conteos, loadingClubes, recargarClubes }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9' }}>
         <aside style={{
           width: 220, background: '#ffffff', borderRight: '1px solid #e2e8f0',
