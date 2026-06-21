@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Pencil, Receipt } from 'lucide-react'
 import { actualizarPlanClub, registrarPagoClub, actualizarEstadoPagoClub } from '@/app/actions/superadmin'
+import { useClubesSuperadmin } from '../layout'
 
 const supabase = createClient()
 
@@ -22,36 +23,34 @@ const ESTADO_COLOR: Record<string, { bg: string; fg: string }> = {
 }
 
 export default function FinanzasSuperadminPage() {
-  const [clubes, setClubes] = useState<any[]>([])
+  const { clubes, loading: loadingClubes, recargar: recargarClubes } = useClubesSuperadmin()
   const [pagos, setPagos] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loadingPagos, setLoadingPagos] = useState(true)
   const [editandoPlan, setEditandoPlan] = useState<string | null>(null)
   const [planValor, setPlanValor] = useState('')
   const [modalPago, setModalPago] = useState<{ clubId: string; nombre: string } | null>(null)
   const [pagoForm, setPagoForm] = useState({ monto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '' })
   const [guardando, setGuardando] = useState(false)
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => { cargarPagos() }, [])
 
-  async function cargar() {
-    setLoading(true)
-    const { data: c } = await supabase.from('clubes').select('*').order('nombre')
-    setClubes(c || [])
+  async function cargarPagos() {
+    setLoadingPagos(true)
     const { data: p } = await supabase.from('pagos_clubes').select('*, clubes(nombre)').order('fecha_pago', { ascending: false }).limit(10)
     setPagos(p || [])
-    setLoading(false)
+    setLoadingPagos(false)
   }
 
   async function guardarPlan(clubId: string) {
     const monto = Number(planValor) || 0
     await actualizarPlanClub({ clubId, planMensual: monto })
     setEditandoPlan(null)
-    await cargar()
+    await recargarClubes()
   }
 
   async function cambiarEstado(clubId: string, estado: 'pagado' | 'pendiente' | 'atrasado') {
     await actualizarEstadoPagoClub({ clubId, estado })
-    await cargar()
+    await recargarClubes()
   }
 
   async function confirmarPago() {
@@ -68,9 +67,10 @@ export default function FinanzasSuperadminPage() {
     setGuardando(false)
     setModalPago(null)
     setPagoForm({ monto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '' })
-    await cargar()
+    await Promise.all([cargarPagos(), recargarClubes()])
   }
 
+  const loading = loadingClubes || loadingPagos
   if (loading) return <div style={{ color: '#94a3b8', fontSize: 14, padding: 24 }}>Cargando...</div>
 
   const mrr = clubes.reduce((a, c) => a + (c.plan_mensual || 0), 0)
