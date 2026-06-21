@@ -13,6 +13,8 @@ export interface Database {
           estado_pago: string
           creado_en: string | null
           logo_url: string | null
+          direccion: string | null
+          telefono: string | null
         }
         Insert: {
           id?: string
@@ -23,6 +25,8 @@ export interface Database {
           estado_pago?: string
           creado_en?: string | null
           logo_url?: string | null
+          direccion?: string | null
+          telefono?: string | null
         }
         Update: {
           id?: string
@@ -33,6 +37,8 @@ export interface Database {
           estado_pago?: string
           creado_en?: string | null
           logo_url?: string | null
+          direccion?: string | null
+          telefono?: string | null
         }
         Relationships: []
       }

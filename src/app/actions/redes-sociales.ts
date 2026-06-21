@@ -83,6 +83,15 @@ export async function eliminarFotoGaleriaAction(id: string) {
   return { ok: true }
 }
 
+export async function actualizarInfoClubAction(direccion: string, telefono: string) {
+  const { error, supabase, clubId } = await requireAdminClub()
+  if (error) return { error }
+
+  const { error: updateError } = await supabase!.from('clubes').update({ direccion, telefono }).eq('id', clubId!)
+  if (updateError) return { error: updateError.message }
+  return { ok: true }
+}
+
 export async function subirLogoAction(formData: FormData) {
   const { error, supabase, clubId } = await requireAdminClub()
   if (error) return { error }
