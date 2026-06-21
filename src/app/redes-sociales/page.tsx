@@ -38,6 +38,7 @@ function btn(variant: 'primary' | 'secondary' | 'danger' = 'primary', disabled =
 interface FlyerReferencia { id: string; url: string; nombre: string | null }
 interface FotoGaleria { id: string; url: string; tipo: string }
 interface Categoria { nombre: string; precio: string; hora: string }
+interface Premio { lugar: string; monto: string }
 
 const TIPOS_FOTO = [
   { value: 'jugador', label: 'Jugador' },
@@ -92,6 +93,7 @@ export default function RedesSocialesPage() {
   const [subiendoLogo, setSubiendoLogo] = useState(false)
   const [direccion, setDireccion] = useState('')
   const [telefono, setTelefono] = useState('')
+  const [clubInfoCargado, setClubInfoCargado] = useState(false)
 
   const [tab, setTab] = useState<'crear' | 'referencias' | 'galeria'>('crear')
 
@@ -103,7 +105,7 @@ export default function RedesSocialesPage() {
   const [nombreEvento, setNombreEvento] = useState('')
   const [fecha, setFecha] = useState('')
   const [categorias, setCategorias] = useState<Categoria[]>([{ nombre: 'Singles', precio: '', hora: '' }])
-  const [premios, setPremios] = useState('')
+  const [premios, setPremios] = useState<Premio[]>([{ lugar: '1er lugar', monto: '' }, { lugar: '2do lugar', monto: '' }])
   const [notas, setNotas] = useState('')
 
   const [referenciaSel, setReferenciaSel] = useState<string | null>(null)
@@ -141,6 +143,7 @@ export default function RedesSocialesPage() {
           if (data?.logo_url) setLogoUrl(data.logo_url)
           if (data?.direccion) setDireccion(data.direccion)
           if (data?.telefono) setTelefono(data.telefono)
+          setClubInfoCargado(true)
         })
       cargarDatos(perfil.club_id)
     }
@@ -160,6 +163,18 @@ export default function RedesSocialesPage() {
 
   function quitarCategoria(i: number) {
     setCategorias(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  function actualizarPremio(i: number, campo: keyof Premio, valor: string) {
+    setPremios(prev => prev.map((p, idx) => idx === i ? { ...p, [campo]: valor } : p))
+  }
+
+  function agregarPremio() {
+    setPremios(prev => [...prev, { lugar: '', monto: '' }])
+  }
+
+  function quitarPremio(i: number) {
+    setPremios(prev => prev.filter((_, idx) => idx !== i))
   }
 
   async function onSubirReferencia(e: React.ChangeEvent<HTMLInputElement>) {
@@ -220,7 +235,7 @@ export default function RedesSocialesPage() {
     if (logoInputRef.current) logoInputRef.current.value = ''
   }
 
-  const listo = !!nombreEvento.trim() && !!referenciaSel && !!fotoSel
+  const listo = !!nombreEvento.trim() && !!referenciaSel && !!fotoSel && clubInfoCargado
 
   async function generar() {
     if (!listo) return
@@ -330,7 +345,7 @@ export default function RedesSocialesPage() {
                   </div>
                   <div>
                     <label style={{ fontSize: 11, color: C.muted, marginBottom: 3, display: 'block' }}>Fecha</label>
-                    <input value={fecha} onChange={e => setFecha(e.target.value)} placeholder="Sábado 27 de junio" style={inputStyle} />
+                    <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }} />
                   </div>
                 </div>
                 <label style={{ fontSize: 11, color: C.muted, marginBottom: 3, display: 'block' }}>Nombre del evento</label>
@@ -348,8 +363,11 @@ export default function RedesSocialesPage() {
                   {categorias.map((c, i) => (
                     <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 6, alignItems: 'center' }}>
                       <input value={c.nombre} onChange={e => actualizarCategoria(i, 'nombre', e.target.value)} placeholder="Singles" style={{ ...inputStyle, fontSize: 12 }} />
-                      <input value={c.precio} onChange={e => actualizarCategoria(i, 'precio', e.target.value)} placeholder="$5.000" style={{ ...inputStyle, fontSize: 12 }} />
-                      <input value={c.hora} onChange={e => actualizarCategoria(i, 'hora', e.target.value)} placeholder="11:00 AM" style={{ ...inputStyle, fontSize: 12 }} />
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.hint }}>$</span>
+                        <input type="number" inputMode="numeric" value={c.precio} onChange={e => actualizarCategoria(i, 'precio', e.target.value)} placeholder="5000" style={{ ...inputStyle, fontSize: 12, paddingLeft: 18 }} />
+                      </div>
+                      <input type="time" value={c.hora} onChange={e => actualizarCategoria(i, 'hora', e.target.value)} style={{ ...inputStyle, fontSize: 12, cursor: 'pointer' }} />
                       <button onClick={() => quitarCategoria(i)} style={{ background: 'none', border: 'none', color: C.hint, cursor: 'pointer', padding: 4 }}>
                         <X size={14} />
                       </button>
@@ -359,8 +377,26 @@ export default function RedesSocialesPage() {
               </div>
 
               <div style={cardStyle}>
-                <label style={{ ...labelStyle, marginBottom: 8 }}>Premios <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span></label>
-                <input value={premios} onChange={e => setPremios(e.target.value)} placeholder="$20.000 y $10.000 para 1er y 2do lugar" style={{ ...inputStyle, marginBottom: 10 }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>Premios <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span></label>
+                  <button onClick={agregarPremio} style={{ ...btn('secondary'), fontSize: 11, padding: '4px 8px' }}>
+                    <Plus size={11} /> Agregar
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                  {premios.map((p, i) => (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, alignItems: 'center' }}>
+                      <input value={p.lugar} onChange={e => actualizarPremio(i, 'lugar', e.target.value)} placeholder="1er lugar" style={{ ...inputStyle, fontSize: 12 }} />
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: C.hint }}>$</span>
+                        <input type="number" inputMode="numeric" value={p.monto} onChange={e => actualizarPremio(i, 'monto', e.target.value)} placeholder="20000" style={{ ...inputStyle, fontSize: 12, paddingLeft: 18 }} />
+                      </div>
+                      <button onClick={() => quitarPremio(i)} style={{ background: 'none', border: 'none', color: C.hint, cursor: 'pointer', padding: 4 }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
                 <label style={{ ...labelStyle, marginBottom: 8 }}>Información adicional <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span></label>
                 <textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Ej: Transmisión en vivo por YouTube" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
               </div>
