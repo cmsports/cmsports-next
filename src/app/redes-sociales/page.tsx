@@ -506,20 +506,33 @@ function FlyrCard({ variante, foto, clubNombre, seleccionada, onSelect, imagenAI
       boxShadow: seleccionada ? `0 0 0 4px ${C.primaryL}` : '0 1px 3px rgba(0,0,0,0.08)',
     }}>
       <div style={{ position: 'relative' }}>
-        {/* Canvas base (visible si no hay AI todavía) */}
-        <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: mostrarAI ? 'none' : 'block' }} />
+        {/* Canvas base (solo visible si no hay AI y no está generando) */}
+        <canvas ref={canvasRef} style={{ width: '100%', aspectRatio: '1/1', display: (mostrarAI || generandoAI) ? 'none' : 'block' }} />
+
+        {/* Loading placeholder mientras genera con IA */}
+        {generandoAI && (
+          <div style={{ width: '100%', aspectRatio: '1/1', background: 'linear-gradient(135deg, #060e1e 0%, #0a2254 50%, #060e1e 100%)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(6,182,212,0.12)', border: '2px solid rgba(6,182,212,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Loader2 size={24} color="#22d3ee" style={{ animation: 'spin 1s linear infinite' }} />
+            </div>
+            <div style={{ textAlign: 'center', padding: '0 20px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#22d3ee', marginBottom: 4 }}>Generando con IA...</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', lineHeight: 1.4 }}>{foto ? 'Integrando tu foto al diseño' : 'Creando flyer profesional'}</div>
+            </div>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: '#22d3ee', animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Imagen IA directa — sin canvas encima */}
         {mostrarAI && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={imagenAI!} alt="Flyer IA" style={{ width: '100%', aspectRatio: '1/1', display: 'block', objectFit: 'cover' }} />
         )}
 
-        {/* Badge AI generando */}
-        {generandoAI && (
-          <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.75)', color: '#22d3ee', borderRadius: 20, fontSize: 11, fontWeight: 600, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-            <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Generando con IA...
-          </div>
-        )}
         {mostrarAI && (
           <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(6,182,212,0.9)', color: '#fff', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '3px 10px' }}>
             ✨ IA
@@ -775,7 +788,7 @@ export default function RedesSocialesPage() {
           </div>
         </div>
       </div>
-      <style>{`@keyframes spin { from{transform:rotate(0deg)}to{transform:rotate(360deg)} } textarea:focus{border-color:#4f46e5!important;}`}</style>
+      <style>{`@keyframes spin { from{transform:rotate(0deg)}to{transform:rotate(360deg)} } @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(0.8)} 50%{opacity:1;transform:scale(1.2)} } textarea:focus{border-color:#4f46e5!important;}`}</style>
     </AppLayout>
   )
 }
