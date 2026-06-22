@@ -107,6 +107,7 @@ export default function RedesSocialesPage() {
   const [categorias, setCategorias] = useState<Categoria[]>([{ nombre: 'Singles', precio: '', hora: '' }])
   const [premios, setPremios] = useState<Premio[]>([{ lugar: '1er lugar', monto: '' }, { lugar: '2do lugar', monto: '' }])
   const [notas, setNotas] = useState('')
+  const [instrucciones, setInstrucciones] = useState('')
 
   const [referenciaSel, setReferenciaSel] = useState<string | null>(null)
   const [fotoSel, setFotoSel] = useState<string | null>(null)
@@ -260,7 +261,7 @@ export default function RedesSocialesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tipoEvento, nombreEvento, fecha, categorias, premios, notas,
+          tipoEvento, nombreEvento, fecha, categorias, premios, notas, instrucciones,
           clubNombre, direccion, telefono, referenciaUrl, fotoUrl, logoUrl,
         }),
       })
@@ -412,6 +413,12 @@ export default function RedesSocialesPage() {
                 </div>
                 <label style={{ ...labelStyle, marginBottom: 8 }}>Información adicional <span style={{ fontWeight: 400, color: C.hint }}>(opcional)</span></label>
                 <textarea value={notas} onChange={e => setNotas(e.target.value)} placeholder="Ej: Transmisión en vivo por YouTube" rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+              </div>
+
+              <div style={{ ...cardStyle, border: `1px solid ${C.sky}`, background: C.skyL }}>
+                <label style={{ ...labelStyle, color: C.skyD }}>Instrucciones para la IA <span style={{ fontWeight: 400, color: C.skyD, opacity: 0.7 }}>(opcional, prioridad alta)</span></label>
+                <div style={{ fontSize: 11, color: C.skyD, opacity: 0.8, marginBottom: 8 }}>Esto no aparece escrito en el flyer — son instrucciones de diseño que la IA debe seguir por sobre todo lo demás.</div>
+                <textarea value={instrucciones} onChange={e => setInstrucciones(e.target.value)} placeholder="Ej: pon el nombre del club arriba, usa letras más grandes, que la foto ocupe más espacio" rows={3} style={{ ...inputStyle, resize: 'vertical', background: 'white' }} />
               </div>
 
               <div style={cardStyle}>
