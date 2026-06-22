@@ -15,6 +15,7 @@ export interface Database {
           logo_url: string | null
           direccion: string | null
           telefono: string | null
+          mensualidad_base: number | null
         }
         Insert: {
           id?: string
@@ -27,6 +28,7 @@ export interface Database {
           logo_url?: string | null
           direccion?: string | null
           telefono?: string | null
+          mensualidad_base?: number | null
         }
         Update: {
           id?: string
@@ -39,6 +41,7 @@ export interface Database {
           logo_url?: string | null
           direccion?: string | null
           telefono?: string | null
+          mensualidad_base?: number | null
         }
         Relationships: []
       }
