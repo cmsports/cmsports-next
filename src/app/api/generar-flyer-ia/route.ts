@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// 'chatgpt-image-latest' es el mismo snapshot que usa ChatGPT, pero requiere
-// verificar la organización en OpenAI. Mientras tanto usamos 'gpt-image-1'.
-const MODELO_IMAGEN = 'gpt-image-1'
+// Mismo snapshot de imagen que usa ChatGPT (requiere organización verificada en OpenAI).
+const MODELO_IMAGEN = 'chatgpt-image-latest'
 
 interface Categoria { nombre: string; precio: string; hora: string }
 interface Premio { lugar: string; monto: string }
