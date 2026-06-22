@@ -5,9 +5,12 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import CampanaNotificaciones from '@/components/campana-notificaciones'
+import GraficoAsistencia from '@/components/GraficoAsistencia'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
-  Link2, Mail, Calendar, Wallet, X, HelpCircle, Copy, Check, UserX,
+  Link2, Mail, Wallet, X, HelpCircle, Copy, Check, UserX,
+  Settings,
 } from 'lucide-react'
 
 const supabase = createClient()
@@ -38,7 +41,6 @@ const C = {
 export default function DashboardPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [kpis, setKpis]                           = useState<any>({})
-  const [ultimasAsist, setUltimasAsist]           = useState<any[]>([])
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
   const [loading, setLoading]       = useState(true)
@@ -60,6 +62,9 @@ export default function DashboardPage() {
   }, [authLoading, perfil])
 
   async function cargarDatos(cid: string) {
+    const { data: clubData } = await supabase.from('clubes').select('mensualidad_base').eq('id', cid).single()
+    const mensualidadBase = clubData?.mensualidad_base ?? 25000
+
     const { data: rpc, error: rpcError } = await supabase.rpc('dashboard_kpis', { p_club_id: cid })
 
     if (!rpcError && rpc) {
@@ -77,9 +82,8 @@ export default function DashboardPage() {
         ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
         : null
 
-      setKpis({ activos, tm: rpc.tasa_morosidad || 0, coa: rpc.coa || 0, ingresos, gastos, morosos: rpc.morosos_lista || [], mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
+      setKpis({ activos, tm: rpc.tasa_morosidad || 0, coa: rpc.coa || 0, ingresos, gastos, morosos: rpc.morosos_lista || [], mensualidadBase, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
       setSolicitudes(rpc.solicitudes_lista || [])
-      setUltimasAsist((rpc.ultimas_asistencias || []).map((a: any) => ({ id: a.id, fecha: a.fecha, jugadores: { nombre: a.jugador_nombre } })))
       await cargarInactivos(cid)
       return
     }
@@ -98,14 +102,12 @@ export default function DashboardPage() {
       { data: movimientos },
       { data: solicitudesData },
       { data: movimientosPrev },
-      { data: asistMes },
     ] = await Promise.all([
       supabase.from('jugadores').select('*').eq('club_id', cid).neq('es_externo', true),
       supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
       supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicio),
       supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).eq('estado', 'pendiente'),
       supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicioPrev).lt('fecha', mesInicio),
-      supabase.from('asistencia').select('*,jugadores(nombre)').eq('club_id', cid).gte('fecha', mesInicio).order('fecha', { ascending: false }).limit(5),
     ])
 
     const activos      = (jugsData || []).filter(j => j.estado === 'activo')
@@ -127,9 +129,8 @@ export default function DashboardPage() {
 
     const activosPorId = new Map(activos.map(j => [j.id, j]))
     const morosasConNombre = morosos.map(m => ({ ...m, nombre: activosPorId.get(m.jugador_id)?.nombre || '—', telefono: activosPorId.get(m.jugador_id)?.telefono || '' }))
-    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos: morosasConNombre, mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
+    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos: morosasConNombre, mensualidadBase, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
     setSolicitudes(solicitudesData || [])
-    setUltimasAsist(asistMes || [])
     await cargarInactivos(cid)
   }
 
@@ -188,17 +189,20 @@ export default function DashboardPage() {
   const tmBg    = (kpis.tm || 0) > 25 ? C.redL : (kpis.tm || 0) > 10 ? C.yellowL : C.greenL
   const coaOk   = (kpis.coa || 0) <= (kpis.mensualidadBase || 25000)
 
+  const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
+  const rolLabel = perfil?.rol === 'superadmin' ? 'Superadmin' : perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
+
   return (
     <AppLayout perfil={perfil}>
       {/* ── Cabecera ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>Dashboard</h1>
           <p style={{ fontSize: 12, color: C.hint }}>
             {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {jugadoresInactivos.length > 0 && (
             <button onClick={() => setRetencionOpen(true)} style={{
               display: 'flex', alignItems: 'center', gap: 6,
@@ -227,6 +231,27 @@ export default function DashboardPage() {
               </span>
             )}
           </a>
+          <CampanaNotificaciones perfil={perfil} />
+          <button title="Configuración" onClick={() => router.push('/configuracion')} style={{
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
+            padding: '7px 10px', color: C.muted, cursor: 'pointer', display: 'flex', alignItems: 'center',
+          }}>
+            <Settings size={16} />
+          </button>
+          <div style={{ width: 1, height: 24, background: C.border }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: '50%', background: C.skyL,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, fontWeight: 600, color: C.skyD, flexShrink: 0,
+            }}>
+              {initials}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: C.text }}>{perfil?.nombre || perfil?.email}</div>
+              <div style={{ fontSize: 10, color: C.hint }}>{rolLabel}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -304,6 +329,9 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* ── Gráfico de asistencia ── */}
+      {perfil?.club_id && <GraficoAsistencia clubId={perfil.club_id} />}
+
       {/* ── Fila 2 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
@@ -355,52 +383,31 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Fila 3 ── */}
+      {/* ── Fila 3: COA + Gastos ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-
-        {/* Últimas asistencias */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-            <Calendar size={15} color={C.sky} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📅 Últimas asistencias</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: coaOk ? C.greenL : C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Wallet size={16} color={coaOk ? C.green : C.red} />
+            </div>
+            <span style={{ fontSize: 12, color: C.muted }}>📊 COA — Costo por alumno</span>
           </div>
-          {ultimasAsist.length === 0
-            ? <p style={{ fontSize: 13, color: C.hint, textAlign: 'center', padding: '20px 0' }}>Sin asistencias este mes</p>
-            : ultimasAsist.map(a => (
-              <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${C.border}`, fontSize: 13 }}>
-                <span style={{ color: C.text }}>{(a as any).jugadores?.nombre || '—'}</span>
-                <span style={{ color: C.hint, fontSize: 12 }}>{a.fecha}</span>
-              </div>
-            ))
-          }
+          <div style={{ fontSize: 22, fontWeight: 600, color: coaOk ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>
+            {fmt(kpis.coa || 0)}
+          </div>
+          <div style={{ fontSize: 11, marginTop: 4, color: coaOk ? C.green : C.red, fontWeight: 500 }}>
+            {coaOk ? '✓ Margen saludable' : '⚠ Pérdida por alumno'}
+          </div>
         </div>
-
-        {/* COA + Gastos */}
-        <div style={{ display: 'grid', gridTemplateRows: '1fr 1fr', gap: 14 }}>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: coaOk ? C.greenL : C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Wallet size={16} color={coaOk ? C.green : C.red} />
-              </div>
-              <span style={{ fontSize: 12, color: C.muted }}>📊 COA — Costo por alumno</span>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <DollarSign size={16} color={C.red} />
             </div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: coaOk ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>
-              {fmt(kpis.coa || 0)}
-            </div>
-            <div style={{ fontSize: 11, marginTop: 4, color: coaOk ? C.green : C.red, fontWeight: 500 }}>
-              {coaOk ? '✓ Margen saludable' : '⚠ Pérdida por alumno'}
-            </div>
+            <span style={{ fontSize: 12, color: C.muted }}>💸 Gastos este mes</span>
           </div>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <DollarSign size={16} color={C.red} />
-              </div>
-              <span style={{ fontSize: 12, color: C.muted }}>💸 Gastos este mes</span>
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: C.red, fontVariantNumeric: 'tabular-nums' }}>
-              {fmt(kpis.gastos || 0)}
-            </div>
+          <div style={{ fontSize: 22, fontWeight: 600, color: C.red, fontVariantNumeric: 'tabular-nums' }}>
+            {fmt(kpis.gastos || 0)}
           </div>
         </div>
       </div>
