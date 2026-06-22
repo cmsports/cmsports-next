@@ -67,7 +67,7 @@ El plan de mejora está en `PLAN-15-PASOS.md`. Léelo al inicio de cada sesión.
 - [x] Paso 11 — Alerta de retención en dashboard admin
 - [ ] Paso 12 — Automatizaciones (cron, alertas, emails)
 - [x] Paso 14 — PWA + optimización móvil (manifest, service worker, caché offline IndexedDB para asistencia, vista de tarjetas móvil en jugadores)
-- [ ] Paso 15 — Auditoría final, performance y deploy
+- [x] Paso 15 — Auditoría final, performance y deploy (npm audit, operaciones sensibles migradas a Server Actions, fixes O(n²)→O(n), README actualizado, tag v2.0.0)
 
 > Nota: la numeración de pasos sigue `PLAN-15-PASOS.md`, que es la fuente de verdad. El Paso 13 no existe como tal en el plan actual (se saltó de 12 a 14).
 

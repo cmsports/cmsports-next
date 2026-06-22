@@ -17,6 +17,7 @@ Cada paso es una sesión independiente de Claude Code. Al iniciar una sesión, i
 - [x] Paso 10 — Refactor de Torneos
 - [x] Paso 11 — Alerta de retención en dashboard admin
 - [x] Paso 14 — PWA + optimización móvil
+- [x] Paso 15 — Auditoría final, performance y deploy
 
 ---
 
@@ -57,7 +58,7 @@ Hacer la app instalable y optimizar la experiencia móvil para los 3 perfiles (a
 
 ---
 
-## Paso 15 — Auditoría final, performance y deploy
+## Paso 15 — Auditoría final, performance y deploy ✅ Completado
 
 - Correr `npm audit fix` y resolver vulnerabilidades de dependencias
 - Auditoría de seguridad: verificar que todas las rutas están protegidas, RLS activo en todas las tablas, no hay inserts directos desde cliente en operaciones sensibles

@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CmSports
 
-## Getting Started
+Plataforma de gestión para clubes de tenis de mesa: jugadores, clases, torneos, asistencia, mensualidades y finanzas. Multi-club, con 4 roles de usuario (superadmin, admin, profesor, jugador).
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router) + **React 19**
+- **Supabase** (PostgreSQL + Auth + Row Level Security)
+- **Tailwind CSS 4**
+- TypeScript estricto, validación con **Zod**
+- Deploy en **Vercel**
+
+## Requisitos
+
+- Node.js 20+
+- Un proyecto de Supabase (con las migraciones de `supabase/migrations/` aplicadas)
+
+## Instalación
+
+```bash
+npm install
+cp .env.local.example .env.local
+```
+
+Completa `.env.local` con tus credenciales (ver variables abajo) y luego:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abre [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Variables de entorno
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Requerida | Uso |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Sí | URL del proyecto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sí | Clave pública (anon) de Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Sí | Clave de servicio — solo se usa en el servidor (invitaciones de usuarios, Server Actions administrativas). Nunca debe exponerse al cliente |
+| `OPENAI_API_KEY` | Opcional | Generación de flyers con IA (`/api/generar-flyer-ia`) |
+| `RESEND_API_KEY` | Opcional | Envío de emails de monitoreo (`/api/monitor-email`) |
+| `VERCEL_MONITOR_TOKEN` | Opcional | Autenticación del endpoint de monitoreo |
 
-## Learn More
+## Estructura del proyecto
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+├── app/                # Páginas (App Router) y Server Actions (src/app/actions/)
+├── components/ui/      # Componentes reutilizables
+├── lib/
+│   ├── supabase/       # Clientes SSR (server.ts, client.ts, proxy.ts)
+│   ├── domain/         # Lógica de negocio pura (elo.ts, finanzas.ts, torneos.ts)
+│   └── validations/    # Esquemas Zod
+├── types/database.ts   # Tipos generados de Supabase
+└── proxy.ts            # Protección de rutas por rol
+supabase/migrations/    # SQL: RLS, esquema y funciones
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Roadmap
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+El plan de mejora del proyecto vive en [`PLAN-15-PASOS.md`](./PLAN-15-PASOS.md), con el progreso detallado en [`CLAUDE.md`](./CLAUDE.md).
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run dev      # servidor de desarrollo
+npm run build    # build de producción
+npm run start    # servidor de producción
+npm run lint     # eslint
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deploy
+
+El deploy a Vercel es automático en cada push a `main`.
