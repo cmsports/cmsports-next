@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { PerfilProvider } from "@/lib/auth/PerfilProvider";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,7 +17,23 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CmSports",
   description: "Plataforma de gestión deportiva",
-  icons: { icon: "/logo.png" },
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/logo.png",
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "CmSports",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: "#4f46e5",
 };
 
 export default function RootLayout({
@@ -30,6 +47,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <ServiceWorkerRegister />
         <PerfilProvider>{children}</PerfilProvider>
       </body>
     </html>

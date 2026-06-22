@@ -16,6 +16,7 @@ Cada paso es una sesión independiente de Claude Code. Al iniciar una sesión, i
 - [x] Paso 7 — Capa de dominio (lógica de negocio pura)
 - [x] Paso 10 — Refactor de Torneos
 - [x] Paso 11 — Alerta de retención en dashboard admin
+- [x] Paso 14 — PWA + optimización móvil
 
 ---
 
@@ -42,7 +43,7 @@ Agregar en el dashboard del admin una alerta de retención de jugadores con 2 o 
 
 ---
 
-## Paso 14 — PWA + optimización móvil
+## Paso 14 — PWA + optimización móvil ✅ Completado
 
 Hacer la app instalable y optimizar la experiencia móvil para los 3 perfiles (admin, profesor, jugador).
 

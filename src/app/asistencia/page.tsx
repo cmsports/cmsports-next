@@ -6,6 +6,15 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
+import {
+  guardarJugadoresCache,
+  obtenerJugadoresCache,
+  encolarAsistencia,
+  obtenerCola,
+  quitarDeCola,
+  type AsistenciaPendiente,
+} from '@/lib/offline/db'
 
 const supabase = createClient()
 
@@ -50,8 +59,10 @@ export default function AsistenciaPage() {
   const [mostrarInasistentes, setMostrarInasistentes] = useState(false)
   const [statsJugadores, setStatsJugadores] = useState<any[]>([])
   const [busquedaStats, setBusquedaStats] = useState('')
+  const [pendientesCount, setPendientesCount] = useState(0)
 
   const router = useRouter()
+  const online = useOnlineStatus()
   const hoy = new Date().toISOString().slice(0, 10)
   const hora = new Date().toTimeString().slice(0, 5)
   const clubId = perfil?.club_id ?? null
@@ -66,6 +77,7 @@ export default function AsistenciaPage() {
         setJugadorPropio(j)
       }
       if (perfil.club_id) {
+        if (navigator.onLine) await sincronizarCola(perfil.club_id)
         await Promise.all([cargarDatos(perfil.club_id), cargarStats(perfil.club_id, 0)])
       }
       setLoading(false)
@@ -78,16 +90,55 @@ export default function AsistenciaPage() {
     cargarStats(clubId, semanaOffset)
   }, [semanaOffset])
 
+  useEffect(() => {
+    if (online && clubId) {
+      sincronizarCola(clubId).then(() => { cargarDatos(); cargarStats() })
+    }
+  }, [online])
+
+  async function sincronizarCola(cid?: string) {
+    const id = cid || clubId
+    if (!id) return
+    const cola = await obtenerCola()
+    const pendientes = cola.filter(c => c.clubId === id)
+    for (const item of pendientes) {
+      const result = await registrarAsistenciaAction(item.clubId, item.jugadorId, item.fecha, item.hora)
+      if (!result.error) await quitarDeCola(item.id)
+    }
+  }
+
   async function cargarDatos(cid?: string) {
     const id = cid || clubId
+    if (!id) return
+    const cola = await obtenerCola()
+    const pendientesHoy: AsistenciaPendiente[] = cola.filter(c => c.clubId === id && c.fecha === hoy)
+    setPendientesCount(cola.filter(c => c.clubId === id).length)
+
+    if (!navigator.onLine) {
+      const cached = await obtenerJugadoresCache(id)
+      setJugadores((cached as any[]) || [])
+      setAsistencias(pendientesHoy.map(p => ({ id: p.id, jugador_id: p.jugadorId, hora: p.hora, pendienteSync: true })))
+      if (perfil?.jugador_id) {
+        setYaRegistroHoy(pendientesHoy.some(p => p.jugadorId === perfil.jugador_id))
+      }
+      return
+    }
+
     const [{ data: j }, { data: a }] = await Promise.all([
       supabase.from('jugadores').select('*').eq('club_id', id).eq('estado', 'activo').order('nombre'),
       supabase.from('asistencia').select('*').eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
     ])
     setJugadores(j || [])
-    setAsistencias(a || [])
+    await guardarJugadoresCache(id, j || [])
+
+    const yaSincronizadas = new Set((a || []).map((x: any) => x.jugador_id))
+    const pendientesSinSincronizar = pendientesHoy
+      .filter(p => !yaSincronizadas.has(p.jugadorId))
+      .map(p => ({ id: p.id, jugador_id: p.jugadorId, hora: p.hora, pendienteSync: true }))
+    setAsistencias([...(a || []), ...pendientesSinSincronizar])
+
     if (perfil?.jugador_id) {
-      setYaRegistroHoy((a || []).some((as: any) => as.jugador_id === perfil.jugador_id))
+      setYaRegistroHoy((a || []).some((as: any) => as.jugador_id === perfil.jugador_id) || pendientesHoy.some(p => p.jugadorId === perfil.jugador_id))
     }
   }
 
@@ -136,6 +187,26 @@ export default function AsistenciaPage() {
   async function registrarAsistencia(jugadorId: string) {
     if (asistencias.find(a => a.jugador_id === jugadorId)) return
     setRegistrando(jugadorId)
+
+    if (!navigator.onLine) {
+      const jug = jugadores.find(j => j.id === jugadorId)
+      const item: AsistenciaPendiente = {
+        id: `pending-${jugadorId}-${hoy}`,
+        clubId: clubId!,
+        jugadorId,
+        fecha: hoy,
+        hora,
+        jugadorNombre: jug?.nombre || '',
+        creadoEn: Date.now(),
+      }
+      await encolarAsistencia(item)
+      setAsistencias(prev => [...prev, { id: item.id, jugador_id: jugadorId, hora, pendienteSync: true }])
+      setPendientesCount(prev => prev + 1)
+      setRegistrando(null)
+      setBusqueda('')
+      return
+    }
+
     const result = await registrarAsistenciaAction(clubId!, jugadorId, hoy, hora)
     if (result.error) { setRegistrando(null); return }
     await cargarDatos()
@@ -154,6 +225,27 @@ export default function AsistenciaPage() {
       setTimeout(() => setMensaje(null), 4000)
       return
     }
+
+    if (!navigator.onLine) {
+      const item: AsistenciaPendiente = {
+        id: `pending-${jugadorPropio.id}-${hoy}`,
+        clubId,
+        jugadorId: jugadorPropio.id,
+        fecha: hoy,
+        hora,
+        jugadorNombre: jugadorPropio.nombre || '',
+        creadoEn: Date.now(),
+      }
+      await encolarAsistencia(item)
+      setAsistencias(prev => [...prev, { id: item.id, jugador_id: jugadorPropio.id, hora, pendienteSync: true }])
+      setPendientesCount(prev => prev + 1)
+      setMensaje({ tipo: 'ok', texto: 'Sin conexión — se sincronizará al recuperar internet' })
+      setYaRegistroHoy(true)
+      setRegistrando(null)
+      setTimeout(() => setMensaje(null), 5000)
+      return
+    }
+
     const result = await registrarAsistenciaAction(clubId!, jugadorPropio.id, hoy, hora)
     if (result.error) {
       setMensaje({ tipo: 'error', texto: result.error })
@@ -202,6 +294,17 @@ export default function AsistenciaPage() {
         <h1 style={{ fontSize: 20, fontWeight: 600, color: text, marginBottom: 4 }}>📋 Asistencia</h1>
         <p style={{ fontSize: 13, color: muted }}>Hoy {hoy} · ✅ {asistencias.length} registros</p>
       </div>
+
+      {!online && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#92400e', fontWeight: 600 }}>
+          📡 Sin conexión — los registros se guardan localmente y se sincronizan automáticamente al recuperar internet
+        </div>
+      )}
+      {online && pendientesCount > 0 && (
+        <div style={{ background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: 12, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#3730a3', fontWeight: 600 }}>
+          🔄 Sincronizando {pendientesCount} {pendientesCount === 1 ? 'registro pendiente' : 'registros pendientes'}...
+        </div>
+      )}
 
       {mensaje && (
         <div style={{
@@ -307,7 +410,11 @@ export default function AsistenciaPage() {
                     <td style={{ padding: '12px 16px', fontSize: 13, color: muted, fontVariantNumeric: 'tabular-nums' }}>{a.hora?.slice(0, 5)}</td>
                     {esAdminOProfesor && (
                       <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        <button onClick={() => handleEliminar(a.id, jug?.nombre || '')} disabled={eliminando === a.id} style={{ background: 'none', border: 'none', color: '#dc262688', cursor: eliminando === a.id ? 'not-allowed' : 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, opacity: eliminando === a.id ? 0.4 : 1 }} title="Eliminar asistencia">✕</button>
+                        {a.pendienteSync ? (
+                          <span style={{ background: '#ede9fe', color: '#3730a3', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>⏳ pendiente</span>
+                        ) : (
+                          <button onClick={() => handleEliminar(a.id, jug?.nombre || '')} disabled={eliminando === a.id} style={{ background: 'none', border: 'none', color: '#dc262688', cursor: eliminando === a.id ? 'not-allowed' : 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, opacity: eliminando === a.id ? 0.4 : 1 }} title="Eliminar asistencia">✕</button>
+                        )}
                       </td>
                     )}
                   </tr>

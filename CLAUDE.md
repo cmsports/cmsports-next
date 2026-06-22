@@ -64,11 +64,12 @@ El plan de mejora está en `PLAN-15-PASOS.md`. Léelo al inicio de cada sesión.
 - [~] Paso 8 — Refactor del Dashboard admin (parcial: Server Actions, WhatsApp, tendencias; sin Server Component. Refactor visual con StatCard+sparklines REVERTIDO en sesión 2026-06-14 por preferencia de diseño)
 - [~] Paso 9 — Refactor de Mensualidades y Finanzas (parcial: pago unificado + SQL generar mensualidades. Refactor visual y tab Presupuesto REVERTIDOS en sesión 2026-06-14)
 - [x] Paso 10 — Refactor de Torneos
-- [ ] Paso 11 — Refactor de Jugadores, Clases y Asistencia
-- [ ] Paso 12 — Automatizaciones (cron, alertas, WhatsApp)
-- [ ] Paso 13 — Perfil del jugador + página pública de torneo
-- [ ] Paso 14 — PWA + multi-club
+- [x] Paso 11 — Alerta de retención en dashboard admin
+- [ ] Paso 12 — Automatizaciones (cron, alertas, emails)
+- [x] Paso 14 — PWA + optimización móvil (manifest, service worker, caché offline IndexedDB para asistencia, vista de tarjetas móvil en jugadores)
 - [ ] Paso 15 — Auditoría final, performance y deploy
+
+> Nota: la numeración de pasos sigue `PLAN-15-PASOS.md`, que es la fuente de verdad. El Paso 13 no existe como tal en el plan actual (se saltó de 12 a 14).
 
 ### Flujo por sesión
 
