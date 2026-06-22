@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador } from '@/app/actions/jugadores'
 
 const supabase = createClient()
 
@@ -99,12 +100,12 @@ export default function JugadoresPage() {
     }
 
     if (editando) {
-      const { error } = await supabase.from('jugadores').update({ nombre: form.nombre.trim(), rut: form.rut || null, email: form.email || null, telefono: form.telefono || null, ...planFields }).eq('id', editando.id)
-      if (error) { mostrarToast('Error al editar: ' + error.message); setGuardando(false); return }
+      const res = await editarJugador({ jugadorId: editando.id, nombre: form.nombre, rut: form.rut, email: form.email, telefono: form.telefono, ...planFields })
+      if (res.error) { mostrarToast(res.error); setGuardando(false); return }
       mostrarToast('Jugador actualizado')
     } else {
-      const { error } = await supabase.from('jugadores').insert({ club_id: clubId, nombre: form.nombre.trim(), rut: form.rut || null, email: form.email || null, telefono: form.telefono || null, ...planFields, elo: 1200, sesiones_usadas: 0, estado: 'activo', es_externo: false })
-      if (error) { mostrarToast('Error al crear: ' + error.message); setGuardando(false); return }
+      const res = await crearJugador({ nombre: form.nombre, rut: form.rut, email: form.email, telefono: form.telefono, ...planFields })
+      if (res.error) { mostrarToast(res.error); setGuardando(false); return }
       mostrarToast('Jugador creado exitosamente')
     }
 
@@ -116,14 +117,14 @@ export default function JugadoresPage() {
 
   async function toggleEstado(j: any) {
     const nuevoEstado = j.estado === 'activo' ? 'bloqueado' : 'activo'
-    await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', j.id)
+    await toggleEstadoJugador({ jugadorId: j.id, nuevoEstado })
     mostrarToast(`Jugador ${nuevoEstado === 'activo' ? 'activado' : 'bloqueado'}`)
     cargarJugadores()
   }
 
   async function eliminar(id: string) {
     if (!confirm('¿Eliminar este jugador? Esta acción no se puede deshacer.')) return
-    await supabase.from('jugadores').delete().eq('id', id)
+    await eliminarJugador({ jugadorId: id })
     mostrarToast('Jugador eliminado')
     cargarJugadores()
   }

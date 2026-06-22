@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
-import { aprobarSolicitud } from '@/app/actions/dashboard'
+import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/dashboard'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
@@ -97,7 +97,8 @@ export default function SolicitudesPage() {
 
   async function rechazar(id: string) {
     if (!confirm('¿Rechazar esta solicitud?')) return
-    await supabase.from('solicitudes_jugador').update({ estado: 'rechazado' }).eq('id', id)
+    if (!clubId) return
+    await rechazarSolicitud(id, clubId)
     cargarSolicitudes()
   }
 

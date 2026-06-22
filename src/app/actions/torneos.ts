@@ -551,6 +551,67 @@ export async function enviarRecaudacionAFinanzas(params: {
   return { success: true }
 }
 
+export async function inscribirEnMesa(params: {
+  torneoId: string
+  busqueda: string
+  rut: string
+  metodoPago: string
+}) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, busqueda, rut, metodoPago } = params
+  const nombreBuscado = busqueda.trim()
+  if (!nombreBuscado) return { error: 'Nombre vacío' }
+  if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
+
+  const { data: torneo } = await supabase.from('torneos').select('cuota_inscripcion').eq('id', torneoId).single()
+
+  const { data: jugsExistentes } = await supabase
+    .from('jugadores').select('id,nombre,elo')
+    .ilike('nombre', `%${nombreBuscado}%`)
+    .eq('club_id', perfil.club_id)
+
+  let jugadorId: string
+  let jugadorElo = 1200
+  let jugadorNombre = nombreBuscado
+
+  if (jugsExistentes?.length) {
+    const jug = jugsExistentes[0]
+    jugadorId = jug.id
+    jugadorElo = jug.elo ?? 1200
+    jugadorNombre = jug.nombre ?? jugadorNombre
+  } else {
+    const { data: nuevo } = await supabase.from('jugadores').insert({
+      club_id: perfil.club_id, nombre: nombreBuscado,
+      rut: rut || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
+      es_externo: true,
+    }).select().single()
+    if (!nuevo) return { error: 'No se pudo crear el jugador' }
+    jugadorId = nuevo.id
+  }
+
+  const { data: yaInscrito } = await supabase
+    .from('grupo_jugadores').select('jugador_id, torneo_grupos!inner(torneo_id)')
+    .eq('jugador_id', jugadorId).eq('torneo_grupos.torneo_id', torneoId).maybeSingle()
+  if (yaInscrito) return { error: 'Este jugador ya está inscrito en este torneo' }
+
+  let { data: grupoMesa } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
+  if (!grupoMesa) {
+    const { data: ng } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: 'MESA' }).select().single()
+    grupoMesa = ng
+  }
+  if (!grupoMesa) return { error: 'No se pudo crear el grupo MESA' }
+
+  await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
+
+  if ((torneo?.cuota_inscripcion ?? 0) > 0) {
+    await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: jugadorId, estado: 'pendiente', metodo_pago: metodoPago })
+  }
+
+  return { success: true, jugadorId, jugadorNombre, jugadorElo }
+}
+
 export async function eliminarTorneo(params: { torneoId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }

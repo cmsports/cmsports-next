@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago } from '@/app/actions/mensualidades'
 
 const supabase = createClient()
 
@@ -56,9 +57,7 @@ export default function MensualidadesPage() {
 
     const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
     if (sinMens.length > 0) {
-      await supabase.from('mensualidades').insert(sinMens.map(jug => ({
-        club_id: id, jugador_id: jug.id, mes, anio, estado: 'pendiente'
-      })))
+      await generarMensualidadesPendientes({ jugadorIds: sinMens.map(jug => jug.id), mes, anio })
       const { data: mActual } = await supabase.from('mensualidades').select('*').eq('club_id', id).eq('mes', mes).eq('anio', anio)
       setMensualidades(mActual || [])
     }
@@ -76,36 +75,21 @@ export default function MensualidadesPage() {
   async function marcarPagado(jugadorId: string, mensId: string) {
     const jugador = jugadores.find(j => j.id === jugadorId)
     const monto = parseInt(montoPago) || 25000
-    if (!mensId) {
-      const { data: nueva } = await supabase.from('mensualidades').insert({
-        club_id: clubId, jugador_id: jugadorId, mes, anio,
-        estado: 'pagado', fecha_pago: new Date().toISOString().slice(0,10), monto
-      }).select().single()
-      if (nueva) await registrarMovimiento(jugador, monto)
-    } else {
-      await supabase.from('mensualidades').update({ estado: 'pagado', fecha_pago: new Date().toISOString().slice(0,10), monto }).eq('id', mensId)
-      await registrarMovimiento(jugador, monto)
-    }
+    await registrarPago({
+      jugadorId, jugadorNombre: jugador?.nombre || '', mensualidadId: mensId || null,
+      mes, anio, monto, metodo: metodoPago, registradoPor: perfil?.nombre || 'Admin',
+    })
     setModalPago(null)
     cargarMensualidades()
   }
 
-  async function registrarMovimiento(jugador: any, monto: number) {
-    await supabase.from('movimientos').insert({
-      club_id: clubId, tipo: 'ingreso', categoria: 'mensualidad',
-      descripcion: `Mensualidad ${jugador?.nombre} — ${mesesN[mes-1]} ${anio}`,
-      monto, fecha: new Date().toISOString().slice(0,10),
-      registrado_por_nombre: perfil?.nombre || 'Admin'
-    })
-  }
-
   async function marcarAtrasado(mensId: string) {
-    await supabase.from('mensualidades').update({ estado: 'atrasado' }).eq('id', mensId)
+    await marcarAtrasadoAction({ mensualidadId: mensId })
     cargarMensualidades()
   }
 
-  async function marcarPendiente(mensId: string) {
-    await supabase.from('mensualidades').update({ estado: 'pendiente', fecha_pago: null, monto: null }).eq('id', mensId)
+  async function marcarPendiente(mensId: string, jugadorId: string) {
+    await revertirPago({ mensualidadId: mensId, jugadorId, mes, anio })
     cargarMensualidades()
   }
 
@@ -114,8 +98,9 @@ export default function MensualidadesPage() {
     const { data: historial } = await supabase.from('mensualidades').select('*').eq('club_id', clubId).order('anio').order('mes')
     const wb = utils.book_new()
 
+    const mensualidadPorJugador = new Map(mensualidades.map(m => [m.jugador_id, m]))
     const datosMes = jugadores.map(j => {
-      const mens = mensualidades.find(m => m.jugador_id === j.id)
+      const mens = mensualidadPorJugador.get(j.id)
       const estado = mens?.estado || 'pendiente'
       return {
         'Nombre': j.nombre, 'RUT': j.rut || '', 'Plan': `${j.sesiones_limite} sesiones`,
@@ -137,16 +122,23 @@ export default function MensualidadesPage() {
     }
     utils.book_append_sheet(wb, ws1, `${mesesN[mes-1]} ${anio}`)
 
+    const jugadorPorId = new Map(jugadores.map(j => [j.id, j]))
     const datosHistorial = (historial || []).map(h => {
-      const jug = jugadores.find(j => j.id === h.jugador_id)
+      const jug = jugadorPorId.get(h.jugador_id)
       return { 'Nombre': jug?.nombre || '', 'Mes': mesesN[h.mes-1], 'Año': h.anio, 'Estado': h.estado === 'atrasado' ? 'Atrasado' : h.estado === 'pendiente' ? 'Pendiente' : 'Pagado', 'Fecha pago': h.fecha_pago || '', 'Monto': h.monto || '' }
     })
     const ws2 = utils.json_to_sheet(datosHistorial)
     ws2['!cols'] = [{ wch:30 },{ wch:14 },{ wch:8 },{ wch:12 },{ wch:14 },{ wch:12 }]
     utils.book_append_sheet(wb, ws2, 'Historial completo')
 
+    const historialPorJugador = new Map<string, typeof historial>()
+    ;(historial || []).forEach(h => {
+      const lista = historialPorJugador.get(h.jugador_id) || []
+      lista.push(h)
+      historialPorJugador.set(h.jugador_id, lista)
+    })
     const resumen = jugadores.map(j => {
-      const histJug = (historial || []).filter(h => h.jugador_id === j.id)
+      const histJug = historialPorJugador.get(j.id) || []
       return { 'Nombre': j.nombre, 'RUT': j.rut || '', 'Categoría': j.categoria, 'Plan (sesiones)': j.sesiones_limite, 'Cuotas pagadas': histJug.filter(h => h.estado === 'pagado').length, 'Cuotas atrasadas': histJug.filter(h => h.estado === 'atrasado').length, 'Cuotas pendientes': histJug.filter(h => h.estado === 'pendiente').length, 'Total pagado': histJug.filter(h => h.estado === 'pagado').reduce((s, h) => s + (h.monto || 0), 0) }
     })
     const ws3 = utils.json_to_sheet(resumen)
@@ -267,7 +259,7 @@ export default function MensualidadesPage() {
                           </button>
                         )}
                         {estado === 'pagado' && mens?.id && (
-                          <button onClick={() => marcarPendiente(mens.id)}
+                          <button onClick={() => marcarPendiente(mens.id, j.id)}
                             style={{ background:'#fffbeb', color:'#d97706', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
                             ↩️ Revertir
                           </button>

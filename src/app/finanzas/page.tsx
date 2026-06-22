@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { registrarMovimiento } from '@/app/actions/finanzas'
 
 const supabase = createClient()
 
@@ -108,12 +109,11 @@ export default function FinanzasPage() {
     }
     if (!descripcion) descripcion = catLabel[form.categoria] || form.categoria
 
-    await supabase.from('movimientos').insert({
-      club_id: clubId, tipo: form.tipo, categoria: form.categoria,
+    await registrarMovimiento({
+      tipo: form.tipo, categoria: form.categoria,
       descripcion, monto: parseInt(form.monto), fecha: form.fecha,
-      registrado_por_nombre: perfil?.nombre || 'Admin',
-      ...(esSueldo && form.profesorId ? { profesor_id: form.profesorId } : {}),
-      ...(esSueldo ? { mes_correspondiente: parseInt(form.mesCorr), anio_correspondiente: parseInt(form.anioCorr) } : {})
+      ...(esSueldo && form.profesorId ? { profesorId: form.profesorId } : {}),
+      ...(esSueldo ? { mesCorrespondiente: parseInt(form.mesCorr), anioCorrespondiente: parseInt(form.anioCorr) } : {})
     })
 
     setGuardando(false)

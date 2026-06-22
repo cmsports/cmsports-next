@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { Link2, Copy, Check, UserCheck, XCircle } from 'lucide-react'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
 
 const supabase = createClient()
 
@@ -64,14 +65,17 @@ export default function SolicitudesPage() {
     const s   = modalAprobar
     const ent = planForm.tipo_plan === 'libre' ? null : parseInt(planForm.entrenamientos_por_semana) || 3
     const ses = planForm.tipo_plan === 'libre' ? 99 : (ent || 3) * 4
-    await supabase.from('jugadores').insert({ club_id: clubId, nombre: s.nombre, rut: s.rut || null, email: s.email || null, telefono: s.telefono || null, categoria: planForm.categoria, tipo_plan: planForm.tipo_plan, entrenamientos_por_semana: ent, mensualidad: parseInt(planForm.mensualidad) || 0, sesiones_limite: ses, elo: 1200, sesiones_usadas: 0, estado: 'activo', es_externo: false })
-    await supabase.from('solicitudes_jugador').update({ estado: 'aprobado' }).eq('id', s.id)
+    await aprobarSolicitud({
+      solicitudId: s.id, nombre: s.nombre, rut: s.rut || '', email: s.email || '', telefono: s.telefono || '',
+      categoria: planForm.categoria, tipo_plan: planForm.tipo_plan, entrenamientos_por_semana: ent,
+      mensualidad: parseInt(planForm.mensualidad) || 0, sesiones_limite: ses,
+    })
     setModalAprobar(null); setAprobando(false); cargarSolicitudes()
   }
 
   async function rechazar(id: string) {
     if (!confirm('¿Rechazar esta solicitud?')) return
-    await supabase.from('solicitudes_jugador').update({ estado: 'rechazado' }).eq('id', id)
+    await rechazarSolicitud({ solicitudId: id })
     cargarSolicitudes()
   }
 

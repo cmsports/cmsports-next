@@ -125,7 +125,8 @@ export default function DashboardPage() {
       ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
       : null
 
-    const morosasConNombre = morosos.map(m => ({ ...m, nombre: activos.find(j => j.id === m.jugador_id)?.nombre || '—', telefono: activos.find(j => j.id === m.jugador_id)?.telefono || '' }))
+    const activosPorId = new Map(activos.map(j => [j.id, j]))
+    const morosasConNombre = morosos.map(m => ({ ...m, nombre: activosPorId.get(m.jugador_id)?.nombre || '—', telefono: activosPorId.get(m.jugador_id)?.telefono || '' }))
     setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos: morosasConNombre, mensualidadBase: 25000, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
     setSolicitudes(solicitudesData || [])
     setUltimasAsist(asistMes || [])

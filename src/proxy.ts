@@ -8,6 +8,7 @@ const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
 const superadminRoutes = ['/superadmin']
 const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/reportes', '/solicitudes']
+const staffRoutes = ['/redes-sociales']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
 
@@ -73,6 +74,15 @@ export async function proxy(request: NextRequest) {
     adminRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) &&
     rol !== 'admin' &&
     rol !== 'superadmin'
+  ) {
+    const url = request.nextUrl.clone()
+    url.pathname = getRolRedirect(rol)
+    return NextResponse.redirect(url)
+  }
+
+  if (
+    staffRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) &&
+    rol === 'jugador'
   ) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)
