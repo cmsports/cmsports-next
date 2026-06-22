@@ -116,8 +116,9 @@ export default function ReportesPage() {
     const diasConAsist = Object.keys(asistPorDia).length
     const promedioAsist = diasConAsist > 0 ? Math.round((asistencias || []).length / diasConAsist) : 0
 
+    const mensualidadPorJugador = new Map((mensualidades || []).map(m => [m.jugador_id, m]))
     const morosos = activos.filter(j => {
-      const mens = (mensualidades || []).find(m => m.jugador_id === j.id)
+      const mens = mensualidadPorJugador.get(j.id)
       return mens?.estado === 'pendiente' || mens?.estado === 'atrasado'
     })
 

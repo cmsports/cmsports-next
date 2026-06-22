@@ -4,8 +4,16 @@ import { createClient } from '@/lib/supabase/server'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
+async function requireAdminClub() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null }
+  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol').eq('id', user.id).single()
+  if (!perfil || perfil.rol !== 'admin' || !perfil.club_id) return { error: 'Acceso denegado' as const, supabase: null, clubId: null }
+  return { error: null, supabase, clubId: perfil.club_id }
+}
+
 export async function registrarPago(params: {
-  clubId: string
   jugadorId: string
   jugadorNombre: string
   mensualidadId: string | null
@@ -15,8 +23,10 @@ export async function registrarPago(params: {
   metodo: string
   registradoPor: string
 }) {
-  const supabase = await createClient()
-  const { clubId, jugadorId, jugadorNombre, mensualidadId, mes, anio, monto, metodo, registradoPor } = params
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { jugadorId, jugadorNombre, mensualidadId, mes, anio, monto, metodo, registradoPor } = params
   const fechaPago = new Date().toISOString().slice(0, 10)
 
   if (mensualidadId) {
@@ -61,15 +71,43 @@ export async function registrarPago(params: {
   return { success: true }
 }
 
+export async function generarMensualidadesPendientes(params: {
+  jugadorIds: string[]
+  mes: number
+  anio: number
+}) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { jugadorIds, mes, anio } = params
+  if (!jugadorIds.length) return { success: true }
+
+  const { error } = await supabase.from('mensualidades').insert(
+    jugadorIds.map(jugadorId => ({ club_id: clubId, jugador_id: jugadorId, mes, anio, estado: 'pendiente' }))
+  )
+  if (error) return { error: 'Error al generar mensualidades' }
+  return { success: true }
+}
+
+export async function marcarAtrasado(params: { mensualidadId: string }) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { error } = await supabase.from('mensualidades').update({ estado: 'atrasado' }).eq('id', params.mensualidadId).eq('club_id', clubId)
+  if (error) return { error: 'Error al marcar atrasado' }
+  return { success: true }
+}
+
 export async function revertirPago(params: {
-  clubId: string
   mensualidadId: string
   jugadorId: string
   mes: number
   anio: number
 }) {
-  const supabase = await createClient()
-  const { clubId, mensualidadId, jugadorId, mes, anio } = params
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { mensualidadId, jugadorId, mes, anio } = params
 
   const { error } = await supabase.from('mensualidades').update({
     estado: 'pendiente',

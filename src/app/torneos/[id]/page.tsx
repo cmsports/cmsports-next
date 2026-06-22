@@ -20,6 +20,7 @@ import {
   intercambiarJugadores,
   eliminarTorneo,
   guardarPremios,
+  inscribirEnMesa,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
@@ -134,36 +135,20 @@ export default function TorneoDetallePage() {
     await cargarTorneo()
   }
 
-  async function inscribirEnMesa() {
+  async function handleInscribirEnMesa() {
     if (inscribiendo || !busquedaMesa.trim()) return
     setInscribiendo(true)
     try {
-      const { data: jugsExistentes } = await supabase.from('jugadores').select('id,nombre,elo').ilike('nombre', `%${busquedaMesa.trim()}%`).eq('club_id', perfil?.club_id)
-
-      let jugadorId: string
-      let jugadorElo = 1200
-      let jugadorNombre = busquedaMesa.trim()
-
-      if (jugsExistentes?.length) {
-        const jug = jugsExistentes[0]
-        jugadorId = jug.id
-        jugadorElo = jug.elo ?? 1200
-        jugadorNombre = jug.nombre ?? jugadorNombre
-      } else {
-        const { data: nuevo } = await supabase.from('jugadores').insert({
-          club_id: perfil?.club_id, nombre: busquedaMesa.trim(),
-          rut: rutMesa || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
-          es_externo: true
-        }).select().single()
-        if (!nuevo) return
-        jugadorId = nuevo.id
-      }
-
-      const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
-        || jugadores.find((j: any) => j.jugador_id === jugadorId)
-      if (yaInscrito) { alert('Este jugador ya está inscrito en este torneo'); return }
-
       if (faseActual !== 'inscripcion') {
+        const { data: jugsExistentes } = await supabase.from('jugadores').select('id,nombre,elo').ilike('nombre', `%${busquedaMesa.trim()}%`).eq('club_id', perfil?.club_id)
+        const jugadorId = jugsExistentes?.[0]?.id
+        const jugadorElo = jugsExistentes?.[0]?.elo ?? 1200
+        if (!jugadorId) { alert('Jugador no encontrado; en fase de inscripción se puede crear uno nuevo desde aquí.'); return }
+
+        const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
+          || jugadores.find((j: any) => j.jugador_id === jugadorId)
+        if (yaInscrito) { alert('Este jugador ya está inscrito en este torneo'); return }
+
         const res = await inscribirJugadorTardio({ torneoId, jugadorId, jugadorElo })
         if (res.error) { alert(res.error); return }
         if (torneo?.cuota_inscripcion > 0) {
@@ -176,22 +161,12 @@ export default function TorneoDetallePage() {
         return
       }
 
-      let { data: grupoMesa } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
-      if (!grupoMesa) {
-        const { data: ng } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: 'MESA' }).select().single()
-        grupoMesa = ng
-      }
-
-      if (!grupoMesa) return
-      await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
-
-      if (torneo?.cuota_inscripcion > 0) {
-        await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: jugadorId, estado: 'pendiente', metodo_pago: metodoPago })
-      }
+      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, rut: rutMesa, metodoPago })
+      if (res.error) { alert(res.error); return }
 
       setBusquedaMesa('')
       setRutMesa('')
-      setJugadoresInscritos(prev => [...prev, { jugador_id: jugadorId, jugadores: { id: jugadorId, nombre: jugadorNombre, elo: jugadorElo } }])
+      setJugadoresInscritos(prev => [...prev, { jugador_id: res.jugadorId!, jugadores: { id: res.jugadorId, nombre: res.jugadorNombre, elo: res.jugadorElo } }])
       await cargarTorneo()
     } finally {
       setInscribiendo(false)
@@ -478,9 +453,8 @@ export default function TorneoDetallePage() {
                       return pago?.estado === 'pagado'
                         ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 6px', borderRadius:10, fontSize:10 }}>✓</span>
                         : <span onClick={async () => {
-                            const ex = pagos.find(p => p.jugador_id === j.jugador?.id)
-                            if (ex) await supabase.from('torneo_pagos').update({ estado:'pagado' }).eq('id', ex.id)
-                            else await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: j.jugador?.id, estado:'pagado', metodo_pago:'efectivo' })
+                            if (!j.jugador?.id) return
+                            await actualizarEstadoPago({ torneoId, jugadorId: j.jugador.id, estado: 'pagado', metodoPago: 'efectivo' })
                             await cargarTorneo()
                           }} style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10, cursor:'pointer' }}>Pend.</span>
                     })()}
@@ -937,9 +911,7 @@ export default function TorneoDetallePage() {
                 <div style={{ flex:1, fontSize:13, color: text }}>{j.jugadores?.nombre||'—'}</div>
                 <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
                 <button onClick={async () => {
-                  const ex = pagos.find(p => p.jugador_id === j.jugador_id)
-                  if (ex) await supabase.from('torneo_pagos').update({ estado:'pagado', metodo_pago:'efectivo', fecha_pago: new Date().toISOString().slice(0,10) }).eq('id', ex.id)
-                  else await supabase.from('torneo_pagos').insert({ torneo_id: torneoId, jugador_id: j.jugador_id, estado:'pagado', metodo_pago:'efectivo', fecha_pago: new Date().toISOString().slice(0,10) })
+                  await actualizarEstadoPago({ torneoId, jugadorId: j.jugador_id, estado: 'pagado', metodoPago: 'efectivo' })
                   await cargarTorneo()
                 }} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
                   ✓ Marcar pagado
@@ -993,7 +965,7 @@ export default function TorneoDetallePage() {
                     ;(window as any).__jugSuggestions = []
                   }
                 }}
-                onKeyDown={e => e.key === 'Enter' && inscribirEnMesa()}
+                onKeyDown={e => e.key === 'Enter' && handleInscribirEnMesa()}
               />
               {busquedaMesa.length > 1 && (window as any).__jugSuggestions?.length > 0 && (
                 <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden', boxShadow:'0 4px 12px rgba(15,23,42,0.1)' }}>
@@ -1024,7 +996,7 @@ export default function TorneoDetallePage() {
                 <option value="efectivo">💵 Efectivo</option>
                 <option value="transferencia">💳 Transferencia</option>
               </select>
-              <button onClick={inscribirEnMesa} disabled={inscribiendo} style={{ flex:1, background: inscribiendo ? '#94a3b8' : '#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor: inscribiendo ? 'not-allowed' : 'pointer' }}>
+              <button onClick={handleInscribirEnMesa} disabled={inscribiendo} style={{ flex:1, background: inscribiendo ? '#94a3b8' : '#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor: inscribiendo ? 'not-allowed' : 'pointer' }}>
                 {inscribiendo ? 'Inscribiendo...' : '+ Inscribir'}
               </button>
             </div>
