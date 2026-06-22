@@ -34,11 +34,11 @@ function formatFecha(iso: string) {
 export async function POST(req: NextRequest) {
   try {
     const {
-      tipoEvento, nombreEvento, fecha, categorias, premios, notas,
+      tipoEvento, nombreEvento, fecha, categorias, premios, notas, instrucciones,
       clubNombre, direccion, telefono, referenciaUrl, fotoUrl, logoUrl,
     }: {
       tipoEvento: string; nombreEvento: string; fecha: string; categorias: Categoria[]
-      premios?: Premio[]; notas?: string; clubNombre: string; direccion?: string; telefono?: string
+      premios?: Premio[]; notas?: string; instrucciones?: string; clubNombre: string; direccion?: string; telefono?: string
       referenciaUrl: string; fotoUrl: string; logoUrl?: string
     } = await req.json()
 
@@ -84,7 +84,11 @@ export async function POST(req: NextRequest) {
 
     const bloque = (titulo: string, lineas: string[]) => lineas.length ? `\n${titulo}:\n${lineas.map(l => `- ${l}`).join('\n')}` : ''
 
-    const textoPrompt = `La PRIMERA imagen es SOLO un molde de diseño: usa de ella EXCLUSIVAMENTE el layout, la tipografía, la paleta de colores, la composición y la posición de los elementos. Ignora y descarta por completo cualquier texto, título, nombre de club, badge o logo que aparezca escrito en la primera imagen — son de OTRO club y NO deben aparecer en el resultado final, ni siquiera parcialmente. El resultado final debe tener el 100% del texto y branding nuevo, según los datos de abajo.
+    const instruccionesBloque = instrucciones?.trim()
+      ? `INSTRUCCIÓN PRIORITARIA DEL USUARIO (síguela por encima de cualquier otra indicación de diseño de este prompt, salvo que contradiga los textos exactos pedidos abajo): ${instrucciones.trim()}\n\n`
+      : ''
+
+    const textoPrompt = `${instruccionesBloque}La PRIMERA imagen es SOLO un molde de diseño: usa de ella EXCLUSIVAMENTE el layout, la tipografía, la paleta de colores, la composición y la posición de los elementos. Ignora y descarta por completo cualquier texto, título, nombre de club, badge o logo que aparezca escrito en la primera imagen — son de OTRO club y NO deben aparecer en el resultado final, ni siquiera parcialmente. El resultado final debe tener el 100% del texto y branding nuevo, según los datos de abajo.
 Reemplaza a la persona de la primera imagen por la persona de la SEGUNDA imagen, integrándola de forma natural en la misma posición y estilo.
 Estos son los ÚNICOS textos y datos que debe mostrar el flyer (todo en español):
 - Título: "${titulo}"
