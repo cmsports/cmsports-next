@@ -65,18 +65,21 @@ export async function aprobarSolicitud(input: {
     return { error: 'Error al actualizar solicitud' }
   }
 
-  const admin = createAdminClient()
-  const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(
-    sol.email,
-    { redirectTo: `${input.origin}/crear-contrasena` },
-  )
+  const password = generarPassword()
 
-  if (inviteError || !invited?.user) {
-    return { success: true, inviteError: inviteError?.message || 'No se pudo enviar la invitación' }
+  const admin = createAdminClient()
+  const { data: creado, error: createError } = await admin.auth.admin.createUser({
+    email: sol.email,
+    password,
+    email_confirm: true,
+  })
+
+  if (createError || !creado?.user) {
+    return { success: true, inviteError: createError?.message || 'No se pudo crear la cuenta del jugador' }
   }
 
   const { error: perfilError } = await admin.from('perfiles').insert({
-    id: invited.user.id,
+    id: creado.user.id,
     club_id: input.clubId,
     nombre: sol.nombre,
     email: sol.email,
@@ -85,10 +88,17 @@ export async function aprobarSolicitud(input: {
   })
 
   if (perfilError) {
-    return { success: true, inviteError: 'Usuario invitado pero falló crear el perfil: ' + perfilError.message }
+    return { success: true, inviteError: 'Cuenta creada pero falló crear el perfil: ' + perfilError.message }
   }
 
-  return { success: true }
+  return { success: true, password }
+}
+
+function generarPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+  let pass = ''
+  for (let i = 0; i < 10; i++) pass += chars[Math.floor(Math.random() * chars.length)]
+  return pass
 }
 
 export async function rechazarSolicitud(solicitudId: string, clubId: string) {
