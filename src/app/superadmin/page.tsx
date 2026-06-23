@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck } from 'lucide-react'
 import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
 import { crearClub } from '@/app/actions/superadmin'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 
@@ -17,10 +18,12 @@ function formatCLP(n: number) {
 
 export default function SuperadminPage() {
   const perfil = usePerfilSuperadmin()
+  const { refetchPerfil } = usePerfil()
   const { clubes, conteos, loading, recargar } = useClubesSuperadmin()
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
   const [guardando, setGuardando] = useState(false)
+  const [gestionandoId, setGestionandoId] = useState<string | null>(null)
   const router = useRouter()
 
   async function handleCrearClub() {
@@ -40,7 +43,9 @@ export default function SuperadminPage() {
   }
 
   async function gestionarClub(clubId: string) {
+    setGestionandoId(clubId)
     await supabase.from('perfiles').update({ club_id: clubId }).eq('id', perfil.id)
+    await refetchPerfil()
     router.push('/dashboard')
   }
 
@@ -106,12 +111,13 @@ export default function SuperadminPage() {
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
               Plan: {formatCLP(c.plan_mensual || 0)}/mes
             </div>
-            <button onClick={() => gestionarClub(c.id)} style={{
+            <button onClick={() => gestionarClub(c.id)} disabled={gestionandoId === c.id} style={{
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: 7, fontSize: 12, color: '#1e293b', cursor: 'pointer',
+              borderRadius: 7, fontSize: 12, color: '#1e293b', cursor: gestionandoId === c.id ? 'not-allowed' : 'pointer',
+              opacity: gestionandoId === c.id ? 0.6 : 1,
             }}>
-              <LogIn size={13} /> Gestionar este club
+              <LogIn size={13} /> {gestionandoId === c.id ? 'Entrando...' : 'Gestionar este club'}
             </button>
           </div>
         ))}
