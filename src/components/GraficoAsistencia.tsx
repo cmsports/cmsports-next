@@ -12,11 +12,10 @@ import {
   Tooltip,
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
+import { Download } from 'lucide-react'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip)
 
-const DIAS_TOTAL = 30
-const OFFSETS = [1, 5, 10, 15, 20, 25, 30]
 const VENTANA = 5
 
 const AZUL = '#3b82f6'
@@ -30,47 +29,83 @@ const border = '#e2e8f0'
 const card = { background: '#ffffff', border: `1px solid ${border}`, borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
 
 const diasSemanaLargo = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 function formatFechaCorta(d: Date) {
   return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
 }
 
-export default function GraficoAsistencia({ clubId }: { clubId: string }) {
-  const [loading, setLoading] = useState(true)
-  const [activosCount, setActivosCount] = useState(0)
-  const [filas, setFilas] = useState<{ fecha: string; date: Date; jugador_id: string }[]>([])
+function lunesDeEstaSemana() {
+  const hoy = new Date()
+  const dia = hoy.getDay()
+  const diffLunes = dia === 0 ? -6 : 1 - dia
+  const lunes = new Date(hoy)
+  lunes.setDate(hoy.getDate() + diffLunes)
+  lunes.setHours(0, 0, 0, 0)
+  return lunes
+}
+
+function generarOffsets(total: number) {
+  if (total <= 1) return [1]
+  const paso = 5
+  const offs = [1]
+  for (let d = paso; d < total; d += paso) offs.push(d)
+  if (offs[offs.length - 1] !== total) offs.push(total)
+  return offs
+}
+
+type Jugador = { id: string; nombre: string }
+type Fila = { fecha: string; date: Date; jugador_id: string }
+
+/* Cache en memoria del módulo: persiste entre navegaciones de la SPA para
+   que el gráfico aparezca al instante al volver a una página ya visitada. */
+const cache: Record<string, { jugadoresActivos: Jugador[]; filas: Fila[] }> = {}
+
+export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { clubId: string; modo?: 'dashboard' | 'completo' }) {
+  const cacheKey = clubId
+  const [loading, setLoading] = useState(!cache[cacheKey])
+  const [jugadoresActivos, setJugadoresActivos] = useState<Jugador[]>(cache[cacheKey]?.jugadoresActivos ?? [])
+  const [filas, setFilas] = useState<Fila[]>(cache[cacheKey]?.filas ?? [])
+  const [mostrarSinAsistencia, setMostrarSinAsistencia] = useState(false)
+  const [exportando, setExportando] = useState(false)
 
   useEffect(() => {
     let activo = true
     async function cargar() {
       const supabase = createClient()
       const hoy = new Date()
-      const desde = new Date(hoy)
-      desde.setDate(hoy.getDate() - (DIAS_TOTAL - 1))
+      const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+      const lunes = lunesDeEstaSemana()
+      const desde = inicioMes < lunes ? inicioMes : lunes
       const desdeStr = desde.toISOString().slice(0, 10)
 
       const [{ data: jugs }, { data: asist }] = await Promise.all([
-        supabase.from('jugadores').select('id').eq('club_id', clubId).eq('estado', 'activo'),
+        supabase.from('jugadores').select('id,nombre').eq('club_id', clubId).eq('estado', 'activo'),
         supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).gte('fecha', desdeStr),
       ])
 
       if (!activo) return
-      setActivosCount((jugs || []).length)
-      setFilas((asist || []).map((a: any) => ({ fecha: a.fecha, date: new Date(a.fecha + 'T12:00:00'), jugador_id: a.jugador_id })))
+      const jugadoresData = jugs || []
+      const filasData = (asist || []).map((a: any) => ({ fecha: a.fecha, date: new Date(a.fecha + 'T12:00:00'), jugador_id: a.jugador_id }))
+      cache[cacheKey] = { jugadoresActivos: jugadoresData, filas: filasData }
+      setJugadoresActivos(jugadoresData)
+      setFilas(filasData)
       setLoading(false)
     }
     if (clubId) cargar()
     return () => { activo = false }
   }, [clubId])
 
+  const activosCount = jugadoresActivos.length
+
   const dias = useMemo(() => {
     const hoy = new Date()
-    const desde = new Date(hoy)
-    desde.setDate(hoy.getDate() - (DIAS_TOTAL - 1))
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+    const diasTranscurridos = hoy.getDate()
     const lista: { fecha: string; date: Date; count: number }[] = []
-    for (let i = 0; i < DIAS_TOTAL; i++) {
-      const d = new Date(desde)
-      d.setDate(desde.getDate() + i)
+    for (let i = 0; i < diasTranscurridos; i++) {
+      const d = new Date(inicioMes)
+      d.setDate(inicioMes.getDate() + i)
       const fecha = d.toISOString().slice(0, 10)
       lista.push({ fecha, date: d, count: filas.filter(f => f.fecha === fecha).length })
     }
@@ -78,7 +113,8 @@ export default function GraficoAsistencia({ clubId }: { clubId: string }) {
   }, [filas])
 
   const puntos = useMemo(() => {
-    return OFFSETS.map(offset => {
+    const offsets = generarOffsets(dias.length)
+    return offsets.map(offset => {
       const fin = offset - 1
       const ini = Math.max(0, fin - VENTANA + 1)
       const tramo = dias.slice(ini, fin + 1)
@@ -93,20 +129,74 @@ export default function GraficoAsistencia({ clubId }: { clubId: string }) {
   const deltaPromedio = puntos.length > 1 ? Math.round((puntos[puntos.length - 1].valor - puntos[puntos.length - 2].valor) * 10) / 10 : 0
 
   const diaMasVisitado = useMemo(() => {
+    const inicioMesStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
     const porDiaSemana: Record<number, number> = {}
-    filas.forEach(f => { const ds = f.date.getDay(); porDiaSemana[ds] = (porDiaSemana[ds] || 0) + 1 })
+    filas.filter(f => f.fecha >= inicioMesStr).forEach(f => { const ds = f.date.getDay(); porDiaSemana[ds] = (porDiaSemana[ds] || 0) + 1 })
     let maxDia = -1, maxCount = 0
     Object.entries(porDiaSemana).forEach(([ds, count]) => { if (count > maxCount) { maxCount = count; maxDia = Number(ds) } })
     return { nombre: maxDia >= 0 ? diasSemanaLargo[maxDia] : '—', count: maxCount }
   }, [filas])
 
-  const retencion = useMemo(() => {
-    if (activosCount === 0) return 0
-    const hace14 = new Date()
-    hace14.setDate(hace14.getDate() - 14)
-    const distintos = new Set(filas.filter(f => f.date >= hace14).map(f => f.jugador_id)).size
-    return Math.round((distintos / activosCount) * 1000) / 10
-  }, [filas, activosCount])
+  const sinAsistenciaSemana = useMemo(() => {
+    const lunesStr = lunesDeEstaSemana().toISOString().slice(0, 10)
+    const presentes = new Set(filas.filter(f => f.fecha >= lunesStr).map(f => f.jugador_id))
+    return jugadoresActivos.filter(j => !presentes.has(j.id))
+  }, [filas, jugadoresActivos])
+
+  const sinAsistenciaMes = useMemo(() => {
+    const inicioMesStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
+    const presentes = new Set(filas.filter(f => f.fecha >= inicioMesStr).map(f => f.jugador_id))
+    return jugadoresActivos.filter(j => !presentes.has(j.id))
+  }, [filas, jugadoresActivos])
+
+  const sinAsistencia = modo === 'completo' ? sinAsistenciaSemana : sinAsistenciaMes
+
+  async function exportarExcel() {
+    if (!clubId) return
+    setExportando(true)
+    try {
+      const supabase = createClient()
+      const [{ data: asistAll }, { data: jugsAll }] = await Promise.all([
+        supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).order('fecha', { ascending: true }),
+        supabase.from('jugadores').select('id').eq('club_id', clubId).eq('estado', 'activo'),
+      ])
+
+      const activos = (jugsAll || []).length || 1
+      const porMes: Record<string, { jugadores: Set<string>; total: number; porDiaSemana: Record<number, number> }> = {}
+
+      ;(asistAll || []).forEach((a: any) => {
+        const mesKey = a.fecha.slice(0, 7)
+        if (!porMes[mesKey]) porMes[mesKey] = { jugadores: new Set(), total: 0, porDiaSemana: {} }
+        porMes[mesKey].jugadores.add(a.jugador_id)
+        porMes[mesKey].total += 1
+        const ds = new Date(a.fecha + 'T12:00:00').getDay()
+        porMes[mesKey].porDiaSemana[ds] = (porMes[mesKey].porDiaSemana[ds] || 0) + 1
+      })
+
+      const filasExport = Object.entries(porMes).sort(([a], [b]) => a.localeCompare(b)).map(([mesKey, d]) => {
+        const [anio, mes] = mesKey.split('-').map(Number)
+        const diasDelMes = new Date(anio, mes, 0).getDate()
+        const promedio = Math.round((d.total / (activos * diasDelMes)) * 1000) / 10
+        let maxDia = -1, maxCount = 0
+        Object.entries(d.porDiaSemana).forEach(([ds, count]) => { if (count > maxCount) { maxCount = count; maxDia = Number(ds) } })
+        return {
+          'Mes': `${nombresMes[mes - 1]} ${anio}`,
+          'Asistencia promedio (%)': promedio,
+          'Día más visitado': maxDia >= 0 ? diasSemanaLargo[maxDia] : '—',
+          'Total asistencias': d.total,
+          'Jugadores sin asistencia ese mes': Math.max(activos - d.jugadores.size, 0),
+        }
+      })
+
+      const XLSX = await import('xlsx')
+      const ws = XLSX.utils.json_to_sheet(filasExport)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Asistencia')
+      XLSX.writeFile(wb, `asistencia_mensual_${clubId.slice(0, 8)}.xlsx`)
+    } finally {
+      setExportando(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -169,42 +259,73 @@ export default function GraficoAsistencia({ clubId }: { clubId: string }) {
   }
 
   return (
-    <div style={{ ...card, padding: 20, height: '100%' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 190px', gap: 16 }}>
-        {/* Chart + header */}
-        <div>
-          <div style={{ fontSize: 12, color: muted, marginBottom: 6 }}>Asistencia promedio</div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
-            <span style={{ fontSize: 26, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{asistenciaPromedio}%</span>
-            {deltaPromedio !== 0 && (
-              <span style={{ fontSize: 12, fontWeight: 600, color: deltaPromedio > 0 ? VERDE : ROJO }}>
-                {deltaPromedio > 0 ? '+' : ''}{deltaPromedio}%
-              </span>
-            )}
-          </div>
-          <div style={{ height: 170 }}>
-            <Line data={data} options={options} />
-          </div>
+    <div>
+      <div style={{ ...card, padding: 20, height: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+          <div style={{ fontSize: 12, color: muted }}>Asistencia promedio</div>
+          {modo === 'dashboard' && (
+            <button onClick={exportarExcel} disabled={exportando} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: `1px solid ${border}`, borderRadius: 8, padding: '5px 10px', color: muted, fontSize: 11, cursor: exportando ? 'not-allowed' : 'pointer' }}>
+              <Download size={12} />
+              {exportando ? 'Generando...' : 'Excel'}
+            </button>
+          )}
         </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 190px', gap: 16 }}>
+          {/* Chart + header */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
+              <span style={{ fontSize: 26, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{asistenciaPromedio}%</span>
+              {deltaPromedio !== 0 && (
+                <span style={{ fontSize: 12, fontWeight: 600, color: deltaPromedio > 0 ? VERDE : ROJO }}>
+                  {deltaPromedio > 0 ? '+' : ''}{deltaPromedio}%
+                </span>
+              )}
+            </div>
+            <div style={{ height: 170 }}>
+              <Line data={data} options={options} />
+            </div>
+          </div>
 
-        {/* Métricas laterales */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ background: '#eff6ff', border: `2px solid ${AZUL}`, borderRadius: 12, padding: '12px 14px' }}>
-            <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Asistencia promedio</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{asistenciaPromedio}%</div>
-          </div>
-          <div style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px' }}>
-            <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Día más visitado</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: text }}>{diaMasVisitado.nombre}</div>
-            <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>{diaMasVisitado.count} asistencias</div>
-          </div>
-          <div style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px' }}>
-            <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Retención</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{retencion}%</div>
-            <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>jugadores activos en 14 días</div>
+          {/* Métricas laterales */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ background: '#eff6ff', border: `2px solid ${AZUL}`, borderRadius: 12, padding: '12px 14px' }}>
+              <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Asistencia promedio</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{asistenciaPromedio}%</div>
+            </div>
+            <div style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px' }}>
+              <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Día más visitado</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: text }}>{diaMasVisitado.nombre}</div>
+              <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>{diaMasVisitado.count} asistencias este mes</div>
+            </div>
+            <div
+              onClick={() => modo === 'completo' && sinAsistencia.length > 0 && setMostrarSinAsistencia(!mostrarSinAsistencia)}
+              style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px', cursor: modo === 'completo' && sinAsistencia.length > 0 ? 'pointer' : 'default' }}
+            >
+              <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Sin asistencia</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: sinAsistencia.length > 0 ? ROJO : VERDE, fontVariantNumeric: 'tabular-nums' }}>{sinAsistencia.length}</div>
+                {modo === 'completo' && sinAsistencia.length > 0 && (
+                  <span style={{ fontSize: 12, color: hint, transform: mostrarSinAsistencia ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+                )}
+              </div>
+              <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>{modo === 'completo' ? 'esta semana' : 'este mes'}</div>
+            </div>
           </div>
         </div>
       </div>
+
+      {modo === 'completo' && mostrarSinAsistencia && sinAsistencia.length > 0 && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 14, padding: 16, marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: ROJO, marginBottom: 12 }}>
+            Jugadores sin asistencia esta semana ({sinAsistencia.length})
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {sinAsistencia.map(j => (
+              <div key={j.id} style={{ background: '#ffffff', border: '1px solid #fecaca', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: ROJO }}>{j.nombre}</div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

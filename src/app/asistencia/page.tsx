@@ -24,21 +24,8 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
-const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
-function getLunesDeSemana(offset: number) {
-  const hoy = new Date()
-  const dia = hoy.getDay()
-  const diffLunes = dia === 0 ? -6 : 1 - dia
-  const lunes = new Date(hoy)
-  lunes.setDate(hoy.getDate() + diffLunes + (offset * 7))
-  lunes.setHours(0, 0, 0, 0)
-  return lunes
-}
-
-function formatFecha(d: Date) { return d.toISOString().slice(0, 10) }
-function formatFechaCorta(d: Date) { return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) }
 function formatFechaLarga(fecha: string) {
   return new Date(fecha + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
 }
@@ -56,12 +43,6 @@ export default function AsistenciaPage() {
   const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
 
-  const [semanaOffset, setSemanaOffset] = useState(0)
-  const [promDiario, setPromDiario] = useState(0)
-  const [diaMasActivo, setDiaMasActivo] = useState('')
-  const [diaMasActivoCount, setDiaMasActivoCount] = useState(0)
-  const [sinAsistencia, setSinAsistencia] = useState<any[]>([])
-  const [mostrarInasistentes, setMostrarInasistentes] = useState(false)
   const [pendientesCount, setPendientesCount] = useState(0)
 
   const [fechaVista, setFechaVista] = useState(() => new Date().toISOString().slice(0, 10))
@@ -85,7 +66,7 @@ export default function AsistenciaPage() {
       }
       if (perfil.club_id) {
         if (navigator.onLine) await sincronizarCola(perfil.club_id)
-        await Promise.all([cargarDatos(perfil.club_id), cargarStats(perfil.club_id, 0)])
+        await cargarDatos(perfil.club_id)
       }
       setLoading(false)
     }
@@ -93,13 +74,8 @@ export default function AsistenciaPage() {
   }, [authLoading, perfil])
 
   useEffect(() => {
-    if (!clubId) return
-    cargarStats(clubId, semanaOffset)
-  }, [semanaOffset])
-
-  useEffect(() => {
     if (online && clubId) {
-      sincronizarCola(clubId).then(() => { cargarDatos(); cargarStats() })
+      sincronizarCola(clubId).then(() => { cargarDatos() })
     }
   }, [online])
 
@@ -162,47 +138,6 @@ export default function AsistenciaPage() {
     setCargandoDia(false)
   }
 
-  async function cargarStats(cid?: string, offset?: number) {
-    const id = cid || clubId
-    const off = offset !== undefined ? offset : semanaOffset
-    const lunes = getLunesDeSemana(off)
-    const domingo = new Date(lunes)
-    domingo.setDate(lunes.getDate() + 6)
-    const inicio = formatFecha(lunes)
-    const fin = formatFecha(domingo)
-
-    const [{ data: asist }, { data: jugs }] = await Promise.all([
-      supabase.from('asistencia').select('*').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin),
-      supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', id).eq('estado', 'activo').order('nombre')
-    ])
-
-    const a = asist || []
-    const j = jugs || []
-
-    const porDia: Record<string, number> = {}
-    const porDiaSemana: Record<number, number> = {}
-    a.forEach(r => {
-      porDia[r.fecha] = (porDia[r.fecha] || 0) + 1
-      const ds = new Date(r.fecha + 'T12:00:00').getDay()
-      porDiaSemana[ds] = (porDiaSemana[ds] || 0) + 1
-    })
-
-    const diasConDatos = Object.keys(porDia).length
-    setPromDiario(diasConDatos > 0 ? Math.round(a.length / diasConDatos) : 0)
-
-    let maxCount = 0, maxIdx = -1
-    Object.entries(porDiaSemana).forEach(([dia, count]) => {
-      if (count > maxCount) { maxCount = count; maxIdx = Number(dia) }
-    })
-    setDiaMasActivo(maxIdx >= 0 ? diasSemana[maxIdx] : '—')
-    setDiaMasActivoCount(maxCount)
-
-    const porJugador: Record<string, number> = {}
-    a.forEach(r => { porJugador[r.jugador_id] = (porJugador[r.jugador_id] || 0) + 1 })
-
-    setSinAsistencia(j.filter(jug => !porJugador[jug.id]))
-  }
-
   async function registrarAsistencia(jugadorId: string) {
     if (asistencias.find(a => a.jugador_id === jugadorId)) return
     setRegistrando(jugadorId)
@@ -229,7 +164,6 @@ export default function AsistenciaPage() {
     const result = await registrarAsistenciaAction(clubId!, jugadorId, hoy, hora)
     if (result.error) { setRegistrando(null); return }
     await cargarDatos()
-    await cargarStats()
     setRegistrando(null)
     setBusqueda('')
   }
@@ -275,7 +209,6 @@ export default function AsistenciaPage() {
     setMensaje({ tipo: 'ok', texto: '¡Asistencia registrada!' })
     setYaRegistroHoy(true)
     await cargarDatos()
-    await cargarStats()
     setRegistrando(null)
     setTimeout(() => setMensaje(null), 4000)
   }
@@ -286,7 +219,6 @@ export default function AsistenciaPage() {
     const result = await eliminarAsistencia(asistenciaId, perfil?.rol || '')
     if (result.error) alert(result.error)
     if (fechaVista === hoy) { await cargarDatos() } else { await cargarAsistenciasDia(fechaVista) }
-    await cargarStats()
     setEliminando(null)
   }
 
@@ -294,11 +226,6 @@ export default function AsistenciaPage() {
   const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor'
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
   const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
-
-  const lunes = getLunesDeSemana(semanaOffset)
-  const domingo = new Date(lunes)
-  domingo.setDate(lunes.getDate() + 6)
-  const esEstaSemana = semanaOffset === 0
 
   const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
 
@@ -371,64 +298,11 @@ export default function AsistenciaPage() {
         </div>
       )}
 
-      {/* ESTADÍSTICAS SEMANALES (Admin/Profesor) */}
-      {esAdminOProfesor && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: text }}>Estadísticas semanales</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button onClick={() => setSemanaOffset(semanaOffset - 1)} style={{ ...card, border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', color: muted, cursor: 'pointer', fontSize: 14 }}>◀</button>
-              <span style={{ fontSize: 13, fontWeight: 600, color: text, minWidth: 170, textAlign: 'center' }}>
-                {formatFechaCorta(lunes)} — {formatFechaCorta(domingo)}
-                {esEstaSemana && <span style={{ color: '#4f46e5', marginLeft: 6, fontSize: 11 }}>esta semana</span>}
-              </span>
-              <button onClick={() => setSemanaOffset(semanaOffset + 1)} disabled={esEstaSemana} style={{ ...card, border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', color: esEstaSemana ? hint : muted, cursor: esEstaSemana ? 'not-allowed' : 'pointer', fontSize: 14 }}>▶</button>
-            </div>
-          </div>
-
-          {/* KPIs */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 16 }}>
-            <div style={{ background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-              <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>Promedio diario</div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: '#3730a3', fontVariantNumeric: 'tabular-nums' }}>{promDiario}</div>
-              <div style={{ fontSize: 11, color: hint, marginTop: 4 }}>jugadores/día</div>
-            </div>
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-              <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>Día más activo</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#16a34a' }}>{diaMasActivo}</div>
-              <div style={{ fontSize: 11, color: hint, marginTop: 4 }}>{diaMasActivoCount > 0 ? `${diaMasActivoCount} asistencias` : ''}</div>
-            </div>
-            <div onClick={() => sinAsistencia.length > 0 && setMostrarInasistentes(!mostrarInasistentes)} style={{ background: sinAsistencia.length > 0 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${sinAsistencia.length > 0 ? '#fecaca' : '#bbf7d0'}`, borderRadius: 14, padding: 18, cursor: sinAsistencia.length > 0 ? 'pointer' : 'default', boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-              <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>Sin asistencia</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: sinAsistencia.length > 0 ? '#dc2626' : '#16a34a', fontVariantNumeric: 'tabular-nums' }}>{sinAsistencia.length}</div>
-                {sinAsistencia.length > 0 && <div style={{ fontSize: 16, color: '#dc262688', transform: mostrarInasistentes ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</div>}
-              </div>
-              <div style={{ fontSize: 11, color: hint, marginTop: 4 }}>{sinAsistencia.length === 0 ? 'todos asistieron' : 'sin venir esta semana'}</div>
-            </div>
-          </div>
-
-          {/* Panel inasistentes */}
-          {mostrarInasistentes && sinAsistencia.length > 0 && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 14, padding: 16, marginBottom: 24 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626', marginBottom: 12 }}>
-                Jugadores sin asistencia esta semana ({sinAsistencia.length})
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {sinAsistencia.map(j => (
-                  <div key={j.id} style={{ background: '#ffffff', border: '1px solid #fecaca', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#dc2626' }}>{j.nombre}</div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* GRÁFICO DE ASISTENCIA */}
-          {clubId && (
-            <div style={{ marginBottom: 24 }}>
-              <GraficoAsistencia clubId={clubId} />
-            </div>
-          )}
-        </>
+      {/* GRÁFICO DE ASISTENCIA (Admin/Profesor) */}
+      {esAdminOProfesor && clubId && (
+        <div style={{ marginBottom: 24 }}>
+          <GraficoAsistencia clubId={clubId} modo="completo" />
+        </div>
       )}
 
       {/* ASISTENCIAS DEL DÍA */}
