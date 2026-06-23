@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/dashboard'
+import { copiarTexto } from '@/lib/clipboard'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
@@ -71,8 +72,9 @@ export default function SolicitudesPage() {
     setPlanForm({ categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   }
 
-  function copiarPassword() {
-    navigator.clipboard.writeText(passwordGenerada)
+  async function copiarPassword() {
+    const ok = await copiarTexto(passwordGenerada)
+    if (!ok) return
     setPasswordCopiada(true)
     setTimeout(() => setPasswordCopiada(false), 2000)
   }
@@ -111,8 +113,9 @@ export default function SolicitudesPage() {
     cargarSolicitudes()
   }
 
-  function copiarLink() {
-    navigator.clipboard.writeText(linkInvitacion)
+  async function copiarLink() {
+    const ok = await copiarTexto(linkInvitacion)
+    if (!ok) return
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
   }

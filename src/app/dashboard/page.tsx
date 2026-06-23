@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { copiarTexto } from '@/lib/clipboard'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
@@ -606,9 +607,10 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
     cargar()
   }, [clubId])
 
-  function copiar() {
+  async function copiar() {
     if (!link) return
-    navigator.clipboard.writeText(link)
+    const ok = await copiarTexto(link)
+    if (!ok) return
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
   }
