@@ -329,8 +329,21 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* ── Gráfico de asistencia ── */}
-      {perfil?.club_id && <GraficoAsistencia clubId={perfil.club_id} />}
+      {/* ── Gráfico de asistencia + Gastos ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 16 }}>
+        <div style={{ gridColumn: 'span 3' }}>
+          {perfil?.club_id && <GraficoAsistencia clubId={perfil.club_id} />}
+        </div>
+        <div style={{ gridColumn: 'span 1', background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+            <DollarSign size={18} color={C.red} />
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>💸 Gastos este mes</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums' }}>
+            {fmt(kpis.gastos || 0)}
+          </div>
+        </div>
+      </div>
 
       {/* ── Fila 2 ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
@@ -383,8 +396,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Fila 3: COA + Gastos ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {/* ── Fila 3: COA ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: coaOk ? C.greenL : C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -397,17 +410,6 @@ export default function DashboardPage() {
           </div>
           <div style={{ fontSize: 11, marginTop: 4, color: coaOk ? C.green : C.red, fontWeight: 500 }}>
             {coaOk ? '✓ Margen saludable' : '⚠ Pérdida por alumno'}
-          </div>
-        </div>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <DollarSign size={16} color={C.red} />
-            </div>
-            <span style={{ fontSize: 12, color: C.muted }}>💸 Gastos este mes</span>
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 600, color: C.red, fontVariantNumeric: 'tabular-nums' }}>
-            {fmt(kpis.gastos || 0)}
           </div>
         </div>
       </div>
