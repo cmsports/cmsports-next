@@ -30,6 +30,15 @@ const CAT_LABEL: Record<string, string> = {
   sub19:'Sub 19', aficionados:'Aficionados', intermedia:'Intermedia', tc:'TC'
 }
 
+const ELO_TABLA: Record<string, Record<string, number>> = {
+  sub19:      { fase_grupos:5,  octavos:10, cuartos:15, semifinal:20, subcampeon:25, campeon:35 },
+  aficionados:{ fase_grupos:8,  octavos:15, cuartos:22, semifinal:30, subcampeon:40, campeon:55 },
+  intermedia: { fase_grupos:12, octavos:20, cuartos:30, semifinal:42, subcampeon:55, campeon:75 },
+  tc:         { fase_grupos:20, octavos:32, cuartos:45, semifinal:60, subcampeon:80, campeon:110 }
+}
+
+const CLUBES_EXTERNOS = ['Club Nuevo Olimpo','Valentín Ramos','Club Deportivo La Florida','Club San Miguel','Club Maipú','Club Providencia','Otro']
+
 export default function JugadorDetallePage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
@@ -49,6 +58,9 @@ export default function JugadorDetallePage() {
   const [contactoForm, setContactoForm] = useState({ email:'', telefono:'', categoria:'' })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [guardandoDatos, setGuardandoDatos] = useState(false)
+  const [modalExternoOpen, setModalExternoOpen] = useState(false)
+  const [externoForm, setExternoForm] = useState({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
+  const [guardandoExterno, setGuardandoExterno] = useState(false)
 
   const PRESETS = [
     { label:'$15.000', valor:15000, ent:1 },
@@ -199,6 +211,41 @@ export default function JugadorDetallePage() {
     setJugador({ ...jugador, ...datos })
     setEditPlan(false)
     setGuardandoDatos(false)
+  }
+
+  const puntosExternoPreview = ELO_TABLA[externoForm.categoria]?.[externoForm.posicion] || 0
+
+  async function guardarExterno() {
+    const clubNombre = externoForm.club === 'Otro' ? externoForm.clubNombre : externoForm.club
+    if (!clubNombre || !externoForm.fecha) return
+    setGuardandoExterno(true)
+
+    const puntos = ELO_TABLA[externoForm.categoria]?.[externoForm.posicion] || 0
+    await supabase.from('torneos_externos').insert({
+      club_id: jugador?.club_id, jugador_id: jugadorId,
+      nombre_club: clubNombre, categoria: externoForm.categoria,
+      posicion: externoForm.posicion, fecha: externoForm.fecha, puntos_elo: puntos
+    })
+
+    const eloAntes = jugador?.elo || 1200
+    const nuevoElo = eloAntes + puntos
+    await supabase.from('jugadores').update({ elo: nuevoElo }).eq('id', jugadorId)
+    await supabase.from('historial_elo').insert({
+      jugador_id: jugadorId, club_id: jugador?.club_id,
+      elo_antes: eloAntes, elo_despues: nuevoElo,
+      posicion: POSICION_LABEL[externoForm.posicion], fecha: externoForm.fecha
+    })
+
+    const [{ data: ext }, { data: h }] = await Promise.all([
+      supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
+      supabase.from('historial_elo').select('*,torneos(nombre)').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
+    ])
+    setExternos(ext || [])
+    setHistorialElo(h || [])
+    setJugador({ ...jugador, elo: nuevoElo })
+    setModalExternoOpen(false)
+    setExternoForm({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
+    setGuardandoExterno(false)
   }
 
   async function aceptarCompromiso() {
@@ -536,7 +583,15 @@ export default function JugadorDetallePage() {
 
           {/* Torneos externos */}
           <div style={{ ...card, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #e2e8f0', fontSize:13, fontWeight:600, color: text }}>Torneos externos</div>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ fontSize:13, fontWeight:600, color: text }}>Torneos externos</div>
+              {puedeEditar && (
+                <button onClick={() => { setModalExternoOpen(true); setExternoForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
+                  style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer', fontWeight:600 }}>
+                  + Agregar
+                </button>
+              )}
+            </div>
             {externos.length === 0
               ? <div style={{ padding:30, textAlign:'center', color: hint, fontSize:13 }}>Sin torneos externos</div>
               : externos.map(t => (
@@ -629,6 +684,69 @@ export default function JugadorDetallePage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal — agregar torneo externo */}
+      {modalExternoOpen && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>Registrar torneo externo — {jugador.nombre}</div>
+
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Club / Lugar</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                value={externoForm.club} onChange={e => setExternoForm(f => ({ ...f, club: e.target.value }))}>
+                <option value="">— Seleccionar —</option>
+                {CLUBES_EXTERNOS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            {externoForm.club === 'Otro' && (
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nombre del club</label>
+                <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  placeholder="Nombre del club" value={externoForm.clubNombre} onChange={e => setExternoForm(f => ({ ...f, clubNombre: e.target.value }))} />
+              </div>
+            )}
+
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                value={externoForm.categoria} onChange={e => setExternoForm(f => ({ ...f, categoria: e.target.value }))}>
+                <option value="sub19">Sub 19</option>
+                <option value="aficionados">Aficionados</option>
+                <option value="intermedia">Intermedia</option>
+                <option value="tc">TC (Top Competencia)</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Posición alcanzada</label>
+              <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                value={externoForm.posicion} onChange={e => setExternoForm(f => ({ ...f, posicion: e.target.value }))}>
+                {Object.entries(POSICION_LABEL).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+              </select>
+            </div>
+
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha</label>
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                type="date" value={externoForm.fecha} onChange={e => setExternoForm(f => ({ ...f, fecha: e.target.value }))} />
+            </div>
+
+            <div style={{ background:'#f4f7fa', borderRadius:10, padding:14, marginBottom:20, textAlign:'center' }}>
+              <div style={{ fontSize:12, color: muted, marginBottom:4 }}>Puntos ELO a ganar</div>
+              <div style={{ fontSize:28, fontWeight:800, color:'#4f46e5', fontFamily:'monospace' }}>+{puntosExternoPreview}</div>
+            </div>
+
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => setModalExternoOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={guardarExterno} disabled={guardandoExterno} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+                {guardandoExterno ? 'Guardando...' : 'Registrar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </AppLayout>

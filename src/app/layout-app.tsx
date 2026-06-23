@@ -54,7 +54,6 @@ const mobileNavAdmin = [
   { label: 'Jugadores',  icon: Users,            href: '/jugadores' },
   { label: 'Torneos',    icon: Trophy,           href: '/torneos' },
   { label: 'Finanzas',   icon: DollarSign,       href: '/finanzas' },
-  { label: 'Más',        icon: Menu,             href: '#mas' },
 ]
 
 const mobileNavProfesor = [
@@ -62,7 +61,6 @@ const mobileNavProfesor = [
   { label: 'Clases',     icon: BookOpen,        href: '/clases' },
   { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia' },
   { label: 'Alumnos',    icon: Users,           href: '/jugadores' },
-  { label: 'Calendario', icon: Calendar,        href: '/calendario' },
 ]
 
 const mobileNavJugador = [
@@ -70,7 +68,6 @@ const mobileNavJugador = [
   { label: 'Asistencia', icon: ClipboardCheck, href: '/asistencia' },
   { label: 'Mis clases', icon: BookOpen,      href: '/mis-clases' },
   { label: 'Mi cuenta',  icon: CreditCard,    href: '/estado-cuenta' },
-  { label: 'Ranking',    icon: BarChart2,     href: '/ranking' },
 ]
 
 type NavItem = { section: string } | { label: string; icon: any; href: string }
@@ -88,8 +85,14 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
       .then(({ data }) => setClubNombre(data?.nombre || ''))
   }, [perfil?.club_id])
 
-  const nav: NavItem[] = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
-  const mobileNav = perfil?.rol === 'admin' ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
+  const esAdminOSuperadmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
+  const nav: NavItem[] = esAdminOSuperadmin ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
+  const mobileNav = esAdminOSuperadmin ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
+
+  const mobileNavHrefs = new Set(mobileNav.map((item) => item.href))
+  const masItems = nav.filter(
+    (item): item is { label: string; icon: any; href: string } => !('section' in item) && !mobileNavHrefs.has(item.href),
+  )
 
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
   const rolLabel = perfil?.rol === 'superadmin' ? 'Superadmin' : perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
@@ -261,7 +264,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             const Icon = item.icon
             return (
               <div key={item.href}
-                onClick={() => item.href === '#mas' ? setMasOpen(!masOpen) : router.push(item.href)}
+                onClick={() => router.push(item.href)}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                   padding: '5px 8px', cursor: 'pointer',
@@ -273,6 +276,17 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               </div>
             )
           })}
+          {masItems.length > 0 && (
+            <div onClick={() => setMasOpen(!masOpen)} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+              padding: '5px 8px', cursor: 'pointer',
+              color: masOpen ? '#4f46e5' : '#94a3b8',
+              fontSize: 10, minWidth: 50, textAlign: 'center',
+            }}>
+              <Menu size={20} strokeWidth={masOpen ? 2.2 : 1.8} />
+              <span>Más</span>
+            </div>
+          )}
           <div onClick={cerrarSesion} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
             padding: '5px 8px', cursor: 'pointer',
@@ -284,21 +298,15 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         </div>
       </div>
 
-      {/* ── MENÚ MÁS (admin móvil) ── */}
-      {masOpen && (
+      {/* ── MENÚ MÁS (móvil, todos los roles) ── */}
+      {masOpen && masItems.length > 0 && (
         <div style={{
           position: 'fixed', bottom: 64, left: 0, right: 0,
           background: '#ffffff', borderTop: '1px solid #e2e8f0',
           zIndex: 19, padding: 12,
         }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-            {[
-              { label: 'Mensualidades', icon: CreditCard,    href: '/mensualidades' },
-              { label: 'Ranking',       icon: BarChart2,     href: '/ranking' },
-              { label: 'Asistencia',    icon: ClipboardCheck,href: '/asistencia' },
-              { label: 'Clases',        icon: BookOpen,      href: '/clases' },
-              { label: 'Calendario',    icon: Calendar,      href: '/calendario' },
-            ].map(item => {
+            {masItems.map(item => {
               const Icon = item.icon
               return (
                 <div key={item.href} onClick={() => { router.push(item.href); setMasOpen(false) }}
