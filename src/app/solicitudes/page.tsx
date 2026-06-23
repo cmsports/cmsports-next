@@ -7,6 +7,7 @@ import AppLayout from '../layout-app'
 import { Link2, Copy, Check, UserCheck, XCircle } from 'lucide-react'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
+import { copiarTexto } from '@/lib/clipboard'
 
 const supabase = createClient()
 
@@ -79,8 +80,9 @@ export default function SolicitudesPage() {
     cargarSolicitudes()
   }
 
-  function copiarLink() {
-    navigator.clipboard.writeText(linkInvitacion)
+  async function copiarLink() {
+    const ok = await copiarTexto(linkInvitacion)
+    if (!ok) return
     setCopiado(true); setTimeout(() => setCopiado(false), 2000)
   }
 
