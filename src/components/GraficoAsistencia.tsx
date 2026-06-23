@@ -108,7 +108,7 @@ export default function GraficoAsistencia({ clubId }: { clubId: string }) {
 
   if (loading) {
     return (
-      <div style={{ ...card, padding: 40, marginBottom: 24, maxWidth: 760, textAlign: 'center', color: hint, fontSize: 13 }}>
+      <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
         Cargando gráfico de asistencia...
       </div>
     )
@@ -167,8 +167,8 @@ export default function GraficoAsistencia({ clubId }: { clubId: string }) {
   }
 
   return (
-    <div style={{ ...card, padding: 20, marginBottom: 24, maxWidth: 760 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 190px', gap: 16 }}>
+    <div style={{ ...card, padding: 20, height: '100%' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 190px', gap: 16 }}>
         {/* Chart + header */}
         <div>
           <div style={{ fontSize: 12, color: muted, marginBottom: 6 }}>Asistencia promedio</div>
