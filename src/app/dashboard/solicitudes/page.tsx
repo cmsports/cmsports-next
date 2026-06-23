@@ -24,6 +24,8 @@ export default function SolicitudesPage() {
   const [planForm, setPlanForm] = useState({ categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [aprobando, setAprobando] = useState(false)
   const [aprobarMsg, setAprobarMsg] = useState('')
+  const [passwordGenerada, setPasswordGenerada] = useState('')
+  const [passwordCopiada, setPasswordCopiada] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -65,7 +67,14 @@ export default function SolicitudesPage() {
   function abrirAprobar(s: any) {
     setModalAprobar(s)
     setAprobarMsg('')
+    setPasswordGenerada('')
     setPlanForm({ categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+  }
+
+  function copiarPassword() {
+    navigator.clipboard.writeText(passwordGenerada)
+    setPasswordCopiada(true)
+    setTimeout(() => setPasswordCopiada(false), 2000)
   }
 
   async function confirmarAprobar() {
@@ -89,10 +98,10 @@ export default function SolicitudesPage() {
     if (res.error) { setAprobarMsg(res.error); return }
     cargarSolicitudes()
     if (res.inviteError) {
-      setAprobarMsg('Jugador creado, pero no se pudo invitar por email: ' + res.inviteError)
+      setAprobarMsg('Jugador creado, pero no se pudo crear su cuenta: ' + res.inviteError)
       return
     }
-    setModalAprobar(null)
+    if (res.password) setPasswordGenerada(res.password)
   }
 
   async function rechazar(id: string) {
@@ -202,6 +211,28 @@ export default function SolicitudesPage() {
               </div>
             )}
 
+            {passwordGenerada ? (
+              <>
+                <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'14px', fontSize:13, color:'#166534', marginBottom:16 }}>
+                  ✓ Jugador creado. Copia esta contraseña y envíasela junto con su email (<b>{modalAprobar.email}</b>) — la va a necesitar para entrar.
+                </div>
+                <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:20 }}>
+                  <div style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 14px', fontSize:15, fontWeight:600, color: text, fontFamily:'monospace' }}>
+                    {passwordGenerada}
+                  </div>
+                  <button
+                    onClick={copiarPassword}
+                    style={{ background: passwordCopiada ? '#f0fdf4' : '#ede9fe', color: passwordCopiada ? '#16a34a' : '#3730a3', border:`1px solid ${passwordCopiada ? '#bbf7d0' : '#c4b5fd'}`, borderRadius:8, padding:'10px 16px', fontSize:12, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}
+                  >
+                    {passwordCopiada ? '✓ Copiada' : '📋 Copiar'}
+                  </button>
+                </div>
+                <button onClick={() => setModalAprobar(null)} style={{ width:'100%', padding:11, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+                  Listo
+                </button>
+              </>
+            ) : (
+              <>
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>
               <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
@@ -256,6 +287,8 @@ export default function SolicitudesPage() {
                 {aprobando ? 'Aprobando...' : 'Aprobar jugador'}
               </button>
             </div>
+              </>
+            )}
           </div>
         </div>
       )}
