@@ -1,9 +1,10 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
+import GraficoAsistencia from '@/components/GraficoAsistencia'
 import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
@@ -24,6 +25,7 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 function getLunesDeSemana(offset: number) {
   const hoy = new Date()
@@ -37,6 +39,9 @@ function getLunesDeSemana(offset: number) {
 
 function formatFecha(d: Date) { return d.toISOString().slice(0, 10) }
 function formatFechaCorta(d: Date) { return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) }
+function formatFechaLarga(fecha: string) {
+  return new Date(fecha + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
+}
 
 export default function AsistenciaPage() {
   const { perfil, loading: authLoading } = usePerfil()
@@ -57,9 +62,11 @@ export default function AsistenciaPage() {
   const [diaMasActivoCount, setDiaMasActivoCount] = useState(0)
   const [sinAsistencia, setSinAsistencia] = useState<any[]>([])
   const [mostrarInasistentes, setMostrarInasistentes] = useState(false)
-  const [statsJugadores, setStatsJugadores] = useState<any[]>([])
-  const [busquedaStats, setBusquedaStats] = useState('')
   const [pendientesCount, setPendientesCount] = useState(0)
+
+  const [fechaVista, setFechaVista] = useState(() => new Date().toISOString().slice(0, 10))
+  const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
+  const [cargandoDia, setCargandoDia] = useState(false)
 
   const router = useRouter()
   const online = useOnlineStatus()
@@ -95,6 +102,11 @@ export default function AsistenciaPage() {
       sincronizarCola(clubId).then(() => { cargarDatos(); cargarStats() })
     }
   }, [online])
+
+  useEffect(() => {
+    if (!clubId || !fechaVista || fechaVista === hoy) return
+    cargarAsistenciasDia(fechaVista)
+  }, [fechaVista, clubId])
 
   async function sincronizarCola(cid?: string) {
     const id = cid || clubId
@@ -142,6 +154,14 @@ export default function AsistenciaPage() {
     }
   }
 
+  async function cargarAsistenciasDia(fecha: string) {
+    if (!clubId) return
+    setCargandoDia(true)
+    const { data } = await supabase.from('asistencia').select('*').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
+    setAsistenciasDia(data || [])
+    setCargandoDia(false)
+  }
+
   async function cargarStats(cid?: string, offset?: number) {
     const id = cid || clubId
     const off = offset !== undefined ? offset : semanaOffset
@@ -180,7 +200,6 @@ export default function AsistenciaPage() {
     const porJugador: Record<string, number> = {}
     a.forEach(r => { porJugador[r.jugador_id] = (porJugador[r.jugador_id] || 0) + 1 })
 
-    setStatsJugadores(j.map(jug => ({ ...jug, asistencias: porJugador[jug.id] || 0 })).sort((a, b) => b.asistencias - a.asistencias))
     setSinAsistencia(j.filter(jug => !porJugador[jug.id]))
   }
 
@@ -266,7 +285,7 @@ export default function AsistenciaPage() {
     setEliminando(asistenciaId)
     const result = await eliminarAsistencia(asistenciaId, perfil?.rol || '')
     if (result.error) alert(result.error)
-    await cargarDatos()
+    if (fechaVista === hoy) { await cargarDatos() } else { await cargarAsistenciasDia(fechaVista) }
     await cargarStats()
     setEliminando(null)
   }
@@ -275,12 +294,13 @@ export default function AsistenciaPage() {
   const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor'
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
   const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
-  const filtradosStats = statsJugadores.filter(j => j.nombre.toLowerCase().includes(busquedaStats.toLowerCase()))
 
   const lunes = getLunesDeSemana(semanaOffset)
   const domingo = new Date(lunes)
   domingo.setDate(lunes.getDate() + 6)
   const esEstaSemana = semanaOffset === 0
+
+  const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
@@ -351,80 +371,6 @@ export default function AsistenciaPage() {
         </div>
       )}
 
-      {/* REGISTRO MANUAL (Admin/Profesor) */}
-      {esAdminOProfesor && (
-        <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 12 }}>✏️ Registro manual</div>
-          <input
-            style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 10 }}
-            placeholder="Buscar jugador para registrar..."
-            value={busqueda} onChange={e => setBusqueda(e.target.value)}
-          />
-          {busqueda && (
-            <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-              {filtrados.slice(0, 5).map(j => {
-                const ya = registradosHoy.has(j.id)
-                return (
-                  <div key={j.id} onClick={() => !ya && registrarAsistencia(j.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e2e8f0', cursor: ya ? 'default' : 'pointer', opacity: ya ? 0.6 : 1 }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
-                      <div style={{ fontSize: 11, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}</div>
-                    </div>
-                    {ya
-                      ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>
-                      : registrando === j.id
-                        ? <span style={{ color: muted, fontSize: 12 }}>Registrando...</span>
-                        : <button style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Registrar</button>
-                    }
-                  </div>
-                )
-              })}
-              {filtrados.length === 0 && <div style={{ padding: 16, color: muted, fontSize: 13, textAlign: 'center' }}>Sin resultados</div>}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ASISTENCIAS DE HOY */}
-      <div style={{ ...card, overflow: 'hidden', marginBottom: 24 }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text }}>
-          Asistencias de hoy ({asistencias.length})
-        </div>
-        {asistencias.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Sin asistencias registradas hoy</div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Jugador</th>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Hora</th>
-                {esAdminOProfesor && <th style={{ padding: '10px 16px', width: 60 }}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {asistencias.map(a => {
-                const jug = jugadores.find(j => j.id === a.jugador_id)
-                return (
-                  <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px 16px', fontWeight: 600, color: text }}>{jug?.nombre || '—'}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: muted, fontVariantNumeric: 'tabular-nums' }}>{a.hora?.slice(0, 5)}</td>
-                    {esAdminOProfesor && (
-                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        {a.pendienteSync ? (
-                          <span style={{ background: '#ede9fe', color: '#3730a3', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>⏳ pendiente</span>
-                        ) : (
-                          <button onClick={() => handleEliminar(a.id, jug?.nombre || '')} disabled={eliminando === a.id} style={{ background: 'none', border: 'none', color: '#dc262688', cursor: eliminando === a.id ? 'not-allowed' : 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, opacity: eliminando === a.id ? 0.4 : 1 }} title="Eliminar asistencia">✕</button>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
       {/* ESTADÍSTICAS SEMANALES (Admin/Profesor) */}
       {esAdminOProfesor && (
         <>
@@ -464,7 +410,7 @@ export default function AsistenciaPage() {
 
           {/* Panel inasistentes */}
           {mostrarInasistentes && sinAsistencia.length > 0 && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 14, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 14, padding: 16, marginBottom: 24 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626', marginBottom: 12 }}>
                 Jugadores sin asistencia esta semana ({sinAsistencia.length})
               </div>
@@ -476,45 +422,174 @@ export default function AsistenciaPage() {
             </div>
           )}
 
-          {/* Tabla por jugador */}
-          <div style={{ marginBottom: 12 }}>
-            <input
-              style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none' }}
-              placeholder="Buscar jugador en estadísticas..."
-              value={busquedaStats} onChange={e => setBusquedaStats(e.target.value)}
-            />
-          </div>
-          <div style={{ ...card, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                  {['#', 'Jugador', 'Categoría', 'Asistencias'].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtradosStats.map((j, i) => {
-                  const col = j.asistencias >= 4 ? '#16a34a' : j.asistencias >= 2 ? '#d97706' : '#dc2626'
-                  const colBg = j.asistencias >= 4 ? '#f0fdf4' : j.asistencias >= 2 ? '#fffbeb' : '#fef2f2'
-                  return (
-                    <tr key={j.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px 16px', fontSize: 12, color: muted }}>{i + 1}</td>
-                      <td style={{ padding: '10px 16px', fontSize: 13, color: text, fontWeight: 500 }}>{j.nombre}</td>
-                      <td style={{ padding: '10px 16px' }}><span style={{ background: '#ede9fe', color: '#3730a3', padding: '2px 8px', borderRadius: 20, fontSize: 11 }}>{j.categoria}</span></td>
-                      <td style={{ padding: '10px 16px' }}>
-                        <span style={{ background: colBg, color: col, padding: '3px 8px', borderRadius: 20, fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{j.asistencias}</span>
-                        <span style={{ fontSize: 11, color: muted, marginLeft: 4 }}>días</span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            {filtradosStats.length === 0 && <div style={{ padding: 30, textAlign: 'center', color: hint, fontSize: 13 }}>Sin resultados</div>}
-          </div>
+          {/* GRÁFICO DE ASISTENCIA */}
+          {clubId && (
+            <div style={{ marginBottom: 24 }}>
+              <GraficoAsistencia clubId={clubId} />
+            </div>
+          )}
         </>
       )}
+
+      {/* ASISTENCIAS DEL DÍA */}
+      <div style={{ ...card, overflow: 'hidden', marginBottom: 24 }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text, textTransform: 'capitalize' }}>
+          Asistencias {fechaVista === hoy ? 'de hoy' : `del ${formatFechaLarga(fechaVista)}`} ({asistenciasMostradas.length})
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            {cargandoDia ? (
+              <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Cargando...</div>
+            ) : asistenciasMostradas.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Sin asistencias registradas este día</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Jugador</th>
+                    <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Hora</th>
+                    {esAdminOProfesor && <th style={{ padding: '10px 16px', width: 60 }}></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {asistenciasMostradas.map(a => {
+                    const jug = jugadores.find(j => j.id === a.jugador_id)
+                    return (
+                      <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, color: text }}>{jug?.nombre || '—'}</td>
+                        <td style={{ padding: '12px 16px', fontSize: 13, color: muted, fontVariantNumeric: 'tabular-nums' }}>{a.hora?.slice(0, 5)}</td>
+                        {esAdminOProfesor && (
+                          <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                            {a.pendienteSync ? (
+                              <span style={{ background: '#ede9fe', color: '#3730a3', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>⏳ pendiente</span>
+                            ) : (
+                              <button onClick={() => handleEliminar(a.id, jug?.nombre || '')} disabled={eliminando === a.id} style={{ background: 'none', border: 'none', color: '#dc262688', cursor: eliminando === a.id ? 'not-allowed' : 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, opacity: eliminando === a.id ? 0.4 : 1 }} title="Eliminar asistencia">✕</button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {esAdminOProfesor && clubId && (
+            <div style={{ borderLeft: '1px solid #e2e8f0', padding: 16 }}>
+              <MiniCalendarioAsistencia clubId={clubId} fechaSeleccionada={fechaVista} onSeleccionar={setFechaVista} hoy={hoy} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* REGISTRO MANUAL (Admin/Profesor) */}
+      {esAdminOProfesor && (
+        <div style={{ ...card, padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 12 }}>✏️ Registro manual</div>
+          <input
+            style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 10 }}
+            placeholder="Buscar jugador para registrar..."
+            value={busqueda} onChange={e => setBusqueda(e.target.value)}
+          />
+          {busqueda && (
+            <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+              {filtrados.slice(0, 5).map(j => {
+                const ya = registradosHoy.has(j.id)
+                return (
+                  <div key={j.id} onClick={() => !ya && registrarAsistencia(j.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e2e8f0', cursor: ya ? 'default' : 'pointer', opacity: ya ? 0.6 : 1 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
+                      <div style={{ fontSize: 11, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}</div>
+                    </div>
+                    {ya
+                      ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>
+                      : registrando === j.id
+                        ? <span style={{ color: muted, fontSize: 12 }}>Registrando...</span>
+                        : <button style={{ background: '#4f46e5', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Registrar</button>
+                    }
+                  </div>
+                )
+              })}
+              {filtrados.length === 0 && <div style={{ padding: 16, color: muted, fontSize: 13, textAlign: 'center' }}>Sin resultados</div>}
+            </div>
+          )}
+        </div>
+      )}
     </AppLayout>
+  )
+}
+
+/* ── Mini calendario para elegir el día a revisar ── */
+function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, hoy }: {
+  clubId: string
+  fechaSeleccionada: string
+  onSeleccionar: (fecha: string) => void
+  hoy: string
+}) {
+  const [mes, setMes] = useState(new Date().getMonth())
+  const [anio, setAnio] = useState(new Date().getFullYear())
+  const [diasConDatos, setDiasConDatos] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    async function cargar() {
+      const supabase = createClient()
+      const inicio = new Date(anio, mes, 1).toISOString().slice(0, 10)
+      const fin = new Date(anio, mes + 1, 0).toISOString().slice(0, 10)
+      const { data } = await supabase.from('asistencia').select('fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
+      setDiasConDatos(new Set((data || []).map((d: any) => d.fecha)))
+    }
+    if (clubId) cargar()
+  }, [clubId, mes, anio])
+
+  function cambiarMes(dir: number) {
+    let nuevoMes = mes + dir
+    let nuevoAnio = anio
+    if (nuevoMes > 11) { nuevoMes = 0; nuevoAnio++ }
+    if (nuevoMes < 0) { nuevoMes = 11; nuevoAnio-- }
+    setMes(nuevoMes)
+    setAnio(nuevoAnio)
+  }
+
+  const primerDia = new Date(anio, mes, 1).getDay()
+  const diasEnMes = new Date(anio, mes + 1, 0).getDate()
+  const nombresDias = ['Su', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá']
+
+  return (
+    <div style={{ width: 230 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <button onClick={() => cambiarMes(-1)} style={{ background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 6, color: muted, cursor: 'pointer', width: 22, height: 22 }}>‹</button>
+        <span style={{ fontSize: 12, fontWeight: 600, color: text }}>{nombresMes[mes]} {anio}</span>
+        <button onClick={() => cambiarMes(1)} style={{ background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 6, color: muted, cursor: 'pointer', width: 22, height: 22 }}>›</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
+        {nombresDias.map(d => (
+          <div key={d} style={{ textAlign: 'center', fontSize: 9, color: hint, fontWeight: 600, padding: '2px 0' }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', rowGap: 2 }}>
+        {Array.from({ length: primerDia }).map((_, i) => <div key={`e-${i}`} />)}
+        {Array.from({ length: diasEnMes }).map((_, i) => {
+          const dia = i + 1
+          const fecha = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+          const esHoy = fecha === hoy
+          const esSeleccionado = fecha === fechaSeleccionada
+          const tieneDatos = diasConDatos.has(fecha)
+          return (
+            <div key={dia} onClick={() => onSeleccionar(fecha)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'pointer', padding: '2px 0' }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: esSeleccionado || esHoy ? 700 : 400,
+                background: esSeleccionado ? '#4f46e5' : esHoy ? '#ede9fe' : 'transparent',
+                color: esSeleccionado ? 'white' : esHoy ? '#3730a3' : text,
+              }}>
+                {dia}
+              </div>
+              <span style={{ width: 4, height: 4, borderRadius: '50%', background: tieneDatos ? '#4f46e5' : 'transparent' }} />
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }

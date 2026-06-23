@@ -9,7 +9,7 @@ import CampanaNotificaciones from '@/components/campana-notificaciones'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
-  Link2, Mail, Wallet, X, HelpCircle, Copy, Check, UserX,
+  Link2, Mail, X, HelpCircle, Copy, Check, UserX,
   Settings,
 } from 'lucide-react'
 
@@ -38,11 +38,18 @@ const C = {
   divider: '#1e2030',
 }
 
+const catLabelGasto: Record<string, string> = {
+  sueldo_profesor: 'Sueldo profesor', sueldo_staff: 'Sueldo staff',
+  arriendo_cancha: 'Arriendo cancha', material_deportivo: 'Material deportivo',
+  servicios_basicos: 'Servicios básicos', mantenimiento: 'Mantenimiento', otro_gasto: 'Otro gasto',
+}
+
 export default function DashboardPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [kpis, setKpis]                           = useState<any>({})
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
+  const [desgloseGastos, setDesgloseGastos]       = useState<{ categoria: string; monto: number }[]>([])
   const [loading, setLoading]       = useState(true)
   const [ddOpen, setDdOpen]         = useState(false)
   const [retencionOpen, setRetencionOpen] = useState(false)
@@ -55,11 +62,25 @@ export default function DashboardPage() {
     if (perfil.rol === 'jugador')  { router.push('/perfil'); return }
     if (perfil.rol === 'profesor') { router.push('/dashboard-profesor'); return }
     if (perfil.club_id) {
-      cargarDatos(perfil.club_id).then(() => setLoading(false))
+      Promise.all([cargarDatos(perfil.club_id), cargarDesgloseGastos(perfil.club_id)]).then(() => setLoading(false))
     } else {
       setLoading(false)
     }
   }, [authLoading, perfil])
+
+  async function cargarDesgloseGastos(cid: string) {
+    const mesActual  = new Date().getMonth() + 1
+    const anioActual = new Date().getFullYear()
+    const mesInicio  = `${anioActual}-${String(mesActual).padStart(2, '0')}-01`
+    const ultimoDia  = new Date(anioActual, mesActual, 0).getDate()
+    const mesFin     = `${anioActual}-${String(mesActual).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
+
+    const { data } = await supabase.from('movimientos').select('categoria,monto').eq('club_id', cid).eq('tipo', 'gasto').gte('fecha', mesInicio).lte('fecha', mesFin)
+
+    const agrupado: Record<string, number> = {}
+    ;(data || []).forEach((m: any) => { agrupado[m.categoria] = (agrupado[m.categoria] || 0) + m.monto })
+    setDesgloseGastos(Object.entries(agrupado).map(([categoria, monto]) => ({ categoria, monto })).sort((a, b) => b.monto - a.monto))
+  }
 
   async function cargarDatos(cid: string) {
     const { data: clubData } = await supabase.from('clubes').select('mensualidad_base').eq('id', cid).single()
@@ -187,7 +208,6 @@ export default function DashboardPage() {
 
   const tmColor = (kpis.tm || 0) > 25 ? C.red : (kpis.tm || 0) > 10 ? C.yellow : C.green
   const tmBg    = (kpis.tm || 0) > 25 ? C.redL : (kpis.tm || 0) > 10 ? C.yellowL : C.greenL
-  const coaOk   = (kpis.coa || 0) <= (kpis.mensualidadBase || 25000)
 
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
   const rolLabel = perfil?.rol === 'superadmin' ? 'Superadmin' : perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
@@ -334,13 +354,31 @@ export default function DashboardPage() {
         <div style={{ gridColumn: 'span 3' }}>
           {perfil?.club_id && <GraficoAsistencia clubId={perfil.club_id} />}
         </div>
-        <div style={{ gridColumn: 'span 1', background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-            <DollarSign size={18} color={C.red} />
+        <div style={{ gridColumn: 'span 1', background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+            <DollarSign size={16} color={C.red} />
           </div>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 6 }}>💸 Gastos este mes</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>💸 Gastos este mes</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
             {fmt(kpis.gastos || 0)}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+            {desgloseGastos.length === 0 ? (
+              <div style={{ fontSize: 11, color: C.hint }}>Sin gastos registrados este mes</div>
+            ) : desgloseGastos.slice(0, 4).map(d => {
+              const pct = (kpis.gastos || 0) > 0 ? Math.round((d.monto / kpis.gastos) * 100) : 0
+              return (
+                <div key={d.categoria}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.muted, marginBottom: 3 }}>
+                    <span>{catLabelGasto[d.categoria] || d.categoria}</span>
+                    <span style={{ fontWeight: 600, color: C.text }}>{fmt(d.monto)}</span>
+                  </div>
+                  <div style={{ height: 4, background: C.redL, borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${pct}%`, background: C.red, borderRadius: 3 }} />
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -393,24 +431,6 @@ export default function DashboardPage() {
               Ver todas →
             </a>
           )}
-        </div>
-      </div>
-
-      {/* ── Fila 3: COA ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: coaOk ? C.greenL : C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wallet size={16} color={coaOk ? C.green : C.red} />
-            </div>
-            <span style={{ fontSize: 12, color: C.muted }}>📊 COA — Costo por alumno</span>
-          </div>
-          <div style={{ fontSize: 22, fontWeight: 600, color: coaOk ? C.green : C.red, fontVariantNumeric: 'tabular-nums' }}>
-            {fmt(kpis.coa || 0)}
-          </div>
-          <div style={{ fontSize: 11, marginTop: 4, color: coaOk ? C.green : C.red, fontWeight: 500 }}>
-            {coaOk ? '✓ Margen saludable' : '⚠ Pérdida por alumno'}
-          </div>
         </div>
       </div>
 
