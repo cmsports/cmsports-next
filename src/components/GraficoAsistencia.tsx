@@ -102,7 +102,9 @@ export default function GraficoAsistencia({ clubId }: { clubId: string }) {
 
   const retencion = useMemo(() => {
     if (activosCount === 0) return 0
-    const distintos = new Set(filas.map(f => f.jugador_id)).size
+    const hace14 = new Date()
+    hace14.setDate(hace14.getDate() - 14)
+    const distintos = new Set(filas.filter(f => f.date >= hace14).map(f => f.jugador_id)).size
     return Math.round((distintos / activosCount) * 1000) / 10
   }, [filas, activosCount])
 
@@ -199,7 +201,7 @@ export default function GraficoAsistencia({ clubId }: { clubId: string }) {
           <div style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px' }}>
             <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Retención</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{retencion}%</div>
-            <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>jugadores activos en 30 días</div>
+            <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>jugadores activos en 14 días</div>
           </div>
         </div>
       </div>
