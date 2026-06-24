@@ -53,7 +53,7 @@ export default function LigaDetallePage() {
       supabase.from('liga_divisiones').select('id, nombre, fixture_generado').eq('liga_id', ligaId).order('orden'),
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero'),
       supabase.from('liga_fechas').select('id, numero, es_ajuste, estado').eq('liga_id', ligaId).order('numero'),
-      supabase.from('jugadores').select('id, nombre').eq('club_id', ligaData.club_id).eq('estado', 'activo').order('nombre'),
+      supabase.from('jugadores').select('id, nombre').eq('club_id', ligaData.club_id).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
       supabase.from('liga_division_jugadores').select('division_id, jugador_id'),
     ])
     setDivisiones(divs || [])
