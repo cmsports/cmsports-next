@@ -14,7 +14,7 @@ const hint = '#94a3b8'
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-export function MensualidadesPanel() {
+export function MensualidadesPanel({ onPagoRegistrado }: { onPagoRegistrado?: () => void } = {}) {
   const { perfil } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [mensualidades, setMensualidades] = useState<any[]>([])
@@ -68,6 +68,7 @@ export function MensualidadesPanel() {
     })
     setModalPago(null)
     cargarMensualidades()
+    onPagoRegistrado?.()
   }
 
   async function marcarAtrasado(mensId: string) {
@@ -78,6 +79,7 @@ export function MensualidadesPanel() {
   async function marcarPendiente(mensId: string, jugadorId: string) {
     await revertirPago({ mensualidadId: mensId, jugadorId, mes, anio })
     cargarMensualidades()
+    onPagoRegistrado?.()
   }
 
   async function exportarExcel() {
