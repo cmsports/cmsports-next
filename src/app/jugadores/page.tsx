@@ -31,7 +31,7 @@ export default function JugadoresPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<any>(null)
   const [form, setForm] = useState({
-    nombre:'', rut:'', email:'', telefono:'',
+    nombre:'', rut:'', email:'', telefono:'', password:'',
     categoria:'principiante',
     tipo_plan:'mensual',
     entrenamientos_por_semana:'3',
@@ -68,14 +68,14 @@ export default function JugadoresPage() {
 
   function abrirNuevo() {
     setEditando(null)
-    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+    setForm({ nombre:'', rut:'', email:'', telefono:'', password:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
     setModalOpen(true)
   }
 
   function abrirEditar(j: any) {
     setEditando(j)
     setForm({
-      nombre:j.nombre||'', rut:j.rut||'', email:j.email||'', telefono:j.telefono||'',
+      nombre:j.nombre||'', rut:j.rut||'', email:j.email||'', telefono:j.telefono||'', password:'',
       categoria:j.categoria||'principiante', tipo_plan:j.tipo_plan||'mensual',
       entrenamientos_por_semana:String(j.entrenamientos_por_semana||3),
       mensualidad:String(j.mensualidad||30000)
@@ -86,6 +86,10 @@ export default function JugadoresPage() {
   async function guardar() {
     if (!form.nombre.trim()) { mostrarToast('El nombre es obligatorio'); return }
     if (!clubId) { mostrarToast('Error: no hay club activo'); return }
+    if (!editando) {
+      if (!form.email.trim()) { mostrarToast('El email es obligatorio'); return }
+      if (form.password.length < 6) { mostrarToast('La contraseña debe tener al menos 6 caracteres'); return }
+    }
     setGuardando(true)
 
     const esLibre = form.tipo_plan === 'libre'
@@ -104,14 +108,15 @@ export default function JugadoresPage() {
       if (res.error) { mostrarToast(res.error); setGuardando(false); return }
       mostrarToast('Jugador actualizado')
     } else {
-      const res = await crearJugador({ nombre: form.nombre, rut: form.rut, email: form.email, telefono: form.telefono, ...planFields })
+      const res = await crearJugador({ nombre: form.nombre, rut: form.rut, email: form.email, password: form.password, telefono: form.telefono, ...planFields })
       if (res.error) { mostrarToast(res.error); setGuardando(false); return }
-      mostrarToast('Jugador creado exitosamente')
+      if (res.cuentaError) mostrarToast('Jugador creado, pero falló la cuenta de acceso: ' + res.cuentaError)
+      else mostrarToast('Jugador creado exitosamente, ya puede iniciar sesión')
     }
 
     setGuardando(false)
     setModalOpen(false)
-    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+    setForm({ nombre:'', rut:'', email:'', telefono:'', password:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
     await cargarJugadores()
   }
 
@@ -340,7 +345,7 @@ export default function JugadoresPage() {
             {[
               { label:'Nombre completo *', key:'nombre', type:'text', placeholder:'Ej: Carlos Muñoz' },
               { label:'RUT', key:'rut', type:'text', placeholder:'12345678-9' },
-              { label:'Email', key:'email', type:'email', placeholder:'tu@email.com' },
+              { label: editando ? 'Email' : 'Email *', key:'email', type:'email', placeholder:'tu@email.com' },
               { label:'Teléfono', key:'telefono', type:'tel', placeholder:'+56 9 1234 5678' },
             ].map(f => (
               <div key={f.key} style={{ marginBottom:14 }}>
@@ -353,6 +358,21 @@ export default function JugadoresPage() {
                 />
               </div>
             ))}
+
+            {!editando && (
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Contraseña *</label>
+                <input
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  type="text" placeholder="Mínimo 6 caracteres"
+                  value={form.password}
+                  onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
+                />
+                <div style={{ fontSize:11, color: hint, marginTop:4 }}>
+                  El jugador entrará con este email y esta contraseña. Podrá actualizar el resto de sus datos desde su perfil.
+                </div>
+              </div>
+            )}
 
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>
