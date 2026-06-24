@@ -28,6 +28,8 @@ const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','mat
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
+const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+
 export default function FinanzasPage() {
   return (
     <Suspense fallback={<div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}><div style={{ color:'#94a3b8' }}>Cargando...</div></div>}>
@@ -152,7 +154,6 @@ function FinanzasContent() {
     writeFile(wb, `finanzas_${mesesN[mes-1]}_${anio}.xlsx`)
   }
 
-  const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
   const ingresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
   const gastos = movimientos.filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0)
 
@@ -203,7 +204,7 @@ function FinanzasContent() {
         ))}
       </div>
 
-      {tabActivo === 'movimientos' && (<>
+      <div style={{ display: tabActivo === 'movimientos' ? 'block' : 'none' }}>
       {/* Stats */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
         {[
@@ -372,13 +373,17 @@ function FinanzasContent() {
           <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>Sin movimientos este mes</div>
         )}
       </div>
-      </>)}
+      </div>
 
       {/* TAB MENSUALIDADES */}
-      {tabActivo === 'mensualidades' && <MensualidadesPanel />}
+      <div style={{ display: tabActivo === 'mensualidades' ? 'block' : 'none' }}>
+        <MensualidadesPanel />
+      </div>
 
       {/* TAB REPORTES */}
-      {tabActivo === 'reportes' && <ReportesTab clubId={clubId} />}
+      <div style={{ display: tabActivo === 'reportes' ? 'block' : 'none' }}>
+        <ReportesTab clubId={clubId} />
+      </div>
 
       {/* Modal nuevo movimiento */}
       {modalOpen && (
@@ -471,24 +476,10 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
   const [preview, setPreview] = useState<any>(null)
   const [generando, setGenerando] = useState(false)
 
-  const text = '#0f172a'
-  const muted = '#64748b'
-  const hint = '#94a3b8'
-  const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
-
-  const mesesNR = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-  const catLabelR: Record<string,string> = {
-    mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo', arriendo_cancha:'Arriendo cancha',
-    donacion:'Donación', otro_ingreso:'Otro ingreso', sueldo_profesor:'Sueldo profesor',
-    sueldo_staff:'Sueldo staff', material_deportivo:'Material deportivo',
-    servicios_basicos:'Servicios básicos', mantenimiento:'Mantenimiento', otro_gasto:'Otro gasto'
-  }
-  const fmt = (n: number) => '$'+n.toLocaleString('es-CL')
-
   function getRango() {
     if (tipo === 'mensual') {
       const ultimoDia = new Date(anio, mes, 0).getDate()
-      return { inicio:`${anio}-${String(mes).padStart(2,'0')}-01`, fin:`${anio}-${String(mes).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`, titulo:`${mesesNR[mes-1]} ${anio}` }
+      return { inicio:`${anio}-${String(mes).padStart(2,'0')}-01`, fin:`${anio}-${String(mes).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`, titulo:`${mesesN[mes-1]} ${anio}` }
     }
     if (tipo === 'trimestral') {
       const mi=(trimestre-1)*3+1, mf=trimestre*3
@@ -541,9 +532,9 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     doc.text('Resumen Financiero',14,y); y+=8
     autoTable(doc,{ startY:y, head:[['Concepto','Monto']], body:[['Ingresos',fmt(preview.ingresos)],['Gastos',fmt(preview.gastos)],['Balance',fmt(preview.ingresos-preview.gastos)]], theme:'striped', headStyles:{fillColor:[14,165,233]}, margin:{left:14,right:14} })
     y=(doc as any).lastAutoTable.finalY+10
-    autoTable(doc,{ startY:y, head:[['Categoría Ingreso','Monto']], body:Object.entries(preview.desgloseI).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[22,163,74]}, margin:{left:14,right:14} })
+    autoTable(doc,{ startY:y, head:[['Categoría Ingreso','Monto']], body:Object.entries(preview.desgloseI).map(([c,t])=>[catLabel[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[22,163,74]}, margin:{left:14,right:14} })
     y=(doc as any).lastAutoTable.finalY+10
-    autoTable(doc,{ startY:y, head:[['Categoría Gasto','Monto']], body:Object.entries(preview.desgloseG).map(([c,t])=>[catLabelR[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[220,38,38]}, margin:{left:14,right:14} })
+    autoTable(doc,{ startY:y, head:[['Categoría Gasto','Monto']], body:Object.entries(preview.desgloseG).map(([c,t])=>[catLabel[c]||c,fmt(t as number)]), theme:'striped', headStyles:{fillColor:[220,38,38]}, margin:{left:14,right:14} })
     const pc=doc.getNumberOfPages()
     for(let i=1;i<=pc;i++){doc.setPage(i);doc.setFontSize(9);doc.setTextColor(150);doc.text(`CmSports — ${titulo} — Pág ${i} de ${pc}`,W/2,doc.internal.pageSize.getHeight()-8,{align:'center'})}
     doc.save(`reporte_${titulo.replace(/ /g,'_')}.pdf`)
@@ -566,7 +557,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
             <div style={{ flex:1, minWidth:140 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mes</label>
               <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }} value={mes} onChange={e=>setMes(parseInt(e.target.value))}>
-                {mesesNR.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+                {mesesN.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
               </select>
             </div>
           )}
@@ -619,7 +610,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Ingresos por categoría</div>
               {Object.entries(preview.desgloseI).map(([cat,total])=>(
                 <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
-                  <span style={{ color: muted }}>{catLabelR[cat]||cat}</span>
+                  <span style={{ color: muted }}>{catLabel[cat]||cat}</span>
                   <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmt(total as number)}</span>
                 </div>
               ))}
@@ -628,7 +619,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Gastos por categoría</div>
               {Object.entries(preview.desgloseG).map(([cat,total])=>(
                 <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
-                  <span style={{ color: muted }}>{catLabelR[cat]||cat}</span>
+                  <span style={{ color: muted }}>{catLabel[cat]||cat}</span>
                   <span style={{ color:'#dc2626', fontFamily:'monospace' }}>{fmt(total as number)}</span>
                 </div>
               ))}
