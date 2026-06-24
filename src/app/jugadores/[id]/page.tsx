@@ -330,21 +330,23 @@ export default function JugadorDetallePage() {
           <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
               <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Contacto</div>
-              {puedeEditar && !editContacto && (
+              {(puedeEditar || esPropio) && !editContacto && (
                 <button onClick={abrirEditContacto} style={{ background:'rgba(255,255,255,0.2)', border:'none', borderRadius:6, padding:'2px 8px', fontSize:11, color:'#fff', cursor:'pointer' }}>Editar</button>
               )}
             </div>
             {editContacto ? (
               <div>
-                <div style={{ marginBottom:8 }}>
-                  <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Categoría</label>
-                  <select style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
-                    value={contactoForm.categoria} onChange={e => setContactoForm(f => ({ ...f, categoria: e.target.value }))}>
-                    <option value="principiante">Principiante</option>
-                    <option value="intermedio">Intermedio</option>
-                    <option value="avanzado">Avanzado</option>
-                  </select>
-                </div>
+                {puedeEditar && (
+                  <div style={{ marginBottom:8 }}>
+                    <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Categoría</label>
+                    <select style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                      value={contactoForm.categoria} onChange={e => setContactoForm(f => ({ ...f, categoria: e.target.value }))}>
+                      <option value="principiante">Principiante</option>
+                      <option value="intermedio">Intermedio</option>
+                      <option value="avanzado">Avanzado</option>
+                    </select>
+                  </div>
+                )}
                 <div style={{ marginBottom:8 }}>
                   <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Email</label>
                   <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
