@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, Trophy, DollarSign, Menu,
   BookOpen, Smartphone, Calendar, User, CreditCard,
-  LogOut, Award, BarChart3, X
+  LogOut, Award, BarChart3, X, Swords
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -37,7 +37,7 @@ const mobileJugador: MobileNavItem[] = [
 ]
 
 const masItemsAdmin: MobileNavItem[] = [
-  { label: 'Mensualidades', icon: CreditCard, href: '/mensualidades' },
+  { label: 'Liga', icon: Swords, href: '/liga' },
   { label: 'Ranking', icon: Award, href: '/ranking' },
   { label: 'Asistencia', icon: BarChart3, href: '/asistencia-stats' },
   { label: 'Clases', icon: BookOpen, href: '/clases' },
