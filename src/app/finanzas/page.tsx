@@ -377,7 +377,7 @@ function FinanzasContent() {
 
       {/* TAB MENSUALIDADES */}
       <div style={{ display: tabActivo === 'mensualidades' ? 'block' : 'none' }}>
-        <MensualidadesPanel />
+        <MensualidadesPanel onPagoRegistrado={() => cargarMovimientos()} />
       </div>
 
       {/* TAB REPORTES */}
