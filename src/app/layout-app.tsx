@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
@@ -162,7 +163,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             const active = isActive(item.href)
             const Icon = item.icon
             return (
-              <div key={item.href} onClick={() => router.push(item.href)} style={{
+              <Link key={item.href} href={item.href} style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 9,
@@ -177,10 +178,11 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
                 fontWeight: active ? 600 : 400,
                 borderLeft: active ? '3px solid #3730a3' : '3px solid transparent',
                 transition: 'all 0.12s',
+                textDecoration: 'none',
               }}>
                 <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
                 <span>{item.label}</span>
-              </div>
+              </Link>
             )
           })}
         </nav>
@@ -263,17 +265,18 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             const active = isActive(item.href)
             const Icon = item.icon
             return (
-              <div key={item.href}
-                onClick={() => router.push(item.href)}
+              <Link key={item.href}
+                href={item.href}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                   padding: '5px 8px', cursor: 'pointer',
                   color: active ? '#4f46e5' : '#94a3b8',
                   fontSize: 10, minWidth: 50, textAlign: 'center',
+                  textDecoration: 'none',
                 }}>
                 <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
                 <span>{item.label}</span>
-              </div>
+              </Link>
             )
           })}
           {masItems.length > 0 && (
@@ -309,14 +312,15 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             {masItems.map(item => {
               const Icon = item.icon
               return (
-                <div key={item.href} onClick={() => { router.push(item.href); setMasOpen(false) }}
+                <Link key={item.href} href={item.href} onClick={() => setMasOpen(false)}
                   style={{
                     background: '#f8fafc', border: '1px solid #e2e8f0',
                     borderRadius: 10, padding: 14, textAlign: 'center', cursor: 'pointer',
+                    textDecoration: 'none', display: 'block',
                   }}>
                   <Icon size={20} color="#4f46e5" style={{ margin: '0 auto 4px' }} />
                   <div style={{ fontSize: 11, color: '#64748b' }}>{item.label}</div>
-                </div>
+                </Link>
               )
             })}
           </div>

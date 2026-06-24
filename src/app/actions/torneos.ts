@@ -5,7 +5,6 @@ import { calculateEloChange } from '@/lib/domain/elo'
 import {
   seedingSerpenteo,
   generarRoundRobin,
-  generarBracketEspejo,
   generarBracketConAvance,
   generarSiguienteFase,
   calcularNumGrupos,
