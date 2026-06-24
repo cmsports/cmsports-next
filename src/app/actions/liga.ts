@@ -268,9 +268,58 @@ export async function moverPartidoLiga(params: {
   return { success: true }
 }
 
+// Cambia manualmente el árbitro de un partido ya programado, reutilizando la
+// misma validación de conflictos del Drag & Drop (HC-04): no puede ser uno
+// de los jugadores, ni estar jugando o arbitrando otro partido en ese bloque.
+export async function cambiarArbitroPartido(params: { partidoId: string; arbitroId: string | null }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { partidoId, arbitroId } = params
+
+  const { data: partido } = await supabase
+    .from('liga_partidos')
+    .select('id, fecha_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id')
+    .eq('id', partidoId)
+    .single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (!partido.fecha_id || !partido.mesa_id || !partido.bloque_horario) {
+    return { error: 'El partido todavía no tiene fecha/mesa/horario asignado' }
+  }
+
+  if (arbitroId) {
+    const { data: partidosFecha } = await supabase
+      .from('liga_partidos')
+      .select('id, fecha_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id')
+      .eq('fecha_id', partido.fecha_id)
+
+    const aPartidoExistente = (p: typeof partido & { arbitro_id?: string | null }): PartidoExistente => ({
+      id: p.id,
+      fechaId: p.fecha_id,
+      mesaId: p.mesa_id,
+      bloqueHorario: p.bloque_horario,
+      jugadorAId: p.jugador_a_id,
+      jugadorBId: p.jugador_b_id,
+      arbitroId: p.arbitro_id ?? null,
+    })
+
+    const { valido, motivo } = validarMovimientoPartido(
+      { ...aPartidoExistente(partido), arbitroId },
+      { fechaId: partido.fecha_id, mesaId: partido.mesa_id, bloqueHorario: partido.bloque_horario },
+      (partidosFecha || []).map(aPartidoExistente),
+    )
+    if (!valido) return { error: motivo }
+  }
+
+  const { error } = await supabase.from('liga_partidos').update({ arbitro_id: arbitroId }).eq('id', partidoId)
+  if (error) return { error: 'No se pudo cambiar el árbitro: ' + error.message }
+
+  return { success: true }
+}
+
 // ─── CRUD básico de ligas/divisiones/mesas (módulo visible) ────────────────
 
-export async function crearLiga(params: { nombre: string }) {
+export async function crearLiga(params: { nombre: string; numDivisiones?: number; jugadoresPorDivision?: number }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
   if (!params.nombre.trim()) return { error: 'El nombre es obligatorio' }
@@ -286,6 +335,19 @@ export async function crearLiga(params: { nombre: string }) {
   await supabase.from('liga_fechas').insert(
     [1, 2, 3, 4, 5].map(numero => ({ liga_id: liga.id, numero, es_ajuste: numero === 5 })),
   )
+
+  // Anexo B: si se especifica cantidad de divisiones, se crean automáticamente
+  const numDivisiones = params.numDivisiones ?? 0
+  if (numDivisiones > 0) {
+    await supabase.from('liga_divisiones').insert(
+      Array.from({ length: numDivisiones }, (_, i) => ({
+        liga_id: liga.id,
+        nombre: `División ${i + 1}`,
+        orden: i,
+        capacidad_max: params.jugadoresPorDivision ?? null,
+      })),
+    )
+  }
 
   return { success: true, ligaId: liga.id }
 }
