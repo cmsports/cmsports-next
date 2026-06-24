@@ -5,11 +5,20 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
-import { Card, CardHeader, Button, Input, Badge, EmptyState } from '@/components/ui'
 import { crearLiga } from '@/app/actions/liga'
-import { Swords, Plus } from 'lucide-react'
 
 const supabase = createClient()
+
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
+const estadoConfig: Record<string, { color: string; bg: string; label: string }> = {
+  planificacion: { color: '#3730a3', bg: '#ede9fe', label: '📋 Planificación' },
+  en_curso:      { color: '#16a34a', bg: '#f0fdf4', label: '🟢 En curso' },
+  finalizada:    { color: muted,     bg: '#f8fafc', label: '✅ Finalizada' },
+}
 
 interface Liga {
   id: string
@@ -23,6 +32,7 @@ export default function LigaPage() {
   const router = useRouter()
   const [ligas, setLigas] = useState<Liga[]>([])
   const [loading, setLoading] = useState(true)
+  const [modalOpen, setModalOpen] = useState(false)
   const [nombre, setNombre] = useState('')
   const [creando, setCreando] = useState(false)
   const [error, setError] = useState('')
@@ -47,51 +57,80 @@ export default function LigaPage() {
     const res = await crearLiga({ nombre })
     setCreando(false)
     if (res.error) { setError(res.error); return }
+    setModalOpen(false)
     setNombre('')
     if (res.ligaId) router.push(`/liga/${res.ligaId}`)
   }
 
-  if (loading) return <AppLayout perfil={perfil}><div className="p-6 text-sm text-[var(--text-muted)]">Cargando…</div></AppLayout>
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
+    </div>
+  )
 
   return (
     <AppLayout perfil={perfil}>
-      <div className="p-6 space-y-5">
-        <div className="flex items-center gap-2">
-          <Swords className="size-5 text-[var(--text)]" />
-          <h1 className="text-xl font-semibold text-[var(--text)]">Liga de Mesa</h1>
-        </div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
+        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>🏓 Liga de Mesa</h1>
+        <button
+          onClick={() => setModalOpen(true)}
+          style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}
+        >
+          + Nueva liga
+        </button>
+      </div>
 
-        <Card>
-          <CardHeader title="Nueva liga" subtitle="Crea una temporada de liga presencial por divisiones" />
-          <div className="flex gap-3 items-end">
-            <div className="flex-1">
-              <Input placeholder="Ej: Liga Invierno 2026" value={nombre} onChange={e => setNombre(e.target.value)} />
-            </div>
-            <Button onClick={handleCrear} loading={creando} icon={Plus}>Crear liga</Button>
-          </div>
-          {error && <p className="text-xs text-[var(--red)] mt-2">{error}</p>}
-        </Card>
-
-        {ligas.length === 0 ? (
-          <EmptyState title="Sin ligas todavía" description="Crea tu primera liga para empezar a armar divisiones y fixture" />
-        ) : (
-          <div className="grid gap-3">
-            {ligas.map(liga => (
-              <Card key={liga.id} className="cursor-pointer hover:border-[var(--sky)] transition-colors" onClick={() => router.push(`/liga/${liga.id}`)}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-[var(--text)]">{liga.nombre}</div>
-                    <div className="text-xs text-[var(--text-muted)]">Creada el {new Date(liga.creado_en).toLocaleDateString('es-CL')}</div>
-                  </div>
-                  <Badge variant={liga.estado === 'en_curso' ? 'success' : liga.estado === 'finalizada' ? 'default' : 'info'}>
-                    {liga.estado === 'planificacion' ? 'Planificación' : liga.estado === 'en_curso' ? 'En curso' : 'Finalizada'}
-                  </Badge>
+      <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+        {ligas.map(liga => {
+          const est = estadoConfig[liga.estado] || { color: muted, bg: '#f4f7fa', label: liga.estado }
+          return (
+            <div
+              key={liga.id}
+              onClick={() => router.push(`/liga/${liga.id}`)}
+              style={{ ...card, padding:20, cursor:'pointer' }}
+            >
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                <div>
+                  <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:4 }}>{liga.nombre}</div>
+                  <div style={{ fontSize:12, color: muted }}>Creada el {new Date(liga.creado_en).toLocaleDateString('es-CL')}</div>
                 </div>
-              </Card>
-            ))}
+                <span style={{ background: est.bg, color: est.color, padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
+                  {est.label}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+        {ligas.length === 0 && (
+          <div style={{ ...card, padding:40, textAlign:'center', color: hint, fontSize:13 }}>
+            Sin ligas todavía — crea la primera para empezar a armar divisiones y fixture
           </div>
         )}
       </div>
+
+      {/* Modal nueva liga */}
+      {modalOpen && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:6 }}>Nueva liga</div>
+            <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Se crean automáticamente las 5 fechas de temporada (4 regulares + 1 de ajuste)</div>
+            <div style={{ marginBottom:20 }}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nombre de la liga</label>
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                placeholder="Ej: Liga Invierno 2026" value={nombre} onChange={e => setNombre(e.target.value)} />
+            </div>
+            {error && <p style={{ fontSize:12, color:'#dc2626', marginBottom:14 }}>{error}</p>}
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={handleCrear} disabled={creando} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer', opacity: creando ? 0.6 : 1 }}>
+                {creando ? 'Creando...' : 'Crear liga'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   )
 }

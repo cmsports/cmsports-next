@@ -1,16 +1,24 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { generarBloquesHorario } from '@/lib/domain/liga'
 import { moverPartidoLiga, iniciarFecha, registrarResultadoPartido, registrarWalkover, reprogramarPartidoAFecha5 } from '@/app/actions/liga'
 import AppLayout from '@/app/layout-app'
-import { Card, Badge, Button, Modal } from '@/components/ui'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
 const BLOQUES = generarBloquesHorario()
+
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
+
+const RESULTADOS_BO5 = ['3-0', '3-1', '3-2', '0-3', '1-3', '2-3']
+
+const exportBtn = { background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', whiteSpace:'nowrap' } as const
 
 interface PartidoBoard {
   id: string
@@ -34,8 +42,9 @@ export default function FechaProgramacionPage() {
   const params = useParams<{ fechaId: string }>()
   const fechaId = params.fechaId
   const { perfil } = usePerfil()
+  const router = useRouter()
 
-  const [fecha, setFecha] = useState<{ numero: number; estado: string; ligaNombre: string } | null>(null)
+  const [fecha, setFecha] = useState<{ numero: number; estado: string; ligaId: string; ligaNombre: string } | null>(null)
   const [mesas, setMesas] = useState<Mesa[]>([])
   const [partidos, setPartidos] = useState<PartidoBoard[]>([])
   const [nombres, setNombres] = useState<Record<string, string>>({})
@@ -52,7 +61,7 @@ export default function FechaProgramacionPage() {
     const { data: fechaData } = await supabase.from('liga_fechas').select('numero, estado, liga_id, ligas(nombre)').eq('id', fechaId).single()
     if (!fechaData) { setLoading(false); return }
     const ligaRel = Array.isArray(fechaData.ligas) ? fechaData.ligas[0] : fechaData.ligas
-    setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaNombre: ligaRel?.nombre ?? '' })
+    setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: ligaRel?.nombre ?? '' })
 
     const [{ data: mesasData }, { data: partidosData }, { data: divisionesData }] = await Promise.all([
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', fechaData.liga_id).order('numero', { ascending: true }),
@@ -247,45 +256,59 @@ export default function FechaProgramacionPage() {
     doc.save(`liga_fecha${fecha?.numero}_hojas_de_partido.pdf`)
   }
 
-  if (loading) return <AppLayout perfil={perfil}><div className="p-6 text-sm text-[var(--text-muted)]">Cargando programación…</div></AppLayout>
-  if (!fecha) return <AppLayout perfil={perfil}><div className="p-6 text-sm text-[var(--text-muted)]">Fecha no encontrada</div></AppLayout>
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
+    </div>
+  )
+  if (!fecha) return <AppLayout perfil={perfil}><div style={{ padding:24, color: muted, fontSize:13 }}>Fecha no encontrada</div></AppLayout>
+
+  const estLabel = fecha.estado === 'programada' ? 'Programada' : fecha.estado === 'en_juego' ? 'En juego' : 'Finalizada'
+  const estColor = fecha.estado === 'en_juego' ? '#16a34a' : muted
+  const estBg = fecha.estado === 'en_juego' ? '#f0fdf4' : '#f4f7fa'
 
   return (
     <AppLayout perfil={perfil}>
-      <div className="p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-[var(--text)]">Fecha {fecha.numero}</h1>
-            <p className="text-sm text-[var(--text-muted)]">
-              {fecha.estado === 'programada'
-                ? 'Arrastra un partido a otra mesa u horario para reprogramarlo'
-                : fecha.estado === 'en_juego'
-                ? 'Haz clic en un partido para registrar su resultado'
-                : 'Fecha finalizada'}
-            </p>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap justify-end">
-            <Badge variant={fecha.estado === 'en_juego' ? 'success' : 'default'}>
-              {fecha.estado === 'programada' ? 'Programada' : fecha.estado === 'en_juego' ? 'En juego' : 'Finalizada'}
-            </Badge>
-            <Button size="sm" variant="secondary" onClick={() => exportarProgramacion('fecha')}>PDF por horario</Button>
-            <Button size="sm" variant="secondary" onClick={() => exportarProgramacion('mesa')}>PDF por mesa</Button>
-            <Button size="sm" variant="secondary" onClick={exportarHojasDePartido}>Hojas de partido</Button>
-            {fecha.estado === 'programada' && <Button size="sm" onClick={handleIniciarFecha}>Iniciar Fecha</Button>}
-          </div>
+      <button onClick={() => router.push(`/liga/${fecha.ligaId}`)} style={{ background:'transparent', border:'none', color: muted, fontSize:12, cursor:'pointer', padding:0, marginBottom:8 }}>
+        ← Volver a {fecha.ligaNombre || 'la liga'}
+      </button>
+
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16, flexWrap:'wrap', gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:20, fontWeight:600, color: text, marginBottom:4 }}>Fecha {fecha.numero}</h1>
+          <p style={{ fontSize:13, color: muted }}>
+            {fecha.estado === 'programada'
+              ? 'Arrastra un partido a otra mesa u horario para reprogramarlo'
+              : fecha.estado === 'en_juego'
+              ? 'Haz clic en un partido para registrar su resultado'
+              : 'Fecha finalizada'}
+          </p>
         </div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', justifyContent:'flex-end' }}>
+          <span style={{ background: estBg, color: estColor, padding:'4px 12px', borderRadius:20, fontSize:11, fontWeight:600 }}>{estLabel}</span>
+          <button onClick={() => exportarProgramacion('fecha')} style={exportBtn}>📄 PDF por horario</button>
+          <button onClick={() => exportarProgramacion('mesa')} style={exportBtn}>📄 PDF por mesa</button>
+          <button onClick={exportarHojasDePartido} style={exportBtn}>📄 Hojas de partido</button>
+          {fecha.estado === 'programada' && (
+            <button onClick={handleIniciarFecha} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+              Iniciar Fecha
+            </button>
+          )}
+        </div>
+      </div>
 
-        {error && (
-          <div className="rounded-lg bg-[var(--red-light)] text-[var(--red)] text-sm px-4 py-2">{error}</div>
-        )}
+      {error && (
+        <div style={{ background:'#fef2f2', color:'#dc2626', borderRadius:10, padding:'10px 14px', fontSize:13, marginBottom:14 }}>{error}</div>
+      )}
 
-        <Card noPadding className="overflow-auto">
-          <table className="border-collapse w-full text-sm">
+      <div style={{ ...card, overflow:'hidden' }}>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
             <thead>
-              <tr>
-                <th className="sticky left-0 bg-white border-b border-[var(--border)] px-3 py-2 text-left text-xs text-[var(--text-muted)]">Horario</th>
+              <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+                <th style={{ position:'sticky', left:0, background:'#f8fafc', padding:'10px 14px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Horario</th>
                 {mesas.map(mesa => (
-                  <th key={mesa.id} className="border-b border-[var(--border)] px-3 py-2 text-xs text-[var(--text-muted)] min-w-[180px]">
+                  <th key={mesa.id} style={{ padding:'10px 14px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', minWidth:170 }}>
                     Mesa {mesa.numero}
                   </th>
                 ))}
@@ -294,15 +317,18 @@ export default function FechaProgramacionPage() {
             <tbody>
               {BLOQUES.map(bloque => (
                 <tr key={bloque}>
-                  <td className="sticky left-0 bg-white border-b border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--text)] tabular-nums">
+                  <td style={{ position:'sticky', left:0, background:'#ffffff', borderBottom:'1px solid #f1f5f9', padding:'8px 14px', fontSize:12, fontWeight:600, color: text, fontFamily:'monospace' }}>
                     {bloque}
                   </td>
                   {mesas.map(mesa => {
                     const partido = partidoEn(mesa.id, bloque)
+                    const clickeable = fecha.estado === 'en_juego' && partido && !['finalizado', 'walkover'].includes(partido.estado)
+                    const bg = !partido ? 'transparent'
+                      : partido.estado === 'finalizado' ? '#f0fdf4'
+                      : partido.estado === 'walkover' ? '#fffbeb'
+                      : '#f4f7fa'
                     return (
-                      <td
-                        key={mesa.id}
-                        className="border-b border-l border-[var(--border)] px-2 py-1 align-top"
+                      <td key={mesa.id} style={{ borderBottom:'1px solid #f1f5f9', borderLeft:'1px solid #f1f5f9', padding:6, verticalAlign:'top' }}
                         onDragOver={e => e.preventDefault()}
                         onDrop={() => soltarEn(mesa.id, bloque)}
                       >
@@ -312,29 +338,29 @@ export default function FechaProgramacionPage() {
                             onDragStart={() => setDraggingId(partido.id)}
                             onDragEnd={() => setDraggingId(null)}
                             onClick={() => abrirResultado(partido)}
-                            className={`rounded-lg border border-[var(--border)] px-2 py-1.5 ${
-                              partido.estado === 'finalizado' ? 'bg-[var(--green-light)]' : partido.estado === 'walkover' ? 'bg-[var(--yellow-light)]' : 'bg-slate-50'
-                            } ${fecha.estado === 'programada' ? 'cursor-grab active:cursor-grabbing' : fecha.estado === 'en_juego' && !['finalizado', 'walkover'].includes(partido.estado) ? 'cursor-pointer' : ''}`}
+                            style={{
+                              borderRadius:8, border:'1px solid #e2e8f0', background: bg, padding:'8px 10px',
+                              cursor: fecha.estado === 'programada' ? 'grab' : clickeable ? 'pointer' : 'default',
+                            }}
                           >
-                            <div className="text-xs font-medium text-[var(--text)] truncate">
+                            <div style={{ fontSize:12, fontWeight:600, color: text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                               {nombres[partido.jugadorAId] ?? '—'} vs {nombres[partido.jugadorBId] ?? '—'}
                             </div>
+                            <div style={{ fontSize:10, color: hint }}>{partido.divisionNombre}</div>
                             {partido.arbitroId && (
-                              <div className="text-[11px] text-[var(--text-muted)] truncate">
+                              <div style={{ fontSize:10, color: muted, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                                 Árbitro: {nombres[partido.arbitroId] ?? '—'}
                               </div>
                             )}
                             {partido.estado === 'finalizado' && (
-                              <div className="text-[11px] font-semibold text-[var(--green)]">
-                                {partido.setsA}-{partido.setsB}
-                              </div>
+                              <div style={{ fontSize:11, fontWeight:700, color:'#16a34a', marginTop:2 }}>{partido.setsA}-{partido.setsB}</div>
                             )}
                             {partido.estado === 'walkover' && (
-                              <div className="text-[11px] font-semibold text-[var(--yellow)]">Walkover</div>
+                              <div style={{ fontSize:11, fontWeight:700, color:'#d97706', marginTop:2 }}>Walkover</div>
                             )}
                           </div>
                         ) : (
-                          <div className="h-[42px] rounded-lg border border-dashed border-[var(--border)]" />
+                          <div style={{ height:46, borderRadius:8, border:'1px dashed #e2e8f0' }} />
                         )}
                       </td>
                     )
@@ -343,45 +369,57 @@ export default function FechaProgramacionPage() {
               ))}
             </tbody>
           </table>
-        </Card>
+        </div>
       </div>
 
-      <Modal open={!!partidoResultado} onClose={() => setPartidoResultado(null)} title="Registrar resultado">
-        {partidoResultado && (
-          <div className="space-y-4">
-            <p className="text-sm text-[var(--text)]">
+      {/* Modal resultado */}
+      {partidoResultado && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:4 }}>Registrar resultado</div>
+            <div style={{ fontSize:13, color: muted, marginBottom:18 }}>
               {nombres[partidoResultado.jugadorAId] ?? '—'} vs {nombres[partidoResultado.jugadorBId] ?? '—'}
-            </p>
-            <div className="flex items-center gap-3">
-              <select className="bg-[var(--bg-dark)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm" value={`${setsA}-${setsB}`} onChange={e => { const [a, b] = e.target.value.split('-'); setSetsA(a); setSetsB(b) }}>
-                {RESULTADOS_BO5.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <span className="text-xs text-[var(--text-muted)]">Sets {nombres[partidoResultado.jugadorAId] ?? 'A'} — Sets {nombres[partidoResultado.jugadorBId] ?? 'B'}</span>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setPartidoResultado(null)}>Cancelar</Button>
-              <Button onClick={handleGuardarResultado} loading={guardandoResultado}>Confirmar</Button>
             </div>
 
-            <div className="border-t border-[var(--border)] pt-4">
-              <p className="text-xs font-medium text-[var(--text-muted)] mb-2">¿No se pudo jugar?</p>
-              <div className="flex gap-2 flex-wrap">
-                <Button size="sm" variant="secondary" disabled={guardandoAccion} onClick={() => handleWalkover(partidoResultado.jugadorAId)}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+              <select
+                style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                value={`${setsA}-${setsB}`}
+                onChange={e => { const [a, b] = e.target.value.split('-'); setSetsA(a); setSetsB(b) }}
+              >
+                {RESULTADOS_BO5.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <span style={{ fontSize:11, color: muted }}>
+                Sets {nombres[partidoResultado.jugadorAId] ?? 'A'} — Sets {nombres[partidoResultado.jugadorBId] ?? 'B'}
+              </span>
+            </div>
+
+            <div style={{ display:'flex', gap:10, marginBottom:22 }}>
+              <button onClick={() => setPartidoResultado(null)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={handleGuardarResultado} disabled={guardandoResultado} style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer', opacity: guardandoResultado ? 0.6 : 1 }}>
+                {guardandoResultado ? 'Guardando...' : 'Confirmar'}
+              </button>
+            </div>
+
+            <div style={{ borderTop:'1px solid #e2e8f0', paddingTop:16 }}>
+              <div style={{ fontSize:12, fontWeight:600, color: muted, marginBottom:10 }}>¿No se pudo jugar?</div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button disabled={guardandoAccion} onClick={() => handleWalkover(partidoResultado.jugadorAId)} style={{ background:'#fffbeb', color:'#d97706', border:'1px solid #fde68a', borderRadius:8, padding:'7px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
                   Walkover: gana {nombres[partidoResultado.jugadorAId] ?? 'Jugador A'}
-                </Button>
-                <Button size="sm" variant="secondary" disabled={guardandoAccion} onClick={() => handleWalkover(partidoResultado.jugadorBId)}>
+                </button>
+                <button disabled={guardandoAccion} onClick={() => handleWalkover(partidoResultado.jugadorBId)} style={{ background:'#fffbeb', color:'#d97706', border:'1px solid #fde68a', borderRadius:8, padding:'7px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
                   Walkover: gana {nombres[partidoResultado.jugadorBId] ?? 'Jugador B'}
-                </Button>
-                <Button size="sm" variant="danger" disabled={guardandoAccion} onClick={handleReprogramar}>
+                </button>
+                <button disabled={guardandoAccion} onClick={handleReprogramar} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
                   Reprogramar a Fecha 5
-                </Button>
+                </button>
               </div>
             </div>
           </div>
-        )}
-      </Modal>
+        </div>
+      )}
     </AppLayout>
   )
 }
-
-const RESULTADOS_BO5 = ['3-0', '3-1', '3-2', '0-3', '1-3', '2-3']
