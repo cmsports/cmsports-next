@@ -65,7 +65,8 @@ export async function aprobarSolicitud(input: {
     return { error: 'Error al actualizar solicitud' }
   }
 
-  const password = generarPassword()
+  const passwordPropia = !!sol.password
+  const password = sol.password || generarPassword()
 
   const admin = createAdminClient()
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
@@ -91,7 +92,9 @@ export async function aprobarSolicitud(input: {
     return { success: true, inviteError: 'Cuenta creada pero falló crear el perfil: ' + perfilError.message }
   }
 
-  return { success: true, password }
+  await supabase.from('solicitudes_jugador').update({ password: null }).eq('id', input.solicitudId)
+
+  return { success: true, password: passwordPropia ? undefined : password }
 }
 
 function generarPassword() {
