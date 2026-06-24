@@ -1160,6 +1160,7 @@ export interface Database {
           nombre: string
           orden: number
           fixture_generado: boolean
+          capacidad_max: number | null
           creado_en: string
         }
         Insert: {
@@ -1168,6 +1169,7 @@ export interface Database {
           nombre: string
           orden?: number
           fixture_generado?: boolean
+          capacidad_max?: number | null
           creado_en?: string
         }
         Update: {
@@ -1176,6 +1178,7 @@ export interface Database {
           nombre?: string
           orden?: number
           fixture_generado?: boolean
+          capacidad_max?: number | null
           creado_en?: string
         }
         Relationships: [

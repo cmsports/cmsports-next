@@ -34,6 +34,8 @@ export default function LigaPage() {
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [nombre, setNombre] = useState('')
+  const [numDivisiones, setNumDivisiones] = useState('')
+  const [jugadoresPorDivision, setJugadoresPorDivision] = useState('')
   const [creando, setCreando] = useState(false)
   const [error, setError] = useState('')
 
@@ -54,11 +56,17 @@ export default function LigaPage() {
     if (!nombre.trim()) return
     setCreando(true)
     setError('')
-    const res = await crearLiga({ nombre })
+    const res = await crearLiga({
+      nombre,
+      numDivisiones: numDivisiones ? parseInt(numDivisiones) : undefined,
+      jugadoresPorDivision: jugadoresPorDivision ? parseInt(jugadoresPorDivision) : undefined,
+    })
     setCreando(false)
     if (res.error) { setError(res.error); return }
     setModalOpen(false)
     setNombre('')
+    setNumDivisiones('')
+    setJugadoresPorDivision('')
     if (res.ligaId) router.push(`/liga/${res.ligaId}`)
   }
 
@@ -114,11 +122,24 @@ export default function LigaPage() {
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:6 }}>Nueva liga</div>
             <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Se crean automáticamente las 5 fechas de temporada (4 regulares + 1 de ajuste)</div>
-            <div style={{ marginBottom:20 }}>
+            <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nombre de la liga</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 placeholder="Ej: Liga Invierno 2026" value={nombre} onChange={e => setNombre(e.target.value)} />
             </div>
+            <div style={{ display:'flex', gap:10, marginBottom:6 }}>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Cantidad de divisiones</label>
+                <input type="number" min={1} style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  placeholder="Ej: 5" value={numDivisiones} onChange={e => setNumDivisiones(e.target.value)} />
+              </div>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Jugadores por división</label>
+                <input type="number" min={2} style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  placeholder="Ej: 12" value={jugadoresPorDivision} onChange={e => setJugadoresPorDivision(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ fontSize:11, color: hint, marginBottom:20 }}>Opcional — si las completas, se crean las divisiones automáticamente (puedes seguir agregando más después)</div>
             {error && <p style={{ fontSize:12, color:'#dc2626', marginBottom:14 }}>{error}</p>}
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
