@@ -103,7 +103,8 @@ export default function SolicitudesPage() {
       setAprobarMsg('Jugador creado, pero no se pudo crear su cuenta: ' + res.inviteError)
       return
     }
-    if (res.password) setPasswordGenerada(res.password)
+    if (res.password) { setPasswordGenerada(res.password); return }
+    setModalAprobar(null)
   }
 
   async function rechazar(id: string) {

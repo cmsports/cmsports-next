@@ -927,6 +927,7 @@ export interface Database {
           telefono: string | null
           estado: string | null
           creado_en: string | null
+          password: string | null
         }
         Insert: {
           id?: string
@@ -937,6 +938,7 @@ export interface Database {
           telefono?: string | null
           estado?: string | null
           creado_en?: string | null
+          password?: string | null
         }
         Update: {
           id?: string
@@ -947,6 +949,7 @@ export interface Database {
           telefono?: string | null
           estado?: string | null
           creado_en?: string | null
+          password?: string | null
         }
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },

@@ -20,7 +20,7 @@ function RegistroForm() {
   const [clubNombre, setClubNombre] = useState('')
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null)
   const [valido, setValido] = useState<boolean | null>(null)
-  const [form, setForm] = useState({ nombre:'', rut:'', email:'', telefono:'' })
+  const [form, setForm] = useState({ nombre:'', rut:'', email:'', telefono:'', password:'', confirmarPassword:'' })
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -29,6 +29,7 @@ function RegistroForm() {
   const rutValido = /^\d{7,8}-[\dkK]$/.test(form.rut)
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)
   const telValido = form.telefono === '' || /^\+56\d{9}$/.test(form.telefono)
+  const passwordValido = form.password.length >= 6
 
   useEffect(() => {
     async function verificar() {
@@ -51,16 +52,18 @@ function RegistroForm() {
   }, [clubIdParam, codigo])
 
   async function enviar() {
-    setTouched({ nombre: true, rut: true, email: true, telefono: true })
-    if (!form.nombre || !form.rut || !form.email) { setError('Nombre, RUT y email son obligatorios'); return }
+    setTouched({ nombre: true, rut: true, email: true, telefono: true, password: true, confirmarPassword: true })
+    if (!form.nombre || !form.rut || !form.email || !form.password) { setError('Nombre, RUT, email y contraseña son obligatorios'); return }
     if (!rutValido) { setError('El RUT debe tener formato 12345678-9 (sin puntos, con guión)'); return }
     if (!emailValido) { setError('El email no es válido'); return }
     if (form.telefono && !telValido) { setError('El teléfono debe tener formato +56912345678'); return }
+    if (!passwordValido) { setError('La contraseña debe tener al menos 6 caracteres'); return }
+    if (form.password !== form.confirmarPassword) { setError('Las contraseñas no coinciden'); return }
     setEnviando(true)
     setError('')
     const { error: err } = await supabase.from('solicitudes_jugador').insert({
       club_id: resolvedClubId, nombre: form.nombre, rut: form.rut,
-      email: form.email, telefono: form.telefono || null
+      email: form.email, telefono: form.telefono || null, password: form.password,
     })
     if (err) { setError('Error al enviar. Intenta de nuevo.'); setEnviando(false); return }
     setEnviado(true)
@@ -143,7 +146,7 @@ function RegistroForm() {
               onBlur={() => setTouched(t => ({ ...t, email: true }))}
             />
             <div style={{ fontSize:11, color: hint, marginTop:4 }}>
-              Te mandaremos aquí el link para crear tu contraseña
+              La usarás junto a tu contraseña para entrar a la app
             </div>
           </div>
 
@@ -159,6 +162,31 @@ function RegistroForm() {
             <div style={{ fontSize:11, color: touched.telefono && !telValido ? '#dc2626' : hint, marginTop:4 }}>
               Con código país. Ej: +56975235780
             </div>
+          </div>
+
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Contraseña *</label>
+            <input
+              style={{ width:'100%', background:'#f4f7fa', border: touched.password && !passwordValido ? '1px solid #dc2626' : '1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+              type="password" placeholder="Mínimo 6 caracteres"
+              value={form.password}
+              onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
+              onBlur={() => setTouched(t => ({ ...t, password: true }))}
+            />
+            <div style={{ fontSize:11, color: hint, marginTop:4 }}>
+              La vas a usar para entrar una vez que el club apruebe tu solicitud
+            </div>
+          </div>
+
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Confirmar contraseña *</label>
+            <input
+              style={{ width:'100%', background:'#f4f7fa', border: touched.confirmarPassword && form.password !== form.confirmarPassword ? '1px solid #dc2626' : '1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+              type="password" placeholder="Repite la contraseña"
+              value={form.confirmarPassword}
+              onChange={e => setForm(prev => ({ ...prev, confirmarPassword: e.target.value }))}
+              onBlur={() => setTouched(t => ({ ...t, confirmarPassword: true }))}
+            />
           </div>
 
           <button
