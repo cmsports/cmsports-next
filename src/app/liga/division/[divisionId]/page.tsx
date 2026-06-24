@@ -5,10 +5,14 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
-import { Card, CardHeader, Table, Button } from '@/components/ui'
 import { calcularRankingDivision, type FilaRanking, type PartidoFinalizado } from '@/lib/domain/liga'
 
 const supabase = createClient()
+
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const text = '#0f172a'
+const muted = '#64748b'
+const hint = '#94a3b8'
 
 export default function RankingDivisionPage() {
   const params = useParams<{ divisionId: string }>()
@@ -93,39 +97,66 @@ export default function RankingDivisionPage() {
     doc.save(`ranking_${division?.nombre?.replace(/\s+/g, '_') ?? 'division'}.pdf`)
   }
 
-  if (loading) return <AppLayout perfil={perfil}><div className="p-6 text-sm text-[var(--text-muted)]">Cargando…</div></AppLayout>
-  if (!division) return <AppLayout perfil={perfil}><div className="p-6 text-sm text-[var(--text-muted)]">División no encontrada</div></AppLayout>
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+      <div style={{ color: hint }}>Cargando...</div>
+    </div>
+  )
+  if (!division) return <AppLayout perfil={perfil}><div style={{ padding:24, color: muted, fontSize:13 }}>División no encontrada</div></AppLayout>
 
   return (
     <AppLayout perfil={perfil}>
-      <div className="p-6 space-y-4">
-        <div>
-          <button onClick={() => router.push(`/liga/${division.ligaId}`)} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] mb-1 cursor-pointer">← Volver a la liga</button>
-          <h1 className="text-xl font-semibold text-[var(--text)]">Ranking — {division.nombre}</h1>
-        </div>
+      <button onClick={() => router.push(`/liga/${division.ligaId}`)} style={{ background:'transparent', border:'none', color: muted, fontSize:12, cursor:'pointer', padding:0, marginBottom:8 }}>
+        ← Volver a la liga
+      </button>
 
-        <Card noPadding>
-          <div className="p-5 pb-0 flex items-start justify-between">
-            <CardHeader title="Tabla de posiciones" subtitle="PJ: jugados · PG: ganados · PP: perdidos · PTS: puntos · SF/SC: sets a favor/en contra · DS: diferencia de sets" />
-            <Button size="sm" variant="secondary" onClick={exportarPDF}>Exportar PDF</Button>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
+        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>🏆 Ranking — {division.nombre}</h1>
+        <button onClick={exportarPDF} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
+          📄 Exportar PDF
+        </button>
+      </div>
+
+      <div style={{ fontSize:12, color: muted, marginBottom:14 }}>
+        PJ: jugados · PG: ganados · PP: perdidos · PTS: puntos · SF/SC: sets a favor/en contra · DS: diferencia de sets
+      </div>
+
+      <div style={{ ...card, overflow:'hidden' }}>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
+            <thead>
+              <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+                {['#', 'Jugador', 'PJ', 'PG', 'PP', 'PTS', 'SF', 'SC', 'DS'].map(h => (
+                  <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ranking.map((row, i) => (
+                <tr key={row.jugadorId} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                  <td style={{ padding:'12px 16px', fontSize:14, fontWeight:700, color: i === 0 ? '#d97706' : i === 1 ? muted : i === 2 ? '#f43f5e' : hint }}>
+                    {i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}
+                  </td>
+                  <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>{nombres[row.jugadorId] ?? '—'}</td>
+                  <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{row.pj}</td>
+                  <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{row.pg}</td>
+                  <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{row.pp}</td>
+                  <td style={{ padding:'12px 16px', fontSize:14, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{row.pts}</td>
+                  <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{row.sf}</td>
+                  <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{row.sc}</td>
+                  <td style={{ padding:'12px 16px', fontSize:13, fontWeight:600, color: row.ds > 0 ? '#16a34a' : row.ds < 0 ? '#dc2626' : muted }}>
+                    {row.ds > 0 ? `+${row.ds}` : row.ds}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {ranking.length === 0 && (
+          <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>
+            Aún no hay resultados registrados en esta división
           </div>
-          <Table
-            columns={[
-              { key: 'pos', header: '#', render: (_row: FilaRanking) => ranking.indexOf(_row) + 1 },
-              { key: 'jugador', header: 'Jugador', render: (row: FilaRanking) => nombres[row.jugadorId] ?? '—' },
-              { key: 'pj', header: 'PJ' },
-              { key: 'pg', header: 'PG' },
-              { key: 'pp', header: 'PP' },
-              { key: 'pts', header: 'PTS', className: 'font-semibold' },
-              { key: 'sf', header: 'SF' },
-              { key: 'sc', header: 'SC' },
-              { key: 'ds', header: 'DS', render: (row: FilaRanking) => (row.ds > 0 ? `+${row.ds}` : row.ds) },
-            ]}
-            data={ranking}
-            rowKey={row => row.jugadorId}
-            emptyMessage="Aún no hay resultados registrados en esta división"
-          />
-        </Card>
+        )}
       </div>
     </AppLayout>
   )
