@@ -26,9 +26,8 @@ export async function updateSession(request: NextRequest) {
     },
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data } = await supabase.auth.getClaims()
+  const user = data?.claims ? { id: data.claims.sub } : null
 
   return { user, supabaseResponse, supabase }
 }
