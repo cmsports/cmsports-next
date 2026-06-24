@@ -1,11 +1,12 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarMovimiento } from '@/app/actions/finanzas'
+import { MensualidadesPanel } from '@/components/MensualidadesPanel'
 
 const supabase = createClient()
 
@@ -28,6 +29,14 @@ const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','mat
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 export default function FinanzasPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}><div style={{ color:'#94a3b8' }}>Cargando...</div></div>}>
+      <FinanzasContent />
+    </Suspense>
+  )
+}
+
+function FinanzasContent() {
   const { perfil, loading: authLoading } = usePerfil()
   const [movimientos, setMovimientos] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
@@ -37,7 +46,10 @@ export default function FinanzasPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
-  const [tabActivo, setTabActivo] = useState<'movimientos'|'reportes'>('movimientos')
+  const searchParams = useSearchParams()
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'reportes'>(
+    searchParams.get('tab') === 'mensualidades' ? 'mensualidades' : 'movimientos',
+  )
   const [jugadoresFinanzas, setJugadoresFinanzas] = useState<any[]>([])
   const [jugadorSeleccionado, setJugadorSeleccionado] = useState<any>(null)
   const [historialJugador, setHistorialJugador] = useState<any[]>([])
@@ -181,6 +193,7 @@ export default function FinanzasPage() {
       <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:20 }}>
         {[
           { key:'movimientos', label:'📋 Movimientos' },
+          { key:'mensualidades', label:'💳 Mensualidades' },
           { key:'reportes', label:'📈 Reportes' },
         ].map(t => (
           <div key={t.key} onClick={() => setTabActivo(t.key as any)}
@@ -360,6 +373,9 @@ export default function FinanzasPage() {
         )}
       </div>
       </>)}
+
+      {/* TAB MENSUALIDADES */}
+      {tabActivo === 'mensualidades' && <MensualidadesPanel />}
 
       {/* TAB REPORTES */}
       {tabActivo === 'reportes' && <ReportesTab clubId={clubId} />}

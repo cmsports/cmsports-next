@@ -1127,6 +1127,209 @@ export interface Database {
           { foreignKeyName: 'fotos_galeria_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
+      ligas: {
+        Row: {
+          id: string
+          club_id: string | null
+          nombre: string
+          estado: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          club_id?: string | null
+          nombre: string
+          estado?: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string | null
+          nombre?: string
+          estado?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'ligas_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+        ]
+      }
+      liga_divisiones: {
+        Row: {
+          id: string
+          liga_id: string
+          nombre: string
+          orden: number
+          fixture_generado: boolean
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          nombre: string
+          orden?: number
+          fixture_generado?: boolean
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          nombre?: string
+          orden?: number
+          fixture_generado?: boolean
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'liga_divisiones_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'ligas'; referencedColumns: ['id'] },
+        ]
+      }
+      liga_division_jugadores: {
+        Row: {
+          id: string
+          division_id: string
+          jugador_id: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          division_id: string
+          jugador_id: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          division_id?: string
+          jugador_id?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'liga_division_jugadores_division_id_fkey'; columns: ['division_id']; referencedRelation: 'liga_divisiones'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_division_jugadores_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
+      }
+      liga_fechas: {
+        Row: {
+          id: string
+          liga_id: string
+          numero: number
+          es_ajuste: boolean
+          fecha: string | null
+          estado: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          numero: number
+          es_ajuste?: boolean
+          fecha?: string | null
+          estado?: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          numero?: number
+          es_ajuste?: boolean
+          fecha?: string | null
+          estado?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'liga_fechas_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'ligas'; referencedColumns: ['id'] },
+        ]
+      }
+      liga_mesas: {
+        Row: {
+          id: string
+          liga_id: string
+          numero: number
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          numero: number
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          numero?: number
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'liga_mesas_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'ligas'; referencedColumns: ['id'] },
+        ]
+      }
+      liga_partidos: {
+        Row: {
+          id: string
+          liga_id: string
+          division_id: string
+          jugador_a_id: string
+          jugador_b_id: string
+          arbitro_id: string | null
+          fecha_id: string | null
+          mesa_id: string | null
+          bloque_horario: string | null
+          estado: string
+          sets_a: number | null
+          sets_b: number | null
+          ganador_id: string | null
+          es_walkover: boolean
+          observaciones: string | null
+          orden_fixture: number
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          division_id: string
+          jugador_a_id: string
+          jugador_b_id: string
+          arbitro_id?: string | null
+          fecha_id?: string | null
+          mesa_id?: string | null
+          bloque_horario?: string | null
+          estado?: string
+          sets_a?: number | null
+          sets_b?: number | null
+          ganador_id?: string | null
+          es_walkover?: boolean
+          observaciones?: string | null
+          orden_fixture?: number
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          division_id?: string
+          jugador_a_id?: string
+          jugador_b_id?: string
+          arbitro_id?: string | null
+          fecha_id?: string | null
+          mesa_id?: string | null
+          bloque_horario?: string | null
+          estado?: string
+          sets_a?: number | null
+          sets_b?: number | null
+          ganador_id?: string | null
+          es_walkover?: boolean
+          observaciones?: string | null
+          orden_fixture?: number
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'liga_partidos_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'ligas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_partidos_division_id_fkey'; columns: ['division_id']; referencedRelation: 'liga_divisiones'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_partidos_jugador_a_id_fkey'; columns: ['jugador_a_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_partidos_jugador_b_id_fkey'; columns: ['jugador_b_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_partidos_arbitro_id_fkey'; columns: ['arbitro_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_partidos_fecha_id_fkey'; columns: ['fecha_id']; referencedRelation: 'liga_fechas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_partidos_mesa_id_fkey'; columns: ['mesa_id']; referencedRelation: 'liga_mesas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'liga_partidos_ganador_id_fkey'; columns: ['ganador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
+      }
     }
     Views: {}
     Functions: {}

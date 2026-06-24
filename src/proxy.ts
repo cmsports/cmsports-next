@@ -7,7 +7,7 @@ const publicRoutes = ['/login', '/registro']
 const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
 const superadminRoutes = ['/superadmin']
-const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/reportes', '/solicitudes']
+const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes']
 const staffRoutes = ['/redes-sociales']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']

@@ -7,7 +7,7 @@ import CampanaNotificaciones from '@/components/campana-notificaciones'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, Camera,
+  Receipt, LogOut, Menu, X, Camera, Swords,
 } from 'lucide-react'
 
 const navAdmin = [
@@ -15,11 +15,11 @@ const navAdmin = [
   { label: 'Dashboard',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores',     icon: Users,            href: '/jugadores' },
   { label: 'Torneos',       icon: Trophy,           href: '/torneos' },
+  { label: 'Liga',          icon: Swords,           href: '/liga' },
   { label: 'Asistencia',    icon: ClipboardCheck,   href: '/asistencia' },
   { section: 'Gestión' },
   { label: 'Clases',        icon: BookOpen,         href: '/clases' },
   { label: 'Calendario',    icon: Calendar,         href: '/calendario' },
-  { label: 'Mensualidades', icon: CreditCard,       href: '/mensualidades' },
   { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas' },
   { section: 'Marketing' },
   { label: 'Redes Sociales', icon: Camera,          href: '/redes-sociales' },
