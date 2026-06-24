@@ -1,8 +1,10 @@
 ﻿'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { copiarTexto } from '@/lib/clipboard'
+import { obtenerLinkInvitacion } from '../actions/dashboard'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
@@ -238,7 +240,7 @@ export default function DashboardPage() {
               </span>
             </button>
           )}
-          <a href="/solicitudes" style={{
+          <Link href="/solicitudes" style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: C.orange, color: 'white', borderRadius: 8,
             padding: '8px 14px', fontSize: 13, fontWeight: 500,
@@ -251,7 +253,7 @@ export default function DashboardPage() {
                 {solicitudes.length}
               </span>
             )}
-          </a>
+          </Link>
           <CampanaNotificaciones perfil={perfil} />
           <button title="Configuración" onClick={() => router.push('/configuracion')} style={{
             background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
@@ -423,14 +425,14 @@ export default function DashboardPage() {
                   <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{sol.nombre}</div>
                   <div style={{ fontSize: 11, color: C.hint }}>{new Date(sol.creado_en).toLocaleDateString('es-CL')}</div>
                 </div>
-                <a href="/solicitudes" style={{ background: C.skyL, color: C.skyD, borderRadius: 6, padding: '4px 10px', fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>Ver →</a>
+                <Link href="/solicitudes" style={{ background: C.skyL, color: C.skyD, borderRadius: 6, padding: '4px 10px', fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>Ver →</Link>
               </div>
             ))
           }
           {solicitudes.length > 0 && (
-            <a href="/solicitudes" style={{ display: 'block', marginTop: 12, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px', color: C.muted, fontSize: 12, textAlign: 'center', textDecoration: 'none' }}>
+            <Link href="/solicitudes" style={{ display: 'block', marginTop: 12, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px', color: C.muted, fontSize: 12, textAlign: 'center', textDecoration: 'none' }}>
               Ver todas →
-            </a>
+            </Link>
           )}
         </div>
       </div>
@@ -594,15 +596,9 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
   useEffect(() => {
     if (!clubId) return
     async function cargar() {
-      let { data: inv } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
-      if (!inv?.length) {
-        await supabase.from('invitaciones').insert({ club_id: clubId })
-        const { data: newInv } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
-        inv = newInv
-      }
-      const codigo = inv?.[0]?.codigo || ''
+      const { codigo } = await obtenerLinkInvitacion()
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      setLink(`${origin}/registro?club=${clubId}&code=${codigo}`)
+      setLink(`${origin}/registro?club=${clubId}&code=${codigo || ''}`)
     }
     cargar()
   }, [clubId])

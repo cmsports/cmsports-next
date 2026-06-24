@@ -29,7 +29,3 @@ export function calculateEloChange(
     loserDelta,
   }
 }
-
-export function sortByEloDescending<T extends { elo?: number | null }>(players: T[]): T[] {
-  return [...players].sort((a, b) => (b.elo ?? CONFIG.ELO_INICIAL) - (a.elo ?? CONFIG.ELO_INICIAL))
-}

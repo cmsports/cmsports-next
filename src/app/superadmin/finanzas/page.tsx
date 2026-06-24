@@ -5,16 +5,13 @@ import { createClient } from '@/lib/supabase/client'
 import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Pencil, Receipt } from 'lucide-react'
 import { actualizarPlanClub, registrarPagoClub, actualizarEstadoPagoClub } from '@/app/actions/superadmin'
 import { useClubesSuperadmin } from '../layout'
+import { formatCLP } from '@/lib/domain/finanzas'
 
 const supabase = createClient()
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12 } as const
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-
-function formatCLP(n: number) {
-  return n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 })
-}
 
 const ESTADO_COLOR: Record<string, { bg: string; fg: string }> = {
   pagado: { bg: '#dcfce7', fg: '#16a34a' },

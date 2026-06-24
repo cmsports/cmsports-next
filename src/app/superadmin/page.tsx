@@ -7,14 +7,11 @@ import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck } from 'lucide-react
 import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
 import { crearClub } from '@/app/actions/superadmin'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { formatCLP } from '@/lib/domain/finanzas'
 
 const supabase = createClient()
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12 } as const
-
-function formatCLP(n: number) {
-  return n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 })
-}
 
 export default function SuperadminPage() {
   const perfil = usePerfilSuperadmin()

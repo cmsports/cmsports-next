@@ -93,5 +93,5 @@ export function montoPorPlan(sesionesLimite: number): number {
 }
 
 export function formatCLP(monto: number | null | undefined): string {
-  return '$' + (monto ?? 0).toLocaleString('es-CL')
+  return (monto ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 })
 }
