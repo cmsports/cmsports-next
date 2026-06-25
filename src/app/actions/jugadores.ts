@@ -44,7 +44,7 @@ export async function crearJugador(params: {
     return { success: true, cuentaError: createError?.message || 'No se pudo crear la cuenta de acceso' }
   }
 
-  const { error: perfilError } = await admin.from('perfiles').insert({
+  const { error: perfilError } = await admin.from('perfiles').upsert({
     id: creado.user.id, club_id: clubId, nombre: nombre.trim(), email: email.trim(),
     rol: 'jugador', jugador_id: nuevoJugador.id,
   })
@@ -78,18 +78,31 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
     .select('id,password').eq('club_id', clubId).eq('email', jugador.email)
     .not('password', 'is', null).order('creado_en', { ascending: false }).limit(1).maybeSingle()
 
-  const passwordPropia = !!solicitud?.password
+  let passwordPropia = !!solicitud?.password
   const password = solicitud?.password || generarPassword()
 
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
     email: jugador.email, password, email_confirm: true,
   })
-  if (createError || !creado?.user) {
-    return { error: 'No se pudo crear la cuenta: ' + (createError?.message || 'error desconocido') }
+
+  let userId = creado?.user?.id
+  if (createError || !userId) {
+    if (!createError?.message?.toLowerCase().includes('already')) {
+      return { error: 'No se pudo crear la cuenta: ' + (createError?.message || 'error desconocido') }
+    }
+    let page = 1
+    while (!userId) {
+      const { data: lista } = await admin.auth.admin.listUsers({ page, perPage: 200 })
+      if (!lista?.users.length) break
+      userId = lista.users.find(u => u.email === jugador.email)?.id
+      page++
+    }
+    if (!userId) return { error: 'El email ya está registrado pero no se pudo encontrar la cuenta' }
+    passwordPropia = true
   }
 
-  const { error: perfilError } = await admin.from('perfiles').insert({
-    id: creado.user.id, club_id: clubId, nombre: jugador.nombre, email: jugador.email,
+  const { error: perfilError } = await admin.from('perfiles').upsert({
+    id: userId, club_id: clubId, nombre: jugador.nombre, email: jugador.email,
     rol: 'jugador', jugador_id: params.jugadorId,
   })
   if (perfilError) return { error: 'Cuenta creada pero falló crear el perfil: ' + perfilError.message }
