@@ -193,7 +193,7 @@ export default function JugadoresPage() {
           <div style={{ ...card, overflow:'hidden' }}>
             {jugadores.filter(j => !busquedaRanking || j.nombre.toLowerCase().includes(busquedaRanking.toLowerCase()))
               .sort((a,b) => b.elo - a.elo)
-              .map((j, i) => {
+              .map((j) => {
                 const posicion = jugadores.sort((a,b) => b.elo-a.elo).findIndex(x => x.id === j.id) + 1
                 const esAdmin = perfil?.rol === 'admin'
                 const esProfesor = perfil?.rol === 'profesor'

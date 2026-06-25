@@ -13,11 +13,6 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
-const diasLabel: Record<string, string> = {
-  lunes:'Lunes', martes:'Martes', miercoles:'Miércoles',
-  jueves:'Jueves', viernes:'Viernes', sabado:'Sábado', domingo:'Domingo'
-}
-
 function getInicioSemana(offset: number): Date {
   const hoy = new Date()
   const dia = hoy.getDay()
@@ -166,7 +161,7 @@ export default function ClasesPage() {
         </div>
       ) : Object.entries(porFecha).map(([fecha, clasesF]) => {
         let fechaLabel = fecha
-        try { if (fecha.includes('-')) fechaLabel = new Date(fecha+'T12:00:00').toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long' }) } catch(e) {}
+        try { if (fecha.includes('-')) fechaLabel = new Date(fecha+'T12:00:00').toLocaleDateString('es-CL', { weekday:'long', day:'numeric', month:'long' }) } catch {}
         const todasPublicadas = clasesF.every(c => c.publicada)
         return (
           <div key={fecha} style={{ ...card, marginBottom:12, overflow:'hidden' }}>

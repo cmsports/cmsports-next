@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
@@ -33,7 +33,6 @@ export default function LigaDetallePage() {
   const params = useParams<{ id: string }>()
   const ligaId = params.id
   const { perfil, loading: authLoading } = usePerfil()
-  const router = useRouter()
 
   const [liga, setLiga] = useState<{ nombre: string } | null>(null)
   const [divisiones, setDivisiones] = useState<Division[]>([])

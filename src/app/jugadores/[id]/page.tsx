@@ -9,7 +9,7 @@ import {
   CategoryScale, LinearScale, PointElement, LineElement,
   RadialLinearScale, Filler, Tooltip, Legend, BarElement
 } from 'chart.js'
-import { Line, Radar, Bar } from 'react-chartjs-2'
+import { Line } from 'react-chartjs-2'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearAccesoJugador } from '@/app/actions/jugadores'
 
@@ -134,7 +134,6 @@ export default function JugadorDetallePage() {
   const mensColor = mensEstado === 'pagado' ? '#86efac' : mensEstado === 'atrasado' ? '#fca5a5' : mensEstado === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
 
   const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
-  const evalAnterior = evaluaciones.find(ev => ev.periodo_trimestre !== trimestre)
 
   const eloLabels = [
     ...historialElo.map(h => {
@@ -155,9 +154,6 @@ export default function JugadorDetallePage() {
     if (m) asistPorMes[m] = (asistPorMes[m] || 0) + 1
   })
   const asistData = eloLabels.map(l => asistPorMes[l?.slice(0,7)] || 0)
-
-  const campos = ['fuerza','resistencia','velocidad','tecnica','tactica']
-  const camposLabel = ['Fuerza','Resistencia','Velocidad','Técnica','Táctica']
 
   async function guardarFeedback() {
     if (!feedbackForm.feedback) return

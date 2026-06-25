@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -11,7 +11,6 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
-  const router = useRouter()
 
   async function handleLogin() {
     try {
@@ -65,7 +64,7 @@ export default function LoginPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 24px',
           }}>
-            <img src="/logo.png" alt="CmSports" style={{ width: 44, height: 44, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+            <Image src="/logo.png" alt="CmSports" width={44} height={44} style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
           </div>
           <h1 style={{ fontSize: 32, fontWeight: 700, color: '#ffffff', marginBottom: 8 }}>CmSports</h1>
           <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
