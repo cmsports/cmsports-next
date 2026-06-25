@@ -2,6 +2,7 @@
 
 import { useEffect, useState, createContext, useContext } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
 import { Building2, Wallet, LogOut } from 'lucide-react'
 
@@ -102,7 +103,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
                 width: 36, height: 36, borderRadius: 8, background: '#3730a3',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}>
-                <img src="/logo.png" alt="CmSports" style={{ width: 22, height: 22, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+                <Image src="/logo.png" alt="CmSports" width={22} height={22} style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
               </div>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.2 }}>CmSports</div>

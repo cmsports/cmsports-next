@@ -22,7 +22,7 @@ async function requireAdmin() {
 }
 
 export async function corregirResultadoGrupos(params: { partidoId: string; nuevoGanadorId: string }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
   const { partidoId, nuevoGanadorId } = params
@@ -265,7 +265,7 @@ export async function avanzarSiguienteFase(params: {
 }
 
 export async function corregirResultadoPlayoff(params: { partidoId: string; nuevoGanadorId: string }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
   const { partidoId, nuevoGanadorId } = params

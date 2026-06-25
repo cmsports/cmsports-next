@@ -37,7 +37,7 @@ export default function AsistenciaPublicaPage() {
         setJugadorNombre(data.nombre)
         setHoraRegistro(data.hora)
         setEstado('bloqueado')
-      } catch (e) {
+      } catch {
         setEstado('bloqueado')
       }
     }
@@ -67,7 +67,7 @@ export default function AsistenciaPublicaPage() {
         const data = JSON.parse(registroHoy)
         setJugadorNombre(data.nombre)
         setHoraRegistro(data.hora)
-      } catch (e) {}
+      } catch {}
       setEstado('bloqueado')
       return
     }
