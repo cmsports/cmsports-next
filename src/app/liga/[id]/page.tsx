@@ -51,8 +51,10 @@ export default function LigaDetallePage() {
   const [divisionActiva, setDivisionActiva] = useState<string | null>(null)
   const [subTab, setSubTab] = useState<SubTab>('jugadores')
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null)
+  const [formExternoAbierto, setFormExternoAbierto] = useState(false)
   const [nombreExterno, setNombreExterno] = useState('')
   const [rutExterno, setRutExterno] = useState('')
+  const [telefonoExterno, setTelefonoExterno] = useState('')
   const [creandoExterno, setCreandoExterno] = useState(false)
 
   const cargar = useCallback(async () => {
@@ -138,11 +140,13 @@ export default function LigaDetallePage() {
   async function handleCrearExterno(division: Division) {
     if (!nombreExterno.trim()) return
     setCreandoExterno(true)
-    const res = await crearJugadorExternoLiga({ nombre: nombreExterno, rut: rutExterno || undefined })
+    const res = await crearJugadorExternoLiga({ nombre: nombreExterno, rut: rutExterno || undefined, telefono: telefonoExterno || undefined })
     setCreandoExterno(false)
     if (res.error || !res.jugadorId) { setMensaje(res.error || 'No se pudo crear el jugador externo'); return }
     setNombreExterno('')
     setRutExterno('')
+    setTelefonoExterno('')
+    setFormExternoAbierto(false)
     setJugadoresClub(prev => [...prev, { id: res.jugadorId!, nombre: res.jugadorNombre!, es_externo: true }].sort((a, b) => a.nombre.localeCompare(b.nombre)))
     toggleJugadorDivision(division, res.jugadorId)
   }
@@ -333,15 +337,21 @@ export default function LigaDetallePage() {
                   </label>
                 ))}
                 {jugadoresClub.length === 0 && <span style={{ fontSize:12, color: hint }}>No hay jugadores activos en el club</span>}
-              </div>
-
-              <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap', alignItems:'center' }}>
-                <input style={{ ...inputStyle, flex:1, minWidth:160 }} placeholder="Nombre del jugador externo" value={nombreExterno} onChange={e => setNombreExterno(e.target.value)} />
-                <input style={{ ...inputStyle, width:140 }} placeholder="RUT (opcional)" value={rutExterno} onChange={e => setRutExterno(e.target.value)} />
-                <button onClick={() => handleCrearExterno(division)} disabled={creandoExterno || !nombreExterno.trim()} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'10px 16px', fontSize:12, fontWeight:600, cursor: creandoExterno ? 'default' : 'pointer', opacity: creandoExterno ? 0.6 : 1 }}>
-                  + Agregar externo
+                <button onClick={() => setFormExternoAbierto(!formExternoAbierto)} style={{ background:'transparent', border:'1px dashed #c7d2e0', borderRadius:6, padding:'4px 8px', color:'#4f46e5', fontSize:11, fontWeight:600, cursor:'pointer', textAlign:'left' }}>
+                  + Externo
                 </button>
               </div>
+
+              {formExternoAbierto && (
+                <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap', alignItems:'center', background:'#f4f7fa', borderRadius:10, padding:12 }}>
+                  <input style={{ ...inputStyle, flex:1, minWidth:140 }} placeholder="Nombre" value={nombreExterno} onChange={e => setNombreExterno(e.target.value)} />
+                  <input style={{ ...inputStyle, width:130 }} placeholder="RUT (opcional)" value={rutExterno} onChange={e => setRutExterno(e.target.value)} />
+                  <input style={{ ...inputStyle, width:130 }} placeholder="Teléfono (opcional)" value={telefonoExterno} onChange={e => setTelefonoExterno(e.target.value)} />
+                  <button onClick={() => handleCrearExterno(division)} disabled={creandoExterno || !nombreExterno.trim()} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'10px 16px', fontSize:12, fontWeight:600, cursor: creandoExterno ? 'default' : 'pointer', opacity: creandoExterno ? 0.6 : 1 }}>
+                    Agregar
+                  </button>
+                </div>
+              )}
 
               <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                 <button onClick={() => handleGuardarJugadores(division)} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 14px', color: muted, fontSize:12, cursor:'pointer' }}>
