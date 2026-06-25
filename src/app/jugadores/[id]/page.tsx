@@ -11,6 +11,7 @@ import {
 } from 'chart.js'
 import { Line, Radar, Bar } from 'react-chartjs-2'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { crearAccesoJugador } from '@/app/actions/jugadores'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, RadialLinearScale, Filler, Tooltip, Legend, BarElement)
 
@@ -61,6 +62,11 @@ export default function JugadorDetallePage() {
   const [modalExternoOpen, setModalExternoOpen] = useState(false)
   const [externoForm, setExternoForm] = useState({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
   const [guardandoExterno, setGuardandoExterno] = useState(false)
+  const [tieneCuenta, setTieneCuenta] = useState(true)
+  const [creandoAcceso, setCreandoAcceso] = useState(false)
+  const [accesoPassword, setAccesoPassword] = useState('')
+  const [accesoError, setAccesoError] = useState('')
+  const [accesoExito, setAccesoExito] = useState(false)
 
   const PRESETS = [
     { label:'$15.000', valor:15000, ent:1 },
@@ -95,6 +101,9 @@ export default function JugadorDetallePage() {
         supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
         supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
       ])
+
+      const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
+      setTieneCuenta(!!perfilJugador)
 
       setJugador(j)
       setHistorialElo(h || [])
@@ -248,6 +257,17 @@ export default function JugadorDetallePage() {
     setGuardandoExterno(false)
   }
 
+  async function crearAcceso() {
+    setCreandoAcceso(true)
+    setAccesoError('')
+    const res = await crearAccesoJugador({ jugadorId })
+    setCreandoAcceso(false)
+    if (res.error) { setAccesoError(res.error); return }
+    setAccesoPassword(res.password || '')
+    setAccesoExito(true)
+    setTieneCuenta(true)
+  }
+
   async function aceptarCompromiso() {
     if (!evalActual) return
     await supabase.from('evaluaciones_trimestrales').update({ firmado_alumno: true }).eq('id', evalActual.id)
@@ -306,9 +326,24 @@ export default function JugadorDetallePage() {
               }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>
                 {jugador.estado==='activo' ? '🔒 Bloquear' : '✅ Activar'}
               </button>
+              {!tieneCuenta && (
+                <button onClick={crearAcceso} disabled={creandoAcceso} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
+                  {creandoAcceso ? 'Creando...' : '🔑 Crear acceso'}
+                </button>
+              )}
             </div>
           )}
         </div>
+
+        {esAdmin && (accesoError || accesoExito) && (
+          <div style={{ marginTop:10, background: accesoError ? 'rgba(220,38,38,0.25)' : 'rgba(34,197,94,0.25)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#fff' }}>
+            {accesoError ? accesoError : accesoPassword ? (
+              <>✓ Cuenta creada. Contraseña: <b style={{ fontFamily:'monospace' }}>{accesoPassword}</b> — envíasela a {jugador.email}.</>
+            ) : (
+              <>✓ Cuenta creada con la contraseña que el jugador eligió al pedir la solicitud. Ya puede entrar con {jugador.email}.</>
+            )}
+          </div>
+        )}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
           <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
             <div style={{ fontSize:22, fontWeight:800, color:'#fff', fontFamily:'monospace' }}>{jugador.elo}</div>
