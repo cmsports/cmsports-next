@@ -320,7 +320,7 @@ export async function cambiarArbitroPartido(params: { partidoId: string; arbitro
 // Crea un jugador externo (igual que en Torneos): no requiere registro
 // completo del club, queda guardado en `jugadores` con es_externo = true y
 // reutilizable después en cualquier otra liga o torneo.
-export async function crearJugadorExternoLiga(params: { nombre: string; rut?: string }) {
+export async function crearJugadorExternoLiga(params: { nombre: string; rut?: string; telefono?: string }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
@@ -330,7 +330,7 @@ export async function crearJugadorExternoLiga(params: { nombre: string; rut?: st
   const { data, error } = await supabase
     .from('jugadores')
     .insert({
-      club_id: clubId, nombre, rut: params.rut || null,
+      club_id: clubId, nombre, rut: params.rut || null, telefono: params.telefono || null,
       categoria: 'principiante', sesiones_limite: 0, elo: 1200,
       estado: 'activo', es_externo: true,
     })
