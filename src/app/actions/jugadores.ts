@@ -55,6 +55,50 @@ export async function crearJugador(params: {
   return { success: true }
 }
 
+function generarPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+  let pass = ''
+  for (let i = 0; i < 10; i++) pass += chars[Math.floor(Math.random() * chars.length)]
+  return pass
+}
+
+export async function crearAccesoJugador(params: { jugadorId: string }) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { data: jugador } = await supabase.from('jugadores').select('*').eq('id', params.jugadorId).eq('club_id', clubId).single()
+  if (!jugador) return { error: 'Jugador no encontrado' }
+  if (!jugador.email) return { error: 'El jugador no tiene email registrado' }
+
+  const admin = createAdminClient()
+  const { data: existente } = await admin.from('perfiles').select('id').eq('jugador_id', params.jugadorId).maybeSingle()
+  if (existente) return { error: 'Este jugador ya tiene una cuenta de acceso' }
+
+  const { data: solicitud } = await admin.from('solicitudes_jugador')
+    .select('id,password').eq('club_id', clubId).eq('email', jugador.email)
+    .not('password', 'is', null).order('creado_en', { ascending: false }).limit(1).maybeSingle()
+
+  const passwordPropia = !!solicitud?.password
+  const password = solicitud?.password || generarPassword()
+
+  const { data: creado, error: createError } = await admin.auth.admin.createUser({
+    email: jugador.email, password, email_confirm: true,
+  })
+  if (createError || !creado?.user) {
+    return { error: 'No se pudo crear la cuenta: ' + (createError?.message || 'error desconocido') }
+  }
+
+  const { error: perfilError } = await admin.from('perfiles').insert({
+    id: creado.user.id, club_id: clubId, nombre: jugador.nombre, email: jugador.email,
+    rol: 'jugador', jugador_id: params.jugadorId,
+  })
+  if (perfilError) return { error: 'Cuenta creada pero falló crear el perfil: ' + perfilError.message }
+
+  if (solicitud) await admin.from('solicitudes_jugador').update({ password: null }).eq('id', solicitud.id)
+
+  return { success: true, password: passwordPropia ? undefined : password }
+}
+
 export async function editarJugador(params: {
   jugadorId: string; nombre: string; rut: string; email: string; telefono: string
 } & PlanFields) {
