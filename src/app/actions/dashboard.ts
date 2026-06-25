@@ -101,7 +101,7 @@ export async function aprobarSolicitud(input: {
     return { success: true, inviteError: createError?.message || 'No se pudo crear la cuenta del jugador' }
   }
 
-  const { error: perfilError } = await admin.from('perfiles').insert({
+  const { error: perfilError } = await admin.from('perfiles').upsert({
     id: creado.user.id,
     club_id: input.clubId,
     nombre: sol.nombre,
