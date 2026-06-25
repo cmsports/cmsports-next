@@ -317,6 +317,30 @@ export async function cambiarArbitroPartido(params: { partidoId: string; arbitro
   return { success: true }
 }
 
+// Crea un jugador externo (igual que en Torneos): no requiere registro
+// completo del club, queda guardado en `jugadores` con es_externo = true y
+// reutilizable después en cualquier otra liga o torneo.
+export async function crearJugadorExternoLiga(params: { nombre: string; rut?: string }) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const nombre = params.nombre.trim()
+  if (!nombre) return { error: 'El nombre es obligatorio' }
+
+  const { data, error } = await supabase
+    .from('jugadores')
+    .insert({
+      club_id: clubId, nombre, rut: params.rut || null,
+      categoria: 'principiante', sesiones_limite: 0, elo: 1200,
+      estado: 'activo', es_externo: true,
+    })
+    .select('id, nombre')
+    .single()
+  if (error || !data) return { error: 'No se pudo crear el jugador externo: ' + (error?.message ?? '') }
+
+  return { success: true, jugadorId: data.id, jugadorNombre: data.nombre }
+}
+
 // ─── CRUD básico de ligas/divisiones/mesas (módulo visible) ────────────────
 
 export async function crearLiga(params: { nombre: string; numDivisiones?: number; jugadoresPorDivision?: number }) {
