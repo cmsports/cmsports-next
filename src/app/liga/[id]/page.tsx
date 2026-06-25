@@ -8,7 +8,7 @@ import AppLayout from '@/app/layout-app'
 import {
   crearDivision, crearMesa, eliminarMesa,
   asignarJugadoresDivision, generarFixtureDivisionAction,
-  generarProgramacionLiga, iniciarFecha,
+  generarProgramacionLiga, iniciarFecha, crearJugadorExternoLiga,
 } from '@/app/actions/liga'
 import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
@@ -25,7 +25,7 @@ const inputStyle = { background:'#f4f7fa', border:'1px solid #e2e8f0', borderRad
 interface Division { id: string; nombre: string; orden: number; fixture_generado: boolean; capacidad_max: number | null }
 interface Mesa { id: string; numero: number }
 interface Fecha { id: string; numero: number; es_ajuste: boolean; estado: string }
-interface Jugador { id: string; nombre: string }
+interface Jugador { id: string; nombre: string; es_externo: boolean | null }
 
 type SubTab = 'jugadores' | 'programacion' | 'ranking'
 
@@ -51,6 +51,9 @@ export default function LigaDetallePage() {
   const [divisionActiva, setDivisionActiva] = useState<string | null>(null)
   const [subTab, setSubTab] = useState<SubTab>('jugadores')
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string | null>(null)
+  const [nombreExterno, setNombreExterno] = useState('')
+  const [rutExterno, setRutExterno] = useState('')
+  const [creandoExterno, setCreandoExterno] = useState(false)
 
   const cargar = useCallback(async () => {
     const { data: ligaData } = await supabase.from('ligas').select('nombre, club_id').eq('id', ligaId).single()
@@ -61,7 +64,7 @@ export default function LigaDetallePage() {
       supabase.from('liga_divisiones').select('id, nombre, orden, fixture_generado, capacidad_max').eq('liga_id', ligaId).order('orden'),
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero'),
       supabase.from('liga_fechas').select('id, numero, es_ajuste, estado').eq('liga_id', ligaId).order('numero'),
-      supabase.from('jugadores').select('id, nombre').eq('club_id', ligaData.club_id).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
+      supabase.from('jugadores').select('id, nombre, es_externo').eq('club_id', ligaData.club_id).eq('estado', 'activo').order('nombre'),
       supabase.from('liga_division_jugadores').select('division_id, jugador_id'),
     ])
     setDivisiones(divs || [])
@@ -130,6 +133,18 @@ export default function LigaDetallePage() {
     if (res.error) { setMensaje(res.error); return }
     setMensaje('')
     cargar()
+  }
+
+  async function handleCrearExterno(division: Division) {
+    if (!nombreExterno.trim()) return
+    setCreandoExterno(true)
+    const res = await crearJugadorExternoLiga({ nombre: nombreExterno, rut: rutExterno || undefined })
+    setCreandoExterno(false)
+    if (res.error || !res.jugadorId) { setMensaje(res.error || 'No se pudo crear el jugador externo'); return }
+    setNombreExterno('')
+    setRutExterno('')
+    setJugadoresClub(prev => [...prev, { id: res.jugadorId!, nombre: res.jugadorNombre!, es_externo: true }].sort((a, b) => a.nombre.localeCompare(b.nombre)))
+    toggleJugadorDivision(division, res.jugadorId)
   }
 
   async function handleGenerarFixture(divisionId: string) {
@@ -306,7 +321,7 @@ export default function LigaDetallePage() {
                 </span>
               </div>
 
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:8, maxHeight:280, overflow:'auto', padding:12, background:'#f4f7fa', borderRadius:10, marginBottom:14 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:8, maxHeight:280, overflow:'auto', padding:12, background:'#f4f7fa', borderRadius:10, marginBottom:10 }}>
                 {jugadoresClub.map(j => (
                   <label key={j.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color: text, cursor:'pointer' }}>
                     <input
@@ -314,10 +329,18 @@ export default function LigaDetallePage() {
                       checked={jugadoresDeDivision.includes(j.id)}
                       onChange={() => toggleJugadorDivision(division, j.id)}
                     />
-                    {j.nombre}
+                    {j.nombre}{j.es_externo && <span style={{ color: hint, fontSize:10 }}> (externo)</span>}
                   </label>
                 ))}
                 {jugadoresClub.length === 0 && <span style={{ fontSize:12, color: hint }}>No hay jugadores activos en el club</span>}
+              </div>
+
+              <div style={{ display:'flex', gap:8, marginBottom:14, flexWrap:'wrap', alignItems:'center' }}>
+                <input style={{ ...inputStyle, flex:1, minWidth:160 }} placeholder="Nombre del jugador externo" value={nombreExterno} onChange={e => setNombreExterno(e.target.value)} />
+                <input style={{ ...inputStyle, width:140 }} placeholder="RUT (opcional)" value={rutExterno} onChange={e => setRutExterno(e.target.value)} />
+                <button onClick={() => handleCrearExterno(division)} disabled={creandoExterno || !nombreExterno.trim()} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'10px 16px', fontSize:12, fontWeight:600, cursor: creandoExterno ? 'default' : 'pointer', opacity: creandoExterno ? 0.6 : 1 }}>
+                  + Agregar externo
+                </button>
               </div>
 
               <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
