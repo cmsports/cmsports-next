@@ -88,7 +88,9 @@ export async function POST(req: NextRequest) {
       ? `INSTRUCCIÓN PRIORITARIA DEL USUARIO (síguela por encima de cualquier otra indicación de diseño de este prompt, salvo que contradiga los textos exactos pedidos abajo): ${instrucciones.trim()}\n\n`
       : ''
 
-    const textoPrompt = `${instruccionesBloque}La PRIMERA imagen es SOLO un molde de diseño: usa de ella EXCLUSIVAMENTE el layout, la tipografía, la paleta de colores, la composición y la posición de los elementos. Ignora y descarta por completo cualquier texto, título, nombre de club, badge o logo que aparezca escrito en la primera imagen — son de OTRO club y NO deben aparecer en el resultado final, ni siquiera parcialmente. El resultado final debe tener el 100% del texto y branding nuevo, según los datos de abajo.
+    const textoPrompt = `URGENTE — NO REPITAS NINGUNA FRASE NI PALABRA: cada texto, título, frase o dato pedido abajo debe aparecer UNA SOLA VEZ en todo el flyer. Nunca dupliques el título, una categoría, un monto, el nombre del club o cualquier línea de texto en dos lugares distintos del diseño. Sé ordenado y meticuloso: organiza cada bloque de información en su propio espacio, alineado y prolijo, sin amontonar ni superponer textos.
+
+${instruccionesBloque}La PRIMERA imagen es SOLO un molde de diseño: usa de ella EXCLUSIVAMENTE el layout, la tipografía, la paleta de colores, la composición y la posición de los elementos. Ignora y descarta por completo cualquier texto, título, nombre de club, badge o logo que aparezca escrito en la primera imagen — son de OTRO club y NO deben aparecer en el resultado final, ni siquiera parcialmente. El resultado final debe tener el 100% del texto y branding nuevo, según los datos de abajo.
 Reemplaza a la persona de la primera imagen por la persona de la SEGUNDA imagen, integrándola de forma natural en la misma posición y estilo.
 Estos son los ÚNICOS textos y datos que debe mostrar el flyer (todo en español):
 - Título: "${titulo}"
