@@ -73,17 +73,27 @@ const mobileNavJugador = [
 
 type NavItem = { section: string } | { label: string; icon: any; href: string }
 
+const clubNombreCache: Record<string, string> = {}
+
 export default function AppLayout({ children, perfil }: { children: React.ReactNode; perfil: any }) {
   const router = useRouter()
   const pathname = usePathname()
   const [masOpen, setMasOpen] = useState(false)
-  const [clubNombre, setClubNombre] = useState('')
+  const [clubNombre, setClubNombre] = useState(() => clubNombreCache[perfil?.club_id] || '')
 
   useEffect(() => {
     if (!perfil?.club_id) return
+    if (clubNombreCache[perfil.club_id]) {
+      setClubNombre(clubNombreCache[perfil.club_id])
+      return
+    }
     const supabase = createClient()
     supabase.from('clubes').select('nombre').eq('id', perfil.club_id).single()
-      .then(({ data }) => setClubNombre(data?.nombre || ''))
+      .then(({ data }) => {
+        const nombre = data?.nombre || ''
+        clubNombreCache[perfil.club_id] = nombre
+        setClubNombre(nombre)
+      })
   }, [perfil?.club_id])
 
   const esAdminOSuperadmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
