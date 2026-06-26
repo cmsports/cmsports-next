@@ -5,14 +5,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import { Suspense } from 'react'
-
-const supabase = createClient()
+import { registrarSolicitud } from '@/app/actions/auth'
 
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
 function RegistroForm() {
+  const supabase = createClient()
   const searchParams = useSearchParams()
   const clubIdParam = searchParams.get('club')
   const codigo = searchParams.get('code')
@@ -61,11 +61,12 @@ function RegistroForm() {
     if (form.password !== form.confirmarPassword) { setError('Las contraseñas no coinciden'); return }
     setEnviando(true)
     setError('')
-    const { error: err } = await supabase.from('solicitudes_jugador').insert({
-      club_id: resolvedClubId, nombre: form.nombre, rut: form.rut,
-      email: form.email, telefono: form.telefono || null, password: form.password,
+    const result = await registrarSolicitud({
+      club_id: resolvedClubId!, nombre: form.nombre, rut: form.rut,
+      email: form.email, telefono: form.telefono, password: form.password,
+      codigo: codigo!,
     })
-    if (err) { setError('Error al enviar. Intenta de nuevo.'); setEnviando(false); return }
+    if (result.error) { setError(result.error); setEnviando(false); return }
     setEnviado(true)
     setEnviando(false)
   }

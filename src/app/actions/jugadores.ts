@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { decrypt } from '@/lib/crypto'
 
 async function requireAdminClub() {
   const supabase = await createClient()
@@ -79,7 +80,7 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
     .not('password', 'is', null).order('creado_en', { ascending: false }).limit(1).maybeSingle()
 
   let passwordPropia = !!solicitud?.password
-  const password = solicitud?.password || generarPassword()
+  const password = solicitud?.password ? decrypt(solicitud.password) : generarPassword()
 
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
     email: jugador.email, password, email_confirm: true,
