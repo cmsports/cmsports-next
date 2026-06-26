@@ -130,6 +130,70 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
   return { success: true }
 }
 
+export async function actualizarCabezasSerie(params: {
+  torneoId: string
+  cabezaSerie1: string | null
+  cabezaSerie2: string | null
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, cabezaSerie1, cabezaSerie2 } = params
+  if (cabezaSerie1 && cabezaSerie2 && cabezaSerie1 === cabezaSerie2) {
+    return { error: 'Los cabezas de serie 1° y 2° deben ser jugadores distintos' }
+  }
+
+  const { error } = await supabase.from('torneos')
+    .update({ cabeza_serie_1: cabezaSerie1 || null, cabeza_serie_2: cabezaSerie2 || null })
+    .eq('id', torneoId)
+  if (error) return { error: 'No se pudo guardar' }
+  return { success: true }
+}
+
+export async function moverJugadorEntreGrupos(params: {
+  torneoId: string
+  jugadorId: string
+  grupoOrigenId: string
+  grupoDestinoId: string
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, jugadorId, grupoOrigenId, grupoDestinoId } = params
+  if (grupoOrigenId === grupoDestinoId) return { success: true }
+
+  const { data: partidosAfectados } = await supabase
+    .from('torneo_partidos')
+    .select('id, ganador')
+    .eq('torneo_id', torneoId)
+    .in('grupo_id', [grupoOrigenId, grupoDestinoId])
+
+  if (partidosAfectados?.some(p => p.ganador)) {
+    return { error: 'No se puede mover jugadores: alguno de los dos grupos ya tiene partidos jugados' }
+  }
+
+  const { error: moveErr } = await supabase.from('grupo_jugadores')
+    .update({ grupo_id: grupoDestinoId })
+    .eq('jugador_id', jugadorId).eq('grupo_id', grupoOrigenId)
+  if (moveErr) return { error: 'No se pudo mover al jugador' }
+
+  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).in('grupo_id', [grupoOrigenId, grupoDestinoId])
+
+  const { data: miembros } = await supabase.from('grupo_jugadores').select('jugador_id, grupo_id').in('grupo_id', [grupoOrigenId, grupoDestinoId])
+
+  const inserts: { torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }[] = []
+  for (const gid of [grupoOrigenId, grupoDestinoId]) {
+    const idsGrupo = (miembros || []).filter(m => m.grupo_id === gid).map(m => m.jugador_id).filter((id): id is string => !!id)
+    const parejas = generarRoundRobin(idsGrupo)
+    for (const [a, b] of parejas) {
+      inserts.push({ torneo_id: torneoId, grupo_id: gid, fase: 'grupos', jugador_a: a, jugador_b: b, orden: inserts.length })
+    }
+  }
+  if (inserts.length) await supabase.from('torneo_partidos').insert(inserts)
+
+  return { success: true }
+}
+
 export async function cerrarInscripcionYGenerarGrupos(params: {
   torneoId: string
   cabezasDeSerie: string[]
@@ -216,7 +280,9 @@ export async function generarPlayoffs(params: {
     await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('jugador_id', j.id)
   }
 
-  const partidosBracket = generarBracketConAvance(clasificadosPrimeros, clasificadosSegundos)
+  const { data: torneoRow } = await supabase.from('torneos').select('cabeza_serie_1, cabeza_serie_2').eq('id', torneoId).single()
+
+  const partidosBracket = generarBracketConAvance(clasificadosPrimeros, clasificadosSegundos, torneoRow?.cabeza_serie_1, torneoRow?.cabeza_serie_2)
   if (!partidosBracket.length) return { error: 'No se pudo generar el bracket' }
 
   const faseInicial = partidosBracket[0].fase as FaseOrden
@@ -246,7 +312,9 @@ export async function avanzarSiguienteFase(params: {
 
   const { torneoId, faseActual, ganadores } = params
 
-  const partidosNuevos = generarSiguienteFase(ganadores, faseActual)
+  const { data: torneoRow } = await supabase.from('torneos').select('cabeza_serie_1, cabeza_serie_2').eq('id', torneoId).single()
+
+  const partidosNuevos = generarSiguienteFase(ganadores, faseActual, torneoRow?.cabeza_serie_1, torneoRow?.cabeza_serie_2)
   if (!partidosNuevos.length) return { error: 'No se pudo generar la siguiente fase' }
 
   const fase = partidosNuevos[0].fase
