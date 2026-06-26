@@ -128,6 +128,23 @@ export function calcularStatsGrupo(
   return { stats: ordenados, hayTripleEmpate }
 }
 
+// ─── Semillas principales (cabezas de serie 1° y 2°) ──────────────────────
+
+// Mueve los cabezas de serie 1° y 2° (si están en la lista) al frente, sin
+// reordenar al resto. Aplicado en cada ronda, garantiza que ambos solo se
+// enfrenten en la final (mientras sigan ganando), sin depender del ELO.
+export function aplicarSemillasPrincipales<T extends { id: string }>(
+  lista: T[],
+  semilla1Id?: string | null,
+  semilla2Id?: string | null,
+): T[] {
+  if (!semilla1Id && !semilla2Id) return lista
+  const semilla1 = lista.find(j => j.id === semilla1Id)
+  const semilla2 = lista.find(j => j.id === semilla2Id)
+  const resto = lista.filter(j => j.id !== semilla1Id && j.id !== semilla2Id)
+  return [semilla1, semilla2, ...resto].filter((x): x is T => !!x)
+}
+
 // ─── Playoffs ──────────────────────────────────────────────────────────────
 
 export function calcularTamanoBracket(numClasificados: number): number {
@@ -154,8 +171,10 @@ export function siguienteFase(faseActual: FaseOrden): FaseOrden | null {
 export function generarBracketEspejo(
   primeros: JugadorTorneo[],
   segundos: JugadorTorneo[],
+  semilla1Id?: string | null,
+  semilla2Id?: string | null,
 ): PartidoGenerado[] {
-  const semillas = [...primeros, ...segundos.slice().reverse()]
+  const semillas = aplicarSemillasPrincipales([...primeros, ...segundos.slice().reverse()], semilla1Id, semilla2Id)
   const n = semillas.length
   if (n < 2) return []
 
@@ -198,8 +217,11 @@ export function generarBracketEspejo(
 export function generarBracketConAvance(
   primeros: JugadorTorneo[],
   segundos: JugadorTorneo[],
+  semilla1Id?: string | null,
+  semilla2Id?: string | null,
 ): PartidoGenerado[] {
-  const todos = [...primeros, ...segundos].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
+  const todosOrdenadosPorElo = [...primeros, ...segundos].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
+  const todos = aplicarSemillasPrincipales(todosOrdenadosPorElo, semilla1Id, semilla2Id)
   const n = todos.length
   if (n < 2) return []
 
@@ -208,10 +230,10 @@ export function generarBracketConAvance(
 
   // Para brackets pequeños (≤32) o sin byes, usar lógica con byes inline
   if (potencia2 <= 32 || numByes === 0) {
-    return generarBracketEspejo(primeros, segundos)
+    return generarBracketEspejo(primeros, segundos, semilla1Id, semilla2Id)
   }
 
-  // Avance: top numByes (mejor ELO) reciben bye, el resto juega
+  // Avance: top numByes (mejor ELO, o cabezas de serie manuales) reciben bye, el resto juega
   const conBye = todos.slice(0, numByes)
   const sinBye = todos.slice(numByes)
   const mid = Math.floor(sinBye.length / 2)
@@ -235,11 +257,14 @@ export function generarBracketConAvance(
 export function generarSiguienteFase(
   ganadores: JugadorTorneo[],
   faseActual: FaseOrden,
+  semilla1Id?: string | null,
+  semilla2Id?: string | null,
 ): PartidoGenerado[] {
   const fase = siguienteFase(faseActual)
   if (!fase) return []
 
-  const sorted = [...ganadores].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
+  const ordenadosPorElo = [...ganadores].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
+  const sorted = aplicarSemillasPrincipales(ordenadosPorElo, semilla1Id, semilla2Id)
   const mid = Math.floor(sorted.length / 2)
   const partidos: PartidoGenerado[] = []
 

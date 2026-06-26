@@ -536,6 +536,8 @@ export interface Database {
           premio_primero: number | null
           premio_segundo: number | null
           premio_tercero: number | null
+          cabeza_serie_1: string | null
+          cabeza_serie_2: string | null
         }
         Insert: {
           id?: string
@@ -554,6 +556,8 @@ export interface Database {
           premio_primero?: number | null
           premio_segundo?: number | null
           premio_tercero?: number | null
+          cabeza_serie_1?: string | null
+          cabeza_serie_2?: string | null
         }
         Update: {
           id?: string
@@ -572,9 +576,13 @@ export interface Database {
           premio_primero?: number | null
           premio_segundo?: number | null
           premio_tercero?: number | null
+          cabeza_serie_1?: string | null
+          cabeza_serie_2?: string | null
         }
         Relationships: [
           { foreignKeyName: 'torneos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneos_cabeza_serie_1_fkey'; columns: ['cabeza_serie_1']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneos_cabeza_serie_2_fkey'; columns: ['cabeza_serie_2']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
       torneo_grupos: {

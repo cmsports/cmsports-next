@@ -21,6 +21,8 @@ import {
   eliminarTorneo,
   guardarPremios,
   inscribirEnMesa,
+  actualizarCabezasSerie,
+  moverJugadorEntreGrupos,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
@@ -63,6 +65,10 @@ export default function TorneoDetallePage() {
   const [premioTerceroOpen, setPremioTerceroOpen] = useState(false)
   const [guardandoPremios, setGuardandoPremios] = useState(false)
   const [modalPremios, setModalPremios] = useState(false)
+  const [cabezaSerie1, setCabezaSerie1] = useState('')
+  const [cabezaSerie2, setCabezaSerie2] = useState('')
+  const [guardandoCabezas, setGuardandoCabezas] = useState(false)
+  const [dragJugadorGrupo, setDragJugadorGrupo] = useState<{ jugadorId: string; grupoId: string } | null>(null)
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -124,8 +130,26 @@ export default function TorneoDetallePage() {
       const p3 = torneo.premio_tercero?.toString() ?? ''
       setPremio3(p3)
       setPremioTerceroOpen(!!p3)
+      setCabezaSerie1(torneo.cabeza_serie_1 ?? '')
+      setCabezaSerie2(torneo.cabeza_serie_2 ?? '')
     }
-  }, [torneo?.id])
+  }, [torneo?.id, torneo?.cabeza_serie_1, torneo?.cabeza_serie_2])
+
+  async function guardarCabezasSerie(nuevo1: string, nuevo2: string) {
+    setGuardandoCabezas(true)
+    const res = await actualizarCabezasSerie({ torneoId, cabezaSerie1: nuevo1 || null, cabezaSerie2: nuevo2 || null })
+    setGuardandoCabezas(false)
+    if (res.error) { alert(res.error); return }
+    setCabezaSerie1(nuevo1)
+    setCabezaSerie2(nuevo2)
+  }
+
+  async function moverAGrupo(jugadorId: string, grupoOrigenId: string, grupoDestinoId: string) {
+    if (grupoOrigenId === grupoDestinoId) return
+    const res = await moverJugadorEntreGrupos({ torneoId, jugadorId, grupoOrigenId, grupoDestinoId })
+    if (res.error) { alert(res.error); return }
+    await cargarTorneo()
+  }
 
   async function marcarGanador(partidoId: string, ganadorId: string) {
     const res = await marcarGanadorPartido({ partidoId, ganadorId })
@@ -426,6 +450,42 @@ export default function TorneoDetallePage() {
       )}
 
       {/* FASE GRUPOS */}
+      {(faseActual === 'grupos' || (esPlayoffs && tabActiva === 'grupos')) && esAdmin && (
+        <div style={{ ...card, padding:'14px 16px', marginBottom:16, display:'flex', gap:16, flexWrap:'wrap', alignItems:'flex-end' }}>
+          <div>
+            <div style={{ fontSize:11, color: muted, marginBottom:4 }}>⭐ Cabeza de serie 1°</div>
+            <select
+              value={cabezaSerie1}
+              disabled={guardandoCabezas}
+              onChange={e => guardarCabezasSerie(e.target.value, cabezaSerie2 === e.target.value ? '' : cabezaSerie2)}
+              style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', color: text, fontSize:13, minWidth:180 }}
+            >
+              <option value="">Sin asignar (usa ELO)</option>
+              {jugadores.map((j: any) => (
+                <option key={j.jugador?.id} value={j.jugador?.id}>{j.jugador?.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize:11, color: muted, marginBottom:4 }}>⭐ Cabeza de serie 2°</div>
+            <select
+              value={cabezaSerie2}
+              disabled={guardandoCabezas}
+              onChange={e => guardarCabezasSerie(cabezaSerie1 === e.target.value ? '' : cabezaSerie1, e.target.value)}
+              style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', color: text, fontSize:13, minWidth:180 }}
+            >
+              <option value="">Sin asignar (usa ELO)</option>
+              {jugadores.map((j: any) => (
+                <option key={j.jugador?.id} value={j.jugador?.id}>{j.jugador?.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ fontSize:11, color: hint, maxWidth:280 }}>
+            Quedan en lados opuestos del cuadro al generar llaves: solo se enfrentan en la final.
+          </div>
+        </div>
+      )}
+
       {(faseActual === 'grupos' || (esPlayoffs && tabActiva === 'grupos')) && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16, marginBottom:16 }}>
           {grupos.filter((g: any) => g.nombre !== 'MESA').map(grupo => {
@@ -433,14 +493,24 @@ export default function TorneoDetallePage() {
             const partidosGrupo = partidos.filter(p => p.grupo_id === grupo.id)
 
             return (
-              <div key={grupo.id} style={{ ...card, overflow:'hidden' }}>
+              <div key={grupo.id} style={{ ...card, overflow:'hidden' }}
+                onDragOver={esAdmin ? (e) => e.preventDefault() : undefined}
+                onDrop={esAdmin ? (e) => {
+                  e.preventDefault()
+                  if (dragJugadorGrupo) moverAGrupo(dragJugadorGrupo.jugadorId, dragJugadorGrupo.grupoId, grupo.id)
+                  setDragJugadorGrupo(null)
+                } : undefined}
+              >
                 <div style={{ padding:'12px 16px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <span style={{ fontSize:14, fontWeight:600, color: text }}>Grupo {grupo.nombre}</span>
                   {hayTripleEmpate && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && partidosGrupo.some((p:any) => p.ganador) && <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
                   {hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto</span>}
                 </div>
                 {ordenados.map((j: any, i: number) => (
-                  <div key={`${grupo.id}-${j.jugador?.id ?? i}`} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}` }}>
+                  <div key={`${grupo.id}-${j.jugador?.id ?? i}`}
+                    draggable={esAdmin && !!j.jugador?.id}
+                    onDragStart={esAdmin && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
+                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: esAdmin ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
                     <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text }}>{j.jugador?.nombre||'—'}</div>
