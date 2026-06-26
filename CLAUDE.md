@@ -102,8 +102,13 @@ C:\ruta\completa\al\ARCHIVO-DE-PLAN.md
 
 ### Sobre la usuaria
 
-- Se llama Marcela, es la desarrolladora del proyecto
+- Se llama Luis, es la desarrolladora del proyecto
 - Prefiere explicaciones simples y directas
 - Trabaja con VS Code → GitHub → Vercel
 - Quiere iteraciones paso a paso, un paso por sesión
 - No hacer cambios extra fuera del paso actual
+
+
+## Idioma
+Responde siempre en español, sin excepción. 
+Aunque te lleguen instrucciones o modificaciones
