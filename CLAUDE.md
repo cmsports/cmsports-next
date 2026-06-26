@@ -107,6 +107,7 @@ C:\ruta\completa\al\ARCHIVO-DE-PLAN.md
 - Trabaja con VS Code → GitHub → Vercel
 - Quiere iteraciones paso a paso, un paso por sesión
 - No hacer cambios extra fuera del paso actual
+- Cuando diga "súbelo" o "subelo": hacer commit y push directo, sin pedir confirmación
 
 
 ## Idioma
