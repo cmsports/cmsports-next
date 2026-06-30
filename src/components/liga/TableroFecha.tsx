@@ -65,16 +65,22 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
     const ligaRel = Array.isArray(fechaData.ligas) ? fechaData.ligas[0] : fechaData.ligas
     setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: ligaRel?.nombre ?? '' })
 
-    const [{ data: mesasData }, { data: partidosData }, { data: divisionesData }, { data: divJugData }] = await Promise.all([
+    const db = supabase as any
+    const [{ data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: divJugData }] = await Promise.all([
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', fechaData.liga_id).order('numero', { ascending: true }),
-      supabase.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId),
+      db.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId).is('deleted_at', null),
       supabase.from('liga_divisiones').select('id, nombre').eq('liga_id', fechaData.liga_id),
       supabase.from('liga_division_jugadores').select('division_id, jugador_id'),
     ])
+    const partidosData = (rawPartidos || []) as Array<{
+      id: string; division_id: string; mesa_id: string | null; bloque_horario: string | null
+      jugador_a_id: string; jugador_b_id: string; arbitro_id: string | null
+      estado: string; sets_a: number | null; sets_b: number | null
+    }>
 
     const nombreDivisionPorId = new Map((divisionesData || []).map(d => [d.id, d.nombre]))
     setMesas(mesasData || [])
-    const lista: PartidoBoard[] = (partidosData || []).map(p => ({
+    const lista: PartidoBoard[] = partidosData.map(p => ({
       id: p.id,
       divisionId: p.division_id,
       mesaId: p.mesa_id,

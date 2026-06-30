@@ -254,14 +254,16 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   if (!fechas?.length) return { error: 'Crea primero las fechas regulares de la liga (1 a 4)' }
   if (!mesas?.length) return { error: 'Crea primero las mesas disponibles de la liga' }
 
-  const { data: partidosPendientes } = await supabase
+  const { data: rawPendientes } = await (supabase as any)
     .from('liga_partidos')
     .select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture')
     .eq('liga_id', ligaId)
     .is('fecha_id', null)
+    .is('deleted_at', null)
     .order('orden_fixture', { ascending: true })
+  const partidosPendientes = (rawPendientes || []) as Array<{ id: string; division_id: string; jugador_a_id: string; jugador_b_id: string; orden_fixture: number }>
 
-  if (!partidosPendientes?.length) return { error: 'No hay partidos pendientes por programar' }
+  if (!partidosPendientes.length) return { error: 'No hay partidos pendientes por programar' }
 
   const divisionIds = Array.from(new Set(partidosPendientes.map(p => p.division_id)))
   const { data: divisionJugadores } = await supabase
@@ -363,10 +365,11 @@ export async function moverPartidoLiga(params: {
   if (!fecha || fecha.liga_id !== partido.liga_id) return { error: 'La fecha no pertenece a esta liga' }
   if (fecha.estado !== 'programada') return { error: 'Solo se puede reprogramar una fecha en estado "Programada"' }
 
-  const { data: partidosFecha } = await supabase
+  const { data: partidosFecha } = await (supabase as any)
     .from('liga_partidos')
     .select('id, fecha_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id')
     .eq('fecha_id', fechaId)
+    .is('deleted_at', null)
 
   const aPartidoExistente = (p: { id: string; fecha_id: string | null; mesa_id: string | null; bloque_horario: string | null; jugador_a_id: string; jugador_b_id: string; arbitro_id: string | null }): PartidoExistente => ({
     id: p.id,
@@ -424,10 +427,11 @@ export async function cambiarArbitroPartido(params: { partidoId: string; arbitro
   }
 
   if (arbitroId) {
-    const { data: partidosFecha } = await supabase
+    const { data: partidosFecha } = await (supabase as any)
       .from('liga_partidos')
       .select('id, fecha_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id')
       .eq('fecha_id', partido.fecha_id)
+      .is('deleted_at', null)
 
     const aPartidoExistente = (p: typeof partido & { arbitro_id?: string | null }): PartidoExistente => ({
       id: p.id,
