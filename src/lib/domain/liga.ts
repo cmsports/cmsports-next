@@ -332,6 +332,59 @@ export function asignarArbitros(
   return resultado
 }
 
+// ─── Diff de fixture (F2) ──────────────────────────────────────────────────
+// Calcula qué cambia al modificar jugadores de una división con fixture ya
+// generado. Función pura — no toca la BD, solo compara sets.
+
+export interface DiffDivision {
+  jugadoresAgregados: string[]
+  jugadoresRemovidos: string[]
+  partidosNuevos: Array<{ a: string; b: string }>
+  partidosAAnular: Array<{ a: string; b: string }>
+  partidosPreservados: Array<{ a: string; b: string }>
+}
+
+function canonicalKey(a: string, b: string): string {
+  return a < b ? `${a}~${b}` : `${b}~${a}`
+}
+
+export function calcularDiffDivision(
+  actuales: string[],
+  nuevos: string[],
+  partidosActivos: Array<{ jugadorAId: string; jugadorBId: string; jugado: boolean }>,
+): DiffDivision {
+  const setActual = new Set(actuales)
+  const setNuevo = new Set(nuevos)
+
+  const jugadoresAgregados = nuevos.filter(id => !setActual.has(id))
+  const jugadoresRemovidos = actuales.filter(id => !setNuevo.has(id))
+  const setRemovidos = new Set(jugadoresRemovidos)
+
+  const partidosAAnular: Array<{ a: string; b: string }> = []
+  const partidosPreservados: Array<{ a: string; b: string }> = []
+  const paresExistentes = new Set<string>()
+
+  for (const p of partidosActivos) {
+    paresExistentes.add(canonicalKey(p.jugadorAId, p.jugadorBId))
+    const involucraRemovido = setRemovidos.has(p.jugadorAId) || setRemovidos.has(p.jugadorBId)
+    if (involucraRemovido) {
+      if (p.jugado) partidosPreservados.push({ a: p.jugadorAId, b: p.jugadorBId })
+      else partidosAAnular.push({ a: p.jugadorAId, b: p.jugadorBId })
+    }
+  }
+
+  const partidosNuevos: Array<{ a: string; b: string }> = []
+  for (let i = 0; i < nuevos.length; i++) {
+    for (let j = i + 1; j < nuevos.length; j++) {
+      if (!paresExistentes.has(canonicalKey(nuevos[i], nuevos[j]))) {
+        partidosNuevos.push({ a: nuevos[i], b: nuevos[j] })
+      }
+    }
+  }
+
+  return { jugadoresAgregados, jugadoresRemovidos, partidosNuevos, partidosAAnular, partidosPreservados }
+}
+
 // ─── Validación de movimientos manuales / Drag & Drop (Paso 4) ────────────
 
 export interface PartidoExistente {
