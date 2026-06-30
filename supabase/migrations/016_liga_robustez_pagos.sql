@@ -1,5 +1,20 @@
 -- ============================================================
 -- CmSports — Liga: robustez, pagos e integridad
+-- VERSIÓN CORREGIDA (post-revisión)
+-- ============================================================
+-- ANTES DE CORRER: pegá esta query de diagnóstico en SQL Editor
+-- para confirmar los nombres reales de los índices en tu DB:
+--
+--   SELECT indexname, indexdef
+--   FROM pg_indexes
+--   WHERE tablename = 'liga_partidos' AND indexdef ILIKE '%unique%';
+--
+--   SELECT conname, contype
+--   FROM pg_constraint
+--   WHERE conrelid = 'liga_partidos'::regclass AND contype = 'u';
+--
+-- Si ves nombres distintos a liga_partidos_mesa_bloque_unico
+-- o liga_partidos_enfrentamiento_unico, avisame antes de correr esto.
 -- ============================================================
 -- INSTRUCCIONES:
 --   1. Abre Supabase Dashboard → SQL Editor
@@ -23,9 +38,16 @@ ALTER TABLE liga_partidos   ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 ALTER TABLE liga_partidos   ADD COLUMN IF NOT EXISTS version int NOT NULL DEFAULT 0;
 
 -- ── 4. Actualizar índices únicos para respetar soft delete ─────────────────
--- Antes: sin filtro de deleted_at → un soft-deleted bloqueaba el slot.
--- Ahora: solo registros activos (deleted_at IS NULL) participan en el índice.
+-- Patrón seguro: intentar drop como CONSTRAINT primero (no-op si era índice
+-- puro), luego drop como INDEX (no-op si ya se eliminó como constraint).
+-- Cubre migración 013 (CREATE UNIQUE INDEX) y el caso de constraint inline.
+
+ALTER TABLE liga_partidos DROP CONSTRAINT IF EXISTS liga_partidos_mesa_bloque_unico;
 DROP INDEX IF EXISTS liga_partidos_mesa_bloque_unico;
+
+ALTER TABLE liga_partidos DROP CONSTRAINT IF EXISTS liga_partidos_enfrentamiento_unico;
+DROP INDEX IF EXISTS liga_partidos_enfrentamiento_unico;
+
 CREATE UNIQUE INDEX liga_partidos_mesa_bloque_unico
   ON liga_partidos (fecha_id, mesa_id, bloque_horario)
   WHERE fecha_id IS NOT NULL
@@ -33,7 +55,6 @@ CREATE UNIQUE INDEX liga_partidos_mesa_bloque_unico
     AND bloque_horario IS NOT NULL
     AND deleted_at IS NULL;
 
-DROP INDEX IF EXISTS liga_partidos_enfrentamiento_unico;
 CREATE UNIQUE INDEX liga_partidos_enfrentamiento_unico
   ON liga_partidos (division_id, LEAST(jugador_a_id, jugador_b_id), GREATEST(jugador_a_id, jugador_b_id))
   WHERE deleted_at IS NULL;
@@ -125,19 +146,27 @@ CREATE TABLE IF NOT EXISTS liga_abonos (
 );
 
 -- ── 9. RLS para tablas de pagos ────────────────────────────────────────────
+-- Criterio:
+--   SELECT → admin y superadmin únicamente (info financiera sensible)
+--   INSERT/UPDATE/DELETE → admin únicamente (consistente con liga_partidos en 013)
+-- Los jugadores y profesores no tienen visibilidad sobre pagos de otros.
+
 ALTER TABLE liga_jugador_pagos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE liga_abonos        ENABLE ROW LEVEL SECURITY;
 
+-- liga_jugador_pagos: lectura para admin/superadmin del club
 DROP POLICY IF EXISTS "liga_jugador_pagos_select" ON liga_jugador_pagos;
 CREATE POLICY "liga_jugador_pagos_select" ON liga_jugador_pagos
   FOR SELECT USING (
-    division_id IN (
+    get_my_rol() IN ('admin', 'superadmin')
+    AND division_id IN (
       SELECT d.id FROM liga_divisiones d
       JOIN ligas l ON l.id = d.liga_id
       WHERE l.club_id = get_my_club_id()
     )
   );
 
+-- liga_jugador_pagos: escritura solo admin (igual que liga_partidos en 013)
 DROP POLICY IF EXISTS "liga_jugador_pagos_admin_all" ON liga_jugador_pagos;
 CREATE POLICY "liga_jugador_pagos_admin_all" ON liga_jugador_pagos
   FOR ALL USING (
@@ -157,10 +186,12 @@ CREATE POLICY "liga_jugador_pagos_admin_all" ON liga_jugador_pagos
     )
   );
 
+-- liga_abonos: lectura para admin/superadmin del club
 DROP POLICY IF EXISTS "liga_abonos_select" ON liga_abonos;
 CREATE POLICY "liga_abonos_select" ON liga_abonos
   FOR SELECT USING (
-    pago_id IN (
+    get_my_rol() IN ('admin', 'superadmin')
+    AND pago_id IN (
       SELECT p.id FROM liga_jugador_pagos p
       JOIN liga_divisiones d ON d.id = p.division_id
       JOIN ligas l ON l.id = d.liga_id
@@ -168,6 +199,7 @@ CREATE POLICY "liga_abonos_select" ON liga_abonos
     )
   );
 
+-- liga_abonos: escritura solo admin
 DROP POLICY IF EXISTS "liga_abonos_admin_all" ON liga_abonos;
 CREATE POLICY "liga_abonos_admin_all" ON liga_abonos
   FOR ALL USING (
