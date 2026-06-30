@@ -2,14 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { generarBloquesHorario } from '@/lib/domain/liga'
+import { generarBloquesHorario, normalizarBloque, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
 import {
   moverPartidoLiga, iniciarFecha, registrarResultadoPartido,
   registrarWalkover, reprogramarPartidoAFecha5, cambiarArbitroPartido,
 } from '@/app/actions/liga'
 
 const supabase = createClient()
-const BLOQUES = generarBloquesHorario()
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
 const text = '#0f172a'
@@ -46,6 +45,7 @@ interface Mesa {
 // partidos de todas las divisiones — es la vista operativa del juez.
 export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisionId?: string }) {
   const [fecha, setFecha] = useState<{ numero: number; estado: string; ligaId: string; ligaNombre: string } | null>(null)
+  const [bloques, setBloques] = useState<string[]>(() => generarBloquesHorario())
   const [mesas, setMesas] = useState<Mesa[]>([])
   const [partidos, setPartidos] = useState<PartidoBoard[]>([])
   const [nombres, setNombres] = useState<Record<string, string>>({})
@@ -66,6 +66,15 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
     setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: ligaRel?.nombre ?? '' })
 
     const db = supabase as any
+
+    // Leer bloque_minutos de la liga para generar la grilla con el paso correcto
+    const { data: ligaConfig } = await db
+      .from('ligas')
+      .select('bloque_minutos')
+      .eq('id', fechaData.liga_id)
+      .single()
+    setBloques(generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, ligaConfig?.bloque_minutos ?? 30))
+
     const [{ data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: divJugData }] = await Promise.all([
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', fechaData.liga_id).order('numero', { ascending: true }),
       db.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId).is('deleted_at', null),
@@ -84,7 +93,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
       id: p.id,
       divisionId: p.division_id,
       mesaId: p.mesa_id,
-      bloqueHorario: p.bloque_horario,
+      bloqueHorario: normalizarBloque(p.bloque_horario),
       jugadorAId: p.jugador_a_id,
       jugadorBId: p.jugador_b_id,
       arbitroId: p.arbitro_id,
@@ -334,7 +343,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
               </tr>
             </thead>
             <tbody>
-              {BLOQUES.map(bloque => (
+              {bloques.map(bloque => (
                 <tr key={bloque}>
                   <td style={{ position:'sticky', left:0, background:'#ffffff', borderBottom:'1px solid #f1f5f9', padding:'8px 14px', fontSize:12, fontWeight:600, color: text, fontFamily:'monospace' }}>
                     {bloque}

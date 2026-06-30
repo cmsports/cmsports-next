@@ -8,9 +8,12 @@ import {
   programarFecha,
   asignarArbitros,
   validarMovimientoPartido,
+  normalizarBloque,
   esResultadoBo5Valido,
   determinarGanadorBo5,
   calcularDiffDivision,
+  BLOQUE_INICIO,
+  BLOQUE_FIN,
   type DiffDivision,
   type PartidoAProgramar,
   type PartidoProgramado,
@@ -228,15 +231,27 @@ export async function generarFixtureDivisionAction(params: { divisionId: string 
   return { success: true, totalPartidos: inserts.length }
 }
 
-// Motor de programación (Paso 3): toma todos los partidos pendientes
-// (sin fecha asignada) de la liga y les asigna fecha (1-4), mesa y bloque
-// horario, además del árbitro. La Fecha 5 (ajuste) queda fuera de la
-// programación inicial — se reserva para incidencias (Paso 6).
+// Motor de programación (F3): toma todos los partidos sin fecha asignada de la
+// liga y les asigna fecha (1 a N-1), mesa y bloque horario + árbitro.
+// La última fecha (es_ajuste=true) se reserva para incidencias.
+// Usa bloque_minutos y total_fechas de la config de la liga (configurable).
 export async function generarProgramacionLiga(params: { ligaId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
   const { ligaId } = params
+  const db = supabase as any
+
+  // Leer config de la liga (total_fechas y bloque_minutos son de migración 016;
+  // si no existen, usar valores por defecto)
+  const { data: ligaConfig } = await db
+    .from('ligas')
+    .select('total_fechas, bloque_minutos')
+    .eq('id', ligaId)
+    .single()
+  const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
+  const totalFechas: number = ligaConfig?.total_fechas ?? 5
+  const nFechasRegulares = totalFechas - 1
 
   const { data: fechas } = await supabase
     .from('liga_fechas')
@@ -251,10 +266,11 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     .eq('liga_id', ligaId)
     .order('numero', { ascending: true })
 
-  if (!fechas?.length) return { error: 'Crea primero las fechas regulares de la liga (1 a 4)' }
+  if (!fechas?.length)
+    return { error: `Crea primero las fechas regulares de la liga (1 a ${nFechasRegulares})` }
   if (!mesas?.length) return { error: 'Crea primero las mesas disponibles de la liga' }
 
-  const { data: rawPendientes } = await (supabase as any)
+  const { data: rawPendientes } = await db
     .from('liga_partidos')
     .select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture')
     .eq('liga_id', ligaId)
@@ -286,14 +302,14 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     ordenFixture: p.orden_fixture,
   }))
 
-  const bloques = generarBloquesHorario()
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
   const mesasNumeros = mesas.map(m => m.numero)
   const capacidadPorFecha = mesasNumeros.length * bloques.length
 
   const { fechas: chunks, sobrantes } = distribuirEnFechas(aProgramar, fechas.length, capacidadPorFecha)
 
   const todosProgramados: PartidoProgramado[] = []
-  const sinAsignarTotal: PartidoAProgramar[] = [...sobrantes]
+  const sinAsignarIds: string[] = sobrantes.map(p => p.id)
   let carryOver: PartidoAProgramar[] = []
 
   for (let i = 0; i < fechas.length; i++) {
@@ -302,7 +318,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     const { programados, sinAsignar } = programarFecha(cola, fechas[i].numero, mesasNumeros, bloques)
     todosProgramados.push(...programados)
     carryOver = i < fechas.length - 1 ? sinAsignar : []
-    if (i === fechas.length - 1) sinAsignarTotal.push(...sinAsignar)
+    if (i === fechas.length - 1) sinAsignarIds.push(...sinAsignar.map(p => p.id))
   }
 
   const conArbitros = asignarArbitros(todosProgramados, jugadoresPorDivision)
@@ -310,10 +326,12 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   const fechaIdPorNumero = new Map(fechas.map(f => [f.numero, f.id]))
   const mesaIdPorNumero = new Map(mesas.map(m => [m.numero, m.id]))
 
+  // Guardar en lotes; capturar errores individuales (p.ej. HC-01 trigger)
+  let programadosExitosos = 0
   const tamanoLote = 25
   for (let i = 0; i < conArbitros.length; i += tamanoLote) {
     const lote = conArbitros.slice(i, i + tamanoLote)
-    await Promise.all(
+    const resultados = await Promise.all(
       lote.map(p =>
         supabase
           .from('liga_partidos')
@@ -323,17 +341,50 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
             bloque_horario: p.bloqueHorario,
             arbitro_id: p.arbitroId,
           })
-          .eq('id', p.id),
+          .eq('id', p.id)
+          .then(r => ({ id: p.id, error: r.error })),
       ),
     )
+    for (const r of resultados) {
+      if (r.error) sinAsignarIds.push(r.id)
+      else programadosExitosos++
+    }
   }
 
   return {
     success: true,
-    totalProgramados: conArbitros.length,
-    totalSinProgramar: sinAsignarTotal.length,
-    sinProgramarIds: sinAsignarTotal.map(p => p.id),
+    totalProgramados: programadosExitosos,
+    totalSinProgramar: sinAsignarIds.length,
+    sinProgramarIds: sinAsignarIds,
   }
+}
+
+// Limpia la programación de todos los partidos no jugados (estado programado
+// o pendiente con fecha asignada) para que puedan ser reprogramados desde cero.
+// NO toca partidos finalizados, walkovers ni partidos sin fecha.
+export async function limpiarProgramacionLiga(params: { ligaId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const db = supabase as any
+  const { data: activos } = await db
+    .from('liga_partidos')
+    .select('id')
+    .eq('liga_id', params.ligaId)
+    .in('estado', ['programado', 'pendiente'])
+    .not('fecha_id', 'is', null)
+    .is('deleted_at', null)
+
+  const ids = (activos || []).map((p: { id: string }) => p.id)
+  if (!ids.length) return { success: true, limpiados: 0 }
+
+  const { error } = await supabase
+    .from('liga_partidos')
+    .update({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null })
+    .in('id', ids)
+  if (error) return { error: 'No se pudo limpiar la programación: ' + error.message }
+
+  return { success: true, limpiados: ids.length }
 }
 
 // Mueve un partido a otra mesa/bloque (misma fecha o distinta) validando en
@@ -375,7 +426,7 @@ export async function moverPartidoLiga(params: {
     id: p.id,
     fechaId: p.fecha_id,
     mesaId: p.mesa_id,
-    bloqueHorario: p.bloque_horario,
+    bloqueHorario: normalizarBloque(p.bloque_horario),
     jugadorAId: p.jugador_a_id,
     jugadorBId: p.jugador_b_id,
     arbitroId: p.arbitro_id,
@@ -437,7 +488,7 @@ export async function cambiarArbitroPartido(params: { partidoId: string; arbitro
       id: p.id,
       fechaId: p.fecha_id,
       mesaId: p.mesa_id,
-      bloqueHorario: p.bloque_horario,
+      bloqueHorario: normalizarBloque(p.bloque_horario),
       jugadorAId: p.jugador_a_id,
       jugadorBId: p.jugador_b_id,
       arbitroId: p.arbitro_id ?? null,
