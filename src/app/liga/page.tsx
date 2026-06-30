@@ -36,6 +36,8 @@ export default function LigaPage() {
   const [nombre, setNombre] = useState('')
   const [numDivisiones, setNumDivisiones] = useState('')
   const [jugadoresPorDivision, setJugadoresPorDivision] = useState('')
+  const [totalFechas, setTotalFechas] = useState('5')
+  const [montoInscripcion, setMontoInscripcion] = useState('')
   const [creando, setCreando] = useState(false)
   const [error, setError] = useState('')
 
@@ -60,6 +62,8 @@ export default function LigaPage() {
       nombre,
       numDivisiones: numDivisiones ? parseInt(numDivisiones) : undefined,
       jugadoresPorDivision: jugadoresPorDivision ? parseInt(jugadoresPorDivision) : undefined,
+      totalFechas: totalFechas ? parseInt(totalFechas) : 5,
+      montoInscripcionDefault: montoInscripcion ? parseInt(montoInscripcion) : undefined,
     })
     setCreando(false)
     if (res.error) { setError(res.error); return }
@@ -67,6 +71,8 @@ export default function LigaPage() {
     setNombre('')
     setNumDivisiones('')
     setJugadoresPorDivision('')
+    setTotalFechas('5')
+    setMontoInscripcion('')
     if (res.ligaId) router.push(`/liga/${res.ligaId}`)
   }
 
@@ -120,13 +126,25 @@ export default function LigaPage() {
       {modalOpen && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
-            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:6 }}>Nueva liga</div>
-            <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Se crean automáticamente las 5 fechas de temporada (4 regulares + 1 de ajuste)</div>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>Nueva liga</div>
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nombre de la liga</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 placeholder="Ej: Liga Invierno 2026" value={nombre} onChange={e => setNombre(e.target.value)} />
             </div>
+            <div style={{ display:'flex', gap:10, marginBottom:14 }}>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fechas de temporada</label>
+                <input type="number" min={2} style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  placeholder="5" value={totalFechas} onChange={e => setTotalFechas(e.target.value)} />
+              </div>
+              <div style={{ flex:1 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Inscripción por jugador ($)</label>
+                <input type="number" min={0} style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  placeholder="Ej: 10000" value={montoInscripcion} onChange={e => setMontoInscripcion(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ fontSize:11, color: hint, marginBottom:8 }}>La última fecha siempre es de ajuste. Mínimo 2 fechas.</div>
             <div style={{ display:'flex', gap:10, marginBottom:6 }}>
               <div style={{ flex:1 }}>
                 <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Cantidad de divisiones</label>
@@ -139,7 +157,7 @@ export default function LigaPage() {
                   placeholder="Ej: 12" value={jugadoresPorDivision} onChange={e => setJugadoresPorDivision(e.target.value)} />
               </div>
             </div>
-            <div style={{ fontSize:11, color: hint, marginBottom:20 }}>Opcional — si las completas, se crean las divisiones automáticamente (puedes seguir agregando más después)</div>
+            <div style={{ fontSize:11, color: hint, marginBottom:20 }}>Divisiones y jugadores son opcionales — puedes configurarlos después</div>
             {error && <p style={{ fontSize:12, color:'#dc2626', marginBottom:14 }}>{error}</p>}
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
