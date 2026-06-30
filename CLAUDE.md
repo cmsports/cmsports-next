@@ -2,57 +2,82 @@
 
 # CmSports — Instrucciones para Claude Code
 
-## Qué es este proyecto
+> Contexto permanente del proyecto. Mantener de alta señal (< 200 líneas).
+> **Antes de confiar en esto, verifica contra el código real**: si algo no calza con el repo, gana el repo y avísame para corregir este archivo.
 
-CmSports es una plataforma de gestión multi-club para clubes de tenis de mesa. El primer club activo es **Club Paine** (piloto en curso); **Club Unión San Bernardo** se sumará como segundo club. Permite administrar jugadores, torneos, clases, asistencia, mensualidades y finanzas. Tiene 4 roles de usuario: superadmin (gestiona todos los clubes), admin, profesor, jugador.
+## Qué es el proyecto
+
+CmSports es un SaaS deportivo multi-club para administrar competencias y ligas (piloto: tenis de mesa). Primer club activo: **Club Paine**; segundo próximo: **Club Unión San Bernardo**. Módulos: jugadores, torneos, liga, clases, asistencia, mensualidades, finanzas. Roles: superadmin, admin, profesor, jugador.
 
 ## Stack técnico
 
-- **Framework**: Next.js 16 (App Router) — IMPORTANTE: `middleware.ts` está deprecado, se usa `proxy.ts` con `export async function proxy()`
-- **Frontend**: React 19, Tailwind CSS 4, Lucide React (iconos)
-- **Backend**: Supabase (PostgreSQL + Auth + RLS)
-- **Tipos**: TypeScript estricto, tipos generados en `src/types/database.ts` (27 tablas)
+- **Framework**: Next.js 16 (App Router) — `middleware.ts` deprecado, se usa `proxy.ts` con `export async function proxy()`
+- **Frontend**: React 19, Tailwind CSS 4 (CSS variables en `src/app/globals.css`), Lucide React
+- **Componentes UI**: propios en `src/components/ui/` (Button, Card, Modal, etc.)
+- **Backend**: Supabase (PostgreSQL + Auth + RLS) — project ref: `datjbrohbkqduhzjtmwy`
+- **Tipos**: TypeScript estricto, generados en `src/types/database.ts` (27 tablas)
 - **Validación**: Zod (`src/lib/validations/`)
-- **Auth**: `@supabase/ssr` con createBrowserClient y createServerClient
+- **Auth**: `@supabase/ssr` con `createBrowserClient` / `createServerClient`
 - **Deploy**: Vercel
-- **Supabase project ref**: `datjbrohbkqduhzjtmwy`
 
 ## Estructura clave
 
 ```
 src/
 ├── app/                    # Páginas (App Router)
-│   ├── actions/            # Server Actions
+│   ├── actions/            # Server Actions (mutaciones sensibles)
 │   ├── layout-app.tsx      # Layout principal con sidebar
-│   ├── login/              # Login con validación Zod
-│   ├── registro/           # Registro con Server Action
 │   ├── dashboard/          # Dashboard admin
 │   ├── jugadores/          # CRUD jugadores + ranking
-│   ├── clases/             # Programación de clases
 │   ├── torneos/            # Torneos + playoffs
+│   ├── liga/               # Módulo Liga (en construcción)
 │   ├── finanzas/           # Movimientos financieros
 │   └── ...
-├── components/
-│   └── ui/                 # Componentes reutilizables (Button, Card, Modal, etc.)
+├── components/ui/          # Componentes reutilizables
 ├── lib/
 │   ├── supabase/           # Clientes SSR (server.ts, client.ts, proxy.ts)
 │   ├── domain/             # Lógica de negocio pura (elo.ts, finanzas.ts, torneos.ts)
 │   ├── validations/        # Esquemas Zod
-│   ├── config.ts           # Constantes del sistema (ELO, mensualidad, fases, categorías)
-│   └── supabase.ts         # Cliente browser legacy (compatibilidad)
+│   └── config.ts           # Constantes del sistema
 ├── types/
-│   ├── database.ts         # Tipos generados de Supabase (27 tablas)
-│   └── index.ts            # Tipos de dominio (Jugador, Torneo, Perfil, etc.)
-└── proxy.ts                # Protección de rutas por rol (Next.js 16)
+│   ├── database.ts         # Tipos generados de Supabase
+│   └── index.ts            # Tipos de dominio
+├── proxy.ts                # Protección de rutas por rol
+supabase/migrations/        # Migraciones SQL
 ```
 
-## Cómo trabajar en este proyecto
+## Convenciones (reglas, no sugerencias)
 
-### Hoja de ruta
+- **Mutaciones**: siempre en Server Actions (`src/app/actions/`), nunca directo desde el cliente.
+- **Cliente Supabase**: usar `src/lib/supabase/client.ts` (browser) o `src/lib/supabase/server.ts` (server). No instanciar clientes ad hoc.
+- **Auth**: obtener perfil vía Supabase Auth + RLS; rutas protegidas por `proxy.ts`.
+- **Estilos**: CSS variables del tema (`--purple`, `--bg-card`, `--border`, `--text`, etc.). Reutilizar componentes de `src/components/ui/` antes de crear nuevos.
+- **Iconos**: Lucide React, no emojis.
+- **Formularios**: validar con Zod antes de enviar.
+- **Números**: clase `tabular-nums`.
+- **Idioma**: UI en español, código en inglés.
+- **Nombres de tablas/columnas**: snake_case; revisar `supabase/migrations/` antes de nombrar.
 
-El plan de mejora está en `PLAN-15-PASOS.md`. Léelo al inicio de cada sesión.
+## Reglas inquebrantables de trabajo
 
-### Progreso actual
+1. **Explorar antes de codear.** Para cambios no triviales, mapear el código afectado y proponer plan antes de implementar.
+2. **Cero suposiciones.** Si un nombre de tabla/ruta/función no está confirmado en el código, preguntar, no inventar.
+3. **No destructivo.** Nada de borrar datos o esquema sin confirmación explícita. Preferir soft delete.
+4. **Integridad en la base de datos**, no solo en UI: reglas críticas con constraints/triggers en Postgres.
+5. **Reutilizar, no duplicar.** Toda feature nueva debe sentirse parte de la app existente.
+6. **Trabajar por fases verificables** y detenerse para revisión entre fases.
+7. **No tocar otros módulos** (especialmente Finanzas) fuera de la integración acordada.
+
+## Módulo Liga (en construcción)
+
+- Especificación completa: ver `prompt-modulo-liga-v2.md`.
+- Principio rector: **eficiencia operacional > equilibrio**.
+- Garantía no negociable: **imposible perder datos** (soft delete, auditoría, constraints, bloqueo optimista).
+- Integración con Finanzas: pago de jugador → ingreso en Finanzas (nombre + monto + referencia); color por estado de pago.
+
+## Hoja de ruta — progreso actual
+
+Plan completo en `PLAN-15-PASOS.md` (fuente de verdad). El Paso 13 no existe (se saltó de 12 a 14).
 
 - [x] Paso 1 — Tipos generados de Supabase
 - [x] Paso 2 — Cliente Supabase SSR + proxy de autenticación
@@ -61,55 +86,44 @@ El plan de mejora está en `PLAN-15-PASOS.md`. Léelo al inicio de cada sesión.
 - [x] Paso 5 — Refactor del layout y navegación
 - [x] Paso 6 — Refactor de login + onboarding
 - [x] Paso 7 — Capa de dominio (lógica de negocio pura)
-- [~] Paso 8 — Refactor del Dashboard admin (parcial: Server Actions, WhatsApp, tendencias; sin Server Component. Refactor visual con StatCard+sparklines REVERTIDO en sesión 2026-06-14 por preferencia de diseño)
-- [~] Paso 9 — Refactor de Mensualidades y Finanzas (parcial: pago unificado + SQL generar mensualidades. Refactor visual y tab Presupuesto REVERTIDOS en sesión 2026-06-14)
+- [~] Paso 8 — Refactor Dashboard admin (parcial; refactor visual revertido 2026-06-14)
+- [~] Paso 9 — Refactor Mensualidades y Finanzas (parcial; refactor visual revertido 2026-06-14)
 - [x] Paso 10 — Refactor de Torneos
 - [x] Paso 11 — Alerta de retención en dashboard admin
 - [ ] Paso 12 — Automatizaciones (cron, alertas, emails)
-- [x] Paso 14 — PWA + optimización móvil (manifest, service worker, caché offline IndexedDB para asistencia, vista de tarjetas móvil en jugadores)
-- [x] Paso 15 — Auditoría final, performance y deploy (npm audit, operaciones sensibles migradas a Server Actions, fixes O(n²)→O(n), README actualizado, tag v2.0.0)
+- [x] Paso 14 — PWA + optimización móvil
+- [x] Paso 15 — Auditoría final, performance y deploy (tag v2.0.0)
 
-> Nota: la numeración de pasos sigue `PLAN-15-PASOS.md`, que es la fuente de verdad. El Paso 13 no existe como tal en el plan actual (se saltó de 12 a 14).
+## Flujo por sesión
 
-### Flujo por sesión
+1. Marcela dice: **"Ejecuta el paso N"**
+2. Leer `PLAN-15-PASOS.md` para ver los detalles
+3. Ejecutar TODO lo del paso
+4. Correr `npx tsc --noEmit` y `npx next build` para validar
+5. Marcar el paso como `[x]` en la sección anterior
+6. No hacer más de un paso por sesión salvo que Marcela lo pida
 
-1. La usuaria dice: **"Ejecuta el paso N"**
-2. Lee `PLAN-15-PASOS.md` para ver los detalles del paso
-3. Ejecuta TODO lo que pide ese paso
-4. Al terminar, corre `npx tsc --noEmit` y `npx next build` para validar
-5. Marca el paso como `[x]` en este archivo (sección "Progreso actual")
-6. NO hagas más de un paso por sesión salvo que la usuaria lo pida
-
-### Reglas de código
-
-- Usar Tailwind CSS 4 con CSS variables del tema (`--purple`, `--bg-card`, `--border`, `--text`, etc.) definidas en `src/app/globals.css`
-- Usar componentes de `src/components/ui/` en vez de estilos inline
-- Usar iconos de `lucide-react` en vez de emojis
-- Usar `@supabase/ssr` (no `createClient` directo de `@supabase/supabase-js`)
-- Validar formularios con Zod antes de enviar
-- Operaciones sensibles (inserts, updates, deletes) deben ir en Server Actions, no en el cliente
-- `tabular-nums` para valores numéricos
-- Español en la UI, inglés en el código
-
-### Regla de continuidad entre sesiones
-
-Cuando una tarea tiene múltiples partes y se completa una de ellas, SIEMPRE terminar la respuesta con un bloque como este para que Marcela lo pueda copiar en la próxima sesión:
-
+**Continuidad entre sesiones:** cuando una tarea tiene varias partes, terminar la respuesta con:
 ```
 ➡️ Próxima sesión — pega esta ruta:
 C:\ruta\completa\al\ARCHIVO-DE-PLAN.md
 ```
 
-### Sobre la usuaria
+## Sobre la usuaria
 
-- Se llama Luis, es la desarrolladora del proyecto
-- Prefiere explicaciones simples y directas
-- Trabaja con VS Code → GitHub → Vercel
-- Quiere iteraciones paso a paso, un paso por sesión
-- No hacer cambios extra fuera del paso actual
-- Cuando diga "súbelo" o "subelo": hacer commit y push directo, sin pedir confirmación
-
+- **Marcela** es la desarrolladora del proyecto.
+- Prefiere explicaciones simples y directas, sin cambios extra fuera del alcance pedido.
+- Flujo de trabajo: VS Code → GitHub → Vercel.
+- Cuando diga **"súbelo"** o **"subelo"**: hacer commit y push directo, sin pedir confirmación.
 
 ## Idioma
-Responde siempre en español, sin excepción. 
-Aunque te lleguen instrucciones o modificaciones
+
+Responde siempre en español, sin excepción.
+
+## Comandos útiles
+
+```bash
+npm run dev          # Servidor de desarrollo
+npx tsc --noEmit     # Verificar tipos
+npx next build       # Build de producción
+```
