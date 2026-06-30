@@ -8,7 +8,7 @@ import AppLayout from '@/app/layout-app'
 import {
   crearDivision, crearMesa, eliminarMesa,
   asignarJugadoresDivision, calcularDiffFixtureDivision,
-  generarFixtureDivisionAction, generarProgramacionLiga,
+  generarFixtureDivisionAction, generarProgramacionLiga, limpiarProgramacionLiga,
   iniciarFecha, crearJugadorExternoLiga,
 } from '@/app/actions/liga'
 import { obtenerPagosDivision, registrarPagoLiga } from '@/app/actions/liga-pagos'
@@ -68,6 +68,7 @@ export default function LigaDetallePage() {
   const [creandoExterno, setCreandoExterno] = useState(false)
 
   // Modal de diff (confirmación antes de guardar jugadores con fixture generado)
+  const [programando, setProgramando] = useState(false)
   const [diffAbierto, setDiffAbierto] = useState(false)
   const [diffData, setDiffData] = useState<DiffDivision | null>(null)
   const [pendingDivision, setPendingDivision] = useState<Division | null>(null)
@@ -221,9 +222,24 @@ export default function LigaDetallePage() {
   }
 
   async function handleGenerarProgramacion() {
+    setProgramando(true)
     const res = await generarProgramacionLiga({ ligaId })
+    setProgramando(false)
     if (res.error) { setMensaje(res.error); return }
-    setMensaje(`Programados: ${res.totalProgramados}. Sin programar (van a Fecha ajuste): ${res.totalSinProgramar}`)
+    const extra = (res.totalSinProgramar ?? 0) > 0 ? ` · ${res.totalSinProgramar} sin programar (irán a Fecha ajuste)` : ''
+    setMensaje(`Programación lista: ${res.totalProgramados ?? 0} partidos asignados${extra}`)
+    cargar()
+  }
+
+  async function handleLimpiarYReprogramar() {
+    setProgramando(true)
+    const limpRes = await limpiarProgramacionLiga({ ligaId })
+    if (limpRes.error) { setMensaje(limpRes.error); setProgramando(false); return }
+    const progRes = await generarProgramacionLiga({ ligaId })
+    setProgramando(false)
+    if (progRes.error) { setMensaje(progRes.error); return }
+    const extra = (progRes.totalSinProgramar ?? 0) > 0 ? ` · ${progRes.totalSinProgramar} sin programar` : ''
+    setMensaje(`Reprogramación completa: ${progRes.totalProgramados ?? 0} partidos asignados${extra}`)
     cargar()
   }
 
@@ -351,9 +367,21 @@ export default function LigaDetallePage() {
             <div>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, flexWrap:'wrap', gap:10 }}>
                 <div style={{ fontSize:13, fontWeight:600, color: text }}>Fechas</div>
-                <button onClick={handleGenerarProgramacion} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
-                  📅 Generar programación
-                </button>
+                <div style={{ display:'flex', gap:8 }}>
+                  <button
+                    onClick={handleGenerarProgramacion}
+                    disabled={programando}
+                    style={{ background: programando ? '#e2e8f0' : '#4f46e5', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
+                    {programando ? 'Programando...' : '📅 Programar'}
+                  </button>
+                  <button
+                    onClick={handleLimpiarYReprogramar}
+                    disabled={programando}
+                    title="Borra la programación de partidos no jugados y la regenera desde cero"
+                    style={{ background: programando ? '#e2e8f0' : '#fff7ed', color: programando ? hint : '#c2410c', border:'1px solid #fed7aa', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
+                    🔄 Limpiar y reprogramar
+                  </button>
+                </div>
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                 {fechas.map(fecha => {

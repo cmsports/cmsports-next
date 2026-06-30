@@ -217,10 +217,19 @@ export interface ResultadoProgramacionFecha {
   sinAsignar: PartidoAProgramar[]
 }
 
+// Normaliza un string de bloque horario al formato HH:MM, independiente de si
+// viene de la BD ("09:00:00") o del scheduler ("09:00").
+export function normalizarBloque(s: string | null | undefined): string | null {
+  if (!s) return null
+  return s.length >= 5 ? s.substring(0, 5) : s
+}
+
 // Asigna mesa y bloque horario a los partidos de una fecha, recorriendo los
-// bloques en orden cronológico y priorizando, en cada bloque, los partidos
-// que continúan la racha de un jugador que ya jugó en el bloque inmediatamente
-// anterior (compactación) por sobre partidos que recién comienzan.
+// bloques en orden cronológico. Prioridad doble:
+// 1. Continuación: partidos donde algún jugador jugó en el bloque inmediato anterior
+// 2. Dentro de cada grupo, mayor peso = jugadores con más partidos pendientes
+//    (compactación: los jugadores con muchos partidos quedan en bloques consecutivos
+//     y pueden retirarse antes).
 export function programarFecha(
   partidos: PartidoAProgramar[],
   fechaNumero: number,
@@ -233,16 +242,29 @@ export function programarFecha(
 
   for (let bIdx = 0; bIdx < bloques.length && pendientes.length > 0; bIdx++) {
     const mesasLibres = [...mesas]
+
+    // Peso = partidos pendientes del jugador A + del jugador B (desc)
+    const pendientesPorJugador = new Map<string, number>()
+    for (const p of pendientes) {
+      pendientesPorJugador.set(p.jugadorAId, (pendientesPorJugador.get(p.jugadorAId) ?? 0) + 1)
+      pendientesPorJugador.set(p.jugadorBId, (pendientesPorJugador.get(p.jugadorBId) ?? 0) + 1)
+    }
+    const peso = (p: PartidoAProgramar) =>
+      (pendientesPorJugador.get(p.jugadorAId) ?? 0) + (pendientesPorJugador.get(p.jugadorBId) ?? 0)
+
     const continuacion: PartidoAProgramar[] = []
     const nuevos: PartidoAProgramar[] = []
 
     for (const p of pendientes) {
       const ultA = ultimoBloqueJugador.get(p.jugadorAId)
       const ultB = ultimoBloqueJugador.get(p.jugadorBId)
-      if (ultA === bIdx || ultB === bIdx) continue // ya jugando este bloque (no debería ocurrir)
+      if (ultA === bIdx || ultB === bIdx) continue
       if (ultA === bIdx - 1 || ultB === bIdx - 1) continuacion.push(p)
       else nuevos.push(p)
     }
+
+    continuacion.sort((a, b) => peso(b) - peso(a))
+    nuevos.sort((a, b) => peso(b) - peso(a))
 
     const candidatos = [...continuacion, ...nuevos]
     const usadosEsteBloque = new Set<string>()
