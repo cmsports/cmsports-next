@@ -343,24 +343,40 @@ export async function crearJugadorExternoLiga(params: { nombre: string; rut?: st
 
 // ─── CRUD básico de ligas/divisiones/mesas (módulo visible) ────────────────
 
-export async function crearLiga(params: { nombre: string; numDivisiones?: number; jugadoresPorDivision?: number }) {
+export async function crearLiga(params: {
+  nombre: string
+  numDivisiones?: number
+  jugadoresPorDivision?: number
+  totalFechas?: number
+  montoInscripcionDefault?: number
+}) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
   if (!params.nombre.trim()) return { error: 'El nombre es obligatorio' }
 
-  const { data: liga, error } = await supabase
+  const totalFechas = Math.max(2, params.totalFechas ?? 5)
+
+  const { data: liga, error } = await (supabase as any)
     .from('ligas')
-    .insert({ club_id: clubId, nombre: params.nombre.trim() })
+    .insert({
+      club_id: clubId,
+      nombre: params.nombre.trim(),
+      total_fechas: totalFechas,
+      monto_inscripcion_default: params.montoInscripcionDefault ?? null,
+    })
     .select('id')
     .single()
   if (error || !liga) return { error: 'No se pudo crear la liga: ' + (error?.message ?? '') }
 
-  // 5 fechas: 1-4 regulares, 5 de ajuste (Anexo A / Sección 4)
+  // Fechas: 1 a (totalFechas-1) son regulares, la última es de ajuste
   await supabase.from('liga_fechas').insert(
-    [1, 2, 3, 4, 5].map(numero => ({ liga_id: liga.id, numero, es_ajuste: numero === 5 })),
+    Array.from({ length: totalFechas }, (_, i) => ({
+      liga_id: liga.id,
+      numero: i + 1,
+      es_ajuste: i + 1 === totalFechas,
+    })),
   )
 
-  // Anexo B: si se especifica cantidad de divisiones, se crean automáticamente
   const numDivisiones = params.numDivisiones ?? 0
   if (numDivisiones > 0) {
     await supabase.from('liga_divisiones').insert(
