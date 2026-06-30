@@ -17,17 +17,23 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
   const [loading, setLoading] = useState(true)
 
   const cargar = useCallback(async () => {
-    const [{ data: dj }, { data: partidosData }] = await Promise.all([
+    const db = supabase as any
+    const [{ data: dj }, { data: rawPartidos }] = await Promise.all([
       supabase.from('liga_division_jugadores').select('jugador_id').eq('division_id', divisionId),
-      supabase
+      db
         .from('liga_partidos')
         .select('jugador_a_id, jugador_b_id, ganador_id, es_walkover, sets_a, sets_b')
         .eq('division_id', divisionId)
-        .in('estado', ['finalizado', 'walkover']),
+        .in('estado', ['finalizado', 'walkover'])
+        .is('deleted_at', null),
     ])
+    const partidosData = (rawPartidos || []) as Array<{
+      jugador_a_id: string; jugador_b_id: string; ganador_id: string | null
+      es_walkover: boolean; sets_a: number | null; sets_b: number | null
+    }>
 
     const jugadorIds = (dj || []).map(j => j.jugador_id)
-    const partidos: PartidoFinalizado[] = (partidosData || [])
+    const partidos: PartidoFinalizado[] = partidosData
       .filter(p => p.ganador_id)
       .map(p => ({
         jugadorAId: p.jugador_a_id,
