@@ -10,6 +10,8 @@ import {
   validarMovimientoPartido,
   esResultadoBo5Valido,
   determinarGanadorBo5,
+  calcularDiffDivision,
+  type DiffDivision,
   type PartidoAProgramar,
   type PartidoProgramado,
   type PartidoExistente,
@@ -24,40 +26,174 @@ async function requireAdminClub() {
   return { error: null, supabase, clubId: perfil.club_id }
 }
 
-// Asigna la lista de jugadores de una división. Si la división ya tiene
-// fixture generado, exige `regenerarFixture: true` (borra fixture y
-// resultados existentes) — evita modificaciones accidentales de jugadores
-// con partidos ya generados.
+// Calcula el diff de cambiar jugadores en una división con fixture ya generado.
+// No modifica la BD — solo devuelve qué cambiaría para mostrar en el modal de
+// confirmación antes de aplicar los cambios.
+export async function calcularDiffFixtureDivision(params: {
+  divisionId: string
+  nuevosJugadorIds: string[]
+}): Promise<{ error: string; data: null } | { error: null; data: DiffDivision }> {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr, data: null }
+
+  const { divisionId, nuevosJugadorIds } = params
+  const db = supabase as any
+
+  const { data: actualesRows } = await supabase
+    .from('liga_division_jugadores')
+    .select('jugador_id')
+    .eq('division_id', divisionId)
+  const actuales = (actualesRows || []).map((r: { jugador_id: string }) => r.jugador_id)
+
+  // Intentar con filtro deleted_at (requiere migración 016). Si la columna no
+  // existe aún, Supabase devuelve error y hacemos fallback sin filtro.
+  const { data: conFiltro, error: errFiltro } = await db
+    .from('liga_partidos')
+    .select('jugador_a_id, jugador_b_id, estado')
+    .eq('division_id', divisionId)
+    .is('deleted_at', null)
+
+  let partidosRows: Array<{ jugador_a_id: string; jugador_b_id: string; estado: string }> = []
+  if (!errFiltro) {
+    partidosRows = conFiltro || []
+  } else {
+    const { data: sinFiltro } = await supabase
+      .from('liga_partidos')
+      .select('jugador_a_id, jugador_b_id, estado')
+      .eq('division_id', divisionId)
+    partidosRows = sinFiltro || []
+  }
+
+  const partidosActivos = partidosRows.map(p => ({
+    jugadorAId: p.jugador_a_id,
+    jugadorBId: p.jugador_b_id,
+    jugado: ['finalizado', 'walkover'].includes(p.estado),
+  }))
+
+  const diff = calcularDiffDivision(actuales, nuevosJugadorIds, partidosActivos)
+  return { error: null, data: diff }
+}
+
+// Asigna la lista de jugadores de una división de forma incremental:
+// - Preserva partidos ya jugados aunque un jugador sea removido (soft delete)
+// - Anula partidos no jugados de jugadores removidos
+// - Crea partidos nuevos para pares que no existen todavía
+// - No borra ni regenera el fixture completo
 export async function asignarJugadoresDivision(params: {
   divisionId: string
   jugadorIds: string[]
-  regenerarFixture?: boolean
+  regenerarFixture?: boolean  // mantenido por compatibilidad, ya no se usa destructivamente
 }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { divisionId, jugadorIds, regenerarFixture } = params
-  const idsUnicos = Array.from(new Set(jugadorIds))
-  if (idsUnicos.length < 2) return { error: 'Una división necesita al menos 2 jugadores' }
+  const { divisionId, jugadorIds } = params
+  const nuevosIds = Array.from(new Set(jugadorIds))
+  if (nuevosIds.length < 2) return { error: 'Una división necesita al menos 2 jugadores' }
 
-  const { data: division } = await supabase.from('liga_divisiones').select('id, fixture_generado').eq('id', divisionId).single()
+  const { data: division } = await supabase
+    .from('liga_divisiones')
+    .select('id, liga_id')
+    .eq('id', divisionId)
+    .single()
   if (!division) return { error: 'División no encontrada' }
 
-  if (division.fixture_generado && !regenerarFixture) {
-    return { error: 'La división ya tiene fixture generado. Confirma la regeneración para modificar la lista de jugadores.' }
+  const db = supabase as any
+
+  // Estado actual
+  const { data: actualesRows } = await supabase
+    .from('liga_division_jugadores')
+    .select('jugador_id')
+    .eq('division_id', divisionId)
+  const actuales = (actualesRows || []).map((r: { jugador_id: string }) => r.jugador_id)
+
+  // Partidos activos (con fallback pre-migración 016)
+  const { data: conFiltro, error: errFiltro } = await db
+    .from('liga_partidos')
+    .select('id, jugador_a_id, jugador_b_id, estado')
+    .eq('division_id', divisionId)
+    .is('deleted_at', null)
+
+  let allPartidos: Array<{ id: string; jugador_a_id: string; jugador_b_id: string; estado: string }> = []
+  if (!errFiltro) {
+    allPartidos = conFiltro || []
+  } else {
+    const { data: sinFiltro } = await supabase
+      .from('liga_partidos')
+      .select('id, jugador_a_id, jugador_b_id, estado')
+      .eq('division_id', divisionId)
+    allPartidos = sinFiltro || []
   }
 
-  if (division.fixture_generado && regenerarFixture) {
-    await supabase.from('liga_partidos').delete().eq('division_id', divisionId)
-    await supabase.from('liga_divisiones').update({ fixture_generado: false }).eq('id', divisionId)
-  }
-
-  await supabase.from('liga_division_jugadores').delete().eq('division_id', divisionId)
-  await supabase.from('liga_division_jugadores').insert(
-    idsUnicos.map(jugadorId => ({ division_id: divisionId, jugador_id: jugadorId })),
+  const { jugadoresAgregados, jugadoresRemovidos, partidosNuevos, partidosAAnular } = calcularDiffDivision(
+    actuales,
+    nuevosIds,
+    allPartidos.map(p => ({
+      jugadorAId: p.jugador_a_id,
+      jugadorBId: p.jugador_b_id,
+      jugado: ['finalizado', 'walkover'].includes(p.estado),
+    })),
   )
 
-  return { success: true, totalJugadores: idsUnicos.length }
+  // Anular partidos no jugados de jugadores removidos
+  for (const { a, b } of partidosAAnular) {
+    const partido = allPartidos.find(
+      p => (p.jugador_a_id === a && p.jugador_b_id === b) || (p.jugador_a_id === b && p.jugador_b_id === a),
+    )
+    if (!partido) continue
+    // Intentar soft delete; si la columna no existe aún, borrar físicamente
+    // (seguro porque son partidos no jugados)
+    const { error: errSoft } = await db
+      .from('liga_partidos')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', partido.id)
+    if (errSoft) {
+      await supabase.from('liga_partidos').delete().eq('id', partido.id)
+    }
+  }
+
+  // Crear partidos nuevos para pares que no existían
+  if (partidosNuevos.length > 0) {
+    await supabase.from('liga_partidos').insert(
+      partidosNuevos.map(({ a, b }, idx) => ({
+        liga_id: division.liga_id,
+        division_id: divisionId,
+        jugador_a_id: a,
+        jugador_b_id: b,
+        orden_fixture: allPartidos.length + idx,
+      })),
+    )
+  }
+
+  // Actualizar liga_division_jugadores (solo los que cambian)
+  if (jugadoresRemovidos.length > 0) {
+    await supabase
+      .from('liga_division_jugadores')
+      .delete()
+      .eq('division_id', divisionId)
+      .in('jugador_id', jugadoresRemovidos)
+  }
+  if (jugadoresAgregados.length > 0) {
+    await supabase.from('liga_division_jugadores').insert(
+      jugadoresAgregados.map(jugadorId => ({ division_id: divisionId, jugador_id: jugadorId })),
+    )
+  }
+
+  // fixture_generado = true si hay partidos activos o jugados
+  const hayPartidos = allPartidos.length - partidosAAnular.length + partidosNuevos.length > 0
+  await supabase
+    .from('liga_divisiones')
+    .update({ fixture_generado: hayPartidos })
+    .eq('id', divisionId)
+
+  return {
+    success: true,
+    totalJugadores: nuevosIds.length,
+    jugadoresAgregados: jugadoresAgregados.length,
+    jugadoresRemovidos: jugadoresRemovidos.length,
+    partidosCreados: partidosNuevos.length,
+    partidosAnulados: partidosAAnular.length,
+  }
 }
 
 export async function generarFixtureDivisionAction(params: { divisionId: string }) {
