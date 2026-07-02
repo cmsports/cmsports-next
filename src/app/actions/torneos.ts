@@ -86,7 +86,15 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
 
   const perdedorId = partido.jugador_a === ganadorId ? partido.jugador_b : partido.jugador_a
 
-  await supabase.from('torneo_partidos').update({ ganador: ganadorId }).eq('id', partidoId)
+  // Guard atómico: solo escribe si el partido sigue sin ganador. Evita que un
+  // doble click o dos dispositivos apliquen el ELO dos veces.
+  const { data: actualizado } = await supabase
+    .from('torneo_partidos')
+    .update({ ganador: ganadorId })
+    .eq('id', partidoId)
+    .is('ganador', null)
+    .select('id')
+  if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
 
   if (perdedorId && perdedorId !== ganadorId) {
     const [{ data: g }, { data: p }] = await Promise.all([

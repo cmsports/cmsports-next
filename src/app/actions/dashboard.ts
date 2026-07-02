@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { CONFIG } from '@/lib/config'
+import { decrypt, generarPassword } from '@/lib/crypto'
 
 async function requireAdminClub() {
   const supabase = await createClient()
@@ -36,13 +37,14 @@ export async function aprobarSolicitud(input: {
   sesionesLimite: number
   origin: string
 }) {
-  const supabase = await createClient()
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr || !supabase) return { error: authErr }
 
   const { data: sol } = await supabase
     .from('solicitudes_jugador')
     .select('*')
     .eq('id', input.solicitudId)
-    .eq('club_id', input.clubId)
+    .eq('club_id', clubId)
     .eq('estado', 'pendiente')
     .single()
 
@@ -56,7 +58,7 @@ export async function aprobarSolicitud(input: {
   const { data: nuevoJugador, error: insertError } = await supabase
     .from('jugadores')
     .insert({
-      club_id: input.clubId,
+      club_id: clubId,
       nombre: sol.nombre,
       rut: sol.rut,
       email: sol.email,
@@ -87,8 +89,20 @@ export async function aprobarSolicitud(input: {
     return { error: 'Error al actualizar solicitud' }
   }
 
-  const passwordPropia = !!sol.password
-  const password = sol.password || generarPassword()
+  // La contraseña elegida por el jugador se guarda cifrada (AES-GCM);
+  // si no se puede descifrar, se genera una y se le informa al admin.
+  let passwordPropia = false
+  let password = ''
+  if (sol.password) {
+    try {
+      password = decrypt(sol.password)
+      passwordPropia = true
+    } catch {
+      password = generarPassword()
+    }
+  } else {
+    password = generarPassword()
+  }
 
   const admin = createAdminClient()
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
@@ -103,7 +117,7 @@ export async function aprobarSolicitud(input: {
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
     id: creado.user.id,
-    club_id: input.clubId,
+    club_id: clubId,
     nombre: sol.nombre,
     email: sol.email,
     rol: 'jugador',
@@ -119,15 +133,9 @@ export async function aprobarSolicitud(input: {
   return { success: true, password: passwordPropia ? undefined : password }
 }
 
-function generarPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
-  let pass = ''
-  for (let i = 0; i < 10; i++) pass += chars[Math.floor(Math.random() * chars.length)]
-  return pass
-}
-
-export async function rechazarSolicitud(solicitudId: string, clubId: string) {
-  const supabase = await createClient()
+export async function rechazarSolicitud(solicitudId: string, _clubId: string) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr || !supabase) return { error: authErr }
 
   const { error } = await supabase
     .from('solicitudes_jugador')

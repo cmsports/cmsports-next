@@ -46,8 +46,17 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse
   }
 
-  // No cookie session — let client-side auth handle it
+  // No cookie session — redirect protected route groups to login in the
+  // server; the rest is handled client-side (RLS protects the data anyway)
   if (!user) {
+    const protectedRoutes = [
+      ...superadminRoutes, ...adminRoutes, ...staffRoutes, ...profesorRoutes, ...jugadorRoutes,
+    ]
+    if (protectedRoutes.some((r) => pathname === r || pathname.startsWith(r + '/'))) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
     return supabaseResponse
   }
 

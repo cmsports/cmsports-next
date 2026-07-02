@@ -1343,7 +1343,12 @@ export interface Database {
       }
     }
     Views: {}
-    Functions: {}
+    Functions: {
+      validar_invitacion: {
+        Args: { p_codigo: string; p_club_id?: string | null }
+        Returns: { club_id: string; club_nombre: string }[]
+      }
+    }
     Enums: {}
     CompositeTypes: {}
   }

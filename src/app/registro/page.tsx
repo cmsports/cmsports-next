@@ -34,19 +34,15 @@ function RegistroForm() {
   useEffect(() => {
     async function verificar() {
       if (!codigo) { setValido(false); return }
-      let clubId = clubIdParam
-      if (!clubId) {
-        const { data: inv } = await supabase.from('invitaciones').select('club_id').eq('codigo', codigo).eq('activa', true).single()
-        if (!inv) { setValido(false); return }
-        clubId = inv.club_id
-      } else {
-        const { data: inv } = await supabase.from('invitaciones').select('id').eq('club_id', clubId).eq('codigo', codigo).eq('activa', true).single()
-        if (!inv) { setValido(false); return }
-      }
-      setResolvedClubId(clubId)
+      const { data: inv } = await supabase.rpc('validar_invitacion', {
+        p_codigo: codigo,
+        p_club_id: clubIdParam,
+      })
+      const match = inv?.[0]
+      if (!match) { setValido(false); return }
+      setResolvedClubId(match.club_id)
       setValido(true)
-      const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
-      if (club) setClubNombre(club.nombre)
+      if (match.club_nombre) setClubNombre(match.club_nombre)
     }
     verificar()
   }, [clubIdParam, codigo])

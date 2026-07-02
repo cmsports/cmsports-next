@@ -3,8 +3,15 @@ import { NextRequest, NextResponse } from 'next/server'
 const TEAM_ID = 'team_tEBVANHI3s1u7391NCICmVfi'
 const PROJECT_ID = 'prj_vX8jugAB0oF30JEJzL4SyftY89m1'
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 export async function GET(request: NextRequest) {
-  const secret = request.nextUrl.searchParams.get('secret')
+  // Preferir header Authorization (no queda en logs de acceso); el query
+  // param se mantiene por compatibilidad con el cron ya configurado.
+  const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+  const secret = bearer || request.nextUrl.searchParams.get('secret')
   const MONITOR_SECRET = process.env.MONITOR_SECRET
   const RESEND_API_KEY = process.env.RESEND_API_KEY
   const VERCEL_MONITOR_TOKEN = process.env.VERCEL_MONITOR_TOKEN
@@ -37,7 +44,7 @@ export async function GET(request: NextRequest) {
     const ultimoHora = ultimo
       ? new Date(ultimo.created).toISOString().slice(11, 16) + ' UTC'
       : 'N/A'
-    const ultimoCommit = ultimo?.meta?.githubCommitMessage?.split('\n')[0] ?? 'N/A'
+    const ultimoCommit = escapeHtml(ultimo?.meta?.githubCommitMessage?.split('\n')[0] ?? 'N/A')
 
     // 2. Obtener logs de error/warning de las últimas 24h
     const logsRes = await fetch(
@@ -84,8 +91,9 @@ export async function GET(request: NextRequest) {
         <tr style="background:#f8fafc;"><th style="text-align:left;padding:4px 8px;">Hora</th><th style="text-align:left;padding:4px 8px;">Ruta</th><th style="text-align:left;padding:4px 8px;">Mensaje</th><th style="text-align:left;padding:4px 8px;">Status</th></tr>
         ${criticalLogs.slice(0, 10).map((log) => {
           const hora = log.timestamp ? new Date(Number(log.timestamp)).toISOString().slice(11, 19) : 'N/A'
-          const msg = (log.message ?? '').slice(0, 60)
-          return `<tr><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${hora}</td><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${log.path ?? '/'}</td><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${msg}</td><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${log.statusCode ?? '-'}</td></tr>`
+          const msg = escapeHtml((log.message ?? '').slice(0, 60))
+          const path = escapeHtml(log.path ?? '/')
+          return `<tr><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${hora}</td><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${path}</td><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${msg}</td><td style="padding:4px 8px;border-top:1px solid #e2e8f0;">${log.statusCode ?? '-'}</td></tr>`
         }).join('')}
       </table>`
     }

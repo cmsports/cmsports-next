@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
 // Mismo snapshot de imagen que usa ChatGPT (requiere organización verificada en OpenAI).
 const MODELO_IMAGEN = 'chatgpt-image-latest'
@@ -7,6 +8,10 @@ interface Categoria { nombre: string; precio: string; hora: string }
 interface Premio { lugar: string; monto: string }
 
 async function urlToBlob(url: string): Promise<Blob> {
+  // Solo imágenes de nuestro storage de Supabase (evita que el endpoint
+  // descargue URLs arbitrarias)
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  if (!base || !url.startsWith(base)) throw new Error('URL de imagen no permitida')
   const res = await fetch(url)
   if (!res.ok) throw new Error('No se pudo descargar la imagen: ' + url)
   return res.blob()
@@ -33,6 +38,15 @@ function formatFecha(iso: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Solo staff autenticado puede generar flyers (cada imagen cuesta dinero)
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    const { data: perfil } = await supabase.from('perfiles').select('rol').eq('id', user.id).single()
+    if (!perfil || !['admin', 'profesor', 'superadmin'].includes(perfil.rol ?? '')) {
+      return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 })
+    }
+
     const {
       tipoEvento, nombreEvento, fecha, categorias, premios, notas, instrucciones,
       clubNombre, direccion, telefono, referenciaUrl, fotoUrl, logoUrl,
