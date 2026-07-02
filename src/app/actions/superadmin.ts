@@ -1,16 +1,7 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-
-async function requireSuperadmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null }
-  const { data: perfil } = await supabase.from('perfiles').select('rol').eq('id', user.id).single()
-  if (!perfil || perfil.rol !== 'superadmin') return { error: 'Acceso denegado' as const, supabase: null }
-  return { error: null, supabase }
-}
+import { requireSuperadmin } from '@/lib/auth/require'
 
 export async function crearClub(input: { nombre: string; ciudad: string; deporte: string; planMensual: number }) {
   const { error: authErr, supabase } = await requireSuperadmin()

@@ -1,15 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
-
-async function requirePerfil() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, perfil: null }
-  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol,jugador_id').eq('id', user.id).single()
-  if (!perfil || !perfil.club_id) return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
-  return { error: null, supabase, perfil: { ...perfil, club_id: perfil.club_id } }
-}
+import { requirePerfil } from '@/lib/auth/require'
 
 export async function registrarAsistenciaAction(
   clubId: string,
@@ -32,17 +23,8 @@ export async function registrarAsistenciaAction(
     hora,
   })
   if (error) return { error: error.message }
-  const { data: jugador } = await supabase
-    .from('jugadores')
-    .select('sesiones_usadas')
-    .eq('id', jugadorId)
-    .single()
-  if (jugador) {
-    await supabase
-      .from('jugadores')
-      .update({ sesiones_usadas: (jugador.sesiones_usadas || 0) + 1 })
-      .eq('id', jugadorId)
-  }
+  // Incremento atómico: evita perder check-ins simultáneos
+  await supabase.rpc('ajustar_sesiones', { p_jugador_id: jugadorId, p_delta: 1 })
   return { ok: true }
 }
 
@@ -65,17 +47,8 @@ export async function eliminarAsistencia(asistenciaId: string) {
   if (error) return { error: error.message }
 
   if (asistencia.jugador_id) {
-    const { data: jugador } = await supabase
-      .from('jugadores')
-      .select('sesiones_usadas')
-      .eq('id', asistencia.jugador_id)
-      .single()
-    if (jugador && (jugador.sesiones_usadas || 0) > 0) {
-      await supabase
-        .from('jugadores')
-        .update({ sesiones_usadas: (jugador.sesiones_usadas || 0) - 1 })
-        .eq('id', asistencia.jugador_id)
-    }
+    // Decremento atómico con piso en 0 (lo garantiza la función SQL)
+    await supabase.rpc('ajustar_sesiones', { p_jugador_id: asistencia.jugador_id, p_delta: -1 })
   }
 
   return { ok: true }
