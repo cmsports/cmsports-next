@@ -14,6 +14,7 @@ import {
 import { obtenerPagosDivision, registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
+import { FixtureDivision } from '@/components/liga/FixtureDivision'
 import type { DiffDivision } from '@/lib/domain/liga'
 
 const supabase = createClient()
@@ -460,6 +461,8 @@ export default function LigaDetallePage() {
               {jugadoresDeDivision.length < 2 && !division.fixture_generado && (
                 <div style={{ fontSize:11, color: hint, marginTop:8 }}>Se necesitan al menos 2 jugadores inscritos para generar el fixture</div>
               )}
+
+              <FixtureDivision divisionId={division.id} nombres={nombrePorId} />
             </div>
           </div>
 
