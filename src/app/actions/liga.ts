@@ -284,10 +284,10 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   if (!partidosPendientes.length) return { error: 'No hay partidos pendientes por programar' }
 
   const divisionIds = Array.from(new Set(partidosPendientes.map(p => p.division_id)))
-  const { data: divisionJugadores } = await supabase
-    .from('liga_division_jugadores')
-    .select('division_id, jugador_id')
-    .in('division_id', divisionIds)
+  const [{ data: divisionJugadores }, { data: divisionesData }] = await Promise.all([
+    supabase.from('liga_division_jugadores').select('division_id, jugador_id').in('division_id', divisionIds),
+    supabase.from('liga_divisiones').select('id, orden').in('id', divisionIds).order('orden', { ascending: true }),
+  ])
 
   const jugadoresPorDivision = new Map<string, string[]>()
   for (const dj of divisionJugadores || []) {
@@ -295,6 +295,13 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     arr.push(dj.jugador_id)
     jugadoresPorDivision.set(dj.division_id, arr)
   }
+
+  // Mesa fija por división: División[i ordenada] → Mesa[i ordenada por numero]
+  const divisionesOrdenadas = (divisionesData || []) as Array<{ id: string; orden: number }>
+  const mesaPorDivision = new Map<string, number>()
+  divisionesOrdenadas.forEach((div, i) => {
+    mesaPorDivision.set(div.id, mesasActivas[i % mesasActivas.length].numero)
+  })
 
   const aProgramar: PartidoAProgramar[] = partidosPendientes.map(p => ({
     id: p.id,
@@ -305,22 +312,35 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   }))
 
   const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
-  const mesasNumeros = mesasActivas.map(m => m.numero)
-  const capacidadPorFecha = mesasNumeros.length * bloques.length
 
-  const { fechas: chunks, sobrantes } = distribuirEnFechas(aProgramar, fechas.length, capacidadPorFecha)
+  // Agrupar partidos por división y programar cada división en su mesa asignada
+  const porDivision = new Map<string, PartidoAProgramar[]>()
+  for (const p of aProgramar) {
+    const arr = porDivision.get(p.divisionId) ?? []
+    arr.push(p)
+    porDivision.set(p.divisionId, arr)
+  }
 
   const todosProgramados: PartidoProgramado[] = []
-  const sinAsignarIds: string[] = sobrantes.map(p => p.id)
-  let carryOver: PartidoAProgramar[] = []
+  const sinAsignarIds: string[] = []
 
-  for (let i = 0; i < fechas.length; i++) {
-    const cola = [...carryOver, ...chunks[i]]
-    if (cola.length === 0) continue
-    const { programados, sinAsignar } = programarFecha(cola, fechas[i].numero, mesasNumeros, bloques)
-    todosProgramados.push(...programados)
-    carryOver = i < fechas.length - 1 ? sinAsignar : []
-    if (i === fechas.length - 1) sinAsignarIds.push(...sinAsignar.map(p => p.id))
+  for (const [divId, partidosDiv] of porDivision) {
+    const mesaNumero = mesaPorDivision.get(divId) ?? mesasActivas[0].numero
+    const capacidadPorFechaDiv = bloques.length  // 1 mesa fija × N bloques
+    const { fechas: chunksDiv, sobrantes: sobrantesDiv } = distribuirEnFechas(
+      partidosDiv, fechas.length, capacidadPorFechaDiv,
+    )
+    sinAsignarIds.push(...sobrantesDiv.map(p => p.id))
+
+    let carryOver: PartidoAProgramar[] = []
+    for (let i = 0; i < fechas.length; i++) {
+      const cola = [...carryOver, ...chunksDiv[i]]
+      if (cola.length === 0) continue
+      const { programados, sinAsignar } = programarFecha(cola, fechas[i].numero, [mesaNumero], bloques)
+      todosProgramados.push(...programados)
+      carryOver = i < fechas.length - 1 ? sinAsignar : []
+      if (i === fechas.length - 1) sinAsignarIds.push(...sinAsignar.map(p => p.id))
+    }
   }
 
   const conArbitros = asignarArbitros(todosProgramados, jugadoresPorDivision)
@@ -547,7 +567,9 @@ export async function crearLiga(params: {
   if (authErr) return { error: authErr }
   if (!params.nombre.trim()) return { error: 'El nombre es obligatorio' }
 
-  const totalFechas = Math.max(2, params.totalFechas ?? 5)
+  // totalFechas = fechas REGULARES pedidas por el admin; se crea una adicional de ajuste
+  const nFechasRegulares = Math.max(1, params.totalFechas ?? 5)
+  const totalFechas = nFechasRegulares + 1
 
   const { data: liga, error } = await (supabase as any)
     .from('ligas')
@@ -561,7 +583,7 @@ export async function crearLiga(params: {
     .single()
   if (error || !liga) return { error: 'No se pudo crear la liga: ' + (error?.message ?? '') }
 
-  // Fechas: 1 a (totalFechas-1) son regulares, la última es de ajuste
+  // Fechas 1 a nFechasRegulares son regulares; la última (nFechasRegulares+1) es ajuste
   await supabase.from('liga_fechas').insert(
     Array.from({ length: totalFechas }, (_, i) => ({
       liga_id: liga.id,
