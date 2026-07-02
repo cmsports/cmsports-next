@@ -25,6 +25,7 @@ export default function SolicitudesPage() {
   const [modalAprobar, setModalAprobar] = useState<any>(null)
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
   const [aprobando, setAprobando]     = useState(false)
+  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; password?: string; cuentaError?: string; cuentaCreada?: boolean }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -66,12 +67,33 @@ export default function SolicitudesPage() {
     const s   = modalAprobar
     const ent = planForm.tipo_plan === 'libre' ? null : parseInt(planForm.entrenamientos_por_semana) || 3
     const ses = planForm.tipo_plan === 'libre' ? 99 : (ent || 3) * 4
-    await aprobarSolicitud({
+    const res = await aprobarSolicitud({
       solicitudId: s.id, nombre: s.nombre, rut: s.rut || '', email: s.email || '', telefono: s.telefono || '',
       categoria: planForm.categoria, tipo_plan: planForm.tipo_plan, entrenamientos_por_semana: ent,
       mensualidad: parseInt(planForm.mensualidad) || 0, sesiones_limite: ses,
     })
-    setModalAprobar(null); setAprobando(false); cargarSolicitudes()
+    setAprobando(false)
+    if (res.error) { alert(res.error); return }
+    setModalAprobar(null)
+    cargarSolicitudes()
+    setAprobadoInfo({
+      nombre: res.jugador?.nombre ?? s.nombre,
+      email: res.jugador?.email ?? (s.email || null),
+      telefono: res.jugador?.telefono ?? (s.telefono || null),
+      password: res.password,
+      cuentaError: res.cuentaError,
+      cuentaCreada: res.cuentaCreada,
+    })
+  }
+
+  function linkWhatsApp(info: NonNullable<typeof aprobadoInfo>) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const tel = (info.telefono || '').replace(/[^0-9]/g, '')
+    const credencial = info.password
+      ? `esta contraseña temporal: ${info.password}`
+      : 'la contraseña que elegiste al registrarte'
+    const msg = `¡Hola ${info.nombre}! 🏓 Tu cuenta en CmSports ya está activa. Entra en ${origin}/login con tu correo (${info.email ?? ''}) y ${credencial}. ¡Nos vemos en el club!`
+    return `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`
   }
 
   async function rechazar(id: string) {
@@ -236,6 +258,45 @@ export default function SolicitudesPage() {
               <button onClick={() => setModalAprobar(null)} style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={confirmarAprobar} disabled={aprobando} style={{ flex: 1, padding: 11, background: '#f43f5e', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 {aprobando ? 'Aprobando...' : 'Aprobar jugador'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal éxito + aviso WhatsApp */}
+      {aprobadoInfo && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize: 40, textAlign: 'center', marginBottom: 8 }}>✅</div>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: text, textAlign: 'center', marginBottom: 6 }}>Jugador aprobado</h2>
+            {aprobadoInfo.cuentaCreada ? (
+              <p style={{ fontSize: 13, color: muted, textAlign: 'center', marginBottom: 18 }}>
+                La cuenta de <strong>{aprobadoInfo.nombre}</strong> ya está activa. Puede entrar con su correo y su contraseña.
+              </p>
+            ) : (
+              <p style={{ fontSize: 13, color: '#d97706', textAlign: 'center', marginBottom: 18 }}>
+                {aprobadoInfo.cuentaError || 'El jugador quedó creado. Puedes crear su acceso desde su ficha cuando quieras.'}
+              </p>
+            )}
+
+            {aprobadoInfo.password && (
+              <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px', marginBottom: 16, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: muted, marginBottom: 4 }}>Contraseña temporal generada (compártela con el jugador)</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: text, fontFamily: 'monospace', letterSpacing: 1 }}>{aprobadoInfo.password}</div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              {aprobadoInfo.telefono && (
+                <a href={linkWhatsApp(aprobadoInfo)} target="_blank" rel="noopener noreferrer"
+                  style={{ flex: 1, padding: 11, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, color: '#16a34a', fontSize: 13, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center' }}>
+                  Enviar WhatsApp
+                </a>
+              )}
+              <button onClick={() => setAprobadoInfo(null)}
+                style={{ flex: 1, padding: 11, background: aprobadoInfo.telefono ? 'transparent' : '#4f46e5', border: aprobadoInfo.telefono ? '1px solid #e2e8f0' : 'none', borderRadius: 8, color: aprobadoInfo.telefono ? muted : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Listo
               </button>
             </div>
           </div>
