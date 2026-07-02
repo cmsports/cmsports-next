@@ -1,6 +1,5 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { calculateEloChange } from '@/lib/domain/elo'
 import {
   seedingSerpenteo,
@@ -11,15 +10,7 @@ import {
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
-
-async function requireAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, perfil: null }
-  const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,nombre').eq('id', user.id).single()
-  if (!perfil || perfil.rol !== 'admin') return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
-  return { error: null, supabase, perfil }
-}
+import { requireAdmin } from '@/lib/auth/require'
 
 export async function corregirResultadoGrupos(params: { partidoId: string; nuevoGanadorId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
@@ -47,8 +38,13 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
     .order('created_at', { ascending: false })
 
   if (historial?.length) {
-    const hGanador = historial.find(h => h.jugador_id === anteriorGanadorId)
-    const hPerdedor = anteriorPerdedorId ? historial.find(h => h.jugador_id === anteriorPerdedorId) : undefined
+    // Prefiere el registro de ESTE partido (partido_id); si no existe
+    // (datos previos a la migración 019), cae al más reciente del jugador.
+    const pickHist = (jid: string) =>
+      historial.filter(h => h.jugador_id === jid).find(h => h.partido_id === partidoId)
+      ?? historial.find(h => h.jugador_id === jid)
+    const hGanador = pickHist(anteriorGanadorId)
+    const hPerdedor = anteriorPerdedorId ? pickHist(anteriorPerdedorId) : undefined
     const revertir = []
     if (hGanador) revertir.push(supabase.from('jugadores').update({ elo: hGanador.elo_antes }).eq('id', anteriorGanadorId))
     if (hPerdedor && anteriorPerdedorId) revertir.push(supabase.from('jugadores').update({ elo: hPerdedor.elo_antes }).eq('id', anteriorPerdedorId))
@@ -110,8 +106,8 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
         supabase.from('jugadores').update({ elo: newWinnerElo }).eq('id', ganadorId),
         supabase.from('jugadores').update({ elo: newLoserElo }).eq('id', perdedorId),
         supabase.from('historial_elo').insert([
-          { jugador_id: ganadorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, elo_antes: eloGanador, elo_despues: newWinnerElo, fecha: new Date().toISOString().slice(0, 10) },
-          { jugador_id: perdedorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, elo_antes: eloPerdedor, elo_despues: newLoserElo, fecha: new Date().toISOString().slice(0, 10) },
+          { jugador_id: ganadorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, partido_id: partidoId, elo_antes: eloGanador, elo_despues: newWinnerElo, fecha: new Date().toISOString().slice(0, 10) },
+          { jugador_id: perdedorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, partido_id: partidoId, elo_antes: eloPerdedor, elo_despues: newLoserElo, fecha: new Date().toISOString().slice(0, 10) },
         ]),
       ])
     }
@@ -375,8 +371,13 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
     .order('created_at', { ascending: false })
 
   if (historial?.length) {
-    const hGanador = historial.find(h => h.jugador_id === anteriorGanadorId)
-    const hPerdedor = anteriorPerdedorId ? historial.find(h => h.jugador_id === anteriorPerdedorId) : undefined
+    // Prefiere el registro de ESTE partido (partido_id); si no existe
+    // (datos previos a la migración 019), cae al más reciente del jugador.
+    const pickHist = (jid: string) =>
+      historial.filter(h => h.jugador_id === jid).find(h => h.partido_id === partidoId)
+      ?? historial.find(h => h.jugador_id === jid)
+    const hGanador = pickHist(anteriorGanadorId)
+    const hPerdedor = anteriorPerdedorId ? pickHist(anteriorPerdedorId) : undefined
     const revertir = []
     if (hGanador) revertir.push(supabase.from('jugadores').update({ elo: hGanador.elo_antes }).eq('id', anteriorGanadorId))
     if (hPerdedor && anteriorPerdedorId) revertir.push(supabase.from('jugadores').update({ elo: hPerdedor.elo_antes }).eq('id', anteriorPerdedorId))

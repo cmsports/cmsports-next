@@ -800,6 +800,7 @@ export interface Database {
           jugador_id: string | null
           club_id: string | null
           torneo_id: string | null
+          partido_id: string | null
           elo_antes: number | null
           elo_despues: number | null
           posicion: string | null
@@ -810,6 +811,7 @@ export interface Database {
           jugador_id?: string | null
           club_id?: string | null
           torneo_id?: string | null
+          partido_id?: string | null
           elo_antes?: number | null
           elo_despues?: number | null
           posicion?: string | null
@@ -820,6 +822,7 @@ export interface Database {
           jugador_id?: string | null
           club_id?: string | null
           torneo_id?: string | null
+          partido_id?: string | null
           elo_antes?: number | null
           elo_despues?: number | null
           posicion?: string | null
@@ -1347,6 +1350,10 @@ export interface Database {
       validar_invitacion: {
         Args: { p_codigo: string; p_club_id?: string | null }
         Returns: { club_id: string; club_nombre: string }[]
+      }
+      ajustar_sesiones: {
+        Args: { p_jugador_id: string; p_delta: number }
+        Returns: undefined
       }
     }
     Enums: {}
