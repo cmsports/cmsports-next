@@ -32,7 +32,14 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
       es_walkover: boolean; sets_a: number | null; sets_b: number | null
     }>
 
-    const jugadorIds = (dj || []).map(j => j.jugador_id)
+    // Usar la unión de division_jugadores + IDs que aparecen en partidos como
+    // lista base, para que ningún partido quede sin contar si un jugador no
+    // está en liga_division_jugadores (bug: calcularRankingDivision saltea el
+    // partido entero si cualquiera de los dos jugadores falta en el Map).
+    const divJugIds = (dj || []).map(j => j.jugador_id)
+    const partidoJugIds = partidosData.flatMap(p => [p.jugador_a_id, p.jugador_b_id])
+    const jugadorIds = Array.from(new Set([...divJugIds, ...partidoJugIds]))
+
     const partidos: PartidoFinalizado[] = partidosData
       .filter(p => p.ganador_id)
       .map(p => ({

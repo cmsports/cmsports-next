@@ -48,6 +48,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
   const [bloques, setBloques] = useState<string[]>(() => generarBloquesHorario())
   const [mesas, setMesas] = useState<Mesa[]>([])
   const [partidos, setPartidos] = useState<PartidoBoard[]>([])
+  const [editandoArbitroId, setEditandoArbitroId] = useState<string | null>(null)
   const [nombres, setNombres] = useState<Record<string, string>>({})
   const [jugadoresPorDivision, setJugadoresPorDivision] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
@@ -60,26 +61,27 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
   const [guardandoAccion, setGuardandoAccion] = useState(false)
 
   const cargar = useCallback(async () => {
-    const { data: fechaData } = await supabase.from('liga_fechas').select('numero, estado, liga_id, ligas(nombre)').eq('id', fechaId).single()
+    // RT1: fecha + liga en un solo join (bloque_minutos incluido — evita RT extra)
+    const { data: fechaData } = await supabase
+      .from('liga_fechas')
+      .select('numero, estado, liga_id, ligas(nombre, bloque_minutos)')
+      .eq('id', fechaId)
+      .single()
     if (!fechaData) { setLoading(false); return }
-    const ligaRel = Array.isArray(fechaData.ligas) ? fechaData.ligas[0] : fechaData.ligas
-    setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: ligaRel?.nombre ?? '' })
+
+    const ligaRel = (Array.isArray(fechaData.ligas) ? fechaData.ligas[0] : fechaData.ligas) as Record<string, unknown> | null
+    setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: String(ligaRel?.nombre ?? '') })
+    setBloques(generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, Number(ligaRel?.bloque_minutos ?? 30)))
 
     const db = supabase as any
 
-    // Leer bloque_minutos de la liga para generar la grilla con el paso correcto
-    const { data: ligaConfig } = await db
-      .from('ligas')
-      .select('bloque_minutos')
-      .eq('id', fechaData.liga_id)
-      .single()
-    setBloques(generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, ligaConfig?.bloque_minutos ?? 30))
-
-    const [{ data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: divJugData }] = await Promise.all([
+    // RT2: todo en paralelo — partidos, mesas, divisiones, jugadores (sin RT secuencial al final)
+    const [{ data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: divJugData }, { data: jugadoresData }] = await Promise.all([
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', fechaData.liga_id).order('numero', { ascending: true }),
       db.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId).is('deleted_at', null),
       supabase.from('liga_divisiones').select('id, nombre').eq('liga_id', fechaData.liga_id),
       supabase.from('liga_division_jugadores').select('division_id, jugador_id'),
+      supabase.from('jugadores').select('id, nombre'),  // RLS filtra por club
     ])
     const partidosData = (rawPartidos || []) as Array<{
       id: string; division_id: string; mesa_id: string | null; bloque_horario: string | null
@@ -110,16 +112,10 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
     }
     setJugadoresPorDivision(mapaDivJug)
 
-    const idsJugadores = Array.from(new Set([
-      ...lista.flatMap(p => [p.jugadorAId, p.jugadorBId, p.arbitroId].filter((x): x is string => !!x)),
-      ...Object.values(mapaDivJug).flat(),
-    ]))
-    if (idsJugadores.length) {
-      const { data: jugadoresData } = await supabase.from('jugadores').select('id, nombre').in('id', idsJugadores)
-      const mapa: Record<string, string> = {}
-      for (const j of jugadoresData || []) mapa[j.id] = j.nombre
-      setNombres(mapa)
-    }
+    const mapa: Record<string, string> = {}
+    for (const j of jugadoresData || []) mapa[j.id] = j.nombre
+    setNombres(mapa)
+
     setLoading(false)
   }, [fechaId])
 
@@ -376,20 +372,38 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
                             </div>
                             <div style={{ fontSize:10, color: hint }}>{partido.divisionNombre}</div>
                             {fecha.estado === 'programada' && roster.length > 0 ? (
-                              <select
-                                value={partido.arbitroId ?? ''}
-                                onClick={e => e.stopPropagation()}
-                                onChange={e => handleCambiarArbitro(partido.id, e.target.value)}
-                                style={{ width:'100%', marginTop:2, fontSize:10, color: muted, background:'transparent', border:'1px solid #e2e8f0', borderRadius:4 }}
-                              >
-                                <option value="">Sin árbitro</option>
-                                {roster.filter(id => id !== partido.jugadorAId && id !== partido.jugadorBId).map(id => (
-                                  <option key={id} value={id}>{nombres[id] ?? id}</option>
-                                ))}
-                              </select>
+                              editandoArbitroId === partido.id ? (
+                                <select
+                                  autoFocus
+                                  value={partido.arbitroId ?? ''}
+                                  onBlur={() => setEditandoArbitroId(null)}
+                                  onClick={e => e.stopPropagation()}
+                                  onChange={async e => {
+                                    await handleCambiarArbitro(partido.id, e.target.value)
+                                    setEditandoArbitroId(null)
+                                  }}
+                                  style={{ width:'100%', marginTop:2, fontSize:10, color: text, background:'#ffffff', border:'1px solid #4f46e5', borderRadius:4, outline:'none' }}
+                                >
+                                  <option value="">Sin árbitro</option>
+                                  {roster.filter(id => id !== partido.jugadorAId && id !== partido.jugadorBId).map(id => (
+                                    <option key={id} value={id}>{nombres[id] ?? id}</option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div
+                                  onClick={e => { e.stopPropagation(); setEditandoArbitroId(partido.id) }}
+                                  title="Clic para cambiar árbitro"
+                                  style={{ fontSize:10, color: muted, marginTop:2, cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}
+                                >
+                                  <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                    {partido.arbitroId ? `Árb: ${nombres[partido.arbitroId] ?? '—'}` : 'Sin árbitro'}
+                                  </span>
+                                  <span style={{ color: hint, flexShrink:0 }}>✎</span>
+                                </div>
+                              )
                             ) : partido.arbitroId && (
-                              <div style={{ fontSize:10, color: muted, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                                Árbitro: {nombres[partido.arbitroId] ?? '—'}
+                              <div style={{ fontSize:10, color: muted, marginTop:2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                                Árb: {nombres[partido.arbitroId] ?? '—'}
                               </div>
                             )}
                             {partido.estado === 'finalizado' && (

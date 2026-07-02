@@ -237,11 +237,12 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   // si no existen, usar valores por defecto)
   const { data: ligaConfig } = await db
     .from('ligas')
-    .select('total_fechas, bloque_minutos')
+    .select('total_fechas, bloque_minutos, mesas_count')
     .eq('id', ligaId)
     .single()
   const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
   const totalFechas: number = ligaConfig?.total_fechas ?? 5
+  const mesasCountDefault: number = ligaConfig?.mesas_count ?? 4
   const nFechasRegulares = totalFechas - 1
 
   const { data: fechas } = await supabase
@@ -251,7 +252,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     .eq('es_ajuste', false)
     .order('numero', { ascending: true })
 
-  const { data: mesas } = await supabase
+  const { data: mesasRaw } = await supabase
     .from('liga_mesas')
     .select('id, numero')
     .eq('liga_id', ligaId)
@@ -259,7 +260,17 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
 
   if (!fechas?.length)
     return { error: `Crea primero las fechas regulares de la liga (1 a ${nFechasRegulares})` }
-  if (!mesas?.length) return { error: 'Crea primero las mesas disponibles de la liga' }
+
+  // Si no hay mesas creadas, crearlas automáticamente usando mesas_count (default 4)
+  let mesasActivas = mesasRaw ?? []
+  if (mesasActivas.length === 0) {
+    const inserts = Array.from({ length: mesasCountDefault }, (_, i) => ({ liga_id: ligaId, numero: i + 1 }))
+    const { data: creadas } = await supabase.from('liga_mesas').insert(inserts).select('id, numero')
+    mesasActivas = creadas ?? []
+  }
+
+  if (!mesasActivas.length)
+    return { error: `No se pudieron crear las ${mesasCountDefault} mesas automáticas. Verifica los permisos de la liga.` }
 
   const { data: rawPendientes } = await db
     .from('liga_partidos')
@@ -294,7 +305,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   }))
 
   const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
-  const mesasNumeros = mesas.map(m => m.numero)
+  const mesasNumeros = mesasActivas.map(m => m.numero)
   const capacidadPorFecha = mesasNumeros.length * bloques.length
 
   const { fechas: chunks, sobrantes } = distribuirEnFechas(aProgramar, fechas.length, capacidadPorFecha)
@@ -315,7 +326,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   const conArbitros = asignarArbitros(todosProgramados, jugadoresPorDivision)
 
   const fechaIdPorNumero = new Map(fechas.map(f => [f.numero, f.id]))
-  const mesaIdPorNumero = new Map(mesas.map(m => [m.numero, m.id]))
+  const mesaIdPorNumero = new Map(mesasActivas.map(m => [m.numero, m.id]))
 
   // Guardar en lotes; capturar errores individuales (p.ej. HC-01 trigger)
   let programadosExitosos = 0
