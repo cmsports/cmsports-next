@@ -23,14 +23,11 @@ export async function registrarSolicitud(input: {
 
   const supabase = await createClient()
 
-  const { data: inv } = await supabase
-    .from('invitaciones')
-    .select('id')
-    .eq('club_id', parsed.data.club_id)
-    .eq('codigo', parsed.data.codigo)
-    .eq('activa', true)
-    .single()
-  if (!inv) return { error: 'Link de invitación inválido o expirado' }
+  const { data: inv } = await supabase.rpc('validar_invitacion', {
+    p_codigo: parsed.data.codigo,
+    p_club_id: parsed.data.club_id,
+  })
+  if (!inv?.length) return { error: 'Link de invitación inválido o expirado' }
 
   const { error } = await supabase.from('solicitudes_jugador').insert({
     club_id: parsed.data.club_id,
@@ -60,15 +57,12 @@ export async function enviarSolicitud(input: {
 
   const supabase = await createClient()
 
-  const { data: inv } = await supabase
-    .from('invitaciones')
-    .select('id')
-    .eq('club_id', parsed.data.club_id)
-    .eq('codigo', parsed.data.codigo)
-    .eq('activa', true)
-    .single()
+  const { data: inv } = await supabase.rpc('validar_invitacion', {
+    p_codigo: parsed.data.codigo,
+    p_club_id: parsed.data.club_id,
+  })
 
-  if (!inv) {
+  if (!inv?.length) {
     return { error: 'Link de invitación inválido o expirado' }
   }
 

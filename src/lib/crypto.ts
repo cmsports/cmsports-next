@@ -20,3 +20,12 @@ export function decrypt(data: string): string {
   decipher.setAuthTag(Buffer.from(tagHex, 'hex'))
   return decipher.update(Buffer.from(encHex, 'hex')).toString('utf8') + decipher.final('utf8')
 }
+
+const PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+
+export function generarPassword(length = 10): string {
+  const bytes = randomBytes(length)
+  let pass = ''
+  for (let i = 0; i < length; i++) pass += PASSWORD_CHARS[bytes[i] % PASSWORD_CHARS.length]
+  return pass
+}

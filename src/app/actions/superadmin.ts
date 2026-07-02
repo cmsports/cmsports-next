@@ -3,8 +3,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-export async function crearClub(input: { nombre: string; ciudad: string; deporte: string; planMensual: number }) {
+async function requireSuperadmin() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' as const, supabase: null }
+  const { data: perfil } = await supabase.from('perfiles').select('rol').eq('id', user.id).single()
+  if (!perfil || perfil.rol !== 'superadmin') return { error: 'Acceso denegado' as const, supabase: null }
+  return { error: null, supabase }
+}
+
+export async function crearClub(input: { nombre: string; ciudad: string; deporte: string; planMensual: number }) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
   const { error } = await supabase.from('clubes').insert({
     nombre: input.nombre.trim(),
     ciudad: input.ciudad.trim() || null,
@@ -17,7 +27,8 @@ export async function crearClub(input: { nombre: string; ciudad: string; deporte
 }
 
 export async function actualizarPlanClub(input: { clubId: string; planMensual: number }) {
-  const supabase = await createClient()
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
   const { error } = await supabase.from('clubes')
     .update({ plan_mensual: input.planMensual })
     .eq('id', input.clubId)
@@ -34,7 +45,8 @@ export async function registrarPagoClub(input: {
   metodo: string
   notas: string
 }) {
-  const supabase = await createClient()
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
 
   const { error } = await supabase.from('pagos_clubes').insert({
     club_id: input.clubId,
@@ -56,7 +68,8 @@ export async function registrarPagoClub(input: {
 }
 
 export async function actualizarEstadoPagoClub(input: { clubId: string; estado: 'pagado' | 'pendiente' | 'atrasado' }) {
-  const supabase = await createClient()
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
   const { error } = await supabase.from('clubes')
     .update({ estado_pago: input.estado })
     .eq('id', input.clubId)

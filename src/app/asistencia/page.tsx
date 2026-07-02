@@ -216,7 +216,7 @@ export default function AsistenciaPage() {
   async function handleEliminar(asistenciaId: string, nombreJugador: string) {
     if (!confirm(`¿Eliminar asistencia de ${nombreJugador}?`)) return
     setEliminando(asistenciaId)
-    const result = await eliminarAsistencia(asistenciaId, perfil?.rol || '')
+    const result = await eliminarAsistencia(asistenciaId)
     if (result.error) alert(result.error)
     if (fechaVista === hoy) { await cargarDatos() } else { await cargarAsistenciasDia(fechaVista) }
     setEliminando(null)

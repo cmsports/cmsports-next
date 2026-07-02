@@ -669,11 +669,15 @@ export async function registrarResultadoPartido(params: {
 
   const ganadorId = determinarGanadorBo5(setsA, setsB, partido.jugador_a_id, partido.jugador_b_id)
 
-  const { error } = await supabase
+  // Guard atómico: solo escribe si el partido sigue abierto (evita doble registro)
+  const { data: actualizado, error } = await supabase
     .from('liga_partidos')
     .update({ sets_a: setsA, sets_b: setsB, ganador_id: ganadorId, estado: 'finalizado', observaciones: observaciones || null })
     .eq('id', partidoId)
+    .in('estado', ['programado', 'en_juego'])
+    .select('id')
   if (error) return { error: 'No se pudo registrar el resultado: ' + error.message }
+  if (!actualizado?.length) return { error: 'Este partido ya tiene un resultado registrado' }
 
   return { success: true, ganadorId }
 }

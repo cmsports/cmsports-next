@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { decrypt } from '@/lib/crypto'
+import { decrypt, generarPassword } from '@/lib/crypto'
 
 async function requireAdminClub() {
   const supabase = await createClient()
@@ -56,13 +56,6 @@ export async function crearJugador(params: {
   return { success: true }
 }
 
-function generarPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
-  let pass = ''
-  for (let i = 0; i < 10; i++) pass += chars[Math.floor(Math.random() * chars.length)]
-  return pass
-}
-
 export async function crearAccesoJugador(params: { jugadorId: string }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
@@ -80,7 +73,14 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
     .not('password', 'is', null).order('creado_en', { ascending: false }).limit(1).maybeSingle()
 
   let passwordPropia = !!solicitud?.password
-  const password = solicitud?.password ? decrypt(solicitud.password) : generarPassword()
+  let password = generarPassword()
+  if (solicitud?.password) {
+    try {
+      password = decrypt(solicitud.password)
+    } catch {
+      passwordPropia = false
+    }
+  }
 
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
     email: jugador.email, password, email_confirm: true,
