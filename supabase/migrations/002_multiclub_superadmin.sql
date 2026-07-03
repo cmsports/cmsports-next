@@ -17,7 +17,7 @@
 --           insert into perfiles (id, email, nombre, rol, club_id)
 --           values ('PEGA-EL-UUID-AQUI', 'tu-email@ejemplo.com', 'Tu Nombre', 'superadmin', null);
 --      d) Entra a /login con ese email/password — el proxy te
---         mandará a /superadmin (una vez hecha la Parte 4-5 del plan).
+--         mandará a /superadmin.
 -- ============================================================
 
 -- ────────────────────────────────────────────────────────────

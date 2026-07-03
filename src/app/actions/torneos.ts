@@ -583,10 +583,10 @@ export async function intercambiarJugadores(params: {
     .eq('torneo_id', torneoId)
 
   if (!ps || ps.length !== ids.length) return { error: 'Partidos no encontrados' }
-  if (ps.some((p: any) => p.ganador)) return { error: 'No se puede mover jugadores en partidos ya jugados' }
+  if (ps.some((p) => p.ganador)) return { error: 'No se puede mover jugadores en partidos ya jugados' }
 
-  const pa = ps.find((p: any) => p.id === slotA.partidoId)
-  const pb = ps.find((p: any) => p.id === slotB.partidoId)
+  const pa = ps.find((p) => p.id === slotA.partidoId)
+  const pb = ps.find((p) => p.id === slotB.partidoId)
   if (!pa || !pb) return { error: 'Partidos no encontrados' }
 
   const jugA: string | null = slotA.posicion === 'jugador_a' ? pa.jugador_a : pa.jugador_b

@@ -56,10 +56,6 @@ src/
 supabase/migrations/    # SQL: RLS, esquema y funciones
 ```
 
-## Roadmap
-
-El plan de mejora del proyecto vive en [`PLAN-15-PASOS.md`](./PLAN-15-PASOS.md), con el progreso detallado en [`CLAUDE.md`](./CLAUDE.md).
-
 ## Scripts
 
 ```bash

@@ -18,7 +18,7 @@ export function generarFixtureDivision(jugadorIds: string[]): PartidoFixtureLiga
   }))
 }
 
-// ─── Resultados Bo5 (Paso 5) ───────────────────────────────────────────────
+// ─── Resultados Bo5 ────────────────────────────────────────────────────────
 // HC-08: únicos marcadores válidos en un partido Mejor de Cinco.
 
 const RESULTADOS_BO5_VALIDOS = new Set(['3-0', '3-1', '3-2', '0-3', '1-3', '2-3'])
@@ -36,7 +36,7 @@ export function determinarGanadorBo5(
   return setsA > setsB ? jugadorAId : jugadorBId
 }
 
-// ─── Ranking por división (Paso 7) ─────────────────────────────────────────
+// ─── Ranking por división ──────────────────────────────────────────────────
 // Puntos: victoria 3, derrota 1, walkover ganado 3, walkover perdido 0.
 // Orden: Puntos → Partidos Ganados → Diferencia de Sets → Sets a Favor →
 // enfrentamiento directo.
@@ -115,7 +115,7 @@ export function calcularRankingDivision(
   return filas
 }
 
-// ─── Motor de programación (Paso 3) ────────────────────────────────────────
+// ─── Motor de programación ─────────────────────────────────────────────────
 // Reglas inquebrantables (Anexo A): HC-01 (jugador no en 2 partidos a la vez),
 // HC-02 (se permiten bloques consecutivos sin descanso mínimo — intencional),
 // HC-03/HC-06 (una mesa, un partido por bloque), HC-04 (árbitro distinto a
@@ -407,7 +407,7 @@ export function calcularDiffDivision(
   return { jugadoresAgregados, jugadoresRemovidos, partidosNuevos, partidosAAnular, partidosPreservados }
 }
 
-// ─── Validación de movimientos manuales / Drag & Drop (Paso 4) ────────────
+// ─── Validación de movimientos manuales / Drag & Drop ──────────────────────
 
 export interface PartidoExistente {
   id: string

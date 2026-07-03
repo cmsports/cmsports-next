@@ -41,18 +41,18 @@ export default function LigaPage() {
   const [creando, setCreando] = useState(false)
   const [error, setError] = useState('')
 
+  async function cargar(clubId: string) {
+    const { data } = await supabase.from('ligas').select('id, nombre, estado, creado_en').eq('club_id', clubId).order('creado_en', { ascending: false })
+    setLigas(data || [])
+    setLoading(false)
+  }
+
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.club_id) cargar(perfil.club_id)
     else setLoading(false)
   }, [authLoading, perfil])
-
-  async function cargar(clubId: string) {
-    const { data } = await supabase.from('ligas').select('id, nombre, estado, creado_en').eq('club_id', clubId).order('creado_en', { ascending: false })
-    setLigas(data || [])
-    setLoading(false)
-  }
 
   async function handleCrear() {
     if (!nombre.trim()) return

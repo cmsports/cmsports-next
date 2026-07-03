@@ -3,16 +3,7 @@
 // Tablas liga_jugador_pagos, liga_abonos y audit_log son nuevas (migración 016).
 // Se usa `as any` hasta que se regeneren los tipos con `npx supabase gen types`.
 
-import { createClient } from '@/lib/supabase/server'
-
-async function requireAdminClub() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null, nombre: null, userId: null }
-  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol,nombre').eq('id', user.id).single()
-  if (!perfil || perfil.rol !== 'admin' || !perfil.club_id) return { error: 'Acceso denegado' as const, supabase: null, clubId: null, nombre: null, userId: null }
-  return { error: null, supabase, clubId: perfil.club_id as string, nombre: perfil.nombre as string, userId: user.id }
-}
+import { requireAdminClub } from '@/lib/auth/require'
 
 // Registra un pago (o abono parcial) de un jugador en una división.
 // Crea el registro en liga_jugador_pagos si no existe, inserta el abono,
@@ -139,7 +130,7 @@ export async function anularUltimoAbono(params: { pagoId: string }) {
     .eq('id', params.pagoId)
     .single()
 
-  const nuevoMontoPagado = ((abonosRestantes as any[]) || []).reduce((s: number, a: any) => s + a.monto, 0)
+  const nuevoMontoPagado = (abonosRestantes ?? []).reduce((s: number, a: { monto: number }) => s + a.monto, 0)
   const montoTotal = (pago?.monto_total as number) ?? 0
   const nuevoEstado = nuevoMontoPagado >= montoTotal ? 'pagado' : nuevoMontoPagado > 0 ? 'parcial' : 'pendiente'
 

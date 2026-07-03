@@ -7,10 +7,11 @@ const publicRoutes = ['/login', '/registro']
 const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
 const superadminRoutes = ['/superadmin']
-const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes']
+const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/jugadores', '/configuracion']
 const staffRoutes = ['/redes-sociales']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
+const anyAuthRoutes = ['/torneos', '/ranking', '/calendario', '/asistencia', '/clases']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'
@@ -50,7 +51,7 @@ export async function proxy(request: NextRequest) {
   // server; the rest is handled client-side (RLS protects the data anyway)
   if (!user) {
     const protectedRoutes = [
-      ...superadminRoutes, ...adminRoutes, ...staffRoutes, ...profesorRoutes, ...jugadorRoutes,
+      ...superadminRoutes, ...adminRoutes, ...staffRoutes, ...profesorRoutes, ...jugadorRoutes, ...anyAuthRoutes,
     ]
     if (protectedRoutes.some((r) => pathname === r || pathname.startsWith(r + '/'))) {
       const url = request.nextUrl.clone()

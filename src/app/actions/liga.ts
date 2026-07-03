@@ -411,7 +411,7 @@ export async function limpiarProgramacionLiga(params: { ligaId: string }) {
 
 // Mueve un partido a otra mesa/bloque (misma fecha o distinta) validando en
 // el servidor las reglas inquebrantables (HC-01, HC-03/06, HC-04). Usado por
-// la interfaz de Drag & Drop (Paso 4).
+// la interfaz de Drag & Drop.
 export async function moverPartidoLiga(params: {
   partidoId: string
   fechaId: string
@@ -642,7 +642,7 @@ export async function eliminarMesa(params: { mesaId: string }) {
   return { success: true }
 }
 
-// ─── Estados de fecha + registro de resultados (Paso 5) ───────────────────
+// ─── Estados de fecha + registro de resultados ─────────────────────────────
 
 // "Iniciar Fecha": Programada → En Juego. Habilita el registro de
 // resultados y bloquea la edición de horarios/mesas/árbitros (Sección 10).
@@ -706,7 +706,7 @@ export async function registrarResultadoPartido(params: {
   return { success: true, ganadorId }
 }
 
-// ─── Partidos no jugados (Paso 6) ──────────────────────────────────────────
+// ─── Partidos no jugados ───────────────────────────────────────────────────
 // Resolución obligatoria: Walkover (cuenta como victoria/derrota normal) o
 // reprogramación a Fecha 5 (sin puntos ni sets, queda "pendiente").
 

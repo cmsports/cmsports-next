@@ -18,18 +18,12 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
   const [open, setOpen]   = useState(false)
   const [notifs, setNotifs] = useState<Notificacion[]>([])
 
-  const hoy      = new Date().toISOString().slice(0, 10)
-  const en14dias = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-
-  useEffect(() => {
-    if (!perfil?.club_id) return
-    cargarNotificaciones()
-  }, [perfil])
-
   async function cargarNotificaciones() {
     const supabase = createClient()
     const notificaciones: Notificacion[] = []
     const rol = perfil?.rol
+    const hoy      = new Date().toISOString().slice(0, 10)
+    const en14dias = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     if (rol === 'jugador' && perfil?.jugador_id) {
       const mesActual  = new Date().getMonth() + 1
@@ -137,6 +131,11 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
     notificaciones.sort((a, b) => (a.fecha > b.fecha ? 1 : -1))
     setNotifs(notificaciones)
   }
+
+  useEffect(() => {
+    if (!perfil?.club_id) return
+    cargarNotificaciones()
+  }, [perfil])
 
   const sinLeer = notifs.filter(n => !n.leida).length
 

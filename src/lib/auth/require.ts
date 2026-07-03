@@ -9,12 +9,12 @@ import { createClient } from '@/lib/supabase/server'
 export async function requireAdminClub() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null, nombre: null }
+  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null, nombre: null, userId: null }
   const { data: perfil } = await supabase.from('perfiles').select('club_id,rol,nombre').eq('id', user.id).single()
   if (!perfil || perfil.rol !== 'admin' || !perfil.club_id) {
-    return { error: 'Acceso denegado' as const, supabase: null, clubId: null, nombre: null }
+    return { error: 'Acceso denegado' as const, supabase: null, clubId: null, nombre: null, userId: null }
   }
-  return { error: null, supabase, clubId: perfil.club_id, nombre: perfil.nombre }
+  return { error: null, supabase, clubId: perfil.club_id, nombre: perfil.nombre, userId: user.id }
 }
 
 // Admin devolviendo el perfil completo (id, club_id, rol, nombre) — torneos.

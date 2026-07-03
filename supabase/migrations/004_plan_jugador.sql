@@ -1,4 +1,4 @@
--- Plan personalizado por jugador (Revisión 12 — Módulo Jugador, sub-paso J1).
+-- Plan personalizado por jugador.
 -- Agrega los campos que definen el plan acordado con cada jugador al aprobar la solicitud:
 --   mensualidad: monto cobrado en CLP (puede venir de planes precargados o ser personalizado)
 --   tipo_plan: modalidad — mensual | semanal | libre

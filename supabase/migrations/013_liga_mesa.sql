@@ -7,8 +7,7 @@
 --
 -- Módulo nuevo e independiente de `torneos` (grupos+playoffs ELO).
 -- Liga de temporada regular por divisiones, formato round robin,
--- con motor de programación de mesas/horarios/árbitros. Ver
--- PLAN-LIGA-MESA.md para la especificación completa.
+-- con motor de programación de mesas/horarios/árbitros.
 -- ============================================================
 
 -- ────────────────────────────────────────────────────────────
