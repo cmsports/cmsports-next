@@ -37,16 +37,6 @@ yarn-error.log*
 # vercel
 .vercel
 
-# claude code / documentos internos de planificación
-.claude/
-CLAUDE.md
-AGENTS.md
-PLAN-15-PASOS.md
-PLAN-LIGA-MESA.md
-PLAN-TORNEO-EN-VIVO.md
-MODULO-JUGADOR.md
-REVISION-12-SEGUIMIENTO.md
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts
