@@ -87,7 +87,9 @@ export default function PerfilPage() {
           supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', perfil.jugador_id).order('creado_en', { ascending: false }).limit(2),
           supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
           perfil.club_id
-            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', perfil.club_id).eq('estado', 'en_curso').neq('fase', 'inscripcion').limit(1).maybeSingle()
+            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', perfil.club_id).neq('fase', 'inscripcion')
+                .or(`estado.eq.en_curso,and(estado.eq.finalizado,fecha_fin.gte.${new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()})`)
+                .order('fecha_inicio', { ascending: false }).limit(1).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
         ])
 
@@ -210,9 +212,17 @@ export default function PerfilPage() {
         }
       }
 
-      // Fase cambió a 'finalizado' → "campeon"
+      // Fase cambió a 'finalizado' → "campeon" + cargar estado de felicitaciones/campeón
       if (td && td.fase === 'finalizado' && prevFase !== 'finalizado') {
         nuevosAvisos.push({ id: `campeon-${td.id}`, tipo: 'campeon', texto: '🏆 ¡El torneo ha finalizado! Revisa los resultados.' })
+        const [{ data: misFeli }, { count }, { data: campeonRec }] = await Promise.all([
+          supabase.from('torneo_felicitaciones').select('id').eq('torneo_id', tId).eq('jugador_id', jId).maybeSingle(),
+          supabase.from('torneo_felicitaciones').select('id', { count: 'exact', head: true }).eq('torneo_id', tId),
+          supabase.from('historial_elo').select('id').eq('torneo_id', tId).eq('jugador_id', jId).eq('posicion', 'campeon').maybeSingle(),
+        ])
+        setYaFelicite(!!misFeli)
+        setFelicitacionesCount(count || 0)
+        setEsCampeon(!!campeonRec)
       }
 
       // Actualizar refs antes de actualizar estado

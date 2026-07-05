@@ -422,7 +422,7 @@ export async function finalizarTorneo(params: { torneoId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  await supabase.from('torneos').update({ estado: 'finalizado', fase: 'finalizado' }).eq('id', params.torneoId)
+  await supabase.from('torneos').update({ estado: 'finalizado', fase: 'finalizado', fecha_fin: new Date().toISOString() }).eq('id', params.torneoId)
   return { success: true }
 }
 

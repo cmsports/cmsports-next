@@ -27,6 +27,7 @@ import {
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { copiarTexto } from '@/lib/clipboard'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -371,6 +372,14 @@ export default function TorneoDetallePage() {
         )}
         <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0 }}>{torneo?.nombre}</h1>
         <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseLabel[faseActual] || faseActual}</span>
+        {torneo?.codigo && (
+          <button
+            onClick={() => copiarTexto(`${window.location.origin}/vivo/${torneo.codigo}`)}
+            title="Copiar link para ver en vivo (sin cuenta)"
+            style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:20, padding:'3px 10px', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+            📺 En vivo: <span style={{ fontFamily:'monospace', letterSpacing:1 }}>{torneo.codigo}</span> 📋
+          </button>
+        )}
         {esAdmin && torneo?.inscripcion_abierta && (
           <button onClick={() => setMesaOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
         )}
