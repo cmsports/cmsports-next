@@ -8,7 +8,6 @@ import { obtenerLinkInvitacion } from '../actions/dashboard'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import CampanaNotificaciones from '@/components/campana-notificaciones'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
@@ -254,7 +253,6 @@ export default function DashboardPage() {
               </span>
             )}
           </Link>
-          <CampanaNotificaciones perfil={perfil} />
           <button title="Configuración" onClick={() => router.push('/configuracion')} style={{
             background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
             padding: '7px 10px', color: C.muted, cursor: 'pointer', display: 'flex', alignItems: 'center',
