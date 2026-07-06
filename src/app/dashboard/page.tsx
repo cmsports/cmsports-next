@@ -46,6 +46,26 @@ const catLabelGasto: Record<string, string> = {
   servicios_basicos: 'Servicios básicos', mantenimiento: 'Mantenimiento', otro_gasto: 'Otro gasto',
 }
 
+const dashboardCache: Record<string, {
+  kpis?: any
+  solicitudes?: any[]
+  desgloseGastos?: { categoria: string; monto: number }[]
+  jugadoresInactivos?: any[]
+}> = {}
+
+const linkCache: Record<string, string> = {}
+
+function scheduleIdle(cb: () => void) {
+  if (typeof window === 'undefined') return cb()
+  const ric = (window as any).requestIdleCallback
+  if (typeof ric === 'function') {
+    const id = ric(cb, { timeout: 1200 })
+    return () => (window as any).cancelIdleCallback?.(id)
+  }
+  const id = window.setTimeout(cb, 200)
+  return () => window.clearTimeout(id)
+}
+
 export default function DashboardPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [kpis, setKpis]                           = useState<any>({})
@@ -58,18 +78,6 @@ export default function DashboardPage() {
   const [tooltip, setTooltip]       = useState<string | null>(null)
   const router = useRouter()
 
-  useEffect(() => {
-    if (authLoading) return
-    if (!perfil) { router.push('/login'); return }
-    if (perfil.rol === 'jugador')  { router.push('/perfil'); return }
-    if (perfil.rol === 'profesor') { router.push('/dashboard-profesor'); return }
-    if (perfil.club_id) {
-      Promise.all([cargarDatos(perfil.club_id), cargarDesgloseGastos(perfil.club_id)]).then(() => setLoading(false))
-    } else {
-      setLoading(false)
-    }
-  }, [authLoading, perfil])
-
   async function cargarDesgloseGastos(cid: string) {
     const mesActual  = new Date().getMonth() + 1
     const anioActual = new Date().getFullYear()
@@ -81,14 +89,17 @@ export default function DashboardPage() {
 
     const agrupado: Record<string, number> = {}
     ;(data || []).forEach((m: any) => { agrupado[m.categoria] = (agrupado[m.categoria] || 0) + m.monto })
-    setDesgloseGastos(Object.entries(agrupado).map(([categoria, monto]) => ({ categoria, monto })).sort((a, b) => b.monto - a.monto))
+    const desglose = Object.entries(agrupado).map(([categoria, monto]) => ({ categoria, monto })).sort((a, b) => b.monto - a.monto)
+    dashboardCache[cid] = { ...dashboardCache[cid], desgloseGastos: desglose }
+    setDesgloseGastos(desglose)
   }
 
   async function cargarDatos(cid: string) {
-    const { data: clubData } = await supabase.from('clubes').select('mensualidad_base').eq('id', cid).single()
+    const [{ data: clubData }, { data: rpc, error: rpcError }] = await Promise.all([
+      supabase.from('clubes').select('mensualidad_base').eq('id', cid).single(),
+      supabase.rpc('dashboard_kpis', { p_club_id: cid }),
+    ])
     const mensualidadBase = clubData?.mensualidad_base ?? 25000
-
-    const { data: rpc, error: rpcError } = await supabase.rpc('dashboard_kpis', { p_club_id: cid })
 
     if (!rpcError && rpc) {
       const activos      = rpc.jugadores_activos   || 0
@@ -105,9 +116,11 @@ export default function DashboardPage() {
         ? Math.round(((utilidadPorAlumno - utilidadPrevPorAlumno) / Math.abs(utilidadPrevPorAlumno)) * 100)
         : null
 
-      setKpis({ activos, tm: rpc.tasa_morosidad || 0, coa: rpc.coa || 0, ingresos, gastos, morosos: rpc.morosos_lista || [], mensualidadBase, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
-      setSolicitudes(rpc.solicitudes_lista || [])
-      await cargarInactivos(cid)
+      const kpisData = { activos, tm: rpc.tasa_morosidad || 0, coa: rpc.coa || 0, ingresos, gastos, morosos: rpc.morosos_lista || [], mensualidadBase, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad }
+      const solicitudesData = rpc.solicitudes_lista || []
+      dashboardCache[cid] = { ...dashboardCache[cid], kpis: kpisData, solicitudes: solicitudesData }
+      setKpis(kpisData)
+      setSolicitudes(solicitudesData)
       return
     }
 
@@ -126,11 +139,11 @@ export default function DashboardPage() {
       { data: solicitudesData },
       { data: movimientosPrev },
     ] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', cid).neq('es_externo', true),
-      supabase.from('mensualidades').select('*').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
-      supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicio),
-      supabase.from('solicitudes_jugador').select('*').eq('club_id', cid).eq('estado', 'pendiente'),
-      supabase.from('movimientos').select('*').eq('club_id', cid).gte('fecha', mesInicioPrev).lt('fecha', mesInicio),
+      supabase.from('jugadores').select('id,nombre,telefono,estado').eq('club_id', cid).neq('es_externo', true),
+      supabase.from('mensualidades').select('id,jugador_id,estado').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
+      supabase.from('movimientos').select('tipo,monto').eq('club_id', cid).gte('fecha', mesInicio),
+      supabase.from('solicitudes_jugador').select('id,nombre,creado_en').eq('club_id', cid).eq('estado', 'pendiente'),
+      supabase.from('movimientos').select('tipo,monto').eq('club_id', cid).gte('fecha', mesInicioPrev).lt('fecha', mesInicio),
     ])
 
     const activos      = (jugsData || []).filter(j => j.estado === 'activo')
@@ -152,9 +165,10 @@ export default function DashboardPage() {
 
     const activosPorId = new Map(activos.map(j => [j.id, j]))
     const morosasConNombre = morosos.map(m => ({ ...m, nombre: activosPorId.get(m.jugador_id)?.nombre || '—', telefono: activosPorId.get(m.jugador_id)?.telefono || '' }))
-    setKpis({ activos: activos.length, tm, coa, ingresos, gastos, morosos: morosasConNombre, mensualidadBase, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad })
+    const kpisData = { activos: activos.length, tm, coa, ingresos, gastos, morosos: morosasConNombre, mensualidadBase, utilidadPorAlumno, ingresoPorAlumno, costoPorAlumno, variacionUtilidad }
+    dashboardCache[cid] = { ...dashboardCache[cid], kpis: kpisData, solicitudes: solicitudesData || [] }
+    setKpis(kpisData)
     setSolicitudes(solicitudesData || [])
-    await cargarInactivos(cid)
   }
 
   async function cargarInactivos(cid: string) {
@@ -197,8 +211,41 @@ export default function DashboardPage() {
         return (b.diasSinVenir ?? 0) - (a.diasSinVenir ?? 0)
       })
 
+    dashboardCache[cid] = { ...dashboardCache[cid], jugadoresInactivos: inactivos }
     setJugadoresInactivos(inactivos)
   }
+
+  useEffect(() => {
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.rol === 'jugador')  { router.push('/perfil'); return }
+    if (perfil.rol === 'profesor') { router.push('/dashboard-profesor'); return }
+    if (!perfil.club_id) { setLoading(false); return }
+
+    const clubId = perfil.club_id
+    const cached = dashboardCache[clubId]
+    if (cached) {
+      scheduleIdle(() => {
+        if (cached.kpis) setKpis(cached.kpis)
+        if (cached.solicitudes) setSolicitudes(cached.solicitudes)
+        if (cached.desgloseGastos) setDesgloseGastos(cached.desgloseGastos)
+        if (cached.jugadoresInactivos) setJugadoresInactivos(cached.jugadoresInactivos)
+        setLoading(false)
+      })
+    }
+
+    let cancelado = false
+    cargarDatos(clubId).then(() => {
+      if (!cancelado) setLoading(false)
+      scheduleIdle(() => {
+        if (!cancelado) {
+          cargarDesgloseGastos(clubId)
+          cargarInactivos(clubId)
+        }
+      })
+    })
+    return () => { cancelado = true }
+  }, [authLoading, perfil, router])
 
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
@@ -593,12 +640,18 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
 
   useEffect(() => {
     if (!clubId) return
+    if (linkCache[clubId]) {
+      setLink(linkCache[clubId])
+      return
+    }
     async function cargar() {
       const { codigo } = await obtenerLinkInvitacion()
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      setLink(`${origin}/registro?club=${clubId}&code=${codigo || ''}`)
+      const invitacion = `${origin}/registro?club=${clubId}&code=${codigo || ''}`
+      linkCache[clubId] = invitacion
+      setLink(invitacion)
     }
-    cargar()
+    scheduleIdle(cargar)
   }, [clubId])
 
   async function copiar() {
