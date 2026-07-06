@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Bell } from 'lucide-react'
 
@@ -14,11 +14,30 @@ interface Notificacion {
   color: string
 }
 
+const CACHE_MS = 60_000
+const notifCache: Record<string, { ts: number; data: Notificacion[] }> = {}
+const notifRequests: Record<string, Promise<Notificacion[]>> = {}
+
+function cacheKey(perfil: any) {
+  return [perfil?.id || perfil?.email || 'anon', perfil?.rol || '', perfil?.club_id || '', perfil?.jugador_id || ''].join(':')
+}
+
+function scheduleIdle(cb: () => void) {
+  if (typeof window === 'undefined') return cb()
+  const ric = (window as any).requestIdleCallback
+  if (typeof ric === 'function') {
+    const id = ric(cb, { timeout: 1500 })
+    return () => (window as any).cancelIdleCallback?.(id)
+  }
+  const id = window.setTimeout(cb, 250)
+  return () => window.clearTimeout(id)
+}
+
 export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: { perfil: any; placement?: 'bottom' | 'top' }) {
   const [open, setOpen]   = useState(false)
   const [notifs, setNotifs] = useState<Notificacion[]>([])
 
-  async function cargarNotificaciones() {
+  const cargarNotificaciones = useCallback(async (): Promise<Notificacion[]> => {
     const supabase = createClient()
     const notificaciones: Notificacion[] = []
     const rol = perfil?.rol
@@ -129,13 +148,39 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
     }
 
     notificaciones.sort((a, b) => (a.fecha > b.fecha ? 1 : -1))
-    setNotifs(notificaciones)
-  }
+    return notificaciones
+  }, [perfil])
 
   useEffect(() => {
     if (!perfil?.club_id) return
-    cargarNotificaciones()
-  }, [perfil])
+    const key = cacheKey(perfil)
+    let cancelado = false
+    const cleanup = scheduleIdle(() => {
+      const cached = notifCache[key]
+      if (cached && Date.now() - cached.ts < CACHE_MS) {
+        setNotifs(cached.data)
+        return
+      }
+
+      notifRequests[key] ||= cargarNotificaciones()
+        .then((data) => {
+          notifCache[key] = { ts: Date.now(), data }
+          return data
+        })
+        .finally(() => {
+          delete notifRequests[key]
+        })
+
+      notifRequests[key].then((data) => {
+        if (!cancelado) setNotifs(data)
+      })
+    })
+
+    return () => {
+      cancelado = true
+      cleanup?.()
+    }
+  }, [cargarNotificaciones, perfil])
 
   const sinLeer = notifs.filter(n => !n.leida).length
 
