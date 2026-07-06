@@ -25,6 +25,8 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+const asistenciaCache: Record<string, { jugadores: any[]; asistencias: any[]; fecha: string }> = {}
+const diasConDatosCache: Record<string, Set<string>> = {}
 
 function formatFechaLarga(fecha: string) {
   return new Date(fecha + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -65,6 +67,12 @@ export default function AsistenciaPage() {
         setJugadorPropio(j)
       }
       if (perfil.club_id) {
+        const cached = asistenciaCache[perfil.club_id]
+        if (cached?.fecha === hoy) {
+          setJugadores(cached.jugadores)
+          setAsistencias(cached.asistencias)
+          setLoading(false)
+        }
         if (navigator.onLine) await sincronizarCola(perfil.club_id)
         await cargarDatos(perfil.club_id)
       }
@@ -113,8 +121,8 @@ export default function AsistenciaPage() {
     }
 
     const [{ data: j }, { data: a }] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', id).eq('estado', 'activo').order('nombre'),
-      supabase.from('asistencia').select('*').eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
+      supabase.from('jugadores').select('id,nombre,categoria,sesiones_usadas,sesiones_limite').eq('club_id', id).eq('estado', 'activo').order('nombre'),
+      supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
     ])
     setJugadores(j || [])
     await guardarJugadoresCache(id, j || [])
@@ -123,7 +131,9 @@ export default function AsistenciaPage() {
     const pendientesSinSincronizar = pendientesHoy
       .filter(p => !yaSincronizadas.has(p.jugadorId))
       .map(p => ({ id: p.id, jugador_id: p.jugadorId, hora: p.hora, pendienteSync: true }))
-    setAsistencias([...(a || []), ...pendientesSinSincronizar])
+    const asistenciasHoy = [...(a || []), ...pendientesSinSincronizar]
+    asistenciaCache[id] = { jugadores: j || [], asistencias: asistenciasHoy, fecha: hoy }
+    setAsistencias(asistenciasHoy)
 
     if (perfil?.jugador_id) {
       setYaRegistroHoy((a || []).some((as: any) => as.jugador_id === perfil.jugador_id) || pendientesHoy.some(p => p.jugadorId === perfil.jugador_id))
@@ -133,7 +143,7 @@ export default function AsistenciaPage() {
   async function cargarAsistenciasDia(fecha: string) {
     if (!clubId) return
     setCargandoDia(true)
-    const { data } = await supabase.from('asistencia').select('*').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
+    const { data } = await supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
     setAsistenciasDia(data || [])
     setCargandoDia(false)
   }
@@ -410,8 +420,15 @@ function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, ho
       const supabase = createClient()
       const inicio = new Date(anio, mes, 1).toISOString().slice(0, 10)
       const fin = new Date(anio, mes + 1, 0).toISOString().slice(0, 10)
+      const cacheKey = `${clubId}:${anio}-${mes}`
+      if (diasConDatosCache[cacheKey]) {
+        setDiasConDatos(diasConDatosCache[cacheKey])
+        return
+      }
       const { data } = await supabase.from('asistencia').select('fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
-      setDiasConDatos(new Set((data || []).map((d: any) => d.fecha)))
+      const dias = new Set((data || []).map((d: any) => d.fecha))
+      diasConDatosCache[cacheKey] = dias
+      setDiasConDatos(dias)
     }
     if (clubId) cargar()
   }, [clubId, mes, anio])
