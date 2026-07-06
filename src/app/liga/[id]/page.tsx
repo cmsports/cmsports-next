@@ -11,7 +11,7 @@ import {
   generarFixtureDivisionAction, generarProgramacionLiga, limpiarProgramacionLiga,
   iniciarFecha, crearJugadorExternoLiga,
 } from '@/app/actions/liga'
-import { obtenerPagosDivision, registrarPagoLiga } from '@/app/actions/liga-pagos'
+import { registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
@@ -80,18 +80,10 @@ export default function LigaDetallePage() {
   const [registrandoPago, setRegistrandoPago] = useState(false)
 
   const cargar = useCallback(async () => {
-    const { data: ligaData } = await supabase.from('ligas').select('nombre, club_id').eq('id', ligaId).single()
+    const { data: ligaData } = await (supabase as any).from('ligas').select('nombre, club_id, monto_inscripcion_default').eq('id', ligaId).single()
     if (!ligaData) { setLoading(false); return }
 
-    let montoDefault: number | null = null
-    const { data: ligaExtra, error: extraErr } = await (supabase as any)
-      .from('ligas')
-      .select('monto_inscripcion_default')
-      .eq('id', ligaId)
-      .single()
-    if (!extraErr && ligaExtra) montoDefault = ligaExtra.monto_inscripcion_default ?? null
-
-    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: montoDefault })
+    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null })
 
     const [{ data: divs }, { data: fch }, { data: jugs }, { data: dj }] = await Promise.all([
       supabase.from('liga_divisiones').select('id, nombre, orden, fixture_generado, capacidad_max').eq('liga_id', ligaId).order('orden'),
@@ -117,16 +109,21 @@ export default function LigaDetallePage() {
 
   useEffect(() => { cargar() }, [cargar])
 
+  // Lectura directa (RLS liga_jugador_pagos_select ya restringe al club) —
+  // evita el hop del Server Action y su re-autenticación en cada cambio de división.
+  const cargarPagos = useCallback(async (divisionId: string) => {
+    const { data } = await (supabase as any)
+      .from('liga_jugador_pagos')
+      .select('id, jugador_id, monto_total, monto_pagado, estado')
+      .eq('division_id', divisionId)
+    const mapa: Record<string, PagoResumen> = {}
+    for (const p of (data || []) as Array<PagoResumen & { jugador_id: string }>) mapa[p.jugador_id] = p
+    setPagos(mapa)
+  }, [])
+
   useEffect(() => {
-    if (!divisionActiva) return
-    obtenerPagosDivision({ divisionId: divisionActiva }).then(res => {
-      if (!res.error && res.data) {
-        const mapa: Record<string, PagoResumen> = {}
-        for (const p of res.data) mapa[p.jugador_id] = p
-        setPagos(mapa)
-      }
-    })
-  }, [divisionActiva])
+    if (divisionActiva) cargarPagos(divisionActiva)
+  }, [divisionActiva, cargarPagos])
 
   async function handleCrearDivision() {
     if (!nombreDivision.trim()) return
@@ -262,12 +259,7 @@ export default function LigaDetallePage() {
     setRegistrandoPago(false)
     if (res.error) { setMensaje(res.error); return }
     setPagoModalAbierto(false)
-    const pagosRes = await obtenerPagosDivision({ divisionId: divisionActiva })
-    if (!pagosRes.error && pagosRes.data) {
-      const mapa: Record<string, PagoResumen> = {}
-      for (const p of pagosRes.data) mapa[p.jugador_id] = p
-      setPagos(mapa)
-    }
+    await cargarPagos(divisionActiva)
     setMensaje(`Pago registrado — ${jugadorPagando.nombre}: $${ma.toLocaleString('es-CL')}`)
   }
 

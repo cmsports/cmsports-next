@@ -150,17 +150,3 @@ export async function anularUltimoAbono(params: { pagoId: string }) {
 
   return { success: true, nuevoEstado, nuevoMontoPagado }
 }
-
-// Obtiene los pagos de todos los jugadores de una división.
-export async function obtenerPagosDivision(params: { divisionId: string }) {
-  const { error: authErr, supabase } = await requireAdminClub()
-  if (authErr) return { error: authErr, data: null }
-
-  const { data, error } = await (supabase as any)
-    .from('liga_jugador_pagos')
-    .select('id, jugador_id, monto_total, monto_pagado, estado')
-    .eq('division_id', params.divisionId)
-
-  if (error) return { error: error.message, data: null }
-  return { error: null, data: (data ?? []) as Array<{ id: string; jugador_id: string; monto_total: number; monto_pagado: number; estado: string }> }
-}

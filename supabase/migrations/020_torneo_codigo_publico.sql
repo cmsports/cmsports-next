@@ -26,30 +26,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS torneos_codigo_key ON torneos (codigo);
 
 
 -- ────────────────────────────────────────────────────────────
--- 2. Generador de código único + trigger + backfill
---    Alfabeto sin caracteres ambiguos (sin 0/O/1/I/L).
+-- 2. Generador de código legible + trigger + backfill
+--    Formato: PREFIJO-NN  (ej. PAINE-01, UNIONS-03)
+--    · PREFIJO = nombre del club sin acentos, sin "CLUB", máx 6 letras.
+--    · NN = correlativo por prefijo (2 dígitos, crece si hace falta).
 -- ────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.gen_codigo_torneo()
+CREATE OR REPLACE FUNCTION public.gen_codigo_torneo(p_club_id uuid)
 RETURNS text
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_alfabeto text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  v_prefijo text;
+  v_num int;
   v_codigo text;
-  v_i int;
-  v_intentos int := 0;
 BEGIN
+  SELECT nombre INTO v_prefijo FROM clubes WHERE id = p_club_id;
+  v_prefijo := upper(coalesce(v_prefijo, 'TORNEO'));
+  v_prefijo := translate(v_prefijo, 'ÁÉÍÓÚÜÑ', 'AEIOUUN');   -- quita acentos
+  v_prefijo := regexp_replace(v_prefijo, '^CLUB\s*', '');    -- quita "CLUB " al inicio
+  v_prefijo := regexp_replace(v_prefijo, '[^A-Z0-9]', '', 'g');
+  IF v_prefijo = '' THEN v_prefijo := 'TORNEO'; END IF;
+  v_prefijo := substr(v_prefijo, 1, 6);
+
+  -- Siguiente correlativo para ese prefijo
+  SELECT coalesce(max(split_part(codigo, '-', 2)::int), 0) + 1
+    INTO v_num
+    FROM torneos
+    WHERE codigo ~ ('^' || v_prefijo || '-[0-9]+$');
+
   LOOP
-    v_codigo := '';
-    FOR v_i IN 1..6 LOOP
-      v_codigo := v_codigo || substr(v_alfabeto, floor(random() * length(v_alfabeto))::int + 1, 1);
-    END LOOP;
+    v_codigo := v_prefijo || '-' || lpad(v_num::text, 2, '0');
     EXIT WHEN NOT EXISTS (SELECT 1 FROM torneos WHERE codigo = v_codigo);
-    v_intentos := v_intentos + 1;
-    IF v_intentos > 30 THEN
-      RAISE EXCEPTION 'No se pudo generar un código de torneo único';
-    END IF;
+    v_num := v_num + 1;
   END LOOP;
+
   RETURN v_codigo;
 END;
 $$;
@@ -60,7 +70,7 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   IF NEW.codigo IS NULL THEN
-    NEW.codigo := gen_codigo_torneo();
+    NEW.codigo := gen_codigo_torneo(NEW.club_id);
   END IF;
   RETURN NEW;
 END;
@@ -71,12 +81,12 @@ CREATE TRIGGER torneos_set_codigo
   BEFORE INSERT ON torneos
   FOR EACH ROW EXECUTE FUNCTION set_codigo_torneo();
 
--- Backfill de torneos existentes
+-- Backfill de torneos existentes (uno a uno para respetar el correlativo)
 DO $$
 DECLARE r record;
 BEGIN
-  FOR r IN SELECT id FROM torneos WHERE codigo IS NULL LOOP
-    UPDATE torneos SET codigo = gen_codigo_torneo() WHERE id = r.id;
+  FOR r IN SELECT id, club_id FROM torneos WHERE codigo IS NULL LOOP
+    UPDATE torneos SET codigo = gen_codigo_torneo(r.club_id) WHERE id = r.id;
   END LOOP;
 END $$;
 
