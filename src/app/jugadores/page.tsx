@@ -22,6 +22,7 @@ const badgeCategoria: Record<string, { bg: string; color: string }> = {
 }
 
 const categorias = ['principiante', 'intermedio', 'avanzado']
+const jugadoresCache: Record<string, any[]> = {}
 
 export default function JugadoresPage() {
   const { perfil, loading: authLoading } = usePerfil()
@@ -48,6 +49,11 @@ export default function JugadoresPage() {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.club_id) {
+      const cached = jugadoresCache[perfil.club_id]
+      if (cached) {
+        setJugadores(cached)
+        setLoading(false)
+      }
       cargarJugadores(perfil.club_id).then(() => setLoading(false))
     } else {
       setLoading(false)
@@ -56,8 +62,14 @@ export default function JugadoresPage() {
 
   async function cargarJugadores(cid?: string) {
     const id = cid || clubId
-    const { data, error } = await supabase.from('jugadores').select('*').eq('club_id', id).neq('es_externo', true).order('elo', { ascending: false })
+    const { data, error } = await supabase
+      .from('jugadores')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,elo')
+      .eq('club_id', id)
+      .neq('es_externo', true)
+      .order('elo', { ascending: false })
     if (error) { mostrarToast('Error al cargar jugadores'); return }
+    if (id) jugadoresCache[id] = data || []
     setJugadores(data || [])
   }
 
@@ -148,6 +160,8 @@ export default function JugadoresPage() {
   }
 
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
+  const rankingOrdenado = [...jugadores].sort((a, b) => (b.elo || 0) - (a.elo || 0))
+  const posicionRanking = new Map(rankingOrdenado.map((j, i) => [j.id, i + 1]))
   const esAdmin = perfil?.rol === 'admin'
 
   if (loading) return (
@@ -191,10 +205,9 @@ export default function JugadoresPage() {
               value={busquedaRanking} onChange={e => setBusquedaRanking(e.target.value)} />
           </div>
           <div style={{ ...card, overflow:'hidden' }}>
-            {jugadores.filter(j => !busquedaRanking || j.nombre.toLowerCase().includes(busquedaRanking.toLowerCase()))
-              .sort((a,b) => b.elo - a.elo)
+            {rankingOrdenado.filter(j => !busquedaRanking || j.nombre.toLowerCase().includes(busquedaRanking.toLowerCase()))
               .map((j) => {
-                const posicion = jugadores.sort((a,b) => b.elo-a.elo).findIndex(x => x.id === j.id) + 1
+                const posicion = posicionRanking.get(j.id) || 0
                 const esAdmin = perfil?.rol === 'admin'
                 const esProfesor = perfil?.rol === 'profesor'
                 const esPropio = perfil?.jugador_id === j.id

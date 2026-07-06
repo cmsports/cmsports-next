@@ -13,6 +13,7 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
+const torneosCache: Record<string, any[]> = {}
 
 export default function TorneosPage() {
   const { perfil, loading: authLoading } = usePerfil()
@@ -29,6 +30,11 @@ export default function TorneosPage() {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.club_id) {
+      const cached = torneosCache[perfil.club_id]
+      if (cached) {
+        setTorneos(cached)
+        setLoading(false)
+      }
       cargarTorneos(perfil.club_id).then(() => setLoading(false))
     } else {
       setLoading(false)
@@ -52,7 +58,10 @@ export default function TorneosPage() {
     const id = cid || clubId
     // Query 1: todos los torneos del club
     const { data: torneosData } = await supabase
-      .from('torneos').select('*').eq('club_id', id).order('creado_en', { ascending: false })
+      .from('torneos')
+      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en')
+      .eq('club_id', id)
+      .order('creado_en', { ascending: false })
     if (!torneosData?.length) { setTorneos([]); return }
 
     const ids = torneosData.map(t => t.id)
@@ -107,11 +116,13 @@ export default function TorneosPage() {
       if (f.ganador && jugadorNombre[f.ganador]) campeonPorTorneo[f.torneo_id] = jugadorNombre[f.ganador]
     }
 
-    setTorneos(torneosData.map(t => ({
+    const lista = torneosData.map(t => ({
       ...t,
       inscritos: inscritosPorTorneo[t.id] || 0,
       campeon:   campeonPorTorneo[t.id] || null,
-    })))
+    }))
+    if (id) torneosCache[id] = lista
+    setTorneos(lista)
   }
 
   async function crearTorneo() {
