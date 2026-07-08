@@ -82,17 +82,20 @@ export default function TorneoDetallePage() {
   const torneoId = params.id as string
 
   const cargarTorneo = useCallback(async () => {
-    // Tanda 1: 4 queries en paralelo (todas solo necesitan torneoId)
+    // Un solo viaje: las 5 queries en paralelo. grupo_jugadores se filtra por
+    // torneo vía el join a torneo_grupos, así no hay que esperar los grupos.
     const [
       { data: t },
       { data: g },
       { data: pts },
       { data: pgs },
+      { data: gj },
     ] = await Promise.all([
       supabase.from('torneos').select('*').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).order('nombre'),
       supabase.from('torneo_partidos').select('*,ja:jugador_a(id,nombre,elo),jb:jugador_b(id,nombre,elo),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('*').eq('torneo_id', torneoId),
+      supabase.from('grupo_jugadores').select('*,jugadores(id,nombre,elo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
     ])
 
     setTorneo(t)
@@ -100,30 +103,22 @@ export default function TorneoDetallePage() {
     setPartidos(pts || [])
     setPagos(pgs || [])
 
-    // Tanda 2: grupo_jugadores para todos los grupos (real + MESA) en una sola query
-    const todosGrupoIds = (g || []).map((gr: any) => gr.id)
-    if (todosGrupoIds.length) {
-      const { data: gj } = await supabase.from('grupo_jugadores').select('*,jugadores(id,nombre,elo)').in('grupo_id', todosGrupoIds)
-      const todos = gj || []
-      const grupoMesaId = (g || []).find((gr: any) => gr.nombre === 'MESA')?.id
-      setJugadores(grupoMesaId ? todos.filter((j: any) => j.grupo_id !== grupoMesaId) : todos)
-      if (t?.fase === 'inscripcion' && grupoMesaId) {
-        setJugadoresInscritos(todos.filter((j: any) => j.grupo_id === grupoMesaId))
-      }
-    } else {
-      setJugadores([])
+    const todos = gj || []
+    const grupoMesaId = (g || []).find((gr: any) => gr.nombre === 'MESA')?.id
+    setJugadores(grupoMesaId ? todos.filter((j: any) => j.grupo_id !== grupoMesaId) : todos)
+    if (t?.fase === 'inscripcion' && grupoMesaId) {
+      setJugadoresInscritos(todos.filter((j: any) => j.grupo_id === grupoMesaId))
     }
   }, [torneoId])
 
   useEffect(() => {
-    async function init() {
-      if (authLoading) return
-      if (!perfil) { router.push('/login'); return }
-      await cargarTorneo()
-      setLoading(false)
-    }
-    init()
-  }, [authLoading, perfil, torneoId, cargarTorneo, router])
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    cargarTorneo().finally(() => setLoading(false))
+    // Depende de perfil?.id (no del objeto): la revalidación en segundo plano
+    // de PerfilProvider crea un objeto nuevo y recargaba el torneo dos veces.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, perfil?.id, torneoId])
 
   useEffect(() => {
     if (torneo?.fase && (fasesOrden as readonly string[]).includes(torneo.fase)) {
