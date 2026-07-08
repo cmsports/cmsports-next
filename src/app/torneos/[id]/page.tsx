@@ -478,9 +478,9 @@ export default function TorneoDetallePage() {
               onChange={e => guardarCabezasSerie(e.target.value, cabezaSerie2 === e.target.value ? '' : cabezaSerie2)}
               style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', color: text, fontSize:13, minWidth:180 }}
             >
-              <option value="">Sin asignar (usa ELO)</option>
+              <option value="">Sin asignar</option>
               {jugadores.map((j: any) => (
-                <option key={j.jugador?.id} value={j.jugador?.id}>{j.jugador?.nombre}</option>
+                <option key={j.jugadores?.id} value={j.jugadores?.id}>{j.jugadores?.nombre}</option>
               ))}
             </select>
           </div>
@@ -492,9 +492,9 @@ export default function TorneoDetallePage() {
               onChange={e => guardarCabezasSerie(cabezaSerie1 === e.target.value ? '' : cabezaSerie1, e.target.value)}
               style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', color: text, fontSize:13, minWidth:180 }}
             >
-              <option value="">Sin asignar (usa ELO)</option>
+              <option value="">Sin asignar</option>
               {jugadores.map((j: any) => (
-                <option key={j.jugador?.id} value={j.jugador?.id}>{j.jugador?.nombre}</option>
+                <option key={j.jugadores?.id} value={j.jugadores?.id}>{j.jugadores?.nombre}</option>
               ))}
             </select>
           </div>
