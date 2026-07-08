@@ -26,7 +26,7 @@ export default function VivoLandingPage() {
           value={codigo}
           onChange={e => setCodigo(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && entrar()}
-          placeholder="EJ: PAINE-01"
+          placeholder="EJ: N2FCH4"
           maxLength={16}
           autoFocus
           style={{ width: '100%', textAlign: 'center', letterSpacing: 3, fontSize: 24, fontWeight: 700, fontFamily: 'monospace', color: '#0f172a', background: '#f4f7fa', border: '2px solid #e2e8f0', borderRadius: 12, padding: '14px 10px', outline: 'none', boxSizing: 'border-box' }}

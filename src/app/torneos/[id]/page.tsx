@@ -1150,6 +1150,32 @@ export default function TorneoDetallePage() {
           </div>
         </div>
       )}
+      {/* Modal QR — para proyectar/imprimir y que la gente entre altiro */}
+      {qrOpen && torneo?.codigo && (() => {
+        const vivoUrl = typeof window !== 'undefined' ? `${window.location.origin}/vivo/${torneo.codigo}` : ''
+        return (
+          <div onClick={() => setQrOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:20 }}>
+            <div onClick={e => e.stopPropagation()} style={{ ...card, padding:28, width:'100%', maxWidth:360, textAlign:'center' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
+                <span style={{ fontSize:15, fontWeight:700, color:text }}>Ver torneo en vivo</span>
+                <button onClick={() => setQrOpen(false)} style={{ background:'transparent', border:'none', color:muted, cursor:'pointer', fontSize:20 }}>✕</button>
+              </div>
+              <p style={{ fontSize:12.5, color:muted, marginTop:0, marginBottom:16 }}>Escanea el QR con la cámara del celular y entras al toque, sin cuenta.</p>
+              <div style={{ display:'inline-block', background:'#fff', padding:12, borderRadius:12, border:'1px solid #e2e8f0' }}>
+                <QRCodeSVG value={vivoUrl} size={200} />
+              </div>
+              <div style={{ marginTop:16, fontSize:12, color:hint }}>Código</div>
+              <div style={{ fontSize:22, fontWeight:800, color:text, fontFamily:'monospace', letterSpacing:2 }}>{torneo.codigo}</div>
+              <div style={{ marginTop:14, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:11.5, color:'#3730a3', wordBreak:'break-all' }}>{vivoUrl}</div>
+              <button
+                onClick={() => copiarTexto(vivoUrl)}
+                style={{ width:'100%', marginTop:12, background:'#4f46e5', color:'#fff', border:'none', borderRadius:10, padding:'11px', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                📋 Copiar link
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </AppLayout>
   )
 }
