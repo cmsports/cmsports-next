@@ -152,22 +152,21 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
       }
     }
 
-    // Inscripciones desde /vivo pendientes — admin y profesor las gestionan
+    // Avisos desde /vivo pendientes — admin y profesor las gestionan
     if (rol === 'admin' || rol === 'profesor') {
       const { data: solicitudes } = await supabase.from('solicitudes_jugador')
-        .select('id, nombre, rut, pago, creado_en')
+        .select('id, nombre, creado_en')
         .eq('club_id', perfil.club_id).eq('estado', 'pendiente')
         .order('creado_en', { ascending: false }).limit(15)
       solicitudes?.forEach((s: any) => {
-        const pagoTxt = s.pago === 'pagado' ? 'Dice que ya pagó' : 'Dice: pago pendiente'
         const recibida = s.creado_en ? new Date(s.creado_en).toLocaleString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
         notificaciones.push({
           id: `solicitud-${s.id}`, tipo: 'solicitud',
-          titulo: `Nueva inscripción: ${s.nombre}`,
-          mensaje: `${s.rut || 'Sin RUT'} · ${pagoTxt}`,
-          detalle: `Nombre:  ${s.nombre}\nRUT:  ${s.rut || '—'}\nPago (informado):  ${pagoTxt}${recibida ? `\nRecibida:  ${recibida}` : ''}\n\nConfirma el pago al agregarl@ al club.`,
+          titulo: `${s.nombre} dice que no aparece`,
+          mensaje: 'Confirma si está inscrito y reingrésalo con su RUT y pago.',
+          detalle: `Nombre:  ${s.nombre}${recibida ? `\nRecibido:  ${recibida}` : ''}\n\nConfirma si está inscrito en el torneo y reingrésalo con su RUT y pago.`,
           href: '/solicitudes',
-          fecha: s.creado_en?.slice(0, 10) || hoy, leida: false, color: s.pago === 'pagado' ? '#16a34a' : '#d97706',
+          fecha: s.creado_en?.slice(0, 10) || hoy, leida: false, color: '#d97706',
         })
       })
     }

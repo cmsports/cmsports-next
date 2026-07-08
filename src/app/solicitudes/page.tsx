@@ -156,7 +156,7 @@ export default function SolicitudesPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                {['Nombre', 'RUT', 'Pago informado', 'Email', 'Teléfono', 'Fecha', 'Estado', 'Acciones'].map(h => (
+                {['Nombre', 'RUT', 'Email', 'Teléfono', 'Fecha', 'Estado', 'Acciones'].map(h => (
                   <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                 ))}
               </tr>
@@ -168,11 +168,6 @@ export default function SolicitudesPage() {
                   <tr key={s.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px 16px', fontWeight: 500, color: text }}>{s.nombre}</td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{s.rut || '—'}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      {s.pago
-                        ? <span style={{ background: s.pago === 'pagado' ? '#f0fdf4' : '#fffbeb', color: s.pago === 'pagado' ? '#16a34a' : '#d97706', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>{s.pago === 'pagado' ? 'Pagó' : 'Pendiente'}</span>
-                        : <span style={{ fontSize: 12, color: muted }}>—</span>}
-                    </td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{s.email || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{s.telefono || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{new Date(s.creado_en).toLocaleDateString('es-CL')}</td>

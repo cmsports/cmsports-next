@@ -1,25 +1,28 @@
 -- ============================================================
--- CmSports — Inscripción desde la vista en vivo (sin cuenta)
+-- CmSports — Aviso desde la vista en vivo (sin cuenta)
 -- ============================================================
 -- INSTRUCCIONES:
 --   1. Abre Supabase Dashboard → SQL Editor
 --   2. Pega TODO este archivo y haz clic en "Run"
 --   3. Se puede correr de nuevo sin riesgo (idempotente)
 --
--- Qué agrega:
---   1. Columna solicitudes_jugador.pago ('pagado' | 'pendiente') —
---      la marca que deja el jugador al inscribirse desde /vivo.
---   2. solicitar_inscripcion_torneo(codigo, nombre, rut, pago) —
---      un jugador que no aparece en la lista deja nombre + RUT +
---      estado de pago. Crea una solicitud_jugador 'pendiente' que
---      el club ve en la campanita y en /solicitudes. Sin correo.
---      SECURITY DEFINER: no expone tablas al rol anon.
+-- Qué hace:
+--   solicitar_inscripcion_torneo(codigo, nombre) —
+--     un jugador que no aparece en la lista deja SOLO su nombre.
+--     Crea una solicitud_jugador 'pendiente' que el club ve en la
+--     campanita y en /solicitudes. El club confirma la inscripción y
+--     reingresa al jugador con su RUT y pago. Sin correo.
+--     SECURITY DEFINER: no expone tablas al rol anon.
+--
+-- Nota: la columna solicitudes_jugador.pago (versión anterior de esta
+-- feature) queda sin uso; no se elimina para no tocar el esquema.
 -- ============================================================
 
-ALTER TABLE solicitudes_jugador ADD COLUMN IF NOT EXISTS pago text;
+-- Versión anterior pedía RUT y pago al jugador (malentendido). Se reemplaza.
+DROP FUNCTION IF EXISTS public.solicitar_inscripcion_torneo(text, text, text, text);
 
 CREATE OR REPLACE FUNCTION public.solicitar_inscripcion_torneo(
-  p_codigo text, p_nombre text, p_rut text, p_pago text
+  p_codigo text, p_nombre text
 )
 RETURNS json
 LANGUAGE plpgsql
@@ -35,12 +38,10 @@ BEGIN
     RAISE EXCEPTION 'Torneo no encontrado';
   END IF;
 
-  INSERT INTO solicitudes_jugador (club_id, nombre, rut, pago, estado)
+  INSERT INTO solicitudes_jugador (club_id, nombre, estado)
   VALUES (
     v_club,
     COALESCE(NULLIF(trim(p_nombre), ''), 'Sin nombre'),
-    NULLIF(trim(p_rut), ''),
-    CASE WHEN p_pago = 'pagado' THEN 'pagado' ELSE 'pendiente' END,
     'pendiente'
   )
   RETURNING id INTO v_id;
@@ -49,10 +50,10 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.solicitar_inscripcion_torneo(text, text, text, text) FROM public;
-GRANT EXECUTE ON FUNCTION public.solicitar_inscripcion_torneo(text, text, text, text) TO anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.solicitar_inscripcion_torneo(text, text) FROM public;
+GRANT EXECUTE ON FUNCTION public.solicitar_inscripcion_torneo(text, text) TO anon, authenticated;
 
 -- ============================================================
--- DONE 🏓  Las inscripciones desde /vivo llegan a la campanita
+-- DONE 🏓  Los avisos desde /vivo llegan a la campanita
 --          (admin/profesor) y a /solicitudes como 'pendiente'.
 -- ============================================================
