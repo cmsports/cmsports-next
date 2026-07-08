@@ -52,6 +52,8 @@ function FinanzasContent() {
   const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'reportes'>(
     searchParams.get('tab') === 'mensualidades' ? 'mensualidades' : 'movimientos',
   )
+  // Monta Mensualidades solo cuando se abre por primera vez (evita sus consultas al entrar en "Movimientos"); una vez montado queda vivo
+  const [mensualidadesVista, setMensualidadesVista] = useState(searchParams.get('tab') === 'mensualidades')
   const [jugadoresFinanzas, setJugadoresFinanzas] = useState<any[]>([])
   const [jugadorSeleccionado, setJugadorSeleccionado] = useState<any>(null)
   const [historialJugador, setHistorialJugador] = useState<any[]>([])
@@ -69,7 +71,7 @@ function FinanzasContent() {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.club_id) {
-      Promise.all([cargarMovimientos(perfil.club_id), cargarProfesores(perfil.club_id)]).then(() => setLoading(false))
+      Promise.all([cargarMovimientos(perfil.club_id), cargarJugadores(perfil.club_id), cargarProfesores(perfil.club_id)]).then(() => setLoading(false))
     } else {
       setLoading(false)
     }
@@ -86,12 +88,15 @@ function FinanzasContent() {
     const ultimoDia = new Date(anio, mes, 0).getDate()
     const inicio = `${anio}-${mesStr}-01`
     const fin = `${anio}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`
-    const [{ data: jugs }, { data }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', id).neq('es_externo', true).order('nombre'),
-      supabase.from('movimientos').select('*').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false }),
-    ])
-    setJugadoresFinanzas(jugs || [])
+    // Solo movimientos: la lista de jugadores no cambia por mes, se carga aparte una sola vez
+    const { data } = await supabase.from('movimientos').select('*').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
     setMovimientos(data || [])
+  }
+
+  async function cargarJugadores(cid?: string) {
+    const id = cid || clubId
+    const { data: jugs } = await supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', id).neq('es_externo', true).order('nombre')
+    setJugadoresFinanzas(jugs || [])
   }
 
   async function cargarProfesores(cid?: string) {
@@ -197,7 +202,7 @@ function FinanzasContent() {
           { key:'mensualidades', label:'💳 Mensualidades' },
           { key:'reportes', label:'📈 Reportes' },
         ].map(t => (
-          <div key={t.key} onClick={() => setTabActivo(t.key as any)}
+          <div key={t.key} onClick={() => { setTabActivo(t.key as any); if (t.key === 'mensualidades') setMensualidadesVista(true) }}
             style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabActivo===t.key?'#ffffff':'transparent', color:tabActivo===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabActivo===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {t.label}
           </div>
@@ -377,7 +382,7 @@ function FinanzasContent() {
 
       {/* TAB MENSUALIDADES */}
       <div style={{ display: tabActivo === 'mensualidades' ? 'block' : 'none' }}>
-        <MensualidadesPanel onPagoRegistrado={() => cargarMovimientos()} />
+        {mensualidadesVista && <MensualidadesPanel onPagoRegistrado={() => cargarMovimientos()} />}
       </div>
 
       {/* TAB REPORTES */}
