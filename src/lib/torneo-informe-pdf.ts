@@ -15,6 +15,7 @@ export type InformeFinanciero = {
   jugadores: Jugador[]
   premios: Premio[]
   gastos: Gasto[]
+  metodoPremio?: 'efectivo' | 'transferencia'
 }
 
 const MORADO: [number, number, number] = [79, 70, 229]
@@ -80,18 +81,19 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
 
   // — Premios —
   y = (doc as any).lastAutoTable.finalY + 8
+  const metodoLabel = d.metodoPremio === 'transferencia' ? 'Transferencia' : 'Efectivo'
   const premiosBody = d.premios
-    .filter(p => (p.monto || 0) > 0 || p.nombre)
-    .map(p => [p.lugar, p.nombre || '—', fmt(p.monto || 0)])
+    .filter(p => (p.monto || 0) > 0)
+    .map(p => [p.lugar, p.nombre || '—', fmt(p.monto || 0), metodoLabel])
   if (premiosBody.length) {
     autoTable(doc, {
       startY: y,
-      head: [['Premio', 'Jugador', 'Monto']],
+      head: [['Premio', 'Jugador', 'Monto', 'Pago']],
       body: premiosBody,
       theme: 'striped',
       headStyles: { fillColor: VERDE },
       margin: { left: 14, right: 14 },
-      columnStyles: { 2: { halign: 'right' } },
+      columnStyles: { 2: { halign: 'right' }, 3: { halign: 'center' } },
     })
     y = (doc as any).lastAutoTable.finalY + 8
   }

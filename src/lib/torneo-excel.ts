@@ -136,17 +136,17 @@ export async function descargarExcelTorneo({ torneo, grupos, partidos, statsDeGr
     const rows: any[][] = [
       [faseLabel[fase] || fase],
       [],
-      ['#', 'Jugador A', 'vs', 'Jugador B', 'Ganador'],
+      ['Llave', 'Jugador A', 'vs', 'Jugador B', 'Ganador'],
     ]
     ps.forEach((p, i) => {
       const a = p.ja?.nombre || 'TBD'
       const isBye = p.jugador_b === null
       const b = isBye ? 'BYE' : p.jb?.nombre || 'TBD'
       const ganador = p.ganador ? p.jg?.nombre || (p.ganador === p.jugador_a ? a : b) : (isBye ? a : 'Pendiente')
-      rows.push([i + 1, a, 'vs', b, ganador])
+      rows.push([`Llave ${(p.orden ?? i) + 1}`, a, 'vs', b, ganador])
     })
     const ws = utils.aoa_to_sheet(rows)
-    ws['!cols'] = [{ wch: 5 }, { wch: 24 }, { wch: 5 }, { wch: 24 }, { wch: 24 }]
+    ws['!cols'] = [{ wch: 9 }, { wch: 24 }, { wch: 5 }, { wch: 24 }, { wch: 24 }]
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }]
     ws['!rows'] = [{ hpt: 26 }]
     setFila(ws, 0, 5, S.titulo)
@@ -154,6 +154,7 @@ export async function descargarExcelTorneo({ torneo, grupos, partidos, statsDeGr
     ps.forEach((p, i) => {
       const r = i + 3
       setFila(ws, r, 5, S.celdaCentro)
+      set(ws, r, 0, S.label)
       set(ws, r, 4, p.ganador || p.jugador_b === null ? S.ganador : S.pendiente)
     })
     const nombreHoja = (faseLabel[fase] || fase).replace(/[\\/?*[\]:]/g, '').slice(0, 31)

@@ -716,9 +716,12 @@ export async function guardarPremios(params: {
   tercero: number | null
   montoRecaudado: number
   enviarRecaudacion: boolean
+  metodo?: 'efectivo' | 'transferencia'
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
+
+  const via = params.metodo === 'transferencia' ? ' (transferencia)' : ' (efectivo)'
 
   await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero, contabilidad_enviada: true }).eq('id', params.torneoId)
 
@@ -729,9 +732,9 @@ export async function guardarPremios(params: {
   if (params.enviarRecaudacion && params.montoRecaudado > 0) {
     movimientos.push({ club_id: perfil.club_id, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Ingreso Torneo — ${params.torneoNombre}`, monto: params.montoRecaudado, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   }
-  if (params.primero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1° — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  if (params.segundo) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2° — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  if (params.tercero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3° — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.primero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1°${via} — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.segundo) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2°${via} — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.tercero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3°${via} — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
 
   if (movimientos.length) await supabase.from('movimientos').insert(movimientos)
 

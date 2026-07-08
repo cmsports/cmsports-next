@@ -130,14 +130,14 @@ function Gate({ jugadores, onListo, irCorreo }: {
   )
 }
 
-// ── Paso 2: no aparezco → inscripción (nombre + RUT + pago) → solicitud ──
+// ── Paso 2: no aparezco → dejo mi nombre → aviso al club ──
+// Solo el nombre: sirve para seguir el torneo con tu nombre y para avisarle al
+// club. El club confirma la inscripción y reingresa al jugador con RUT y pago.
 function Correo({ codigo, onListo, volver }: {
   codigo: string
   onListo: (i: { jugadorId: string | null; nombre: string }) => void; volver: () => void
 }) {
   const [nombre, setNombre] = useState('')
-  const [rut, setRut] = useState('')
-  const [pago, setPago] = useState<'pagado' | 'pendiente'>('pendiente')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
   const [enviado, setEnviado] = useState(false)
@@ -145,10 +145,9 @@ function Correo({ codigo, onListo, volver }: {
   async function enviar() {
     setError('')
     if (nombre.trim().length < 2) { setError('Ingresa tu nombre'); return }
-    if (rut.trim().length < 3) { setError('Ingresa tu RUT'); return }
     setEnviando(true)
     const { error: e } = await supabase.rpc('solicitar_inscripcion_torneo', {
-      p_codigo: codigo, p_nombre: nombre.trim(), p_rut: rut.trim(), p_pago: pago,
+      p_codigo: codigo, p_nombre: nombre.trim(),
     })
     setEnviando(false)
     if (e) { setError('No se pudo enviar. Intenta de nuevo.'); return }
@@ -160,7 +159,7 @@ function Correo({ codigo, onListo, volver }: {
       <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380, textAlign: 'center' }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
         <h1 style={{ fontSize: 19, fontWeight: 800, color: text, margin: 0 }}>¡Listo, {nombre.trim().split(' ')[0]}!</h1>
-        <p style={{ fontSize: 13, color: muted, marginTop: 8, marginBottom: 20 }}>Le avisamos al club para agregarte. Apenas estés en la lista podrás elegir tu nombre y seguir tus partidos.</p>
+        <p style={{ fontSize: 13, color: muted, marginTop: 8, marginBottom: 20 }}>Le avisamos al club. Mientras tanto puedes seguir el torneo con tu nombre; el club confirmará tu inscripción.</p>
         <button onClick={() => onListo({ jugadorId: null, nombre: nombre.trim() || 'Invitado' })} style={btnPrimary}>Ver el torneo →</button>
         <button onClick={volver} style={btnGhost}>← Volver</button>
       </div>
@@ -172,31 +171,17 @@ function Correo({ codigo, onListo, volver }: {
       <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380 }}>
         <h1 style={{ fontSize: 19, fontWeight: 800, color: text, margin: 0, textAlign: 'center' }}>No apareces en la lista</h1>
         <p style={{ fontSize: 12.5, color: muted, marginTop: 6, marginBottom: 18, textAlign: 'center' }}>
-          Déjanos tus datos y el club te agrega al torneo.
+          Deja tu nombre para seguir el torneo. Le avisamos al club para que confirme tu inscripción.
         </p>
 
         <label style={lbl}>Nombre y apellido
-          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Juan Pérez" style={inp} />
+          <input value={nombre} onChange={e => setNombre(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviar() }} placeholder="Ej: Juan Pérez" style={inp} />
         </label>
 
-        <label style={lbl}>RUT
-          <input value={rut} onChange={e => setRut(e.target.value)} placeholder="12.345.678-9" style={inp} />
-        </label>
+        {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 4, marginBottom: 6 }}>{error}</div>}
 
-        <label style={lbl}>¿Ya pagaste la inscripción?</label>
-        <div style={{ display: 'flex', gap: 0, borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', marginBottom: 4 }}>
-          {([['pagado', 'Ya pagué'], ['pendiente', 'Pago pendiente']] as const).map(([v, l]) => (
-            <button key={v} onClick={() => setPago(v)}
-              style={{ flex: 1, padding: '11px 0', background: pago === v ? purple : '#f4f7fa', color: pago === v ? '#fff' : muted, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              {l}
-            </button>
-          ))}
-        </div>
-
-        {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 10 }}>{error}</div>}
-
-        <button onClick={enviar} disabled={enviando} style={{ ...btnPrimary, marginTop: 16, opacity: enviando ? 0.6 : 1 }}>
-          {enviando ? 'Enviando…' : 'Enviar al club →'}
+        <button onClick={enviar} disabled={enviando} style={{ ...btnPrimary, marginTop: 12, opacity: enviando ? 0.6 : 1 }}>
+          {enviando ? 'Enviando…' : 'Avisar al club →'}
         </button>
         <button onClick={volver} style={btnGhost}>← Volver</button>
       </div>
@@ -225,6 +210,24 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
   // clasificados = los 2 primeros de cada grupo (por partidos ganados)
   const clasificados = useMemo(() => standingsPorGrupo(grupos, jugadores, partidos), [grupos, jugadores, partidos])
 
+  // campeón = ganador de la final (para el mensaje al finalizar)
+  const campeon = useMemo(() => {
+    const f = partidos.find(p => p.fase === 'final' && p.ganador)
+    if (!f) return null
+    return { id: f.ganador, nombre: f.ganador === f.jugador_a ? f.nombre_a : f.nombre_b }
+  }, [partidos])
+
+  // desarrollo del torneo: todas las llaves de playoff por fase (jugadas y por jugar)
+  const llavesPorFase = useMemo(() => {
+    const playoff = partidos.filter(p => !p.grupo_id && p.fase && FASE_LABELS[p.fase] && p.fase !== 'grupos')
+    const secc: { fase: string; titulo: string; partidos: Partido[] }[] = []
+    for (const fase of Object.keys(FASE_LABELS)) {
+      const ps = playoff.filter(p => p.fase === fase).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+      if (ps.length) secc.push({ fase, titulo: FASE_LABELS[fase], partidos: ps })
+    }
+    return secc
+  }, [partidos])
+
   return (
     <div style={{ minHeight: '100vh', background: '#a9bac8', padding: '16px 12px 40px' }}>
       <div style={{ maxWidth: 720, margin: '0 auto' }}>
@@ -241,6 +244,24 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
             {yo?.jugadorId ? yo.nombre : 'Soy…'} ▾
           </button>
         </div>
+
+        {/* Campeón: mensaje al finalizar el torneo */}
+        {fase === 'finalizado' && campeon && (
+          <div style={{ ...card, padding: 20, marginBottom: 14, textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a' }}>
+            <div style={{ fontSize: 40, marginBottom: 6 }}>🏆</div>
+            {campeon.id === yo?.jugadorId ? (
+              <>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#b45309' }}>¡Enhorabuena, {(campeon.nombre || '').split(' ')[0]}! 🎉</div>
+                <div style={{ fontSize: 13.5, color: '#92400e', marginTop: 6 }}>Ganaste el torneo. ¡Gracias por participar y te esperamos en el próximo! 🏓</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1 }}>Campeón del torneo</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#b45309', marginTop: 4 }}>{campeon.nombre || 'Por definir'}</div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Mi próximo partido */}
         {yo?.jugadorId && (
@@ -268,6 +289,23 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
             </div>
           ))}
         </Seccion>
+
+        {/* Desarrollo del torneo: llaves por fase con resultados */}
+        {llavesPorFase.length > 0 && (
+          <Seccion titulo="🏆 Llaves del torneo">
+            {llavesPorFase.map(sec => (
+              <div key={sec.fase}>
+                <SubTitulo>{sec.titulo}</SubTitulo>
+                {sec.partidos.map(p => (
+                  <div key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ padding: '7px 14px 0', fontSize: 11, fontWeight: 700, color: purple }}>Llave {(p.orden ?? 0) + 1}</div>
+                    <FilaPartido p={p} mio={!!esMio(p)} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Seccion>
+        )}
 
         {/* Clasificados: los 2 primeros de cada grupo — solo en fase de grupos */}
         {fase === 'grupos' && clasificados.length > 0 && (
@@ -301,7 +339,7 @@ function agruparPartidos(lista: Partido[], grupos: Grupo[]): { titulo: string; p
   // playoffs (sin grupo), agrupados por fase según el orden de FASE_LABELS
   const playoff = lista.filter(p => !p.grupo_id)
   for (const fase of Object.keys(FASE_LABELS)) {
-    const ps = playoff.filter(p => (p.fase ?? '') === fase)
+    const ps = playoff.filter(p => (p.fase ?? '') === fase).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
     if (ps.length) secc.push({ titulo: FASE_LABELS[fase], partidos: ps })
   }
   // fases desconocidas al final
@@ -334,13 +372,18 @@ function standingsPorGrupo(grupos: Grupo[], jugadores: Jugador[], partidos: Part
 
 // ── piezas visuales ─────────────────────────────────────────
 function FilaPartido({ p, mio }: { p: Partido; mio: boolean }) {
+  const esBye = p.jugador_b === null
   const ganoA = p.ganador === p.jugador_a
   const ganoB = p.ganador === p.jugador_b
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid #f1f5f9', background: mio ? '#faf5ff' : 'transparent', fontSize: 13 }}>
-      <span style={{ flex: 1, textAlign: 'right', color: ganoA ? green : text, fontWeight: ganoA ? 700 : 400 }}>{p.nombre_a || 'Por definir'}</span>
-      <span style={{ fontSize: 10, color: hint, minWidth: 20, textAlign: 'center' }}>{p.ganador ? '·' : 'vs'}</span>
-      <span style={{ flex: 1, color: ganoB ? green : text, fontWeight: ganoB ? 700 : 400 }}>{p.nombre_b || 'Por definir'}</span>
+      <span style={{ flex: 1, textAlign: 'right', color: ganoA ? green : text, fontWeight: ganoA ? 700 : 400 }}>
+        {ganoA && '✓ '}{p.nombre_a || 'Por definir'}
+      </span>
+      <span style={{ fontSize: 10, color: hint, minWidth: 20, textAlign: 'center' }}>{esBye ? '·' : p.ganador ? '·' : 'vs'}</span>
+      <span style={{ flex: 1, color: ganoB ? green : esBye ? hint : text, fontWeight: ganoB ? 700 : 400, fontStyle: esBye ? 'italic' : 'normal' }}>
+        {esBye ? 'BYE (pasa directo)' : <>{ganoB && '✓ '}{p.nombre_b || 'Por definir'}</>}
+      </span>
     </div>
   )
 }
