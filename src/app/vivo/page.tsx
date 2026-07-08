@@ -18,7 +18,7 @@ export default function VivoLandingPage() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#a9bac8', padding: 20 }}>
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 18, boxShadow: '0 8px 30px rgba(15,23,42,0.2)', padding: 32, width: '100%', maxWidth: 380, textAlign: 'center' }}>
-        <div style={{ fontSize: 40, marginBottom: 8 }}>🎾</div>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🏓</div>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0 }}>Torneo en vivo</h1>
         <p style={{ fontSize: 13, color: '#64748b', marginTop: 6, marginBottom: 22 }}>Ingresa el código del torneo para ver los partidos</p>
 

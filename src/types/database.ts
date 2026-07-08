@@ -939,6 +939,7 @@ export interface Database {
           estado: string | null
           creado_en: string | null
           password: string | null
+          pago: string | null
         }
         Insert: {
           id?: string
@@ -950,6 +951,7 @@ export interface Database {
           estado?: string | null
           creado_en?: string | null
           password?: string | null
+          pago?: string | null
         }
         Update: {
           id?: string
@@ -961,6 +963,7 @@ export interface Database {
           estado?: string | null
           creado_en?: string | null
           password?: string | null
+          pago?: string | null
         }
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },

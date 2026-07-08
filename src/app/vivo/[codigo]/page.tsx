@@ -78,7 +78,7 @@ export default function VivoTorneoPage() {
   if (!snap) return null
 
   if (paso === 'gate') return <Gate jugadores={snap.jugadores} onListo={guardarIdentidad} irCorreo={() => setPaso('correo')} />
-  if (paso === 'correo') return <Correo codigo={codigo} jugadores={snap.jugadores} onListo={guardarIdentidad} volver={() => setPaso('gate')} />
+  if (paso === 'correo') return <Correo codigo={codigo} onListo={guardarIdentidad} volver={() => setPaso('gate')} />
 
   return <Vivo snap={snap} yo={yo} cambiar={() => { try { localStorage.removeItem(storeKey) } catch { /* noop */ }; setYo(null); setPaso('gate') }} />
 }
@@ -105,7 +105,7 @@ function Gate({ jugadores, onListo, irCorreo }: {
   return (
     <Centro>
       <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380, textAlign: 'center' }}>
-        <div style={{ fontSize: 34, marginBottom: 8 }}>🎾</div>
+        <div style={{ fontSize: 34, marginBottom: 8 }}>🏓</div>
         <h1 style={{ fontSize: 20, fontWeight: 800, color: text, margin: 0 }}>¿Quién eres?</h1>
         <p style={{ fontSize: 13, color: muted, marginTop: 6, marginBottom: 20 }}>Elige tu nombre y sigue de cerca contra quién te toca.</p>
 
@@ -118,78 +118,85 @@ function Gate({ jugadores, onListo, irCorreo }: {
             <button onClick={elegir} disabled={!sel} style={{ ...btnPrimary, opacity: sel ? 1 : 0.5, cursor: sel ? 'pointer' : 'not-allowed' }}>Ver mis partidos →</button>
           </>
         ) : (
-          <p style={{ fontSize: 12.5, color: hint, marginBottom: 14 }}>El torneo aún no arma los grupos.</p>
+          <>
+            <p style={{ fontSize: 12.5, color: hint, marginBottom: 14 }}>El torneo aún no arma los grupos.</p>
+            <button onClick={() => onListo({ jugadorId: null, nombre: 'Espectador' })} style={btnGhost}>Ver el torneo</button>
+          </>
         )}
 
-        <button onClick={() => onListo({ jugadorId: null, nombre: 'Espectador' })} style={btnGhost}>Solo estoy mirando</button>
-        <button onClick={irCorreo} style={{ background: 'none', border: 'none', color: purple, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginTop: 12 }}>No aparezco en la lista →</button>
+        <button onClick={irCorreo} style={{ background: 'none', border: 'none', color: purple, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginTop: 14 }}>No aparezco en la lista →</button>
       </div>
     </Centro>
   )
 }
 
-// ── Paso 2 (solo club sin cuenta): nombre + correo → solicitud ──
-function Correo({ codigo, jugadores, onListo, volver }: {
-  codigo: string; jugadores: Jugador[]
+// ── Paso 2: no aparezco → inscripción (nombre + RUT + pago) → solicitud ──
+function Correo({ codigo, onListo, volver }: {
+  codigo: string
   onListo: (i: { jugadorId: string | null; nombre: string }) => void; volver: () => void
 }) {
   const [nombre, setNombre] = useState('')
-  const [email, setEmail] = useState('')
-  const [jugadorId, setJugadorId] = useState<string>('')
+  const [rut, setRut] = useState('')
+  const [pago, setPago] = useState<'pagado' | 'pendiente'>('pendiente')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
-
-  // nombres únicos de inscritos, para autocompletar quién eres
-  const inscritos = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const j of jugadores) if (!m.has(j.id)) m.set(j.id, j.nombre)
-    return Array.from(m, ([id, nom]) => ({ id, nombre: nom })).sort((a, b) => a.nombre.localeCompare(b.nombre))
-  }, [jugadores])
+  const [enviado, setEnviado] = useState(false)
 
   async function enviar() {
     setError('')
-    if (email.trim().indexOf('@') < 1) { setError('Ingresa un correo válido'); return }
-    const nombreFinal = jugadorId ? (inscritos.find(i => i.id === jugadorId)?.nombre ?? nombre) : nombre
+    if (nombre.trim().length < 2) { setError('Ingresa tu nombre'); return }
+    if (rut.trim().length < 3) { setError('Ingresa tu RUT'); return }
     setEnviando(true)
-    const { error: e } = await supabase.rpc('solicitar_acceso_torneo', {
-      p_codigo: codigo, p_nombre: nombreFinal.trim() || 'Sin nombre', p_email: email.trim(),
+    const { error: e } = await supabase.rpc('solicitar_inscripcion_torneo', {
+      p_codigo: codigo, p_nombre: nombre.trim(), p_rut: rut.trim(), p_pago: pago,
     })
     setEnviando(false)
-    if (e) { setError('No se pudo registrar. Intenta de nuevo.'); return }
-    onListo({ jugadorId: jugadorId || null, nombre: nombreFinal.trim() || 'Jugador' })
+    if (e) { setError('No se pudo enviar. Intenta de nuevo.'); return }
+    setEnviado(true)
   }
+
+  if (enviado) return (
+    <Centro>
+      <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380, textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
+        <h1 style={{ fontSize: 19, fontWeight: 800, color: text, margin: 0 }}>¡Listo, {nombre.trim().split(' ')[0]}!</h1>
+        <p style={{ fontSize: 13, color: muted, marginTop: 8, marginBottom: 20 }}>Le avisamos al club para agregarte. Apenas estés en la lista podrás elegir tu nombre y seguir tus partidos.</p>
+        <button onClick={() => onListo({ jugadorId: null, nombre: nombre.trim() || 'Invitado' })} style={btnPrimary}>Ver el torneo →</button>
+        <button onClick={volver} style={btnGhost}>← Volver</button>
+      </div>
+    </Centro>
+  )
 
   return (
     <Centro>
       <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380 }}>
-        <h1 style={{ fontSize: 19, fontWeight: 800, color: text, margin: 0, textAlign: 'center' }}>Deja tu correo</h1>
+        <h1 style={{ fontSize: 19, fontWeight: 800, color: text, margin: 0, textAlign: 'center' }}>No apareces en la lista</h1>
         <p style={{ fontSize: 12.5, color: muted, marginTop: 6, marginBottom: 18, textAlign: 'center' }}>
-          Le avisamos al profe para crear tu cuenta. Mientras, ya puedes ver los partidos.
+          Déjanos tus datos y el club te agrega al torneo.
         </p>
 
-        {inscritos.length > 0 && (
-          <label style={lbl}>¿Cuál eres en la lista? (opcional)
-            <select value={jugadorId} onChange={e => setJugadorId(e.target.value)} style={inp}>
-              <option value="">— No estoy / no aparezco —</option>
-              {inscritos.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
-            </select>
-          </label>
-        )}
-
-        {!jugadorId && (
-          <label style={lbl}>Tu nombre
-            <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre y apellido" style={inp} />
-          </label>
-        )}
-
-        <label style={lbl}>Tu correo
-          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="correo@ejemplo.cl" type="email" style={inp} />
+        <label style={lbl}>Nombre y apellido
+          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Juan Pérez" style={inp} />
         </label>
 
-        {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>{error}</div>}
+        <label style={lbl}>RUT
+          <input value={rut} onChange={e => setRut(e.target.value)} placeholder="12.345.678-9" style={inp} />
+        </label>
+
+        <label style={lbl}>¿Ya pagaste la inscripción?</label>
+        <div style={{ display: 'flex', gap: 0, borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', marginBottom: 4 }}>
+          {([['pagado', 'Ya pagué'], ['pendiente', 'Pago pendiente']] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setPago(v)}
+              style={{ flex: 1, padding: '11px 0', background: pago === v ? purple : '#f4f7fa', color: pago === v ? '#fff' : muted, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 10 }}>{error}</div>}
 
         <button onClick={enviar} disabled={enviando} style={{ ...btnPrimary, marginTop: 16, opacity: enviando ? 0.6 : 1 }}>
-          {enviando ? 'Enviando…' : 'Enviar y ver partidos →'}
+          {enviando ? 'Enviando…' : 'Enviar al club →'}
         </button>
         <button onClick={volver} style={btnGhost}>← Volver</button>
       </div>

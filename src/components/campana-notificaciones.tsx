@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell } from 'lucide-react'
 
@@ -12,6 +13,8 @@ interface Notificacion {
   fecha: string
   leida: boolean
   color: string
+  detalle?: string   // texto completo que se despliega al tocar la notificación
+  href?: string      // adónde ir al tocar "Ver"
 }
 
 const CACHE_MS = 60_000
@@ -34,7 +37,9 @@ function scheduleIdle(cb: () => void) {
 }
 
 export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: { perfil: any; placement?: 'bottom' | 'top' }) {
+  const router = useRouter()
   const [open, setOpen]   = useState(false)
+  const [expandida, setExpandida] = useState<string | null>(null)
   const [notifs, setNotifs] = useState<Notificacion[]>([])
 
   const cargarNotificaciones = useCallback(async (): Promise<Notificacion[]> => {
@@ -147,6 +152,26 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
       }
     }
 
+    // Inscripciones desde /vivo pendientes — admin y profesor las gestionan
+    if (rol === 'admin' || rol === 'profesor') {
+      const { data: solicitudes } = await supabase.from('solicitudes_jugador')
+        .select('id, nombre, rut, pago, creado_en')
+        .eq('club_id', perfil.club_id).eq('estado', 'pendiente')
+        .order('creado_en', { ascending: false }).limit(15)
+      solicitudes?.forEach((s: any) => {
+        const pagoTxt = s.pago === 'pagado' ? 'Pagó la inscripción' : 'Pago pendiente'
+        const recibida = s.creado_en ? new Date(s.creado_en).toLocaleString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
+        notificaciones.push({
+          id: `solicitud-${s.id}`, tipo: 'solicitud',
+          titulo: `Nueva inscripción: ${s.nombre}`,
+          mensaje: `${s.rut || 'Sin RUT'} · ${pagoTxt}`,
+          detalle: `Nombre:  ${s.nombre}\nRUT:  ${s.rut || '—'}\nPago:  ${pagoTxt}${recibida ? `\nRecibida:  ${recibida}` : ''}`,
+          href: '/solicitudes',
+          fecha: s.creado_en?.slice(0, 10) || hoy, leida: false, color: s.pago === 'pagado' ? '#16a34a' : '#d97706',
+        })
+      })
+    }
+
     notificaciones.sort((a, b) => (a.fecha > b.fecha ? 1 : -1))
     return notificaciones
   }, [perfil])
@@ -244,27 +269,51 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
             </div>
             {notifs.length === 0
               ? <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Sin notificaciones</div>
-              : notifs.map(n => (
+              : notifs.map(n => {
+                const abierta = expandida === n.id
+                const desplegable = !!(n.detalle || n.href)
+                return (
                 <div
                   key={n.id}
-                  onClick={() => setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, leida: true } : x))}
+                  onClick={() => {
+                    setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, leida: true } : x))
+                    if (desplegable) setExpandida(prev => (prev === n.id ? null : n.id))
+                  }}
                   style={{
                     padding: '11px 16px',
                     borderBottom: '1px solid #f1f5f9',
                     cursor: 'pointer',
-                    background: n.leida ? '#ffffff' : '#f8fafc',
+                    background: n.leida && !abierta ? '#ffffff' : '#f8fafc',
                     display: 'flex',
                     gap: 10,
                     alignItems: 'flex-start',
                   }}
                 >
                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: n.leida ? '#e2e8f0' : n.color, marginTop: 5, flexShrink: 0 }} />
-                  <div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: n.leida ? '#94a3b8' : '#0f172a', marginBottom: 2 }}>{n.titulo}</div>
                     <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>{n.mensaje}</div>
+
+                    {abierta && n.detalle && (
+                      <div style={{ marginTop: 8, padding: '8px 10px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 11.5, color: '#334155', lineHeight: 1.7, whiteSpace: 'pre-line', fontVariantNumeric: 'tabular-nums' }}>
+                        {n.detalle}
+                      </div>
+                    )}
+                    {abierta && n.href && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpen(false); router.push(n.href!) }}
+                        style={{ marginTop: 8, background: '#ede9fe', color: '#3730a3', border: '1px solid #c4b5fd', borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Ver en Solicitudes →
+                      </button>
+                    )}
                   </div>
+                  {desplegable && (
+                    <span style={{ fontSize: 11, color: '#94a3b8', marginTop: 1, transform: abierta ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+                  )}
                 </div>
-              ))
+                )
+              })
             }
           </div>
         </>
