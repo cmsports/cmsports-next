@@ -159,13 +159,13 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         .eq('club_id', perfil.club_id).eq('estado', 'pendiente')
         .order('creado_en', { ascending: false }).limit(15)
       solicitudes?.forEach((s: any) => {
-        const pagoTxt = s.pago === 'pagado' ? 'Pagó la inscripción' : 'Pago pendiente'
+        const pagoTxt = s.pago === 'pagado' ? 'Dice que ya pagó' : 'Dice: pago pendiente'
         const recibida = s.creado_en ? new Date(s.creado_en).toLocaleString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
         notificaciones.push({
           id: `solicitud-${s.id}`, tipo: 'solicitud',
           titulo: `Nueva inscripción: ${s.nombre}`,
           mensaje: `${s.rut || 'Sin RUT'} · ${pagoTxt}`,
-          detalle: `Nombre:  ${s.nombre}\nRUT:  ${s.rut || '—'}\nPago:  ${pagoTxt}${recibida ? `\nRecibida:  ${recibida}` : ''}`,
+          detalle: `Nombre:  ${s.nombre}\nRUT:  ${s.rut || '—'}\nPago (informado):  ${pagoTxt}${recibida ? `\nRecibida:  ${recibida}` : ''}\n\nConfirma el pago al agregarl@ al club.`,
           href: '/solicitudes',
           fecha: s.creado_en?.slice(0, 10) || hoy, leida: false, color: s.pago === 'pagado' ? '#16a34a' : '#d97706',
         })

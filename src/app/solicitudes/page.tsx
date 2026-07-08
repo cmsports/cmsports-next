@@ -156,7 +156,7 @@ export default function SolicitudesPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                {['Nombre', 'RUT', 'Pago', 'Email', 'Teléfono', 'Fecha', 'Estado', 'Acciones'].map(h => (
+                {['Nombre', 'RUT', 'Pago informado', 'Email', 'Teléfono', 'Fecha', 'Estado', 'Acciones'].map(h => (
                   <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                 ))}
               </tr>
