@@ -76,6 +76,7 @@ export default function TorneoDetallePage() {
   const [dragJugadorGrupo, setDragJugadorGrupo] = useState<{ jugadorId: string; grupoId: string } | null>(null)
   const [informeOpen, setInformeOpen] = useState(false)
   const [gastosGestion, setGastosGestion] = useState<{ tipo: string; monto: string }[]>([{ tipo: '', monto: '' }])
+  const [tercerLugarId, setTercerLugarId] = useState('')
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -348,6 +349,13 @@ export default function TorneoDetallePage() {
   const partidosFaseActual = partidos.filter(p => p.fase === faseActual)
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
 
+  // Perdedores de semifinal = candidatos a 3er lugar (no hay partido por el bronce)
+  const perdedoresSemis: { id: string; nombre: string }[] = partidos
+    .filter(p => p.fase === 'semis' && p.ganador && p.jugador_b)
+    .map(p => (p.ganador === p.jugador_a ? (p as any).jb : (p as any).ja))
+    .filter((j: any) => j?.id)
+    .map((j: any) => ({ id: j.id, nombre: j.nombre }))
+
   const partidosGrupos = partidos.filter(p => p.fase === 'grupos')
   const todosGruposJugados = partidosGrupos.length > 0 && partidosGrupos.every(p => p.ganador !== null && p.ganador !== undefined)
 
@@ -397,7 +405,7 @@ export default function TorneoDetallePage() {
         )}
         {esAdmin && faseActual === 'finalizado' && (
           <button
-            onClick={() => setInformeOpen(true)}
+            onClick={() => { setTercerLugarId(perdedoresSemis[0]?.id ?? ''); setInformeOpen(true) }}
             title="Descargar informe financiero del torneo (PDF)"
             style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             📄 Informe financiero
@@ -1026,6 +1034,20 @@ export default function TorneoDetallePage() {
             <div style={{ fontSize:16, fontWeight:700, color: text, marginBottom:4 }}>📄 Informe financiero</div>
             <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Agrega gastos de gestión o gastos extra (opcional). Se incluirán en el PDF.</div>
 
+            {perdedoresSemis.length > 0 && (
+              <div style={{ marginBottom:20 }}>
+                <div style={{ fontSize:12, fontWeight:600, color: text, marginBottom:8 }}>🥉 3er lugar</div>
+                <select
+                  value={tercerLugarId}
+                  onChange={e => setTercerLugarId(e.target.value)}
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', color: text, fontSize:13, outline:'none' }}>
+                  <option value="">Sin 3er lugar</option>
+                  {perdedoresSemis.map(j => <option key={j.id} value={j.id}>{j.nombre}</option>)}
+                </select>
+                <div style={{ fontSize:11, color: hint, marginTop:4 }}>Los dos perdedores de semifinal quedan 3°/4°. Elige quién recibe el premio.</div>
+              </div>
+            )}
+
             <div style={{ fontSize:12, fontWeight:600, color: text, marginBottom:8 }}>Gastos de gestión</div>
             {gastosGestion.map((g, i) => (
               <div key={i} style={{ display:'flex', gap:8, marginBottom:8, alignItems:'center' }}>
@@ -1068,7 +1090,7 @@ export default function TorneoDetallePage() {
                   const premios = [
                     { lugar: '1° lugar', nombre: campeon1?.nombre, monto: torneo?.premio_primero },
                     { lugar: '2° lugar', nombre: subcampeon?.nombre, monto: torneo?.premio_segundo },
-                    { lugar: '3° lugar', nombre: null, monto: torneo?.premio_tercero },
+                    { lugar: '3° lugar', nombre: perdedoresSemis.find(j => j.id === tercerLugarId)?.nombre ?? null, monto: torneo?.premio_tercero },
                   ]
                   const gastos = gastosGestion
                     .filter(g => g.tipo.trim() && g.monto)
