@@ -44,9 +44,10 @@ export function seedingSerpenteo(
   numGrupos: number,
   cabezasDeSerie: Set<string> = new Set(),
 ): SeedResult[] {
+  // ELO ya no influye en el sembrado: los cabezas de serie van primero, el
+  // resto conserva el orden recibido.
   const cabezas = jugadores.filter(j => cabezasDeSerie.has(j.id))
   const resto = jugadores.filter(j => !cabezasDeSerie.has(j.id))
-  resto.sort((a, b) => (b.elo ?? CONFIG.ELO_INICIAL) - (a.elo ?? CONFIG.ELO_INICIAL))
   const ordenados = [...cabezas, ...resto]
 
   const asignaciones: SeedResult[] = []
@@ -131,8 +132,9 @@ export function calcularStatsGrupo(
 // ─── Semillas principales (cabezas de serie 1° y 2°) ──────────────────────
 
 // Mueve los cabezas de serie 1° y 2° (si están en la lista) al frente, sin
-// reordenar al resto. Aplicado en cada ronda, garantiza que ambos solo se
-// enfrenten en la final (mientras sigan ganando), sin depender del ELO.
+// reordenar al resto. Como el cuadro se arma con sembrado estándar (ver
+// `slotsSeed`), quedar 1° y 2° en la lista garantiza que caen en mitades
+// opuestas y solo se pueden enfrentar en la final. Sin depender del ELO.
 export function aplicarSemillasPrincipales<T extends { id: string }>(
   lista: T[],
   semilla1Id?: string | null,
@@ -143,6 +145,43 @@ export function aplicarSemillasPrincipales<T extends { id: string }>(
   const semilla2 = lista.find(j => j.id === semilla2Id)
   const resto = lista.filter(j => j.id !== semilla1Id && j.id !== semilla2Id)
   return [semilla1, semilla2, ...resto].filter((x): x is T => !!x)
+}
+
+// Orden de sembrado estándar (bit-reversal) para un cuadro de tamaño `tam`
+// (potencia de 2). Devuelve, por cada slot, el número de sembrado (1..tam) que
+// va ahí. Emparejando slots consecutivos (0-1, 2-3, …) el sembrado 1 y 2 caen
+// en mitades opuestas: solo se cruzan en la final. Ej: tam=8 → [1,8,4,5,2,7,3,6].
+export function slotsSeed(tam: number): number[] {
+  let rondas = [1]
+  while (rondas.length < tam) {
+    const m = rondas.length * 2
+    const next: number[] = []
+    for (const s of rondas) { next.push(s); next.push(m + 1 - s) }
+    rondas = next
+  }
+  return rondas
+}
+
+// Arma los partidos de una ronda a partir de una lista ya ordenada por sembrado
+// (el 1° sembrado primero). Completa con BYEs a los sembrados más débiles.
+function construirBracket(orden: JugadorTorneo[], fase: string): PartidoGenerado[] {
+  const n = orden.length
+  if (n < 2) return []
+  const tam = calcularTamanoBracket(n)
+  const slots = slotsSeed(tam)
+  const partidos: PartidoGenerado[] = []
+  for (let k = 0; k < tam / 2; k++) {
+    const jugA = orden[slots[2 * k] - 1] ?? null       // sembrado → jugador (o BYE)
+    const jugB = orden[slots[2 * k + 1] - 1] ?? null
+    if (jugA && jugB) {
+      partidos.push({ jugadorA: jugA.id, jugadorB: jugB.id, fase, orden: k })
+    } else if (jugA) {
+      partidos.push({ jugadorA: jugA.id, jugadorB: null, ganador: jugA.id, fase, orden: k })
+    } else if (jugB) {
+      partidos.push({ jugadorA: jugB.id, jugadorB: null, ganador: jugB.id, fase, orden: k })
+    }
+  }
+  return partidos
 }
 
 // ─── Playoffs ──────────────────────────────────────────────────────────────
@@ -174,84 +213,21 @@ export function generarBracketEspejo(
   semilla1Id?: string | null,
   semilla2Id?: string | null,
 ): PartidoGenerado[] {
-  const semillas = aplicarSemillasPrincipales([...primeros, ...segundos.slice().reverse()], semilla1Id, semilla2Id)
-  const n = semillas.length
-  if (n < 2) return []
-
-  const tamBracket = calcularTamanoBracket(n)
-  const numByes = tamBracket - n
-  const faseInicial = determinarFaseInicial(tamBracket)
-
-  const conBye = semillas.slice(0, numByes)
-  const sinBye = semillas.slice(numByes)
-
-  const partidos: PartidoGenerado[] = []
-  const mid = Math.floor(sinBye.length / 2)
-
-  for (let i = 0; i < mid; i++) {
-    const jugA = sinBye[i]
-    const jugB = sinBye[sinBye.length - 1 - i]
-    if (jugA && jugB && jugA.id !== jugB.id) {
-      partidos.push({
-        jugadorA: jugA.id,
-        jugadorB: jugB.id,
-        fase: faseInicial,
-        orden: i,
-      })
-    }
-  }
-
-  for (let i = 0; i < conBye.length; i++) {
-    partidos.push({
-      jugadorA: conBye[i].id,
-      jugadorB: null,
-      ganador: conBye[i].id,
-      fase: faseInicial,
-      orden: mid + i,
-    })
-  }
-
-  return partidos
+  const orden = aplicarSemillasPrincipales([...primeros, ...segundos], semilla1Id, semilla2Id)
+  if (orden.length < 2) return []
+  const faseInicial = determinarFaseInicial(calcularTamanoBracket(orden.length))
+  return construirBracket(orden, faseInicial)
 }
 
+// Un solo motor de armado para cualquier cantidad de clasificados. Los BYEs los
+// coloca el sembrado estándar en los sembrados más débiles.
 export function generarBracketConAvance(
   primeros: JugadorTorneo[],
   segundos: JugadorTorneo[],
   semilla1Id?: string | null,
   semilla2Id?: string | null,
 ): PartidoGenerado[] {
-  const todosOrdenadosPorElo = [...primeros, ...segundos].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
-  const todos = aplicarSemillasPrincipales(todosOrdenadosPorElo, semilla1Id, semilla2Id)
-  const n = todos.length
-  if (n < 2) return []
-
-  const potencia2 = calcularTamanoBracket(n)
-  const numByes = potencia2 - n
-
-  // Para brackets pequeños (≤32) o sin byes, usar lógica con byes inline
-  if (potencia2 <= 32 || numByes === 0) {
-    return generarBracketEspejo(primeros, segundos, semilla1Id, semilla2Id)
-  }
-
-  // Avance: top numByes (mejor ELO, o cabezas de serie manuales) reciben bye, el resto juega
-  const conBye = todos.slice(0, numByes)
-  const sinBye = todos.slice(numByes)
-  const mid = Math.floor(sinBye.length / 2)
-  const partidos: PartidoGenerado[] = []
-
-  for (let i = 0; i < mid; i++) {
-    const jugA = sinBye[i]
-    const jugB = sinBye[sinBye.length - 1 - i]
-    if (jugA && jugB && jugA.id !== jugB.id) {
-      partidos.push({ jugadorA: jugA.id, jugadorB: jugB.id, fase: 'avance', orden: i })
-    }
-  }
-
-  for (let i = 0; i < conBye.length; i++) {
-    partidos.push({ jugadorA: conBye[i].id, jugadorB: null, ganador: conBye[i].id, fase: 'avance', orden: mid + i })
-  }
-
-  return partidos
+  return generarBracketEspejo(primeros, segundos, semilla1Id, semilla2Id)
 }
 
 export function generarSiguienteFase(
@@ -262,31 +238,8 @@ export function generarSiguienteFase(
 ): PartidoGenerado[] {
   const fase = siguienteFase(faseActual)
   if (!fase) return []
-
-  const ordenadosPorElo = [...ganadores].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
-  const sorted = aplicarSemillasPrincipales(ordenadosPorElo, semilla1Id, semilla2Id)
-  const mid = Math.floor(sorted.length / 2)
-  const partidos: PartidoGenerado[] = []
-
-  for (let i = 0; i < mid; i++) {
-    partidos.push({
-      jugadorA: sorted[i].id,
-      jugadorB: sorted[sorted.length - 1 - i].id,
-      fase,
-      orden: i,
-    })
-  }
-
-  if (sorted.length % 2 !== 0) {
-    const bye = sorted[Math.floor(sorted.length / 2)]
-    partidos.push({
-      jugadorA: bye.id,
-      jugadorB: null,
-      ganador: bye.id,
-      fase,
-      orden: mid,
-    })
-  }
-
-  return partidos
+  // Se re-siembra cada ronda: mientras 1° y 2° sigan ganando, vuelven a caer en
+  // mitades opuestas y no se cruzan hasta la final.
+  const orden = aplicarSemillasPrincipales([...ganadores], semilla1Id, semilla2Id)
+  return construirBracket(orden, fase)
 }

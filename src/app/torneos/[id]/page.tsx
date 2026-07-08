@@ -28,6 +28,8 @@ import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
+import { descargarExcelTorneo } from '@/lib/torneo-excel'
+import { QRCodeSVG } from 'qrcode.react'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -47,6 +49,7 @@ export default function TorneoDetallePage() {
   const [pagos, setPagos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [mesaOpen, setMesaOpen] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
   const [busquedaMesa, setBusquedaMesa] = useState('')
   const [rutMesa, setRutMesa] = useState('')
   const [metodoPago, setMetodoPago] = useState('efectivo')
@@ -271,9 +274,7 @@ export default function TorneoDetallePage() {
       }
     }
 
-    primeros.sort((a, b) => b.elo - a.elo)
-    segundos.sort((a, b) => b.elo - a.elo)
-
+    // El ELO ya no influye en el sembrado: mandan los cabezas de serie manuales.
     const res = await generarPlayoffsAction({ torneoId, clasificadosPrimeros: primeros, clasificadosSegundos: segundos })
     if (res.error) { alert(res.error); return }
     const byeMsg = res.byes && res.byes > 0 ? ` (${res.byes} BYE${res.byes > 1 ? 's' : ''})` : ''
@@ -374,14 +375,22 @@ export default function TorneoDetallePage() {
         <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseLabel[faseActual] || faseActual}</span>
         {torneo?.codigo && (
           <button
-            onClick={() => copiarTexto(`${window.location.origin}/vivo/${torneo.codigo}`)}
-            title="Copiar link para ver en vivo (sin cuenta)"
+            onClick={() => setQrOpen(true)}
+            title="Mostrar QR y link para ver en vivo (sin cuenta)"
             style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:20, padding:'3px 10px', fontSize:12, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-            📺 En vivo: <span style={{ fontFamily:'monospace', letterSpacing:1 }}>{torneo.codigo}</span> 📋
+            📺 En vivo: <span style={{ fontFamily:'monospace', letterSpacing:1 }}>{torneo.codigo}</span> QR
           </button>
         )}
         {esAdmin && torneo?.inscripcion_abierta && (
           <button onClick={() => setMesaOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
+        )}
+        {esAdmin && faseActual !== 'inscripcion' && (
+          <button
+            onClick={() => descargarExcelTorneo({ torneo, grupos, partidos, statsDeGrupo: (id) => calcularStats(id), faseLabel, fasesOrden })}
+            title="Descargar respaldo del torneo en Excel (una hoja por fase)"
+            style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            📊 Descargar Excel
+          </button>
         )}
         {esAdmin && faseActual === 'grupos' && todosGruposJugados && (
           <button onClick={avanzarALlaves} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Generar playoffs →</button>

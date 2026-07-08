@@ -91,6 +91,52 @@ describe('aplicarSemillasPrincipales', () => {
     expect(r).toHaveLength(4)
     expect(new Set(r.map(x => x.id)).size).toBe(4)
   })
+  it('los cabezas de serie 1° y 2° solo se cruzan en la final', () => {
+    // Simula un torneo completo donde 1° y 2° siempre ganan, y verifica que
+    // nunca comparten partido antes de la final. ELO adverso (ambos top).
+    for (const n of [4, 5, 6, 7, 8, 9, 12, 16, 17, 24, 32]) {
+      const js = jugadores(n)
+      const mid = Math.ceil(n / 2)
+      const primeros = js.slice(0, mid)
+      const segundos = js.slice(mid)
+      const s1 = primeros[0].id
+      const s2 = primeros[1]?.id ?? segundos[0].id // ambos "arriba": caso adverso
+      const byId = new Map(js.map(j => [j.id, j]))
+
+      let partidos = generarBracketConAvance(primeros, segundos, s1, s2)
+      let fase = partidos[0].fase as any
+      let cruceFinal = false
+      let guard = 0
+
+      while (partidos.length && guard++ < 20) {
+        const juntos = partidos.some(p =>
+          (p.jugadorA === s1 && p.jugadorB === s2) || (p.jugadorA === s2 && p.jugadorB === s1))
+        if (juntos) {
+          expect(fase).toBe('final') // si se cruzan, solo puede ser en la final
+          cruceFinal = true
+        }
+        // Ganadores: 1° y 2° siempre ganan; el resto gana el jugadorA
+        const ganadores: JugadorTorneo[] = partidos.map(p => {
+          if (p.ganador) return byId.get(p.ganador)!
+          if (p.jugadorA === s1 || p.jugadorB === s1) return byId.get(s1)!
+          if (p.jugadorA === s2 || p.jugadorB === s2) return byId.get(s2)!
+          return byId.get(p.jugadorA)!
+        })
+        if (fase === 'final') break
+        partidos = generarSiguienteFase(ganadores, fase, s1, s2)
+        fase = partidos[0]?.fase as any
+      }
+      expect(cruceFinal).toBe(true) // ambos llegaron a la final y se cruzaron ahí
+    }
+  })
+  it('el ELO no altera el sembrado (mismos cruces con ELO invertido)', () => {
+    const a = jugadores(8)
+    const b = a.map((j, i) => ({ ...j, elo: 9999 - i })) // ELO al revés
+    const cruces = (js: JugadorTorneo[]) =>
+      generarBracketConAvance(js.slice(0, 4), js.slice(4), 'j0', 'j1')
+        .map(p => `${p.jugadorA}-${p.jugadorB}`).sort()
+    expect(cruces(a)).toEqual(cruces(b))
+  })
   it('sin semillas devuelve la lista igual', () => {
     const lista = [{ id: 'a' }, { id: 'b' }]
     expect(aplicarSemillasPrincipales(lista)).toEqual(lista)
