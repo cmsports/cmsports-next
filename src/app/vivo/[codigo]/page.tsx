@@ -262,8 +262,8 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
           ))}
         </Seccion>
 
-        {/* Clasificados: los 2 primeros de cada grupo */}
-        {clasificados.length > 0 && (
+        {/* Clasificados: los 2 primeros de cada grupo — solo en fase de grupos */}
+        {fase === 'grupos' && clasificados.length > 0 && (
           <Seccion titulo="Clasificados por grupo">
             {clasificados.map(c => (
               <div key={c.grupoId}>
