@@ -77,22 +77,52 @@ export default function VivoTorneoPage() {
   )
   if (!snap) return null
 
-  if (paso === 'gate') return <Gate onListo={guardarIdentidad} irCorreo={() => setPaso('correo')} />
+  if (paso === 'gate') return <Gate jugadores={snap.jugadores} onListo={guardarIdentidad} irCorreo={() => setPaso('correo')} />
   if (paso === 'correo') return <Correo codigo={codigo} jugadores={snap.jugadores} onListo={guardarIdentidad} volver={() => setPaso('gate')} />
 
   return <Vivo snap={snap} yo={yo} cambiar={() => { try { localStorage.removeItem(storeKey) } catch { /* noop */ }; setYo(null); setPaso('gate') }} />
 }
 
-// ── Paso 1: ¿eres del club? ─────────────────────────────────
-function Gate({ onListo, irCorreo }: { onListo: (i: { jugadorId: null; nombre: string }) => void; irCorreo: () => void }) {
+// ── Paso 1: ¿quién eres? — elegir nombre para seguir tus partidos ──
+function Gate({ jugadores, onListo, irCorreo }: {
+  jugadores: Jugador[]
+  onListo: (i: { jugadorId: string | null; nombre: string }) => void; irCorreo: () => void
+}) {
+  const [sel, setSel] = useState('')
+
+  // nombres únicos de inscritos, ordenados alfabéticamente
+  const inscritos = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const j of jugadores) if (!m.has(j.id)) m.set(j.id, j.nombre)
+    return Array.from(m, ([id, nombre]) => ({ id, nombre })).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [jugadores])
+
+  const elegir = () => {
+    const nom = inscritos.find(i => i.id === sel)?.nombre
+    if (sel && nom) onListo({ jugadorId: sel, nombre: nom })
+  }
+
   return (
     <Centro>
       <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380, textAlign: 'center' }}>
-        <div style={{ fontSize: 34, marginBottom: 8 }}>👋</div>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: text, margin: 0 }}>¿Eres del club?</h1>
-        <p style={{ fontSize: 13, color: muted, marginTop: 6, marginBottom: 22 }}>Así sabemos cómo mostrarte el torneo.</p>
-        <button onClick={irCorreo} style={btnPrimary}>Sí, soy del club</button>
-        <button onClick={() => onListo({ jugadorId: null, nombre: 'Espectador' })} style={btnGhost}>No, solo quiero mirar</button>
+        <div style={{ fontSize: 34, marginBottom: 8 }}>🎾</div>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: text, margin: 0 }}>¿Quién eres?</h1>
+        <p style={{ fontSize: 13, color: muted, marginTop: 6, marginBottom: 20 }}>Elige tu nombre y sigue de cerca contra quién te toca.</p>
+
+        {inscritos.length > 0 ? (
+          <>
+            <select value={sel} onChange={e => setSel(e.target.value)} style={{ ...inp, marginTop: 0, marginBottom: 14, textAlign: 'center' }}>
+              <option value="">— Elige tu nombre —</option>
+              {inscritos.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
+            </select>
+            <button onClick={elegir} disabled={!sel} style={{ ...btnPrimary, opacity: sel ? 1 : 0.5, cursor: sel ? 'pointer' : 'not-allowed' }}>Ver mis partidos →</button>
+          </>
+        ) : (
+          <p style={{ fontSize: 12.5, color: hint, marginBottom: 14 }}>El torneo aún no arma los grupos.</p>
+        )}
+
+        <button onClick={() => onListo({ jugadorId: null, nombre: 'Espectador' })} style={btnGhost}>Solo estoy mirando</button>
+        <button onClick={irCorreo} style={{ background: 'none', border: 'none', color: purple, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginTop: 12 }}>No aparezco en la lista →</button>
       </div>
     </Centro>
   )
@@ -178,12 +208,15 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
     return partidos.find(p => !p.ganador && p.jugador_b && (p.jugador_a === yo.jugadorId || p.jugador_b === yo.jugadorId)) ?? null
   }, [partidos, yo])
 
-  const nombreGrupo = (id: string | null) => grupos.find(g => g.id === id)?.nombre ?? ''
   const esMio = (p: Partido) => yo?.jugadorId && (p.jugador_a === yo.jugadorId || p.jugador_b === yo.jugadorId)
 
-  // partidos "en vivo" = pendientes con ambos jugadores definidos
-  const enJuego = partidos.filter(p => !p.ganador && p.jugador_a && p.jugador_b)
-  const jugados = partidos.filter(p => p.ganador)
+  // partidos "en vivo" = pendientes con ambos jugadores definidos, agrupados por grupo/fase
+  const enJuego = useMemo(() => partidos.filter(p => !p.ganador && p.jugador_a && p.jugador_b), [partidos])
+  const enJuegoSecc = useMemo(() => agruparPartidos(enJuego, grupos), [enJuego, grupos])
+  const totalEnJuego = enJuego.length
+
+  // clasificados = los 2 primeros de cada grupo (por partidos ganados)
+  const clasificados = useMemo(() => standingsPorGrupo(grupos, jugadores, partidos), [grupos, jugadores, partidos])
 
   return (
     <div style={{ minHeight: '100vh', background: '#a9bac8', padding: '16px 12px 40px' }}>
@@ -218,21 +251,28 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
           </div>
         )}
 
-        {/* En juego */}
-        <Seccion titulo={`En juego (${enJuego.length})`}>
-          {enJuego.length === 0 && <Vacio texto="No hay partidos en curso en este momento." />}
-          {enJuego.map(p => (
-            <FilaPartido key={p.id} p={p} etiqueta={p.grupo_id ? `Grupo ${nombreGrupo(p.grupo_id)}` : (FASE_LABELS[p.fase ?? ''] || p.fase || '')} mio={!!esMio(p)} />
+        {/* En juego, separado por grupo/fase */}
+        <Seccion titulo={`En juego (${totalEnJuego})`}>
+          {totalEnJuego === 0 && <Vacio texto="No hay partidos en curso en este momento." />}
+          {enJuegoSecc.map(sec => (
+            <div key={sec.titulo}>
+              <SubTitulo>{sec.titulo}</SubTitulo>
+              {sec.partidos.map(p => <FilaPartido key={p.id} p={p} mio={!!esMio(p)} />)}
+            </div>
           ))}
         </Seccion>
 
-        {/* Resultados */}
-        <Seccion titulo={`Resultados (${jugados.length})`}>
-          {jugados.length === 0 && <Vacio texto="Aún no hay resultados." />}
-          {jugados.map(p => (
-            <FilaPartido key={p.id} p={p} etiqueta={p.grupo_id ? `Grupo ${nombreGrupo(p.grupo_id)}` : (FASE_LABELS[p.fase ?? ''] || p.fase || '')} mio={!!esMio(p)} />
-          ))}
-        </Seccion>
+        {/* Clasificados: los 2 primeros de cada grupo */}
+        {clasificados.length > 0 && (
+          <Seccion titulo="Clasificados por grupo">
+            {clasificados.map(c => (
+              <div key={c.grupoId}>
+                <SubTitulo>Grupo {c.nombre}</SubTitulo>
+                {c.top.map((s, i) => <FilaClasificado key={s.id} pos={i + 1} s={s} mio={s.id === yo?.jugadorId} />)}
+              </div>
+            ))}
+          </Seccion>
+        )}
 
         {jugadores.length === 0 && (
           <div style={{ textAlign: 'center', color: '#475569', fontSize: 12, marginTop: 8 }}>
@@ -244,8 +284,49 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
   )
 }
 
+// ── agrupar partidos por grupo (en orden) y luego por fase de playoff ──
+function agruparPartidos(lista: Partido[], grupos: Grupo[]): { titulo: string; partidos: Partido[] }[] {
+  const secc: { titulo: string; partidos: Partido[] }[] = []
+  for (const g of grupos) {
+    const ps = lista.filter(p => p.grupo_id === g.id)
+    if (ps.length) secc.push({ titulo: `Grupo ${g.nombre}`, partidos: ps })
+  }
+  // playoffs (sin grupo), agrupados por fase según el orden de FASE_LABELS
+  const playoff = lista.filter(p => !p.grupo_id)
+  for (const fase of Object.keys(FASE_LABELS)) {
+    const ps = playoff.filter(p => (p.fase ?? '') === fase)
+    if (ps.length) secc.push({ titulo: FASE_LABELS[fase], partidos: ps })
+  }
+  // fases desconocidas al final
+  const otras = playoff.filter(p => !(p.fase ?? '') || !FASE_LABELS[p.fase ?? ''])
+  if (otras.length) secc.push({ titulo: 'Playoffs', partidos: otras })
+  return secc
+}
+
+type Clasificado = { id: string; nombre: string; pg: number; pp: number }
+
+// ── standings por grupo: solo los 2 primeros (por partidos ganados) ──
+function standingsPorGrupo(grupos: Grupo[], jugadores: Jugador[], partidos: Partido[]): { grupoId: string; nombre: string; top: Clasificado[] }[] {
+  const res: { grupoId: string; nombre: string; top: Clasificado[] }[] = []
+  for (const g of grupos) {
+    const players = jugadores.filter(j => j.grupo_id === g.id)
+    const ps = partidos.filter(p => p.grupo_id === g.id && p.ganador)
+    if (ps.length === 0) continue // sin resultados aún → no mostramos clasificados provisorios
+    const stat = new Map<string, Clasificado>(players.map(j => [j.id, { id: j.id, nombre: j.nombre, pg: 0, pp: 0 }]))
+    for (const p of ps) {
+      const w = p.ganador!, l = p.jugador_a === w ? p.jugador_b : p.jugador_a
+      if (stat.has(w)) stat.get(w)!.pg++
+      if (l && stat.has(l)) stat.get(l)!.pp++
+    }
+    // ponytail: sin sets en el snapshot, el desempate posible es solo por victorias
+    const orden = [...stat.values()].sort((a, b) => b.pg - a.pg || a.nombre.localeCompare(b.nombre))
+    res.push({ grupoId: g.id, nombre: g.nombre, top: orden.slice(0, 2) })
+  }
+  return res
+}
+
 // ── piezas visuales ─────────────────────────────────────────
-function FilaPartido({ p, etiqueta, mio }: { p: Partido; etiqueta: string; mio: boolean }) {
+function FilaPartido({ p, mio }: { p: Partido; mio: boolean }) {
   const ganoA = p.ganador === p.jugador_a
   const ganoB = p.ganador === p.jugador_b
   return (
@@ -253,9 +334,22 @@ function FilaPartido({ p, etiqueta, mio }: { p: Partido; etiqueta: string; mio: 
       <span style={{ flex: 1, textAlign: 'right', color: ganoA ? green : text, fontWeight: ganoA ? 700 : 400 }}>{p.nombre_a || 'Por definir'}</span>
       <span style={{ fontSize: 10, color: hint, minWidth: 20, textAlign: 'center' }}>{p.ganador ? '·' : 'vs'}</span>
       <span style={{ flex: 1, color: ganoB ? green : text, fontWeight: ganoB ? 700 : 400 }}>{p.nombre_b || 'Por definir'}</span>
-      <span style={{ fontSize: 9, color: muted, background: '#f4f7fa', padding: '2px 6px', borderRadius: 6, whiteSpace: 'nowrap' }}>{etiqueta}</span>
     </div>
   )
+}
+
+function FilaClasificado({ pos, s, mio }: { pos: number; s: Clasificado; mio: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid #f1f5f9', background: mio ? '#faf5ff' : 'transparent', fontSize: 13 }}>
+      <span style={{ width: 22, height: 22, borderRadius: '50%', background: green, color: '#fff', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{pos}º</span>
+      <span style={{ flex: 1, color: text, fontWeight: 600 }}>{s.nombre}</span>
+      <span className="tabular-nums" style={{ fontSize: 12, color: muted, fontWeight: 600 }}>{s.pg}G · {s.pp}P</span>
+    </div>
+  )
+}
+
+function SubTitulo({ children }: { children: React.ReactNode }) {
+  return <div style={{ padding: '7px 14px', background: '#f8fafc', fontSize: 11, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{children}</div>
 }
 
 function Lado({ nombre, destaca }: { nombre: string | null; destaca: boolean | '' | null }) {
