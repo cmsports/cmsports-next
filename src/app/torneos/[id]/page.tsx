@@ -29,6 +29,7 @@ import { calcularNumGrupos } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
 import { descargarExcelTorneo } from '@/lib/torneo-excel'
+import { descargarInformeFinancieroPdf } from '@/lib/torneo-informe-pdf'
 import { QRCodeSVG } from 'qrcode.react'
 
 const supabase = createClient()
@@ -73,6 +74,8 @@ export default function TorneoDetallePage() {
   const [cabezaSerie2, setCabezaSerie2] = useState('')
   const [guardandoCabezas, setGuardandoCabezas] = useState(false)
   const [dragJugadorGrupo, setDragJugadorGrupo] = useState<{ jugadorId: string; grupoId: string } | null>(null)
+  const [informeOpen, setInformeOpen] = useState(false)
+  const [gastosGestion, setGastosGestion] = useState<{ tipo: string; monto: string }[]>([{ tipo: '', monto: '' }])
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -390,6 +393,14 @@ export default function TorneoDetallePage() {
             title="Descargar respaldo del torneo en Excel (una hoja por fase)"
             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             📊 Descargar Excel
+          </button>
+        )}
+        {esAdmin && faseActual === 'finalizado' && (
+          <button
+            onClick={() => setInformeOpen(true)}
+            title="Descargar informe financiero del torneo (PDF)"
+            style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            📄 Informe financiero
           </button>
         )}
         {esAdmin && faseActual === 'grupos' && todosGruposJugados && (
@@ -1005,6 +1016,75 @@ export default function TorneoDetallePage() {
               </div>
             ))
           }
+        </div>
+      )}
+
+      {/* MODAL INFORME FINANCIERO — gastos de gestión antes de descargar */}
+      {informeOpen && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+          <div style={{ background:'#fff', borderRadius:16, padding:28, width:'100%', maxWidth:480, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.18)' }}>
+            <div style={{ fontSize:16, fontWeight:700, color: text, marginBottom:4 }}>📄 Informe financiero</div>
+            <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Agrega gastos de gestión o gastos extra (opcional). Se incluirán en el PDF.</div>
+
+            <div style={{ fontSize:12, fontWeight:600, color: text, marginBottom:8 }}>Gastos de gestión</div>
+            {gastosGestion.map((g, i) => (
+              <div key={i} style={{ display:'flex', gap:8, marginBottom:8, alignItems:'center' }}>
+                <input
+                  placeholder="Tipo de gasto (ej: arbitraje)"
+                  value={g.tipo}
+                  onChange={e => setGastosGestion(prev => prev.map((x, idx) => idx === i ? { ...x, tipo: e.target.value } : x))}
+                  style={{ flex:2, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', color: text, fontSize:13, outline:'none' }}
+                />
+                <input
+                  type="number"
+                  placeholder="$ monto"
+                  value={g.monto}
+                  onChange={e => setGastosGestion(prev => prev.map((x, idx) => idx === i ? { ...x, monto: e.target.value } : x))}
+                  style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', color: text, fontSize:13, outline:'none', fontVariantNumeric:'tabular-nums' }}
+                />
+                <button
+                  onClick={() => setGastosGestion(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : [{ tipo:'', monto:'' }])}
+                  title="Quitar"
+                  style={{ background:'transparent', border:'none', color: hint, cursor:'pointer', fontSize:16, padding:'0 4px' }}>✕</button>
+              </div>
+            ))}
+            <button
+              onClick={() => setGastosGestion(prev => [...prev, { tipo:'', monto:'' }])}
+              style={{ background:'transparent', border:'1px dashed #c4b5fd', borderRadius:8, padding:'8px 14px', color:'#3730a3', fontSize:12, cursor:'pointer', width:'100%', marginBottom:20 }}>
+              + Agregar gasto
+            </button>
+
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => setInformeOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer' }}>Cancelar</button>
+              <button
+                onClick={() => {
+                  const pFinal = partidos.find(p => p.fase === 'final' && p.ganador)
+                  const campeon1 = pFinal ? (pFinal as any).jg : null
+                  const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : null
+                  const listaJug = jugadoresUnicos.map((j: any) => ({
+                    nombre: j.jugadores?.nombre || '—',
+                    pagado: pagos.some(p => p.jugador_id === j.jugador_id && p.estado === 'pagado'),
+                  }))
+                  const premios = [
+                    { lugar: '1° lugar', nombre: campeon1?.nombre, monto: torneo?.premio_primero },
+                    { lugar: '2° lugar', nombre: subcampeon?.nombre, monto: torneo?.premio_segundo },
+                    { lugar: '3° lugar', nombre: null, monto: torneo?.premio_tercero },
+                  ]
+                  const gastos = gastosGestion
+                    .filter(g => g.tipo.trim() && g.monto)
+                    .map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 }))
+                  descargarInformeFinancieroPdf({
+                    torneoNombre: torneo?.nombre || 'Torneo',
+                    cuota, totalInscritos, pagados, recaudado, proyectado,
+                    jugadores: listaJug, premios, gastos,
+                  })
+                  setInformeOpen(false)
+                }}
+                style={{ flex:1, padding:11, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                Descargar PDF
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
