@@ -720,8 +720,16 @@ export default function TorneoDetallePage() {
             const COL_W = 190
             const CONN_W = 22
 
+            // Fase tope a mostrar: durante el armado la fase del torneo aún es
+            // "grupos" (no está en fasesOrden), así que caemos a la fase inicial
+            // del cuadro para poder dibujar la primera ronda que se va llenando.
+            const faseTope = faseActual === 'finalizado'
+              ? fasesOrden[fasesOrden.length - 1]
+              : (fasesOrden as readonly string[]).includes(faseActual)
+                ? faseActual
+                : (llavesLayout?.faseInicial ?? faseActual)
             const fasesVis = fasesOrden
-              .slice(0, faseActual === 'finalizado' ? fasesOrden.length : fasesOrden.indexOf(faseActual) + 1)
+              .slice(0, fasesOrden.indexOf(faseTope as FaseOrden) + 1)
               .filter(f => partidos.some(p => p.fase === f))
 
             if (!fasesVis.length) return null
