@@ -97,7 +97,7 @@ export default function TiendaPage() {
                   {formatPrecio(p.precio)}
                 </div>
                 <a
-                  href={`https://wa.me/${WA}?text=${encodeURIComponent('Hola DoubleTT! Vengo de parte de CmSports (tengo descuento). Quiero consultar por:' + p.name)}`}
+                  href={`https://wa.me/${WA}?text=${encodeURIComponent('Hola DoubleTT! Vengo de parte de CmSports. Quiero consultar por:' + p.name)}`}
                   target="_blank" rel="noopener noreferrer"
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
