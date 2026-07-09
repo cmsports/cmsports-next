@@ -267,9 +267,17 @@ export default function DashboardPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>Dashboard</h1>
-          <p style={{ fontSize: 12, color: C.hint }}>
-            {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <p style={{ fontSize: 12, color: C.hint }}>
+              {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
+            </p>
+            <a href="https://wa.me/56975235780" target="_blank" rel="noopener noreferrer" style={{
+              fontSize: 11, color: C.hint, textDecoration: 'none',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              · Soporte: +569 7523 5780
+            </a>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {jugadoresInactivos.length > 0 && (

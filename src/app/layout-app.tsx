@@ -9,7 +9,7 @@ import CampanaNotificaciones from '@/components/campana-notificaciones'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, Camera, ShoppingBag, Settings, Phone,
+  Receipt, LogOut, Menu, X, Camera, ShoppingBag, Settings,
 } from 'lucide-react'
 
 const navAdmin = [
@@ -217,12 +217,6 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               </Link>
             )}
           </div>
-          <a href="https://wa.me/56975235780" target="_blank" rel="noopener noreferrer" style={{
-            display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#94a3b8',
-            marginBottom: 8, textDecoration: 'none',
-          }}>
-            <Phone size={11} /> Soporte: +569 7523 5780
-          </a>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
             <div style={{
               width: 30, height: 30, borderRadius: '50%',
