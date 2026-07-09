@@ -9,7 +9,7 @@ import CampanaNotificaciones from '@/components/campana-notificaciones'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, Camera, Swords,
+  Receipt, LogOut, Menu, X, Camera, Swords, ShoppingBag,
 } from 'lucide-react'
 
 const navAdmin = [
@@ -25,6 +25,7 @@ const navAdmin = [
   { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas' },
   { section: 'Marketing' },
   { label: 'Redes Sociales', icon: Camera,          href: '/redes-sociales' },
+  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda' },
 ]
 
 const navProfesor = [
@@ -37,6 +38,8 @@ const navProfesor = [
   { label: 'Calendario', icon: Calendar,        href: '/calendario' },
   { label: 'Jugadores',  icon: Users,           href: '/jugadores' },
   { label: 'Torneos',    icon: Trophy,          href: '/torneos' },
+  { section: 'Tienda' },
+  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda' },
 ]
 
 const navJugador = [
@@ -49,6 +52,8 @@ const navJugador = [
   { label: 'Torneos externos',    icon: Globe,         href: '/torneos-externos' },
   { label: 'Calendario',          icon: Calendar,      href: '/calendario' },
   { label: 'Ranking',             icon: BarChart2,     href: '/ranking' },
+  { section: 'Tienda' },
+  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda' },
 ]
 
 const mobileNavAdmin = [
