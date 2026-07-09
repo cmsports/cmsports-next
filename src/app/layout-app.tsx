@@ -9,7 +9,7 @@ import CampanaNotificaciones from '@/components/campana-notificaciones'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, Camera, ShoppingBag,
+  Receipt, LogOut, Menu, X, Camera, ShoppingBag, Settings, Phone,
 } from 'lucide-react'
 
 const navAdmin = [
@@ -205,9 +205,24 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
 
         {/* Footer */}
         <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <CampanaNotificaciones perfil={perfil} placement="top" />
+            {esAdminOSuperadmin && (
+              <Link href="/configuracion" style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 32, height: 32, borderRadius: 7, color: '#64748b',
+                background: 'transparent', textDecoration: 'none',
+              }} title="Configuración">
+                <Settings size={16} strokeWidth={1.8} />
+              </Link>
+            )}
           </div>
+          <a href="https://wa.me/56975235780" target="_blank" rel="noopener noreferrer" style={{
+            display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#94a3b8',
+            marginBottom: 8, textDecoration: 'none',
+          }}>
+            <Phone size={11} /> Soporte: +569 7523 5780
+          </a>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
             <div style={{
               width: 30, height: 30, borderRadius: '50%',

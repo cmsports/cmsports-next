@@ -112,6 +112,31 @@ export default function TiendaPage() {
             </div>
           ))}
         </div>
+
+        {/* Aviso más productos */}
+        <div style={{
+          marginTop: 24, padding: '18px 22px', borderRadius: 12,
+          background: '#fff', border: '1px solid #e2e8f0', textAlign: 'center',
+        }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>
+            Hay más productos en bodega
+          </p>
+          <p style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+            Si buscas algo que no está acá, pregunta directamente por WhatsApp.
+          </p>
+          <a
+            href={`https://wa.me/${WA}?text=${encodeURIComponent('Hola DoubleTT! Vengo de parte de CmSports. Quiero consultar por un producto que no está en la tienda.')}`}
+            target="_blank" rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '9px 20px', borderRadius: 10,
+              background: '#25d366', color: '#fff', fontWeight: 700, fontSize: 13,
+              textDecoration: 'none',
+            }}
+          >
+            <ExternalLink size={14} /> Consultar por más productos
+          </a>
+        </div>
       </div>
     </AppLayout>
   )
