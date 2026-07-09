@@ -140,9 +140,11 @@ export default function TorneoDetallePage() {
     const clasificados = calcularClasificados()
     if (!clasificados.length) return
 
-    const hayBracketAhora = partidos.some(p => p.fase !== 'grupos')
-    const firma = (hayBracketAhora ? 'B|' : '-|') +
-      clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')
+    // ponytail: firma SOLO por clasificados (no por si hay bracket). Antes
+    // cada cierre disparaba dos syncs porque insertar el esqueleto cambiaba
+    // el prefijo B/- y volvía a entrar. Con 17 grupos eso duplica el trabajo
+    // y termina bloqueando la UI.
+    const firma = clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')
     if (firma === ultimaSyncRef.current || sincronizandoRef.current) return
 
     sincronizandoRef.current = true
@@ -150,18 +152,15 @@ export default function TorneoDetallePage() {
     sincronizarLlavesAction({ torneoId, clasificados })
       .then(res => {
         if (res?.error) {
-          // ponytail: antes fallaba en silencio y el bracket no se armaba nunca
+          // ponytail: NO resetear ultimaSyncRef aquí (causaba bucle de
+          // alerts si el server fallaba). Marcela usa el botón manual si
+          // quiere reintentar.
           console.error('sincronizarLlaves error:', res.error)
-          ultimaSyncRef.current = ''
-          alert(`No se pudo armar el bracket: ${res.error}`)
           return
         }
         return cargarTorneo()
       })
-      .catch(err => {
-        console.error('sincronizarLlaves throw:', err)
-        ultimaSyncRef.current = ''
-      })
+      .catch(err => { console.error('sincronizarLlaves throw:', err) })
       .finally(() => { sincronizandoRef.current = false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partidos, grupos, empateManual, torneo?.fase, perfil?.rol, loading, authLoading])
