@@ -148,10 +148,23 @@ export default function TorneoDetallePage() {
     sincronizandoRef.current = true
     ultimaSyncRef.current = firma
     sincronizarLlavesAction({ torneoId, clasificados })
-      .then(res => { if (!res?.error) return cargarTorneo() })
+      .then(res => {
+        if (res?.error) {
+          // ponytail: antes fallaba en silencio y el bracket no se armaba nunca
+          console.error('sincronizarLlaves error:', res.error)
+          ultimaSyncRef.current = ''
+          alert(`No se pudo armar el bracket: ${res.error}`)
+          return
+        }
+        return cargarTorneo()
+      })
+      .catch(err => {
+        console.error('sincronizarLlaves throw:', err)
+        ultimaSyncRef.current = ''
+      })
       .finally(() => { sincronizandoRef.current = false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partidos, grupos, empateManual, torneo?.fase, loading, authLoading])
+  }, [partidos, grupos, empateManual, torneo?.fase, perfil?.rol, loading, authLoading])
 
   useEffect(() => {
     if (torneo?.id) {
@@ -302,6 +315,16 @@ export default function TorneoDetallePage() {
     return out
   }
 
+  async function armarBracketAhora() {
+    const clasificados = calcularClasificados()
+    if (!clasificados.length) { alert('Ningún grupo cerrado todavía (todos sus partidos con ganador y sin triple empate pendiente).'); return }
+    const res = await sincronizarLlavesAction({ torneoId, clasificados })
+    if (res?.error) { alert(`No se pudo armar el bracket: ${res.error}`); return }
+    ultimaSyncRef.current = ''
+    await cargarTorneo()
+    setTabActiva('bracket')
+  }
+
   async function avanzarSiguienteFase(faseActual: string) {
     const partidosFase = partidos.filter(p => p.fase === faseActual && p.ganador && p.jugador_b !== null)
     const ganadores = partidosFase.map(p => (p as any).jg).filter(Boolean)
@@ -450,6 +473,14 @@ export default function TorneoDetallePage() {
         )}
         {esAdmin && faseActual === 'grupos' && hayBracket && (
           <button onClick={() => setTabActiva('bracket')} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Ver llaves →</button>
+        )}
+        {esAdmin && faseActual === 'grupos' && (
+          <button
+            onClick={armarBracketAhora}
+            title="Fuerza el armado/rellenado del cuadro con los grupos ya cerrados"
+            style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            🔄 Armar bracket ahora
+          </button>
         )}
         {esAdmin && esPlayoffs && todosJugadosFase && faseActual !== 'final' && faseActual !== 'finalizado' && (
           <button onClick={() => avanzarSiguienteFase(faseActual)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Siguiente fase →</button>
@@ -707,6 +738,11 @@ export default function TorneoDetallePage() {
                 ? '💡 Las llaves se van llenando solas al cerrar cada grupo. Arrastra un jugador para reordenar los cupos ya definidos.'
                 : '💡 Haz clic en el nombre del ganador para registrar el resultado'}
             </div>
+            {esAdmin && faseActual === 'grupos' && (
+              <button onClick={armarBracketAhora} title="Fuerza el armado/rellenado con los grupos ya cerrados" style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
+                🔄 Armar bracket ahora
+              </button>
+            )}
             {esAdmin && esPlayoffs && faseActual !== 'finalizado' && (
               <button onClick={volverAGrupos} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
                 ⚠️ Volver a grupos
