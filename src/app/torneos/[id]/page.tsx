@@ -194,9 +194,21 @@ export default function TorneoDetallePage() {
   }
 
   async function marcarGanador(partidoId: string, ganadorId: string) {
+    // ponytail: optimistic UI. Antes esperábamos el server + recargábamos
+    // 5 queries con joins pesados en cada click → clicks se sentían lentos
+    // con 50+ jugadores. Ahora pintamos el ganador al toque; el server
+    // corre en background y sólo revertimos si falla.
+    const previo = partidos
+    const partido = partidos.find(p => p.id === partidoId)
+    const ganador = partido?.jugador_a === ganadorId
+      ? (partido as any).ja
+      : partido?.jugador_b === ganadorId ? (partido as any).jb : null
+    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador } : p))
+
     const res = await marcarGanadorPartido({ partidoId, ganadorId })
-    if (res.error) { alert(res.error); return }
-    await cargarTorneo()
+    if (res.error) { setPartidos(previo); alert(res.error); return }
+    // Refresca ELO/stats en background — no bloquea el próximo click.
+    cargarTorneo()
   }
 
   async function handleInscribirEnMesa() {
