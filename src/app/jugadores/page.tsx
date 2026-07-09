@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
+import AsistenciaPanel from '@/components/AsistenciaPanel'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador } from '@/app/actions/jugadores'
 
@@ -40,7 +41,11 @@ export default function JugadoresPage() {
   })
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
-  const [tabJug, setTabJug] = useState<'jugadores'|'ranking'>('jugadores')
+  const searchParams = useSearchParams()
+  const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia'
+    : searchParams.get('tab') === 'ranking' ? 'ranking'
+    : 'jugadores'
+  const [tabJug, setTabJug] = useState<'jugadores'|'ranking'|'asistencia'>(tabInicial)
   const [busquedaRanking, setBusquedaRanking] = useState('')
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -188,13 +193,16 @@ export default function JugadoresPage() {
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:16 }}>
-        {[{key:'jugadores',label:'Jugadores'},{key:'ranking',label:'Ranking'}].map(t => (
+        {[{key:'jugadores',label:'Jugadores'},{key:'ranking',label:'Ranking'},{key:'asistencia',label:'📋 Asistencia'}].map(t => (
           <div key={t.key} onClick={() => setTabJug(t.key as any)}
             style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#ffffff':'transparent', color:tabJug===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabJug===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {t.label}
           </div>
         ))}
       </div>
+
+      {/* TAB ASISTENCIA */}
+      {tabJug === 'asistencia' && <AsistenciaPanel perfil={perfil} />}
 
       {/* TAB RANKING */}
       {tabJug === 'ranking' && (
