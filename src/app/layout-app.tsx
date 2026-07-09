@@ -9,7 +9,7 @@ import CampanaNotificaciones from '@/components/campana-notificaciones'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, Camera, Swords, ShoppingBag,
+  Receipt, LogOut, Menu, X, Camera, ShoppingBag,
 } from 'lucide-react'
 
 const navAdmin = [
@@ -17,7 +17,6 @@ const navAdmin = [
   { label: 'Dashboard',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores',     icon: Users,            href: '/jugadores' },
   { label: 'Torneos',       icon: Trophy,           href: '/torneos' },
-  { label: 'Liga',          icon: Swords,           href: '/liga' },
   { label: 'Asistencia',    icon: ClipboardCheck,   href: '/asistencia' },
   { section: 'Gestión' },
   { label: 'Clases',        icon: BookOpen,         href: '/clases' },
@@ -124,6 +123,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   }
 
   function isActive(href: string) {
+    if (href === '/torneos' && pathname.startsWith('/liga')) return true
     return pathname.startsWith(href) && href !== '/' && href !== '#mas'
   }
 

@@ -84,13 +84,21 @@ export default function LigaPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
-        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>🏓 Liga de Mesa</h1>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Competencias</h1>
         <button
           onClick={() => setModalOpen(true)}
           style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}
         >
           + Nueva liga
+        </button>
+      </div>
+      <div style={{ display:'flex', gap:4, marginBottom:20, background:'#f1f5f9', borderRadius:10, padding:3 }}>
+        <button onClick={() => router.push('/torneos')} style={{ flex:1, padding:'8px 16px', borderRadius:8, border:'none', background:'transparent', color: muted, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+          Torneos
+        </button>
+        <button style={{ flex:1, padding:'8px 16px', borderRadius:8, border:'none', background:'#4f46e5', color:'#fff', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+          Liga
         </button>
       </div>
 

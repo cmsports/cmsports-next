@@ -161,8 +161,8 @@ export default function TorneosPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
-        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Torneos</h1>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Competencias</h1>
         {puedeCrear && (
           <button
             onClick={() => setModalOpen(true)}
@@ -171,6 +171,14 @@ export default function TorneosPage() {
             🏆 Nuevo torneo
           </button>
         )}
+      </div>
+      <div style={{ display:'flex', gap:4, marginBottom:20, background:'#f1f5f9', borderRadius:10, padding:3 }}>
+        <button style={{ flex:1, padding:'8px 16px', borderRadius:8, border:'none', background:'#4f46e5', color:'#fff', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+          Torneos
+        </button>
+        <button onClick={() => router.push('/liga')} style={{ flex:1, padding:'8px 16px', borderRadius:8, border:'none', background:'transparent', color: muted, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+          Liga
+        </button>
       </div>
 
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>

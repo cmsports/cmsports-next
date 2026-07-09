@@ -6,7 +6,7 @@ import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { ExternalLink, ShoppingBag } from 'lucide-react'
 
-const WA = '56900000000'
+const WA = '56922515010'
 
 const productos = [
   { name: 'Yinhe 01 Pro', cat: 'Madero', marca: 'Yinhe', desc: 'Madero profesional 5+2 capas. Velocidad y control para juego ofensivo.', precio: 60000, img: '/tienda/1.png' },
@@ -51,7 +51,7 @@ export default function TiendaPage() {
             Tienda <span style={{ color: '#c8102e' }}>DoubleTT</span>
           </h1>
           <p style={{ fontSize: 14, opacity: 0.8, marginTop: 6, maxWidth: 500 }}>
-            Equipamiento profesional de tenis de mesa. Precios exclusivos para miembros CmSports.
+            Equipamiento profesional de tenis de mesa. Miembros CmSports tienen descuento exclusivo — menciónalo al cotizar.
           </p>
         </div>
 
@@ -97,7 +97,7 @@ export default function TiendaPage() {
                   {formatPrecio(p.precio)}
                 </div>
                 <a
-                  href={`https://wa.me/${WA}?text=${encodeURIComponent('Hola DoubleTT, soy de CmSports y quiero consultar por: ' + p.name)}`}
+                  href={`https://wa.me/${WA}?text=${encodeURIComponent('Hola DoubleTT! Vengo de parte de CmSports (tengo descuento). Quiero consultar por:' + p.name)}`}
                   target="_blank" rel="noopener noreferrer"
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
