@@ -9,6 +9,7 @@ import {
   aplicarSemillasPrincipales,
   generarBracketConAvance,
   generarSiguienteFase,
+  construirLlavesLayout,
   type JugadorTorneo,
 } from './torneos'
 
@@ -150,6 +151,37 @@ describe('generarBracketConAvance', () => {
     const partidos = generarBracketConAvance(primeros, segundos)
     expect(partidos).toHaveLength(2)
     expect(partidos.every(p => p.jugadorA !== p.jugadorB)).toBe(true)
+  })
+})
+
+describe('construirLlavesLayout', () => {
+  it('todos los cupos de todos los grupos aparecen exactamente una vez', () => {
+    const numGrupos = 4 // 8 clasificados → cuadro de 8, sin BYE
+    const { faseInicial, matches } = construirLlavesLayout(numGrupos)
+    expect(faseInicial).toBe('cuartos')
+    const cupos = matches.flatMap(m => [m.a, m.b]).filter(Boolean)
+    const claves = cupos.map(s => `${s!.grupoIdx}:${s!.pos}`)
+    expect(new Set(claves).size).toBe(numGrupos * 2)
+    expect(claves).toHaveLength(numGrupos * 2)
+  })
+  it('con grupos que no llenan potencia de 2, los BYE quedan como b=null', () => {
+    const { matches } = construirLlavesLayout(3) // 6 clasificados → cuadro 8 → 2 BYE
+    const byes = matches.filter(m => m.a && m.b === null)
+    expect(byes).toHaveLength(2)
+    // Ningún cupo real se pierde: 6 clasificados presentes
+    const reales = matches.flatMap(m => [m.a, m.b]).filter(Boolean)
+    expect(reales).toHaveLength(6)
+  })
+  it('el layout es estable: mismas entradas → mismos cupos (rellenado idempotente)', () => {
+    const a = construirLlavesLayout(4, 0, 1)
+    const b = construirLlavesLayout(4, 0, 1)
+    expect(a).toEqual(b)
+  })
+  it('el cabeza de serie 1° queda en la posición de sembrado 1', () => {
+    // Con cabeza en grupo 2, su 1° debe caer en el primer slot del bracket.
+    const { matches } = construirLlavesLayout(4, 2, 3)
+    const primerSlot = matches.find(m => m.orden === 0)!.a
+    expect(primerSlot).toEqual({ grupoIdx: 2, pos: 1 })
   })
 })
 

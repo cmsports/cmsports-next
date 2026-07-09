@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, useCallback, Fragment } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
@@ -9,7 +9,7 @@ import {
   marcarGanadorPartido,
   corregirResultadoGrupos,
   cerrarInscripcionYGenerarGrupos,
-  generarPlayoffs as generarPlayoffsAction,
+  sincronizarLlaves as sincronizarLlavesAction,
   avanzarSiguienteFase as avanzarSiguienteFaseAction,
   finalizarTorneo as finalizarTorneoAction,
   inscribirJugadorTardio,
@@ -25,7 +25,7 @@ import {
   moverJugadorEntreGrupos,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
-import { calcularNumGrupos } from '@/lib/domain/torneos'
+import { calcularNumGrupos, construirLlavesLayout } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
 import { descargarExcelTorneo } from '@/lib/torneo-excel'
@@ -77,6 +77,8 @@ export default function TorneoDetallePage() {
   const [dragJugadorGrupo, setDragJugadorGrupo] = useState<{ jugadorId: string; grupoId: string } | null>(null)
   const [informeOpen, setInformeOpen] = useState(false)
   const [gastosGestion, setGastosGestion] = useState<{ tipo: string; monto: string }[]>([{ tipo: '', monto: '' }])
+  const sincronizandoRef = useRef(false)
+  const ultimaSyncRef = useRef('')
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -125,6 +127,31 @@ export default function TorneoDetallePage() {
       setTabActiva('bracket')
     }
   }, [torneo?.fase])
+
+  // Arma/rellena las llaves apenas cierra cada grupo, sin esperar a que terminen
+  // todos. Solo corre durante la fase de grupos; es idempotente (solo rellena
+  // cupos vacíos) y se dispara únicamente cuando cambia el set de clasificados o
+  // aparece/desaparece el cuadro, para no entrar en bucle.
+  useEffect(() => {
+    if (loading || authLoading) return
+    if (perfil?.rol !== 'admin') return
+    if (torneo?.fase !== 'grupos') return
+
+    const clasificados = calcularClasificados()
+    if (!clasificados.length) return
+
+    const hayBracketAhora = partidos.some(p => p.fase !== 'grupos')
+    const firma = (hayBracketAhora ? 'B|' : '-|') +
+      clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')
+    if (firma === ultimaSyncRef.current || sincronizandoRef.current) return
+
+    sincronizandoRef.current = true
+    ultimaSyncRef.current = firma
+    sincronizarLlavesAction({ torneoId, clasificados })
+      .then(res => { if (!res?.error) return cargarTorneo() })
+      .finally(() => { sincronizandoRef.current = false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partidos, grupos, empateManual, torneo?.fase, loading, authLoading])
 
   useEffect(() => {
     if (torneo?.id) {
@@ -249,37 +276,30 @@ export default function TorneoDetallePage() {
     return { stats, ordenados, hayTripleEmpate, empatados }
   }
 
-  async function avanzarALlaves() {
-    if (!confirm('¿Generar playoffs con regla espejo y BYEs automáticos?')) return
+  // Grupos ya cerrados (todos sus partidos jugados y sin triple empate pendiente)
+  // con su 1° y 2° resueltos. Son los que ya pueden entrar al cuadro.
+  function calcularClasificados(): { grupoId: string; primeroId: string; segundoId: string }[] {
+    const out: { grupoId: string; primeroId: string; segundoId: string }[] = []
+    for (const grupo of grupos.filter((g: any) => g.nombre !== 'MESA')) {
+      const partidosGrupo = partidos.filter(p => p.grupo_id === grupo.id)
+      const cerrado = partidosGrupo.length > 0 && partidosGrupo.every(p => !!p.ganador)
+      if (!cerrado) continue
 
-    const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
-    const primeros: { id: string; nombre: string; elo: number }[] = []
-    const segundos: { id: string; nombre: string; elo: number }[] = []
-
-    for (const grupo of gruposReales) {
       const { ordenados, hayTripleEmpate } = calcularStats(grupo.id)
-
+      let primeroId: string | undefined
+      let segundoId: string | undefined
       if (hayTripleEmpate) {
         const m = empateManual[grupo.id]
-        if (!m?.primero || !m?.segundo || m.primero.id === m.segundo.id) {
-          alert(`Grupo ${grupo.nombre} tiene triple empate. Debes elegir tanto el 1° como el 2° antes de continuar.`)
-          return
-        }
-        primeros.push({ id: m.primero.id, nombre: m.primero.nombre, elo: m.primero.elo ?? CONFIG.ELO_INICIAL })
-        segundos.push({ id: m.segundo.id, nombre: m.segundo.nombre, elo: m.segundo.elo ?? CONFIG.ELO_INICIAL })
+        if (!m?.primero || !m?.segundo || m.primero.id === m.segundo.id) continue // sin resolver → aún no clasifica
+        primeroId = m.primero.id
+        segundoId = m.segundo.id
       } else {
-        if (ordenados[0]?.jugador) primeros.push({ id: ordenados[0].jugador.id, nombre: ordenados[0].jugador.nombre, elo: ordenados[0].jugador.elo ?? CONFIG.ELO_INICIAL })
-        if (ordenados[1]?.jugador) segundos.push({ id: ordenados[1].jugador.id, nombre: ordenados[1].jugador.nombre, elo: ordenados[1].jugador.elo ?? CONFIG.ELO_INICIAL })
+        primeroId = ordenados[0]?.jugador?.id
+        segundoId = ordenados[1]?.jugador?.id
       }
+      if (primeroId && segundoId) out.push({ grupoId: grupo.id, primeroId, segundoId })
     }
-
-    // El ELO ya no influye en el sembrado: mandan los cabezas de serie manuales.
-    const res = await generarPlayoffsAction({ torneoId, clasificadosPrimeros: primeros, clasificadosSegundos: segundos })
-    if (res.error) { alert(res.error); return }
-    const byeMsg = res.byes && res.byes > 0 ? ` (${res.byes} BYE${res.byes > 1 ? 's' : ''})` : ''
-    alert(`Playoffs generados con regla espejo${byeMsg}`)
-    setTabActiva('bracket')
-    await cargarTorneo()
+    return out
   }
 
   async function avanzarSiguienteFase(faseActual: string) {
@@ -349,6 +369,35 @@ export default function TorneoDetallePage() {
 
   const numGruposEstimados = calcularNumGrupos(jugadoresInscritos.length)
 
+  // El cuadro puede existir (parcialmente lleno) mientras la fase sigue siendo
+  // "grupos": mostramos las pestañas y el bracket también en ese caso.
+  const hayBracket = partidos.some(p => p.fase !== 'grupos')
+  const mostrarLlaves = !!esPlayoffs || hayBracket
+
+  // Layout determinista del cuadro (mismo sembrado que el servidor), para poder
+  // etiquetar los cupos vacíos con su grupo/posición y distinguir BYE reales de
+  // cupos aún por definir.
+  const idxCabeza = (jid?: string | null): number | null => {
+    if (!jid) return null
+    const m = jugadores.find((j: any) => j.jugador_id === jid)
+    if (!m) return null
+    const idx = gruposReales.findIndex((g: any) => g.id === m.grupo_id)
+    return idx >= 0 ? idx : null
+  }
+  const llavesLayout = gruposReales.length >= 2
+    ? construirLlavesLayout(gruposReales.length, idxCabeza(torneo?.cabeza_serie_1), idxCabeza(torneo?.cabeza_serie_2))
+    : null
+  const byeOrdenesInicial = new Set((llavesLayout?.matches || []).filter(m => m.b === null).map(m => m.orden))
+  const etiquetaCupo = (fase: string, orden: number, pos: 'a' | 'b'): string => {
+    if (!llavesLayout || fase !== llavesLayout.faseInicial) return 'Por definir'
+    const m = llavesLayout.matches.find(x => x.orden === orden)
+    const slot = pos === 'a' ? m?.a : m?.b
+    if (!slot) return 'Por definir'
+    return `Grupo ${gruposReales[slot.grupoIdx]?.nombre ?? ''} · ${slot.pos}°`
+  }
+  const esByeMatch = (fase: string, orden: number, jugadorB: string | null): boolean =>
+    (llavesLayout && fase === llavesLayout.faseInicial) ? byeOrdenesInicial.has(orden) : jugadorB === null
+
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
@@ -399,8 +448,8 @@ export default function TorneoDetallePage() {
             📄 Informe financiero
           </button>
         )}
-        {esAdmin && faseActual === 'grupos' && todosGruposJugados && (
-          <button onClick={avanzarALlaves} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Generar playoffs →</button>
+        {esAdmin && faseActual === 'grupos' && hayBracket && (
+          <button onClick={() => setTabActiva('bracket')} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Ver llaves →</button>
         )}
         {esAdmin && esPlayoffs && todosJugadosFase && faseActual !== 'final' && faseActual !== 'finalizado' && (
           <button onClick={() => avanzarSiguienteFase(faseActual)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Siguiente fase →</button>
@@ -467,7 +516,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* Tabs */}
-      {esPlayoffs && (
+      {mostrarLlaves && (
         <div style={{ display:'flex', gap:8, marginBottom:16, borderBottom:'1px solid #e2e8f0' }}>
           <button onClick={() => setTabActiva('grupos')} style={{ background:'transparent', border:'none', color: tabActiva==='grupos'?'#4f46e5': muted, borderBottom: tabActiva==='grupos'?'2px solid #4f46e5':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Fase de grupos</button>
           <button onClick={() => setTabActiva('bracket')} style={{ background:'transparent', border:'none', color: tabActiva==='bracket'?'#4f46e5': muted, borderBottom: tabActiva==='bracket'?'2px solid #4f46e5':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Bracket</button>
@@ -475,7 +524,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* FASE GRUPOS */}
-      {(faseActual === 'grupos' || (esPlayoffs && tabActiva === 'grupos')) && esAdmin && (
+      {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && esAdmin && (
         <div style={{ ...card, padding:'14px 16px', marginBottom:16, display:'flex', gap:16, flexWrap:'wrap', alignItems:'flex-end' }}>
           <div>
             <div style={{ fontSize:11, color: muted, marginBottom:4 }}>⭐ Cabeza de serie 1°</div>
@@ -511,7 +560,7 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
-      {(faseActual === 'grupos' || (esPlayoffs && tabActiva === 'grupos')) && (
+      {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16, marginBottom:16 }}>
           {grupos.filter((g: any) => g.nombre !== 'MESA').map(grupo => {
             const { ordenados, hayTripleEmpate, empatados } = calcularStats(grupo.id)
@@ -650,13 +699,15 @@ export default function TorneoDetallePage() {
       )}
 
       {/* PLAYOFFS BRACKET */}
-      {esPlayoffs && tabActiva === 'bracket' && (
+      {mostrarLlaves && tabActiva === 'bracket' && (
         <div>
           <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16, flexWrap:'wrap' }}>
             <div style={{ flex:1, background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#3730a3' }}>
-              💡 Haz clic en el nombre del ganador para registrar el resultado
+              {faseActual === 'grupos'
+                ? '💡 Las llaves se van llenando solas al cerrar cada grupo. Arrastra un jugador para reordenar los cupos ya definidos.'
+                : '💡 Haz clic en el nombre del ganador para registrar el resultado'}
             </div>
-            {esAdmin && faseActual !== 'finalizado' && (
+            {esAdmin && esPlayoffs && faseActual !== 'finalizado' && (
               <button onClick={volverAGrupos} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
                 ⚠️ Volver a grupos
               </button>
@@ -699,7 +750,7 @@ export default function TorneoDetallePage() {
                         </div>
                         {ps.map((p, i) => {
                           const top = cy(i, N) - CARD_H / 2
-                          const isBye = p.jugador_b === null
+                          const isBye = esByeMatch(p.fase, p.orden ?? 0, p.jugador_b)
                           const editandoEste = partidoPlayoffEditando === p.id
                           const showEdit = !!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado'
                           const rowH = showEdit ? `${Math.floor((CARD_H - 20) / 2)}px` : '50%'
@@ -722,17 +773,17 @@ export default function TorneoDetallePage() {
                               ) : (
                                 <>
                                   <div
-                                    onClick={() => esAdmin && !p.ganador && !isBye && marcarGanador(p.id, p.jugador_a)}
-                                    draggable={esAdmin && !p.ganador ? true : undefined}
-                                    onDragStart={esAdmin && !p.ganador ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_a', jugadorId: p.jugador_a }) : undefined}
+                                    onClick={() => esAdmin && !p.ganador && !isBye && p.jugador_a && marcarGanador(p.id, p.jugador_a)}
+                                    draggable={esAdmin && !p.ganador && !!p.jugador_a ? true : undefined}
+                                    onDragStart={esAdmin && !p.ganador && p.jugador_a ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_a', jugadorId: p.jugador_a }) : undefined}
                                     onDragOver={esAdmin && !p.ganador ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_a' }) } : undefined}
                                     onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_a') } : undefined}
                                     onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
                                     onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.4 : 1 }}>
-                                    <span style={{ fontSize: 12, color: p.ganador === p.jugador_a ? '#16a34a' : text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye && p.jugador_a ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.4 : 1 }}>
+                                    <span style={{ fontSize: 12, color: p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                       <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
-                                      {(p as any).ja?.nombre || 'TBD'}
+                                      {(p as any).ja?.nombre || etiquetaCupo(p.fase, p.orden ?? 0, 'a')}
                                     </span>
                                     {p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                   </div>
@@ -740,17 +791,17 @@ export default function TorneoDetallePage() {
                                     <div style={{ height: rowH, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 11, color: hint, fontStyle: 'italic' }}>BYE</div>
                                   ) : (
                                     <div
-                                      onClick={() => esAdmin && !p.ganador && marcarGanador(p.id, p.jugador_b)}
-                                      draggable={esAdmin && !p.ganador ? true : undefined}
-                                      onDragStart={esAdmin && !p.ganador ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_b', jugadorId: p.jugador_b }) : undefined}
+                                      onClick={() => esAdmin && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}
+                                      draggable={esAdmin && !p.ganador && !!p.jugador_b ? true : undefined}
+                                      onDragStart={esAdmin && !p.ganador && p.jugador_b ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_b', jugadorId: p.jugador_b }) : undefined}
                                       onDragOver={esAdmin && !p.ganador ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_b' }) } : undefined}
                                       onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_b') } : undefined}
                                       onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
                                       onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.4 : 1 }}>
-                                      <span style={{ fontSize: 12, color: p.ganador === p.jugador_b ? '#16a34a' : text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador && p.jugador_b ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.4 : 1 }}>
+                                      <span style={{ fontSize: 12, color: p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                         <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
-                                        {(p as any).jb?.nombre || 'TBD'}
+                                        {(p as any).jb?.nombre || etiquetaCupo(p.fase, p.orden ?? 0, 'b')}
                                       </span>
                                       {p.ganador === p.jugador_b && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                     </div>

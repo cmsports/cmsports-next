@@ -4,8 +4,8 @@ import { calculateEloChange } from '@/lib/domain/elo'
 import {
   seedingSerpenteo,
   generarRoundRobin,
-  generarBracketConAvance,
   generarSiguienteFase,
+  construirLlavesLayout,
   calcularNumGrupos,
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
@@ -266,44 +266,103 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   return { success: true, numGrupos }
 }
 
-export async function generarPlayoffs(params: {
+// Construye/rellena el cuadro a medida que terminan los grupos, sin re-generar:
+// crea el esqueleto (tamaño fijo = 2 clasificados por grupo) la primera vez y
+// después solo rellena cupos vacíos, respetando resultados jugados y arrastres.
+// El cliente manda solo los grupos ya cerrados (con su 1° y 2° resueltos).
+export async function sincronizarLlaves(params: {
   torneoId: string
-  clasificadosPrimeros: { id: string; nombre: string; elo: number }[]
-  clasificadosSegundos: { id: string; nombre: string; elo: number }[]
+  clasificados: { grupoId: string; primeroId: string; segundoId: string }[]
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { torneoId, clasificadosPrimeros, clasificadosSegundos } = params
+  const { torneoId, clasificados } = params
 
-  if (clasificadosPrimeros.length + clasificadosSegundos.length < 2) {
-    return { error: 'No hay suficientes clasificados' }
+  const { data: torneo } = await supabase.from('torneos').select('cabeza_serie_1, cabeza_serie_2, fase').eq('id', torneoId).single()
+  if (!torneo) return { error: 'Torneo no encontrado' }
+
+  const { data: gruposRaw } = await supabase
+    .from('torneo_grupos').select('id, nombre').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('nombre')
+  const grupos = gruposRaw || []
+  const numGrupos = grupos.length
+  if (numGrupos < 2) return { error: 'Se requieren al menos 2 grupos' }
+
+  // Grupo (por orden alfabético) al que pertenece cada cabeza de serie protegido.
+  const idxByGrupoId = new Map(grupos.map((g, i) => [g.id, i]))
+  const { data: miembros } = await supabase
+    .from('grupo_jugadores').select('jugador_id, grupo_id').in('grupo_id', grupos.map(g => g.id))
+  const grupoIdxDe = (jid?: string | null): number | null => {
+    if (!jid) return null
+    const m = (miembros || []).find(x => x.jugador_id === jid)
+    return m?.grupo_id ? (idxByGrupoId.get(m.grupo_id) ?? null) : null
+  }
+  const c1 = grupoIdxDe(torneo.cabeza_serie_1)
+  const c2 = grupoIdxDe(torneo.cabeza_serie_2)
+
+  const layout = construirLlavesLayout(numGrupos, c1, c2)
+
+  const realDe = (slot: { grupoIdx: number; pos: 1 | 2 } | null): string | null => {
+    if (!slot) return null
+    const g = grupos[slot.grupoIdx]
+    const c = clasificados.find(x => x.grupoId === g?.id)
+    if (!c) return null
+    return slot.pos === 1 ? c.primeroId : c.segundoId
   }
 
-  for (const j of clasificadosPrimeros) {
-    await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('jugador_id', j.id)
+  const { data: existentes } = await supabase
+    .from('torneo_partidos').select('id, orden, jugador_a, jugador_b, ganador')
+    .eq('torneo_id', torneoId).eq('fase', layout.faseInicial)
+
+  if (!existentes || existentes.length === 0) {
+    // Primera vez: crear el esqueleto completo de la ronda inicial.
+    const inserts = layout.matches.map(m => {
+      const a = realDe(m.a)
+      const esBye = m.b === null
+      return {
+        torneo_id: torneoId,
+        fase: layout.faseInicial,
+        jugador_a: a,
+        jugador_b: esBye ? null : realDe(m.b),
+        ganador: esBye && a ? a : null, // BYE ya conocido avanza solo
+        orden: m.orden,
+      }
+    })
+    if (inserts.length) await supabase.from('torneo_partidos').insert(inserts)
+  } else {
+    // Rellenar solo cupos vacíos de partidos aún no jugados (no pisa arrastres).
+    const byOrden = new Map(existentes.map(r => [r.orden, r]))
+    for (const m of layout.matches) {
+      const row = byOrden.get(m.orden)
+      if (!row || row.ganador) continue
+      const upd: { jugador_a?: string; jugador_b?: string; ganador?: string } = {}
+      if (row.jugador_a == null) {
+        const a = realDe(m.a)
+        if (a) {
+          upd.jugador_a = a
+          if (m.b === null) upd.ganador = a // BYE
+        }
+      }
+      if (m.b !== null && row.jugador_b == null) {
+        const b = realDe(m.b)
+        if (b) upd.jugador_b = b
+      }
+      if (Object.keys(upd).length) await supabase.from('torneo_partidos').update(upd).eq('id', row.id)
+    }
   }
 
-  const { data: torneoRow } = await supabase.from('torneos').select('cabeza_serie_1, cabeza_serie_2').eq('id', torneoId).single()
+  // Marcar clasificados (los 1° de cada grupo cerrado).
+  for (const c of clasificados) {
+    await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('jugador_id', c.primeroId)
+  }
 
-  const partidosBracket = generarBracketConAvance(clasificadosPrimeros, clasificadosSegundos, torneoRow?.cabeza_serie_1, torneoRow?.cabeza_serie_2)
-  if (!partidosBracket.length) return { error: 'No se pudo generar el bracket' }
+  // Solo se entra de lleno a playoffs cuando TODOS los grupos cerraron.
+  const todosCompletos = clasificados.length === numGrupos
+  if (todosCompletos && torneo.fase === 'grupos') {
+    await supabase.from('torneos').update({ fase: layout.faseInicial, estado: 'en_curso' }).eq('id', torneoId)
+  }
 
-  const faseInicial = partidosBracket[0].fase as FaseOrden
-
-  const partidosInsert = partidosBracket.map(p => ({
-    torneo_id: torneoId,
-    fase: p.fase,
-    jugador_a: p.jugadorA,
-    jugador_b: p.jugadorB,
-    ganador: p.ganador ?? null,
-    orden: p.orden,
-  }))
-  await supabase.from('torneo_partidos').insert(partidosInsert)
-
-  await supabase.from('torneos').update({ fase: faseInicial, estado: 'en_curso' }).eq('id', torneoId)
-
-  return { success: true, fase: faseInicial, byes: partidosBracket.filter(p => !p.jugadorB).length }
+  return { success: true, faseInicial: layout.faseInicial, todosCompletos }
 }
 
 export async function avanzarSiguienteFase(params: {
@@ -401,9 +460,13 @@ export async function volverAGrupos(params: { torneoId: string }) {
 
   const { data: torneo } = await supabase.from('torneos').select('fase').eq('id', torneoId).single()
   if (!torneo) return { error: 'Torneo no encontrado' }
-  if (torneo.fase === 'grupos' || torneo.fase === 'inscripcion') {
-    return { error: 'El torneo ya está en fase de grupos' }
-  }
+  if (torneo.fase === 'inscripcion') return { error: 'El torneo aún está en inscripción' }
+
+  // Vale también durante la fase de grupos: borra el cuadro parcialmente armado
+  // para que se reconstruya limpio desde los resultados actuales.
+  const { data: bracketRows } = await supabase
+    .from('torneo_partidos').select('id').eq('torneo_id', torneoId).neq('fase', 'grupos').limit(1)
+  if (!bracketRows?.length) return { error: 'No hay llaves generadas' }
 
   await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
 

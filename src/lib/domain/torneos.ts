@@ -230,6 +230,41 @@ export function generarBracketConAvance(
   return generarBracketEspejo(primeros, segundos, semilla1Id, semilla2Id)
 }
 
+// ─── Llaves incrementales ────────────────────────────────────────────────────
+// El cuadro tiene tamaño fijo desde que se conocen los grupos (2 clasificados por
+// grupo), así que su forma y la posición de cada cupo se pueden calcular antes de
+// que terminen los grupos. Cada cupo se identifica por (grupoIdx, pos) y se va
+// rellenando con el jugador real apenas ese grupo termina. Reutiliza el mismo
+// sembrado que `generarBracketConAvance` (cabezas de serie en mitades opuestas).
+
+export interface LlaveSlot { grupoIdx: number; pos: 1 | 2 }
+export interface LlaveMatch { orden: number; a: LlaveSlot | null; b: LlaveSlot | null }
+export interface LlavesLayout { faseInicial: FaseOrden; matches: LlaveMatch[] }
+
+export function construirLlavesLayout(
+  numGrupos: number,
+  cabeza1GrupoIdx?: number | null,
+  cabeza2GrupoIdx?: number | null,
+): LlavesLayout {
+  const primeros = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:1`, nombre: '', elo: 0 }))
+  const segundos = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:2`, nombre: '', elo: 0 }))
+  // Los cabezas de serie protegidos se anclan al 1° de su grupo.
+  const c1 = cabeza1GrupoIdx != null ? `${cabeza1GrupoIdx}:1` : null
+  let c2 = cabeza2GrupoIdx != null ? `${cabeza2GrupoIdx}:1` : null
+  if (c2 && c2 === c1) c2 = null
+
+  const bracket = generarBracketConAvance(primeros, segundos, c1, c2)
+  const parse = (id: string | null | undefined): LlaveSlot | null => {
+    if (!id) return null
+    const [g, p] = id.split(':')
+    return { grupoIdx: Number(g), pos: Number(p) as 1 | 2 }
+  }
+  return {
+    faseInicial: (bracket[0]?.fase as FaseOrden) ?? 'final',
+    matches: bracket.map(p => ({ orden: p.orden, a: parse(p.jugadorA), b: parse(p.jugadorB) })),
+  }
+}
+
 export function generarSiguienteFase(
   ganadores: JugadorTorneo[],
   faseActual: FaseOrden,
