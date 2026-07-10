@@ -122,7 +122,6 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   }
 
   function isActive(href: string) {
-    if (href === '/torneos' && pathname.startsWith('/liga')) return true
     return pathname.startsWith(href) && href !== '/' && href !== '#mas'
   }
 
