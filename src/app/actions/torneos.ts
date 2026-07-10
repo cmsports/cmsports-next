@@ -560,13 +560,28 @@ export async function inscribirJugadorTardio(params: {
   }
 
   const disponibles = groupsInfo.filter(g => g.count < 4)
-  if (!disponibles.length) return { error: 'Todos los grupos están llenos (máx 4 jugadores)' }
 
-  disponibles.sort((a, b) => {
-    if (a.count !== b.count) return a.count - b.count
-    return Math.abs(a.avgElo - jugadorElo) - Math.abs(b.avgElo - jugadorElo)
-  })
-  const target = disponibles[0]
+  let target: typeof groupsInfo[number]
+
+  if (disponibles.length) {
+    disponibles.sort((a, b) => {
+      if (a.count !== b.count) return a.count - b.count
+      return Math.abs(a.avgElo - jugadorElo) - Math.abs(b.avgElo - jugadorElo)
+    })
+    target = disponibles[0]
+  } else {
+    // ponytail: crear grupo nuevo con la siguiente letra disponible
+    const letras = groupsInfo.map(g => g.nombre).sort()
+    const ultima = letras[letras.length - 1] || 'A'
+    const siguiente = String.fromCharCode(ultima.charCodeAt(0) + 1)
+    const { data: nuevoGrupo } = await supabase
+      .from('torneo_grupos')
+      .insert({ torneo_id: torneoId, nombre: siguiente })
+      .select()
+      .single()
+    if (!nuevoGrupo) return { error: 'No se pudo crear un grupo nuevo' }
+    target = { id: nuevoGrupo.id, nombre: siguiente, count: 0, avgElo: CONFIG.ELO_INICIAL, playerIds: [] }
+  }
 
   await supabase.from('grupo_jugadores').insert({ grupo_id: target.id, jugador_id: jugadorId })
 

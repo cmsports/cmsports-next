@@ -233,9 +233,19 @@ export default function TorneoDetallePage() {
     try {
       if (faseActual !== 'inscripcion') {
         const { data: jugsExistentes } = await supabase.from('jugadores').select('id,nombre,elo').ilike('nombre', `%${busquedaMesa.trim()}%`).eq('club_id', perfil?.club_id)
-        const jugadorId = jugsExistentes?.[0]?.id
-        const jugadorElo = jugsExistentes?.[0]?.elo ?? 1200
-        if (!jugadorId) { alert('Jugador no encontrado; en fase de inscripción se puede crear uno nuevo desde aquí.'); return }
+        let jugadorId = jugsExistentes?.[0]?.id
+        let jugadorElo = jugsExistentes?.[0]?.elo ?? 1200
+
+        if (!jugadorId) {
+          const { data: nuevo } = await supabase.from('jugadores').insert({
+            club_id: perfil?.club_id, nombre: busquedaMesa.trim(),
+            rut: rutMesa || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
+            es_externo: true,
+          }).select().single()
+          if (!nuevo) { alert('No se pudo crear el jugador'); return }
+          jugadorId = nuevo.id
+          jugadorElo = 1200
+        }
 
         const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
           || jugadores.find((j: any) => j.jugador_id === jugadorId)
