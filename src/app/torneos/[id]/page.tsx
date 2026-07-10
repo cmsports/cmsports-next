@@ -207,8 +207,12 @@ export default function TorneoDetallePage() {
 
     const res = await marcarGanadorPartido({ partidoId, ganadorId })
     if (res.error) { setPartidos(previo); alert(res.error); return }
-    // Refresca ELO/stats en background — no bloquea el próximo click.
-    cargarTorneo()
+    // ponytail: en llaves (sin grupo_id) NO recargar: el pintado optimista ya
+    // muestra el ganador y el bracket no depende de ELO/standings. Recargar
+    // rehacía todo el cuadro (SVG + divs absolutos) por nada y en el celu ese
+    // 2º re-render pesado tumbaba la pestaña por memoria. En grupos sí se
+    // recarga porque la tabla de posiciones depende del reload.
+    if (partido?.grupo_id) cargarTorneo()
   }
 
   async function handleInscribirEnMesa() {
@@ -760,7 +764,9 @@ export default function TorneoDetallePage() {
               </button>
             )}
           </div>
-          {/* SVG Bracket */}
+          {/* SVG Bracket — solo desktop; en el celu el árbol absoluto + SVG es
+              demasiado pesado y tumba la pestaña por memoria (ver lista móvil abajo) */}
+          <div className="hidden md:block">
           {(() => {
             const CARD_H = 80
             const SLOT_H = 96
@@ -900,6 +906,101 @@ export default function TorneoDetallePage() {
               </div>
             )
           })()}
+          </div>
+
+          {/* Bracket móvil: lista por fase (liviana). Mismo dato que el SVG, sin
+              divs absolutos ni SVG → no hay OOM. Tocas el nombre para marcar. */}
+          <div className="md:hidden">
+          {(() => {
+            const faseTope = faseActual === 'finalizado'
+              ? fasesOrden[fasesOrden.length - 1]
+              : (fasesOrden as readonly string[]).includes(faseActual)
+                ? faseActual
+                : (llavesLayout?.faseInicial ?? faseActual)
+            const fasesVis = fasesOrden
+              .slice(0, fasesOrden.indexOf(faseTope as FaseOrden) + 1)
+              .filter(f => partidos.some(p => p.fase === f))
+            if (!fasesVis.length) return null
+
+            const nombre = (p: any, pos: 'a' | 'b') =>
+              (pos === 'a' ? p.ja?.nombre : p.jb?.nombre) || etiquetaCupo(p.fase, p.orden ?? 0, pos)
+
+            return fasesVis.map(fase => {
+              const ps = partidos.filter(p => p.fase === fase).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+              return (
+                <div key={fase} style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 11, color: muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>{faseLabel[fase]}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {ps.map((p, i) => {
+                      const isBye = esByeMatch(p.fase, p.orden ?? 0, p.jugador_b)
+                      const editando = partidoPlayoffEditando === p.id
+                      const definidoA = !!(p as any).ja?.nombre
+                      const definidoB = !!(p as any).jb?.nombre
+                      const ganoA = p.ganador === p.jugador_a
+                      const ganoB = p.ganador === p.jugador_b
+                      const puedeMarcar = esAdmin && !p.ganador && !isBye
+
+                      const Lado = (pos: 'a' | 'b') => {
+                        const gano = pos === 'a' ? ganoA : ganoB
+                        const jid = pos === 'a' ? p.jugador_a : p.jugador_b
+                        const definido = pos === 'a' ? definidoA : definidoB
+                        const clickable = puedeMarcar && !!jid && definido
+                        return (
+                          <button
+                            onClick={clickable ? () => marcarGanador(p.id, jid!) : undefined}
+                            disabled={!clickable}
+                            style={{
+                              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              gap: 8, padding: '13px 14px', border: 'none', textAlign: 'left',
+                              background: gano ? '#f0fdf4' : 'transparent',
+                              color: gano ? '#16a34a' : definido ? text : hint,
+                              fontStyle: definido ? 'normal' : 'italic',
+                              fontWeight: gano ? 700 : 500, fontSize: 15,
+                              cursor: clickable ? 'pointer' : 'default',
+                            }}
+                          >
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre(p, pos)}</span>
+                            {gano && <span style={{ color: '#16a34a', fontSize: 15, flexShrink: 0 }}>✓</span>}
+                          </button>
+                        )
+                      }
+
+                      return (
+                        <div key={p.id} style={{ ...card, borderRadius: 12, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>Llave {i + 1}</span>
+                            {!!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado' && !editando && (
+                              <button onClick={() => setPartidoPlayoffEditando(p.id)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 13, cursor: 'pointer', padding: '0 2px' }} title="Corregir resultado">✏️</button>
+                            )}
+                          </div>
+                          {editando ? (
+                            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>¿Quién ganó?</span>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button onClick={() => corregirPlayoff(p.id, p.jugador_a)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 8, padding: '11px 6px', fontSize: 14, fontWeight: 600, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(p as any).ja?.nombre?.split(' ')[0] || 'A'}</button>
+                                <button onClick={() => corregirPlayoff(p.id, p.jugador_b)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 8, padding: '11px 6px', fontSize: 14, fontWeight: 600, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(p as any).jb?.nombre?.split(' ')[0] || 'B'}</button>
+                                <button onClick={() => setPartidoPlayoffEditando(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 18, cursor: 'pointer', padding: '0 8px' }}>✕</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {Lado('a')}
+                              {isBye ? (
+                                <div style={{ padding: '13px 14px', borderTop: '1px solid #f1f5f9', fontSize: 14, color: hint, fontStyle: 'italic' }}>BYE (pasa directo)</div>
+                              ) : (
+                                <div style={{ borderTop: '1px solid #f1f5f9' }}>{Lado('b')}</div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })
+          })()}
+          </div>
 
           {/* Campeón */}
           {faseActual === 'finalizado' && (() => {
