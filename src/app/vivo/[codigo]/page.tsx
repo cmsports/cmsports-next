@@ -37,10 +37,17 @@ export default function VivoTorneoPage() {
   const [yo, setYo] = useState<{ jugadorId: string | null; nombre: string } | null>(null)
   const [paso, setPaso] = useState<'gate' | 'correo' | 'ver'>('gate')
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const cargadoRef = useRef(false)
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase.rpc('torneo_publico', { p_codigo: codigo })
-    if (error || !data) { setEstado('no-encontrado'); return }
+    if (error || !data) {
+      // ponytail: solo mostrar "no encontrado" en la carga inicial; en polling
+      // conservar el último snapshot bueno para no blanquear la vista en errores transitorios
+      if (!cargadoRef.current) setEstado('no-encontrado')
+      return
+    }
+    cargadoRef.current = true
     setSnap(data as Snapshot)
     setEstado('ok')
   }, [codigo])
