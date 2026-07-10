@@ -6,7 +6,6 @@ import { useRouter, useParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
 import {
-  marcarGanadorPartido,
   corregirResultadoGrupos,
   cerrarInscripcionYGenerarGrupos,
   sincronizarLlaves as sincronizarLlavesAction,
@@ -83,6 +82,7 @@ export default function TorneoDetallePage() {
   const [isMobile, setIsMobile] = useState(false)
   const sincronizandoRef = useRef(false)
   const ultimaSyncRef = useRef('')
+  const marcandoRef = useRef(false)
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -206,10 +206,10 @@ export default function TorneoDetallePage() {
   }
 
   async function marcarGanador(partidoId: string, ganadorId: string) {
-    // ponytail: optimistic UI. Antes esperábamos el server + recargábamos
-    // 5 queries con joins pesados en cada click → clicks se sentían lentos
-    // con 50+ jugadores. Ahora pintamos el ganador al toque; el server
-    // corre en background y sólo revertimos si falla.
+    // ponytail: semáforo anti-doble-tap (iPhone registra dos touches a veces)
+    if (marcandoRef.current) return
+    marcandoRef.current = true
+
     const previo = partidos
     const partido = partidos.find(p => p.id === partidoId)
     const ganador = partido?.jugador_a === ganadorId
@@ -217,14 +217,24 @@ export default function TorneoDetallePage() {
       : partido?.jugador_b === ganadorId ? (partido as any).jb : null
     setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador } : p))
 
-    const res = await marcarGanadorPartido({ partidoId, ganadorId })
-    if (res.error) { setPartidos(previo); alert(res.error); return }
-    // ponytail: en llaves (sin grupo_id) NO recargar: el pintado optimista ya
-    // muestra el ganador y el bracket no depende de ELO/standings. Recargar
-    // rehacía todo el cuadro (SVG + divs absolutos) por nada y en el celu ese
-    // 2º re-render pesado tumbaba la pestaña por memoria. En grupos sí se
-    // recarga porque la tabla de posiciones depende del reload.
-    if (partido?.grupo_id) cargarTorneo()
+    try {
+      // ponytail: fetch a API route en vez de server action directa. La server
+      // action pasa por el protocolo RSC flight de Next.js (serializa/deserializa
+      // el árbol completo); en un componente de 1500 líneas con 30 hooks eso
+      // reventaba la pestaña de Safari en iPhone por memoria. El API route
+      // devuelve JSON plano → cero overhead RSC.
+      const res = await fetch('/api/marcar-ganador', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partidoId, ganadorId }),
+      }).then(r => r.json())
+      if (res.error) { setPartidos(previo); alert(res.error); return }
+      if (partido?.fase === 'grupos') cargarTorneo()
+    } catch {
+      setPartidos(previo)
+    } finally {
+      marcandoRef.current = false
+    }
   }
 
   async function handleInscribirEnMesa() {
