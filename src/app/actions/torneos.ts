@@ -629,20 +629,25 @@ export async function actualizarEstadoPago(params: {
   const { torneoId, jugadorId, estado, metodoPago } = params
   const fechaPago = estado === 'pagado' ? new Date().toISOString().slice(0, 10) : null
 
-  const { data: existing } = await supabase
+  // ponytail: delete duplicates then upsert — prevents race condition on rapid clicks
+  const { data: existingRows } = await supabase
     .from('torneo_pagos')
     .select('id')
     .eq('torneo_id', torneoId)
     .eq('jugador_id', jugadorId)
-    .maybeSingle()
+    .order('id', { ascending: true })
 
-  if (existing) {
-    const update: { estado: string; fecha_pago: string | null; metodo_pago?: string } = {
+  if (existingRows && existingRows.length > 1) {
+    const idsToDelete = existingRows.slice(1).map(r => r.id)
+    await supabase.from('torneo_pagos').delete().in('id', idsToDelete)
+  }
+
+  if (existingRows && existingRows.length > 0) {
+    await supabase.from('torneo_pagos').update({
       estado,
       fecha_pago: fechaPago,
-    }
-    if (metodoPago) update.metodo_pago = metodoPago
-    await supabase.from('torneo_pagos').update(update).eq('id', existing.id)
+      ...(metodoPago ? { metodo_pago: metodoPago } : {}),
+    }).eq('id', existingRows[0].id)
   } else {
     await supabase.from('torneo_pagos').insert({
       torneo_id: torneoId,

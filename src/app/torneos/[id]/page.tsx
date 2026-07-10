@@ -53,6 +53,7 @@ export default function TorneoDetallePage() {
   const [busquedaMesa, setBusquedaMesa] = useState('')
   const [rutMesa, setRutMesa] = useState('')
   const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [pagoLoading, setPagoLoading] = useState<string|null>(null)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
   const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
   const [criterioEmpate, setCriterioEmpate] = useState<'sets'|'puntos'>('sets')
@@ -643,10 +644,13 @@ export default function TorneoDetallePage() {
                       return pago?.estado === 'pagado'
                         ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 6px', borderRadius:10, fontSize:10 }}>✓</span>
                         : <span onClick={async () => {
-                            if (!j.jugador?.id) return
-                            await actualizarEstadoPago({ torneoId, jugadorId: j.jugador.id, estado: 'pagado', metodoPago: 'efectivo' })
-                            await cargarTorneo()
-                          }} style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10, cursor:'pointer' }}>Pend.</span>
+                            if (!j.jugador?.id || pagoLoading) return
+                            setPagoLoading(j.jugador.id)
+                            try {
+                              await actualizarEstadoPago({ torneoId, jugadorId: j.jugador.id, estado: 'pagado', metodoPago: 'efectivo' })
+                              await cargarTorneo()
+                            } finally { setPagoLoading(null) }
+                          }} style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10, cursor: pagoLoading ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador?.id ? 0.5 : 1 }}>Pend.</span>
                     })()}
                   </div>
                 ))}
@@ -1220,11 +1224,15 @@ export default function TorneoDetallePage() {
               <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
                 <div style={{ flex:1, fontSize:13, color: text }}>{j.jugadores?.nombre||'—'}</div>
                 <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
-                <button onClick={async () => {
-                  await actualizarEstadoPago({ torneoId, jugadorId: j.jugador_id, estado: 'pagado', metodoPago: 'efectivo' })
-                  await cargarTorneo()
-                }} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
-                  ✓ Marcar pagado
+                <button disabled={pagoLoading === j.jugador_id} onClick={async () => {
+                  if (pagoLoading) return
+                  setPagoLoading(j.jugador_id)
+                  try {
+                    await actualizarEstadoPago({ torneoId, jugadorId: j.jugador_id, estado: 'pagado', metodoPago: 'efectivo' })
+                    await cargarTorneo()
+                  } finally { setPagoLoading(null) }
+                }} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>
+                  {pagoLoading === j.jugador_id ? '...' : '✓ Marcar pagado'}
                 </button>
               </div>
             ))
@@ -1405,17 +1413,21 @@ export default function TorneoDetallePage() {
                       const pagoActual = pagos.find(p => p.jugador_id === j.jugador_id)
                       const esPagado = pagoActual?.estado === 'pagado'
                       return (
-                        <button onClick={async () => {
-                          const res = await actualizarEstadoPago({
-                            torneoId,
-                            jugadorId: j.jugador_id,
-                            estado: esPagado ? 'pendiente' : 'pagado',
-                            metodoPago,
-                          })
-                          if (res.error) { alert(res.error); return }
-                          await cargarTorneo()
+                        <button disabled={pagoLoading === j.jugador_id} onClick={async () => {
+                          if (pagoLoading) return
+                          setPagoLoading(j.jugador_id)
+                          try {
+                            const res = await actualizarEstadoPago({
+                              torneoId,
+                              jugadorId: j.jugador_id,
+                              estado: esPagado ? 'pendiente' : 'pagado',
+                              metodoPago,
+                            })
+                            if (res.error) { alert(res.error); return }
+                            await cargarTorneo()
+                          } finally { setPagoLoading(null) }
                         }}
-                          style={{ background: esPagado ? '#f0fdf4' : '#fef2f2', color: esPagado ? '#16a34a' : '#dc2626', border:`1px solid ${esPagado ? '#bbf7d0' : '#fecaca'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}>
+                          style={{ background: esPagado ? '#f0fdf4' : '#fef2f2', color: esPagado ? '#16a34a' : '#dc2626', border:`1px solid ${esPagado ? '#bbf7d0' : '#fecaca'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>
                           {esPagado ? '✓ Pagado' : 'Pendiente'}
                         </button>
                       )
