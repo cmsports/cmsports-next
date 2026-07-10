@@ -77,6 +77,10 @@ export default function TorneoDetallePage() {
   const [dragJugadorGrupo, setDragJugadorGrupo] = useState<{ jugadorId: string; grupoId: string } | null>(null)
   const [informeOpen, setInformeOpen] = useState(false)
   const [gastosGestion, setGastosGestion] = useState<{ tipo: string; monto: string }[]>([{ tipo: '', monto: '' }])
+  // En celu NO montamos el cuadro SVG (divs absolutos + SVG de conectores): con
+  // display:none React lo reconcilía igual en cada re-render y reventaba la
+  // pestaña por memoria al marcar. Con este flag el SVG ni entra al árbol.
+  const [isMobile, setIsMobile] = useState(false)
   const sincronizandoRef = useRef(false)
   const ultimaSyncRef = useRef('')
   const router = useRouter()
@@ -127,6 +131,14 @@ export default function TorneoDetallePage() {
       setTabActiva('bracket')
     }
   }, [torneo?.fase])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const on = () => setIsMobile(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
 
   // Arma/rellena las llaves apenas cierra cada grupo, sin esperar a que terminen
   // todos. Solo corre durante la fase de grupos; es idempotente (solo rellena
@@ -764,10 +776,9 @@ export default function TorneoDetallePage() {
               </button>
             )}
           </div>
-          {/* SVG Bracket — solo desktop; en el celu el árbol absoluto + SVG es
-              demasiado pesado y tumba la pestaña por memoria (ver lista móvil abajo) */}
-          <div className="hidden md:block">
-          {(() => {
+          {/* SVG Bracket — solo desktop; en el celu ni se monta (isMobile) porque
+              el árbol absoluto + SVG revienta la pestaña por memoria (lista abajo) */}
+          {!isMobile && (() => {
             const CARD_H = 80
             const SLOT_H = 96
             const COL_W = 190
@@ -906,12 +917,10 @@ export default function TorneoDetallePage() {
               </div>
             )
           })()}
-          </div>
 
           {/* Bracket móvil: lista por fase (liviana). Mismo dato que el SVG, sin
               divs absolutos ni SVG → no hay OOM. Tocas el nombre para marcar. */}
-          <div className="md:hidden">
-          {(() => {
+          {isMobile && (() => {
             const faseTope = faseActual === 'finalizado'
               ? fasesOrden[fasesOrden.length - 1]
               : (fasesOrden as readonly string[]).includes(faseActual)
@@ -1000,7 +1009,6 @@ export default function TorneoDetallePage() {
               )
             })
           })()}
-          </div>
 
           {/* Campeón */}
           {faseActual === 'finalizado' && (() => {
