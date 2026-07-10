@@ -351,9 +351,10 @@ export async function sincronizarLlaves(params: {
     }
   }
 
-  // Marcar clasificados (los 1° de cada grupo cerrado).
-  for (const c of clasificados) {
-    await supabase.from('grupo_jugadores').update({ clasificado: true }).eq('jugador_id', c.primeroId)
+  // Marcar clasificados — ambos avanzan al bracket.
+  const clasificadosIds = clasificados.flatMap(c => [c.primeroId, c.segundoId])
+  if (clasificadosIds.length) {
+    await supabase.from('grupo_jugadores').update({ clasificado: true }).in('jugador_id', clasificadosIds)
   }
 
   // Solo se entra de lleno a playoffs cuando TODOS los grupos cerraron.
