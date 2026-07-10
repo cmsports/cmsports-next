@@ -17,6 +17,7 @@ const navAdmin = [
   { label: 'Dashboard',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores',     icon: Users,            href: '/jugadores' },
   { label: 'Torneos',       icon: Trophy,           href: '/torneos' },
+  { label: 'Liga',          icon: BarChart2,        href: '/liga' },
   { section: 'Gestión' },
   { label: 'Clases',        icon: BookOpen,         href: '/clases' },
   { label: 'Calendario',    icon: Calendar,         href: '/calendario' },
