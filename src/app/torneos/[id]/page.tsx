@@ -1437,17 +1437,21 @@ export default function TorneoDetallePage() {
               </button>
             ) : jugadoresInscritos.length > 0 ? (
               <button onClick={async () => {
-                const n = calcularNumGrupos(jugadoresInscritos.length)
-                if (!confirm(`¿Crear ${n} grupo(s) con ${jugadoresInscritos.length} jugador(es) tardíos?`)) return
+                const msg = jugadoresInscritos.length === 1
+                  ? '¿Agregar al grupo con menos jugadores?'
+                  : `¿Crear grupo(s) con ${jugadoresInscritos.length} jugador(es) tardíos?`
+                if (!confirm(msg)) return
                 const res = await generarGruposTardios({ torneoId, cabezasDeSerie: Array.from(cabezasSerie) })
                 if (res.error) { alert(res.error); return }
                 setCabezasSerie(new Set())
-                alert(`Grupo(s) creados: ${res.nombres}`)
+                alert(`Jugador(es) asignados a: ${res.nombres}`)
                 setMesaOpen(false)
                 await cargarTorneo()
               }}
                 style={{ width:'100%', padding:12, background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
-                ✓ Crear {calcularNumGrupos(jugadoresInscritos.length)} grupo(s) con {jugadoresInscritos.length} jugador(es)
+                {jugadoresInscritos.length === 1
+                  ? '✓ Agregar al grupo con menos jugadores'
+                  : `✓ Crear grupo(s) con ${jugadoresInscritos.length} jugadores`}
               </button>
             ) : (
               <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#3730a3', textAlign:'center' }}>

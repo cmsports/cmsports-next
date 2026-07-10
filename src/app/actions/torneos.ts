@@ -544,14 +544,40 @@ export async function generarGruposTardios(params: {
 
   if (!jugadores.length) return { error: 'No hay jugadores tardíos en mesa' }
 
-  // Siguiente letra disponible
   const { data: gruposExistentes } = await supabase
-    .from('torneo_grupos').select('nombre').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('nombre')
+    .from('torneo_grupos').select('id, nombre').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('nombre')
+
+  // 1 jugador: meter en grupo existente con menos integrantes
+  if (jugadores.length === 1) {
+    const counts = await Promise.all(
+      (gruposExistentes || []).map(async g => {
+        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id').eq('grupo_id', g.id)
+        return { id: g.id, nombre: g.nombre ?? '', count: gjs?.length ?? 0, playerIds: (gjs || []).map(x => x.jugador_id).filter((id): id is string => !!id) }
+      }),
+    )
+    const disponibles = counts.filter(g => g.count < 4)
+    if (disponibles.length) {
+      disponibles.sort((a, b) => a.count - b.count)
+      const target = disponibles[0]
+      await supabase.from('grupo_jugadores').delete().eq('grupo_id', grupoMesa.id)
+      await supabase.from('grupo_jugadores').insert({ grupo_id: target.id, jugador_id: jugadores[0].id })
+      const { data: pts } = await supabase.from('torneo_partidos').select('orden').eq('torneo_id', torneoId)
+      let maxOrden = (pts || []).reduce((m, p) => Math.max(m, p.orden ?? 0), 0)
+      const nuevos = target.playerIds.map((pid, i) => ({
+        torneo_id: torneoId, grupo_id: target.id, fase: 'grupos' as const,
+        jugador_a: jugadores[0].id, jugador_b: pid, orden: maxOrden + 1 + i,
+      }))
+      if (nuevos.length) await supabase.from('torneo_partidos').insert(nuevos)
+      return { success: true, numGrupos: 0, nombres: target.nombre }
+    }
+  }
+
+  // 2+ jugadores: crear grupo nuevo
   const letrasUsadas = (gruposExistentes || []).map(g => g.nombre ?? '')
   const ultimaLetra = letrasUsadas.sort().pop() || '@'
   let letraBase = ultimaLetra.charCodeAt(0) + 1
 
-  const numGrupos = calcularNumGrupos(jugadores.length)
+  const numGrupos = jugadores.length < 3 ? 1 : calcularNumGrupos(jugadores.length)
   const nuevosGrupos: { id: string; nombre: string }[] = []
   for (let i = 0; i < numGrupos; i++) {
     const { data: g } = await supabase
