@@ -781,6 +781,7 @@ export async function guardarPremios(params: {
   montoRecaudado: number
   enviarRecaudacion: boolean
   metodo?: 'efectivo' | 'transferencia'
+  gastosGestion?: { tipo: string; monto: number }[]
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -799,6 +800,10 @@ export async function guardarPremios(params: {
   if (params.primero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1°${via} — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   if (params.segundo) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2°${via} — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   if (params.tercero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3°${via} — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+
+  for (const g of (params.gastosGestion || [])) {
+    if (g.monto > 0) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'otro_gasto', descripcion: `${g.tipo} — ${params.torneoNombre}`, monto: g.monto, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  }
 
   if (movimientos.length) await supabase.from('movimientos').insert(movimientos)
 

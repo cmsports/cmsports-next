@@ -1085,7 +1085,7 @@ export default function TorneoDetallePage() {
                       <button
                         onClick={async () => {
                           setGuardandoPremios(true)
-                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, montoRecaudado: recaudado, enviarRecaudacion: enviarRec, metodo: premioMetodo })
+                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, montoRecaudado: recaudado, enviarRecaudacion: enviarRec, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
                           setGuardandoPremios(false)
                           setModalPremios(false)
                           if (res.error) { alert(res.error); return }
