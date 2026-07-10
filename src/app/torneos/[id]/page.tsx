@@ -11,7 +11,7 @@ import {
   sincronizarLlaves as sincronizarLlavesAction,
   avanzarSiguienteFase as avanzarSiguienteFaseAction,
   finalizarTorneo as finalizarTorneoAction,
-  inscribirJugadorTardio,
+  generarGruposTardios,
   actualizarEstadoPago,
   limpiarGruposHuerfanos,
   volverAGrupos as volverAGruposAction,
@@ -112,8 +112,10 @@ export default function TorneoDetallePage() {
     const todos = gj || []
     const grupoMesaId = (g || []).find((gr: any) => gr.nombre === 'MESA')?.id
     setJugadores(grupoMesaId ? todos.filter((j: any) => j.grupo_id !== grupoMesaId) : todos)
-    if (t?.fase === 'inscripcion' && grupoMesaId) {
+    if (grupoMesaId) {
       setJugadoresInscritos(todos.filter((j: any) => j.grupo_id === grupoMesaId))
+    } else {
+      setJugadoresInscritos([])
     }
   }, [torneoId])
 
@@ -241,38 +243,6 @@ export default function TorneoDetallePage() {
     if (inscribiendo || !busquedaMesa.trim()) return
     setInscribiendo(true)
     try {
-      if (faseActual !== 'inscripcion') {
-        const { data: jugsExistentes } = await supabase.from('jugadores').select('id,nombre,elo').ilike('nombre', `%${busquedaMesa.trim()}%`).eq('club_id', perfil?.club_id)
-        let jugadorId = jugsExistentes?.[0]?.id
-        let jugadorElo = jugsExistentes?.[0]?.elo ?? 1200
-
-        if (!jugadorId) {
-          const { data: nuevo } = await supabase.from('jugadores').insert({
-            club_id: perfil?.club_id, nombre: busquedaMesa.trim(),
-            rut: rutMesa || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
-            es_externo: true,
-          }).select().single()
-          if (!nuevo) { alert('No se pudo crear el jugador'); return }
-          jugadorId = nuevo.id
-          jugadorElo = 1200
-        }
-
-        const yaInscrito = jugadoresInscritos.find((j: any) => j.jugador_id === jugadorId)
-          || jugadores.find((j: any) => j.jugador_id === jugadorId)
-        if (yaInscrito) { alert('Este jugador ya está inscrito en este torneo'); return }
-
-        const res = await inscribirJugadorTardio({ torneoId, jugadorId, jugadorElo })
-        if (res.error) { alert(res.error); return }
-        if (torneo?.cuota_inscripcion > 0) {
-          await actualizarEstadoPago({ torneoId, jugadorId, estado: 'pendiente', metodoPago })
-        }
-        alert(`Jugador agregado al Grupo ${res.grupoNombre}`)
-        setBusquedaMesa('')
-        setRutMesa('')
-        await cargarTorneo()
-        return
-      }
-
       const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, rut: rutMesa, metodoPago })
       if (res.error) { alert(res.error); return }
 
@@ -589,7 +559,7 @@ export default function TorneoDetallePage() {
               🗑️ Limpiar grupos vacíos
             </button>
           )}
-          <span style={{ fontSize:11, color: hint }}>El jugador se ubica automáticamente en el grupo más adecuado</span>
+          <span style={{ fontSize:11, color: hint }}>Se acumulan en mesa — luego creas grupo(s) con ellos</span>
         </div>
       )}
 
@@ -1411,7 +1381,7 @@ export default function TorneoDetallePage() {
             </div>
 
             {/* Lista inscritos en tiempo real */}
-            {faseActual === 'inscripcion' && jugadoresInscritos.length > 0 && (
+            {jugadoresInscritos.length > 0 && (
               <div style={{ background:'#f4f7fa', borderRadius:10, overflow:'hidden', marginBottom:16 }}>
                 <div style={{ padding:'8px 14px', fontSize:11, color: muted, textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'1px solid #e2e8f0' }}>
                   Jugadores inscritos
@@ -1465,9 +1435,23 @@ export default function TorneoDetallePage() {
                 style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= 4?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= 4?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4?'pointer':'not-allowed' }}>
                 {jugadoresInscritos.length < 4 ? `Mínimo 4 jugadores (faltan ${4-jugadoresInscritos.length})` : `✓ Cerrar inscripción y generar ${numGruposEstimados} grupos`}
               </button>
+            ) : jugadoresInscritos.length > 0 ? (
+              <button onClick={async () => {
+                const n = calcularNumGrupos(jugadoresInscritos.length)
+                if (!confirm(`¿Crear ${n} grupo(s) con ${jugadoresInscritos.length} jugador(es) tardíos?`)) return
+                const res = await generarGruposTardios({ torneoId, cabezasDeSerie: Array.from(cabezasSerie) })
+                if (res.error) { alert(res.error); return }
+                setCabezasSerie(new Set())
+                alert(`Grupo(s) creados: ${res.nombres}`)
+                setMesaOpen(false)
+                await cargarTorneo()
+              }}
+                style={{ width:'100%', padding:12, background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                ✓ Crear {calcularNumGrupos(jugadoresInscritos.length)} grupo(s) con {jugadoresInscritos.length} jugador(es)
+              </button>
             ) : (
               <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#3730a3', textAlign:'center' }}>
-                💡 Cada jugador se agrega al grupo con menos integrantes (ELO más cercano).
+                💡 Agrega jugadores tardíos y luego crea grupo(s) con ellos.
               </div>
             )}
           </div>

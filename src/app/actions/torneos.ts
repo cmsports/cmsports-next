@@ -520,88 +520,75 @@ export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
   return { success: true, eliminados }
 }
 
-export async function inscribirJugadorTardio(params: {
+export async function generarGruposTardios(params: {
   torneoId: string
-  jugadorId: string
-  jugadorElo: number
+  cabezasDeSerie: string[]
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { torneoId, jugadorId, jugadorElo } = params
+  const { torneoId, cabezasDeSerie } = params
 
-  const { data: gruposReales } = await supabase
-    .from('torneo_grupos')
-    .select('id, nombre')
-    .eq('torneo_id', torneoId)
-    .neq('nombre', 'MESA')
+  const { data: grupoMesa } = await supabase
+    .from('torneo_grupos').select('id').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
+  if (!grupoMesa) return { error: 'No hay jugadores en mesa' }
 
-  if (!gruposReales?.length) return { error: 'No hay grupos generados todavía' }
-
-  const groupsInfo = await Promise.all(
-    gruposReales.map(async g => {
-      const { data: gjs } = await supabase
-        .from('grupo_jugadores')
-        .select('jugador_id, jugadores(elo)')
-        .eq('grupo_id', g.id)
-      const lista = gjs || []
-      const elos = lista.map(gj => {
-        const j = Array.isArray(gj.jugadores) ? gj.jugadores[0] : gj.jugadores
-        return j?.elo ?? CONFIG.ELO_INICIAL
-      })
-      const avgElo = elos.length ? elos.reduce((a, b) => a + b, 0) / elos.length : CONFIG.ELO_INICIAL
-      const playerIds = lista.map(gj => gj.jugador_id).filter((id): id is string => !!id)
-      return { id: g.id, nombre: g.nombre ?? '', count: lista.length, avgElo, playerIds }
-    }),
-  )
-
-  if (groupsInfo.some(g => g.playerIds.includes(jugadorId))) {
-    return { error: 'El jugador ya está inscrito en este torneo' }
-  }
-
-  const disponibles = groupsInfo.filter(g => g.count < 4)
-
-  let target: typeof groupsInfo[number]
-
-  if (disponibles.length) {
-    disponibles.sort((a, b) => {
-      if (a.count !== b.count) return a.count - b.count
-      return Math.abs(a.avgElo - jugadorElo) - Math.abs(b.avgElo - jugadorElo)
+  const { data: mesaJugadores } = await supabase
+    .from('grupo_jugadores').select('jugador_id, jugadores(id,nombre,elo)').eq('grupo_id', grupoMesa.id)
+  const jugadores: JugadorTorneo[] = (mesaJugadores || [])
+    .map(i => {
+      const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
+      return j ? { id: j.id, nombre: j.nombre ?? '', elo: j.elo ?? CONFIG.ELO_INICIAL } : null
     })
-    target = disponibles[0]
-  } else {
-    // ponytail: crear grupo nuevo con la siguiente letra disponible
-    const letras = groupsInfo.map(g => g.nombre).sort()
-    const ultima = letras[letras.length - 1] || 'A'
-    const siguiente = String.fromCharCode(ultima.charCodeAt(0) + 1)
-    const { data: nuevoGrupo } = await supabase
+    .filter((x): x is JugadorTorneo => x !== null)
+
+  if (!jugadores.length) return { error: 'No hay jugadores tardíos en mesa' }
+
+  // Siguiente letra disponible
+  const { data: gruposExistentes } = await supabase
+    .from('torneo_grupos').select('nombre').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('nombre')
+  const letrasUsadas = (gruposExistentes || []).map(g => g.nombre ?? '')
+  const ultimaLetra = letrasUsadas.sort().pop() || '@'
+  let letraBase = ultimaLetra.charCodeAt(0) + 1
+
+  const numGrupos = calcularNumGrupos(jugadores.length)
+  const nuevosGrupos: { id: string; nombre: string }[] = []
+  for (let i = 0; i < numGrupos; i++) {
+    const { data: g } = await supabase
       .from('torneo_grupos')
-      .insert({ torneo_id: torneoId, nombre: siguiente })
-      .select()
+      .insert({ torneo_id: torneoId, nombre: String.fromCharCode(letraBase + i) })
+      .select('id, nombre')
       .single()
-    if (!nuevoGrupo) return { error: 'No se pudo crear un grupo nuevo' }
-    target = { id: nuevoGrupo.id, nombre: siguiente, count: 0, avgElo: CONFIG.ELO_INICIAL, playerIds: [] }
+    if (g) nuevosGrupos.push({ id: g.id, nombre: g.nombre ?? '' })
   }
 
-  await supabase.from('grupo_jugadores').insert({ grupo_id: target.id, jugador_id: jugadorId })
-
-  const { data: partidosExistentes } = await supabase
-    .from('torneo_partidos')
-    .select('orden')
-    .eq('torneo_id', torneoId)
-  const maxOrden = (partidosExistentes || []).reduce((m, p) => Math.max(m, p.orden ?? 0), 0)
-
-  const nuevosPartidos = target.playerIds.map((pid, i) => ({
-    torneo_id: torneoId,
-    grupo_id: target.id,
-    fase: 'grupos',
-    jugador_a: jugadorId,
-    jugador_b: pid,
-    orden: maxOrden + 1 + i,
+  const asignaciones = seedingSerpenteo(jugadores, numGrupos, new Set(cabezasDeSerie))
+  const inserts = asignaciones.map(a => ({
+    grupo_id: nuevosGrupos[a.grupoIndex].id,
+    jugador_id: a.jugadorId,
   }))
-  if (nuevosPartidos.length) await supabase.from('torneo_partidos').insert(nuevosPartidos)
 
-  return { success: true, grupoNombre: target.nombre }
+  // Mover de MESA a sus nuevos grupos
+  await supabase.from('grupo_jugadores').delete().eq('grupo_id', grupoMesa.id)
+  await supabase.from('grupo_jugadores').insert(inserts)
+
+  // Generar partidos round robin
+  const { data: partidosExistentes } = await supabase
+    .from('torneo_partidos').select('orden').eq('torneo_id', torneoId)
+  let maxOrden = (partidosExistentes || []).reduce((m, p) => Math.max(m, p.orden ?? 0), 0)
+
+  const partidos: Array<{ torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }> = []
+  for (const g of nuevosGrupos) {
+    const jugadoresGrupo = inserts.filter(a => a.grupo_id === g.id).map(a => a.jugador_id)
+    const parejas = generarRoundRobin(jugadoresGrupo)
+    for (const [a, b] of parejas) {
+      partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: a, jugador_b: b, orden: ++maxOrden })
+    }
+  }
+  if (partidos.length) await supabase.from('torneo_partidos').insert(partidos)
+
+  const nombres = nuevosGrupos.map(g => g.nombre).join(', ')
+  return { success: true, numGrupos, nombres }
 }
 
 export async function actualizarEstadoPago(params: {
