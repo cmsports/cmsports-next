@@ -764,6 +764,7 @@ export async function eliminarTorneo(params: { torneoId: string }) {
 
   await supabase.from('historial_elo').delete().eq('torneo_id', torneoId)
   if (grupoIds.length) await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+  await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
   await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
   await supabase.from('torneo_pagos').delete().eq('torneo_id', torneoId)
   await supabase.from('torneo_grupos').delete().eq('torneo_id', torneoId)
