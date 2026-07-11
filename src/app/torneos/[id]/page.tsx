@@ -232,7 +232,7 @@ export default function TorneoDetallePage() {
         body: JSON.stringify({ partidoId, ganadorId }),
       }).then(r => r.json())
       if (res.error) { setPartidos(previo); alert(res.error); return }
-      if (partido?.fase === 'grupos') cargarTorneo()
+      await cargarTorneo()
     } catch {
       setPartidos(previo)
     } finally {

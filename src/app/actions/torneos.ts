@@ -5,6 +5,7 @@ import {
   seedingSerpenteo,
   generarRoundRobin,
   generarSiguienteFase,
+  siguienteFase,
   construirLlavesLayout,
   calcularNumGrupos,
   type JugadorTorneo,
@@ -128,6 +129,47 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
           partidos_jugados: (gjP.partidos_jugados || 0) + 1,
         }).eq('id', gjP.id)
       }
+    }
+  }
+
+  if (partido.torneo_id && partido.fase && partido.fase !== 'grupos') {
+    const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
+    if (faseSiguiente) {
+      const ordenSiguiente = Math.floor((partido.orden ?? 0) / 2)
+      const slotGanador = (partido.orden ?? 0) % 2 === 0 ? 'jugador_a' : 'jugador_b'
+
+      const { data: existentes } = await supabase
+        .from('torneo_partidos')
+        .select('id, jugador_a, jugador_b, ganador')
+        .eq('torneo_id', partido.torneo_id)
+        .eq('fase', faseSiguiente)
+        .eq('orden', ordenSiguiente)
+        .order('creado_en', { ascending: true })
+        .limit(1)
+
+      const existente = existentes?.[0]
+      if (existente) {
+        if (!existente.ganador && existente[slotGanador] !== ganadorId) {
+          const updateSlot = slotGanador === 'jugador_a'
+            ? { jugador_a: ganadorId }
+            : { jugador_b: ganadorId }
+          await supabase
+            .from('torneo_partidos')
+            .update(updateSlot)
+            .eq('id', existente.id)
+        }
+      } else {
+        await supabase.from('torneo_partidos').insert({
+          torneo_id: partido.torneo_id,
+          fase: faseSiguiente,
+          orden: ordenSiguiente,
+          jugador_a: slotGanador === 'jugador_a' ? ganadorId : null,
+          jugador_b: slotGanador === 'jugador_b' ? ganadorId : null,
+          ganador: null,
+        })
+      }
+
+      await supabase.from('torneos').update({ fase: faseSiguiente }).eq('id', partido.torneo_id)
     }
   }
 
