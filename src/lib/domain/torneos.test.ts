@@ -183,6 +183,39 @@ describe('construirLlavesLayout', () => {
     const primerSlot = matches.find(m => m.orden === 0)!.a
     expect(primerSlot).toEqual({ grupoIdx: 2, pos: 1 })
   })
+  it('regla espejo: 1 y 2 del mismo grupo quedan en mitades opuestas', () => {
+    const numGrupos = 16
+    const { matches } = construirLlavesLayout(numGrupos, 0, 1)
+    const totalPosiciones = matches.length * 2
+    const mitad = totalPosiciones / 2
+    const posicionPorCupo = new Map<string, number>()
+
+    matches.forEach((m, i) => {
+      if (m.a) posicionPorCupo.set(`${m.a.grupoIdx}:${m.a.pos}`, i * 2)
+      if (m.b) posicionPorCupo.set(`${m.b.grupoIdx}:${m.b.pos}`, i * 2 + 1)
+    })
+
+    for (let g = 0; g < numGrupos; g++) {
+      const p1 = posicionPorCupo.get(`${g}:1`)
+      const p2 = posicionPorCupo.get(`${g}:2`)
+      expect(p1).toBeDefined()
+      expect(p2).toBeDefined()
+      expect(Math.floor(p1! / mitad)).not.toBe(Math.floor(p2! / mitad))
+    }
+  })
+  it('regla espejo: los cabezas principales quedan en mitades opuestas', () => {
+    const { matches } = construirLlavesLayout(16, 0, 1)
+    const totalPosiciones = matches.length * 2
+    const mitad = totalPosiciones / 2
+    const posiciones = new Map<string, number>()
+
+    matches.forEach((m, i) => {
+      if (m.a) posiciones.set(`${m.a.grupoIdx}:${m.a.pos}`, i * 2)
+      if (m.b) posiciones.set(`${m.b.grupoIdx}:${m.b.pos}`, i * 2 + 1)
+    })
+
+    expect(Math.floor(posiciones.get('0:1')! / mitad)).not.toBe(Math.floor(posiciones.get('1:1')! / mitad))
+  })
 })
 
 describe('generarSiguienteFase', () => {

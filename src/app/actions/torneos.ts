@@ -321,6 +321,17 @@ export async function sincronizarLlaves(params: {
 
   const { torneoId, clasificados } = params
 
+  if (clasificados.some(c => c.primeroId === c.segundoId)) {
+    return { error: 'Hay un grupo con el mismo jugador como 1° y 2°. Revisa la tabla del grupo antes de armar llaves.' }
+  }
+  const clasificadosIdsUnicos = new Set<string>()
+  for (const c of clasificados) {
+    for (const id of [c.primeroId, c.segundoId]) {
+      if (clasificadosIdsUnicos.has(id)) return { error: 'Hay un jugador clasificado en más de un cupo. Revisa los grupos antes de armar llaves.' }
+      clasificadosIdsUnicos.add(id)
+    }
+  }
+
   const { data: torneo } = await supabase.from('torneos').select('cabeza_serie_1, cabeza_serie_2, fase').eq('id', torneoId).single()
   if (!torneo) return { error: 'Torneo no encontrado' }
 
@@ -343,6 +354,22 @@ export async function sincronizarLlaves(params: {
   const c2 = grupoIdxDe(torneo.cabeza_serie_2)
 
   const layout = construirLlavesLayout(numGrupos, c1, c2)
+
+  const { data: bracketExistente } = await supabase
+    .from('torneo_partidos')
+    .select('id, fase, ganador')
+    .eq('torneo_id', torneoId)
+    .neq('fase', 'grupos')
+
+  const hayLlavesJugadas = !!bracketExistente?.some(p => !!p.ganador)
+  const debeReconstruirEsqueleto = !!bracketExistente?.length && !hayLlavesJugadas && (
+    bracketExistente.some(p => p.fase !== layout.faseInicial) ||
+    bracketExistente.length !== layout.matches.length
+  )
+
+  if (debeReconstruirEsqueleto) {
+    await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
+  }
 
   const realDe = (slot: { grupoIdx: number; pos: 1 | 2 } | null): string | null => {
     if (!slot) return null

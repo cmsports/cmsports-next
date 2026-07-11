@@ -184,6 +184,98 @@ function construirBracket(orden: JugadorTorneo[], fase: string): PartidoGenerado
   return partidos
 }
 
+function construirBracketDesdePosiciones(posiciones: Array<JugadorTorneo | null>, fase: string): PartidoGenerado[] {
+  const partidos: PartidoGenerado[] = []
+  for (let k = 0; k < posiciones.length / 2; k++) {
+    const jugA = posiciones[2 * k] ?? null
+    const jugB = posiciones[2 * k + 1] ?? null
+    if (jugA && jugB) {
+      partidos.push({ jugadorA: jugA.id, jugadorB: jugB.id, fase, orden: k })
+    } else if (jugA) {
+      partidos.push({ jugadorA: jugA.id, jugadorB: null, ganador: jugA.id, fase, orden: k })
+    } else if (jugB) {
+      partidos.push({ jugadorA: jugB.id, jugadorB: null, ganador: jugB.id, fase, orden: k })
+    }
+  }
+  return partidos
+}
+
+function posicionesSembradas(tam: number): number[] {
+  const slots = slotsSeed(tam)
+  const posiciones = Array(tam + 1).fill(0)
+  slots.forEach((seed, pos) => { posiciones[seed] = pos })
+  return posiciones.slice(1)
+}
+
+function mitadDe(pos: number, tam: number): 0 | 1 {
+  return pos < tam / 2 ? 0 : 1
+}
+
+function posicionarCuposEspejo(
+  primeros: JugadorTorneo[],
+  segundos: JugadorTorneo[],
+  semilla1Id?: string | null,
+  semilla2Id?: string | null,
+): Array<JugadorTorneo | null> {
+  const total = primeros.length + segundos.length
+  const tam = calcularTamanoBracket(total)
+  const posiciones: Array<JugadorTorneo | null> = Array(tam).fill(null)
+  const seedPositions = posicionesSembradas(tam)
+  const groupCount = Math.max(primeros.length, segundos.length)
+  const posPrimeros = new Map<number, number>()
+
+  const grupoDeSemilla = (id?: string | null): number | null => {
+    if (!id) return null
+    const idx = primeros.findIndex(j => j.id === id)
+    if (idx >= 0) return idx
+    return null
+  }
+
+  const ordenGrupos = Array.from({ length: groupCount }, (_, i) => i)
+  const c1 = grupoDeSemilla(semilla1Id)
+  const c2Raw = grupoDeSemilla(semilla2Id)
+  const c2 = c2Raw !== c1 ? c2Raw : null
+  const gruposPriorizados = [c1, c2, ...ordenGrupos]
+    .filter((g): g is number => g != null)
+    .filter((g, i, arr) => arr.indexOf(g) === i)
+
+  const ocupar = (jugador: JugadorTorneo | undefined, preferencias: number[]): number | null => {
+    if (!jugador) return null
+    const pos = preferencias.find(p => p >= 0 && p < tam && posiciones[p] === null)
+    if (pos == null) return null
+    posiciones[pos] = jugador
+    return pos
+  }
+
+  gruposPriorizados.forEach((g, idx) => {
+    const jugador = primeros[g]
+    if (!jugador) return
+    const preferencias = idx === 0
+      ? [seedPositions[0], ...seedPositions]
+      : idx === 1
+        ? [seedPositions[1], ...seedPositions]
+        : seedPositions
+    const pos = ocupar(jugador, preferencias)
+    if (pos != null) posPrimeros.set(g, pos)
+  })
+
+  gruposPriorizados.forEach(g => {
+    const jugador = segundos[g]
+    if (!jugador) return
+    const posPrimero = posPrimeros.get(g)
+    const mitadObjetivo = posPrimero == null ? null : (mitadDe(posPrimero, tam) === 0 ? 1 : 0)
+    const espejo = posPrimero == null ? -1 : (posPrimero + tam / 2) % tam
+    const preferencias = [
+      espejo,
+      ...seedPositions.filter(p => mitadObjetivo == null || mitadDe(p, tam) === mitadObjetivo),
+      ...seedPositions,
+    ]
+    ocupar(jugador, preferencias)
+  })
+
+  return posiciones
+}
+
 // ─── Playoffs ──────────────────────────────────────────────────────────────
 
 export function calcularTamanoBracket(numClasificados: number): number {
@@ -213,6 +305,16 @@ export function generarBracketEspejo(
   semilla1Id?: string | null,
   semilla2Id?: string | null,
 ): PartidoGenerado[] {
+  const total = primeros.length + segundos.length
+  if (total < 2) return []
+  const tam = calcularTamanoBracket(total)
+  const faseInicialNueva = determinarFaseInicial(tam)
+  return construirBracketDesdePosiciones(
+    posicionarCuposEspejo(primeros, segundos, semilla1Id, semilla2Id),
+    faseInicialNueva,
+  )
+
+  /*
   const orden = aplicarSemillasPrincipales([...primeros, ...segundos], semilla1Id, semilla2Id)
   if (orden.length < 2) return []
   const faseInicial = determinarFaseInicial(calcularTamanoBracket(orden.length))
@@ -251,6 +353,7 @@ export function generarBracketEspejo(
   }
 
   return partidos
+  */
 }
 
 // Un solo motor de armado para cualquier cantidad de clasificados. Los BYEs los
