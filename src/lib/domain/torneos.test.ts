@@ -197,4 +197,13 @@ describe('generarSiguienteFase', () => {
     const byes = partidos.filter(p => p.jugadorB === null)
     expect(byes).toHaveLength(1)
   })
+  it('mantiene el camino del cuadro sin re-sembrar ganadores', () => {
+    const partidos = generarSiguienteFase(jugadores(8), '8vos')
+    expect(partidos.map(p => [p.jugadorA, p.jugadorB])).toEqual([
+      ['j0', 'j1'],
+      ['j2', 'j3'],
+      ['j4', 'j5'],
+      ['j6', 'j7'],
+    ])
+  })
 })

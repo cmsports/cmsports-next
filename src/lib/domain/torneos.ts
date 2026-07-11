@@ -268,13 +268,25 @@ export function construirLlavesLayout(
 export function generarSiguienteFase(
   ganadores: JugadorTorneo[],
   faseActual: FaseOrden,
-  semilla1Id?: string | null,
-  semilla2Id?: string | null,
+  _semilla1Id?: string | null,
+  _semilla2Id?: string | null,
 ): PartidoGenerado[] {
   const fase = siguienteFase(faseActual)
   if (!fase) return []
-  // Se re-siembra cada ronda: mientras 1° y 2° sigan ganando, vuelven a caer en
-  // mitades opuestas y no se cruzan hasta la final.
-  const orden = aplicarSemillasPrincipales([...ganadores], semilla1Id, semilla2Id)
-  return construirBracket(orden, fase)
+  // El cuadro ya iniciado conserva su camino: ganador llave 1 vs ganador llave 2,
+  // ganador llave 3 vs ganador llave 4, etc.
+  const partidos: PartidoGenerado[] = []
+  for (let i = 0; i < ganadores.length; i += 2) {
+    const a = ganadores[i]
+    const b = ganadores[i + 1]
+    if (!a) continue
+    partidos.push({
+      jugadorA: a.id,
+      jugadorB: b?.id ?? null,
+      ganador: b ? null : a.id,
+      fase,
+      orden: partidos.length,
+    })
+  }
+  return partidos
 }

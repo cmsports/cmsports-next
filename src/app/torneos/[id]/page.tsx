@@ -344,11 +344,12 @@ export default function TorneoDetallePage() {
   }
 
   async function avanzarSiguienteFase(faseActual: string) {
-    const partidosFase = partidos.filter(p => p.fase === faseActual && p.ganador && p.jugador_b !== null)
-    const ganadores = partidosFase.map(p => (p as any).jg).filter(Boolean)
-    const byesFase = partidos.filter(p => p.fase === faseActual && p.jugador_b === null && p.ganador)
-    const ganByes = byesFase.map(p => (p as any).ja).filter(Boolean)
-    const todos = [...ganadores, ...ganByes].map((j: any) => ({ id: j.id, nombre: j.nombre, elo: j.elo ?? CONFIG.ELO_INICIAL }))
+    const todos = partidos
+      .filter(p => p.fase === faseActual && p.ganador)
+      .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+      .map((p: any) => p.ganador === p.jugador_a ? p.ja : p.jb)
+      .filter(Boolean)
+      .map((j: any) => ({ id: j.id, nombre: j.nombre, elo: j.elo ?? CONFIG.ELO_INICIAL }))
 
     const res = await avanzarSiguienteFaseAction({ torneoId, faseActual: faseActual as FaseOrden, ganadores: todos })
     if (res.error) { alert(res.error); return }
