@@ -26,6 +26,7 @@ export default function CalendarioPage() {
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [eventos, setEventos] = useState<any[]>([])
   const [clases, setClases] = useState<any[]>([])
+  const [torneos, setTorneos] = useState<any[]>([])
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [modalEvento, setModalEvento] = useState(false)
@@ -48,12 +49,14 @@ export default function CalendarioPage() {
   async function cargarMes() {
     const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
     const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
-    const [{ data: ev }, { data: cl }] = await Promise.all([
+    const [{ data: ev }, { data: cl }, { data: tr }] = await Promise.all([
       supabase.from('eventos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-      supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin)
+      supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
+      supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
     ])
     setEventos(ev || [])
     setClases(cl || [])
+    setTorneos(tr || [])
   }
 
   async function cargarReservasJugador(jugadorId: string) {
@@ -121,6 +124,10 @@ export default function CalendarioPage() {
   clases.forEach(c => {
     const f = c.fecha?.slice(0,10)
     if (f) { if (!diasConItems[f]) diasConItems[f] = []; diasConItems[f].push({ ...c, tipo_item:'clase' }) }
+  })
+  torneos.forEach(t => {
+    const f = t.fecha_inicio?.slice(0,10)
+    if (f) { if (!diasConItems[f]) diasConItems[f] = []; diasConItems[f].push({ ...t, tipo_item:'torneo', tipo:'torneo', titulo: t.nombre }) }
   })
 
   const itemsDelDia = diaSeleccionado ? (diasConItems[diaSeleccionado] || []) : []
@@ -213,6 +220,16 @@ export default function CalendarioPage() {
                   </div>
                   {puedeEditarEventos && <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#dc2626', cursor:'pointer', fontSize:14 }}>✕</button>}
                 </div>
+              </div>
+            ))}
+
+            {itemsDelDia.filter(i => i.tipo_item === 'torneo').map((t, i) => (
+              <div key={i} onClick={() => router.push(`/torneos/${t.id}`)} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:'3px solid #4f46e5', cursor:'pointer' }}>
+                <div style={{ fontSize:13, fontWeight:600, color: text }}>🏆 {t.nombre}</div>
+                <div style={{ fontSize:11, color: muted, marginTop:2 }}>
+                  Torneo · {t.fase || t.estado || 'programado'}
+                </div>
+                <div style={{ fontSize:11, color:'#4f46e5', marginTop:6, fontWeight:600 }}>Ver torneo →</div>
               </div>
             ))}
 
