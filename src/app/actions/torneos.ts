@@ -381,10 +381,13 @@ export async function reordenarJugadorEnGrupo(params: {
     return { error: 'No se puede reordenar este grupo porque ya tiene partidos jugados.' }
   }
 
-  const { data: miembros } = await supabase
+  const { data: miembros, error: miembrosErr } = await supabase
     .from('grupo_jugadores')
     .select('id, jugador_id, orden')
     .eq('grupo_id', grupoId)
+  if (miembrosErr) {
+    return { error: 'No se pudo leer el orden del grupo. Falta aplicar la migracion de base de datos para ordenar jugadores.' }
+  }
 
   const ordenados = ordenarMiembros(miembros || [])
   const idx = ordenados.findIndex(m => m.jugador_id === jugadorId)
@@ -395,9 +398,11 @@ export async function reordenarJugadorEnGrupo(params: {
   ordenados[idx] = ordenados[swapIdx]
   ordenados[swapIdx] = actual
 
-  await Promise.all(ordenados.map((m, orden) => supabase.from('grupo_jugadores').update({ orden }).eq('id', m.id)))
+  const updates = await Promise.all(ordenados.map((m, orden) => supabase.from('grupo_jugadores').update({ orden }).eq('id', m.id)))
+  if (updates.some(r => r.error)) return { error: 'No se pudo guardar el nuevo orden del grupo.' }
 
-  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).eq('grupo_id', grupoId)
+  const { error: deleteErr } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).eq('grupo_id', grupoId)
+  if (deleteErr) return { error: 'No se pudieron regenerar los partidos del grupo.' }
   const idsGrupo = ordenados.map(m => m.jugador_id).filter((id): id is string => !!id)
   const partidos = generarRoundRobin(idsGrupo).map(([a, b], orden) => ({
     torneo_id: torneoId,
@@ -407,7 +412,10 @@ export async function reordenarJugadorEnGrupo(params: {
     jugador_b: b,
     orden,
   }))
-  if (partidos.length) await supabase.from('torneo_partidos').insert(partidos)
+  if (partidos.length) {
+    const { error: insertErr } = await supabase.from('torneo_partidos').insert(partidos)
+    if (insertErr) return { error: 'No se pudieron crear los nuevos partidos del grupo.' }
+  }
 
   return { success: true }
 }

@@ -672,7 +672,10 @@ export default function TorneoDetallePage() {
                     {esAdmin && !grupoConResultados && (
                       <div style={{ display:'flex', gap:4 }}>
                         <button
-                          onClick={() => j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'arriba')}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'arriba')
+                          }}
                           disabled={i === 0}
                           title="Subir en el grupo"
                           style={{ width:24, height:24, border:'1px solid #e2e8f0', borderRadius:6, background:i === 0 ? '#f8fafc' : '#ffffff', color:i === 0 ? hint : text, cursor:i === 0 ? 'not-allowed' : 'pointer', fontSize:12 }}
@@ -680,7 +683,10 @@ export default function TorneoDetallePage() {
                           ↑
                         </button>
                         <button
-                          onClick={() => j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'abajo')}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'abajo')
+                          }}
                           disabled={i === ordenados.length - 1}
                           title="Bajar en el grupo"
                           style={{ width:24, height:24, border:'1px solid #e2e8f0', borderRadius:6, background:i === ordenados.length - 1 ? '#f8fafc' : '#ffffff', color:i === ordenados.length - 1 ? hint : text, cursor:i === ordenados.length - 1 ? 'not-allowed' : 'pointer', fontSize:12 }}
