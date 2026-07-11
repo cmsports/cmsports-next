@@ -468,12 +468,12 @@ export default function TorneoDetallePage() {
         <button onClick={() => router.push('/torneos')} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer' }}>← Volver</button>
         {esAdmin && (
           <button onClick={async () => {
-            if (!confirm(`¿Eliminar "${torneo?.nombre}" y todos sus datos? Esta acción no se puede deshacer.`)) return
+            if (!confirm(`¿Archivar "${torneo?.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
             const res = await eliminarTorneo({ torneoId })
             if (res.error) { alert(res.error); return }
             router.push('/torneos')
           }} style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'6px 14px', color:'#dc2626', fontSize:13, cursor:'pointer' }}>
-            🗑 Eliminar
+            Archivar
           </button>
         )}
         <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0 }}>{torneo?.nombre}</h1>

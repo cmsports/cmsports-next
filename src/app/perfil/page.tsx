@@ -87,7 +87,7 @@ export default function PerfilPage() {
           supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', perfil.jugador_id).order('creado_en', { ascending: false }).limit(2),
           supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
           perfil.club_id
-            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', perfil.club_id).neq('fase', 'inscripcion')
+            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', perfil.club_id).neq('fase', 'inscripcion').neq('estado', 'archivado')
                 .or(`estado.eq.en_curso,and(estado.eq.finalizado,fecha_fin.gte.${new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()})`)
                 .order('fecha_inicio', { ascending: false }).limit(1).maybeSingle()
             : Promise.resolve({ data: null, error: null }),

@@ -23,6 +23,7 @@ export default function TorneosPage() {
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
   const [cuota, setCuota] = useState('0')
+  const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -30,7 +31,8 @@ export default function TorneosPage() {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.club_id) {
-      const cached = torneosCache[perfil.club_id]
+      const cacheKey = `${perfil.club_id}:${mostrarArchivados ? 'archivados' : 'activos'}`
+      const cached = torneosCache[cacheKey]
       if (cached) {
         setTorneos(cached)
         setLoading(false)
@@ -39,7 +41,7 @@ export default function TorneosPage() {
     } else {
       setLoading(false)
     }
-  }, [authLoading, perfil])
+  }, [authLoading, perfil, mostrarArchivados])
 
   async function exportarTorneos() {
     const { utils, writeFile } = await import('xlsx')
@@ -57,11 +59,13 @@ export default function TorneosPage() {
   async function cargarTorneos(cid?: string) {
     const id = cid || clubId
     // Query 1: todos los torneos del club
-    const { data: torneosData } = await supabase
+    let query = supabase
       .from('torneos')
       .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en')
       .eq('club_id', id)
       .order('creado_en', { ascending: false })
+    query = mostrarArchivados ? query.eq('estado', 'archivado') : query.neq('estado', 'archivado')
+    const { data: torneosData } = await query
     if (!torneosData?.length) { setTorneos([]); return }
 
     const ids = torneosData.map(t => t.id)
@@ -121,7 +125,7 @@ export default function TorneosPage() {
       inscritos: inscritosPorTorneo[t.id] || 0,
       campeon:   campeonPorTorneo[t.id] || null,
     }))
-    if (id) torneosCache[id] = lista
+    if (id) torneosCache[`${id}:${mostrarArchivados ? 'archivados' : 'activos'}`] = lista
     setTorneos(lista)
   }
 
@@ -163,15 +167,30 @@ export default function TorneosPage() {
     <AppLayout perfil={perfil}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
         <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Torneos</h1>
-        {puedeCrear && (
-          <button
-            onClick={() => setModalOpen(true)}
-            style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}
-          >
-            🏆 Nuevo torneo
-          </button>
-        )}
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          {esAdmin && (
+            <button
+              onClick={() => setMostrarArchivados(v => !v)}
+              style={{ background:mostrarArchivados ? '#ede9fe' : '#ffffff', color:mostrarArchivados ? '#3730a3' : muted, border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }}
+            >
+              {mostrarArchivados ? 'Ver activos' : 'Ver archivados'}
+            </button>
+          )}
+          {puedeCrear && !mostrarArchivados && (
+            <button
+              onClick={() => setModalOpen(true)}
+              style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}
+            >
+              🏆 Nuevo torneo
+            </button>
+          )}
+        </div>
       </div>
+      {mostrarArchivados && (
+        <div style={{ marginBottom:14, background:'#fffbeb', color:'#92400e', border:'1px solid #fde68a', borderRadius:8, padding:'10px 12px', fontSize:12 }}>
+          Torneos archivados: quedan guardados para consulta histórica y no se descuentan de Finanzas.
+        </div>
+      )}
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
         {torneos.map(t => {
           const est = estadoConfig[t.estado] || { color: muted, bg: '#f4f7fa' }
@@ -208,19 +227,19 @@ export default function TorneosPage() {
                       <span style={{ fontSize:12, fontWeight:700, color:'#d97706' }}>{t.campeon}</span>
                     </div>
                   )}
-                  {esAdmin && (
+                  {esAdmin && !mostrarArchivados && (
                     <button
                       onClick={async e => {
                         e.stopPropagation()
-                        if (!confirm(`¿Eliminar "${t.nombre}" y todos sus datos? Esta acción no se puede deshacer.`)) return
+                        if (!confirm(`¿Archivar "${t.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
                         const res = await eliminarTorneo({ torneoId: t.id })
                         if (res.error) { alert(res.error); return }
                         await cargarTorneos()
                       }}
                       style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer' }}
-                      title="Eliminar torneo"
+                      title="Archivar torneo"
                     >
-                      🗑
+                      Archivar
                     </button>
                   )}
                 </div>
@@ -230,7 +249,7 @@ export default function TorneosPage() {
         })}
         {torneos.length === 0 && (
           <div style={{ ...card, padding:40, textAlign:'center', color: hint, fontSize:13 }}>
-            Sin torneos registrados
+            {mostrarArchivados ? 'Sin torneos archivados' : 'Sin torneos registrados'}
           </div>
         )}
       </div>

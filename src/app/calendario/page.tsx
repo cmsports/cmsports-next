@@ -52,7 +52,7 @@ export default function CalendarioPage() {
     const [{ data: ev }, { data: cl }, { data: tr }] = await Promise.all([
       supabase.from('eventos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
       supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
-      supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
+      supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
     ])
     setEventos(ev || [])
     setClases(cl || [])
