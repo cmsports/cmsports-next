@@ -13,6 +13,50 @@ import {
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { requireAdmin } from '@/lib/auth/require'
 
+type AdminSupabase = NonNullable<Awaited<ReturnType<typeof requireAdmin>>['supabase']>
+
+async function propagarGanadorPlayoff(
+  supabase: AdminSupabase,
+  partido: { torneo_id: string | null; fase: string | null; orden: number | null },
+  ganadorId: string,
+) {
+  if (!partido.torneo_id || !partido.fase || partido.fase === 'grupos') return
+  const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
+  if (!faseSiguiente) return
+
+  const ordenSiguiente = Math.floor((partido.orden ?? 0) / 2)
+  const slotGanador = (partido.orden ?? 0) % 2 === 0 ? 'jugador_a' : 'jugador_b'
+  const { data: existentes } = await supabase
+    .from('torneo_partidos')
+    .select('id, jugador_a, jugador_b, ganador')
+    .eq('torneo_id', partido.torneo_id)
+    .eq('fase', faseSiguiente)
+    .eq('orden', ordenSiguiente)
+    .order('creado_en', { ascending: true })
+    .limit(1)
+
+  const existente = existentes?.[0]
+  if (existente) {
+    if (!existente.ganador && existente[slotGanador] !== ganadorId) {
+      const updateSlot = slotGanador === 'jugador_a'
+        ? { jugador_a: ganadorId }
+        : { jugador_b: ganadorId }
+      await supabase.from('torneo_partidos').update(updateSlot).eq('id', existente.id)
+    }
+  } else {
+    await supabase.from('torneo_partidos').insert({
+      torneo_id: partido.torneo_id,
+      fase: faseSiguiente,
+      orden: ordenSiguiente,
+      jugador_a: slotGanador === 'jugador_a' ? ganadorId : null,
+      jugador_b: slotGanador === 'jugador_b' ? ganadorId : null,
+      ganador: null,
+    })
+  }
+
+  await supabase.from('torneos').update({ fase: faseSiguiente }).eq('id', partido.torneo_id)
+}
+
 export async function corregirResultadoGrupos(params: { partidoId: string; nuevoGanadorId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -132,46 +176,7 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
     }
   }
 
-  if (partido.torneo_id && partido.fase && partido.fase !== 'grupos') {
-    const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
-    if (faseSiguiente) {
-      const ordenSiguiente = Math.floor((partido.orden ?? 0) / 2)
-      const slotGanador = (partido.orden ?? 0) % 2 === 0 ? 'jugador_a' : 'jugador_b'
-
-      const { data: existentes } = await supabase
-        .from('torneo_partidos')
-        .select('id, jugador_a, jugador_b, ganador')
-        .eq('torneo_id', partido.torneo_id)
-        .eq('fase', faseSiguiente)
-        .eq('orden', ordenSiguiente)
-        .order('creado_en', { ascending: true })
-        .limit(1)
-
-      const existente = existentes?.[0]
-      if (existente) {
-        if (!existente.ganador && existente[slotGanador] !== ganadorId) {
-          const updateSlot = slotGanador === 'jugador_a'
-            ? { jugador_a: ganadorId }
-            : { jugador_b: ganadorId }
-          await supabase
-            .from('torneo_partidos')
-            .update(updateSlot)
-            .eq('id', existente.id)
-        }
-      } else {
-        await supabase.from('torneo_partidos').insert({
-          torneo_id: partido.torneo_id,
-          fase: faseSiguiente,
-          orden: ordenSiguiente,
-          jugador_a: slotGanador === 'jugador_a' ? ganadorId : null,
-          jugador_b: slotGanador === 'jugador_b' ? ganadorId : null,
-          ganador: null,
-        })
-      }
-
-      await supabase.from('torneos').update({ fase: faseSiguiente }).eq('id', partido.torneo_id)
-    }
-  }
+  await propagarGanadorPlayoff(supabase, partido, ganadorId)
 
   return { success: true }
 }
@@ -480,11 +485,19 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
   const torneoId: string = partido.torneo_id ?? partidoId
   const fasePartido = partido.fase as FaseOrden
 
-  // Borrar partidos de fases posteriores
-  const idxFase = CONFIG.FASES_ORDEN.indexOf(fasePartido)
-  const fasesPosterrores = CONFIG.FASES_ORDEN.slice(idxFase + 1)
-  if (fasesPosterrores.length) {
-    await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).in('fase', fasesPosterrores)
+  const faseSiguiente = siguienteFase(fasePartido)
+  if (faseSiguiente) {
+    const ordenSiguiente = Math.floor((partido.orden ?? 0) / 2)
+    const { data: siguientePartido } = await supabase
+      .from('torneo_partidos')
+      .select('id, ganador')
+      .eq('torneo_id', torneoId)
+      .eq('fase', faseSiguiente)
+      .eq('orden', ordenSiguiente)
+      .maybeSingle()
+    if (siguientePartido?.ganador) {
+      return { error: 'No se puede cambiar este ganador porque la siguiente llave ya fue jugada. Corrige primero la siguiente fase.' }
+    }
   }
 
   const anteriorGanadorId: string = partido.ganador
