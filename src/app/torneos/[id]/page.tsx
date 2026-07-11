@@ -266,7 +266,7 @@ export default function TorneoDetallePage() {
   }
 
   async function cerrarInscripcion() {
-    if (!confirm('¿Cerrar inscripción y generar grupos con seeding ELO?')) return
+    if (!confirm('¿Cerrar inscripción y generar grupos?')) return
     const res = await cerrarInscripcionYGenerarGrupos({
       torneoId,
       cabezasDeSerie: Array.from(cabezasSerie),
@@ -1395,7 +1395,7 @@ export default function TorneoDetallePage() {
                 <div style={{ padding:'8px 14px', fontSize:11, color: muted, textTransform:'uppercase', letterSpacing:'0.5px', borderBottom:'1px solid #e2e8f0' }}>
                   Jugadores inscritos
                 </div>
-                {jugadoresInscritos.sort((a: any, b: any) => (b.jugadores?.elo||0) - (a.jugadores?.elo||0)).map((j: any, i: number) => (
+                {[...jugadoresInscritos].sort((a: any, b: any) => (a.jugadores?.nombre || '').localeCompare(b.jugadores?.nombre || '', 'es')).map((j: any, i: number) => (
                   <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderBottom:'1px solid #e2e8f0', background:'#ffffff' }}>
                     <span style={{ fontSize:12, color: muted, width:20 }}>{i+1}</span>
                     <div style={{ flex:1 }}>

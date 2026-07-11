@@ -62,6 +62,11 @@ describe('seedingSerpenteo', () => {
     const g1 = asign.find(a => a.jugadorId === js[1].id)!.grupoIndex
     expect(g0).not.toBe(g1)
   })
+  it('el ELO no altera la asignacion de grupos', () => {
+    const a = jugadores(8)
+    const b = a.map((j, i) => ({ ...j, elo: 9999 - i }))
+    expect(seedingSerpenteo(a, 3)).toEqual(seedingSerpenteo(b, 3))
+  })
 })
 
 describe('bracket helpers', () => {
