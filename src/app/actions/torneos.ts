@@ -1084,7 +1084,7 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
 
   const { data: torneo } = await supabase
     .from('torneos')
-    .select('estado')
+    .select('estado, nombre, club_id')
     .eq('id', torneoId)
     .single()
   if (!torneo) return { error: 'Torneo no encontrado' }
@@ -1096,6 +1096,14 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
     .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
   const grupoIds = (grupos || []).map(g => g.id)
 
+  await supabase.from('movimientos').delete().eq('torneo_id', torneoId)
+  if (torneo.nombre && torneo.club_id) {
+    await supabase
+      .from('movimientos')
+      .delete()
+      .eq('club_id', torneo.club_id)
+      .ilike('descripcion', `%${torneo.nombre}%`)
+  }
   await supabase.from('historial_elo').delete().eq('torneo_id', torneoId)
   if (grupoIds.length) await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
   await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
@@ -1126,18 +1134,18 @@ export async function guardarPremios(params: {
   await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero, contabilidad_enviada: true }).eq('id', params.torneoId)
 
   const fecha = new Date().toISOString().slice(0, 10)
-  type Mov = { club_id: string | null; tipo: string; categoria: string; descripcion: string; monto: number; fecha: string; registrado_por_nombre: string }
+  type Mov = { club_id: string | null; torneo_id: string; tipo: string; categoria: string; descripcion: string; monto: number; fecha: string; registrado_por_nombre: string }
   const movimientos: Mov[] = []
 
   if (params.enviarRecaudacion && params.montoRecaudado > 0) {
-    movimientos.push({ club_id: perfil.club_id, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Ingreso Torneo — ${params.torneoNombre}`, monto: params.montoRecaudado, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+    movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Ingreso Torneo — ${params.torneoNombre}`, monto: params.montoRecaudado, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   }
-  if (params.primero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1°${via} — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  if (params.segundo) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2°${via} — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  if (params.tercero) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3°${via} — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.primero) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1°${via} — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.segundo) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2°${via} — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  if (params.tercero) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3°${via} — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
 
   for (const g of (params.gastosGestion || [])) {
-    if (g.monto > 0) movimientos.push({ club_id: perfil.club_id, tipo: 'gasto', categoria: 'otro_gasto', descripcion: `${g.tipo} — ${params.torneoNombre}`, monto: g.monto, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+    if (g.monto > 0) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'otro_gasto', descripcion: `${g.tipo} — ${params.torneoNombre}`, monto: g.monto, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   }
 
   if (movimientos.length) await supabase.from('movimientos').insert(movimientos)

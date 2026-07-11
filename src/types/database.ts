@@ -470,6 +470,7 @@ export interface Database {
           categoria: string | null
           descripcion: string
           monto: number
+          torneo_id: string | null
           fecha: string | null
           jugador_id: string | null
           registrado_por: string | null
@@ -486,6 +487,7 @@ export interface Database {
           categoria?: string | null
           descripcion: string
           monto: number
+          torneo_id?: string | null
           fecha?: string | null
           jugador_id?: string | null
           registrado_por?: string | null
@@ -502,6 +504,7 @@ export interface Database {
           categoria?: string | null
           descripcion?: string
           monto?: number
+          torneo_id?: string | null
           fecha?: string | null
           jugador_id?: string | null
           registrado_por?: string | null
@@ -514,6 +517,7 @@ export interface Database {
         Relationships: [
           { foreignKeyName: 'movimientos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
           { foreignKeyName: 'movimientos_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'movimientos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
           { foreignKeyName: 'movimientos_registrado_por_fkey'; columns: ['registrado_por']; referencedRelation: 'usuarios'; referencedColumns: ['id'] },
           { foreignKeyName: 'movimientos_profesor_id_fkey'; columns: ['profesor_id']; referencedRelation: 'profesores'; referencedColumns: ['id'] },
         ]
