@@ -23,6 +23,23 @@ type Snapshot = {
   grupos: Grupo[]; jugadores: Jugador[]; partidos: Partido[]
 }
 
+function normalizarSnapshot(data: unknown): Snapshot | null {
+  if (!data || typeof data !== 'object') return null
+  const raw = data as Partial<Snapshot>
+  if (!raw.torneo || typeof raw.torneo !== 'object') return null
+  return {
+    torneo: {
+      id: String(raw.torneo.id || ''),
+      nombre: String(raw.torneo.nombre || 'Torneo'),
+      fase: raw.torneo.fase ?? null,
+      estado: raw.torneo.estado ?? null,
+    },
+    grupos: Array.isArray(raw.grupos) ? raw.grupos : [],
+    jugadores: Array.isArray(raw.jugadores) ? raw.jugadores : [],
+    partidos: Array.isArray(raw.partidos) ? raw.partidos : [],
+  }
+}
+
 const text = '#0f172a', muted = '#64748b', hint = '#94a3b8', purple = '#4f46e5', green = '#16a34a'
 const card = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.12)' } as const
 
@@ -41,14 +58,15 @@ export default function VivoTorneoPage() {
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase.rpc('torneo_publico', { p_codigo: codigo })
-    if (error || !data) {
+    const snapshot = normalizarSnapshot(data)
+    if (error || !snapshot) {
       // ponytail: solo mostrar "no encontrado" en la carga inicial; en polling
       // conservar el último snapshot bueno para no blanquear la vista en errores transitorios
       if (!cargadoRef.current) setEstado('no-encontrado')
       return
     }
     cargadoRef.current = true
-    setSnap(data as Snapshot)
+    setSnap(snapshot)
     setEstado('ok')
   }, [codigo])
 
@@ -198,7 +216,10 @@ function Correo({ codigo, onListo, volver }: {
 
 // ── Paso 3: vista en vivo ───────────────────────────────────
 function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string | null; nombre: string } | null; cambiar: () => void }) {
-  const { torneo, grupos, jugadores, partidos } = snap
+  const torneo = snap.torneo
+  const grupos = Array.isArray(snap.grupos) ? snap.grupos : []
+  const jugadores = Array.isArray(snap.jugadores) ? snap.jugadores : []
+  const partidos = Array.isArray(snap.partidos) ? snap.partidos : []
   const fase = torneo.fase ?? ''
 
   // mi próximo partido: pendiente (sin ganador) donde participo
@@ -382,17 +403,18 @@ function standingsPorGrupo(grupos: Grupo[], jugadores: Jugador[], partidos: Part
 
 // ── piezas visuales ─────────────────────────────────────────
 function FilaPartido({ p, mio }: { p: Partido; mio: boolean }) {
-  const esBye = p.jugador_b === null
-  const ganoA = p.ganador === p.jugador_a
-  const ganoB = p.ganador === p.jugador_b
+  const tieneB = !!p.jugador_b
+  const esBye = !!p.jugador_a && !tieneB && !!p.ganador
+  const ganoA = !!p.ganador && p.ganador === p.jugador_a
+  const ganoB = !!p.ganador && p.ganador === p.jugador_b
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid #f1f5f9', background: mio ? '#faf5ff' : 'transparent', fontSize: 13 }}>
       <span style={{ flex: 1, textAlign: 'right', color: ganoA ? green : text, fontWeight: ganoA ? 700 : 400 }}>
         {ganoA && '✓ '}{p.nombre_a || 'Por definir'}
       </span>
-      <span style={{ fontSize: 10, color: hint, minWidth: 20, textAlign: 'center' }}>{esBye ? '·' : p.ganador ? '·' : 'vs'}</span>
+      <span style={{ fontSize: 10, color: hint, minWidth: 20, textAlign: 'center' }}>{p.ganador ? '·' : 'vs'}</span>
       <span style={{ flex: 1, color: ganoB ? green : esBye ? hint : text, fontWeight: ganoB ? 700 : 400, fontStyle: esBye ? 'italic' : 'normal' }}>
-        {esBye ? 'BYE (pasa directo)' : <>{ganoB && '✓ '}{p.nombre_b || 'Por definir'}</>}
+        {esBye ? 'BYE (pasa directo)' : <>{ganoB && '✓ '}{tieneB ? (p.nombre_b || 'Por definir') : 'Por definir'}</>}
       </span>
     </div>
   )
