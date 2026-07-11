@@ -216,7 +216,41 @@ export function generarBracketEspejo(
   const orden = aplicarSemillasPrincipales([...primeros, ...segundos], semilla1Id, semilla2Id)
   if (orden.length < 2) return []
   const faseInicial = determinarFaseInicial(calcularTamanoBracket(orden.length))
-  return construirBracket(orden, faseInicial)
+  const partidos = construirBracket(orden, faseInicial)
+
+  // Map each player ID → group index to detect same-group first-round pairings
+  const grupoIdx = new Map<string, number>()
+  primeros.forEach((j, i) => grupoIdx.set(j.id, i))
+  segundos.forEach((j, i) => grupoIdx.set(j.id, i))
+
+  // ponytail: O(n²) swap pass, n ≤ 16 matches
+  for (let i = 0; i < partidos.length; i++) {
+    const p = partidos[i]
+    if (!p.jugadorB) continue
+    const ga = grupoIdx.get(p.jugadorA)
+    const gb = grupoIdx.get(p.jugadorB)
+    if (ga === undefined || gb === undefined || ga !== gb) continue
+    for (let j = 0; j < partidos.length; j++) {
+      if (i === j || !partidos[j].jugadorB) continue
+      const q = partidos[j]
+      const qga = grupoIdx.get(q.jugadorA)!
+      const qgb = grupoIdx.get(q.jugadorB!)!
+      if (ga !== qga && qgb !== gb) {
+        const tmp = p.jugadorB
+        partidos[i] = { ...p, jugadorB: q.jugadorA }
+        partidos[j] = { ...q, jugadorA: tmp }
+        break
+      }
+      if (ga !== qgb && qga !== gb) {
+        const tmp = p.jugadorB
+        partidos[i] = { ...p, jugadorB: q.jugadorB }
+        partidos[j] = { ...q, jugadorB: tmp }
+        break
+      }
+    }
+  }
+
+  return partidos
 }
 
 // Un solo motor de armado para cualquier cantidad de clasificados. Los BYEs los
