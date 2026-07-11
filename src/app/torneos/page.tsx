@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
-import { eliminarTorneo } from '@/app/actions/torneos'
+import { eliminarTorneo, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
@@ -240,6 +240,21 @@ export default function TorneosPage() {
                       title="Archivar torneo"
                     >
                       Archivar
+                    </button>
+                  )}
+                  {esAdmin && mostrarArchivados && (
+                    <button
+                      onClick={async e => {
+                        e.stopPropagation()
+                        if (!confirm(`¿Borrar definitivamente "${t.nombre}"?\n\nEsto elimina el torneo, grupos, partidos, pagos e historial ELO. Los movimientos ya enviados a Finanzas no se borran.`)) return
+                        const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
+                        if (res.error) { alert(res.error); return }
+                        await cargarTorneos()
+                      }}
+                      style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer', fontWeight:600 }}
+                      title="Borrar definitivamente"
+                    >
+                      Borrar definitivo
                     </button>
                   )}
                 </div>

@@ -1076,6 +1076,37 @@ export async function eliminarTorneo(params: { torneoId: string }) {
   return { success: true }
 }
 
+export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId } = params
+
+  const { data: torneo } = await supabase
+    .from('torneos')
+    .select('estado')
+    .eq('id', torneoId)
+    .single()
+  if (!torneo) return { error: 'Torneo no encontrado' }
+  if (torneo.estado !== 'archivado') {
+    return { error: 'Solo se puede borrar definitivamente un torneo archivado.' }
+  }
+
+  const { data: grupos } = await supabase
+    .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  const grupoIds = (grupos || []).map(g => g.id)
+
+  await supabase.from('historial_elo').delete().eq('torneo_id', torneoId)
+  if (grupoIds.length) await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+  await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
+  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
+  await supabase.from('torneo_pagos').delete().eq('torneo_id', torneoId)
+  await supabase.from('torneo_grupos').delete().eq('torneo_id', torneoId)
+  await supabase.from('torneos').delete().eq('id', torneoId)
+
+  return { success: true }
+}
+
 export async function guardarPremios(params: {
   torneoId: string
   torneoNombre: string
