@@ -10,11 +10,22 @@ import {
   generarBracketConAvance,
   generarSiguienteFase,
   construirLlavesLayout,
+  calcularStatsGrupo,
   type JugadorTorneo,
 } from './torneos'
 
 function jugadores(n: number): JugadorTorneo[] {
   return Array.from({ length: n }, (_, i) => ({ id: `j${i}`, nombre: `J${i}`, elo: 1200 + i * 10 }))
+}
+
+function posicionesLayout(numGrupos: number, cabeza1?: number, cabeza2?: number) {
+  const { matches } = construirLlavesLayout(numGrupos, cabeza1, cabeza2)
+  const posiciones = new Map<string, number>()
+  matches.forEach((m, i) => {
+    if (m.a) posiciones.set(`${m.a.grupoIdx}:${m.a.pos}`, i * 2)
+    if (m.b) posiciones.set(`${m.b.grupoIdx}:${m.b.pos}`, i * 2 + 1)
+  })
+  return { matches, posiciones }
 }
 
 describe('calcularNumGrupos', () => {
@@ -190,15 +201,9 @@ describe('construirLlavesLayout', () => {
   })
   it('regla espejo: 1 y 2 del mismo grupo quedan en mitades opuestas', () => {
     const numGrupos = 16
-    const { matches } = construirLlavesLayout(numGrupos, 0, 1)
+    const { matches, posiciones: posicionPorCupo } = posicionesLayout(numGrupos, 0, 1)
     const totalPosiciones = matches.length * 2
     const mitad = totalPosiciones / 2
-    const posicionPorCupo = new Map<string, number>()
-
-    matches.forEach((m, i) => {
-      if (m.a) posicionPorCupo.set(`${m.a.grupoIdx}:${m.a.pos}`, i * 2)
-      if (m.b) posicionPorCupo.set(`${m.b.grupoIdx}:${m.b.pos}`, i * 2 + 1)
-    })
 
     for (let g = 0; g < numGrupos; g++) {
       const p1 = posicionPorCupo.get(`${g}:1`)
@@ -207,6 +212,51 @@ describe('construirLlavesLayout', () => {
       expect(p2).toBeDefined()
       expect(Math.floor(p1! / mitad)).not.toBe(Math.floor(p2! / mitad))
     }
+  })
+  it('regla espejo se mantiene con grupos pares, impares y BYE', () => {
+    for (const numGrupos of [3, 4, 5, 8, 10, 16]) {
+      const { matches, posiciones } = posicionesLayout(numGrupos, 0, Math.min(1, numGrupos - 1))
+      const totalPosiciones = matches.length * 2
+      const mitad = totalPosiciones / 2
+      const claves = Array.from(posiciones.keys())
+
+      expect(new Set(claves).size).toBe(numGrupos * 2)
+      expect(claves).toHaveLength(numGrupos * 2)
+
+      for (let g = 0; g < numGrupos; g++) {
+        const p1 = posiciones.get(`${g}:1`)
+        const p2 = posiciones.get(`${g}:2`)
+        expect(p1).toBeDefined()
+        expect(p2).toBeDefined()
+        expect(Math.floor(p1! / mitad)).not.toBe(Math.floor(p2! / mitad))
+      }
+    }
+  })
+  it('la correccion de un grupo cambia los cupos reales del bracket sin mover el arbol', () => {
+    const jugadoresGrupo = [
+      { id: 'armando', nombre: 'Armando', elo: 1000 },
+      { id: 'nelson', nombre: 'Nelson', elo: 2500 },
+      { id: 'carlos', nombre: 'Carlos', elo: 1200 },
+    ]
+    const antes = calcularStatsGrupo(jugadoresGrupo, [
+      { jugadorA: 'armando', jugadorB: 'nelson', ganador: 'armando' },
+      { jugadorA: 'armando', jugadorB: 'carlos', ganador: 'armando' },
+      { jugadorA: 'nelson', jugadorB: 'carlos', ganador: 'nelson' },
+    ]).stats
+    const despues = calcularStatsGrupo(jugadoresGrupo, [
+      { jugadorA: 'armando', jugadorB: 'nelson', ganador: 'nelson' },
+      { jugadorA: 'armando', jugadorB: 'carlos', ganador: 'armando' },
+      { jugadorA: 'nelson', jugadorB: 'carlos', ganador: 'nelson' },
+    ]).stats
+    const { matches } = construirLlavesLayout(2, 0, 1)
+    const materializar = (primeroGrupo0: string, segundoGrupo0: string) =>
+      matches.map(m => [m.a?.grupoIdx === 0 ? (m.a.pos === 1 ? primeroGrupo0 : segundoGrupo0) : `${m.a?.grupoIdx}:${m.a?.pos}`,
+        m.b?.grupoIdx === 0 ? (m.b.pos === 1 ? primeroGrupo0 : segundoGrupo0) : `${m.b?.grupoIdx}:${m.b?.pos}`])
+
+    expect([antes[0].jugadorId, antes[1].jugadorId]).toEqual(['armando', 'nelson'])
+    expect([despues[0].jugadorId, despues[1].jugadorId]).toEqual(['nelson', 'armando'])
+    expect(materializar(despues[0].jugadorId, despues[1].jugadorId)).not.toEqual(materializar(antes[0].jugadorId, antes[1].jugadorId))
+    expect(matches).toEqual(construirLlavesLayout(2, 0, 1).matches)
   })
   it('regla espejo: los cabezas principales quedan en mitades opuestas', () => {
     const { matches } = construirLlavesLayout(16, 0, 1)

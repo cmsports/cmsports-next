@@ -715,6 +715,7 @@ export interface Database {
           id: string
           grupo_id: string | null
           jugador_id: string | null
+          orden: number
           partidos_jugados: number | null
           partidos_ganados: number | null
           clasificado: boolean | null
@@ -723,6 +724,7 @@ export interface Database {
           id?: string
           grupo_id?: string | null
           jugador_id?: string | null
+          orden?: number
           partidos_jugados?: number | null
           partidos_ganados?: number | null
           clasificado?: boolean | null
@@ -731,6 +733,7 @@ export interface Database {
           id?: string
           grupo_id?: string | null
           jugador_id?: string | null
+          orden?: number
           partidos_jugados?: number | null
           partidos_ganados?: number | null
           clasificado?: boolean | null

@@ -22,6 +22,7 @@ import {
   inscribirEnMesa,
   actualizarCabezasSerie,
   moverJugadorEntreGrupos,
+  reordenarJugadorEnGrupo,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayout } from '@/lib/domain/torneos'
@@ -110,7 +111,11 @@ export default function TorneoDetallePage() {
     setPartidos(pts || [])
     setPagos(pgs || [])
 
-    const todos = gj || []
+    const todos = [...(gj || [])].sort((a: any, b: any) =>
+      String(a.grupo_id ?? '').localeCompare(String(b.grupo_id ?? '')) ||
+      (a.orden ?? 0) - (b.orden ?? 0) ||
+      String(a.jugadores?.nombre ?? '').localeCompare(String(b.jugadores?.nombre ?? ''), 'es')
+    )
     const grupoMesaId = (g || []).find((gr: any) => gr.nombre === 'MESA')?.id
     setJugadores(grupoMesaId ? todos.filter((j: any) => j.grupo_id !== grupoMesaId) : todos)
     if (grupoMesaId) {
@@ -145,8 +150,8 @@ export default function TorneoDetallePage() {
 
   // Arma/rellena las llaves apenas cierra cada grupo, sin esperar a que terminen
   // todos. Solo corre durante la fase de grupos; es idempotente (solo rellena
-  // cupos vacíos) y se dispara únicamente cuando cambia el set de clasificados o
-  // aparece/desaparece el cuadro, para no entrar en bucle.
+  // cupos vacios) y se dispara cuando cambian clasificados o reglas del layout,
+  // sin depender de si el cuadro existe para no entrar en bucle.
   useEffect(() => {
     if (loading || authLoading) return
     if (perfil?.rol !== 'admin') return
@@ -155,11 +160,13 @@ export default function TorneoDetallePage() {
     const clasificados = calcularClasificados()
     if (!clasificados.length) return
 
-    // ponytail: firma SOLO por clasificados (no por si hay bracket). Antes
-    // cada cierre disparaba dos syncs porque insertar el esqueleto cambiaba
-    // el prefijo B/- y volvía a entrar. Con 17 grupos eso duplica el trabajo
-    // y termina bloqueando la UI.
-    const firma = clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')
+    const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
+    const firmaLayout = [
+      torneo?.cabeza_serie_1 ?? '',
+      torneo?.cabeza_serie_2 ?? '',
+      gruposReales.map((g: any) => g.id).sort().join(','),
+    ].join(':')
+    const firma = `${firmaLayout}|${clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')}`
     if (firma === ultimaSyncRef.current || sincronizandoRef.current) return
 
     sincronizandoRef.current = true
@@ -178,7 +185,7 @@ export default function TorneoDetallePage() {
       .catch(err => { console.error('sincronizarLlaves throw:', err) })
       .finally(() => { sincronizandoRef.current = false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partidos, grupos, empateManual, torneo?.fase, perfil?.rol, loading, authLoading])
+  }, [partidos, grupos, empateManual, torneo?.fase, torneo?.cabeza_serie_1, torneo?.cabeza_serie_2, perfil?.rol, loading, authLoading])
 
   useEffect(() => {
     if (torneo?.id) {
@@ -204,6 +211,12 @@ export default function TorneoDetallePage() {
   async function moverAGrupo(jugadorId: string, grupoOrigenId: string, grupoDestinoId: string) {
     if (grupoOrigenId === grupoDestinoId) return
     const res = await moverJugadorEntreGrupos({ torneoId, jugadorId, grupoOrigenId, grupoDestinoId })
+    if (res.error) { alert(res.error); return }
+    await cargarTorneo()
+  }
+
+  async function reordenarEnGrupo(jugadorId: string, grupoId: string, direccion: 'arriba' | 'abajo') {
+    const res = await reordenarJugadorEnGrupo({ torneoId, jugadorId, grupoId, direccion })
     if (res.error) { alert(res.error); return }
     await cargarTorneo()
   }
@@ -281,9 +294,9 @@ export default function TorneoDetallePage() {
     const jugsGrupo = jugadores.filter((j: any) => j.grupo_id === grupoId)
     const partidosGrupo = partidos.filter(p => p.grupo_id === grupoId)
 
-    const stats: Record<string, { jugador: any, pts: number, pg: number, pp: number, sets: number, puntos: number }> = {}
+    const stats: Record<string, { jugador: any, pts: number, pg: number, pp: number, sets: number, puntos: number, orden: number }> = {}
     jugsGrupo.forEach((j: any) => {
-      stats[j.jugador_id] = { jugador: j.jugadores, pts: 0, pg: 0, pp: 0, sets: 0, puntos: 0 }
+      stats[j.jugador_id] = { jugador: j.jugadores, pts: 0, pg: 0, pp: 0, sets: 0, puntos: 0, orden: j.orden ?? 0 }
     })
 
     partidosGrupo.filter(p => p.ganador).forEach(p => {
@@ -296,8 +309,10 @@ export default function TorneoDetallePage() {
 
     let ordenados = Object.values(stats).sort((a: any, b: any) => {
       if (b.pts !== a.pts) return b.pts - a.pts
-      if (criterioEmpate === 'sets') return b.sets - a.sets
-      return b.puntos - a.puntos
+      if (criterioEmpate === 'sets' && b.sets !== a.sets) return b.sets - a.sets
+      if (criterioEmpate !== 'sets' && b.puntos !== a.puntos) return b.puntos - a.puntos
+      if (b.puntos !== a.puntos) return b.puntos - a.puntos
+      return a.orden - b.orden
     })
 
     const primerPts = ordenados[0]?.pts
@@ -615,6 +630,7 @@ export default function TorneoDetallePage() {
           {grupos.filter((g: any) => g.nombre !== 'MESA').map(grupo => {
             const { ordenados, hayTripleEmpate, empatados } = calcularStats(grupo.id)
             const partidosGrupo = partidos.filter(p => p.grupo_id === grupo.id)
+            const grupoConResultados = partidosGrupo.some((p: any) => !!p.ganador)
 
             return (
               <div key={grupo.id} style={{ ...card, overflow:'hidden' }}
@@ -653,6 +669,26 @@ export default function TorneoDetallePage() {
                             } finally { setPagoLoading(null) }
                           }} style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10, cursor: pagoLoading ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador?.id ? 0.5 : 1 }}>Pend.</span>
                     })()}
+                    {esAdmin && !grupoConResultados && (
+                      <div style={{ display:'flex', gap:4 }}>
+                        <button
+                          onClick={() => j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'arriba')}
+                          disabled={i === 0}
+                          title="Subir en el grupo"
+                          style={{ width:24, height:24, border:'1px solid #e2e8f0', borderRadius:6, background:i === 0 ? '#f8fafc' : '#ffffff', color:i === 0 ? hint : text, cursor:i === 0 ? 'not-allowed' : 'pointer', fontSize:12 }}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={() => j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'abajo')}
+                          disabled={i === ordenados.length - 1}
+                          title="Bajar en el grupo"
+                          style={{ width:24, height:24, border:'1px solid #e2e8f0', borderRadius:6, background:i === ordenados.length - 1 ? '#f8fafc' : '#ffffff', color:i === ordenados.length - 1 ? hint : text, cursor:i === ordenados.length - 1 ? 'not-allowed' : 'pointer', fontSize:12 }}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {/* PANEL TRIPLE EMPATE */}

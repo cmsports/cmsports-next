@@ -8,12 +8,86 @@ import {
   siguienteFase,
   construirLlavesLayout,
   calcularNumGrupos,
+  calcularStatsGrupo,
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { requireAdmin } from '@/lib/auth/require'
 
 type AdminSupabase = NonNullable<Awaited<ReturnType<typeof requireAdmin>>['supabase']>
+
+type ClasificadoGrupo = { grupoId: string; primeroId: string; segundoId: string }
+
+function llaveFueJugada(partido: { ganador: string | null; jugador_b: string | null }) {
+  return !!partido.ganador && !!partido.jugador_b
+}
+
+function ordenarMiembros<T extends { orden?: number | null; jugador_id?: string | null }>(miembros: T[]) {
+  return [...miembros].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(a.jugador_id ?? '').localeCompare(String(b.jugador_id ?? '')))
+}
+
+async function calcularClasificadosDesdeBD(
+  supabase: AdminSupabase,
+  torneoId: string,
+): Promise<{ clasificados: ClasificadoGrupo[] } | { error: string }> {
+  const { data: grupos } = await supabase
+    .from('torneo_grupos')
+    .select('id, nombre')
+    .eq('torneo_id', torneoId)
+    .neq('nombre', 'MESA')
+    .order('nombre')
+
+  if (!grupos?.length) return { clasificados: [] }
+
+  const grupoIds = grupos.map(g => g.id)
+  const [{ data: miembros }, { data: partidos }] = await Promise.all([
+    supabase
+      .from('grupo_jugadores')
+      .select('grupo_id, jugador_id, jugadores(id,nombre,elo)')
+      .in('grupo_id', grupoIds),
+    supabase
+      .from('torneo_partidos')
+      .select('grupo_id, jugador_a, jugador_b, ganador')
+      .eq('torneo_id', torneoId)
+      .eq('fase', 'grupos')
+      .in('grupo_id', grupoIds),
+  ])
+
+  const clasificados: ClasificadoGrupo[] = []
+  for (const grupo of grupos) {
+    const jugadoresGrupo: JugadorTorneo[] = (miembros || [])
+      .filter(m => m.grupo_id === grupo.id)
+      .map(m => {
+        const j = Array.isArray(m.jugadores) ? m.jugadores[0] : m.jugadores
+        return j ? { id: j.id, nombre: j.nombre ?? '', elo: j.elo ?? CONFIG.ELO_INICIAL } : null
+      })
+      .filter((j): j is JugadorTorneo => !!j)
+
+    const partidosGrupo = (partidos || []).filter(p => p.grupo_id === grupo.id)
+    if (
+      jugadoresGrupo.length < 2 ||
+      partidosGrupo.length === 0 ||
+      partidosGrupo.some(p => !p.jugador_a || !p.jugador_b || !p.ganador)
+    ) continue
+
+    const { stats, hayTripleEmpate } = calcularStatsGrupo(
+      jugadoresGrupo,
+      partidosGrupo.map(p => ({
+        jugadorA: p.jugador_a!,
+        jugadorB: p.jugador_b!,
+        ganador: p.ganador,
+      })),
+    )
+    if (hayTripleEmpate) {
+      return { error: `El grupo ${grupo.nombre ?? ''} quedo con triple empate. Resuelve ese desempate antes de sincronizar llaves.` }
+    }
+    if (stats[0]?.jugadorId && stats[1]?.jugadorId) {
+      clasificados.push({ grupoId: grupo.id, primeroId: stats[0].jugadorId, segundoId: stats[1].jugadorId })
+    }
+  }
+
+  return { clasificados }
+}
 
 async function propagarGanadorPlayoff(
   supabase: AdminSupabase,
@@ -73,6 +147,16 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
   const anteriorPerdedorId: string | null = anteriorGanadorId === partido.jugador_a ? partido.jugador_b : partido.jugador_a
   const torneoIdPartido: string = partido.torneo_id ?? partidoId
 
+  const { data: llavesExistentes } = await supabase
+    .from('torneo_partidos')
+    .select('id, ganador, jugador_b')
+    .eq('torneo_id', torneoIdPartido)
+    .neq('fase', 'grupos')
+
+  if (llavesExistentes?.some(llaveFueJugada)) {
+    return { error: 'No se puede corregir grupos porque ya hay llaves jugadas. Vuelve a grupos o corrige primero la llave afectada para no romper el arbolito.' }
+  }
+
   // Revertir ELO del resultado anterior usando historial
   const jugadoresIds = [anteriorGanadorId, anteriorPerdedorId].filter((id): id is string => !!id)
   const { data: historial } = await supabase
@@ -112,7 +196,17 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
   await supabase.from('torneo_partidos').update({ ganador: null }).eq('id', partidoId)
 
   // Aplicar nuevo resultado (reutiliza la lógica existente)
-  return marcarGanadorPartido({ partidoId, ganadorId: nuevoGanadorId })
+  const marcado = await marcarGanadorPartido({ partidoId, ganadorId: nuevoGanadorId })
+  if (marcado.error) return marcado
+
+  if (llavesExistentes?.length) {
+    const recalculo = await calcularClasificadosDesdeBD(supabase, torneoIdPartido)
+    if ('error' in recalculo) return recalculo
+    const sync = await sincronizarLlaves({ torneoId: torneoIdPartido, clasificados: recalculo.clasificados })
+    if (sync.error) return sync
+  }
+
+  return marcado
 }
 
 export async function marcarGanadorPartido(params: { partidoId: string; ganadorId: string }) {
@@ -223,24 +317,97 @@ export async function moverJugadorEntreGrupos(params: {
     return { error: 'No se puede mover jugadores: alguno de los dos grupos ya tiene partidos jugados' }
   }
 
+  const { data: destinoActual } = await supabase
+    .from('grupo_jugadores')
+    .select('id')
+    .eq('grupo_id', grupoDestinoId)
+  const ordenDestino = destinoActual?.length ?? 0
+
   const { error: moveErr } = await supabase.from('grupo_jugadores')
-    .update({ grupo_id: grupoDestinoId })
+    .update({ grupo_id: grupoDestinoId, orden: ordenDestino })
     .eq('jugador_id', jugadorId).eq('grupo_id', grupoOrigenId)
   if (moveErr) return { error: 'No se pudo mover al jugador' }
 
   await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).in('grupo_id', [grupoOrigenId, grupoDestinoId])
 
-  const { data: miembros } = await supabase.from('grupo_jugadores').select('jugador_id, grupo_id').in('grupo_id', [grupoOrigenId, grupoDestinoId])
+  const { data: miembros } = await supabase.from('grupo_jugadores').select('id, jugador_id, grupo_id, orden').in('grupo_id', [grupoOrigenId, grupoDestinoId])
 
   const inserts: { torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }[] = []
   for (const gid of [grupoOrigenId, grupoDestinoId]) {
-    const idsGrupo = (miembros || []).filter(m => m.grupo_id === gid).map(m => m.jugador_id).filter((id): id is string => !!id)
+    const miembrosGrupo = ordenarMiembros((miembros || []).filter(m => m.grupo_id === gid))
+    await Promise.all(miembrosGrupo.map((m, orden) => supabase.from('grupo_jugadores').update({ orden }).eq('id', m.id)))
+    const idsGrupo = miembrosGrupo.map(m => m.jugador_id).filter((id): id is string => !!id)
     const parejas = generarRoundRobin(idsGrupo)
     for (const [a, b] of parejas) {
       inserts.push({ torneo_id: torneoId, grupo_id: gid, fase: 'grupos', jugador_a: a, jugador_b: b, orden: inserts.length })
     }
   }
   if (inserts.length) await supabase.from('torneo_partidos').insert(inserts)
+
+  const origenQuedoVacio = !(miembros || []).some(m => m.grupo_id === grupoOrigenId)
+  if (origenQuedoVacio) {
+    const { data: grupoOrigen } = await supabase
+      .from('torneo_grupos')
+      .select('nombre')
+      .eq('id', grupoOrigenId)
+      .maybeSingle()
+    if (grupoOrigen?.nombre !== 'MESA') {
+      await supabase.from('torneo_partidos').delete().eq('grupo_id', grupoOrigenId)
+      await supabase.from('torneo_grupos').delete().eq('id', grupoOrigenId)
+    }
+  }
+
+  return { success: true }
+}
+
+export async function reordenarJugadorEnGrupo(params: {
+  torneoId: string
+  grupoId: string
+  jugadorId: string
+  direccion: 'arriba' | 'abajo'
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, grupoId, jugadorId, direccion } = params
+
+  const { data: partidosGrupo } = await supabase
+    .from('torneo_partidos')
+    .select('id, ganador')
+    .eq('torneo_id', torneoId)
+    .eq('grupo_id', grupoId)
+
+  if (partidosGrupo?.some(p => !!p.ganador)) {
+    return { error: 'No se puede reordenar este grupo porque ya tiene partidos jugados.' }
+  }
+
+  const { data: miembros } = await supabase
+    .from('grupo_jugadores')
+    .select('id, jugador_id, orden')
+    .eq('grupo_id', grupoId)
+
+  const ordenados = ordenarMiembros(miembros || [])
+  const idx = ordenados.findIndex(m => m.jugador_id === jugadorId)
+  const swapIdx = direccion === 'arriba' ? idx - 1 : idx + 1
+  if (idx < 0 || swapIdx < 0 || swapIdx >= ordenados.length) return { success: true }
+
+  const actual = ordenados[idx]
+  ordenados[idx] = ordenados[swapIdx]
+  ordenados[swapIdx] = actual
+
+  await Promise.all(ordenados.map((m, orden) => supabase.from('grupo_jugadores').update({ orden }).eq('id', m.id)))
+
+  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).eq('grupo_id', grupoId)
+  const idsGrupo = ordenados.map(m => m.jugador_id).filter((id): id is string => !!id)
+  const partidos = generarRoundRobin(idsGrupo).map(([a, b], orden) => ({
+    torneo_id: torneoId,
+    grupo_id: grupoId,
+    fase: 'grupos',
+    jugador_a: a,
+    jugador_b: b,
+    orden,
+  }))
+  if (partidos.length) await supabase.from('torneo_partidos').insert(partidos)
 
   return { success: true }
 }
@@ -292,15 +459,20 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   }
 
   const asignaciones = seedingSerpenteo(jugadores, numGrupos, new Set(cabezasDeSerie))
-  const inserts = asignaciones.map(a => ({
+  const ordenPorGrupo = new Map<number, number>()
+  const inserts = asignaciones.map(a => {
+    const orden = ordenPorGrupo.get(a.grupoIndex) ?? 0
+    ordenPorGrupo.set(a.grupoIndex, orden + 1)
+    return {
     grupo_id: nuevosGrupos[a.grupoIndex].id,
     jugador_id: a.jugadorId,
-  }))
+    orden,
+  }})
   await supabase.from('grupo_jugadores').insert(inserts)
 
   const partidos: Array<{ torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }> = []
   for (const g of nuevosGrupos) {
-    const jugadoresGrupo = inserts.filter(a => a.grupo_id === g.id).map(a => a.jugador_id)
+    const jugadoresGrupo = inserts.filter(a => a.grupo_id === g.id).sort((a, b) => a.orden - b.orden).map(a => a.jugador_id)
     const parejas = generarRoundRobin(jugadoresGrupo)
     for (const [a, b] of parejas) {
       partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: a, jugador_b: b, orden: partidos.length })
@@ -362,11 +534,11 @@ export async function sincronizarLlaves(params: {
 
   const { data: bracketExistente } = await supabase
     .from('torneo_partidos')
-    .select('id, fase, ganador')
+    .select('id, fase, ganador, jugador_a, jugador_b')
     .eq('torneo_id', torneoId)
     .neq('fase', 'grupos')
 
-  const hayLlavesJugadas = !!bracketExistente?.some(p => !!p.ganador)
+  const hayLlavesJugadas = !!bracketExistente?.some(llaveFueJugada)
   const debeReconstruirEsqueleto = !!bracketExistente?.length && !hayLlavesJugadas && (
     bracketExistente.some(p => p.fase !== layout.faseInicial) ||
     bracketExistente.length !== layout.matches.length
@@ -408,17 +580,22 @@ export async function sincronizarLlaves(params: {
     const byOrden = new Map(existentes.map(r => [r.orden, r]))
     for (const m of layout.matches) {
       const row = byOrden.get(m.orden)
-      if (!row || row.ganador) continue
-      const upd: { jugador_a?: string; jugador_b?: string; ganador?: string } = {}
-      if (row.jugador_a == null) {
-        const a = realDe(m.a)
+      if (!row || llaveFueJugada(row)) continue
+      const upd: { jugador_a?: string | null; jugador_b?: string | null; ganador?: string | null } = {}
+      const a = realDe(m.a)
+      const b = m.b === null ? null : realDe(m.b)
+      if (!hayLlavesJugadas) {
+        if (row.jugador_a !== a) upd.jugador_a = a
+        if (row.jugador_b !== b) upd.jugador_b = b
+        const ganadorEsperado = m.b === null && a ? a : null
+        if (row.ganador !== ganadorEsperado) upd.ganador = ganadorEsperado
+      } else if (row.jugador_a == null) {
         if (a) {
           upd.jugador_a = a
           if (m.b === null) upd.ganador = a // BYE
         }
       }
-      if (m.b !== null && row.jugador_b == null) {
-        const b = realDe(m.b)
+      if (hayLlavesJugadas && !row.ganador && m.b !== null && row.jugador_b == null) {
         if (b) upd.jugador_b = b
       }
       if (Object.keys(upd).length) await supabase.from('torneo_partidos').update(upd).eq('id', row.id)
@@ -427,6 +604,9 @@ export async function sincronizarLlaves(params: {
 
   // Marcar clasificados — ambos avanzan al bracket.
   const clasificadosIds = clasificados.flatMap(c => [c.primeroId, c.segundoId])
+  if (grupos.length) {
+    await supabase.from('grupo_jugadores').update({ clasificado: false }).in('grupo_id', grupos.map(g => g.id))
+  }
   if (clasificadosIds.length) {
     await supabase.from('grupo_jugadores').update({ clasificado: true }).in('jugador_id', clasificadosIds)
   }
@@ -633,8 +813,9 @@ export async function generarGruposTardios(params: {
   if (jugadores.length === 1) {
     const counts = await Promise.all(
       (gruposExistentes || []).map(async g => {
-        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id').eq('grupo_id', g.id)
-        return { id: g.id, nombre: g.nombre ?? '', count: gjs?.length ?? 0, playerIds: (gjs || []).map(x => x.jugador_id).filter((id): id is string => !!id) }
+        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id, orden').eq('grupo_id', g.id)
+        const ordenados = ordenarMiembros(gjs || [])
+        return { id: g.id, nombre: g.nombre ?? '', count: ordenados.length, playerIds: ordenados.map(x => x.jugador_id).filter((id): id is string => !!id) }
       }),
     )
     const disponibles = counts.filter(g => g.count < 4)
@@ -642,7 +823,7 @@ export async function generarGruposTardios(params: {
       disponibles.sort((a, b) => a.count - b.count)
       const target = disponibles[0]
       await supabase.from('grupo_jugadores').delete().eq('grupo_id', grupoMesa.id)
-      await supabase.from('grupo_jugadores').insert({ grupo_id: target.id, jugador_id: jugadores[0].id })
+      await supabase.from('grupo_jugadores').insert({ grupo_id: target.id, jugador_id: jugadores[0].id, orden: target.count })
       const { data: pts } = await supabase.from('torneo_partidos').select('orden').eq('torneo_id', torneoId)
       let maxOrden = (pts || []).reduce((m, p) => Math.max(m, p.orden ?? 0), 0)
       const nuevos = target.playerIds.map((pid, i) => ({
@@ -671,10 +852,15 @@ export async function generarGruposTardios(params: {
   }
 
   const asignaciones = seedingSerpenteo(jugadores, numGrupos, new Set(cabezasDeSerie))
-  const inserts = asignaciones.map(a => ({
+  const ordenPorGrupo = new Map<number, number>()
+  const inserts = asignaciones.map(a => {
+    const orden = ordenPorGrupo.get(a.grupoIndex) ?? 0
+    ordenPorGrupo.set(a.grupoIndex, orden + 1)
+    return {
     grupo_id: nuevosGrupos[a.grupoIndex].id,
     jugador_id: a.jugadorId,
-  }))
+    orden,
+  }})
 
   // Mover de MESA a sus nuevos grupos
   await supabase.from('grupo_jugadores').delete().eq('grupo_id', grupoMesa.id)
@@ -687,7 +873,7 @@ export async function generarGruposTardios(params: {
 
   const partidos: Array<{ torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }> = []
   for (const g of nuevosGrupos) {
-    const jugadoresGrupo = inserts.filter(a => a.grupo_id === g.id).map(a => a.jugador_id)
+    const jugadoresGrupo = inserts.filter(a => a.grupo_id === g.id).sort((a, b) => a.orden - b.orden).map(a => a.jugador_id)
     const parejas = generarRoundRobin(jugadoresGrupo)
     for (const [a, b] of parejas) {
       partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: a, jugador_b: b, orden: ++maxOrden })
