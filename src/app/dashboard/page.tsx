@@ -13,7 +13,6 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
   Link2, Mail, X, HelpCircle, Copy, Check, UserX,
-  Settings,
 } from 'lucide-react'
 
 const supabase = createClient()
@@ -310,12 +309,6 @@ export default function DashboardPage() {
               </span>
             )}
           </Link>
-          <button title="Configuración" onClick={() => router.push('/configuracion')} style={{
-            background: C.card, border: `1px solid ${C.border}`, borderRadius: 8,
-            padding: '7px 10px', color: C.muted, cursor: 'pointer', display: 'flex', alignItems: 'center',
-          }}>
-            <Settings size={16} />
-          </button>
           <div style={{ width: 1, height: 24, background: C.border }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{

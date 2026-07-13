@@ -12,6 +12,7 @@ import {
 import { Line } from 'react-chartjs-2'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearAccesoJugador } from '@/app/actions/jugadores'
+import { formatRut } from '@/lib/rut'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, RadialLinearScale, Filler, Tooltip, Legend, BarElement)
 
@@ -56,9 +57,10 @@ export default function JugadorDetallePage() {
   const [feedbackForm, setFeedbackForm] = useState({ feedback:'', meta:'' })
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
-  const [contactoForm, setContactoForm] = useState({ email:'', telefono:'', categoria:'' })
+  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'' })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [guardandoDatos, setGuardandoDatos] = useState(false)
+  const [datosError, setDatosError] = useState('')
   const [modalExternoOpen, setModalExternoOpen] = useState(false)
   const [externoForm, setExternoForm] = useState({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
   const [guardandoExterno, setGuardandoExterno] = useState(false)
@@ -177,18 +179,37 @@ export default function JugadorDetallePage() {
   }
 
   function abrirEditContacto() {
-    setContactoForm({ email: jugador?.email || '', telefono: jugador?.telefono || '', categoria: jugador?.categoria || 'principiante' })
+    setContactoForm({
+      nombre: jugador?.nombre || '',
+      rut: jugador?.rut || '',
+      email: jugador?.email || '',
+      telefono: jugador?.telefono || '',
+      categoria: jugador?.categoria || 'principiante',
+    })
+    setDatosError('')
     setEditContacto(true)
   }
 
   async function guardarContacto() {
+    if (puedeEditar && !contactoForm.nombre.trim()) {
+      setDatosError('El nombre es obligatorio')
+      return
+    }
     setGuardandoDatos(true)
-    await supabase.from('jugadores').update({
+    setDatosError('')
+    const datos = {
+      ...(puedeEditar ? { nombre: contactoForm.nombre.trim(), rut: contactoForm.rut || null } : {}),
       email: contactoForm.email || null,
       telefono: contactoForm.telefono || null,
       categoria: contactoForm.categoria,
-    }).eq('id', jugadorId)
-    setJugador({ ...jugador, email: contactoForm.email || null, telefono: contactoForm.telefono || null, categoria: contactoForm.categoria })
+    }
+    const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
+    if (error) {
+      setDatosError('No se pudieron guardar los cambios')
+      setGuardandoDatos(false)
+      return
+    }
+    setJugador({ ...jugador, ...datos })
     setEditContacto(false)
     setGuardandoDatos(false)
   }
@@ -364,15 +385,28 @@ export default function JugadorDetallePage() {
             {editContacto ? (
               <div>
                 {puedeEditar && (
-                  <div style={{ marginBottom:8 }}>
-                    <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Categoría</label>
-                    <select style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
-                      value={contactoForm.categoria} onChange={e => setContactoForm(f => ({ ...f, categoria: e.target.value }))}>
-                      <option value="principiante">Principiante</option>
-                      <option value="intermedio">Intermedio</option>
-                      <option value="avanzado">Avanzado</option>
-                    </select>
-                  </div>
+                  <>
+                    <div style={{ marginBottom:8 }}>
+                      <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Nombre</label>
+                      <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                        value={contactoForm.nombre} onChange={e => setContactoForm(f => ({ ...f, nombre: e.target.value }))} />
+                    </div>
+                    <div style={{ marginBottom:8 }}>
+                      <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>RUT</label>
+                      <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                        placeholder="12.345.678-9" value={contactoForm.rut}
+                        onChange={e => setContactoForm(f => ({ ...f, rut: formatRut(e.target.value) }))} />
+                    </div>
+                    <div style={{ marginBottom:8 }}>
+                      <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Categoría</label>
+                      <select style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                        value={contactoForm.categoria} onChange={e => setContactoForm(f => ({ ...f, categoria: e.target.value }))}>
+                        <option value="principiante">Principiante</option>
+                        <option value="intermedio">Intermedio</option>
+                        <option value="avanzado">Avanzado</option>
+                      </select>
+                    </div>
+                  </>
                 )}
                 <div style={{ marginBottom:8 }}>
                   <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Email</label>
@@ -384,6 +418,7 @@ export default function JugadorDetallePage() {
                   <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
                     type="tel" placeholder="+56975235780" value={contactoForm.telefono} onChange={e => setContactoForm(f => ({ ...f, telefono: e.target.value }))} />
                 </div>
+                {datosError && <div style={{ fontSize:11, color:'#fecaca', marginBottom:8 }}>{datosError}</div>}
                 <div style={{ display:'flex', gap:6 }}>
                   <button onClick={() => setEditContacto(false)} style={{ flex:1, padding:'5px 0', background:'rgba(255,255,255,0.1)', border:'none', borderRadius:6, color:'#fff', fontSize:11, cursor:'pointer' }}>Cancelar</button>
                   <button onClick={guardarContacto} disabled={guardandoDatos} style={{ flex:1, padding:'5px 0', background:'#f43f5e', border:'none', borderRadius:6, color:'white', fontSize:11, fontWeight:600, cursor:'pointer' }}>
