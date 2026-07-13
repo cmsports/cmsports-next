@@ -82,6 +82,7 @@ export default function TorneoDetallePage() {
   // display:none React lo reconcilía igual en cada re-render y reventaba la
   // pestaña por memoria al marcar. Con este flag el SVG ni entra al árbol.
   const [isMobile, setIsMobile] = useState(false)
+  const [torneosActivos, setTorneosActivos] = useState<{ id: string; nombre: string; fase: string }[]>([])
   const sincronizandoRef = useRef(false)
   const ultimaSyncRef = useRef('')
   const marcandoRef = useRef(false)
@@ -133,6 +134,12 @@ export default function TorneoDetallePage() {
     // de PerfilProvider crea un objeto nuevo y recargaba el torneo dos veces.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, perfil?.id, torneoId])
+
+  useEffect(() => {
+    if (!perfil?.club_id) return
+    supabase.from('torneos').select('id,nombre,fase').eq('club_id', perfil.club_id).eq('estado', 'en_curso').order('fecha_inicio', { ascending: false })
+      .then(({ data }) => setTorneosActivos(data || []))
+  }, [perfil?.club_id, torneoId])
 
   useEffect(() => {
     if (torneo?.fase && (fasesOrden as readonly string[]).includes(torneo.fase)) {
@@ -476,7 +483,7 @@ export default function TorneoDetallePage() {
             Archivar
           </button>
         )}
-        <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0 }}>{torneo?.nombre}</h1>
+        <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0, flex:'1 1 auto' }}>{torneo?.nombre}</h1>
         <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseLabel[faseActual] || faseActual}</span>
         {torneo?.codigo && (
           <button
@@ -523,6 +530,20 @@ export default function TorneoDetallePage() {
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
         )}
       </div>
+
+      {/* Switcher de torneos activos */}
+      {torneosActivos.length > 1 && (
+        <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
+          <span style={{ fontSize:11, color: hint, marginRight:4 }}>Torneos activos:</span>
+          {torneosActivos.map(ta => (
+            <button key={ta.id} onClick={() => { if (ta.id !== torneoId) router.push(`/torneos/${ta.id}`) }}
+              style={{ padding:'5px 12px', borderRadius:8, border: ta.id === torneoId ? '2px solid #4f46e5' : '1px solid #e2e8f0', background: ta.id === torneoId ? '#ede9fe' : '#f8fafc', color: ta.id === torneoId ? '#4f46e5' : muted, fontSize:12, fontWeight: ta.id === torneoId ? 600 : 400, cursor: ta.id === torneoId ? 'default' : 'pointer' }}>
+              {ta.nombre}
+              <span style={{ marginLeft:6, fontSize:10, opacity:0.7 }}>{faseLabel[ta.fase] || ta.fase}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Control financiero */}
       {esAdmin && cuota > 0 && (
