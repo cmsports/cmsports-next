@@ -246,7 +246,7 @@ export default function TorneosPage() {
                     <button
                       onClick={async e => {
                         e.stopPropagation()
-                        if (!confirm(`¿Borrar definitivamente "${t.nombre}"?\n\nEsto elimina el torneo, grupos, partidos, pagos, historial ELO y movimientos asociados en Finanzas.`)) return
+                        if (!confirm(`¿Borrar definitivamente "${t.nombre}"?\n\nEsto elimina el torneo, grupos, partidos, pagos y movimientos asociados en Finanzas.`)) return
                         const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
                         if (res.error) { alert(res.error); return }
                         await cargarTorneos()

@@ -31,7 +31,6 @@ const navProfesor = [
   { section: 'Principal' },
   { label: 'Dashboard',  icon: LayoutDashboard, href: '/dashboard-profesor' },
   { label: 'Jugadores',  icon: Users,           href: '/jugadores' },
-  { label: 'Ranking',    icon: BarChart2,       href: '/ranking' },
   { section: 'Gestión' },
   { label: 'Mis clases', icon: BookOpen,        href: '/clases' },
   { label: 'Calendario', icon: Calendar,        href: '/calendario' },
@@ -49,7 +48,6 @@ const navJugador = [
   { label: 'Mis clases',          icon: BookOpen,      href: '/mis-clases' },
   { label: 'Torneos externos',    icon: Globe,         href: '/torneos-externos' },
   { label: 'Calendario',          icon: Calendar,      href: '/calendario' },
-  { label: 'Ranking',             icon: BarChart2,     href: '/ranking' },
   { section: 'Tienda' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda' },
 ]

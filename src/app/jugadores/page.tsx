@@ -42,11 +42,8 @@ export default function JugadoresPage() {
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
   const searchParams = useSearchParams()
-  const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia'
-    : searchParams.get('tab') === 'ranking' ? 'ranking'
-    : 'jugadores'
-  const [tabJug, setTabJug] = useState<'jugadores'|'ranking'|'asistencia'>(tabInicial)
-  const [busquedaRanking, setBusquedaRanking] = useState('')
+  const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia' : 'jugadores'
+  const [tabJug, setTabJug] = useState<'jugadores'|'asistencia'>(tabInicial)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -155,7 +152,7 @@ export default function JugadoresPage() {
     const { utils, writeFile } = await import('xlsx')
     const datos = filtrados.map(j => ({
       'Nombre': j.nombre, 'RUT': j.rut || '', 'Email': j.email || '', 'Teléfono': j.telefono || '',
-      'Categoría': j.categoria, 'Ranking': j.elo, 'Sesiones usadas': j.sesiones_usadas,
+      'Categoría': j.categoria, 'Sesiones usadas': j.sesiones_usadas,
       'Sesiones límite': j.sesiones_limite, 'Estado': j.estado
     }))
     const ws = utils.json_to_sheet(datos)
@@ -165,8 +162,6 @@ export default function JugadoresPage() {
   }
 
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
-  const rankingOrdenado = [...jugadores].sort((a, b) => (b.elo || 0) - (a.elo || 0))
-  const posicionRanking = new Map(rankingOrdenado.map((j, i) => [j.id, i + 1]))
   const esAdmin = perfil?.rol === 'admin'
 
   if (loading) return (
@@ -193,7 +188,7 @@ export default function JugadoresPage() {
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:16 }}>
-        {[{key:'jugadores',label:'Jugadores'},{key:'ranking',label:'Ranking'},{key:'asistencia',label:'📋 Asistencia'}].map(t => (
+        {[{key:'jugadores',label:'Jugadores'},{key:'asistencia',label:'📋 Asistencia'}].map(t => (
           <div key={t.key} onClick={() => setTabJug(t.key as any)}
             style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#ffffff':'transparent', color:tabJug===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabJug===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {t.label}
@@ -203,49 +198,6 @@ export default function JugadoresPage() {
 
       {/* TAB ASISTENCIA */}
       {tabJug === 'asistencia' && <AsistenciaPanel perfil={perfil} />}
-
-      {/* TAB RANKING */}
-      {tabJug === 'ranking' && (
-        <div>
-          <div style={{ marginBottom:12 }}>
-            <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-              placeholder="Buscar jugador en el ranking..."
-              value={busquedaRanking} onChange={e => setBusquedaRanking(e.target.value)} />
-          </div>
-          <div style={{ ...card, overflow:'hidden' }}>
-            {rankingOrdenado.filter(j => !busquedaRanking || j.nombre.toLowerCase().includes(busquedaRanking.toLowerCase()))
-              .map((j) => {
-                const posicion = posicionRanking.get(j.id) || 0
-                const esAdmin = perfil?.rol === 'admin'
-                const esProfesor = perfil?.rol === 'profesor'
-                const esPropio = perfil?.jugador_id === j.id
-                const puedeVer = esAdmin || esProfesor || esPropio
-                return (
-                  <div key={j.id}
-                    onClick={() => puedeVer && router.push(`/jugadores/${j.id}`)}
-                    style={{ display:'flex', alignItems:'center', gap:14, padding:'12px 16px', borderBottom:'1px solid #f1f5f9', cursor: puedeVer ? 'pointer' : 'default', transition:'background 0.1s' }}
-                    onMouseEnter={e => { if (puedeVer) (e.currentTarget as HTMLDivElement).style.background = '#f8fafc' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent' }}
-                  >
-                    <div style={{ width:32, textAlign:'center', fontSize:14, fontWeight:700, color: posicion===1?'#d97706':posicion===2?'#64748b':posicion===3?'#f43f5e': hint }}>
-                      {posicion<=3 ? ['🥇','🥈','🥉'][posicion-1] : posicion}
-                    </div>
-                    <div style={{ width:36, height:36, borderRadius:'50%', background:'#ede9fe', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'#3730a3', flexShrink:0 }}>
-                      {j.nombre.split(' ').map((n:string)=>n[0]).join('').slice(0,2)}
-                    </div>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, color: text, fontWeight:500 }}>{j.nombre}</div>
-                      <div style={{ fontSize:11, color: muted }}>{j.categoria}</div>
-                    </div>
-                    <div style={{ fontSize:18, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</div>
-                    {puedeVer && <div style={{ fontSize:14, color: hint }}>›</div>}
-                  </div>
-                )
-              })
-            }
-          </div>
-        </div>
-      )}
 
       {/* TAB JUGADORES */}
       {tabJug === 'jugadores' && <>
@@ -264,7 +216,7 @@ export default function JugadoresPage() {
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
               <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-                {['#','Nombre','RUT','Categoría','Sesiones','Ranking','Estado',''].map(h => (
+                {['#','Nombre','RUT','Categoría','Sesiones','Estado',''].map(h => (
                   <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -283,7 +235,6 @@ export default function JugadoresPage() {
                       </span>
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite}</td>
-                    <td style={{ padding:'12px 16px', fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</td>
                     <td style={{ padding:'12px 16px' }}>
                       <span style={{ background: j.estado === 'activo' ? '#f0fdf4' : '#fef2f2', color: j.estado === 'activo' ? '#16a34a' : '#dc2626', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
                         {j.estado === 'activo' ? '✅ Activo' : '🚫 Bloqueado'}
@@ -320,13 +271,10 @@ export default function JugadoresPage() {
           const cat = badgeCategoria[j.categoria] || { bg: '#f4f7fa', color: muted }
           return (
             <div key={j.id} style={{ ...card, padding:14 }}>
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, marginBottom:10 }}>
-                <div>
-                  <div style={{ fontSize:11, color: hint, marginBottom:2 }}>{String(i+1).padStart(3,'0')}</div>
-                  <div style={{ fontSize:15, fontWeight:600, color: text }}>{j.nombre}</div>
-                  <div style={{ fontSize:12, color: muted, marginTop:2 }}>{j.rut || '—'}</div>
-                </div>
-                <div style={{ fontSize:18, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</div>
+              <div style={{ marginBottom:10 }}>
+                <div style={{ fontSize:11, color: hint, marginBottom:2 }}>{String(i+1).padStart(3,'0')}</div>
+                <div style={{ fontSize:15, fontWeight:600, color: text }}>{j.nombre}</div>
+                <div style={{ fontSize:12, color: muted, marginTop:2 }}>{j.rut || '—'}</div>
               </div>
               <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:12 }}>
                 <span style={{ background: cat.bg, color: cat.color, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{j.categoria}</span>

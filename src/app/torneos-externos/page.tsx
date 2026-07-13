@@ -97,7 +97,7 @@ export default function TorneosExternosPage() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <div>
           <h1 style={{ fontSize:20, fontWeight:600, color: text, marginBottom:4 }}>Torneos externos</h1>
-          <p style={{ fontSize:13, color: muted }}>Registra torneos fuera del club y suma ELO</p>
+          <p style={{ fontSize:13, color: muted }}>Registra torneos fuera del club</p>
         </div>
         {perfil?.jugador_id && (
           <button onClick={() => { setModalOpen(true); setForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
@@ -107,18 +107,12 @@ export default function TorneosExternosPage() {
         )}
       </div>
 
-      {/* Total ELO */}
-      <div style={{ ...card, padding:20, marginBottom:16, textAlign:'center' }}>
-        <div style={{ fontSize:12, color: muted, marginBottom:4 }}>Ranking ganado en torneos externos</div>
-        <div style={{ fontSize:36, fontWeight:800, color:'#4f46e5', fontFamily:'monospace' }}>+{totalElo}</div>
-      </div>
-
       {/* Lista */}
       {externos.length === 0 ? (
         <div style={{ ...card, padding:40, textAlign:'center' }}>
           <div style={{ fontSize:40, marginBottom:12 }}>🌎</div>
           <div style={{ fontSize:14, color: text, marginBottom:8 }}>Sin torneos externos aún</div>
-          <div style={{ fontSize:13, color: muted }}>Registra tus torneos fuera del club para sumar puntos de ranking</div>
+          <div style={{ fontSize:13, color: muted }}>Registra tus torneos fuera del club</div>
         </div>
       ) : externos.map(t => (
         <div key={t.id} style={{ ...card, padding:16, marginBottom:10 }}>
@@ -131,8 +125,7 @@ export default function TorneosExternosPage() {
               </span>
             </div>
             <div style={{ textAlign:'right' }}>
-              <div style={{ fontSize:24, fontWeight:800, color:'#4f46e5', fontFamily:'monospace' }}>+{t.puntos_elo}</div>
-              <div style={{ fontSize:10, color: muted }}>Ranking</div>
+              <div style={{ fontSize:12, color: muted }}>{POSICION_LABEL[t.posicion] || t.posicion}</div>
             </div>
           </div>
         </div>
@@ -184,11 +177,6 @@ export default function TorneosExternosPage() {
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 type="date" value={form.fecha} onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} />
-            </div>
-
-            <div style={{ background:'#f4f7fa', borderRadius:10, padding:14, marginBottom:20, textAlign:'center' }}>
-              <div style={{ fontSize:12, color: muted, marginBottom:4 }}>Puntos ELO a ganar</div>
-              <div style={{ fontSize:28, fontWeight:800, color:'#4f46e5', fontFamily:'monospace' }}>+{puntosPreview}</div>
             </div>
 
             <div style={{ display:'flex', gap:10 }}>

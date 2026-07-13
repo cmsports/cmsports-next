@@ -1406,7 +1406,7 @@ export default function TorneoDetallePage() {
                       ;(window as any).__jugSuggestions = []
                     }} style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:13 }}>
                       <span style={{ color: text }}>{j.nombre}</span>
-                      <span style={{ color: muted, fontSize:11, marginLeft:8 }}>ELO {j.elo} · {j.categoria}</span>
+                      <span style={{ color: muted, fontSize:11, marginLeft:8 }}>{j.categoria}</span>
                       <span style={{ background:'#f0fdf4', color:'#16a34a', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
                     </div>
                   ))}
@@ -1442,7 +1442,7 @@ export default function TorneoDetallePage() {
                     <span style={{ fontSize:12, color: muted, width:20 }}>{i+1}</span>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text, fontWeight:500 }}>{j.jugadores?.nombre||'—'}</div>
-                      <div style={{ fontSize:11, color: muted }}>ELO: {j.jugadores?.elo||1200}</div>
+                      <div style={{ fontSize:11, color: muted }}>{j.jugadores?.categoria || ''}</div>
                     </div>
                     {/* Cabeza de serie */}
                     <button

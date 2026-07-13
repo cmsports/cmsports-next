@@ -232,9 +232,9 @@ export default function ReportesPage() {
 
     autoTable(doc, {
       startY: y,
-      head: [['Nombre', 'Categoría', 'ELO', 'Sesiones', 'Estado']],
-      body: preview.activos.sort((a: any, b: any) => b.elo - a.elo).map((j: any) => [
-        j.nombre, j.categoria, j.elo, `${j.sesiones_usadas}/${j.sesiones_limite}`, j.estado
+      head: [['Nombre', 'Categoría', 'Sesiones', 'Estado']],
+      body: preview.activos.sort((a: any, b: any) => a.nombre.localeCompare(b.nombre)).map((j: any) => [
+        j.nombre, j.categoria, `${j.sesiones_usadas}/${j.sesiones_limite}`, j.estado
       ]),
       theme: 'striped',
       headStyles: { fillColor: [14, 165, 233] },
@@ -425,16 +425,6 @@ export default function ReportesPage() {
             </div>
           </div>
 
-          <div style={{ ...card, padding:16 }}>
-            <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Top 5 ELO</div>
-            {preview.activos.sort((a: any, b: any) => b.elo - a.elo).slice(0,5).map((j: any, i: number) => (
-              <div key={j.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid #f1f5f9' }}>
-                <span style={{ fontSize:16 }}>{i < 3 ? ['🥇','🥈','🥉'][i] : i+1}</span>
-                <span style={{ flex:1, fontSize:13, color: text }}>{j.nombre}</span>
-                <span style={{ fontSize:15, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>{j.elo}</span>
-              </div>
-            ))}
-          </div>
         </div>
       )}
     </AppLayout>

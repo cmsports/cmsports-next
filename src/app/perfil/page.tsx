@@ -351,11 +351,7 @@ export default function PerfilPage() {
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-          <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '10px', textAlign: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', fontFamily: 'monospace' }}>{jugador.elo}</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Ranking</div>
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10 }}>
           <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '10px', textAlign: 'center' }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: '#fff', fontFamily: 'monospace' }}>{torneosTotal}</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Torneos</div>
@@ -455,55 +451,6 @@ export default function PerfilPage() {
         </div>
       )}
 
-      {/* Curva de ELO */}
-      {eloLabels.length > 1 && (
-        <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 12 }}>Curva de ranking</div>
-          <Line
-            data={{
-              labels: eloLabels,
-              datasets: [{
-                label: 'ELO',
-                data: eloData,
-                borderColor: '#4f46e5',
-                backgroundColor: '#4f46e518',
-                tension: 0.3,
-                fill: true,
-                pointBackgroundColor: '#4f46e5',
-                pointBorderColor: '#4f46e5',
-                pointRadius: 5,
-                pointHoverRadius: 8,
-              }]
-            }}
-            options={{
-              responsive: true,
-              plugins: {
-                legend: { display: false },
-                tooltip: {
-                  backgroundColor: '#ffffff',
-                  titleColor: '#3730a3',
-                  bodyColor: text,
-                  borderColor: '#e2e8f0',
-                  borderWidth: 1,
-                  callbacks: {
-                    title: (items) => eloNombres[items[0].dataIndex] || '',
-                    label: (item) => {
-                      const pos = eloTooltips[item.dataIndex]
-                      const lines = [`ELO: ${item.raw}`]
-                      if (pos) lines.push(`Posición: ${POSICION_LABEL[pos] || pos}`)
-                      return lines
-                    }
-                  }
-                }
-              },
-              scales: {
-                x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: '#f1f5f9' } },
-                y: { ticks: { color: muted }, grid: { color: '#f1f5f9' } }
-              }
-            }}
-          />
-        </div>
-      )}
 
       {/* Últimas asistencias */}
       <div style={{ ...card, overflow: 'hidden' }}>
@@ -654,7 +601,6 @@ function TorneoEnVivoBanner({ torneo, miGrupo, grupos, misPartidos, jugadorId, y
                           {m.jugadores?.nombre || '—'}
                           {m.jugador_id === jugadorId && <span style={{ marginLeft: 6, fontSize: 10, color: '#4f46e5', fontWeight: 500 }}>(tú)</span>}
                         </span>
-                        <span style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace' }}>{m.jugadores?.elo || '—'}</span>
                       </div>
                     ))}
                   </div>
@@ -679,7 +625,6 @@ function TorneoEnVivoBanner({ torneo, miGrupo, grupos, misPartidos, jugadorId, y
                         {g.miembros.map((m: any) => (
                           <div key={m.jugador_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
                             <span style={{ flex: 1, color: '#334155' }}>{m.jugadores?.nombre || '—'}</span>
-                            <span style={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: 11 }}>{m.jugadores?.elo || '—'}</span>
                           </div>
                         ))}
                       </div>

@@ -74,7 +74,7 @@ export default function LoginPage() {
           <div style={{ marginTop: 48, display: 'flex', flexDirection: 'column', gap: 16 }}>
             {[
               { icon: '🏓', text: 'Gestión de jugadores y categorías' },
-              { icon: '🏆', text: 'Torneos y ranking ELO automatizado' },
+              { icon: '🏆', text: 'Torneos y competencias automatizadas' },
               { icon: '📊', text: 'Finanzas y mensualidades en tiempo real' },
             ].map((item, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}>

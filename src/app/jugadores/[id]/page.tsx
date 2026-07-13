@@ -308,7 +308,7 @@ export default function JugadorDetallePage() {
             <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
               {jugador.es_externo && (
                 <button onClick={async () => {
-                  if (!confirm('¿Agregar este jugador al club? Aparecerá en la lista de jugadores, ranking y mensualidades.')) return
+                  if (!confirm('¿Agregar este jugador al club? Aparecerá en la lista de jugadores y mensualidades.')) return
                   await supabase.from('jugadores').update({ es_externo: false, sesiones_limite: 12, estado: 'activo' }).eq('id', jugadorId)
                   setJugador({ ...jugador, es_externo: false })
                 }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
@@ -340,11 +340,7 @@ export default function JugadorDetallePage() {
             )}
           </div>
         )}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10 }}>
-          <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
-            <div style={{ fontSize:22, fontWeight:800, color:'#fff', fontFamily:'monospace' }}>{jugador.elo}</div>
-            <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Ranking</div>
-          </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:10 }}>
           <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
             <div style={{ fontSize:22, fontWeight:800, color:'#fff', fontFamily:'monospace' }}>{torneosTotal}</div>
             <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Torneos</div>
@@ -502,95 +498,6 @@ export default function JugadorDetallePage() {
       {/* Tab 0 — Competencia */}
       {tab === 0 && (
         <div>
-          <div style={{ ...card, padding:16, marginBottom:16 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-              <div style={{ fontSize:13, fontWeight:600, color: text }}>Curva de ranking</div>
-              {puedeEditar && eloLabels.length > 1 && (
-                <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:12, color: muted }}>
-                  <input type="checkbox" checked={mostrarAsistencia} onChange={e => setMostrarAsistencia(e.target.checked)} style={{ accentColor:'#4f46e5' }} />
-                  Ver asistencia
-                </label>
-              )}
-            </div>
-            {eloLabels.length > 1 && (
-              <div style={{ display:'flex', gap:14, marginBottom:12 }}>
-                <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color: muted }}>
-                  <span style={{ width:9, height:9, borderRadius:'50%', background:'#3730a3', display:'inline-block' }} />
-                  Torneo interno
-                </span>
-                <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color: muted }}>
-                  <span style={{ width:9, height:9, borderRadius:'50%', background:'#0F6E56', display:'inline-block' }} />
-                  Torneo externo
-                </span>
-              </div>
-            )}
-            {eloLabels.length > 1 ? (
-              <Line
-                data={{
-                  labels: eloLabels,
-                  datasets: (() => {
-                    const ds: any[] = [{
-                      label: 'ELO',
-                      data: eloData,
-                      borderColor: '#4f46e5',
-                      backgroundColor: '#4f46e518',
-                      tension: 0.3,
-                      fill: true,
-                      pointBackgroundColor: eloColores,
-                      pointBorderColor: eloColores,
-                      pointRadius: 6,
-                      pointHoverRadius: 9,
-                      yAxisID: 'y'
-                    }]
-                    if (mostrarAsistencia) ds.push({
-                      label: 'Asistencias',
-                      data: asistData,
-                      type: 'bar',
-                      backgroundColor: '#16a34a33',
-                      borderColor: '#16a34a',
-                      borderWidth: 1,
-                      yAxisID: 'y2'
-                    })
-                    return ds
-                  })()
-                }}
-                options={{
-                  responsive: true,
-                  interaction: { mode: 'index', intersect: false },
-                  plugins: {
-                    legend: { display: mostrarAsistencia, labels: { color: muted, font: { size: 11 } } },
-                    tooltip: {
-                      backgroundColor: '#ffffff',
-                      titleColor: '#3730a3',
-                      bodyColor: text,
-                      borderColor: '#e2e8f0',
-                      borderWidth: 1,
-                      callbacks: {
-                        title: (items) => eloNombres[items[0].dataIndex] || '',
-                        label: (item) => {
-                          if (item.dataset.label !== 'ELO') return `Asistencias: ${item.raw}`
-                          const pos = eloTooltips[item.dataIndex]
-                          const lines = [`ELO: ${item.raw}`]
-                          if (pos) lines.push(`Posición: ${POSICION_LABEL[pos] || pos}`)
-                          return lines
-                        }
-                      }
-                    }
-                  },
-                  scales: {
-                    x: { ticks: { color: muted, maxTicksLimit: 8 }, grid: { color: '#f1f5f9' } },
-                    y: { ticks: { color: muted }, grid: { color: '#f1f5f9' } },
-                    ...(mostrarAsistencia ? { y2: { position: 'right' as const, ticks: { color: '#16a34a' }, grid: { display: false } } } : {})
-                  }
-                }}
-              />
-            ) : (
-              <div style={{ textAlign:'center', padding:20 }}>
-                <div style={{ fontSize:13, color: muted }}>Ranking inicial: <strong style={{ color:'#4f46e5' }}>{jugador.elo}</strong></div>
-                <div style={{ fontSize:12, color: hint, marginTop:6 }}>El gráfico se completará con los torneos</div>
-              </div>
-            )}
-          </div>
 
           {/* Partidos */}
           <div style={{ ...card, overflow:'hidden', marginBottom:16 }}>
@@ -634,8 +541,7 @@ export default function JugadorDetallePage() {
                     <div style={{ fontSize:11, color: muted }}>{t.fecha} · {CAT_LABEL[t.categoria] || t.categoria}</div>
                   </div>
                   <div style={{ textAlign:'right' }}>
-                    <div style={{ fontSize:16, fontWeight:700, color:'#4f46e5', fontFamily:'monospace' }}>+{t.puntos_elo}</div>
-                    <div style={{ fontSize:10, color: muted }}>{POSICION_LABEL[t.posicion] || t.posicion}</div>
+                    <div style={{ fontSize:12, color: muted }}>{POSICION_LABEL[t.posicion] || t.posicion}</div>
                   </div>
                 </div>
               ))
@@ -766,11 +672,6 @@ export default function JugadorDetallePage() {
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 type="date" value={externoForm.fecha} onChange={e => setExternoForm(f => ({ ...f, fecha: e.target.value }))} />
-            </div>
-
-            <div style={{ background:'#f4f7fa', borderRadius:10, padding:14, marginBottom:20, textAlign:'center' }}>
-              <div style={{ fontSize:12, color: muted, marginBottom:4 }}>Puntos ELO a ganar</div>
-              <div style={{ fontSize:28, fontWeight:800, color:'#4f46e5', fontFamily:'monospace' }}>+{puntosExternoPreview}</div>
             </div>
 
             <div style={{ display:'flex', gap:10 }}>
