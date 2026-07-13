@@ -382,7 +382,7 @@ function FinanzasContent() {
 
       {/* TAB MENSUALIDADES */}
       <div style={{ display: tabActivo === 'mensualidades' ? 'block' : 'none' }}>
-        {mensualidadesVista && <MensualidadesPanel onPagoRegistrado={() => cargarMovimientos()} />}
+        {mensualidadesVista && <MensualidadesPanel mes={mes} anio={anio} onPagoRegistrado={() => cargarMovimientos()} />}
       </div>
 
       {/* TAB REPORTES */}

@@ -14,13 +14,16 @@ const hint = '#94a3b8'
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-export function MensualidadesPanel({ onPagoRegistrado }: { onPagoRegistrado?: () => void } = {}) {
+export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioProp }: { onPagoRegistrado?: () => void; mes?: number; anio?: number } = {}) {
   const { perfil } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [mensualidades, setMensualidades] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [mes, setMes] = useState(new Date().getMonth() + 1)
-  const [anio, setAnio] = useState(new Date().getFullYear())
+  const [mesLocal, setMesLocal] = useState(new Date().getMonth() + 1)
+  const [anioLocal, setAnioLocal] = useState(new Date().getFullYear())
+  const mes = mesProp ?? mesLocal
+  const anio = anioProp ?? anioLocal
+  const tienePropsExternos = mesProp !== undefined
   const [modalPago, setModalPago] = useState<any>(null)
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [montoPago, setMontoPago] = useState('25000')
@@ -55,8 +58,8 @@ export function MensualidadesPanel({ onPagoRegistrado }: { onPagoRegistrado?: ()
     let nuevoAnio = anio
     if (nuevoMes > 12) { nuevoMes = 1; nuevoAnio++ }
     if (nuevoMes < 1) { nuevoMes = 12; nuevoAnio-- }
-    setMes(nuevoMes)
-    setAnio(nuevoAnio)
+    setMesLocal(nuevoMes)
+    setAnioLocal(nuevoAnio)
   }
 
   async function marcarPagado(jugadorId: string, mensId: string) {
@@ -157,11 +160,13 @@ export function MensualidadesPanel({ onPagoRegistrado }: { onPagoRegistrado?: ()
     <div>
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button onClick={() => cambiarMes(-1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>◀</button>
-          <span style={{ fontSize:16, fontWeight:600, color: text, minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
-          <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
-        </div>
+        {!tienePropsExternos && (
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <button onClick={() => cambiarMes(-1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>◀</button>
+            <span style={{ fontSize:16, fontWeight:600, color: text, minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
+            <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
+          </div>
+        )}
         <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📊 Exportar Excel</button>
       </div>
 
