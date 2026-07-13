@@ -36,6 +36,8 @@ export default function TorneosPage() {
       if (cached) {
         setTorneos(cached)
         setLoading(false)
+      } else {
+        setTorneos([])
       }
       cargarTorneos(perfil.club_id).then(() => setLoading(false))
     } else {
@@ -170,7 +172,7 @@ export default function TorneosPage() {
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           {esAdmin && (
             <button
-              onClick={() => setMostrarArchivados(v => !v)}
+              onClick={() => { if (clubId) { delete torneosCache[`${clubId}:activos`]; delete torneosCache[`${clubId}:archivados`] } setMostrarArchivados(v => !v) }}
               style={{ background:mostrarArchivados ? '#ede9fe' : '#ffffff', color:mostrarArchivados ? '#3730a3' : muted, border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }}
             >
               {mostrarArchivados ? 'Ver activos' : 'Ver archivados'}
