@@ -129,7 +129,7 @@ export default function FinanzasSuperadminPage() {
                       </div>
                     ) : (
                       <span onClick={() => { setEditandoPlan(c.id); setPlanValor(String(c.plan_mensual || 0)) }} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                        {formatCLP(c.plan_mensual || 0)} <Pencil size={11} color="#94a3b8" />
+                        {c.plan_mensual > 0 ? formatCLP(c.plan_mensual) : 'Por definir'} <Pencil size={11} color="#94a3b8" />
                       </span>
                     )}
                   </td>

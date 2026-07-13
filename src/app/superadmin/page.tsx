@@ -22,7 +22,6 @@ const MODULOS_OPCIONALES = [
   { key: 'asistencia', label: 'Asistencia' },
   { key: 'mensualidades', label: 'Mensualidades' },
   { key: 'finanzas', label: 'Finanzas' },
-  { key: 'elo', label: 'ELO / Ranking' },
   { key: 'redes', label: 'Redes Sociales' },
   { key: 'tienda', label: 'Tienda' },
 ] as const
@@ -34,17 +33,21 @@ export default function SuperadminPage() {
   const { refetchPerfil } = usePerfil()
   const { clubes, conteos, loading, recargar } = useClubesSuperadmin()
   const [modalOpen, setModalOpen] = useState(false)
-  const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
+  const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '', adminNombre: '', adminEmail: '', passwordProvisoria: '' })
   const [modulosForm, setModulosForm] = useState<string[]>([...TODOS_MODULOS])
   const [guardando, setGuardando] = useState(false)
   const [gestionandoId, setGestionandoId] = useState<string | null>(null)
-  const [editModulosClub, setEditModulosClub] = useState<any>(null)
+  const [editModulosClub, setEditModulosClub] = useState<{ id: string; nombre: string; modulos_habilitados: string[] | null } | null>(null)
   const [editModulos, setEditModulos] = useState<string[]>([])
   const [guardandoModulos, setGuardandoModulos] = useState(false)
+  const [errorCrear, setErrorCrear] = useState('')
+  const [mensajeExito, setMensajeExito] = useState('')
   const router = useRouter()
 
   async function handleCrearClub() {
     if (!form.nombre.trim()) return
+    setErrorCrear('')
+    setMensajeExito('')
     setGuardando(true)
     const res = await crearClub({
       nombre: form.nombre,
@@ -52,12 +55,16 @@ export default function SuperadminPage() {
       deporte: form.deporte,
       planMensual: Number(form.planMensual) || 0,
       modulos: modulosForm,
+      adminNombre: form.adminNombre,
+      adminEmail: form.adminEmail,
+      passwordProvisoria: form.passwordProvisoria,
     })
     setGuardando(false)
-    if (res?.error) return
+    if (res?.error) { setErrorCrear(res.error); return }
     setModalOpen(false)
-    setForm({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
+    setForm({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '', adminNombre: '', adminEmail: '', passwordProvisoria: '' })
     setModulosForm([...TODOS_MODULOS])
+    setMensajeExito('Club creado y correo de bienvenida enviado al administrador.')
     await recargar()
   }
 
@@ -115,6 +122,12 @@ export default function SuperadminPage() {
         </button>
       </div>
 
+      {mensajeExito && (
+        <div style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px', fontSize: 12, marginBottom: 16 }}>
+          {mensajeExito}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 22 }}>
         {[
           { label: 'Clubes activos', value: clubes.length, icon: Building2, color: '#4f46e5' },
@@ -151,7 +164,10 @@ export default function SuperadminPage() {
               {conteos[c.id] ?? 0} jugador{(conteos[c.id] ?? 0) === 1 ? '' : 'es'}
             </div>
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
-              Plan: {formatCLP(c.plan_mensual || 0)}/mes
+              {c.plan_mensual > 0 ? `Plan: ${formatCLP(c.plan_mensual)}/mes` : 'Plan por definir'}
+              <span style={{ color: c.estado_pago === 'pagado' ? '#16a34a' : c.estado_pago === 'atrasado' ? '#dc2626' : '#d97706' }}>
+                {' · '}{c.estado_pago === 'pagado' ? 'Pago al día' : c.estado_pago === 'atrasado' ? 'Pago atrasado' : 'Pago pendiente'}
+              </span>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => gestionarClub(c.id)} disabled={gestionandoId === c.id} style={{
@@ -191,9 +207,27 @@ export default function SuperadminPage() {
               <input placeholder="Deporte" value={form.deporte}
                 onChange={e => setForm({ ...form, deporte: e.target.value })}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
-              <input placeholder="Plan mensual (CLP)" type="number" value={form.planMensual}
-                onChange={e => setForm({ ...form, planMensual: e.target.value })}
-                style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 5 }}>Plan mensual (opcional)</div>
+                <input placeholder="Déjalo vacío para definirlo después" type="number" min="0" value={form.planMensual}
+                  onChange={e => setForm({ ...form, planMensual: e.target.value })}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>El club se crea con pago pendiente. Puedes definir o editar el monto posteriormente en Finanzas.</div>
+              </div>
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10, marginTop: 2 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>Administrador del club</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input placeholder="Nombre del administrador" value={form.adminNombre}
+                    onChange={e => setForm({ ...form, adminNombre: e.target.value })}
+                    style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+                  <input placeholder="Correo del administrador" type="email" value={form.adminEmail}
+                    onChange={e => setForm({ ...form, adminEmail: e.target.value })}
+                    style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+                  <input placeholder="Contraseña provisoria (mínimo 8 caracteres)" type="password" value={form.passwordProvisoria}
+                    onChange={e => setForm({ ...form, passwordProvisoria: e.target.value })}
+                    style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+                </div>
+              </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 6 }}>Módulos</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
@@ -207,6 +241,11 @@ export default function SuperadminPage() {
                 </div>
               </div>
             </div>
+            {errorCrear && (
+              <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '8px 10px', fontSize: 12, marginTop: 12 }}>
+                {errorCrear}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => setModalOpen(false)} style={{
                 flex: 1, padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
