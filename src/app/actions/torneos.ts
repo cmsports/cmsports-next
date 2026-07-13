@@ -8,6 +8,7 @@ import {
   siguienteFase,
   construirLlavesLayout,
   calcularNumGrupos,
+  calcularNumGruposTardios,
   calcularStatsGrupo,
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
@@ -93,6 +94,7 @@ async function propagarGanadorPlayoff(
   supabase: AdminSupabase,
   partido: { torneo_id: string | null; fase: string | null; orden: number | null },
   ganadorId: string,
+  actualizarFase = true,
 ) {
   if (!partido.torneo_id || !partido.fase || partido.fase === 'grupos') return
   const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
@@ -128,7 +130,9 @@ async function propagarGanadorPlayoff(
     })
   }
 
-  await supabase.from('torneos').update({ fase: faseSiguiente }).eq('id', partido.torneo_id)
+  if (actualizarFase) {
+    await supabase.from('torneos').update({ fase: faseSiguiente }).eq('id', partido.torneo_id)
+  }
 }
 
 export async function corregirResultadoGrupos(params: { partidoId: string; nuevoGanadorId: string }) {
@@ -286,6 +290,14 @@ export async function actualizarCabezasSerie(params: {
   const { torneoId, cabezaSerie1, cabezaSerie2 } = params
   if (cabezaSerie1 && cabezaSerie2 && cabezaSerie1 === cabezaSerie2) {
     return { error: 'Los cabezas de serie 1° y 2° deben ser jugadores distintos' }
+  }
+
+  const { data: llaves } = await supabase.from('torneo_partidos')
+    .select('ganador,jugador_b')
+    .eq('torneo_id', torneoId)
+    .neq('fase', 'grupos')
+  if (llaves?.some(llaveFueJugada)) {
+    return { error: 'No se pueden cambiar los cabezas de serie porque el bracket ya tiene partidos jugados' }
   }
 
   const { error } = await supabase.from('torneos')
@@ -625,6 +637,21 @@ export async function sincronizarLlaves(params: {
     await supabase.from('torneos').update({ fase: layout.faseInicial, estado: 'en_curso' }).eq('id', torneoId)
   }
 
+  // Los BYE ya tienen ganador automático. Al cerrar todos los grupos deben
+  // ocupar su slot de la fase siguiente igual que un ganador manual.
+  if (todosCompletos) {
+    const { data: rondaInicial } = await supabase.from('torneo_partidos')
+      .select('torneo_id,fase,orden,ganador,jugador_b')
+      .eq('torneo_id', torneoId)
+      .eq('fase', layout.faseInicial)
+      .order('orden')
+    for (const partido of rondaInicial || []) {
+      if (partido.ganador && !partido.jugador_b) {
+        await propagarGanadorPlayoff(supabase, partido, partido.ganador, false)
+      }
+    }
+  }
+
   return { success: true, faseInicial: layout.faseInicial, todosCompletos }
 }
 
@@ -814,6 +841,38 @@ export async function generarGruposTardios(params: {
 
   if (!jugadores.length) return { error: 'No hay jugadores tardíos en mesa' }
 
+  const { data: llavesJugadas } = await supabase.from('torneo_partidos')
+    .select('ganador,jugador_b')
+    .eq('torneo_id', torneoId)
+    .neq('fase', 'grupos')
+  if (llavesJugadas?.some(llaveFueJugada)) {
+    return { error: 'No se pueden agregar tardíos porque el bracket ya tiene partidos jugados' }
+  }
+
+  const cabezasTardias = [...new Set(cabezasDeSerie.filter(id => jugadores.some(j => j.id === id)))]
+  const { data: torneoCabezas } = await supabase.from('torneos')
+    .select('cabeza_serie_1,cabeza_serie_2')
+    .eq('id', torneoId)
+    .single()
+  let nuevaCabeza1 = torneoCabezas?.cabeza_serie_1 ?? null
+  let nuevaCabeza2 = torneoCabezas?.cabeza_serie_2 ?? null
+  for (const id of cabezasTardias) {
+    if (id === nuevaCabeza1 || id === nuevaCabeza2) continue
+    if (!nuevaCabeza1) nuevaCabeza1 = id
+    else if (!nuevaCabeza2) nuevaCabeza2 = id
+    else return { error: 'El torneo ya tiene definidos sus dos cabezas de serie principales' }
+  }
+  const guardarCabezasTardias = async () => {
+    if (!cabezasTardias.length) return
+    await supabase.from('torneos')
+      .update({ cabeza_serie_1: nuevaCabeza1, cabeza_serie_2: nuevaCabeza2 })
+      .eq('id', torneoId)
+  }
+  const reactivarGruposSiHabiaLlaves = async () => {
+    if (!llavesJugadas?.length) return
+    await supabase.from('torneos').update({ fase: 'grupos', estado: 'en_curso' }).eq('id', torneoId)
+  }
+
   const { data: gruposExistentes } = await supabase
     .from('torneo_grupos').select('id, nombre').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('nombre')
 
@@ -833,12 +892,14 @@ export async function generarGruposTardios(params: {
       await supabase.from('grupo_jugadores').delete().eq('grupo_id', grupoMesa.id)
       await supabase.from('grupo_jugadores').insert({ grupo_id: target.id, jugador_id: jugadores[0].id, orden: target.count })
       const { data: pts } = await supabase.from('torneo_partidos').select('orden').eq('torneo_id', torneoId)
-      let maxOrden = (pts || []).reduce((m, p) => Math.max(m, p.orden ?? 0), 0)
+      const maxOrden = (pts || []).reduce((m, p) => Math.max(m, p.orden ?? 0), 0)
       const nuevos = target.playerIds.map((pid, i) => ({
         torneo_id: torneoId, grupo_id: target.id, fase: 'grupos' as const,
         jugador_a: jugadores[0].id, jugador_b: pid, orden: maxOrden + 1 + i,
       }))
       if (nuevos.length) await supabase.from('torneo_partidos').insert(nuevos)
+      await guardarCabezasTardias()
+      await reactivarGruposSiHabiaLlaves()
       return { success: true, numGrupos: 0, nombres: target.nombre }
     }
   }
@@ -846,9 +907,9 @@ export async function generarGruposTardios(params: {
   // 2+ jugadores: crear grupo nuevo
   const letrasUsadas = (gruposExistentes || []).map(g => g.nombre ?? '')
   const ultimaLetra = letrasUsadas.sort().pop() || '@'
-  let letraBase = ultimaLetra.charCodeAt(0) + 1
+  const letraBase = ultimaLetra.charCodeAt(0) + 1
 
-  const numGrupos = jugadores.length < 3 ? 1 : calcularNumGrupos(jugadores.length)
+  const numGrupos = calcularNumGruposTardios(jugadores.length)
   const nuevosGrupos: { id: string; nombre: string }[] = []
   for (let i = 0; i < numGrupos; i++) {
     const { data: g } = await supabase
@@ -888,6 +949,8 @@ export async function generarGruposTardios(params: {
     }
   }
   if (partidos.length) await supabase.from('torneo_partidos').insert(partidos)
+  await guardarCabezasTardias()
+  await reactivarGruposSiHabiaLlaves()
 
   const nombres = nuevosGrupos.map(g => g.nombre).join(', ')
   return { success: true, numGrupos, nombres }

@@ -213,6 +213,7 @@ export default function TorneoDetallePage() {
     if (res.error) { alert(res.error); return }
     setCabezaSerie1(nuevo1)
     setCabezaSerie2(nuevo2)
+    await cargarTorneo()
   }
 
   async function moverAGrupo(jugadorId: string, grupoOrigenId: string, grupoDestinoId: string) {
@@ -314,7 +315,7 @@ export default function TorneoDetallePage() {
       if (p.puntos_ganador) stats[p.ganador] && (stats[p.ganador].puntos += p.puntos_ganador)
     })
 
-    let ordenados = Object.values(stats).sort((a: any, b: any) => {
+    const ordenados = Object.values(stats).sort((a: any, b: any) => {
       if (b.pts !== a.pts) return b.pts - a.pts
       if (criterioEmpate === 'sets' && b.sets !== a.sets) return b.sets - a.sets
       if (criterioEmpate !== 'sets' && b.puntos !== a.puntos) return b.puntos - a.puntos
@@ -910,12 +911,12 @@ export default function TorneoDetallePage() {
                                     onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_a') } : undefined}
                                     onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
                                     onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye && p.jugador_a ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.4 : 1 }}>
-                                    <span style={{ fontSize: 12, color: p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye && p.jugador_a ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.4 : 1 }}>
+                                    <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                       <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
                                       {(p as any).ja?.nombre || etiquetaCupo(p.fase, p.orden ?? 0, 'a')}
                                     </span>
-                                    {p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
+                                    {!!p.ganador && p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                   </div>
                                   {isBye ? (
                                     <div style={{ height: rowH, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 11, color: hint, fontStyle: 'italic' }}>BYE</div>
@@ -928,12 +929,12 @@ export default function TorneoDetallePage() {
                                       onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_b') } : undefined}
                                       onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
                                       onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador && p.jugador_b ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.4 : 1 }}>
-                                      <span style={{ fontSize: 12, color: p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador && p.jugador_b ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.4 : 1 }}>
+                                      <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                         <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
                                         {(p as any).jb?.nombre || etiquetaCupo(p.fase, p.orden ?? 0, 'b')}
                                       </span>
-                                      {p.ganador === p.jugador_b && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
+                                      {!!p.ganador && p.ganador === p.jugador_b && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                     </div>
                                   )}
                                   {showEdit && (
@@ -1003,8 +1004,8 @@ export default function TorneoDetallePage() {
                       const editando = partidoPlayoffEditando === p.id
                       const definidoA = !!(p as any).ja?.nombre
                       const definidoB = !!(p as any).jb?.nombre
-                      const ganoA = p.ganador === p.jugador_a
-                      const ganoB = p.ganador === p.jugador_b
+                      const ganoA = !!p.ganador && p.ganador === p.jugador_a
+                      const ganoB = !!p.ganador && p.ganador === p.jugador_b
                       const puedeMarcar = esAdmin && !p.ganador && !isBye
 
                       const Lado = (pos: 'a' | 'b') => {

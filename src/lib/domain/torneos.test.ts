@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   calcularNumGrupos,
+  calcularNumGruposTardios,
   generarRoundRobin,
   seedingSerpenteo,
   calcularTamanoBracket,
@@ -37,6 +38,19 @@ describe('calcularNumGrupos', () => {
     expect(calcularNumGrupos(6)).toBe(2)
     expect(calcularNumGrupos(9)).toBe(3)
     expect(calcularNumGrupos(12)).toBe(4)
+  })
+})
+
+describe('calcularNumGruposTardios', () => {
+  it('mantiene entre 2 y 4 tardíos en un solo grupo', () => {
+    expect(calcularNumGruposTardios(2)).toBe(1)
+    expect(calcularNumGruposTardios(3)).toBe(1)
+    expect(calcularNumGruposTardios(4)).toBe(1)
+  })
+  it('crea más grupos solamente al superar cuatro jugadores', () => {
+    expect(calcularNumGruposTardios(5)).toBe(2)
+    expect(calcularNumGruposTardios(8)).toBe(2)
+    expect(calcularNumGruposTardios(9)).toBe(3)
   })
 })
 

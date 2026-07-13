@@ -39,6 +39,13 @@ export function calcularNumGrupos(
   return Math.max(2, Math.round(numJugadores / jugadoresPorGrupo))
 }
 
+// Los tardíos forman grupos independientes de hasta cuatro jugadores.
+// Tres tardíos deben quedar juntos, no divididos en grupos de 2 y 1.
+export function calcularNumGruposTardios(total: number): number {
+  if (total <= 0) return 0
+  return Math.ceil(total / 4)
+}
+
 export function seedingSerpenteo(
   jugadores: JugadorTorneo[],
   numGrupos: number,
