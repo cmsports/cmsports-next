@@ -211,7 +211,7 @@ export default function JugadoresPage() {
       </div>
 
       {/* Vista tabla — pantallas medianas y grandes */}
-      <div className="hidden sm:block" style={{ ...card, overflow:'hidden' }}>
+      <div style={{ ...card, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
@@ -265,43 +265,6 @@ export default function JugadoresPage() {
         )}
       </div>
 
-      {/* Vista tarjetas — celular */}
-      <div className="sm:hidden" style={{ display:'flex', flexDirection:'column', gap:10 }}>
-        {filtrados.map((j, i) => {
-          const cat = badgeCategoria[j.categoria] || { bg: '#f4f7fa', color: muted }
-          return (
-            <div key={j.id} style={{ ...card, padding:14 }}>
-              <div style={{ marginBottom:10 }}>
-                <div style={{ fontSize:11, color: hint, marginBottom:2 }}>{String(i+1).padStart(3,'0')}</div>
-                <div style={{ fontSize:15, fontWeight:600, color: text }}>{j.nombre}</div>
-                <div style={{ fontSize:12, color: muted, marginTop:2 }}>{j.rut || '—'}</div>
-              </div>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:12 }}>
-                <span style={{ background: cat.bg, color: cat.color, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{j.categoria}</span>
-                <span style={{ background: j.estado === 'activo' ? '#f0fdf4' : '#fef2f2', color: j.estado === 'activo' ? '#16a34a' : '#dc2626', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                  {j.estado === 'activo' ? '✅ Activo' : '🚫 Bloqueado'}
-                </span>
-                <span style={{ background:'#f4f7fa', color: muted, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones</span>
-              </div>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                <button onClick={() => router.push(`/jugadores/${j.id}`)} style={{ flex:'1 1 auto', background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12, cursor:'pointer' }}>Ver perfil</button>
-                {esAdmin && <>
-                  <button onClick={() => abrirEditar(j)} style={{ flex:'1 1 auto', background:'#f4f7fa', color: muted, border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:12, cursor:'pointer' }}>Editar</button>
-                  <button onClick={() => toggleEstado(j)} style={{ flex:'1 1 auto', background: j.estado==='activo'?'#fef2f2':'#f0fdf4', color: j.estado==='activo'?'#dc2626':'#16a34a', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12, cursor:'pointer' }}>
-                    {j.estado==='activo'?'🚫 Bloquear':'✅ Activar'}
-                  </button>
-                  <button onClick={() => eliminar(j.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12, cursor:'pointer' }}>✕</button>
-                </>}
-              </div>
-            </div>
-          )
-        })}
-        {filtrados.length === 0 && (
-          <div style={{ ...card, padding:40, textAlign:'center', color: hint, fontSize:13 }}>
-            {busqueda ? 'No se encontraron jugadores' : 'Sin jugadores registrados'}
-          </div>
-        )}
-      </div>
       </>}
 
       {/* Modal crear/editar */}
