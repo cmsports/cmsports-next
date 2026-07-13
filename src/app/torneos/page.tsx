@@ -245,19 +245,34 @@ export default function TorneosPage() {
                     </button>
                   )}
                   {esAdmin && mostrarArchivados && (
-                    <button
-                      onClick={async e => {
-                        e.stopPropagation()
-                        if (!confirm(`¿Borrar definitivamente "${t.nombre}"?\n\nEsto elimina el torneo, grupos, partidos, pagos y movimientos asociados en Finanzas.`)) return
-                        const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
-                        if (res.error) { alert(res.error); return }
-                        await cargarTorneos()
-                      }}
-                      style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer', fontWeight:600 }}
-                      title="Borrar definitivamente"
-                    >
-                      Borrar definitivo
-                    </button>
+                    <>
+                      <button
+                        onClick={async e => {
+                          e.stopPropagation()
+                          const { error } = await supabase.from('torneos').update({ estado: 'en_curso' }).eq('id', t.id)
+                          if (error) { alert('No se pudo desarchivar'); return }
+                          if (clubId) { delete torneosCache[`${clubId}:activos`]; delete torneosCache[`${clubId}:archivados`] }
+                          await cargarTorneos()
+                        }}
+                        style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'5px 10px', color:'#16a34a', fontSize:12, cursor:'pointer', fontWeight:600 }}
+                        title="Restaurar torneo a la lista activa"
+                      >
+                        Desarchivar
+                      </button>
+                      <button
+                        onClick={async e => {
+                          e.stopPropagation()
+                          if (!confirm(`¿Borrar definitivamente "${t.nombre}"?\n\nEsto elimina el torneo, grupos, partidos, pagos y movimientos asociados en Finanzas.`)) return
+                          const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
+                          if (res.error) { alert(res.error); return }
+                          await cargarTorneos()
+                        }}
+                        style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer', fontWeight:600 }}
+                        title="Borrar definitivamente"
+                      >
+                        Borrar definitivo
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
