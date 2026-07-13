@@ -306,13 +306,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         </div>
       )}
 
-      {/* GRÁFICO DE ASISTENCIA (Admin/Profesor) */}
-      {esAdminOProfesor && clubId && (
-        <div style={{ marginBottom: 24 }}>
-          <GraficoAsistencia clubId={clubId} modo="completo" />
-        </div>
-      )}
-
       {/* ASISTENCIAS DEL DÍA */}
       <div style={{ ...card, overflow: 'hidden', marginBottom: 24 }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text, textTransform: 'capitalize' }}>
@@ -364,6 +357,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           )}
         </div>
       </div>
+
+      {/* GRÁFICO DE ASISTENCIA (Admin/Profesor) */}
+      {esAdminOProfesor && clubId && (
+        <div style={{ marginBottom: 24 }}>
+          <GraficoAsistencia clubId={clubId} modo="completo" />
+        </div>
+      )}
 
       {/* REGISTRO MANUAL (Admin/Profesor) */}
       {esAdminOProfesor && (
