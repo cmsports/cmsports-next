@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { PerfilProvider } from "@/lib/auth/PerfilProvider";
+import { ModulosProvider } from "@/lib/hooks/useModulos";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
@@ -48,7 +49,9 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <ServiceWorkerRegister />
-        <PerfilProvider>{children}</PerfilProvider>
+        <PerfilProvider>
+          <ModulosProvider>{children}</ModulosProvider>
+        </PerfilProvider>
       </body>
     </html>
   );

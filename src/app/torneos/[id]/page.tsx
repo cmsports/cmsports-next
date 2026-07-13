@@ -53,7 +53,7 @@ export default function TorneoDetallePage() {
   const [qrOpen, setQrOpen] = useState(false)
   const [busquedaMesa, setBusquedaMesa] = useState('')
   const [rutMesa, setRutMesa] = useState('')
-  const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'pendiente'>('efectivo')
   const [pagoLoading, setPagoLoading] = useState<string|null>(null)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
   const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
@@ -420,6 +420,8 @@ export default function TorneoDetallePage() {
   const totalInscritos = inscritosReales.length || jugadoresInscritos.length
   const pagados = pagos.filter(p => p.estado === 'pagado').length
   const recaudado = pagados * cuota
+  const recaudadoTransferencia = pagos.filter(p => p.estado === 'pagado' && p.metodo_pago === 'transferencia').length * cuota
+  const recaudadoEfectivo = recaudado - recaudadoTransferencia
   const proyectado = totalInscritos * cuota
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
@@ -556,11 +558,13 @@ export default function TorneoDetallePage() {
               : <span style={{ background:'#fffbeb', color:'#d97706', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:500 }}>📤 Se enviará con los premios</span>
             }
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))', gap:10 }}>
             {[
               { label:'Inscritos', value:totalInscritos, color: text },
               { label:'Meta', value:fmt(proyectado), color: muted },
               { label:'Recaudado', value:fmt(recaudado), color:'#16a34a' },
+              { label:'Efectivo', value:fmt(recaudadoEfectivo), color:'#15803d' },
+              { label:'Transferencias', value:fmt(recaudadoTransferencia), color:'#4f46e5' },
               { label:'Pendiente', value:fmt(proyectado-recaudado), color: proyectado-recaudado>0?'#dc2626':'#16a34a' },
             ].map(s => (
               <div key={s.label} style={{ background:'#f4f7fa', borderRadius:10, padding:10, textAlign:'center' }}>
@@ -681,15 +685,10 @@ export default function TorneoDetallePage() {
                     {esAdmin && cuota > 0 && (() => {
                       const pago = pagos.find(p => p.jugador_id === j.jugador?.id)
                       return pago?.estado === 'pagado'
-                        ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 6px', borderRadius:10, fontSize:10 }}>✓</span>
-                        : <span onClick={async () => {
-                            if (!j.jugador?.id || pagoLoading) return
-                            setPagoLoading(j.jugador.id)
-                            try {
-                              await actualizarEstadoPago({ torneoId, jugadorId: j.jugador.id, estado: 'pagado', metodoPago: 'efectivo' })
-                              await cargarTorneo()
-                            } finally { setPagoLoading(null) }
-                          }} style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10, cursor: pagoLoading ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador?.id ? 0.5 : 1 }}>Pend.</span>
+                        ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 6px', borderRadius:10, fontSize:10 }}>
+                            ✓ {pago.metodo_pago === 'transferencia' ? 'Transf.' : 'Efectivo'}
+                          </span>
+                        : <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10 }}>Pend.</span>
                     })()}
                     {esAdmin && !grupoConResultados && (
                       <div style={{ display:'flex', gap:4 }}>
@@ -1253,7 +1252,7 @@ export default function TorneoDetallePage() {
                       <button
                         onClick={async () => {
                           setGuardandoPremios(true)
-                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, montoRecaudado: recaudado, enviarRecaudacion: enviarRec, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
+                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, montoRecaudado: recaudado, montoEfectivo: recaudadoEfectivo, montoTransferencia: recaudadoTransferencia, enviarRecaudacion: enviarRec, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
                           setGuardandoPremios(false)
                           setModalPremios(false)
                           if (res.error) { alert(res.error); return }
@@ -1289,16 +1288,19 @@ export default function TorneoDetallePage() {
               <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
                 <div style={{ flex:1, fontSize:13, color: text }}>{j.jugadores?.nombre||'—'}</div>
                 <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
-                <button disabled={pagoLoading === j.jugador_id} onClick={async () => {
-                  if (pagoLoading) return
-                  setPagoLoading(j.jugador_id)
-                  try {
-                    await actualizarEstadoPago({ torneoId, jugadorId: j.jugador_id, estado: 'pagado', metodoPago: 'efectivo' })
-                    await cargarTorneo()
-                  } finally { setPagoLoading(null) }
-                }} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>
-                  {pagoLoading === j.jugador_id ? '...' : '✓ Marcar pagado'}
-                </button>
+                {(['efectivo', 'transferencia'] as const).map(metodo => (
+                  <button key={metodo} disabled={pagoLoading === j.jugador_id} onClick={async () => {
+                    if (pagoLoading) return
+                    setPagoLoading(j.jugador_id)
+                    try {
+                      const res = await actualizarEstadoPago({ torneoId, jugadorId: j.jugador_id, estado: 'pagado', metodoPago: metodo })
+                      if (res.error) { alert(res.error); return }
+                      await cargarTorneo()
+                    } finally { setPagoLoading(null) }
+                  }} style={{ background: metodo === 'efectivo' ? '#f0fdf4' : '#ede9fe', color: metodo === 'efectivo' ? '#16a34a' : '#4f46e5', border:`1px solid ${metodo === 'efectivo' ? '#bbf7d0' : '#c4b5fd'}`, borderRadius:6, padding:'5px 10px', fontSize:11, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>
+                    {pagoLoading === j.jugador_id ? '...' : metodo === 'efectivo' ? '💵 Efectivo' : '💳 Transferencia'}
+                  </button>
+                ))}
               </div>
             ))
           }
@@ -1350,6 +1352,7 @@ export default function TorneoDetallePage() {
                   const listaJug = jugadoresUnicos.map((j: any) => ({
                     nombre: j.jugadores?.nombre || '—',
                     pagado: pagos.some(p => p.jugador_id === j.jugador_id && p.estado === 'pagado'),
+                    metodoPago: pagos.find(p => p.jugador_id === j.jugador_id && p.estado === 'pagado')?.metodo_pago || null,
                   }))
                   const premios = [
                     { lugar: '1° lugar', nombre: campeon1?.nombre, monto: torneo?.premio_primero },
@@ -1362,6 +1365,7 @@ export default function TorneoDetallePage() {
                   descargarInformeFinancieroPdf({
                     torneoNombre: torneo?.nombre || 'Torneo',
                     cuota, totalInscritos, pagados, recaudado, proyectado,
+                    recaudadoEfectivo, recaudadoTransferencia,
                     jugadores: listaJug, premios, gastos, metodoPremio: premioMetodo,
                   })
                   setInformeOpen(false)
@@ -1444,7 +1448,8 @@ export default function TorneoDetallePage() {
             </div>
             <div style={{ display:'flex', gap:8, marginBottom:16 }}>
               <select style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                value={metodoPago} onChange={e => setMetodoPago(e.target.value)}>
+                value={metodoPago} onChange={e => setMetodoPago(e.target.value as 'efectivo' | 'transferencia' | 'pendiente')}>
+                <option value="pendiente">⏳ Pago pendiente</option>
                 <option value="efectivo">💵 Efectivo</option>
                 <option value="transferencia">💳 Transferencia</option>
               </select>
@@ -1480,20 +1485,26 @@ export default function TorneoDetallePage() {
                       return (
                         <button disabled={pagoLoading === j.jugador_id} onClick={async () => {
                           if (pagoLoading) return
+                          if (!esPagado && metodoPago === 'pendiente') {
+                            alert('Selecciona Efectivo o Transferencia para registrar el pago')
+                            return
+                          }
                           setPagoLoading(j.jugador_id)
                           try {
                             const res = await actualizarEstadoPago({
                               torneoId,
                               jugadorId: j.jugador_id,
                               estado: esPagado ? 'pendiente' : 'pagado',
-                              metodoPago,
+                              metodoPago: metodoPago === 'pendiente' ? undefined : metodoPago,
                             })
                             if (res.error) { alert(res.error); return }
                             await cargarTorneo()
                           } finally { setPagoLoading(null) }
                         }}
                           style={{ background: esPagado ? '#f0fdf4' : '#fef2f2', color: esPagado ? '#16a34a' : '#dc2626', border:`1px solid ${esPagado ? '#bbf7d0' : '#fecaca'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>
-                          {esPagado ? '✓ Pagado' : 'Pendiente'}
+                          {esPagado
+                            ? `✓ ${pagoActual?.metodo_pago === 'transferencia' ? 'Transferencia' : 'Efectivo'}`
+                            : 'Pendiente'}
                         </button>
                       )
                     })()}

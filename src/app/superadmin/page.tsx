@@ -40,6 +40,7 @@ export default function SuperadminPage() {
   const [editModulosClub, setEditModulosClub] = useState<{ id: string; nombre: string; modulos_habilitados: string[] | null } | null>(null)
   const [editModulos, setEditModulos] = useState<string[]>([])
   const [guardandoModulos, setGuardandoModulos] = useState(false)
+  const [errorModulos, setErrorModulos] = useState('')
   const [errorCrear, setErrorCrear] = useState('')
   const [mensajeExito, setMensajeExito] = useState('')
   const router = useRouter()
@@ -71,12 +72,15 @@ export default function SuperadminPage() {
   async function handleGuardarModulos() {
     if (!editModulosClub) return
     setGuardandoModulos(true)
+    setErrorModulos('')
     // ponytail: mensualidades requiere finanzas
     const mods = editModulos.includes('mensualidades') && !editModulos.includes('finanzas')
       ? [...editModulos, 'finanzas']
       : editModulos
-    await actualizarModulosClub({ clubId: editModulosClub.id, modulos: mods })
+    const res = await actualizarModulosClub({ clubId: editModulosClub.id, modulos: mods })
     setGuardandoModulos(false)
+    if (res?.error) { setErrorModulos(res.error); return }
+    window.dispatchEvent(new CustomEvent('cmsports:modulos-actualizados', { detail: { clubId: editModulosClub.id } }))
     setEditModulosClub(null)
     await recargar()
   }
@@ -178,7 +182,7 @@ export default function SuperadminPage() {
               }}>
                 <LogIn size={13} /> {gestionandoId === c.id ? 'Entrando...' : 'Gestionar'}
               </button>
-              <button onClick={() => { setEditModulosClub(c); setEditModulos(c.modulos_habilitados || [...TODOS_MODULOS]) }} style={{
+              <button onClick={() => { setErrorModulos(''); setEditModulosClub(c); setEditModulos(c.modulos_habilitados || [...TODOS_MODULOS]) }} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
                 padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0',
                 borderRadius: 7, fontSize: 12, color: '#4f46e5', cursor: 'pointer',
@@ -278,6 +282,11 @@ export default function SuperadminPage() {
                 </label>
               ))}
             </div>
+            {errorModulos && (
+              <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '8px 10px', fontSize: 12, marginTop: 12 }}>
+                {errorModulos}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => setEditModulosClub(null)} style={{
                 flex: 1, padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',

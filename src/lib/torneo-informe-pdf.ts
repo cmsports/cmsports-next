@@ -1,7 +1,7 @@
 // Informe financiero del torneo en PDF (1-2 hojas), con jugadores, pagos,
 // premios y gastos de gestión. Usa jspdf + jspdf-autotable (ya instalados).
 
-type Jugador = { nombre: string; pagado: boolean }
+type Jugador = { nombre: string; pagado: boolean; metodoPago?: string | null }
 type Premio = { lugar: string; nombre?: string | null; monto?: number | null }
 type Gasto = { tipo: string; monto: number }
 
@@ -11,6 +11,8 @@ export type InformeFinanciero = {
   totalInscritos: number
   pagados: number
   recaudado: number
+  recaudadoEfectivo: number
+  recaudadoTransferencia: number
   proyectado: number
   jugadores: Jugador[]
   premios: Premio[]
@@ -53,6 +55,8 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
       ['Inscritos', String(d.totalInscritos)],
       ['Cuota por jugador', fmt(d.cuota)],
       [`Pagaron (${d.pagados}/${d.totalInscritos})`, fmt(d.recaudado)],
+      ['Recaudado en efectivo', fmt(d.recaudadoEfectivo)],
+      ['Recaudado por transferencia', fmt(d.recaudadoTransferencia)],
       ['Pendiente por cobrar', fmt(pendienteCobro)],
     ],
     theme: 'striped',
@@ -65,12 +69,17 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
   let y = (doc as any).lastAutoTable.finalY + 8
   autoTable(doc, {
     startY: y,
-    head: [['Jugador', 'Estado', 'Monto']],
-    body: d.jugadores.map(j => [j.nombre, j.pagado ? 'Pagado' : 'Pendiente', j.pagado ? fmt(d.cuota) : '—']),
+    head: [['Jugador', 'Estado', 'Método', 'Monto']],
+    body: d.jugadores.map(j => [
+      j.nombre,
+      j.pagado ? 'Pagado' : 'Pendiente',
+      j.pagado ? (j.metodoPago === 'transferencia' ? 'Transferencia' : 'Efectivo') : '—',
+      j.pagado ? fmt(d.cuota) : '—',
+    ]),
     theme: 'striped',
     headStyles: { fillColor: MORADO },
     margin: { left: 14, right: 14 },
-    columnStyles: { 2: { halign: 'right' } },
+    columnStyles: { 3: { halign: 'right' } },
     didParseCell: (data: any) => {
       if (data.section === 'body' && data.column.index === 1) {
         data.cell.styles.textColor = data.cell.raw === 'Pagado' ? VERDE : ROJO
