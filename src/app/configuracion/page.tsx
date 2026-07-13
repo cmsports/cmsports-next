@@ -7,7 +7,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import { actualizarClubAction } from '@/app/actions/club'
 import { subirLogoAction, actualizarInfoClubAction } from '@/app/actions/redes-sociales'
-import { Building2, Upload, Loader2, Check } from 'lucide-react'
+import { Building2, Upload, Loader2, Check, Lock } from 'lucide-react'
 
 const C = {
   card: '#ffffff', border: '#e2e8f0',
@@ -37,6 +37,12 @@ export default function ConfiguracionPage() {
   const [guardado, setGuardado] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const logoInputRef = useRef<HTMLInputElement>(null)
+  const [pwActual, setPwActual] = useState('')
+  const [pwNueva, setPwNueva] = useState('')
+  const [pwConfirmar, setPwConfirmar] = useState('')
+  const [cambiandoPw, setCambiandoPw] = useState(false)
+  const [pwError, setPwError] = useState('')
+  const [pwExito, setPwExito] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -92,6 +98,40 @@ export default function ConfiguracionPage() {
       if (data?.logo_url) setLogoUrl(data.logo_url)
     }
     setSubiendoLogo(false)
+  }
+
+  async function cambiarPassword() {
+    setPwError('')
+    setPwExito(false)
+    if (!pwActual) { setPwError('Ingresa tu contraseña actual'); return }
+    if (pwNueva.length < 6) { setPwError('La nueva contraseña debe tener al menos 6 caracteres'); return }
+    if (pwNueva !== pwConfirmar) { setPwError('Las contraseñas no coinciden'); return }
+
+    setCambiandoPw(true)
+    const supabase = createClient()
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: perfil!.email!,
+      password: pwActual,
+    })
+    if (signInError) {
+      setPwError('La contraseña actual es incorrecta')
+      setCambiandoPw(false)
+      return
+    }
+
+    const { error: updateError } = await supabase.auth.updateUser({ password: pwNueva })
+    setCambiandoPw(false)
+    if (updateError) {
+      setPwError(updateError.message)
+      return
+    }
+
+    setPwExito(true)
+    setPwActual('')
+    setPwNueva('')
+    setPwConfirmar('')
+    setTimeout(() => setPwExito(false), 3000)
   }
 
   if (authLoading || loading) return (
@@ -188,6 +228,52 @@ export default function ConfiguracionPage() {
             {logoUrl ? 'Cambiar logo' : 'Subir logo'}
           </button>
           <input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onSubirLogo} />
+        </div>
+      </div>
+
+      {/* ── Cambiar contraseña ── */}
+      <div style={{ maxWidth: 760, marginTop: 16 }}>
+        <div style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <Lock size={16} color={C.sky} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Cambiar contraseña</span>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Contraseña actual</label>
+            <input type="password" value={pwActual} onChange={e => setPwActual(e.target.value)} style={inputStyle} placeholder="Tu contraseña actual" />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+            <div>
+              <label style={labelStyle}>Nueva contraseña</label>
+              <input type="password" value={pwNueva} onChange={e => setPwNueva(e.target.value)} style={inputStyle} placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div>
+              <label style={labelStyle}>Confirmar nueva contraseña</label>
+              <input type="password" value={pwConfirmar} onChange={e => setPwConfirmar(e.target.value)} style={inputStyle} placeholder="Repetir nueva contraseña" />
+            </div>
+          </div>
+
+          {pwError && (
+            <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '8px 12px', fontSize: 12, marginBottom: 12 }}>
+              {pwError}
+            </div>
+          )}
+          {pwExito && (
+            <div style={{ background: C.greenL, color: C.green, borderRadius: 8, padding: '8px 12px', fontSize: 12, marginBottom: 12 }}>
+              Contraseña actualizada correctamente
+            </div>
+          )}
+
+          <button onClick={cambiarPassword} disabled={cambiandoPw} style={{
+            background: C.sky, color: 'white',
+            border: 'none', borderRadius: 8, padding: '10px 18px', fontSize: 13, fontWeight: 600,
+            cursor: cambiandoPw ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            {cambiandoPw ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Lock size={14} />}
+            {cambiandoPw ? 'Cambiando...' : 'Cambiar contraseña'}
+          </button>
         </div>
       </div>
 

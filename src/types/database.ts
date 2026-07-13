@@ -16,6 +16,7 @@ export interface Database {
           direccion: string | null
           telefono: string | null
           mensualidad_base: number | null
+          modulos_habilitados: string[] | null
         }
         Insert: {
           id?: string
@@ -29,6 +30,7 @@ export interface Database {
           direccion?: string | null
           telefono?: string | null
           mensualidad_base?: number | null
+          modulos_habilitados?: string[] | null
         }
         Update: {
           id?: string
@@ -42,6 +44,7 @@ export interface Database {
           direccion?: string | null
           telefono?: string | null
           mensualidad_base?: number | null
+          modulos_habilitados?: string[] | null
         }
         Relationships: []
       }

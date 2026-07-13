@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
+import { useModulos } from '@/lib/hooks/useModulos'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
@@ -16,15 +17,15 @@ const navAdmin = [
   { section: 'Principal' },
   { label: 'Dashboard',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores',     icon: Users,            href: '/jugadores' },
-  { label: 'Torneos',       icon: Trophy,           href: '/torneos' },
-  { label: 'Liga',          icon: BarChart2,        href: '/liga' },
+  { label: 'Torneos',       icon: Trophy,           href: '/torneos',    modulo: 'torneos' },
+  { label: 'Liga',          icon: BarChart2,        href: '/liga',       modulo: 'liga' },
   { section: 'Gestión' },
-  { label: 'Clases',        icon: BookOpen,         href: '/clases' },
-  { label: 'Calendario',    icon: Calendar,         href: '/calendario' },
-  { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas' },
+  { label: 'Clases',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
+  { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
+  { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas',   modulo: 'finanzas' },
   { section: 'Marketing' },
-  { label: 'Redes Sociales', icon: Camera,          href: '/redes-sociales' },
-  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda' },
+  { label: 'Redes Sociales', icon: Camera,          href: '/redes-sociales', modulo: 'redes' },
+  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',     modulo: 'tienda' },
 ]
 
 const navProfesor = [
@@ -32,48 +33,48 @@ const navProfesor = [
   { label: 'Dashboard',  icon: LayoutDashboard, href: '/dashboard-profesor' },
   { label: 'Jugadores',  icon: Users,           href: '/jugadores' },
   { section: 'Gestión' },
-  { label: 'Mis clases', icon: BookOpen,        href: '/clases' },
-  { label: 'Calendario', icon: Calendar,        href: '/calendario' },
-  { label: 'Torneos',    icon: Trophy,          href: '/torneos' },
+  { label: 'Mis clases', icon: BookOpen,        href: '/clases',     modulo: 'clases' },
+  { label: 'Calendario', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
+  { label: 'Torneos',    icon: Trophy,          href: '/torneos',    modulo: 'torneos' },
   { section: 'Tienda' },
-  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda' },
+  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
 ]
 
 const navJugador = [
   { section: 'Mi cuenta' },
   { label: 'Mi perfil',           icon: User,          href: '/perfil' },
-  { label: 'Mi Estado de Cuenta', icon: Receipt,       href: '/estado-cuenta' },
-  { label: 'Asistencia',          icon: ClipboardCheck,href: '/asistencia' },
+  { label: 'Mi Estado de Cuenta', icon: Receipt,       href: '/estado-cuenta', modulo: 'mensualidades' },
+  { label: 'Asistencia',          icon: ClipboardCheck,href: '/asistencia',    modulo: 'asistencia' },
   { section: 'Club' },
-  { label: 'Mis clases',          icon: BookOpen,      href: '/mis-clases' },
-  { label: 'Torneos externos',    icon: Globe,         href: '/torneos-externos' },
-  { label: 'Calendario',          icon: Calendar,      href: '/calendario' },
+  { label: 'Mis clases',          icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
+  { label: 'Torneos externos',    icon: Globe,         href: '/torneos-externos', modulo: 'torneos' },
+  { label: 'Calendario',          icon: Calendar,      href: '/calendario',    modulo: 'calendario' },
   { section: 'Tienda' },
-  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda' },
+  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
 ]
 
 const mobileNavAdmin = [
   { label: 'Inicio',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores',  icon: Users,            href: '/jugadores' },
-  { label: 'Torneos',    icon: Trophy,           href: '/torneos' },
-  { label: 'Finanzas',   icon: DollarSign,       href: '/finanzas' },
+  { label: 'Torneos',    icon: Trophy,           href: '/torneos',  modulo: 'torneos' },
+  { label: 'Finanzas',   icon: DollarSign,       href: '/finanzas', modulo: 'finanzas' },
 ]
 
 const mobileNavProfesor = [
   { label: 'Inicio',     icon: LayoutDashboard, href: '/dashboard-profesor' },
-  { label: 'Clases',     icon: BookOpen,        href: '/clases' },
-  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia' },
+  { label: 'Clases',     icon: BookOpen,        href: '/clases',     modulo: 'clases' },
+  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
   { label: 'Alumnos',    icon: Users,           href: '/jugadores' },
 ]
 
 const mobileNavJugador = [
   { label: 'Perfil',     icon: User,          href: '/perfil' },
-  { label: 'Asistencia', icon: ClipboardCheck, href: '/asistencia' },
-  { label: 'Mis clases', icon: BookOpen,      href: '/mis-clases' },
-  { label: 'Mi cuenta',  icon: CreditCard,    href: '/estado-cuenta' },
+  { label: 'Asistencia', icon: ClipboardCheck, href: '/asistencia',    modulo: 'asistencia' },
+  { label: 'Mis clases', icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
+  { label: 'Mi cuenta',  icon: CreditCard,    href: '/estado-cuenta', modulo: 'mensualidades' },
 ]
 
-type NavItem = { section: string } | { label: string; icon: any; href: string }
+type NavItem = { section: string } | { label: string; icon: any; href: string; modulo?: string }
 
 const clubNombreCache: Record<string, string> = {}
 
@@ -82,6 +83,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const pathname = usePathname()
   const [masOpen, setMasOpen] = useState(false)
   const [clubNombre, setClubNombre] = useState(() => clubNombreCache[perfil?.club_id] || '')
+  const { tiene } = useModulos()
 
   useEffect(() => {
     if (!perfil?.club_id) return
@@ -99,8 +101,17 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   }, [perfil?.club_id])
 
   const esAdminOSuperadmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
-  const nav: NavItem[] = esAdminOSuperadmin ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
-  const mobileNav = esAdminOSuperadmin ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
+  const navRaw: NavItem[] = esAdminOSuperadmin ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
+  const mobileNavRaw = esAdminOSuperadmin ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
+
+  // Filtrar items por módulos habilitados, eliminar secciones vacías
+  const filtrado = navRaw.filter(item => !('section' in item) ? (!item.modulo || tiene(item.modulo)) : true)
+  const nav = filtrado.filter((item, i) => {
+    if (!('section' in item)) return true
+    const next = filtrado[i + 1]
+    return next && !('section' in next)
+  })
+  const mobileNav = mobileNavRaw.filter(item => !item.modulo || tiene(item.modulo))
 
   const mobileNavHrefs = new Set(mobileNav.map((item) => item.href))
   const masItems = nav.filter(

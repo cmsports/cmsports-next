@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireSuperadmin } from '@/lib/auth/require'
 
-export async function crearClub(input: { nombre: string; ciudad: string; deporte: string; planMensual: number }) {
+export async function crearClub(input: { nombre: string; ciudad: string; deporte: string; planMensual: number; modulos?: string[] }) {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }
   const { error } = await supabase.from('clubes').insert({
@@ -11,8 +11,20 @@ export async function crearClub(input: { nombre: string; ciudad: string; deporte
     ciudad: input.ciudad.trim() || null,
     deporte: input.deporte.trim() || null,
     plan_mensual: input.planMensual,
+    modulos_habilitados: input.modulos ?? null,
   })
   if (error) return { error: 'Error al crear el club' }
+  revalidatePath('/superadmin')
+  return { success: true }
+}
+
+export async function actualizarModulosClub(input: { clubId: string; modulos: string[] }) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  const { error } = await supabase.from('clubes')
+    .update({ modulos_habilitados: input.modulos })
+    .eq('id', input.clubId)
+  if (error) return { error: 'Error al actualizar módulos' }
   revalidatePath('/superadmin')
   return { success: true }
 }

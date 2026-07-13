@@ -5,13 +5,29 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck } from 'lucide-react'
 import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
-import { crearClub } from '@/app/actions/superadmin'
+import { crearClub, actualizarModulosClub } from '@/app/actions/superadmin'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { formatCLP } from '@/lib/domain/finanzas'
+import { Settings } from 'lucide-react'
 
 const supabase = createClient()
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12 } as const
+
+const MODULOS_OPCIONALES = [
+  { key: 'torneos', label: 'Torneos' },
+  { key: 'liga', label: 'Liga' },
+  { key: 'clases', label: 'Clases' },
+  { key: 'calendario', label: 'Calendario' },
+  { key: 'asistencia', label: 'Asistencia' },
+  { key: 'mensualidades', label: 'Mensualidades' },
+  { key: 'finanzas', label: 'Finanzas' },
+  { key: 'elo', label: 'ELO / Ranking' },
+  { key: 'redes', label: 'Redes Sociales' },
+  { key: 'tienda', label: 'Tienda' },
+] as const
+
+const TODOS_MODULOS = MODULOS_OPCIONALES.map(m => m.key)
 
 export default function SuperadminPage() {
   const perfil = usePerfilSuperadmin()
@@ -19,8 +35,12 @@ export default function SuperadminPage() {
   const { clubes, conteos, loading, recargar } = useClubesSuperadmin()
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
+  const [modulosForm, setModulosForm] = useState<string[]>([...TODOS_MODULOS])
   const [guardando, setGuardando] = useState(false)
   const [gestionandoId, setGestionandoId] = useState<string | null>(null)
+  const [editModulosClub, setEditModulosClub] = useState<any>(null)
+  const [editModulos, setEditModulos] = useState<string[]>([])
+  const [guardandoModulos, setGuardandoModulos] = useState(false)
   const router = useRouter()
 
   async function handleCrearClub() {
@@ -31,12 +51,37 @@ export default function SuperadminPage() {
       ciudad: form.ciudad,
       deporte: form.deporte,
       planMensual: Number(form.planMensual) || 0,
+      modulos: modulosForm,
     })
     setGuardando(false)
     if (res?.error) return
     setModalOpen(false)
     setForm({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '' })
+    setModulosForm([...TODOS_MODULOS])
     await recargar()
+  }
+
+  async function handleGuardarModulos() {
+    if (!editModulosClub) return
+    setGuardandoModulos(true)
+    // ponytail: mensualidades requiere finanzas
+    const mods = editModulos.includes('mensualidades') && !editModulos.includes('finanzas')
+      ? [...editModulos, 'finanzas']
+      : editModulos
+    await actualizarModulosClub({ clubId: editModulosClub.id, modulos: mods })
+    setGuardandoModulos(false)
+    setEditModulosClub(null)
+    await recargar()
+  }
+
+  function toggleModulo(arr: string[], key: string): string[] {
+    if (arr.includes(key)) {
+      const sin = arr.filter(m => m !== key)
+      if (key === 'finanzas') return sin.filter(m => m !== 'mensualidades')
+      return sin
+    }
+    if (key === 'mensualidades') return [...arr, key, ...(arr.includes('finanzas') ? [] : ['finanzas'])]
+    return [...arr, key]
   }
 
   async function gestionarClub(clubId: string) {
@@ -108,14 +153,23 @@ export default function SuperadminPage() {
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
               Plan: {formatCLP(c.plan_mensual || 0)}/mes
             </div>
-            <button onClick={() => gestionarClub(c.id)} disabled={gestionandoId === c.id} style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: 7, fontSize: 12, color: '#1e293b', cursor: gestionandoId === c.id ? 'not-allowed' : 'pointer',
-              opacity: gestionandoId === c.id ? 0.6 : 1,
-            }}>
-              <LogIn size={13} /> {gestionandoId === c.id ? 'Entrando...' : 'Gestionar este club'}
-            </button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => gestionarClub(c.id)} disabled={gestionandoId === c.id} style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
+                borderRadius: 7, fontSize: 12, color: '#1e293b', cursor: gestionandoId === c.id ? 'not-allowed' : 'pointer',
+                opacity: gestionandoId === c.id ? 0.6 : 1,
+              }}>
+                <LogIn size={13} /> {gestionandoId === c.id ? 'Entrando...' : 'Gestionar'}
+              </button>
+              <button onClick={() => { setEditModulosClub(c); setEditModulos(c.modulos_habilitados || [...TODOS_MODULOS]) }} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0',
+                borderRadius: 7, fontSize: 12, color: '#4f46e5', cursor: 'pointer',
+              }}>
+                <Settings size={13} /> Módulos
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -140,6 +194,18 @@ export default function SuperadminPage() {
               <input placeholder="Plan mensual (CLP)" type="number" value={form.planMensual}
                 onChange={e => setForm({ ...form, planMensual: e.target.value })}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 6 }}>Módulos</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                  {MODULOS_OPCIONALES.map(m => (
+                    <label key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={modulosForm.includes(m.key)}
+                        onChange={() => setModulosForm(toggleModulo(modulosForm, m.key))} />
+                      {m.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => setModalOpen(false)} style={{
@@ -150,6 +216,38 @@ export default function SuperadminPage() {
                 flex: 1, padding: '8px', background: '#4f46e5', border: 'none',
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardando ? 0.6 : 1,
               }}>{guardando ? 'Creando...' : 'Crear'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar módulos */}
+      {editModulosClub && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+        }} onClick={() => setEditModulosClub(null)}>
+          <div style={{ ...card, padding: 20, width: 360 }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>Módulos — {editModulosClub.nombre}</h2>
+            <p style={{ fontSize: 11, color: '#94a3b8', marginBottom: 14 }}>Dashboard y Jugadores siempre están activos</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {MODULOS_OPCIONALES.map(m => (
+                <label key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={editModulos.includes(m.key)}
+                    onChange={() => setEditModulos(toggleModulo(editModulos, m.key))} />
+                  {m.label}
+                </label>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button onClick={() => setEditModulosClub(null)} style={{
+                flex: 1, padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
+                borderRadius: 7, fontSize: 12, color: '#64748b', cursor: 'pointer',
+              }}>Cancelar</button>
+              <button onClick={handleGuardarModulos} disabled={guardandoModulos} style={{
+                flex: 1, padding: '8px', background: '#4f46e5', border: 'none',
+                borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardandoModulos ? 0.6 : 1,
+              }}>{guardandoModulos ? 'Guardando...' : 'Guardar'}</button>
             </div>
           </div>
         </div>
