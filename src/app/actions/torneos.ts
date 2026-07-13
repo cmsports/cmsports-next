@@ -1062,8 +1062,8 @@ export async function inscribirEnMesa(params: {
 }
 
 export async function eliminarTorneo(params: { torneoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
-  if (authErr) return { error: authErr }
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr || !supabase) return { error: authErr }
 
   const { torneoId } = params
 
@@ -1071,7 +1071,8 @@ export async function eliminarTorneo(params: { torneoId: string }) {
     .from('torneos')
     .update({ estado: 'archivado' })
     .eq('id', torneoId)
-  if (error) return { error: 'No se pudo archivar el torneo' }
+    .eq('club_id', perfil!.club_id!)
+  if (error) return { error: `No se pudo archivar: ${error.message}` }
 
   return { success: true }
 }
