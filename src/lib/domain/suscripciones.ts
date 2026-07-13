@@ -23,4 +23,3 @@ export function diasParaVencimiento(proximoVencimiento: string, hoy = hoyISO()):
   const b = Date.parse(`${proximoVencimiento}T00:00:00Z`)
   return Math.ceil((b - a) / 86_400_000)
 }
-

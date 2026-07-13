@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -14,9 +14,41 @@ export default function CrearContrasenaPage() {
   const [confirmar, setConfirmar] = useState('')
   const [error, setError] = useState('')
   const [guardando, setGuardando] = useState(false)
+  const [sesionLista, setSesionLista] = useState(false)
   const router = useRouter()
 
+  useEffect(() => {
+    let activo = true
+
+    async function prepararSesion() {
+      const url = new URL(window.location.href)
+      const code = url.searchParams.get('code')
+
+      // Compatibilidad con links emitidos antes de usar /auth/callback.
+      if (code) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+        if (exchangeError) {
+          if (activo) setError('El link de recuperación no es válido o ha expirado. Solicita uno nuevo.')
+          return
+        }
+        window.history.replaceState({}, '', '/crear-contrasena')
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!activo) return
+      if (!session) {
+        setError('El link de recuperación no es válido o ha expirado. Solicita uno nuevo.')
+        return
+      }
+      setSesionLista(true)
+    }
+
+    void prepararSesion()
+    return () => { activo = false }
+  }, [])
+
   async function guardar() {
+    if (!sesionLista) { setError('El link de recuperación no es válido o ha expirado. Solicita uno nuevo.'); return }
     if (password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres'); return }
     if (password !== confirmar) { setError('Las contraseñas no coinciden'); return }
     setGuardando(true)
@@ -65,10 +97,10 @@ export default function CrearContrasenaPage() {
 
           <button
             onClick={guardar}
-            disabled={guardando}
+            disabled={guardando || !sesionLista}
             style={{ width:'100%', padding:12, background:'#4f46e5', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer' }}
           >
-            {guardando ? 'Guardando...' : 'Guardar y entrar'}
+            {guardando ? 'Guardando...' : !sesionLista ? 'Verificando link...' : 'Guardar y entrar'}
           </button>
         </div>
       </div>

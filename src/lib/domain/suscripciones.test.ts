@@ -18,4 +18,3 @@ describe('ciclo mensual de suscripción', () => {
     expect(planVencido('suspendido', '2026-07-01', '2026-07-13')).toBe(false)
   })
 })
-

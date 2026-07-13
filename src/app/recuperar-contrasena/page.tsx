@@ -18,10 +18,14 @@ export default function RecuperarContrasenaPage() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Ingresa un email válido'); return }
     setEnviando(true)
     setError('')
-    await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/crear-contrasena`,
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/callback?next=/crear-contrasena`,
     })
     setEnviando(false)
+    if (resetError) {
+      setError('No se pudo enviar el link. Intenta nuevamente.')
+      return
+    }
     setEnviado(true)
   }
 

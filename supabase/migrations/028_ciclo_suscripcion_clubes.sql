@@ -16,4 +16,3 @@ CREATE INDEX IF NOT EXISTS clubes_plan_vencimiento_idx
 UPDATE clubes
 SET estado_plan = 'prueba', fecha_inicio_plan = NULL, proximo_vencimiento = NULL
 WHERE fecha_inicio_plan IS NULL;
-
