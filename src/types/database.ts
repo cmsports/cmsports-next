@@ -17,6 +17,9 @@ export interface Database {
           telefono: string | null
           mensualidad_base: number | null
           modulos_habilitados: string[] | null
+          estado_plan: string
+          fecha_inicio_plan: string | null
+          proximo_vencimiento: string | null
         }
         Insert: {
           id?: string
@@ -31,6 +34,9 @@ export interface Database {
           telefono?: string | null
           mensualidad_base?: number | null
           modulos_habilitados?: string[] | null
+          estado_plan?: string
+          fecha_inicio_plan?: string | null
+          proximo_vencimiento?: string | null
         }
         Update: {
           id?: string
@@ -45,6 +51,9 @@ export interface Database {
           telefono?: string | null
           mensualidad_base?: number | null
           modulos_habilitados?: string[] | null
+          estado_plan?: string
+          fecha_inicio_plan?: string | null
+          proximo_vencimiento?: string | null
         }
         Relationships: []
       }

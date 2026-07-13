@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell } from 'lucide-react'
+import { planVencido } from '@/lib/domain/suscripciones'
 
 interface Notificacion {
   id: string
@@ -138,6 +139,22 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
     }
 
     if (rol === 'admin') {
+      const { data: clubPlan } = await supabase.from('clubes')
+        .select('estado_plan,proximo_vencimiento')
+        .eq('id', perfil.club_id)
+        .single()
+      if (clubPlan && planVencido(clubPlan.estado_plan, clubPlan.proximo_vencimiento, hoy)) {
+        notificaciones.push({
+          id: `plan-pendiente-${clubPlan.proximo_vencimiento}`,
+          tipo: 'mensualidad',
+          titulo: 'Pago de CmSports pendiente',
+          mensaje: `El plan del club venció el ${new Date(`${clubPlan.proximo_vencimiento}T12:00:00`).toLocaleDateString('es-CL')}. Avisa cuando realices la transferencia.`,
+          fecha: clubPlan.proximo_vencimiento,
+          leida: false,
+          color: '#dc2626',
+        })
+      }
+
       const trimestre = Math.ceil((new Date().getMonth() + 1) / 3)
       const periodo   = `Q${trimestre}-${new Date().getFullYear()}`
       const { data: evsConFeedback } = await supabase.from('evaluaciones_trimestrales')

@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Pencil, Receipt } from 'lucide-react'
-import { actualizarPlanClub, registrarPagoClub, actualizarEstadoPagoClub } from '@/app/actions/superadmin'
+import { actualizarPlanClub, registrarPagoClub } from '@/app/actions/superadmin'
 import { useClubesSuperadmin } from '../layout'
 import { formatCLP } from '@/lib/domain/finanzas'
+import { planVencido, type EstadoPlan } from '@/lib/domain/suscripciones'
 
 const supabase = createClient()
 
@@ -19,41 +20,76 @@ const ESTADO_COLOR: Record<string, { bg: string; fg: string }> = {
   atrasado: { bg: '#fee2e2', fg: '#dc2626' },
 }
 
+const PLAN_COLOR: Record<EstadoPlan, { bg: string; fg: string; label: string }> = {
+  prueba: { bg: '#e0e7ff', fg: '#4338ca', label: 'Prueba' },
+  activo: { bg: '#dcfce7', fg: '#15803d', label: 'Activo' },
+  suspendido: { bg: '#fef3c7', fg: '#b45309', label: 'Suspendido' },
+  cancelado: { bg: '#fee2e2', fg: '#b91c1c', label: 'Cancelado' },
+}
+
 export default function FinanzasSuperadminPage() {
   const { clubes, loading: loadingClubes, recargar: recargarClubes } = useClubesSuperadmin()
   const [pagos, setPagos] = useState<any[]>([])
   const [loadingPagos, setLoadingPagos] = useState(true)
   const [editandoPlan, setEditandoPlan] = useState<string | null>(null)
-  const [planValor, setPlanValor] = useState('')
+  const [planForm, setPlanForm] = useState<{ monto: string; estado: EstadoPlan; fechaInicio: string }>({ monto: '', estado: 'prueba', fechaInicio: '' })
   const [modalPago, setModalPago] = useState<{ clubId: string; nombre: string } | null>(null)
   const [pagoForm, setPagoForm] = useState({ monto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '' })
   const [guardando, setGuardando] = useState(false)
+  const [cobradoEsteMes, setCobradoEsteMes] = useState(0)
+  const [mensaje, setMensaje] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => { cargarPagos() }, [])
 
   async function cargarPagos() {
     setLoadingPagos(true)
-    const { data: p } = await supabase.from('pagos_clubes').select('*, clubes(nombre)').order('fecha_pago', { ascending: false }).limit(10)
+    const ahora = new Date()
+    const [{ data: p }, { data: pagosMes }] = await Promise.all([
+      supabase.from('pagos_clubes').select('*, clubes(nombre)').order('fecha_pago', { ascending: false }).limit(10),
+      supabase.from('pagos_clubes').select('monto').eq('periodo_mes', ahora.getMonth() + 1).eq('periodo_anio', ahora.getFullYear()),
+    ])
     setPagos(p || [])
+    setCobradoEsteMes((pagosMes || []).reduce((total, pago) => total + Number(pago.monto || 0), 0))
     setLoadingPagos(false)
   }
 
   async function guardarPlan(clubId: string) {
-    const monto = Number(planValor) || 0
-    await actualizarPlanClub({ clubId, planMensual: monto })
+    setGuardando(true)
+    setError('')
+    setMensaje('')
+    const res = await actualizarPlanClub({
+      clubId,
+      planMensual: Number(planForm.monto) || 0,
+      estadoPlan: planForm.estado,
+      fechaInicioPlan: planForm.fechaInicio || null,
+    })
+    setGuardando(false)
+    if (res?.error) { setError(res.error); return }
     setEditandoPlan(null)
     await recargarClubes()
+    setMensaje('Plan actualizado correctamente.')
   }
 
-  async function cambiarEstado(clubId: string, estado: 'pagado' | 'pendiente' | 'atrasado') {
-    await actualizarEstadoPagoClub({ clubId, estado })
-    await recargarClubes()
+  function abrirPago(club: any) {
+    const fecha = club.proximo_vencimiento ? new Date(`${club.proximo_vencimiento}T12:00:00`) : new Date()
+    setPagoForm({
+      monto: String(club.plan_mensual || ''),
+      mes: fecha.getMonth() + 1,
+      anio: fecha.getFullYear(),
+      metodo: 'transferencia',
+      notas: '',
+    })
+    setError('')
+    setModalPago({ clubId: club.id, nombre: club.nombre })
   }
 
   async function confirmarPago() {
     if (!modalPago || !pagoForm.monto) return
     setGuardando(true)
-    await registrarPagoClub({
+    setError('')
+    setMensaje('')
+    const res = await registrarPagoClub({
       clubId: modalPago.clubId,
       monto: Number(pagoForm.monto),
       periodoMes: pagoForm.mes,
@@ -62,20 +98,19 @@ export default function FinanzasSuperadminPage() {
       notas: pagoForm.notas,
     })
     setGuardando(false)
+    if (res?.error) { setError(res.error); return }
     setModalPago(null)
     setPagoForm({ monto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '' })
     await Promise.all([cargarPagos(), recargarClubes()])
+    setMensaje('Pago confirmado. El próximo vencimiento fue actualizado.')
   }
 
   const loading = loadingClubes || loadingPagos
   if (loading) return <div style={{ color: '#94a3b8', fontSize: 14, padding: 24 }}>Cargando...</div>
 
   const mrr = clubes.reduce((a, c) => a + (c.plan_mensual || 0), 0)
-  const cobradoEsteMes = pagos
-    .filter(p => p.periodo_mes === new Date().getMonth() + 1 && p.periodo_anio === new Date().getFullYear())
-    .reduce((a, p) => a + p.monto, 0)
-  const atrasados = clubes.filter(c => c.estado_pago === 'atrasado').length
-  const alDia = clubes.filter(c => c.estado_pago === 'pagado').length
+  const vencidos = clubes.filter(c => planVencido(c.estado_plan, c.proximo_vencimiento)).length
+  const activos = clubes.filter(c => c.estado_plan === 'activo').length
 
   return (
     <div>
@@ -84,12 +119,15 @@ export default function FinanzasSuperadminPage() {
         <p style={{ fontSize: 12, color: '#94a3b8' }}>Ingresos de CmSports por suscripción de cada club</p>
       </div>
 
+      {mensaje && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8, background: '#dcfce7', color: '#15803d', fontSize: 13 }}>{mensaje}</div>}
+      {error && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8, background: '#fee2e2', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 22 }}>
         {[
           { label: 'MRR total', value: formatCLP(mrr), icon: Wallet, color: '#4f46e5' },
           { label: 'Cobrado este mes', value: formatCLP(cobradoEsteMes), icon: TrendingUp, color: '#16a34a' },
-          { label: 'Clubes al día', value: `${alDia}/${clubes.length}`, icon: CheckCircle2, color: '#0891b2' },
-          { label: 'Clubes atrasados', value: atrasados, icon: AlertTriangle, color: '#dc2626' },
+          { label: 'Planes activos', value: `${activos}/${clubes.length}`, icon: CheckCircle2, color: '#0891b2' },
+          { label: 'Pagos vencidos', value: vencidos, icon: AlertTriangle, color: '#dc2626' },
         ].map(m => (
           <div key={m.label} style={{ ...card, padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -105,58 +143,45 @@ export default function FinanzasSuperadminPage() {
         <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
           Suscripción por club
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ fontSize: 11, color: '#94a3b8', textAlign: 'left' }}>
-              <th style={{ padding: '8px 18px' }}>Club</th>
-              <th style={{ padding: '8px 18px' }}>Plan mensual</th>
-              <th style={{ padding: '8px 18px' }}>Estado</th>
-              <th style={{ padding: '8px 18px' }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {clubes.map(c => {
-              const estadoStyle = ESTADO_COLOR[c.estado_pago] || ESTADO_COLOR.pendiente
-              return (
-                <tr key={c.id} style={{ borderTop: '1px solid #f1f5f9', fontSize: 13 }}>
-                  <td style={{ padding: '10px 18px', color: '#0f172a', fontWeight: 500 }}>{c.nombre}</td>
-                  <td style={{ padding: '10px 18px' }}>
-                    {editandoPlan === c.id ? (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <input autoFocus type="number" value={planValor} onChange={e => setPlanValor(e.target.value)}
-                          style={{ width: 100, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12 }} />
-                        <button onClick={() => guardarPlan(c.id)} style={{ fontSize: 12, color: '#4f46e5', background: 'none', border: 'none', cursor: 'pointer' }}>Guardar</button>
-                      </div>
-                    ) : (
-                      <span onClick={() => { setEditandoPlan(c.id); setPlanValor(String(c.plan_mensual || 0)) }} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                        {c.plan_mensual > 0 ? formatCLP(c.plan_mensual) : 'Por definir'} <Pencil size={11} color="#94a3b8" />
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: '10px 18px' }}>
-                    <select value={c.estado_pago} onChange={e => cambiarEstado(c.id, e.target.value as any)} style={{
-                      fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 6, border: 'none',
-                      background: estadoStyle.bg, color: estadoStyle.fg, cursor: 'pointer',
-                    }}>
-                      <option value="pagado">Pagado</option>
-                      <option value="pendiente">Pendiente</option>
-                      <option value="atrasado">Atrasado</option>
-                    </select>
-                  </td>
-                  <td style={{ padding: '10px 18px', textAlign: 'right' }}>
-                    <button onClick={() => setModalPago({ clubId: c.id, nombre: c.nombre })} style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      fontSize: 12, color: '#4f46e5', background: 'none', border: '1px solid #e2e8f0',
-                      borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
-                    }}>
-                      <Receipt size={12} /> Registrar pago
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+            <thead><tr style={{ fontSize: 11, color: '#94a3b8', textAlign: 'left' }}>
+              <th style={{ padding: '8px 18px' }}>Club</th><th style={{ padding: '8px 18px' }}>Plan mensual</th>
+              <th style={{ padding: '8px 18px' }}>Plan e inicio</th><th style={{ padding: '8px 18px' }}>Próximo vencimiento</th>
+              <th style={{ padding: '8px 18px' }}>Cobro</th><th style={{ padding: '8px 18px' }}></th>
+            </tr></thead>
+            <tbody>{clubes.map(c => {
+              const vencido = planVencido(c.estado_plan, c.proximo_vencimiento)
+              const estadoPlan = (c.estado_plan || 'prueba') as EstadoPlan
+              const planStyle = PLAN_COLOR[estadoPlan] || PLAN_COLOR.prueba
+              const cobroStyle = vencido ? ESTADO_COLOR.atrasado : ESTADO_COLOR.pagado
+              const editando = editandoPlan === c.id
+              return <tr key={c.id} style={{ borderTop: '1px solid #f1f5f9', fontSize: 13, background: vencido ? '#fff7ed' : '#fff' }}>
+                <td style={{ padding: '10px 18px', color: '#0f172a', fontWeight: 500 }}>{c.nombre}</td>
+                <td style={{ padding: '10px 18px' }}>{editando ?
+                  <input autoFocus type="number" min="0" value={planForm.monto} onChange={e => setPlanForm({ ...planForm, monto: e.target.value })} style={{ width: 105, padding: '5px 8px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12 }} /> :
+                  <button onClick={() => { setError(''); setEditandoPlan(c.id); setPlanForm({ monto: String(c.plan_mensual || 0), estado: estadoPlan, fechaInicio: c.fecha_inicio_plan || '' }) }} style={{ border: 0, background: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                    {c.plan_mensual > 0 ? formatCLP(c.plan_mensual) : 'Por definir'} <Pencil size={11} color="#94a3b8" />
+                  </button>}
+                </td>
+                <td style={{ padding: '10px 18px' }}>{editando ? <div style={{ display: 'grid', gap: 5 }}>
+                  <select value={planForm.estado} onChange={e => setPlanForm({ ...planForm, estado: e.target.value as EstadoPlan })} style={{ padding: '5px 7px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 11 }}>
+                    <option value="prueba">Prueba</option><option value="activo">Activo</option><option value="suspendido">Suspendido</option><option value="cancelado">Cancelado</option>
+                  </select>
+                  <input type="date" value={planForm.fechaInicio} onChange={e => setPlanForm({ ...planForm, fechaInicio: e.target.value })} disabled={planForm.estado !== 'activo'} style={{ padding: '5px 7px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 11 }} />
+                </div> : <div><span style={{ background: planStyle.bg, color: planStyle.fg, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>{planStyle.label}</span>
+                  {c.fecha_inicio_plan && <div style={{ marginTop: 5, color: '#64748b', fontSize: 11 }}>Desde {new Date(`${c.fecha_inicio_plan}T12:00:00`).toLocaleDateString('es-CL')}</div>}</div>}
+                </td>
+                <td style={{ padding: '10px 18px', color: vencido ? '#b91c1c' : '#64748b', fontWeight: vencido ? 700 : 400 }}>{c.proximo_vencimiento ? new Date(`${c.proximo_vencimiento}T12:00:00`).toLocaleDateString('es-CL') : '—'}</td>
+                <td style={{ padding: '10px 18px' }}><span style={{ background: cobroStyle.bg, color: cobroStyle.fg, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>{vencido ? 'Pago pendiente' : estadoPlan === 'activo' ? 'Al día' : 'Sin cobro'}</span></td>
+                <td style={{ padding: '10px 18px', textAlign: 'right' }}>{editando ? <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                  <button onClick={() => setEditandoPlan(null)} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>Cancelar</button>
+                  <button onClick={() => guardarPlan(c.id)} disabled={guardando} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, border: 0, background: '#4f46e5', color: '#fff', cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+                </div> : <button onClick={() => abrirPago(c)} disabled={estadoPlan !== 'activo'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#4f46e5', background: 'none', border: '1px solid #e2e8f0', borderRadius: 6, padding: '5px 10px', cursor: estadoPlan === 'activo' ? 'pointer' : 'not-allowed', opacity: estadoPlan === 'activo' ? 1 : 0.45 }}><Receipt size={12} /> Registrar pago</button>}</td>
+              </tr>
+            })}</tbody>
+          </table>
+        </div>
       </div>
 
       <div style={{ ...card, overflow: 'hidden' }}>

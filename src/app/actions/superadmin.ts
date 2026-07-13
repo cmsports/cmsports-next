@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireSuperadmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { hoyISO, sumarMesesISO } from '@/lib/domain/suscripciones'
 
 const MODULOS_VALIDOS = ['torneos', 'liga', 'clases', 'calendario', 'asistencia', 'mensualidades', 'finanzas', 'redes', 'tienda'] as const
 
@@ -155,12 +156,57 @@ export async function actualizarModulosClub(input: { clubId: string; modulos: st
   return { success: true }
 }
 
-export async function actualizarPlanClub(input: { clubId: string; planMensual: number }) {
+const actualizarPlanSchema = z.object({
+  clubId: z.string().uuid('Club inválido'),
+  planMensual: z.number().finite().min(0, 'El plan mensual no puede ser negativo'),
+  estadoPlan: z.enum(['prueba', 'activo', 'suspendido', 'cancelado']),
+  fechaInicioPlan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de inicio inválida').nullable(),
+})
+
+export async function actualizarPlanClub(input: {
+  clubId: string
+  planMensual: number
+  estadoPlan: 'prueba' | 'activo' | 'suspendido' | 'cancelado'
+  fechaInicioPlan: string | null
+}) {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }
+
+  const parsed = actualizarPlanSchema.safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0].message }
+  const data = parsed.data
+  if (data.estadoPlan === 'activo' && data.planMensual <= 0) return { error: 'Define un monto antes de activar el plan' }
+  if (data.estadoPlan === 'activo' && !data.fechaInicioPlan) return { error: 'Define la fecha de inicio del plan activo' }
+
+  const { data: actual, error: actualError } = await supabase.from('clubes')
+    .select('fecha_inicio_plan,proximo_vencimiento')
+    .eq('id', data.clubId)
+    .single()
+  if (actualError || !actual) return { error: 'No se encontró el club' }
+
+  let fechaInicio = data.fechaInicioPlan
+  let proximoVencimiento: string | null = null
+  if (data.estadoPlan === 'activo' && fechaInicio) {
+    proximoVencimiento = actual.fecha_inicio_plan === fechaInicio && actual.proximo_vencimiento
+      ? actual.proximo_vencimiento
+      : sumarMesesISO(fechaInicio)
+  } else if (data.estadoPlan === 'suspendido') {
+    fechaInicio = actual.fecha_inicio_plan
+    proximoVencimiento = actual.proximo_vencimiento
+  } else {
+    fechaInicio = null
+  }
+
+  const pagoVencido = data.estadoPlan === 'activo' && !!proximoVencimiento && proximoVencimiento <= hoyISO()
   const { error } = await supabase.from('clubes')
-    .update({ plan_mensual: input.planMensual })
-    .eq('id', input.clubId)
+    .update({
+      plan_mensual: data.planMensual,
+      estado_plan: data.estadoPlan,
+      fecha_inicio_plan: fechaInicio,
+      proximo_vencimiento: proximoVencimiento,
+      estado_pago: pagoVencido ? 'pendiente' : 'pagado',
+    })
+    .eq('id', data.clubId)
   if (error) return { error: 'Error al actualizar el plan' }
   revalidatePath('/superadmin/finanzas')
   return { success: true }
@@ -177,19 +223,40 @@ export async function registrarPagoClub(input: {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }
 
+  const parsed = z.object({
+    clubId: z.string().uuid('Club inválido'),
+    monto: z.number().finite().positive('El monto debe ser mayor a cero'),
+    periodoMes: z.number().int().min(1).max(12),
+    periodoAnio: z.number().int().min(2020).max(2100),
+    metodo: z.enum(['transferencia', 'efectivo', 'otro']),
+    notas: z.string().trim().max(500, 'Las notas son demasiado largas'),
+  }).safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0].message }
+  const data = parsed.data
+
+  const { data: club, error: clubError } = await supabase.from('clubes')
+    .select('estado_plan,proximo_vencimiento')
+    .eq('id', data.clubId)
+    .single()
+  if (clubError || !club) return { error: 'No se encontró el club' }
+
   const { error } = await supabase.from('pagos_clubes').insert({
-    club_id: input.clubId,
-    monto: input.monto,
-    periodo_mes: input.periodoMes,
-    periodo_anio: input.periodoAnio,
-    metodo: input.metodo || null,
-    notas: input.notas || null,
+    club_id: data.clubId,
+    monto: data.monto,
+    periodo_mes: data.periodoMes,
+    periodo_anio: data.periodoAnio,
+    metodo: data.metodo,
+    notas: data.notas || null,
   })
   if (error) return { error: 'Error al registrar el pago' }
 
+  const baseVencimiento = club.proximo_vencimiento || hoyISO()
   const { error: estadoError } = await supabase.from('clubes')
-    .update({ estado_pago: 'pagado' })
-    .eq('id', input.clubId)
+    .update({
+      estado_pago: 'pagado',
+      proximo_vencimiento: club.estado_plan === 'activo' ? sumarMesesISO(baseVencimiento) : club.proximo_vencimiento,
+    })
+    .eq('id', data.clubId)
   if (estadoError) return { error: 'Pago registrado pero fallo actualizar el estado' }
 
   revalidatePath('/superadmin/finanzas')

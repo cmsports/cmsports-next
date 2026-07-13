@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { PerfilProvider } from "@/lib/auth/PerfilProvider";
 import { ModulosProvider } from "@/lib/hooks/useModulos";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
+import AvisoPagoPlanGlobal from "@/components/aviso-pago-plan";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -50,7 +51,10 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <ServiceWorkerRegister />
         <PerfilProvider>
-          <ModulosProvider>{children}</ModulosProvider>
+          <ModulosProvider>
+            <AvisoPagoPlanGlobal />
+            {children}
+          </ModulosProvider>
         </PerfilProvider>
       </body>
     </html>
