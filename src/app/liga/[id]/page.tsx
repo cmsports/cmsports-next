@@ -66,6 +66,7 @@ export default function LigaDetallePage() {
   const [creandoExterno, setCreandoExterno] = useState(false)
 
   const [programando, setProgramando] = useState(false)
+  const [programacionKey, setProgramacionKey] = useState(0)
   const [diffAbierto, setDiffAbierto] = useState(false)
   const [diffData, setDiffData] = useState<DiffDivision | null>(null)
   const [pendingDivision, setPendingDivision] = useState<Division | null>(null)
@@ -212,6 +213,7 @@ export default function LigaDetallePage() {
     if (res.error) { setMensaje(res.error); return }
     const extra = (res.totalSinProgramar ?? 0) > 0 ? ` · ${res.totalSinProgramar} sin programar (irán a Fecha ajuste)` : ''
     setMensaje(`Programación lista: ${res.totalProgramados ?? 0} partidos asignados${extra}`)
+    setProgramacionKey(k => k + 1)
     cargar()
   }
 
@@ -360,7 +362,7 @@ export default function LigaDetallePage() {
           </div>
 
           {/* ── Tab Jugadores ─────────────────────────────────────────────── */}
-          <div style={{ display: subTab === 'jugadores' ? 'block' : 'none' }}>
+          {subTab === 'jugadores' && <div>
             <div style={{ ...card, padding:20 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexWrap:'wrap', gap:10 }}>
                 <div style={{ fontSize:13, color: muted }}>
@@ -461,10 +463,10 @@ export default function LigaDetallePage() {
 
               <FixtureDivision key={`${division.id}-${division.fixture_generado}`} divisionId={division.id} nombres={nombrePorId} />
             </div>
-          </div>
+          </div>}
 
           {/* ── Tab Programación ──────────────────────────────────────────── */}
-          <div style={{ display: subTab === 'programacion' ? 'block' : 'none' }}>
+          {subTab === 'programacion' && <div>
             {/* Barra: selector de fecha + acciones */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14, flexWrap:'wrap', gap:10 }}>
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
@@ -491,16 +493,16 @@ export default function LigaDetallePage() {
             </div>
 
             {fechaSeleccionada ? (
-              <TableroFecha fechaId={fechaSeleccionada} divisionId={division.id} />
+              <TableroFecha key={`${fechaSeleccionada}-${programacionKey}`} fechaId={fechaSeleccionada} divisionId={division.id} />
             ) : (
-              <div style={{ fontSize:13, color: hint }}>Sin fechas disponibles. Usa "Programar" para asignar partidos a fechas.</div>
+              <div style={{ fontSize:13, color: hint }}>Sin fechas disponibles. Usa "Programar fecha" para asignar partidos a fechas.</div>
             )}
-          </div>
+          </div>}
 
           {/* ── Tab Ranking ───────────────────────────────────────────────── */}
-          <div style={{ display: subTab === 'ranking' ? 'block' : 'none' }}>
+          {subTab === 'ranking' && <div>
             <RankingDivision divisionId={division.id} nombreDivision={division.nombre} />
-          </div>
+          </div>}
         </div>
       )}
 
