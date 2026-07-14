@@ -459,7 +459,7 @@ export default function LigaDetallePage() {
                 )}
               </div>
 
-              <FixtureDivision divisionId={division.id} nombres={nombrePorId} />
+              <FixtureDivision key={`${division.id}-${division.fixture_generado}`} divisionId={division.id} nombres={nombrePorId} />
             </div>
           </div>
 
