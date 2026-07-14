@@ -147,17 +147,32 @@ export default function LigaDetallePage() {
     })
   }
 
-  async function handleGuardarJugadores(division: Division) {
+  async function handleRegistrarJugadores(division: Division) {
     const ids = divisionJugadores[division.id] || []
+    if (ids.length < 2) {
+      setMensaje('Seleccioná al menos 2 jugadores para continuar')
+      return
+    }
     if (division.fixture_generado) {
       const res = await calcularDiffFixtureDivision({ divisionId: division.id, nuevosJugadorIds: ids })
       if (res.error) { setMensaje(res.error); return }
       setDiffData(res.data)
       setPendingDivision(division)
       setDiffAbierto(true)
-    } else {
-      await aplicarGuardado(division)
+      return
     }
+    setAplicandoDiff(true)
+    const saveRes = await asignarJugadoresDivision({ divisionId: division.id, jugadorIds: ids })
+    if (saveRes.error) { setMensaje(saveRes.error); setAplicandoDiff(false); return }
+    const fixtureRes = await generarFixtureDivisionAction({ divisionId: division.id })
+    setAplicandoDiff(false)
+    if (fixtureRes.error) {
+      setMensaje(`Jugadores guardados, pero el fixture falló: ${fixtureRes.error}`)
+      cargar()
+      return
+    }
+    setMensaje(`${ids.length} jugadores registrados · ${fixtureRes.totalPartidos} partidos en el fixture`)
+    cargar()
   }
 
   async function aplicarGuardado(division: Division) {
@@ -188,12 +203,6 @@ export default function LigaDetallePage() {
     setFormExternoAbierto(false)
     setJugadoresClub(prev => [...prev, { id: res.jugadorId!, nombre: res.jugadorNombre!, es_externo: true }].sort((a, b) => a.nombre.localeCompare(b.nombre)))
     toggleJugadorDivision(division, res.jugadorId)
-  }
-
-  async function handleGenerarFixture(divisionId: string) {
-    const res = await generarFixtureDivisionAction({ divisionId })
-    setMensaje(res.error || `Fixture generado: ${res.totalPartidos} partidos`)
-    cargar()
   }
 
   async function handleGenerarProgramacion() {
@@ -432,27 +441,23 @@ export default function LigaDetallePage() {
                 </div>
               )}
 
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                <button onClick={() => handleGuardarJugadores(division)} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 14px', color: muted, fontSize:12, cursor:'pointer' }}>
-                  {division.fixture_generado ? 'Guardar (ver cambios)' : 'Guardar jugadores'}
+              <div style={{ marginTop:4 }}>
+                <button
+                  onClick={() => handleRegistrarJugadores(division)}
+                  disabled={aplicandoDiff}
+                  style={{
+                    background: jugadoresDeDivision.length >= 2 ? '#4f46e5' : '#e2e8f0',
+                    color: jugadoresDeDivision.length >= 2 ? 'white' : hint,
+                    border:'none', borderRadius:8, padding:'9px 20px', fontSize:13, fontWeight:600,
+                    cursor: aplicandoDiff || jugadoresDeDivision.length < 2 ? 'not-allowed' : 'pointer',
+                    opacity: aplicandoDiff ? 0.6 : 1,
+                  }}>
+                  {aplicandoDiff ? 'Guardando...' : 'Registrar jugadores'}
                 </button>
-                {!division.fixture_generado && (
-                  <button
-                    onClick={() => handleGenerarFixture(division.id)}
-                    disabled={jugadoresDeDivision.length < 2}
-                    style={{
-                      background: jugadoresDeDivision.length < 2 ? '#e2e8f0' : '#4f46e5',
-                      color: jugadoresDeDivision.length < 2 ? hint : 'white',
-                      border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600,
-                      cursor: jugadoresDeDivision.length < 2 ? 'not-allowed' : 'pointer',
-                    }}>
-                    Generar fixture
-                  </button>
+                {jugadoresDeDivision.length < 2 && (
+                  <div style={{ fontSize:11, color: hint, marginTop:6 }}>Seleccioná al menos 2 jugadores</div>
                 )}
               </div>
-              {jugadoresDeDivision.length < 2 && !division.fixture_generado && (
-                <div style={{ fontSize:11, color: hint, marginTop:8 }}>Se necesitan al menos 2 jugadores inscritos para generar el fixture</div>
-              )}
 
               <FixtureDivision divisionId={division.id} nombres={nombrePorId} />
             </div>
