@@ -481,25 +481,11 @@ export default function LigaDetallePage() {
                 ))}
               </div>
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-                {fechaActual?.estado === 'programada' && !fechaActual.es_ajuste && (
-                  <button
-                    onClick={() => handleIniciarFecha(fechaActual.id)}
-                    style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
-                    Iniciar Fecha {fechaActual.numero}
-                  </button>
-                )}
                 <button
                   onClick={handleGenerarProgramacion}
                   disabled={programando}
                   style={{ background: programando ? '#e2e8f0' : '#4f46e5', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
-                  {programando ? 'Programando...' : 'Programar'}
-                </button>
-                <button
-                  onClick={handleLimpiarYReprogramar}
-                  disabled={programando}
-                  title="Borra la programación de partidos no jugados y la regenera desde cero"
-                  style={{ background: programando ? '#e2e8f0' : '#fff7ed', color: programando ? hint : '#c2410c', border:'1px solid #fed7aa', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
-                  Limpiar y reprogramar
+                  {programando ? 'Programando...' : 'Programar fecha'}
                 </button>
               </div>
             </div>

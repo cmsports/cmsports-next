@@ -312,7 +312,6 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
           <span style={{ background: estBg, color: estColor, padding:'4px 12px', borderRadius:20, fontSize:11, fontWeight:600 }}>{estLabel}</span>
           <button onClick={() => exportarProgramacion('fecha')} style={exportBtn}>📄 PDF por horario</button>
           <button onClick={() => exportarProgramacion('mesa')} style={exportBtn}>📄 PDF por mesa</button>
-          <button onClick={exportarHojasDePartido} style={exportBtn}>📄 Hojas de partido</button>
           {fecha.estado === 'programada' && (
             <button onClick={handleIniciarFecha} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
               Iniciar Fecha
