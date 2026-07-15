@@ -1,8 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import {
+  firmaSnapshotTorneoVivo,
+  normalizarSnapshotTorneoVivo,
+  type GrupoVivo,
+  type JugadorVivo,
+  type PartidoVivo,
+  type SnapshotTorneoVivo,
+} from '@/lib/domain/torneo-vivo'
 
 const supabase = createClient()
 
@@ -11,34 +19,10 @@ const FASE_LABELS: Record<string, string> = {
   '8vos': '8vos', cuartos: 'Cuartos', semis: 'Semifinal', final: 'Final', finalizado: 'Finalizado',
 }
 
-type Jugador = { id: string; nombre: string; grupo_id: string | null }
-type Grupo = { id: string; nombre: string }
-type Partido = {
-  id: string; fase: string | null; grupo_id: string | null; orden: number | null
-  jugador_a: string | null; jugador_b: string | null; ganador: string | null
-  nombre_a: string | null; nombre_b: string | null
-}
-type Snapshot = {
-  torneo: { id: string; nombre: string; fase: string | null; estado: string | null }
-  grupos: Grupo[]; jugadores: Jugador[]; partidos: Partido[]
-}
-
-function normalizarSnapshot(data: unknown): Snapshot | null {
-  if (!data || typeof data !== 'object') return null
-  const raw = data as Partial<Snapshot>
-  if (!raw.torneo || typeof raw.torneo !== 'object') return null
-  return {
-    torneo: {
-      id: String(raw.torneo.id || ''),
-      nombre: String(raw.torneo.nombre || 'Torneo'),
-      fase: raw.torneo.fase ?? null,
-      estado: raw.torneo.estado ?? null,
-    },
-    grupos: Array.isArray(raw.grupos) ? raw.grupos : [],
-    jugadores: Array.isArray(raw.jugadores) ? raw.jugadores : [],
-    partidos: Array.isArray(raw.partidos) ? raw.partidos : [],
-  }
-}
+type Jugador = JugadorVivo
+type Grupo = GrupoVivo
+type Partido = PartidoVivo
+type Snapshot = SnapshotTorneoVivo
 
 const text = '#0f172a', muted = '#64748b', hint = '#94a3b8', purple = '#4f46e5', green = '#16a34a'
 const card = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.12)' } as const
@@ -53,37 +37,85 @@ export default function VivoTorneoPage() {
   // identidad del espectador: se guarda en localStorage por torneo
   const [yo, setYo] = useState<{ jugadorId: string | null; nombre: string } | null>(null)
   const [paso, setPaso] = useState<'gate' | 'correo' | 'ver'>('gate')
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cargadoRef = useRef(false)
+  const firmaRef = useRef('')
+  const peticionEnCursoRef = useRef<string | null>(null)
+  const activoRef = useRef(false)
+  const codigoActualRef = useRef(codigo)
 
   const cargar = useCallback(async () => {
-    const { data, error } = await supabase.rpc('torneo_publico', { p_codigo: codigo })
-    const snapshot = normalizarSnapshot(data)
-    if (error || !snapshot) {
-      // ponytail: solo mostrar "no encontrado" en la carga inicial; en polling
-      // conservar el último snapshot bueno para no blanquear la vista en errores transitorios
-      if (!cargadoRef.current) setEstado('no-encontrado')
-      return
+    if (!codigo || peticionEnCursoRef.current === codigo) return
+    peticionEnCursoRef.current = codigo
+    try {
+      const { data, error } = await supabase.rpc('torneo_publico', { p_codigo: codigo })
+      if (!activoRef.current || codigoActualRef.current !== codigo) return
+      const snapshot = normalizarSnapshotTorneoVivo(data)
+      if (error || !snapshot) {
+        // Solo mostrar "no encontrado" en la carga inicial. Durante el polling
+        // se conserva el último snapshot bueno ante cualquier error transitorio.
+        if (!cargadoRef.current) setEstado('no-encontrado')
+        return
+      }
+      cargadoRef.current = true
+      const firma = firmaSnapshotTorneoVivo(snapshot)
+      if (firma !== firmaRef.current) {
+        firmaRef.current = firma
+        startTransition(() => setSnap(snapshot))
+      }
+      setEstado('ok')
+    } catch {
+      if (activoRef.current && codigoActualRef.current === codigo && !cargadoRef.current) {
+        setEstado('no-encontrado')
+      }
+    } finally {
+      if (peticionEnCursoRef.current === codigo) peticionEnCursoRef.current = null
     }
-    cargadoRef.current = true
-    setSnap(snapshot)
-    setEstado('ok')
+  }, [codigo])
+
+  useEffect(() => {
+    activoRef.current = true
+    return () => { activoRef.current = false }
+  }, [])
+
+  useEffect(() => {
+    codigoActualRef.current = codigo
   }, [codigo])
 
   // Restaurar identidad guardada y primera carga
   useEffect(() => {
+    cargadoRef.current = false
+    firmaRef.current = ''
+    setSnap(null)
+    setEstado('cargando')
+    setYo(null)
+    setPaso('gate')
     try {
       const raw = localStorage.getItem(storeKey)
       if (raw) { setYo(JSON.parse(raw)); setPaso('ver') }
     } catch { /* noop */ }
-    cargar()
+    void cargar()
   }, [storeKey, cargar])
 
-  // Polling en vivo mientras se están viendo los partidos (cada 5s)
+  // Polling secuencial: una consulta termina antes de programar la siguiente.
+  // Así no se acumulan renders ni solicitudes cuando cambia una llave.
   useEffect(() => {
     if (paso !== 'ver') return
-    timer.current = setInterval(cargar, 5000)
-    return () => { if (timer.current) clearInterval(timer.current) }
+    let cancelado = false
+    const actualizar = async () => {
+      if (document.visibilityState !== 'hidden') await cargar()
+      if (!cancelado) timer.current = setTimeout(actualizar, 5000)
+    }
+    const alCambiarVisibilidad = () => {
+      if (document.visibilityState === 'visible') void cargar()
+    }
+    timer.current = setTimeout(actualizar, 5000)
+    document.addEventListener('visibilitychange', alCambiarVisibilidad)
+    return () => {
+      cancelado = true
+      if (timer.current) clearTimeout(timer.current)
+      document.removeEventListener('visibilitychange', alCambiarVisibilidad)
+    }
   }, [paso, cargar])
 
   function guardarIdentidad(id: { jugadorId: string | null; nombre: string }) {
@@ -236,7 +268,10 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
   const totalEnJuego = enJuego.length
 
   // clasificados = los 2 primeros de cada grupo (por partidos ganados)
-  const clasificados = useMemo(() => standingsPorGrupo(grupos, jugadores, partidos), [grupos, jugadores, partidos])
+  const clasificados = useMemo(
+    () => fase === 'grupos' ? standingsPorGrupo(grupos, jugadores, partidos) : [],
+    [fase, grupos, jugadores, partidos],
+  )
 
   // campeón = ganador de la final (para el mensaje al finalizar)
   const campeon = useMemo(() => {

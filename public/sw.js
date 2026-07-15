@@ -1,4 +1,5 @@
-const CACHE_NAME = 'cmsports-v1';
+// Nueva versión para eliminar chunks antiguos acumulados por despliegues previos.
+const CACHE_NAME = 'cmsports-v2';
 const APP_SHELL = ['/manifest.json', '/logo.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
