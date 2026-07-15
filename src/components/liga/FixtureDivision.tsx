@@ -22,7 +22,6 @@ interface PartidoFila {
   ganadorId: string | null
   ordenFixture: number
   fechaNumero: number | null
-  fechaEstado: string | null
 }
 
 export function FixtureDivision({
@@ -59,7 +58,6 @@ export function FixtureDivision({
         ganadorId: p.ganador_id,
         ordenFixture: p.orden_fixture,
         fechaNumero: f?.numero ?? null,
-        fechaEstado: f?.estado ?? null,
       }
     }))
     setLoading(false)
@@ -114,7 +112,6 @@ export function FixtureDivision({
       <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
         {partidos.map(p => {
           const jugado = p.estado === 'finalizado' || p.estado === 'walkover'
-          const enJuego = p.fechaEstado === 'en_juego'
           const nombreA = nombres[p.jugadorAId] ?? '—'
           const nombreB = nombres[p.jugadorBId] ?? '—'
           const resStr = jugado && p.setsA !== null && p.setsB !== null
@@ -149,7 +146,7 @@ export function FixtureDivision({
                 <span style={{ flexShrink:0, fontWeight:700, color:'#16a34a', fontVariantNumeric:'tabular-nums', fontSize:12 }}>
                   {resStr}{ganadorNombre ? ` (${ganadorNombre})` : ''}
                 </span>
-              ) : enJuego ? (
+              ) : (
                 <div style={{ display:'flex', gap:5, alignItems:'center', flexShrink:0 }}>
                   <select
                     value={resultados[p.id] ?? ''}
@@ -172,10 +169,6 @@ export function FixtureDivision({
                     {guardandoId === p.id ? '...' : 'OK'}
                   </button>
                 </div>
-              ) : (
-                <span style={{ flexShrink:0, fontSize:11, color:hint }}>
-                  {p.fechaNumero != null ? 'Programado' : 'Sin programar'}
-                </span>
               )}
             </div>
           )

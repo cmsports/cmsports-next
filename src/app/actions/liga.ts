@@ -680,15 +680,8 @@ export async function registrarResultadoPartido(params: {
     .eq('id', partidoId)
     .single()
   if (!partido) return { error: 'Partido no encontrado' }
-  if (partido.estado === 'finalizado') return { error: 'Este partido ya tiene un resultado registrado' }
-  if (!['programado', 'en_juego'].includes(partido.estado)) {
-    return { error: 'Este partido no está en condiciones de recibir un resultado (walkover/pendiente se resuelven aparte)' }
-  }
-
-  if (!partido.fecha_id) return { error: 'El partido no tiene una fecha asignada' }
-  const { data: fecha } = await supabase.from('liga_fechas').select('estado').eq('id', partido.fecha_id).single()
-  if (!fecha || fecha.estado !== 'en_juego') {
-    return { error: 'Solo se pueden registrar resultados en una fecha "En Juego". Inicia la fecha primero.' }
+  if (['finalizado', 'walkover'].includes(partido.estado)) {
+    return { error: 'Este partido ya fue resuelto' }
   }
 
   const ganadorId = determinarGanadorBo5(setsA, setsB, partido.jugador_a_id, partido.jugador_b_id)
@@ -698,7 +691,7 @@ export async function registrarResultadoPartido(params: {
     .from('liga_partidos')
     .update({ sets_a: setsA, sets_b: setsB, ganador_id: ganadorId, estado: 'finalizado', observaciones: observaciones || null })
     .eq('id', partidoId)
-    .in('estado', ['programado', 'en_juego'])
+    .not('estado', 'in', '("finalizado","walkover")')
     .select('id')
   if (error) return { error: 'No se pudo registrar el resultado: ' + error.message }
   if (!actualizado?.length) return { error: 'Este partido ya tiene un resultado registrado' }
@@ -722,7 +715,7 @@ export async function registrarWalkover(params: { partidoId: string; ganadorId: 
     .eq('id', partidoId)
     .single()
   if (!partido) return { error: 'Partido no encontrado' }
-  if (!['programado', 'en_juego'].includes(partido.estado)) {
+  if (['finalizado', 'walkover'].includes(partido.estado)) {
     return { error: 'Este partido ya fue resuelto' }
   }
   if (ganadorId !== partido.jugador_a_id && ganadorId !== partido.jugador_b_id) {
