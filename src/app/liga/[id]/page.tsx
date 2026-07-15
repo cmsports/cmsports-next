@@ -10,6 +10,7 @@ import {
   asignarJugadoresDivision, calcularDiffFixtureDivision,
   generarFixtureDivisionAction, generarProgramacionLiga, limpiarProgramacionLiga,
   iniciarFecha, crearJugadorExternoLiga,
+  terminarFechaAction, programarEnReajuste,
 } from '@/app/actions/liga'
 import { registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
@@ -233,6 +234,33 @@ export default function LigaDetallePage() {
   async function handleIniciarFecha(fechaId: string) {
     const res = await iniciarFecha({ fechaId })
     if (res.error) { setMensaje(res.error); return }
+    cargar()
+  }
+
+  async function handleTerminarFecha(fechaId: string) {
+    setProgramando(true)
+    const res = await terminarFechaAction({ fechaId })
+    if (res.error) { setMensaje(res.error); setProgramando(false); return }
+    if (res.todasTerminadas) {
+      const rRes = await programarEnReajuste({ ligaId })
+      setProgramando(false)
+      if (rRes.error) { setMensaje(`Fecha terminada · Error al programar reajuste: ${rRes.error}`); return }
+      setMensaje(`Todas las fechas terminadas — ${rRes.total ?? 0} partidos programados en fecha de reajuste`)
+      setProgramacionKey(k => k + 1)
+    } else {
+      setProgramando(false)
+      setMensaje('Fecha terminada')
+    }
+    cargar()
+  }
+
+  async function handleProgramarReajuste() {
+    setProgramando(true)
+    const res = await programarEnReajuste({ ligaId })
+    setProgramando(false)
+    if (res.error) { setMensaje(res.error); return }
+    setMensaje(`Reajuste programado: ${res.total ?? 0} partidos asignados`)
+    setProgramacionKey(k => k + 1)
     cargar()
   }
 
@@ -486,12 +514,31 @@ export default function LigaDetallePage() {
                 ))}
               </div>
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-                <button
-                  onClick={handleGenerarProgramacion}
-                  disabled={programando}
-                  style={{ background: programando ? '#e2e8f0' : '#4f46e5', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
-                  {programando ? 'Programando...' : 'Programar fecha'}
-                </button>
+                {fechaActual?.es_ajuste ? (
+                  <button
+                    onClick={handleProgramarReajuste}
+                    disabled={programando}
+                    style={{ background: programando ? '#e2e8f0' : '#7c3aed', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
+                    {programando ? 'Programando...' : 'Programar Reajuste'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleGenerarProgramacion}
+                      disabled={programando}
+                      style={{ background: programando ? '#e2e8f0' : '#4f46e5', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
+                      {programando ? 'Programando...' : 'Programar fecha'}
+                    </button>
+                    {fechaSeleccionada && fechaActual?.estado !== 'finalizada' && (
+                      <button
+                        onClick={() => handleTerminarFecha(fechaSeleccionada)}
+                        disabled={programando}
+                        style={{ background: programando ? '#e2e8f0' : '#dc2626', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
+                        Terminar Fecha
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
 

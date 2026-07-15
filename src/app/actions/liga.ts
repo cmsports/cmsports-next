@@ -761,3 +761,144 @@ export async function reprogramarPartidoAFecha5(params: { partidoId: string }) {
 
   return { success: true }
 }
+
+// ─── Terminar fecha regular ───────────────────────────────────────────────────
+// Marca la fecha como "finalizada". Si tras esto todas las fechas regulares
+// están terminadas, devuelve todasTerminadas=true para que el cliente
+// dispare programarEnReajuste automáticamente.
+export async function terminarFechaAction(params: { fechaId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { data: fecha } = await supabase
+    .from('liga_fechas')
+    .select('id, liga_id, es_ajuste')
+    .eq('id', params.fechaId)
+    .single()
+  if (!fecha) return { error: 'Fecha no encontrada' }
+  if (fecha.es_ajuste) return { error: 'La fecha de reajuste no se puede terminar manualmente' }
+
+  const { error } = await supabase
+    .from('liga_fechas')
+    .update({ estado: 'finalizada' })
+    .eq('id', params.fechaId)
+  if (error) return { error: 'No se pudo terminar la fecha: ' + error.message }
+
+  // Verificar si todas las fechas regulares quedaron finalizadas
+  const { data: regularFechas } = await supabase
+    .from('liga_fechas')
+    .select('estado')
+    .eq('liga_id', fecha.liga_id)
+    .eq('es_ajuste', false)
+
+  const todasTerminadas = (regularFechas || []).every(f => f.estado === 'finalizada')
+
+  return { success: true, todasTerminadas, ligaId: fecha.liga_id }
+}
+
+// ─── Programar partidos no jugados en la fecha de reajuste ───────────────────
+// Recoge TODOS los partidos no resueltos (pendiente/programado) de fechas
+// regulares y sin fecha, los mueve al reajuste y los programa con la misma
+// lógica de orden y árbitros.
+export async function programarEnReajuste(params: { ligaId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+  const db = supabase as any
+  const { ligaId } = params
+
+  const [{ data: ligaConfig }, { data: fechaAjuste }, { data: mesasRaw }] = await Promise.all([
+    db.from('ligas').select('bloque_minutos').eq('id', ligaId).single(),
+    supabase.from('liga_fechas').select('id').eq('liga_id', ligaId).eq('es_ajuste', true).single(),
+    supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero'),
+  ])
+  if (!fechaAjuste) return { error: 'Esta liga no tiene fecha de reajuste' }
+
+  const mesas = (mesasRaw || []) as Array<{ id: string; numero: number }>
+  const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
+
+  // Todos los partidos no resueltos de la liga (cliente filtra por fecha)
+  const { data: rawAll } = await db
+    .from('liga_partidos')
+    .select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture, fecha_id, mesa_id')
+    .eq('liga_id', ligaId)
+    .not('estado', 'in', '("finalizado","walkover")')
+    .is('deleted_at', null)
+
+  const todos = (rawAll || []) as Array<{
+    id: string; division_id: string; jugador_a_id: string; jugador_b_id: string
+    orden_fixture: number; fecha_id: string | null; mesa_id: string | null
+  }>
+
+  // Los que NO están ya en reajuste: moverlos ahí sin mesa/bloque
+  const toMoveIds = todos.filter(p => p.fecha_id !== fechaAjuste.id).map(p => p.id)
+  if (toMoveIds.length > 0) {
+    const lote = 50
+    for (let i = 0; i < toMoveIds.length; i += lote) {
+      await supabase
+        .from('liga_partidos')
+        .update({ fecha_id: fechaAjuste.id, mesa_id: null, bloque_horario: null, arbitro_id: null })
+        .in('id', toMoveIds.slice(i, i + lote))
+    }
+  }
+
+  // Todos los que van a quedar en reajuste sin programar (incluye ya-en-reajuste sin mesa)
+  const toSchedule: PartidoAProgramar[] = todos
+    .filter(p => p.fecha_id !== fechaAjuste.id || !p.mesa_id)
+    .map(p => ({ id: p.id, divisionId: p.division_id, jugadorAId: p.jugador_a_id, jugadorBId: p.jugador_b_id, ordenFixture: p.orden_fixture }))
+
+  if (!toSchedule.length) return { success: true, total: 0 }
+
+  const divisionIds = Array.from(new Set(toSchedule.map(p => p.divisionId)))
+  const [{ data: divJug }, { data: divsData }] = await Promise.all([
+    supabase.from('liga_division_jugadores').select('division_id, jugador_id').in('division_id', divisionIds),
+    supabase.from('liga_divisiones').select('id, orden').in('id', divisionIds).order('orden'),
+  ])
+
+  const jugadoresPorDivision = new Map<string, string[]>()
+  for (const dj of divJug || []) {
+    const arr = jugadoresPorDivision.get(dj.division_id) ?? []
+    arr.push(dj.jugador_id)
+    jugadoresPorDivision.set(dj.division_id, arr)
+  }
+
+  const mesaPorDivision = new Map<string, number>()
+  ;(divsData || []).forEach((div, i) => {
+    mesaPorDivision.set(div.id, mesas[i % mesas.length]?.numero ?? 1)
+  })
+
+  const porDivision = new Map<string, PartidoAProgramar[]>()
+  for (const p of toSchedule) {
+    const arr = porDivision.get(p.divisionId) ?? []
+    arr.push(p)
+    porDivision.set(p.divisionId, arr)
+  }
+
+  const todosProgramados: PartidoProgramado[] = []
+  for (const [divId, partidosDiv] of porDivision) {
+    const mesaNumero = mesaPorDivision.get(divId) ?? mesas[0]?.numero ?? 1
+    const jugadoresDiv = jugadoresPorDivision.get(divId) ?? []
+    const { programados } = programarDivision(partidosDiv, jugadoresDiv, 1, bloques, mesaNumero)
+    todosProgramados.push(...programados)
+  }
+
+  const conArbitros = asignarArbitrosEficiente(todosProgramados, jugadoresPorDivision, bloques)
+  const mesaIdPorNumero = new Map(mesas.map(m => [m.numero, m.id]))
+
+  let exitosos = 0
+  const tam = 25
+  for (let i = 0; i < conArbitros.length; i += tam) {
+    const resultados = await Promise.all(
+      conArbitros.slice(i, i + tam).map(p =>
+        supabase.from('liga_partidos').update({
+          mesa_id: mesaIdPorNumero.get(p.mesaNumero) ?? null,
+          bloque_horario: p.bloqueHorario,
+          arbitro_id: p.arbitroId,
+        }).eq('id', p.id).then(r => ({ error: r.error }))
+      )
+    )
+    exitosos += resultados.filter(r => !r.error).length
+  }
+
+  return { success: true, total: exitosos }
+}
