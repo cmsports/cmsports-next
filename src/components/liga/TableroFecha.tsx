@@ -123,6 +123,11 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
 
   const partidosVisibles = divisionId ? partidos.filter(p => p.divisionId === divisionId) : partidos
 
+  // Cuando se muestra una sola división, ocultar mesas vacías (cada división usa 1 mesa)
+  const mesasVisibles = divisionId
+    ? mesas.filter(m => partidosVisibles.some(p => p.mesaId === m.id))
+    : mesas
+
   function partidoEn(mesaId: string, bloque: string) {
     return partidosVisibles.find(p => p.mesaId === mesaId && p.bloqueHorario === bloque)
   }
@@ -330,7 +335,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
             <thead>
               <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
                 <th style={{ position:'sticky', left:0, background:'#f8fafc', padding:'10px 14px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Horario</th>
-                {mesas.map(mesa => (
+                {mesasVisibles.map(mesa => (
                   <th key={mesa.id} style={{ padding:'10px 14px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', minWidth:170 }}>
                     Mesa {mesa.numero}
                   </th>
@@ -343,7 +348,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
                   <td style={{ position:'sticky', left:0, background:'#ffffff', borderBottom:'1px solid #f1f5f9', padding:'8px 14px', fontSize:12, fontWeight:600, color: text, fontFamily:'monospace' }}>
                     {bloque}
                   </td>
-                  {mesas.map(mesa => {
+                  {mesasVisibles.map(mesa => {
                     const partido = partidoEn(mesa.id, bloque)
                     const clickeable = fecha.estado === 'en_juego' && partido && !['finalizado', 'walkover'].includes(partido.estado)
                     const bg = !partido ? 'transparent'

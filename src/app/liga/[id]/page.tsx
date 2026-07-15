@@ -79,19 +79,20 @@ export default function LigaDetallePage() {
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0])
   const [metodoPago, setMetodoPago] = useState('')
   const [registrandoPago, setRegistrandoPago] = useState(false)
+  const [pagoError, setPagoError] = useState('')
 
   const cargar = useCallback(async () => {
-    const { data: ligaData } = await (supabase as any).from('ligas').select('nombre, club_id, monto_inscripcion_default').eq('id', ligaId).single()
+    // 5 queries en paralelo — RLS filtra por club sin necesitar club_id explícito
+    const [{ data: ligaData }, { data: divs }, { data: fch }, { data: jugs }, { data: dj }] = await Promise.all([
+      (supabase as any).from('ligas').select('nombre, monto_inscripcion_default').eq('id', ligaId).single(),
+      supabase.from('liga_divisiones').select('id, nombre, orden, fixture_generado, capacidad_max').eq('liga_id', ligaId).order('orden'),
+      supabase.from('liga_fechas').select('id, numero, es_ajuste, estado').eq('liga_id', ligaId).order('numero'),
+      supabase.from('jugadores').select('id, nombre, es_externo').eq('estado', 'activo').order('nombre'),
+      supabase.from('liga_division_jugadores').select('division_id, jugador_id'),
+    ])
     if (!ligaData) { setLoading(false); return }
 
     setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null })
-
-    const [{ data: divs }, { data: fch }, { data: jugs }, { data: dj }] = await Promise.all([
-      supabase.from('liga_divisiones').select('id, nombre, orden, fixture_generado, capacidad_max').eq('liga_id', ligaId).order('orden'),
-      supabase.from('liga_fechas').select('id, numero, es_ajuste, estado').eq('liga_id', ligaId).order('numero'),
-      supabase.from('jugadores').select('id, nombre, es_externo').eq('club_id', ligaData.club_id).eq('estado', 'activo').order('nombre'),
-      supabase.from('liga_division_jugadores').select('division_id, jugador_id'),
-    ])
     setDivisiones(divs || [])
     setFechas(fch || [])
     setJugadoresClub(jugs || [])
@@ -237,6 +238,7 @@ export default function LigaDetallePage() {
 
   function abrirPagoModal(jugador: Jugador) {
     setJugadorPagando(jugador)
+    setPagoError('')
     const pagoExistente = pagos[jugador.id]
     if (pagoExistente) {
       setMontoTotal(String(pagoExistente.monto_total))
@@ -254,8 +256,9 @@ export default function LigaDetallePage() {
     if (!jugadorPagando || !divisionActiva || !liga) return
     const mt = parseInt(montoTotal)
     const ma = parseInt(montoAbono)
-    if (!mt || mt <= 0) { setMensaje('El monto total debe ser mayor a cero'); return }
-    if (!ma || ma <= 0) { setMensaje('El monto del abono debe ser mayor a cero'); return }
+    if (!mt || mt <= 0) { setPagoError('El monto total debe ser mayor a cero'); return }
+    if (!ma || ma <= 0) { setPagoError('El monto del abono debe ser mayor a cero'); return }
+    setPagoError('')
     setRegistrandoPago(true)
     const res = await registrarPagoLiga({
       divisionId: divisionActiva,
@@ -268,7 +271,7 @@ export default function LigaDetallePage() {
       nombreLiga: liga.nombre,
     })
     setRegistrandoPago(false)
-    if (res.error) { setMensaje(res.error); return }
+    if (res.error) { setPagoError(res.error); return }
     setPagoModalAbierto(false)
     await cargarPagos(divisionActiva)
     setMensaje(`Pago registrado — ${jugadorPagando.nombre}: $${ma.toLocaleString('es-CL')}`)
@@ -625,6 +628,12 @@ export default function LigaDetallePage() {
               El pago quedará registrado en Finanzas como ingreso de inscripción.
             </div>
 
+            {pagoError && (
+              <div style={{ background:'#fef2f2', color:'#dc2626', borderRadius:8, padding:'9px 12px', fontSize:12, marginBottom:14 }}>
+                {pagoError}
+              </div>
+            )}
+
             <div style={{ display:'flex', gap:10 }}>
               <button
                 onClick={() => setPagoModalAbierto(false)}
@@ -633,8 +642,8 @@ export default function LigaDetallePage() {
               </button>
               <button
                 onClick={handleRegistrarPago}
-                disabled={registrandoPago || !montoTotal || !montoAbono}
-                style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor: (registrandoPago || !montoTotal || !montoAbono) ? 'default' : 'pointer', opacity: (registrandoPago || !montoTotal || !montoAbono) ? 0.6 : 1 }}>
+                disabled={registrandoPago}
+                style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor: registrandoPago ? 'default' : 'pointer', opacity: registrandoPago ? 0.6 : 1 }}>
                 {registrandoPago ? 'Registrando...' : 'Registrar pago'}
               </button>
             </div>

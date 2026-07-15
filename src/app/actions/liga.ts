@@ -245,30 +245,18 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   const { ligaId } = params
   const db = supabase as any
 
-  // Leer config de la liga (total_fechas y bloque_minutos son de migración 016;
-  // si no existen, usar valores por defecto)
-  const { data: ligaConfig } = await db
-    .from('ligas')
-    .select('total_fechas, bloque_minutos, mesas_count')
-    .eq('id', ligaId)
-    .single()
+  // 4 queries independientes en paralelo
+  const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawPendientes }] = await Promise.all([
+    db.from('ligas').select('total_fechas, bloque_minutos, mesas_count').eq('id', ligaId).single(),
+    supabase.from('liga_fechas').select('id, numero').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero', { ascending: true }),
+    supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
+    db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture').eq('liga_id', ligaId).is('fecha_id', null).is('deleted_at', null).order('orden_fixture', { ascending: true }),
+  ])
+
   const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
   const totalFechas: number = ligaConfig?.total_fechas ?? 5
   const mesasCountDefault: number = ligaConfig?.mesas_count ?? 4
   const nFechasRegulares = totalFechas - 1
-
-  const { data: fechas } = await supabase
-    .from('liga_fechas')
-    .select('id, numero')
-    .eq('liga_id', ligaId)
-    .eq('es_ajuste', false)
-    .order('numero', { ascending: true })
-
-  const { data: mesasRaw } = await supabase
-    .from('liga_mesas')
-    .select('id, numero')
-    .eq('liga_id', ligaId)
-    .order('numero', { ascending: true })
 
   if (!fechas?.length)
     return { error: `Crea primero las fechas regulares de la liga (1 a ${nFechasRegulares})` }
@@ -283,14 +271,6 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
 
   if (!mesasActivas.length)
     return { error: `No se pudieron crear las ${mesasCountDefault} mesas automáticas. Verifica los permisos de la liga.` }
-
-  const { data: rawPendientes } = await db
-    .from('liga_partidos')
-    .select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture')
-    .eq('liga_id', ligaId)
-    .is('fecha_id', null)
-    .is('deleted_at', null)
-    .order('orden_fixture', { ascending: true })
   const partidosPendientes = (rawPendientes || []) as Array<{ id: string; division_id: string; jugador_a_id: string; jugador_b_id: string; orden_fixture: number }>
 
   if (!partidosPendientes.length) return { error: 'No hay partidos pendientes por programar' }
