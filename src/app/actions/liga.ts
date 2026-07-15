@@ -748,7 +748,7 @@ export async function reprogramarPartidoAFecha5(params: { partidoId: string }) {
     .eq('id', params.partidoId)
     .single()
   if (!partido) return { error: 'Partido no encontrado' }
-  if (!['programado', 'en_juego'].includes(partido.estado)) {
+  if (['finalizado', 'walkover'].includes(partido.estado)) {
     return { error: 'Este partido ya fue resuelto' }
   }
 
@@ -758,7 +758,7 @@ export async function reprogramarPartidoAFecha5(params: { partidoId: string }) {
     .eq('liga_id', partido.liga_id)
     .eq('es_ajuste', true)
     .single()
-  if (!fechaAjuste) return { error: 'Esta liga no tiene Fecha 5 (ajuste) configurada' }
+  if (!fechaAjuste) return { error: 'Esta liga no tiene fecha de reajuste configurada' }
 
   const { error } = await supabase
     .from('liga_partidos')

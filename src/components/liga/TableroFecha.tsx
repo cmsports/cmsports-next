@@ -507,7 +507,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
                   Walkover: gana {nombres[partidoResultado.jugadorBId] ?? 'Jugador B'}
                 </button>
                 <button disabled={guardandoAccion} onClick={handleReprogramar} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
-                  Reprogramar a fecha de reajuste
+                  Reajuste
                 </button>
               </div>
             </div>
