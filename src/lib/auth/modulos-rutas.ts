@@ -7,7 +7,7 @@ export type ModuloClub = typeof MODULOS_CLUB[number]
 
 const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly string[] }> = [
   { modulo: 'torneos', rutas: ['/torneos', '/torneos-externos'] },
-  { modulo: 'liga', rutas: ['/liga', '/ranking'] },
+  { modulo: 'liga', rutas: ['/liga'] },
   { modulo: 'clases', rutas: ['/clases', '/mis-clases'] },
   { modulo: 'calendario', rutas: ['/calendario'] },
   { modulo: 'asistencia', rutas: ['/asistencia'] },

@@ -24,27 +24,13 @@ export default function AsistenciaPublicaPage() {
   const [horaRegistro, setHoraRegistro] = useState('')
   const [mounted, setMounted] = useState(false)
 
-  const hoy = new Date().toISOString().slice(0, 10)
-  const STORAGE_KEY = `cmsports_asistencia_${clubId}_${hoy}`
-
   useEffect(() => {
     setMounted(true)
 
-    const registroHoy = localStorage.getItem(STORAGE_KEY)
-    if (registroHoy) {
-      try {
-        const data = JSON.parse(registroHoy)
-        setJugadorNombre(data.nombre)
-        setHoraRegistro(data.hora)
-        setEstado('bloqueado')
-      } catch {
-        setEstado('bloqueado')
-      }
-    }
-
     async function cargarClub() {
-      const { data } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
-      setClub(data)
+      const { data } = await supabase.rpc('obtener_club_asistencia', { p_club_id: clubId })
+      const filas = data as Array<{ nombre: string }> | null
+      setClub(filas?.[0] || null)
     }
     if (clubId) cargarClub()
   }, [clubId])
@@ -61,74 +47,33 @@ export default function AsistenciaPublicaPage() {
   async function registrar() {
     if (!rut || rut.length < 5) { setEstado('error'); setMensaje('Ingresa tu RUT completo'); return }
 
-    const registroHoy = localStorage.getItem(STORAGE_KEY)
-    if (registroHoy) {
-      try {
-        const data = JSON.parse(registroHoy)
-        setJugadorNombre(data.nombre)
-        setHoraRegistro(data.hora)
-      } catch {}
-      setEstado('bloqueado')
-      return
-    }
-
     setEstado('loading')
-
-    const rutSinFormato = rut.replace(/\./g, '').replace('-', '').toLowerCase()
-    const rutNumeros = rutSinFormato.slice(0, -1)
-    const { data: jugadores } = await supabase.from('jugadores')
-      .select('id,nombre,sesiones_usadas,sesiones_limite,estado,rut')
-      .eq('club_id', clubId)
-
-    const jugador = jugadores?.find(j => {
-      if (!j.rut) return false
-      const jRut = j.rut.replace(/\./g, '').replace('-', '').toLowerCase()
-      return jRut === rutSinFormato || jRut.slice(0, -1) === rutNumeros
+    const { data, error } = await supabase.rpc('registrar_asistencia_rut', {
+      p_club_id: clubId,
+      p_rut: rut,
     })
 
-    if (!jugador) {
+    if (error) {
       setEstado('error')
-      setMensaje('RUT no encontrado. Consulta al encargado del club.')
+      setMensaje(error.message)
       return
     }
 
-    if (jugador.estado !== 'activo') {
+    const filas = data as Array<{
+      jugador_nombre: string
+      hora_registro: string
+      ya_registrada: boolean
+    }> | null
+    const resultado = filas?.[0]
+    if (!resultado) {
       setEstado('error')
-      setMensaje('Tu cuenta está bloqueada. Consulta al encargado.')
+      setMensaje('No fue posible registrar la asistencia')
       return
     }
 
-    const { data: asistHoy } = await supabase.from('asistencia')
-      .select('id').eq('jugador_id', jugador.id).eq('fecha', hoy).maybeSingle()
-
-    if (asistHoy) {
-      const hora = new Date().toTimeString().slice(0, 5)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ nombre: jugador.nombre, hora }))
-      setJugadorNombre(jugador.nombre)
-      setHoraRegistro(hora)
-      setEstado('bloqueado')
-      return
-    }
-
-    if (jugador.sesiones_usadas >= jugador.sesiones_limite && jugador.sesiones_limite > 0) {
-      setEstado('error')
-      setMensaje('No tienes sesiones disponibles este mes. Contacta al encargado.')
-      return
-    }
-
-    const hora = new Date().toTimeString().slice(0, 5)
-    await supabase.from('asistencia').insert({
-      club_id: clubId, jugador_id: jugador.id, fecha: hoy, hora
-    })
-    if (jugador.sesiones_limite > 0) {
-      await supabase.from('jugadores').update({ sesiones_usadas: jugador.sesiones_usadas + 1 }).eq('id', jugador.id)
-    }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ nombre: jugador.nombre, hora, jugadorId: jugador.id }))
-
-    setJugadorNombre(jugador.nombre)
-    setHoraRegistro(hora)
-    setEstado('ok')
+    setJugadorNombre(resultado.jugador_nombre)
+    setHoraRegistro(resultado.hora_registro?.slice(0, 5) || '')
+    setEstado(resultado.ya_registrada ? 'yaRegistrado' : 'ok')
   }
 
   if (!mounted) return null
@@ -148,14 +93,14 @@ export default function AsistenciaPublicaPage() {
         </div>
 
         {/* Bloqueado */}
-        {estado === 'bloqueado' && (
+        {(estado === 'bloqueado' || estado === 'yaRegistrado') && (
           <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:20, padding:32, textAlign:'center' }}>
             <div style={{ fontSize:56, marginBottom:16 }}>🔒</div>
             <div style={{ fontSize:20, fontWeight:700, color:'#3730a3', marginBottom:8 }}>Ya registraste hoy</div>
             {jugadorNombre && <div style={{ fontSize:16, color: text, marginBottom:8 }}>{jugadorNombre}</div>}
             {horaRegistro && <div style={{ fontSize:13, color: muted, marginBottom:16 }}>Hora de ingreso: {horaRegistro}</div>}
             <div style={{ fontSize:12, color: muted, lineHeight:1.6 }}>
-              Solo se permite un registro por día por dispositivo. Si hay un problema, avisa al encargado.
+              Solo se permite un registro por jugador cada día. Si hay un problema, avisa al encargado.
             </div>
           </div>
         )}

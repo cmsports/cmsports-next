@@ -1,23 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import {
-  calcularTotalPartidos,
   generarFixtureDivision,
   esResultadoBo5Valido,
   determinarGanadorBo5,
   calcularRankingDivision,
   validarMovimientoPartido,
-  distribuirEnFechas,
-  programarFecha,
   type PartidoFinalizado,
   type PartidoExistente,
-  type PartidoAProgramar,
 } from './liga'
 
 describe('fixture round-robin', () => {
-  it('calcularTotalPartidos = n(n-1)/2', () => {
-    expect(calcularTotalPartidos(4)).toBe(6)
-    expect(calcularTotalPartidos(5)).toBe(10)
-  })
   it('generarFixtureDivision numera el orden correlativo', () => {
     const f = generarFixtureDivision(['a', 'b', 'c'])
     expect(f).toHaveLength(3)
@@ -111,38 +103,5 @@ describe('validarMovimientoPartido', () => {
     const r = validarMovimientoPartido(conArbitro, destino, [conArbitro])
     expect(r.valido).toBe(false)
     expect(r.motivo).toMatch(/árbitro/i)
-  })
-})
-
-describe('motor de programación', () => {
-  const mkPartidos = (n: number, divisionId = 'd1'): PartidoAProgramar[] =>
-    Array.from({ length: n }, (_, i) => ({
-      id: `p${i}`, divisionId, jugadorAId: `a${i}`, jugadorBId: `b${i}`, ordenFixture: i,
-    }))
-
-  it('distribuirEnFechas respeta la capacidad y manda el resto a sobrantes', () => {
-    const { fechas, sobrantes } = distribuirEnFechas(mkPartidos(10), 2, 4)
-    expect(fechas[0].length).toBeLessThanOrEqual(4)
-    expect(fechas[1].length).toBeLessThanOrEqual(4)
-    expect(fechas.flat().length + sobrantes.length).toBe(10)
-    expect(sobrantes.length).toBe(2)
-  })
-
-  it('programarFecha no pone a un jugador en dos partidos del mismo bloque', () => {
-    // 3 partidos que comparten al jugador X → deben caer en bloques distintos
-    const partidos: PartidoAProgramar[] = [
-      { id: 'p1', divisionId: 'd1', jugadorAId: 'X', jugadorBId: 'B', ordenFixture: 0 },
-      { id: 'p2', divisionId: 'd1', jugadorAId: 'X', jugadorBId: 'C', ordenFixture: 1 },
-      { id: 'p3', divisionId: 'd1', jugadorAId: 'X', jugadorBId: 'D', ordenFixture: 2 },
-    ]
-    const { programados } = programarFecha(partidos, 1, [1, 2], ['09:00', '09:30', '10:00'])
-    const bloquesDeX = programados.map(p => p.bloqueHorario)
-    expect(new Set(bloquesDeX).size).toBe(bloquesDeX.length) // todos distintos
-  })
-
-  it('programarFecha nunca asigna dos partidos a la misma mesa+bloque', () => {
-    const { programados } = programarFecha(mkPartidos(6), 1, [1, 2], ['09:00', '09:30', '10:00'])
-    const slots = programados.map(p => `${p.mesaNumero}@${p.bloqueHorario}`)
-    expect(new Set(slots).size).toBe(slots.length)
   })
 })

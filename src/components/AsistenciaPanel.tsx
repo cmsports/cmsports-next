@@ -27,9 +27,6 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-const asistenciaCache: Record<string, { jugadores: any[]; asistencias: any[]; fecha: string }> = {}
-const diasConDatosCache: Record<string, Set<string>> = {}
-
 function formatFechaLarga(fecha: string) {
   return new Date(fecha + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
 }
@@ -67,12 +64,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         setJugadorPropio(j)
       }
       if (perfil.club_id) {
-        const cached = asistenciaCache[perfil.club_id]
-        if (cached?.fecha === hoy) {
-          setJugadores(cached.jugadores)
-          setAsistencias(cached.asistencias)
-          setLoading(false)
-        }
         if (navigator.onLine) await sincronizarCola(perfil.club_id)
         await cargarDatos(perfil.club_id)
       }
@@ -91,6 +82,21 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (!clubId || !fechaVista || fechaVista === hoy) return
     cargarAsistenciasDia(fechaVista)
   }, [fechaVista, clubId])
+
+  useEffect(() => {
+    if (!clubId) return
+    const canal = supabase
+      .channel(`asistencia-panel-${clubId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'asistencia',
+      }, () => {
+        void cargarDatos(clubId)
+        if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
+      })
+      .subscribe()
+
+    return () => { void supabase.removeChannel(canal) }
+  }, [clubId, fechaVista])
 
   async function sincronizarCola(cid?: string) {
     const id = cid || clubId
@@ -120,10 +126,21 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       return
     }
 
-    const [{ data: j }, { data: a }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,categoria,sesiones_usadas,sesiones_limite').eq('club_id', id).eq('estado', 'activo').order('nombre'),
+    let consultaJugadores = supabase.from('jugadores')
+      .select('id,nombre,categoria,sesiones_usadas,sesiones_limite')
+      .eq('club_id', id).eq('estado', 'activo').order('nombre')
+    if (perfil?.rol === 'jugador' && perfil.jugador_id) {
+      consultaJugadores = consultaJugadores.eq('id', perfil.jugador_id)
+    }
+
+    const [{ data: j, error: jugadoresError }, { data: a, error: asistenciasError }] = await Promise.all([
+      consultaJugadores,
       supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
     ])
+    if (jugadoresError || asistenciasError) {
+      setMensaje({ tipo: 'error', texto: jugadoresError?.message || asistenciasError?.message || 'No fue posible cargar la asistencia' })
+      return
+    }
     setJugadores(j || [])
     await guardarJugadoresCache(id, j || [])
 
@@ -132,7 +149,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       .filter(p => !yaSincronizadas.has(p.jugadorId))
       .map(p => ({ id: p.id, jugador_id: p.jugadorId, hora: p.hora, pendienteSync: true }))
     const asistenciasHoy = [...(a || []), ...pendientesSinSincronizar]
-    asistenciaCache[id] = { jugadores: j || [], asistencias: asistenciasHoy, fecha: hoy }
     setAsistencias(asistenciasHoy)
 
     if (perfil?.jugador_id) {
@@ -143,7 +159,8 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   async function cargarAsistenciasDia(fecha: string) {
     if (!clubId) return
     setCargandoDia(true)
-    const { data } = await supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
+    const { data, error } = await supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
+    if (error) setMensaje({ tipo: 'error', texto: error.message })
     setAsistenciasDia(data || [])
     setCargandoDia(false)
   }
@@ -172,7 +189,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
 
     const result = await registrarAsistenciaAction(clubId!, jugadorId, hoy, hora)
-    if (result.error) { setRegistrando(null); return }
+    if (result.error) {
+      setMensaje({ tipo: 'error', texto: result.error })
+      setRegistrando(null)
+      return
+    }
     await cargarDatos()
     setRegistrando(null)
     setBusqueda('')
@@ -227,8 +248,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (!confirm(`¿Eliminar asistencia de ${nombreJugador}?`)) return
     setEliminando(asistenciaId)
     const result = await eliminarAsistencia(asistenciaId)
-    if (result.error) alert(result.error)
-    if (fechaVista === hoy) { await cargarDatos() } else { await cargarAsistenciasDia(fechaVista) }
+    if (result.error) {
+      setMensaje({ tipo: 'error', texto: result.error })
+    } else if (fechaVista === hoy) {
+      await cargarDatos()
+    } else {
+      await cargarAsistenciasDia(fechaVista)
+    }
     setEliminando(null)
   }
 
@@ -418,17 +444,20 @@ function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, ho
       const supabase = createClient()
       const inicio = new Date(anio, mes, 1).toISOString().slice(0, 10)
       const fin = new Date(anio, mes + 1, 0).toISOString().slice(0, 10)
-      const cacheKey = `${clubId}:${anio}-${mes}`
-      if (diasConDatosCache[cacheKey]) {
-        setDiasConDatos(diasConDatosCache[cacheKey])
-        return
-      }
       const { data } = await supabase.from('asistencia').select('fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
       const dias = new Set((data || []).map((d: any) => d.fecha))
-      diasConDatosCache[cacheKey] = dias
       setDiasConDatos(dias)
     }
     if (clubId) cargar()
+
+    const canal = supabase
+      .channel(`asistencia-calendario-${clubId}-${anio}-${mes}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'asistencia',
+      }, () => { void cargar() })
+      .subscribe()
+
+    return () => { void supabase.removeChannel(canal) }
   }, [clubId, mes, anio])
 
   function cambiarMes(dir: number) {

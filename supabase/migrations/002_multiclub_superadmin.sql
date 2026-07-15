@@ -63,7 +63,6 @@ where rol = 'admin';
 -- PASO 4: Borrar TODOS los datos de prueba (irreversible)
 -- Orden: hijos antes que padres para respetar FKs
 -- ────────────────────────────────────────────────────────────
-delete from historial_elo;
 delete from evaluaciones_trimestrales;
 
 delete from torneo_pagos;

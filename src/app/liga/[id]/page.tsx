@@ -8,8 +8,8 @@ import AppLayout from '@/app/layout-app'
 import {
   crearDivision, actualizarCapacidadDivision,
   asignarJugadoresDivision, calcularDiffFixtureDivision,
-  generarFixtureDivisionAction, generarProgramacionLiga, limpiarProgramacionLiga,
-  iniciarFecha, crearJugadorExternoLiga,
+  generarFixtureDivisionAction, generarProgramacionLiga,
+  crearJugadorExternoLiga,
   terminarFechaAction, programarEnReajuste, programarNuevosPartidosDivision,
 } from '@/app/actions/liga'
 import { registrarPagoLiga } from '@/app/actions/liga-pagos'
@@ -255,24 +255,6 @@ export default function LigaDetallePage() {
     const extra = (res.totalSinProgramar ?? 0) > 0 ? ` · ${res.totalSinProgramar} sin programar (irán a Fecha ajuste)` : ''
     setMensaje(`Programación lista: ${res.totalProgramados ?? 0} partidos asignados${extra}`)
     setProgramacionKey(k => k + 1)
-    cargar()
-  }
-
-  async function handleLimpiarYReprogramar() {
-    setProgramando(true)
-    const limpRes = await limpiarProgramacionLiga({ ligaId })
-    if (limpRes.error) { setMensaje(limpRes.error); setProgramando(false); return }
-    const progRes = await generarProgramacionLiga({ ligaId })
-    setProgramando(false)
-    if (progRes.error) { setMensaje(progRes.error); return }
-    const extra = (progRes.totalSinProgramar ?? 0) > 0 ? ` · ${progRes.totalSinProgramar} sin programar` : ''
-    setMensaje(`Reprogramación completa: ${progRes.totalProgramados ?? 0} partidos asignados${extra}`)
-    cargar()
-  }
-
-  async function handleIniciarFecha(fechaId: string) {
-    const res = await iniciarFecha({ fechaId })
-    if (res.error) { setMensaje(res.error); return }
     cargar()
   }
 
@@ -623,7 +605,7 @@ export default function LigaDetallePage() {
             {fechaSeleccionada ? (
               <TableroFecha key={`${fechaSeleccionada}-${programacionKey}`} fechaId={fechaSeleccionada} divisionId={division.id} ligaId={ligaId} />
             ) : (
-              <div style={{ fontSize:13, color: hint }}>Sin fechas disponibles. Usa "Programar fecha" para asignar partidos a fechas.</div>
+              <div style={{ fontSize:13, color: hint }}>Sin fechas disponibles. Usa &quot;Programar fecha&quot; para asignar partidos a fechas.</div>
             )}
           </div>}
 

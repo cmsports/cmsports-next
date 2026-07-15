@@ -34,16 +34,9 @@ export default function DashboardProfesorPage() {
   const domingo = new Date(hoy)
   domingo.setDate(hoy.getDate() + diasHastaDom)
   const domingoISO = domingo.toISOString().slice(0, 10)
-
-  useEffect(() => {
-    async function cargar() {
-      if (authLoading) return
-      if (!perfil) { router.push('/login'); return }
-      if (perfil.club_id) await cargarDatos(perfil)
-      setLoading(false)
-    }
-    cargar()
-  }, [authLoading, perfil])
+  const cincoDiasAtras = new Date(hoy)
+  cincoDiasAtras.setDate(hoy.getDate() - 5)
+  const cincoDiasAtrasISO = cincoDiasAtras.toISOString().slice(0, 10)
 
   async function cargarDatos(p: any) {
     const trimestre = `Q${Math.ceil((hoy.getMonth()+1)/3)}-${hoy.getFullYear()}`
@@ -54,7 +47,7 @@ export default function DashboardProfesorPage() {
         .gte('fecha', hoyISO).lte('fecha', domingoISO)
         .order('fecha').order('hora_inicio'),
       supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', p.club_id).eq('periodo_trimestre', trimestre),
-      supabase.from('asistencia').select('jugador_id').eq('club_id', p.club_id).gte('fecha', new Date(Date.now()-5*24*60*60*1000).toISOString().slice(0,10))
+      supabase.from('asistencia').select('jugador_id').eq('club_id', p.club_id).gte('fecha', cincoDiasAtrasISO)
     ])
 
     setTotalAlumnos(jugadores?.length || 0)
@@ -72,6 +65,16 @@ export default function DashboardProfesorPage() {
     if (ausentes.length > 0) nuevasAlertas.push({ tipo:'error', msg:`${ausentes.length} alumno${ausentes.length>1?'s':''} sin asistir en los últimos 5 días`, data: ausentes, key:'ausentes' })
     setAlertas(nuevasAlertas)
   }
+
+  useEffect(() => {
+    async function cargar() {
+      if (authLoading) return
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.club_id) await cargarDatos(perfil)
+      setLoading(false)
+    }
+    cargar()
+  }, [authLoading, perfil])
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>

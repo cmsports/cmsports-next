@@ -66,10 +66,10 @@ export default function JugadoresPage() {
     const id = cid || clubId
     const { data, error } = await supabase
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,elo')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado')
       .eq('club_id', id)
       .neq('es_externo', true)
-      .order('elo', { ascending: false })
+      .order('nombre')
     if (error) { mostrarToast('Error al cargar jugadores'); return }
     if (id) jugadoresCache[id] = data || []
     setJugadores(data || [])
@@ -136,14 +136,16 @@ export default function JugadoresPage() {
 
   async function toggleEstado(j: any) {
     const nuevoEstado = j.estado === 'activo' ? 'bloqueado' : 'activo'
-    await toggleEstadoJugador({ jugadorId: j.id, nuevoEstado })
+    const resultado = await toggleEstadoJugador({ jugadorId: j.id, nuevoEstado })
+    if (resultado.error) { mostrarToast(resultado.error); return }
     mostrarToast(`Jugador ${nuevoEstado === 'activo' ? 'activado' : 'bloqueado'}`)
     cargarJugadores()
   }
 
   async function eliminar(id: string) {
     if (!confirm('¿Eliminar este jugador? Esta acción no se puede deshacer.')) return
-    await eliminarJugador({ jugadorId: id })
+    const resultado = await eliminarJugador({ jugadorId: id })
+    if (resultado.error) { mostrarToast(resultado.error); return }
     mostrarToast('Jugador eliminado')
     cargarJugadores()
   }
@@ -175,9 +177,11 @@ export default function JugadoresPage() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Jugadores</h1>
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
-            Exportar Excel
-          </button>
+          {esAdmin && (
+            <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
+              Exportar Excel
+            </button>
+          )}
           {esAdmin && tabJug === 'jugadores' && (
             <button onClick={abrirNuevo} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
               + Nuevo jugador

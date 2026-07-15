@@ -13,13 +13,6 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
-const ELO_TABLA: Record<string, Record<string, number>> = {
-  sub19:      { fase_grupos:5,  octavos:10, cuartos:15, semifinal:20, subcampeon:25, campeon:35 },
-  aficionados:{ fase_grupos:8,  octavos:15, cuartos:22, semifinal:30, subcampeon:40, campeon:55 },
-  intermedia: { fase_grupos:12, octavos:20, cuartos:30, semifinal:42, subcampeon:55, campeon:75 },
-  tc:         { fase_grupos:20, octavos:32, cuartos:45, semifinal:60, subcampeon:80, campeon:110 }
-}
-
 const POSICION_LABEL: Record<string, string> = {
   fase_grupos:'Fase de grupos', octavos:'Octavos de final', cuartos:'Cuartos de final',
   semifinal:'Semifinal', subcampeon:'Subcampeón', campeon:'Campeón 🏆'
@@ -54,28 +47,21 @@ export default function TorneosExternosPage() {
     cargar()
   }, [authLoading, perfil])
 
-  const puntosPreview = ELO_TABLA[form.categoria]?.[form.posicion] || 0
-
   async function guardar() {
     const clubNombre = form.club === 'Otro' ? form.clubNombre : form.club
     if (!clubNombre || !form.fecha) return
     setGuardando(true)
 
-    const puntos = ELO_TABLA[form.categoria]?.[form.posicion] || 0
-    await supabase.from('torneos_externos').insert({
+    const { error } = await supabase.from('torneos_externos').insert({
       club_id: clubId, jugador_id: perfil?.jugador_id,
       nombre_club: clubNombre, categoria: form.categoria,
-      posicion: form.posicion, fecha: form.fecha, puntos_elo: puntos
+      posicion: form.posicion, fecha: form.fecha,
     })
-
-    const { data: jug } = await supabase.from('jugadores').select('elo').eq('id', perfil?.jugador_id).single()
-    const nuevoElo = (jug?.elo || 1200) + puntos
-    await supabase.from('jugadores').update({ elo: nuevoElo }).eq('id', perfil?.jugador_id)
-    await supabase.from('historial_elo').insert({
-      jugador_id: perfil?.jugador_id, club_id: clubId,
-      elo_antes: jug?.elo || 1200, elo_despues: nuevoElo,
-      posicion: POSICION_LABEL[form.posicion], fecha: form.fecha
-    })
+    if (error) {
+      alert(`No se pudo registrar: ${error.message}`)
+      setGuardando(false)
+      return
+    }
 
     const { data: e } = await supabase.from('torneos_externos').select('*').eq('jugador_id', perfil?.jugador_id).order('fecha', { ascending: false })
     setExternos(e || [])
@@ -83,8 +69,6 @@ export default function TorneosExternosPage() {
     setForm({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
     setGuardando(false)
   }
-
-  const totalElo = externos.reduce((s, t) => s + t.puntos_elo, 0)
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>

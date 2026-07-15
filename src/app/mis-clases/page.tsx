@@ -22,6 +22,8 @@ export default function MisClasesPage() {
   const [reservas, setReservas] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [semanaOffset, setSemanaOffset] = useState(0)
+  const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  const [reservaLoading, setReservaLoading] = useState<string | null>(null)
   const router = useRouter()
 
   const hoy = new Date()
@@ -41,49 +43,84 @@ export default function MisClasesPage() {
     setLoading(false)
   }, [authLoading, perfil])
 
-  useEffect(() => {
-    if (!perfil?.club_id) return
-    cargarClases()
-  }, [perfil, semanaOffset])
-
   async function cargarClases() {
     const inicio = formatFecha(inicioSemana)
     const fin = formatFecha(finSemana)
 
-    const [{ data: cl }, { data: pr }] = await Promise.all([
+    const [{ data: cl, error: clasesError }, { data: pr, error: profesoresError }] = await Promise.all([
       supabase.from('clases').select('*').eq('club_id', perfil?.club_id).eq('publicada', true)
         .gte('fecha', inicio).lte('fecha', fin).order('fecha').order('hora_inicio'),
       supabase.from('profesores').select('*').eq('club_id', perfil?.club_id)
     ])
+    if (clasesError || profesoresError) {
+      setMensaje({ tipo: 'error', texto: clasesError?.message || profesoresError?.message || 'No fue posible cargar las clases' })
+      return
+    }
 
-    const clasesConAsistentes = await Promise.all((cl || []).map(async (clase: any) => {
-      const { count } = await supabase.from('reservas').select('*', { count:'exact', head:true }).eq('clase_id', clase.id).eq('estado', 'confirmado')
-      return { ...clase, _asistentes: count || 0 }
+    const { data: conteosData, error: conteosError } = await supabase.rpc('contar_reservas_clases', {
+      p_clase_ids: (cl || []).map(clase => clase.id),
+    })
+    if (conteosError) {
+      setMensaje({ tipo: 'error', texto: conteosError.message })
+      return
+    }
+    const conteos = new Map(
+      ((conteosData as Array<{ clase_id: string; total: number }> | null) || [])
+        .map(fila => [fila.clase_id, Number(fila.total)])
+    )
+    const clasesConAsistentes = (cl || []).map(clase => ({
+      ...clase,
+      _asistentes: conteos.get(clase.id) || 0,
     }))
     setClases(clasesConAsistentes)
     setProfesores(pr || [])
 
     if (perfil?.jugador_id) {
-      const { data: res } = await supabase.from('reservas').select('clase_id').eq('jugador_id', perfil.jugador_id).eq('estado', 'confirmado')
+      const { data: res, error } = await supabase.from('reservas').select('clase_id').eq('jugador_id', perfil.jugador_id).eq('estado', 'confirmado')
+      if (error) {
+        setMensaje({ tipo: 'error', texto: error.message })
+        return
+      }
       setReservas(new Set((res || []).map((r: any) => r.clase_id)))
     }
   }
 
+  useEffect(() => {
+    if (!perfil?.club_id) return
+    void cargarClases()
+  }, [perfil, semanaOffset])
+
+  useEffect(() => {
+    if (!perfil?.club_id) return
+    const canal = supabase
+      .channel(`mis-clases-${perfil.club_id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'reservas',
+      }, () => { void cargarClases() })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'clases',
+      }, () => { void cargarClases() })
+      .subscribe()
+    return () => { void supabase.removeChannel(canal) }
+  }, [perfil?.club_id, semanaOffset])
+
   async function toggleReserva(clase: any) {
     if (!perfil?.jugador_id) return
     const yaReservado = reservas.has(clase.id)
-
-    if (yaReservado) {
-      await supabase.from('reservas').update({ estado: 'cancelado' }).eq('clase_id', clase.id).eq('jugador_id', perfil.jugador_id)
-      setReservas(prev => { const s = new Set(prev); s.delete(clase.id); return s })
-    } else {
-      const { data: jug } = await supabase.from('jugadores').select('sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single()
-      if (jug && jug.sesiones_usadas >= jug.sesiones_limite) {
-        alert('No tienes sesiones disponibles este mes'); return
-      }
-      await supabase.from('reservas').upsert({ clase_id: clase.id, jugador_id: perfil.jugador_id, estado: 'confirmado' })
-      setReservas(prev => new Set([...prev, clase.id]))
+    setReservaLoading(clase.id)
+    setMensaje(null)
+    const { error } = await supabase.rpc('cambiar_reserva_clase', {
+      p_clase_id: clase.id,
+      p_confirmar: !yaReservado,
+    })
+    if (error) {
+      setMensaje({ tipo: 'error', texto: error.message })
+      setReservaLoading(null)
+      return
     }
+    await cargarClases()
+    setMensaje({ tipo: 'ok', texto: yaReservado ? 'Reserva cancelada' : 'Reserva confirmada' })
+    setReservaLoading(null)
   }
 
   const clasesPorDia: Record<string, any[]> = {}
@@ -128,6 +165,17 @@ export default function MisClasesPage() {
             style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, width:32, height:32, cursor:'pointer', fontSize:16, display:'flex', alignItems:'center', justifyContent:'center', color:'#4f46e5' }}>▶</button>
         </div>
       </div>
+
+      {mensaje && (
+        <div style={{
+          background: mensaje.tipo === 'ok' ? '#f0fdf4' : '#fef2f2',
+          border: `1px solid ${mensaje.tipo === 'ok' ? '#bbf7d0' : '#fecaca'}`,
+          borderRadius: 10, padding: '10px 14px', marginBottom: 14,
+          color: mensaje.tipo === 'ok' ? '#16a34a' : '#dc2626', fontSize: 13,
+        }}>
+          {mensaje.texto}
+        </div>
+      )}
 
       {/* Fecha de la semana */}
       <div style={{ fontSize:13, color: muted, marginBottom:20, textAlign:'center' }}>
@@ -174,9 +222,9 @@ export default function MisClasesPage() {
                       {prof?.especialidad && <div style={{ fontSize:11, color: hint, marginTop:4 }}>{prof.especialidad}</div>}
                     </div>
                     {!esPasado && (
-                      <button onClick={() => toggleReserva(clase)}
-                        style={{ background: reservado ? '#f0fdf4' : '#f4f7fa', color: reservado ? '#16a34a' : muted, border: `1px solid ${reservado ? '#bbf7d0' : '#e2e8f0'}`, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}>
-                        {reservado ? '✓ Asisto' : 'Asisto'}
+                      <button onClick={() => toggleReserva(clase)} disabled={reservaLoading === clase.id}
+                        style={{ background: reservado ? '#f0fdf4' : '#f4f7fa', color: reservado ? '#16a34a' : muted, border: `1px solid ${reservado ? '#bbf7d0' : '#e2e8f0'}`, borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor: reservaLoading === clase.id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap', marginLeft:12, opacity: reservaLoading === clase.id ? 0.6 : 1 }}>
+                        {reservaLoading === clase.id ? 'Guardando...' : reservado ? '✓ Asisto' : 'Asisto'}
                       </button>
                     )}
                     {esPasado && reservado && <span style={{ fontSize:11, color:'#16a34a', marginLeft:12 }}>✓ Asistí</span>}

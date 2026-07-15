@@ -31,7 +31,7 @@ export async function aprobarSolicitud(params: {
 
   const { data: nuevoJugador, error: insertErr } = await supabase.from('jugadores').insert({
     club_id: clubId, nombre, rut: rut || null, email: email || null, telefono: telefono || null,
-    ...planFields, elo: 1200, sesiones_usadas: 0, estado: 'activo', es_externo: false,
+    ...planFields, sesiones_usadas: 0, estado: 'activo', es_externo: false,
   }).select('id').single()
   if (insertErr || !nuevoJugador) return { error: 'Error al crear jugador: ' + (insertErr?.message ?? '') }
 

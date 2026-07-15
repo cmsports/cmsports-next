@@ -1,7 +1,7 @@
 // Genera un .xlsx con una hoja por fase del torneo, con colores del tema.
 // Usa `xlsx-js-style` (fork de `xlsx` con estilos de celda, misma API).
 
-type Jugador = { id: string; nombre: string; elo?: number | null }
+type Jugador = { id: string; nombre: string }
 type StatFila = { jugador: Jugador; pts: number; pg: number; pp: number; sets: number; puntos: number }
 
 type Args = {

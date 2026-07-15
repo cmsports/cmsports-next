@@ -1,6 +1,5 @@
 'use server'
 
-import { calculateEloChange } from '@/lib/domain/elo'
 import {
   seedingSerpenteo,
   generarRoundRobin,
@@ -10,6 +9,7 @@ import {
   calcularNumGrupos,
   calcularNumGruposTardios,
   calcularStatsGrupo,
+  derivarPodioFinal,
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
@@ -44,7 +44,7 @@ async function calcularClasificadosDesdeBD(
   const [{ data: miembros }, { data: partidos }] = await Promise.all([
     supabase
       .from('grupo_jugadores')
-      .select('grupo_id, jugador_id, jugadores(id,nombre,elo)')
+      .select('grupo_id, jugador_id, jugadores(id,nombre)')
       .in('grupo_id', grupoIds),
     supabase
       .from('torneo_partidos')
@@ -60,7 +60,7 @@ async function calcularClasificadosDesdeBD(
       .filter(m => m.grupo_id === grupo.id)
       .map(m => {
         const j = Array.isArray(m.jugadores) ? m.jugadores[0] : m.jugadores
-        return j ? { id: j.id, nombre: j.nombre ?? '', elo: j.elo ?? CONFIG.ELO_INICIAL } : null
+        return j ? { id: j.id, nombre: j.nombre ?? '' } : null
       })
       .filter((j): j is JugadorTorneo => !!j)
 
@@ -161,31 +161,6 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
     return { error: 'No se puede corregir grupos porque ya hay llaves jugadas. Vuelve a grupos o corrige primero la llave afectada para no romper el arbolito.' }
   }
 
-  // Revertir ELO del resultado anterior usando historial
-  const jugadoresIds = [anteriorGanadorId, anteriorPerdedorId].filter((id): id is string => !!id)
-  const { data: historial } = await supabase
-    .from('historial_elo')
-    .select('*')
-    .eq('torneo_id', torneoIdPartido)
-    .in('jugador_id', jugadoresIds)
-    .order('created_at', { ascending: false })
-
-  if (historial?.length) {
-    // Prefiere el registro de ESTE partido (partido_id); si no existe
-    // (datos previos a la migración 019), cae al más reciente del jugador.
-    const pickHist = (jid: string) =>
-      historial.filter(h => h.jugador_id === jid).find(h => h.partido_id === partidoId)
-      ?? historial.find(h => h.jugador_id === jid)
-    const hGanador = pickHist(anteriorGanadorId)
-    const hPerdedor = anteriorPerdedorId ? pickHist(anteriorPerdedorId) : undefined
-    const revertir = []
-    if (hGanador) revertir.push(supabase.from('jugadores').update({ elo: hGanador.elo_antes }).eq('id', anteriorGanadorId))
-    if (hPerdedor && anteriorPerdedorId) revertir.push(supabase.from('jugadores').update({ elo: hPerdedor.elo_antes }).eq('id', anteriorPerdedorId))
-    if (revertir.length) await Promise.all(revertir)
-    const idsHistorial = [hGanador?.id, hPerdedor?.id].filter((id): id is string => !!id)
-    if (idsHistorial.length) await supabase.from('historial_elo').delete().in('id', idsHistorial)
-  }
-
   // Revertir stats en grupo_jugadores
   if (partido.grupo_id) {
     const { data: gjG } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', anteriorGanadorId).maybeSingle()
@@ -214,7 +189,7 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
 }
 
 export async function marcarGanadorPartido(params: { partidoId: string; ganadorId: string }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
   const { partidoId, ganadorId } = params
@@ -225,8 +200,7 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
 
   const perdedorId = partido.jugador_a === ganadorId ? partido.jugador_b : partido.jugador_a
 
-  // Guard atómico: solo escribe si el partido sigue sin ganador. Evita que un
-  // doble click o dos dispositivos apliquen el ELO dos veces.
+  // Guard atómico: solo escribe si el partido sigue sin ganador.
   const { data: actualizado } = await supabase
     .from('torneo_partidos')
     .update({ ganador: ganadorId })
@@ -234,27 +208,6 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
     .is('ganador', null)
     .select('id')
   if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
-
-  if (perdedorId && perdedorId !== ganadorId) {
-    const [{ data: g }, { data: p }] = await Promise.all([
-      supabase.from('jugadores').select('elo').eq('id', ganadorId).single(),
-      supabase.from('jugadores').select('elo').eq('id', perdedorId).single(),
-    ])
-    if (g && p) {
-      const eloGanador = g.elo ?? CONFIG.ELO_INICIAL
-      const eloPerdedor = p.elo ?? CONFIG.ELO_INICIAL
-      const { newWinnerElo, newLoserElo } = calculateEloChange(eloGanador, eloPerdedor)
-
-      await Promise.all([
-        supabase.from('jugadores').update({ elo: newWinnerElo }).eq('id', ganadorId),
-        supabase.from('jugadores').update({ elo: newLoserElo }).eq('id', perdedorId),
-        supabase.from('historial_elo').insert([
-          { jugador_id: ganadorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, partido_id: partidoId, elo_antes: eloGanador, elo_despues: newWinnerElo, fecha: new Date().toISOString().slice(0, 10) },
-          { jugador_id: perdedorId, club_id: perfil.club_id, torneo_id: partido.torneo_id, partido_id: partidoId, elo_antes: eloPerdedor, elo_despues: newLoserElo, fecha: new Date().toISOString().slice(0, 10) },
-        ]),
-      ])
-    }
-  }
 
   if (partido.grupo_id) {
     const { data: gjG } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', ganadorId).maybeSingle()
@@ -446,13 +399,13 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
   const { data: inscritos } = await supabase
     .from('grupo_jugadores')
-    .select('jugador_id, jugadores(id,nombre,elo)')
+    .select('jugador_id, jugadores(id,nombre)')
     .in('grupo_id', grupoIds.length ? grupoIds : ['00000000-0000-0000-0000-000000000000'])
 
   const jugadores: JugadorTorneo[] = (inscritos || [])
     .map(i => {
       const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
-      return j ? { id: j.id, nombre: j.nombre ?? '', elo: j.elo ?? CONFIG.ELO_INICIAL } : null
+      return j ? { id: j.id, nombre: j.nombre ?? '' } : null
     })
     .filter((x): x is JugadorTorneo => x !== null)
 
@@ -658,7 +611,7 @@ export async function sincronizarLlaves(params: {
 export async function avanzarSiguienteFase(params: {
   torneoId: string
   faseActual: FaseOrden
-  ganadores: { id: string; nombre: string; elo: number }[]
+  ganadores: { id: string; nombre: string }[]
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -715,34 +668,6 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
     }
   }
 
-  const anteriorGanadorId: string = partido.ganador
-  const anteriorPerdedorId: string | null = anteriorGanadorId === partido.jugador_a ? partido.jugador_b : partido.jugador_a
-
-  // Revertir ELO usando historial
-  const jugadoresIds = [anteriorGanadorId, anteriorPerdedorId].filter((id): id is string => !!id)
-  const { data: historial } = await supabase
-    .from('historial_elo')
-    .select('*')
-    .eq('torneo_id', torneoId)
-    .in('jugador_id', jugadoresIds)
-    .order('created_at', { ascending: false })
-
-  if (historial?.length) {
-    // Prefiere el registro de ESTE partido (partido_id); si no existe
-    // (datos previos a la migración 019), cae al más reciente del jugador.
-    const pickHist = (jid: string) =>
-      historial.filter(h => h.jugador_id === jid).find(h => h.partido_id === partidoId)
-      ?? historial.find(h => h.jugador_id === jid)
-    const hGanador = pickHist(anteriorGanadorId)
-    const hPerdedor = anteriorPerdedorId ? pickHist(anteriorPerdedorId) : undefined
-    const revertir = []
-    if (hGanador) revertir.push(supabase.from('jugadores').update({ elo: hGanador.elo_antes }).eq('id', anteriorGanadorId))
-    if (hPerdedor && anteriorPerdedorId) revertir.push(supabase.from('jugadores').update({ elo: hPerdedor.elo_antes }).eq('id', anteriorPerdedorId))
-    if (revertir.length) await Promise.all(revertir)
-    const idsHistorial = [hGanador?.id, hPerdedor?.id].filter((id): id is string => !!id)
-    if (idsHistorial.length) await supabase.from('historial_elo').delete().in('id', idsHistorial)
-  }
-
   // Limpiar ganador actual y actualizar fase del torneo
   await supabase.from('torneo_partidos').update({ ganador: null }).eq('id', partidoId)
   await supabase.from('torneos').update({ fase: fasePartido }).eq('id', torneoId)
@@ -783,7 +708,25 @@ export async function finalizarTorneo(params: { torneoId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  await supabase.from('torneos').update({ estado: 'finalizado', fase: 'finalizado', fecha_fin: new Date().toISOString() }).eq('id', params.torneoId)
+  const { data: final, error: finalError } = await supabase
+    .from('torneo_partidos')
+    .select('jugador_a,jugador_b,ganador')
+    .eq('torneo_id', params.torneoId)
+    .eq('fase', 'final')
+    .maybeSingle()
+  const podio = final ? derivarPodioFinal(final) : null
+  if (finalError || !podio) {
+    return { error: 'La final debe estar completa antes de finalizar el torneo.' }
+  }
+
+  const { error } = await supabase.from('torneos').update({
+    estado: 'finalizado',
+    fase: 'finalizado',
+    fecha_fin: new Date().toISOString(),
+    campeon_id: podio.campeonId,
+    subcampeon_id: podio.subcampeonId,
+  }).eq('id', params.torneoId)
+  if (error) return { error: `No se pudo finalizar el torneo: ${error.message}` }
   return { success: true }
 }
 
@@ -831,11 +774,11 @@ export async function generarGruposTardios(params: {
   if (!grupoMesa) return { error: 'No hay jugadores en mesa' }
 
   const { data: mesaJugadores } = await supabase
-    .from('grupo_jugadores').select('jugador_id, jugadores(id,nombre,elo)').eq('grupo_id', grupoMesa.id)
+    .from('grupo_jugadores').select('jugador_id, jugadores(id,nombre)').eq('grupo_id', grupoMesa.id)
   const jugadores: JugadorTorneo[] = (mesaJugadores || [])
     .map(i => {
       const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
-      return j ? { id: j.id, nombre: j.nombre ?? '', elo: j.elo ?? CONFIG.ELO_INICIAL } : null
+      return j ? { id: j.id, nombre: j.nombre ?? '' } : null
     })
     .filter((x): x is JugadorTorneo => x !== null)
 
@@ -1083,23 +1026,21 @@ export async function inscribirEnMesa(params: {
   const { data: torneo } = await supabase.from('torneos').select('cuota_inscripcion').eq('id', torneoId).single()
 
   const { data: jugsExistentes } = await supabase
-    .from('jugadores').select('id,nombre,elo')
+    .from('jugadores').select('id,nombre')
     .ilike('nombre', `%${nombreBuscado}%`)
     .eq('club_id', perfil.club_id)
 
   let jugadorId: string
-  let jugadorElo = 1200
   let jugadorNombre = nombreBuscado
 
   if (jugsExistentes?.length) {
     const jug = jugsExistentes[0]
     jugadorId = jug.id
-    jugadorElo = jug.elo ?? 1200
     jugadorNombre = jug.nombre ?? jugadorNombre
   } else {
     const { data: nuevo } = await supabase.from('jugadores').insert({
       club_id: perfil.club_id, nombre: nombreBuscado,
-      rut: rut || null, categoria: 'principiante', sesiones_limite: 0, elo: 1200,
+      rut: rut || null, categoria: 'principiante', sesiones_limite: 0,
       es_externo: true,
     }).select().single()
     if (!nuevo) return { error: 'No se pudo crear el jugador' }
@@ -1135,7 +1076,7 @@ export async function inscribirEnMesa(params: {
     }
   }
 
-  return { success: true, jugadorId, jugadorNombre, jugadorElo }
+  return { success: true, jugadorId, jugadorNombre }
 }
 
 export async function eliminarTorneo(params: { torneoId: string }) {
@@ -1182,7 +1123,6 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
       .eq('club_id', torneo.club_id)
       .ilike('descripcion', `%${torneo.nombre}%`)
   }
-  await supabase.from('historial_elo').delete().eq('torneo_id', torneoId)
   if (grupoIds.length) await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
   await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
   await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)

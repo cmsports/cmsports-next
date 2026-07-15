@@ -59,13 +59,11 @@ type Fila = { fecha: string; date: Date; jugador_id: string }
 
 /* Cache en memoria del módulo: persiste entre navegaciones de la SPA para
    que el gráfico aparezca al instante al volver a una página ya visitada. */
-const cache: Record<string, { jugadoresActivos: Jugador[]; filas: Fila[] }> = {}
-
 export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { clubId: string; modo?: 'dashboard' | 'completo' }) {
-  const cacheKey = clubId
-  const [loading, setLoading] = useState(!cache[cacheKey])
-  const [jugadoresActivos, setJugadoresActivos] = useState<Jugador[]>(cache[cacheKey]?.jugadoresActivos ?? [])
-  const [filas, setFilas] = useState<Fila[]>(cache[cacheKey]?.filas ?? [])
+  const [loading, setLoading] = useState(true)
+  const [jugadoresActivos, setJugadoresActivos] = useState<Jugador[]>([])
+  const [filas, setFilas] = useState<Fila[]>([])
+  const [diasEntrenamiento, setDiasEntrenamiento] = useState<string[]>([])
   const [mostrarSinAsistencia, setMostrarSinAsistencia] = useState(false)
   const [exportando, setExportando] = useState(false)
 
@@ -79,38 +77,54 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
       const desde = inicioMes < lunes ? inicioMes : lunes
       const desdeStr = desde.toISOString().slice(0, 10)
 
-      const [{ data: jugs }, { data: asist }] = await Promise.all([
+      const [{ data: jugs }, { data: asist }, { data: clases }] = await Promise.all([
         supabase.from('jugadores').select('id,nombre').eq('club_id', clubId).eq('estado', 'activo'),
         supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).gte('fecha', desdeStr),
+        supabase.from('clases').select('fecha').eq('club_id', clubId).eq('publicada', true).gte('fecha', desdeStr),
       ])
 
       if (!activo) return
       const jugadoresData = jugs || []
       const filasData = (asist || []).map((a: any) => ({ fecha: a.fecha, date: new Date(a.fecha + 'T12:00:00'), jugador_id: a.jugador_id }))
-      cache[cacheKey] = { jugadoresActivos: jugadoresData, filas: filasData }
       setJugadoresActivos(jugadoresData)
       setFilas(filasData)
+      setDiasEntrenamiento((clases || []).flatMap(c => c.fecha ? [c.fecha] : []))
       setLoading(false)
     }
-    if (clubId) cargar()
-    return () => { activo = false }
+    if (clubId) void cargar()
+
+    const supabase = createClient()
+    const canal = supabase
+      .channel(`grafico-asistencia-${clubId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'asistencia',
+      }, () => { void cargar() })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'clases',
+      }, () => { void cargar() })
+      .subscribe()
+
+    return () => {
+      activo = false
+      void supabase.removeChannel(canal)
+    }
   }, [clubId])
 
   const activosCount = jugadoresActivos.length
 
   const dias = useMemo(() => {
-    const hoy = new Date()
-    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-    const diasTranscurridos = hoy.getDate()
-    const lista: { fecha: string; date: Date; count: number }[] = []
-    for (let i = 0; i < diasTranscurridos; i++) {
-      const d = new Date(inicioMes)
-      d.setDate(inicioMes.getDate() + i)
-      const fecha = d.toISOString().slice(0, 10)
-      lista.push({ fecha, date: d, count: filas.filter(f => f.fecha === fecha).length })
-    }
-    return lista
-  }, [filas])
+    const hoy = new Date().toISOString().slice(0, 10)
+    const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
+    const fechas = new Set([
+      ...diasEntrenamiento.filter(fecha => fecha >= inicioMes && fecha <= hoy),
+      ...filas.filter(f => f.fecha >= inicioMes && f.fecha <= hoy).map(f => f.fecha),
+    ])
+    return [...fechas].sort().map(fecha => ({
+      fecha,
+      date: new Date(fecha + 'T12:00:00'),
+      count: filas.filter(f => f.fecha === fecha).length,
+    }))
+  }, [filas, diasEntrenamiento])
 
   const puntos = useMemo(() => {
     const offsets = generarOffsets(dias.length)
@@ -156,27 +170,36 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
     setExportando(true)
     try {
       const supabase = createClient()
-      const [{ data: asistAll }, { data: jugsAll }] = await Promise.all([
+      const [{ data: asistAll }, { data: jugsAll }, { data: clasesAll }] = await Promise.all([
         supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).order('fecha', { ascending: true }),
         supabase.from('jugadores').select('id').eq('club_id', clubId).eq('estado', 'activo'),
+        supabase.from('clases').select('fecha').eq('club_id', clubId).eq('publicada', true),
       ])
 
       const activos = (jugsAll || []).length || 1
-      const porMes: Record<string, { jugadores: Set<string>; total: number; porDiaSemana: Record<number, number> }> = {}
+      const porMes: Record<string, { jugadores: Set<string>; dias: Set<string>; total: number; porDiaSemana: Record<number, number> }> = {}
 
       ;(asistAll || []).forEach((a: any) => {
         const mesKey = a.fecha.slice(0, 7)
-        if (!porMes[mesKey]) porMes[mesKey] = { jugadores: new Set(), total: 0, porDiaSemana: {} }
+        if (!porMes[mesKey]) porMes[mesKey] = { jugadores: new Set(), dias: new Set(), total: 0, porDiaSemana: {} }
         porMes[mesKey].jugadores.add(a.jugador_id)
+        porMes[mesKey].dias.add(a.fecha)
         porMes[mesKey].total += 1
         const ds = new Date(a.fecha + 'T12:00:00').getDay()
         porMes[mesKey].porDiaSemana[ds] = (porMes[mesKey].porDiaSemana[ds] || 0) + 1
       })
 
+      ;(clasesAll || []).forEach(c => {
+        if (!c.fecha) return
+        const mesKey = c.fecha.slice(0, 7)
+        if (!porMes[mesKey]) porMes[mesKey] = { jugadores: new Set(), dias: new Set(), total: 0, porDiaSemana: {} }
+        porMes[mesKey].dias.add(c.fecha)
+      })
+
       const filasExport = Object.entries(porMes).sort(([a], [b]) => a.localeCompare(b)).map(([mesKey, d]) => {
         const [anio, mes] = mesKey.split('-').map(Number)
-        const diasDelMes = new Date(anio, mes, 0).getDate()
-        const promedio = Math.round((d.total / (activos * diasDelMes)) * 1000) / 10
+        const diasActividad = d.dias.size || 1
+        const promedio = Math.round((d.total / (activos * diasActividad)) * 1000) / 10
         let maxDia = -1, maxCount = 0
         Object.entries(d.porDiaSemana).forEach(([ds, count]) => { if (count > maxCount) { maxCount = count; maxDia = Number(ds) } })
         return {

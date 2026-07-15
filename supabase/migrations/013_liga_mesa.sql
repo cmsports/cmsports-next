@@ -5,7 +5,7 @@
 --   1. Abre Supabase Dashboard → SQL Editor
 --   2. Pega TODO este archivo y haz clic en "Run"
 --
--- Módulo nuevo e independiente de `torneos` (grupos+playoffs ELO).
+-- Módulo nuevo e independiente de `torneos` (grupos y playoffs).
 -- Liga de temporada regular por divisiones, formato round robin,
 -- con motor de programación de mesas/horarios/árbitros.
 -- ============================================================

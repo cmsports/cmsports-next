@@ -6,7 +6,7 @@
 --   2. Pega TODO este archivo y haz clic en "Run"
 --
 -- Permite marcar manualmente quién es el cabeza de serie 1° y 2°
--- de un torneo (independiente del ELO, útil cuando recién hay poca
+-- de un torneo (útil cuando recién hay poca
 -- data). Se usan al generar las llaves para que esos dos jugadores
 -- queden en lados opuestos del cuadro y solo puedan enfrentarse en
 -- la final.

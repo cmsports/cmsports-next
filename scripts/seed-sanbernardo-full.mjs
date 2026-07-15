@@ -55,15 +55,15 @@ async function main() {
 
   // ─── 2. Jugadores (9 nuevos + Diego Soto existente) ────
   const nuevosBase = [
-    { nombre: 'Javiera Muñoz', categoria: 'intermedio', elo: 1150, tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
-    { nombre: 'Tomás Reyes', categoria: 'principiante', elo: 1100, tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
-    { nombre: 'Camila Soto', categoria: 'avanzado', elo: 1080, tipo_plan: 'semanal', ent: 1, mensualidad: 15000 },
-    { nombre: 'Nicolás Vargas', categoria: 'intermedio', elo: 1220, tipo_plan: 'mensual', ent: 3, mensualidad: 30000 },
-    { nombre: 'Florencia Castillo', categoria: 'principiante', elo: 1160, tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
-    { nombre: 'Joaquín Tapia', categoria: 'intermedio', elo: 1140, tipo_plan: 'mensual', ent: 3, mensualidad: 30000 },
-    { nombre: 'Isidora Romero', categoria: 'avanzado', elo: 1090, tipo_plan: 'mensual', ent: 4, mensualidad: 40000 },
-    { nombre: 'Vicente Fuentes', categoria: 'principiante', elo: 1130, tipo_plan: 'libre', ent: null, mensualidad: 20000 },
-    { nombre: 'Constanza Silva', categoria: 'intermedio', elo: 1170, tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
+    { nombre: 'Javiera Muñoz', categoria: 'intermedio', tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
+    { nombre: 'Tomás Reyes', categoria: 'principiante', tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
+    { nombre: 'Camila Soto', categoria: 'avanzado', tipo_plan: 'semanal', ent: 1, mensualidad: 15000 },
+    { nombre: 'Nicolás Vargas', categoria: 'intermedio', tipo_plan: 'mensual', ent: 3, mensualidad: 30000 },
+    { nombre: 'Florencia Castillo', categoria: 'principiante', tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
+    { nombre: 'Joaquín Tapia', categoria: 'intermedio', tipo_plan: 'mensual', ent: 3, mensualidad: 30000 },
+    { nombre: 'Isidora Romero', categoria: 'avanzado', tipo_plan: 'mensual', ent: 4, mensualidad: 40000 },
+    { nombre: 'Vicente Fuentes', categoria: 'principiante', tipo_plan: 'libre', ent: null, mensualidad: 20000 },
+    { nombre: 'Constanza Silva', categoria: 'intermedio', tipo_plan: 'mensual', ent: 2, mensualidad: 25000 },
   ]
 
   const jugadoresInsert = nuevosBase.map((j) => ({
@@ -72,7 +72,6 @@ async function main() {
     rut: rutFalso(usadosRut),
     telefono: `9${rndInt(10000000, 99999999)}`,
     categoria: j.categoria,
-    elo: j.elo,
     sesiones_usadas: rndInt(0, 6),
     sesiones_limite: j.tipo_plan === 'libre' ? 99 : (j.ent || 3) * 4,
     estado: 'activo',
@@ -83,12 +82,12 @@ async function main() {
   }))
 
   const { data: nuevosJugadores, error: jugErr } = await supabase
-    .from('jugadores').insert(jugadoresInsert).select('id, nombre, categoria, elo')
+    .from('jugadores').insert(jugadoresInsert).select('id, nombre, categoria')
   if (jugErr) { console.error('Error creando jugadores:', jugErr); process.exit(1) }
   console.log(`Creados ${nuevosJugadores.length} jugadores nuevos.`)
 
   const { data: diego, error: diegoErr } = await supabase
-    .from('jugadores').select('id, nombre, categoria, elo').eq('id', DIEGO_ID).single()
+    .from('jugadores').select('id, nombre, categoria').eq('id', DIEGO_ID).single()
   if (diegoErr || !diego) { console.error('No se encontró a Diego Soto:', diegoErr); process.exit(1) }
 
   const jugadores = [diego, ...nuevosJugadores]
@@ -283,29 +282,7 @@ async function main() {
   )
   if (tjErr) { console.error('Error creando torneo_jugadores:', tjErr); process.exit(1) }
 
-  const deltaPorEtiqueta = { campeon: 45, subcampeon: 25, semifinal: -5, fase_grupos: -15 }
-  const elosFinales = {}
-  const historialInsert = posiciones.map((p) => {
-    const eloAntes = p.j.elo
-    const eloDespues = eloAntes + deltaPorEtiqueta[p.etiqueta]
-    elosFinales[p.j.id] = eloDespues
-    return {
-      jugador_id: p.j.id,
-      club_id: CLUB_ID,
-      torneo_id: torneo.id,
-      elo_antes: eloAntes,
-      elo_despues: eloDespues,
-      posicion: p.etiqueta,
-      fecha: '2026-05-18',
-    }
-  })
-  const { error: histErr } = await supabase.from('historial_elo').insert(historialInsert)
-  if (histErr) { console.error('Error creando historial_elo:', histErr); process.exit(1) }
-
-  for (const [jugadorId, elo] of Object.entries(elosFinales)) {
-    await supabase.from('jugadores').update({ elo }).eq('id', jugadorId)
-  }
-  console.log('Torneo interno completo con resultados y ELO actualizado.')
+  console.log('Torneo interno completo con resultados registrados.')
 
   const inscritos = posiciones.length
   await supabase.from('movimientos').insert([
@@ -316,21 +293,14 @@ async function main() {
 
   // ─── 8. Torneos externos ───────────────────────────────
   const externosInsert = [
-    { club_id: CLUB_ID, jugador_id: diegoJ.id, nombre_club: 'Club La Reina', categoria: 'intermedio', posicion: '1er lugar', fecha: '2026-05-25', puntos_elo: 20 },
-    { club_id: CLUB_ID, jugador_id: diegoJ.id, nombre_club: 'Liga Metropolitana de Tenis de Mesa', categoria: 'intermedio', posicion: 'Cuartos de final', fecha: '2026-06-15', puntos_elo: 8 },
-    { club_id: CLUB_ID, jugador_id: nicolasJ.id, nombre_club: 'Club Maipú', categoria: 'intermedio', posicion: 'Semifinal', fecha: '2026-06-08', puntos_elo: 12 },
-    { club_id: CLUB_ID, jugador_id: byName('Isidora Romero').id, nombre_club: 'Club Providencia', categoria: 'avanzado', posicion: '2do lugar', fecha: '2026-05-30', puntos_elo: 15 },
+    { club_id: CLUB_ID, jugador_id: diegoJ.id, nombre_club: 'Club La Reina', categoria: 'intermedio', posicion: '1er lugar', fecha: '2026-05-25' },
+    { club_id: CLUB_ID, jugador_id: diegoJ.id, nombre_club: 'Liga Metropolitana de Tenis de Mesa', categoria: 'intermedio', posicion: 'Cuartos de final', fecha: '2026-06-15' },
+    { club_id: CLUB_ID, jugador_id: nicolasJ.id, nombre_club: 'Club Maipú', categoria: 'intermedio', posicion: 'Semifinal', fecha: '2026-06-08' },
+    { club_id: CLUB_ID, jugador_id: byName('Isidora Romero').id, nombre_club: 'Club Providencia', categoria: 'avanzado', posicion: '2do lugar', fecha: '2026-05-30' },
   ]
   const { error: extErr } = await supabase.from('torneos_externos').insert(externosInsert)
   if (extErr) { console.error('Error creando torneos_externos:', extErr); process.exit(1) }
   console.log(`Insertados ${externosInsert.length} torneos externos.`)
-
-  for (const e of externosInsert) {
-    const actual = elosFinales[e.jugador_id] ?? jugadores.find((j) => j.id === e.jugador_id)?.elo ?? 1200
-    const nuevo = actual + e.puntos_elo
-    elosFinales[e.jugador_id] = nuevo
-    await supabase.from('jugadores').update({ elo: nuevo }).eq('id', e.jugador_id)
-  }
 
   // ─── 9. Evaluaciones trimestrales (Q2-2026) ────────────
   const evaluacionesInsert = jugadores.map((j) => ({

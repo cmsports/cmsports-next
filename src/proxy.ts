@@ -8,11 +8,13 @@ const publicRoutes = ['/login', '/registro']
 const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
 const superadminRoutes = ['/superadmin']
-const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/jugadores', '/configuracion']
-const staffRoutes = ['/redes-sociales']
+const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/configuracion']
+// El profesor necesita abrir el listado y la ficha para evaluar. Las acciones
+// administrativas dentro de esas pantallas siguen reservadas al admin.
+const staffRoutes = ['/redes-sociales', '/jugadores']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
-const anyAuthRoutes = ['/torneos', '/ranking', '/calendario', '/asistencia', '/clases', '/tienda']
+const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/tienda']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'
@@ -24,6 +26,12 @@ function getRolRedirect(rol: string | null): string {
 export async function proxy(request: NextRequest) {
   const { user, supabaseResponse, supabase } = await updateSession(request)
   const { pathname } = request.nextUrl
+
+  // El marcador por club usa un RPC seguro y debe funcionar en el dispositivo
+  // de recepción sin iniciar sesión. La portada /asistencia sigue protegida.
+  if (/^\/asistencia\/[^/]+$/.test(pathname)) {
+    return supabaseResponse
+  }
 
   // Flujo de crear/recuperar contraseña — siempre accesible, no redirigir
   if (authFlowRoutes.some((r) => pathname.startsWith(r))) {

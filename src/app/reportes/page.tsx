@@ -263,7 +263,7 @@ export default function ReportesPage() {
       const j = preview.jugador
       doc.setTextColor(40, 40, 40)
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(`Ficha — ${j.nombre}`, 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['ELO', String(j.elo || 0)], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Sesiones', `${j.sesiones_usadas || 0}/${j.sesiones_limite || 0}`], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Sesiones', `${j.sesiones_usadas || 0}/${j.sesiones_limite || 0}`], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
       y = (doc as any).lastAutoTable.finalY + 10
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Mensualidades (período)', 14, y); y += 8
       autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total pagado', fmt(preview.totalPagado)], ['Total pendiente', fmt(preview.totalPendiente)], ['Meses pagados', String(preview.pagadas.length)], ['Meses pendientes/atrasados', String(preview.pendientes.length)]], theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
@@ -524,7 +524,6 @@ export default function ReportesPage() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, fontSize:13 }}>
               {[
                 ['Categoría', preview.jugador.categoria || '—'],
-                ['ELO', preview.jugador.elo || 0],
                 ['Estado', preview.jugador.estado || '—'],
                 ['Plan', preview.jugador.tipo_plan || '—'],
                 ['Sesiones', `${preview.jugador.sesiones_usadas || 0}/${preview.jugador.sesiones_limite || 0}`],

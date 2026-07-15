@@ -397,34 +397,6 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   }
 }
 
-// Limpia la programación de todos los partidos no jugados (estado programado
-// o pendiente con fecha asignada) para que puedan ser reprogramados desde cero.
-// NO toca partidos finalizados, walkovers ni partidos sin fecha.
-export async function limpiarProgramacionLiga(params: { ligaId: string }) {
-  const { error: authErr, supabase } = await requireAdminClub()
-  if (authErr) return { error: authErr }
-
-  const db = supabase as any
-  const { data: activos } = await db
-    .from('liga_partidos')
-    .select('id')
-    .eq('liga_id', params.ligaId)
-    .in('estado', ['programado', 'pendiente'])
-    .not('fecha_id', 'is', null)
-    .is('deleted_at', null)
-
-  const ids = (activos || []).map((p: { id: string }) => p.id)
-  if (!ids.length) return { success: true, limpiados: 0 }
-
-  const { error } = await supabase
-    .from('liga_partidos')
-    .update({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null })
-    .in('id', ids)
-  if (error) return { error: 'No se pudo limpiar la programación: ' + error.message }
-
-  return { success: true, limpiados: ids.length }
-}
-
 // Mueve un partido a otra mesa/bloque (misma fecha o distinta) validando en
 // el servidor las reglas inquebrantables (HC-01, HC-03/06, HC-04). Usado por
 // la interfaz de Drag & Drop.
@@ -560,7 +532,7 @@ export async function crearJugadorExternoLiga(params: { nombre: string; rut?: st
     .from('jugadores')
     .insert({
       club_id: clubId, nombre, rut: params.rut || null, telefono: params.telefono || null,
-      categoria: 'principiante', sesiones_limite: 0, elo: 1200,
+      categoria: 'principiante', sesiones_limite: 0,
       estado: 'activo', es_externo: true,
     })
     .select('id, nombre')
@@ -699,26 +671,6 @@ export async function actualizarCapacidadDivision(params: {
     .update({ capacidad_max: capacidadMax })
     .eq('id', divisionId)
   if (error) return { error: 'No se pudo actualizar el cupo: ' + error.message }
-
-  return { success: true }
-}
-
-export async function crearMesa(params: { ligaId: string; numero: number }) {
-  const { error: authErr, supabase } = await requireAdminClub()
-  if (authErr) return { error: authErr }
-
-  const { error } = await supabase.from('liga_mesas').insert({ liga_id: params.ligaId, numero: params.numero })
-  if (error) return { error: 'No se pudo crear la mesa: ' + error.message }
-
-  return { success: true }
-}
-
-export async function eliminarMesa(params: { mesaId: string }) {
-  const { error: authErr, supabase } = await requireAdminClub()
-  if (authErr) return { error: authErr }
-
-  const { error } = await supabase.from('liga_mesas').delete().eq('id', params.mesaId)
-  if (error) return { error: 'No se pudo eliminar la mesa: ' + error.message }
 
   return { success: true }
 }

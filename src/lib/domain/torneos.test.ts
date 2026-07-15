@@ -7,16 +7,16 @@ import {
   calcularTamanoBracket,
   determinarFaseInicial,
   siguienteFase,
-  aplicarSemillasPrincipales,
   generarBracketConAvance,
   generarSiguienteFase,
   construirLlavesLayout,
   calcularStatsGrupo,
+  derivarPodioFinal,
   type JugadorTorneo,
 } from './torneos'
 
 function jugadores(n: number): JugadorTorneo[] {
-  return Array.from({ length: n }, (_, i) => ({ id: `j${i}`, nombre: `J${i}`, elo: 1200 + i * 10 }))
+  return Array.from({ length: n }, (_, i) => ({ id: `j${i}`, nombre: `J${i}` }))
 }
 
 function posicionesLayout(numGrupos: number, cabeza1?: number, cabeza2?: number) {
@@ -38,6 +38,18 @@ describe('calcularNumGrupos', () => {
     expect(calcularNumGrupos(6)).toBe(2)
     expect(calcularNumGrupos(9)).toBe(3)
     expect(calcularNumGrupos(12)).toBe(4)
+  })
+})
+
+describe('derivarPodioFinal', () => {
+  it('guarda ganador y perdedor de la final', () => {
+    expect(derivarPodioFinal({ jugador_a: 'a', jugador_b: 'b', ganador: 'b' }))
+      .toEqual({ campeonId: 'b', subcampeonId: 'a' })
+  })
+
+  it('rechaza una final incompleta o un ganador ajeno', () => {
+    expect(derivarPodioFinal({ jugador_a: 'a', jugador_b: null, ganador: 'a' })).toBeNull()
+    expect(derivarPodioFinal({ jugador_a: 'a', jugador_b: 'b', ganador: 'c' })).toBeNull()
   })
 })
 
@@ -87,10 +99,9 @@ describe('seedingSerpenteo', () => {
     const g1 = asign.find(a => a.jugadorId === js[1].id)!.grupoIndex
     expect(g0).not.toBe(g1)
   })
-  it('el ELO no altera la asignacion de grupos', () => {
-    const a = jugadores(8)
-    const b = a.map((j, i) => ({ ...j, elo: 9999 - i }))
-    expect(seedingSerpenteo(a, 3)).toEqual(seedingSerpenteo(b, 3))
+  it('conserva un sembrado determinista para el mismo orden', () => {
+    const lista = jugadores(8)
+    expect(seedingSerpenteo(lista, 3)).toEqual(seedingSerpenteo([...lista], 3))
   })
 })
 
@@ -113,18 +124,10 @@ describe('bracket helpers', () => {
   })
 })
 
-describe('aplicarSemillasPrincipales', () => {
-  it('mueve las semillas 1 y 2 al frente sin duplicar', () => {
-    const lista = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]
-    const r = aplicarSemillasPrincipales(lista, 'c', 'a')
-    expect(r[0].id).toBe('c')
-    expect(r[1].id).toBe('a')
-    expect(r).toHaveLength(4)
-    expect(new Set(r.map(x => x.id)).size).toBe(4)
-  })
+describe('semillas principales', () => {
   it('los cabezas de serie 1° y 2° solo se cruzan en la final', () => {
     // Simula un torneo completo donde 1° y 2° siempre ganan, y verifica que
-    // nunca comparten partido antes de la final. ELO adverso (ambos top).
+    // nunca comparten partido antes de la final.
     for (const n of [4, 5, 6, 7, 8, 9, 12, 16, 17, 24, 32]) {
       const js = jugadores(n)
       const mid = Math.ceil(n / 2)
@@ -159,18 +162,6 @@ describe('aplicarSemillasPrincipales', () => {
       }
       expect(cruceFinal).toBe(true) // ambos llegaron a la final y se cruzaron ahí
     }
-  })
-  it('el ELO no altera el sembrado (mismos cruces con ELO invertido)', () => {
-    const a = jugadores(8)
-    const b = a.map((j, i) => ({ ...j, elo: 9999 - i })) // ELO al revés
-    const cruces = (js: JugadorTorneo[]) =>
-      generarBracketConAvance(js.slice(0, 4), js.slice(4), 'j0', 'j1')
-        .map(p => `${p.jugadorA}-${p.jugadorB}`).sort()
-    expect(cruces(a)).toEqual(cruces(b))
-  })
-  it('sin semillas devuelve la lista igual', () => {
-    const lista = [{ id: 'a' }, { id: 'b' }]
-    expect(aplicarSemillasPrincipales(lista)).toEqual(lista)
   })
 })
 
@@ -248,9 +239,9 @@ describe('construirLlavesLayout', () => {
   })
   it('la correccion de un grupo cambia los cupos reales del bracket sin mover el arbol', () => {
     const jugadoresGrupo = [
-      { id: 'armando', nombre: 'Armando', elo: 1000 },
-      { id: 'nelson', nombre: 'Nelson', elo: 2500 },
-      { id: 'carlos', nombre: 'Carlos', elo: 1200 },
+      { id: 'armando', nombre: 'Armando' },
+      { id: 'nelson', nombre: 'Nelson' },
+      { id: 'carlos', nombre: 'Carlos' },
     ]
     const antes = calcularStatsGrupo(jugadoresGrupo, [
       { jugadorA: 'armando', jugadorB: 'nelson', ganador: 'armando' },

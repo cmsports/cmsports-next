@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
@@ -102,9 +102,9 @@ export default function TorneoDetallePage() {
     ] = await Promise.all([
       supabase.from('torneos').select('*').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).order('nombre'),
-      supabase.from('torneo_partidos').select('*,ja:jugador_a(id,nombre,elo),jb:jugador_b(id,nombre,elo),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
+      supabase.from('torneo_partidos').select('*,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('*').eq('torneo_id', torneoId),
-      supabase.from('grupo_jugadores').select('*,jugadores(id,nombre,elo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
+      supabase.from('grupo_jugadores').select('*,jugadores(id,nombre),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
     ])
 
     setTorneo(t)
@@ -270,7 +270,7 @@ export default function TorneoDetallePage() {
 
       setBusquedaMesa('')
       setRutMesa('')
-      setJugadoresInscritos(prev => [...prev, { jugador_id: res.jugadorId!, jugadores: { id: res.jugadorId, nombre: res.jugadorNombre, elo: res.jugadorElo } }])
+      setJugadoresInscritos(prev => [...prev, { jugador_id: res.jugadorId!, jugadores: { id: res.jugadorId, nombre: res.jugadorNombre } }])
       await cargarTorneo()
     } finally {
       setInscribiendo(false)
@@ -372,7 +372,7 @@ export default function TorneoDetallePage() {
       .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
       .map((p: any) => p.ganador === p.jugador_a ? p.ja : p.jb)
       .filter(Boolean)
-      .map((j: any) => ({ id: j.id, nombre: j.nombre, elo: j.elo ?? CONFIG.ELO_INICIAL }))
+      .map((j: any) => ({ id: j.id, nombre: j.nombre }))
 
     const res = await avanzarSiguienteFaseAction({ torneoId, faseActual: faseActual as FaseOrden, ganadores: todos })
     if (res.error) { alert(res.error); return }
@@ -430,9 +430,6 @@ export default function TorneoDetallePage() {
 
   const partidosFaseActual = partidos.filter(p => p.fase === faseActual)
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
-
-  const partidosGrupos = partidos.filter(p => p.fase === 'grupos')
-  const todosGruposJugados = partidosGrupos.length > 0 && partidosGrupos.every(p => p.ganador !== null && p.ganador !== undefined)
 
   const numGruposEstimados = calcularNumGrupos(jugadoresInscritos.length)
 
@@ -787,7 +784,7 @@ export default function TorneoDetallePage() {
                             <span style={{ fontSize:10, color:'#94a3b8' }}>¿Quién ganó?</span>
                             <button onClick={async () => {
                               const res = await corregirResultadoGrupos({ partidoId: p.id, nuevoGanadorId: p.jugador_a })
-                              if (res.error) { alert(res.error); return }
+                              if ('error' in res && res.error) { alert(res.error); return }
                               setPartidoEditando(null)
                               await cargarTorneo()
                             }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
@@ -795,7 +792,7 @@ export default function TorneoDetallePage() {
                             </button>
                             <button onClick={async () => {
                               const res = await corregirResultadoGrupos({ partidoId: p.id, nuevoGanadorId: p.jugador_b })
-                              if (res.error) { alert(res.error); return }
+                              if ('error' in res && res.error) { alert(res.error); return }
                               setPartidoEditando(null)
                               await cargarTorneo()
                             }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
@@ -1414,7 +1411,7 @@ export default function TorneoDetallePage() {
                   setBusquedaMesa(e.target.value)
                   setRutMesa('')
                   if (e.target.value.length > 1 && perfil?.club_id) {
-                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,elo,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
+                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
                     ;(window as any).__jugSuggestions = data || []
                     setBusquedaMesa(e.target.value)
                   } else {

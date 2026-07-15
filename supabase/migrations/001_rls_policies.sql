@@ -446,21 +446,6 @@ CREATE POLICY "partidos_admin_all" ON partidos
 
 
 -- ============================================================
--- 20. HISTORIAL_ELO — lectura del club; admin modifica
--- ============================================================
-ALTER TABLE historial_elo ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "historial_elo_select" ON historial_elo;
-CREATE POLICY "historial_elo_select" ON historial_elo
-  FOR SELECT USING (club_id = get_my_club_id());
-
-DROP POLICY IF EXISTS "historial_elo_admin_all" ON historial_elo;
-CREATE POLICY "historial_elo_admin_all" ON historial_elo
-  FOR ALL USING (club_id = get_my_club_id() AND get_my_rol() = 'admin')
-  WITH CHECK (club_id = get_my_club_id() AND get_my_rol() = 'admin');
-
-
--- ============================================================
 -- 21. EVALUACIONES_TRIMESTRALES — profesor crea; jugador lee las suyas
 -- ============================================================
 ALTER TABLE evaluaciones_trimestrales ENABLE ROW LEVEL SECURITY;

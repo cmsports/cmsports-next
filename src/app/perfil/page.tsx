@@ -4,15 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
-import {
-  Chart as ChartJS,
-  CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend
-} from 'chart.js'
-import { Line } from 'react-chartjs-2'
 import { registrarAsistenciaAction } from '@/app/actions/asistencia'
+import { confirmarFeedbackAction } from '@/app/actions/feedback'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
 const supabase = createClient()
 
@@ -23,17 +17,12 @@ const hint = '#94a3b8'
 
 type Aviso = { id: string; tipo: 'jugar' | 'ganaste' | 'perdiste' | 'campeon'; texto: string }
 
-const POSICION_LABEL: Record<string, string> = {
-  fase_grupos: 'Fase de grupos', octavos: 'Octavos de final', cuartos: 'Cuartos de final',
-  semifinal: 'Semifinal', subcampeon: 'Subcampeón', campeon: 'Campeón 🏆'
-}
-
 export default function PerfilPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
   const [asistencias, setAsistencias] = useState<any[]>([])
-  const [historialElo, setHistorialElo] = useState<any[]>([])
   const [externos, setExternos] = useState<any[]>([])
+  const [torneosInternos, setTorneosInternos] = useState(0)
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
   const [evaluaciones, setEvaluaciones] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -72,7 +61,7 @@ export default function PerfilPage() {
         const [
           { data: j },
           { data: a },
-          { data: h },
+          { data: participaciones },
           { data: ext },
           { data: mens },
           { data: evs },
@@ -81,13 +70,13 @@ export default function PerfilPage() {
         ] = await Promise.all([
           supabase.from('jugadores').select('*').eq('id', perfil.jugador_id).single(),
           supabase.from('asistencia').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
-          supabase.from('historial_elo').select('*,torneos(nombre)').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: true }),
+          supabase.from('grupo_jugadores').select('torneo_grupos!inner(torneo_id)').eq('jugador_id', perfil.jugador_id),
           supabase.from('torneos_externos').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }),
           supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
           supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', perfil.jugador_id).order('creado_en', { ascending: false }).limit(2),
           supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
           perfil.club_id
-            ? supabase.from('torneos').select('id, nombre, fase, estado').eq('club_id', perfil.club_id).neq('fase', 'inscripcion').neq('estado', 'archivado')
+            ? supabase.from('torneos').select('id, nombre, fase, estado, campeon_id').eq('club_id', perfil.club_id).neq('fase', 'inscripcion').neq('estado', 'archivado')
                 .or(`estado.eq.en_curso,and(estado.eq.finalizado,fecha_fin.gte.${new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()})`)
                 .order('fecha_inicio', { ascending: false }).limit(1).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
@@ -95,8 +84,8 @@ export default function PerfilPage() {
 
         setJugador(j)
         setAsistencias(a || [])
-        setHistorialElo(h || [])
         setExternos(ext || [])
+        setTorneosInternos(new Set((participaciones || []).map((p: any) => p.torneo_grupos?.torneo_id).filter(Boolean)).size)
         setMensualidadActual(mens)
         setEvaluaciones(evs || [])
         setYaRegistroHoy((asistHoy || []).length > 0)
@@ -118,7 +107,7 @@ export default function PerfilPage() {
           // Ronda 3 — jugadores de cada grupo (necesita los IDs de ronda 2)
           if (grupoIds.length) {
             const { data: gjData } = await supabase
-              .from('grupo_jugadores').select('grupo_id, jugador_id, jugadores(id, nombre, elo)').in('grupo_id', grupoIds)
+              .from('grupo_jugadores').select('grupo_id, jugador_id, jugadores(id, nombre)').in('grupo_id', grupoIds)
             const gruposConJ = gruposReales.map((g: any) => ({
               ...g, miembros: (gjData || []).filter((x: any) => x.grupo_id === g.id)
             }))
@@ -131,14 +120,13 @@ export default function PerfilPage() {
           }
 
           if (td.fase === 'finalizado') {
-            const [{ data: misFeli }, { count }, { data: campeonRec }] = await Promise.all([
+            const [{ data: misFeli }, { count }] = await Promise.all([
               supabase.from('torneo_felicitaciones').select('id').eq('torneo_id', td.id).eq('jugador_id', j.id).maybeSingle(),
               supabase.from('torneo_felicitaciones').select('id', { count: 'exact', head: true }).eq('torneo_id', td.id),
-              supabase.from('historial_elo').select('id').eq('torneo_id', td.id).eq('jugador_id', j.id).eq('posicion', 'campeon').maybeSingle(),
             ])
             setYaFelicite(!!misFeli)
             setFelicitacionesCount(count || 0)
-            setEsCampeon(!!campeonRec)
+            setEsCampeon(td.campeon_id === j.id)
           }
         }
       }
@@ -174,7 +162,7 @@ export default function PerfilPage() {
 
     async function recargarTorneo() {
       const [{ data: td }, { data: gd }, { data: partidos }] = await Promise.all([
-        supabase.from('torneos').select('id, nombre, fase, estado').eq('id', tId).single(),
+        supabase.from('torneos').select('id, nombre, fase, estado, campeon_id').eq('id', tId).single(),
         supabase.from('torneo_grupos').select('id, nombre').eq('torneo_id', tId).order('nombre'),
         supabase.from('torneo_partidos')
           .select('id, jugador_a, jugador_b, ganador, ja:jugador_a(id,nombre), jb:jugador_b(id,nombre)')
@@ -215,14 +203,13 @@ export default function PerfilPage() {
       // Fase cambió a 'finalizado' → "campeon" + cargar estado de felicitaciones/campeón
       if (td && td.fase === 'finalizado' && prevFase !== 'finalizado') {
         nuevosAvisos.push({ id: `campeon-${td.id}`, tipo: 'campeon', texto: '🏆 ¡El torneo ha finalizado! Revisa los resultados.' })
-        const [{ data: misFeli }, { count }, { data: campeonRec }] = await Promise.all([
+        const [{ data: misFeli }, { count }] = await Promise.all([
           supabase.from('torneo_felicitaciones').select('id').eq('torneo_id', tId).eq('jugador_id', jId).maybeSingle(),
           supabase.from('torneo_felicitaciones').select('id', { count: 'exact', head: true }).eq('torneo_id', tId),
-          supabase.from('historial_elo').select('id').eq('torneo_id', tId).eq('jugador_id', jId).eq('posicion', 'campeon').maybeSingle(),
         ])
         setYaFelicite(!!misFeli)
         setFelicitacionesCount(count || 0)
-        setEsCampeon(!!campeonRec)
+        setEsCampeon(td.campeon_id === jId)
       }
 
       // Actualizar refs antes de actualizar estado
@@ -236,7 +223,7 @@ export default function PerfilPage() {
         const grupoIds = gruposReales.map((g: any) => g.id)
         if (grupoIds.length) {
           const { data: gjData } = await supabase
-            .from('grupo_jugadores').select('grupo_id, jugador_id, jugadores(id, nombre, elo)').in('grupo_id', grupoIds)
+            .from('grupo_jugadores').select('grupo_id, jugador_id, jugadores(id, nombre)').in('grupo_id', grupoIds)
           const gruposConJ = gruposReales.map((g: any) => ({
             ...g, miembros: (gjData || []).filter((x: any) => x.grupo_id === g.id)
           }))
@@ -262,8 +249,12 @@ export default function PerfilPage() {
       .channel(`torneo-${tId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'torneo_partidos', filter: `torneo_id=eq.${tId}` }, recargarTorneo)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'torneos', filter: `id=eq.${tId}` }, recargarTorneo)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'torneo_felicitaciones', filter: `torneo_id=eq.${tId}` }, () => {
-        setFelicitacionesCount(c => c + 1)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'torneo_felicitaciones', filter: `torneo_id=eq.${tId}` }, async () => {
+        const { count } = await supabase
+          .from('torneo_felicitaciones')
+          .select('id', { count: 'exact', head: true })
+          .eq('torneo_id', tId)
+        setFelicitacionesCount(count || 0)
         if (esCampeonRef.current) {
           const id = `felicita-${Date.now()}`
           setAvisos(prev => [...prev, { id, tipo: 'ganaste', texto: '🎊 ¡Alguien te acaba de felicitar!' }])
@@ -278,7 +269,12 @@ export default function PerfilPage() {
     const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
     if (!evalActual) return
     setAceptandoCompromiso(true)
-    await supabase.from('evaluaciones_trimestrales').update({ firmado_alumno: true }).eq('id', evalActual.id)
+    const resultado = await confirmarFeedbackAction({ evaluacionId: evalActual.id })
+    if (resultado.error) {
+      setMensaje({ tipo: 'error', texto: resultado.error })
+      setAceptandoCompromiso(false)
+      return
+    }
     const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugador.id).order('creado_en', { ascending: false }).limit(2)
     setEvaluaciones(evs || [])
     setAceptandoCompromiso(false)
@@ -287,9 +283,17 @@ export default function PerfilPage() {
   async function enviarFelicitaciones() {
     if (!torneoActivo?.id || !jugador?.id || yaFelicite) return
     const { error } = await supabase.from('torneo_felicitaciones').insert({ torneo_id: torneoActivo.id, jugador_id: jugador.id })
-    if (!error) {
+    if (error && error.code !== '23505') {
+      setMensaje({ tipo: 'error', texto: `No se pudieron enviar las felicitaciones: ${error.message}` })
+      return
+    }
+    if (!error || error.code === '23505') {
       setYaFelicite(true)
-      setFelicitacionesCount(c => c + 1)
+      const { count } = await supabase
+        .from('torneo_felicitaciones')
+        .select('id', { count: 'exact', head: true })
+        .eq('torneo_id', torneoActivo.id)
+      setFelicitacionesCount(count || 0)
     }
   }
 
@@ -310,25 +314,12 @@ export default function PerfilPage() {
   )
 
   const iniciales = jugador.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
-  const torneosInternos = new Set(historialElo.filter((h: any) => h.torneo_id).map((h: any) => h.torneo_id)).size
   const torneosTotal = torneosInternos + externos.length
   const mensEstado = mensualidadActual?.estado
   const mensLabel = mensEstado === 'pagado' ? '✅ Pagado' : mensEstado === 'atrasado' ? '❌ Atrasado' : mensEstado === 'pendiente' ? '⚠️ Pendiente' : '—'
   const mensColor = mensEstado === 'pagado' ? '#86efac' : mensEstado === 'atrasado' ? '#fca5a5' : mensEstado === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
 
   const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
-
-  const eloLabels = [
-    ...historialElo.map((h: any) => {
-      if (!h.fecha) return ''
-      const d = new Date(h.fecha)
-      return d.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })
-    }),
-    'Hoy'
-  ]
-  const eloData = [...historialElo.map((h: any) => h.elo_despues), jugador?.elo || 1200]
-  const eloNombres = [...historialElo.map((h: any) => (h as any).torneos?.nombre || 'Torneo externo'), 'ELO actual']
-  const eloTooltips = [...historialElo.map((h: any) => h.posicion || ''), '']
 
   return (
     <AppLayout perfil={perfil}>

@@ -6,7 +6,6 @@ describe('protección de rutas por módulos del club', () => {
     ['/torneos', 'torneos'],
     ['/torneos/abc', 'torneos'],
     ['/liga/division/abc', 'liga'],
-    ['/ranking', 'liga'],
     ['/mis-clases', 'clases'],
     ['/calendario', 'calendario'],
     ['/asistencia/club-id', 'asistencia'],

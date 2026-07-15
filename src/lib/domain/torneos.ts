@@ -3,7 +3,6 @@ import { CONFIG, FaseOrden } from '../config'
 export interface JugadorTorneo {
   id: string
   nombre: string
-  elo: number
 }
 
 export interface GrupoStats {
@@ -30,6 +29,20 @@ export interface SeedResult {
   jugadorId: string
 }
 
+export function derivarPodioFinal(final: {
+  jugador_a: string | null
+  jugador_b: string | null
+  ganador: string | null
+}): { campeonId: string; subcampeonId: string } | null {
+  const { jugador_a: jugadorA, jugador_b: jugadorB, ganador } = final
+  if (!jugadorA || !jugadorB || !ganador) return null
+  if (ganador !== jugadorA && ganador !== jugadorB) return null
+  return {
+    campeonId: ganador,
+    subcampeonId: ganador === jugadorA ? jugadorB : jugadorA,
+  }
+}
+
 // ─── Grupos ────────────────────────────────────────────────────────────────
 
 export function calcularNumGrupos(
@@ -51,8 +64,7 @@ export function seedingSerpenteo(
   numGrupos: number,
   cabezasDeSerie: Set<string> = new Set(),
 ): SeedResult[] {
-  // ELO ya no influye en el sembrado: los cabezas de serie van primero, el
-  // resto conserva el orden recibido.
+  // Los cabezas de serie van primero; el resto conserva el orden recibido.
   const cabezas = jugadores.filter(j => cabezasDeSerie.has(j.id))
   const resto = jugadores.filter(j => !cabezasDeSerie.has(j.id))
   const ordenados = [...cabezas, ...resto]
@@ -138,27 +150,11 @@ export function calcularStatsGrupo(
 
 // ─── Semillas principales (cabezas de serie 1° y 2°) ──────────────────────
 
-// Mueve los cabezas de serie 1° y 2° (si están en la lista) al frente, sin
-// reordenar al resto. Como el cuadro se arma con sembrado estándar (ver
-// `slotsSeed`), quedar 1° y 2° en la lista garantiza que caen en mitades
-// opuestas y solo se pueden enfrentar en la final. Sin depender del ELO.
-export function aplicarSemillasPrincipales<T extends { id: string }>(
-  lista: T[],
-  semilla1Id?: string | null,
-  semilla2Id?: string | null,
-): T[] {
-  if (!semilla1Id && !semilla2Id) return lista
-  const semilla1 = lista.find(j => j.id === semilla1Id)
-  const semilla2 = lista.find(j => j.id === semilla2Id)
-  const resto = lista.filter(j => j.id !== semilla1Id && j.id !== semilla2Id)
-  return [semilla1, semilla2, ...resto].filter((x): x is T => !!x)
-}
-
 // Orden de sembrado estándar (bit-reversal) para un cuadro de tamaño `tam`
 // (potencia de 2). Devuelve, por cada slot, el número de sembrado (1..tam) que
 // va ahí. Emparejando slots consecutivos (0-1, 2-3, …) el sembrado 1 y 2 caen
 // en mitades opuestas: solo se cruzan en la final. Ej: tam=8 → [1,8,4,5,2,7,3,6].
-export function slotsSeed(tam: number): number[] {
+function slotsSeed(tam: number): number[] {
   let rondas = [1]
   while (rondas.length < tam) {
     const m = rondas.length * 2
@@ -169,28 +165,7 @@ export function slotsSeed(tam: number): number[] {
   return rondas
 }
 
-// Arma los partidos de una ronda a partir de una lista ya ordenada por sembrado
-// (el 1° sembrado primero). Completa con BYEs a los sembrados más débiles.
-function construirBracket(orden: JugadorTorneo[], fase: string): PartidoGenerado[] {
-  const n = orden.length
-  if (n < 2) return []
-  const tam = calcularTamanoBracket(n)
-  const slots = slotsSeed(tam)
-  const partidos: PartidoGenerado[] = []
-  for (let k = 0; k < tam / 2; k++) {
-    const jugA = orden[slots[2 * k] - 1] ?? null       // sembrado → jugador (o BYE)
-    const jugB = orden[slots[2 * k + 1] - 1] ?? null
-    if (jugA && jugB) {
-      partidos.push({ jugadorA: jugA.id, jugadorB: jugB.id, fase, orden: k })
-    } else if (jugA) {
-      partidos.push({ jugadorA: jugA.id, jugadorB: null, ganador: jugA.id, fase, orden: k })
-    } else if (jugB) {
-      partidos.push({ jugadorA: jugB.id, jugadorB: null, ganador: jugB.id, fase, orden: k })
-    }
-  }
-  return partidos
-}
-
+// Arma los partidos desde posiciones sembradas y completa los BYEs.
 function construirBracketDesdePosiciones(posiciones: Array<JugadorTorneo | null>, fase: string): PartidoGenerado[] {
   const partidos: PartidoGenerado[] = []
   for (let k = 0; k < posiciones.length / 2; k++) {
@@ -320,47 +295,6 @@ export function generarBracketEspejo(
     posicionarCuposEspejo(primeros, segundos, semilla1Id, semilla2Id),
     faseInicialNueva,
   )
-
-  /*
-  const orden = aplicarSemillasPrincipales([...primeros, ...segundos], semilla1Id, semilla2Id)
-  if (orden.length < 2) return []
-  const faseInicial = determinarFaseInicial(calcularTamanoBracket(orden.length))
-  const partidos = construirBracket(orden, faseInicial)
-
-  // Map each player ID → group index to detect same-group first-round pairings
-  const grupoIdx = new Map<string, number>()
-  primeros.forEach((j, i) => grupoIdx.set(j.id, i))
-  segundos.forEach((j, i) => grupoIdx.set(j.id, i))
-
-  // ponytail: O(n²) swap pass, n ≤ 16 matches
-  for (let i = 0; i < partidos.length; i++) {
-    const p = partidos[i]
-    if (!p.jugadorB) continue
-    const ga = grupoIdx.get(p.jugadorA)
-    const gb = grupoIdx.get(p.jugadorB)
-    if (ga === undefined || gb === undefined || ga !== gb) continue
-    for (let j = 0; j < partidos.length; j++) {
-      if (i === j || !partidos[j].jugadorB) continue
-      const q = partidos[j]
-      const qga = grupoIdx.get(q.jugadorA)!
-      const qgb = grupoIdx.get(q.jugadorB!)!
-      if (ga !== qga && qgb !== gb) {
-        const tmp = p.jugadorB
-        partidos[i] = { ...p, jugadorB: q.jugadorA }
-        partidos[j] = { ...q, jugadorA: tmp }
-        break
-      }
-      if (ga !== qgb && qga !== gb) {
-        const tmp = p.jugadorB
-        partidos[i] = { ...p, jugadorB: q.jugadorB }
-        partidos[j] = { ...q, jugadorB: tmp }
-        break
-      }
-    }
-  }
-
-  return partidos
-  */
 }
 
 // Un solo motor de armado para cualquier cantidad de clasificados. Los BYEs los
@@ -390,8 +324,8 @@ export function construirLlavesLayout(
   cabeza1GrupoIdx?: number | null,
   cabeza2GrupoIdx?: number | null,
 ): LlavesLayout {
-  const primeros = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:1`, nombre: '', elo: 0 }))
-  const segundos = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:2`, nombre: '', elo: 0 }))
+  const primeros = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:1`, nombre: '' }))
+  const segundos = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:2`, nombre: '' }))
   // Los cabezas de serie protegidos se anclan al 1° de su grupo.
   const c1 = cabeza1GrupoIdx != null ? `${cabeza1GrupoIdx}:1` : null
   let c2 = cabeza2GrupoIdx != null ? `${cabeza2GrupoIdx}:1` : null

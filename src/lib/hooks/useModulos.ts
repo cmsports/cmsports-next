@@ -39,7 +39,7 @@ export function ModulosProvider({ children }: { children: React.ReactNode }) {
     const { data } = await supabase.from('clubes').select('modulos_habilitados').eq('id', id).single()
     setEstado({
       clubId: id,
-      modulos: (data?.modulos_habilitados ?? ALL_MODULOS).filter((modulo: string) => modulo !== 'elo'),
+      modulos: data?.modulos_habilitados ?? ALL_MODULOS,
     })
   }, [])
 

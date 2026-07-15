@@ -50,7 +50,6 @@ async function main() {
       nombre: perfil.nombre || 'Jugador de Prueba',
       email: perfil.email,
       categoria: 'intermedio',
-      elo: 1200,
       sesiones_usadas: 0,
       sesiones_limite: 12,
       estado: 'activo',

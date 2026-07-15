@@ -668,7 +668,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       const j = preview.jugador
       doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
       doc.text(`Ficha — ${j.nombre}`, 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['ELO', String(j.elo || 0)], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Sesiones', `${j.sesiones_usadas || 0}/${j.sesiones_limite || 0}`], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Sesiones', `${j.sesiones_usadas || 0}/${j.sesiones_limite || 0}`], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
       y = (doc as any).lastAutoTable.finalY + 10
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Mensualidades (período)', 14, y); y += 8
       autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total pagado', fmt(preview.totalPagado)], ['Total pendiente', fmt(preview.totalPendiente)], ['Pagados', String(preview.pagadas.length)], ['Pendientes', String(preview.pendientes.length)]], theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
@@ -889,7 +889,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — {preview.jugador.nombre} — {titulo}</div>
           <div style={{ ...card, padding:20, marginBottom:16 }}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, fontSize:13 }}>
-              {([['Categoría', preview.jugador.categoria || '—'], ['ELO', preview.jugador.elo || 0], ['Estado', preview.jugador.estado || '—'], ['Plan', preview.jugador.tipo_plan || '—'], ['Sesiones', `${preview.jugador.sesiones_usadas || 0}/${preview.jugador.sesiones_limite || 0}`], ['Mensualidad', preview.jugador.mensualidad ? fmt(preview.jugador.mensualidad) : '—'], ['RUT', preview.jugador.rut || '—'], ['Email', preview.jugador.email || '—']] as [string, any][]).map(([l, v]) => (
+              {([['Categoría', preview.jugador.categoria || '—'], ['Estado', preview.jugador.estado || '—'], ['Plan', preview.jugador.tipo_plan || '—'], ['Sesiones', `${preview.jugador.sesiones_usadas || 0}/${preview.jugador.sesiones_limite || 0}`], ['Mensualidad', preview.jugador.mensualidad ? fmt(preview.jugador.mensualidad) : '—'], ['RUT', preview.jugador.rut || '—'], ['Email', preview.jugador.email || '—']] as [string, any][]).map(([l, v]) => (
                 <div key={l} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
                   <span style={{ color: muted }}>{l}</span>
                   <span style={{ color: text, fontWeight:500 }}>{v}</span>

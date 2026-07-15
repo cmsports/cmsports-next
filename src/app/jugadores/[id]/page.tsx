@@ -4,17 +4,10 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
-import {
-  Chart as ChartJS,
-  CategoryScale, LinearScale, PointElement, LineElement,
-  RadialLinearScale, Filler, Tooltip, Legend, BarElement
-} from 'chart.js'
-import { Line } from 'react-chartjs-2'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearAccesoJugador } from '@/app/actions/jugadores'
+import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, RadialLinearScale, Filler, Tooltip, Legend, BarElement)
 
 const supabase = createClient()
 
@@ -32,28 +25,20 @@ const CAT_LABEL: Record<string, string> = {
   sub19:'Sub 19', aficionados:'Aficionados', intermedia:'Intermedia', tc:'TC'
 }
 
-const ELO_TABLA: Record<string, Record<string, number>> = {
-  sub19:      { fase_grupos:5,  octavos:10, cuartos:15, semifinal:20, subcampeon:25, campeon:35 },
-  aficionados:{ fase_grupos:8,  octavos:15, cuartos:22, semifinal:30, subcampeon:40, campeon:55 },
-  intermedia: { fase_grupos:12, octavos:20, cuartos:30, semifinal:42, subcampeon:55, campeon:75 },
-  tc:         { fase_grupos:20, octavos:32, cuartos:45, semifinal:60, subcampeon:80, campeon:110 }
-}
-
 const CLUBES_EXTERNOS = ['Club Nuevo Olimpo','Valentín Ramos','Club Deportivo La Florida','Club San Miguel','Club Maipú','Club Providencia','Otro']
 
 export default function JugadorDetallePage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
-  const [historialElo, setHistorialElo] = useState<any[]>([])
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
-  const [asistencias, setAsistencias] = useState<any[]>([])
   const [partidos, setPartidos] = useState<any[]>([])
   const [externos, setExternos] = useState<any[]>([])
   const [evaluaciones, setEvaluaciones] = useState<any[]>([])
   const [tab, setTab] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [mostrarAsistencia, setMostrarAsistencia] = useState(false)
   const [guardandoFeedback, setGuardandoFeedback] = useState(false)
+  const [feedbackError, setFeedbackError] = useState('')
+  const [feedbackExito, setFeedbackExito] = useState('')
   const [feedbackForm, setFeedbackForm] = useState({ feedback:'', meta:'' })
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
@@ -86,33 +71,33 @@ export default function JugadorDetallePage() {
     async function cargar() {
       if (authLoading) return
       if (!perfil) { router.push('/login'); return }
-      if (perfil.rol === 'jugador' && perfil.jugador_id !== jugadorId) {
-        router.replace('/jugadores')
+      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor') {
+        router.replace(perfil.rol === 'jugador' ? '/perfil' : '/')
         return
       }
 
       const mesActual = new Date().getMonth() + 1
       const anioActual = new Date().getFullYear()
 
-      const [{ data: j }, { data: h }, { data: e }, { data: ext }, { data: evs }, { data: asist }, { data: mens }] = await Promise.all([
+      const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
         supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
-        supabase.from('historial_elo').select('*,torneos(nombre)').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
         supabase.from('torneo_partidos').select('*,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
         supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
         supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
-        supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
-        supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
+        perfil.rol === 'admin'
+          ? supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
+          : Promise.resolve({ data: null }),
       ])
 
-      const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
-      setTieneCuenta(!!perfilJugador)
+      if (perfil.rol === 'admin') {
+        const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
+        setTieneCuenta(!!perfilJugador)
+      }
 
       setJugador(j)
-      setHistorialElo(h || [])
       setPartidos(e || [])
       setExternos(ext || [])
       setEvaluaciones(evs || [])
-      setAsistencias(asist || [])
       setMensualidadActual(mens)
 
       const evalActual = evs?.find((ev: any) => ev.periodo_trimestre === trimestre)
@@ -125,11 +110,11 @@ export default function JugadorDetallePage() {
 
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'
-  const esPropio = perfil?.jugador_id === jugadorId
-  const puedeVerTodo = esAdmin || esProfesor || esPropio
-  const puedeEditar = esAdmin || esProfesor
+  const puedeVerTodo = esAdmin || esProfesor
+  const puedeEditar = esAdmin
+  const puedeEvaluar = esAdmin || esProfesor
 
-  const torneosInternos = new Set(historialElo.filter(h => h.torneo_id).map(h => h.torneo_id)).size
+  const torneosInternos = new Set(partidos.map(p => p.torneo_id).filter(Boolean)).size
   const torneosTotal = torneosInternos + externos.length
   const mensEstado = mensualidadActual?.estado
   const mensLabel = mensEstado === 'pagado' ? '✅ Pagado' : mensEstado === 'atrasado' ? '❌ Atrasado' : mensEstado === 'pendiente' ? '⚠️ Pendiente' : '—'
@@ -137,44 +122,29 @@ export default function JugadorDetallePage() {
 
   const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
 
-  const eloLabels = [
-    ...historialElo.map(h => {
-      if (!h.fecha) return ''
-      const d = new Date(h.fecha)
-      return d.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })
-    }),
-    'Hoy'
-  ]
-  const eloData = [...historialElo.map(h => h.elo_despues), jugador?.elo || 1200]
-  const eloNombres = [...historialElo.map(h => (h as any).torneos?.nombre || 'Torneo externo'), 'ELO actual']
-  const eloTooltips = [...historialElo.map(h => h.posicion || ''), '']
-  const eloColores = [...historialElo.map(h => h.torneo_id ? '#3730a3' : '#0F6E56'), '#94a3b8']
-
-  const asistPorMes: Record<string, number> = {}
-  asistencias.forEach((a: any) => {
-    const m = a.fecha?.slice(0,7)
-    if (m) asistPorMes[m] = (asistPorMes[m] || 0) + 1
-  })
-  const asistData = eloLabels.map(l => asistPorMes[l?.slice(0,7)] || 0)
-
   async function guardarFeedback() {
-    if (!feedbackForm.feedback) return
+    if (!feedbackForm.feedback.trim()) {
+      setFeedbackError('El feedback es obligatorio')
+      return
+    }
     setGuardandoFeedback(true)
-    if (evalActual) {
-      await supabase.from('evaluaciones_trimestrales').update({
-        feedback_profesor: feedbackForm.feedback,
-        meta_proximo_periodo: feedbackForm.meta || null
-      }).eq('id', evalActual.id)
-    } else {
-      await supabase.from('evaluaciones_trimestrales').insert({
-        club_id: jugador?.club_id, jugador_id: jugadorId,
-        periodo_trimestre: trimestre,
-        feedback_profesor: feedbackForm.feedback,
-        meta_proximo_periodo: feedbackForm.meta || null
-      })
+    setFeedbackError('')
+    setFeedbackExito('')
+    const resultado = await guardarFeedbackAction({
+      jugadorId,
+      evaluacionId: evalActual?.id,
+      periodo: trimestre,
+      feedback: feedbackForm.feedback,
+      meta: feedbackForm.meta,
+    })
+    if (resultado.error) {
+      setFeedbackError(resultado.error)
+      setGuardandoFeedback(false)
+      return
     }
     const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2)
     setEvaluaciones(evs || [])
+    setFeedbackExito('Feedback guardado. El jugador debe confirmarlo.')
     setGuardandoFeedback(false)
   }
 
@@ -205,7 +175,7 @@ export default function JugadorDetallePage() {
     }
     const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
     if (error) {
-      setDatosError('No se pudieron guardar los cambios')
+      setDatosError(`No se pudieron guardar los cambios: ${error.message}`)
       setGuardandoDatos(false)
       return
     }
@@ -225,6 +195,7 @@ export default function JugadorDetallePage() {
 
   async function guardarPlan() {
     setGuardandoDatos(true)
+    setDatosError('')
     const ent = planFormState.tipo_plan === 'libre' ? null : parseInt(planFormState.entrenamientos_por_semana) || 3
     const sesLimite = planFormState.tipo_plan === 'libre' ? 99 : (ent || 3) * 4
     const datos = {
@@ -233,42 +204,36 @@ export default function JugadorDetallePage() {
       mensualidad: parseInt(planFormState.mensualidad) || 0,
       sesiones_limite: sesLimite,
     }
-    await supabase.from('jugadores').update(datos).eq('id', jugadorId)
+    const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
+    if (error) {
+      setDatosError(`No se pudo guardar el plan: ${error.message}`)
+      setGuardandoDatos(false)
+      return
+    }
     setJugador({ ...jugador, ...datos })
     setEditPlan(false)
     setGuardandoDatos(false)
   }
 
-  const puntosExternoPreview = ELO_TABLA[externoForm.categoria]?.[externoForm.posicion] || 0
-
   async function guardarExterno() {
     const clubNombre = externoForm.club === 'Otro' ? externoForm.clubNombre : externoForm.club
     if (!clubNombre || !externoForm.fecha) return
     setGuardandoExterno(true)
+    setDatosError('')
 
-    const puntos = ELO_TABLA[externoForm.categoria]?.[externoForm.posicion] || 0
-    await supabase.from('torneos_externos').insert({
+    const { error } = await supabase.from('torneos_externos').insert({
       club_id: jugador?.club_id, jugador_id: jugadorId,
       nombre_club: clubNombre, categoria: externoForm.categoria,
-      posicion: externoForm.posicion, fecha: externoForm.fecha, puntos_elo: puntos
+      posicion: externoForm.posicion, fecha: externoForm.fecha,
     })
+    if (error) {
+      setDatosError(`No se pudo registrar el torneo: ${error.message}`)
+      setGuardandoExterno(false)
+      return
+    }
 
-    const eloAntes = jugador?.elo || 1200
-    const nuevoElo = eloAntes + puntos
-    await supabase.from('jugadores').update({ elo: nuevoElo }).eq('id', jugadorId)
-    await supabase.from('historial_elo').insert({
-      jugador_id: jugadorId, club_id: jugador?.club_id,
-      elo_antes: eloAntes, elo_despues: nuevoElo,
-      posicion: POSICION_LABEL[externoForm.posicion], fecha: externoForm.fecha
-    })
-
-    const [{ data: ext }, { data: h }] = await Promise.all([
-      supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
-      supabase.from('historial_elo').select('*,torneos(nombre)').eq('jugador_id', jugadorId).order('fecha', { ascending: true }),
-    ])
+    const { data: ext } = await supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false })
     setExternos(ext || [])
-    setHistorialElo(h || [])
-    setJugador({ ...jugador, elo: nuevoElo })
     setModalExternoOpen(false)
     setExternoForm({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
     setGuardandoExterno(false)
@@ -283,13 +248,6 @@ export default function JugadorDetallePage() {
     setAccesoPassword(res.password || '')
     setAccesoExito(true)
     setTieneCuenta(true)
-  }
-
-  async function aceptarCompromiso() {
-    if (!evalActual) return
-    await supabase.from('evaluaciones_trimestrales').update({ firmado_alumno: true }).eq('id', evalActual.id)
-    const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2)
-    setEvaluaciones(evs || [])
   }
 
   if (loading) return (
@@ -330,7 +288,8 @@ export default function JugadorDetallePage() {
               {jugador.es_externo && (
                 <button onClick={async () => {
                   if (!confirm('¿Agregar este jugador al club? Aparecerá en la lista de jugadores y mensualidades.')) return
-                  await supabase.from('jugadores').update({ es_externo: false, sesiones_limite: 12, estado: 'activo' }).eq('id', jugadorId)
+                  const { error } = await supabase.from('jugadores').update({ es_externo: false, sesiones_limite: 12, estado: 'activo' }).eq('id', jugadorId)
+                  if (error) { setDatosError(`No se pudo agregar al club: ${error.message}`); return }
                   setJugador({ ...jugador, es_externo: false })
                 }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
                   ✅ Agregar al club
@@ -338,12 +297,13 @@ export default function JugadorDetallePage() {
               )}
               <button onClick={async () => {
                 const nuevoEstado = jugador.estado === 'activo' ? 'bloqueado' : 'activo'
-                await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', jugadorId)
+                const { error } = await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', jugadorId)
+                if (error) { setDatosError(`No se pudo cambiar el estado: ${error.message}`); return }
                 setJugador({ ...jugador, estado: nuevoEstado })
               }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>
                 {jugador.estado==='activo' ? '🔒 Bloquear' : '✅ Activar'}
               </button>
-              {!tieneCuenta && (
+              {puedeEditar && !tieneCuenta && (
                 <button onClick={crearAcceso} disabled={creandoAcceso} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
                   {creandoAcceso ? 'Creando...' : '🔑 Crear acceso'}
                 </button>
@@ -361,15 +321,22 @@ export default function JugadorDetallePage() {
             )}
           </div>
         )}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:10 }}>
+        {esAdmin && datosError && !editContacto && !editPlan && (
+          <div style={{ marginTop:10, background:'rgba(220,38,38,0.25)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#fff' }}>
+            {datosError}
+          </div>
+        )}
+        <div style={{ display:'grid', gridTemplateColumns: esAdmin ? 'repeat(2,1fr)' : '1fr', gap:10 }}>
           <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
             <div style={{ fontSize:22, fontWeight:800, color:'#fff', fontFamily:'monospace' }}>{torneosTotal}</div>
             <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Torneos</div>
           </div>
-          <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
-            <div style={{ fontSize:13, fontWeight:800, color: mensColor, lineHeight:1.8 }}>{mensLabel}</div>
-            <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Mensualidad</div>
-          </div>
+          {esAdmin && (
+            <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:'10px', textAlign:'center' }}>
+              <div style={{ fontSize:13, fontWeight:800, color: mensColor, lineHeight:1.8 }}>{mensLabel}</div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Mensualidad</div>
+            </div>
+          )}
         </div>
 
         {/* Info contacto + Plan */}
@@ -378,7 +345,7 @@ export default function JugadorDetallePage() {
           <div style={{ background:'rgba(255,255,255,0.15)', borderRadius:10, padding:12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
               <div style={{ fontSize:11, color:'rgba(255,255,255,0.7)', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Contacto</div>
-              {(puedeEditar || esPropio) && !editContacto && (
+              {puedeEditar && !editContacto && (
                 <button onClick={abrirEditContacto} style={{ background:'rgba(255,255,255,0.2)', border:'none', borderRadius:6, padding:'2px 8px', fontSize:11, color:'#fff', cursor:'pointer' }}>Editar</button>
               )}
             </div>
@@ -600,28 +567,13 @@ export default function JugadorDetallePage() {
                   </div>
                 )}
               </div>
-              {esPropio && (
-                <div style={{ ...card, padding:20, marginBottom:16 }}>
-                  {evalActual.firmado_alumno
-                    ? <div style={{ background:'#f0fdf4', color:'#16a34a', padding:'12px 16px', borderRadius:10, fontSize:13, textAlign:'center', border:'1px solid #bbf7d0' }}>✅ Compromiso aceptado</div>
-                    : <>
-                        <div style={{ fontSize:13, color: text, marginBottom:12 }}>He leído el informe de mi entrenador y acepto mis metas para el próximo período.</div>
-                        <button onClick={aceptarCompromiso} style={{ width:'100%', padding:14, background:'linear-gradient(135deg,#3730a3,#4f46e5)', color:'white', border:'none', borderRadius:12, fontSize:14, fontWeight:600, cursor:'pointer' }}>
-                          ✍️ Aceptar compromiso del trimestre
-                        </button>
-                      </>
-                  }
-                </div>
-              )}
-              {!esPropio && (
-                <div style={{ ...card, padding:16, marginBottom:16 }}>
-                  <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:8 }}>Estado del compromiso</div>
-                  {evalActual.firmado_alumno
-                    ? <div style={{ background:'#f0fdf4', color:'#16a34a', padding:'10px 16px', borderRadius:10, fontSize:13, border:'1px solid #bbf7d0' }}>✅ Compromiso aceptado por el alumno</div>
-                    : <div style={{ background:'#fffbeb', color:'#d97706', padding:'10px 16px', borderRadius:10, fontSize:13, border:'1px solid #fde68a' }}>⏳ Pendiente de aceptación</div>
-                  }
-                </div>
-              )}
+              <div style={{ ...card, padding:16, marginBottom:16 }}>
+                <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:8 }}>Estado del compromiso</div>
+                {evalActual.firmado_alumno
+                  ? <div style={{ background:'#f0fdf4', color:'#16a34a', padding:'10px 16px', borderRadius:10, fontSize:13, border:'1px solid #bbf7d0' }}>✅ Compromiso aceptado por el alumno</div>
+                  : <div style={{ background:'#fffbeb', color:'#d97706', padding:'10px 16px', borderRadius:10, fontSize:13, border:'1px solid #fde68a' }}>⏳ Pendiente de aceptación</div>
+                }
+              </div>
             </>
           ) : (
             <div style={{ ...card, padding:30, textAlign:'center', marginBottom:16 }}>
@@ -630,7 +582,7 @@ export default function JugadorDetallePage() {
             </div>
           )}
 
-          {puedeEditar && (
+          {puedeEvaluar && (
             <div style={{ ...card, padding:20 }}>
               <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>
                 {evalActual?.feedback_profesor ? 'Editar feedback' : 'Agregar feedback'} — {trimestre}
@@ -653,6 +605,8 @@ export default function JugadorDetallePage() {
                   onChange={e => setFeedbackForm(f => ({ ...f, meta: e.target.value }))}
                 />
               </div>
+              {feedbackError && <div style={{ marginBottom:10, color:'#dc2626', fontSize:12 }}>{feedbackError}</div>}
+              {feedbackExito && <div style={{ marginBottom:10, color:'#16a34a', fontSize:12 }}>{feedbackExito}</div>}
               <button onClick={guardarFeedback} disabled={guardandoFeedback} style={{ width:'100%', padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 {guardandoFeedback ? 'Guardando...' : 'Guardar feedback'}
               </button>
@@ -708,6 +662,8 @@ export default function JugadorDetallePage() {
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 type="date" value={externoForm.fecha} onChange={e => setExternoForm(f => ({ ...f, fecha: e.target.value }))} />
             </div>
+
+            {datosError && <div style={{ marginBottom:12, color:'#dc2626', fontSize:12 }}>{datosError}</div>}
 
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setModalExternoOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>

@@ -45,25 +45,12 @@ export default function TorneosPage() {
     }
   }, [authLoading, perfil, mostrarArchivados])
 
-  async function exportarTorneos() {
-    const { utils, writeFile } = await import('xlsx')
-    const datos = torneos.map(t => ({
-      'Nombre': t.nombre, 'Estado': t.estado, 'Fase': t.fase,
-      'Fecha inicio': t.fecha_inicio || '', 'Inscritos': t.inscritos || 0,
-      'Campeón': t.campeon || '', 'Cuota': t.cuota_inscripcion ? '$'+t.cuota_inscripcion.toLocaleString('es-CL') : '',
-    }))
-    const ws = utils.json_to_sheet(datos)
-    const wb = utils.book_new()
-    utils.book_append_sheet(wb, ws, 'Torneos')
-    writeFile(wb, 'torneos.xlsx')
-  }
-
   async function cargarTorneos(cid?: string) {
     const id = cid || clubId
     // Query 1: todos los torneos del club
     let query = supabase
       .from('torneos')
-      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en')
+      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,campeon:campeon_id(nombre)')
       .eq('club_id', id)
       .order('creado_en', { ascending: false })
     query = mostrarArchivados ? query.eq('estado', 'archivado') : query.neq('estado', 'archivado')
@@ -72,37 +59,15 @@ export default function TorneosPage() {
 
     const ids = torneosData.map(t => t.id)
 
-    // Queries 2-5 en paralelo
-    const idsFinalizados = torneosData.filter(t => t.fase === 'finalizado' || t.estado === 'finalizado').map(t => t.id)
-
-    const [
-      { data: todosGrupos },
-      { data: finales },
-    ] = await Promise.all([
-      // Query 2: grupos de todos los torneos de una vez
-      supabase.from('torneo_grupos').select('id, torneo_id').in('torneo_id', ids),
-      // Query 3: partido final de todos los torneos finalizados de una vez
-      idsFinalizados.length > 0
-        ? supabase.from('torneo_partidos').select('torneo_id, ganador').in('torneo_id', idsFinalizados).eq('fase', 'final').not('ganador', 'is', null)
-        : Promise.resolve({ data: [] }),
-    ])
+    const { data: todosGrupos } = await supabase
+      .from('torneo_grupos')
+      .select('id, torneo_id')
+      .in('torneo_id', ids)
 
     const grupoIds = (todosGrupos || []).map(g => g.id)
-    const ganadorIds = [...new Set((finales || []).map(f => f.ganador).filter(Boolean))]
-
-    const [
-      { data: inscripciones },
-      { data: jugadores },
-    ] = await Promise.all([
-      // Query 4: todas las inscripciones de todos los grupos de una vez
-      grupoIds.length > 0
-        ? supabase.from('grupo_jugadores').select('grupo_id').in('grupo_id', grupoIds)
-        : Promise.resolve({ data: [] }),
-      // Query 5: nombres de todos los ganadores de una vez
-      ganadorIds.length > 0
-        ? supabase.from('jugadores').select('id, nombre').in('id', ganadorIds)
-        : Promise.resolve({ data: [] }),
-    ])
+    const { data: inscripciones } = grupoIds.length > 0
+      ? await supabase.from('grupo_jugadores').select('grupo_id').in('grupo_id', grupoIds)
+      : { data: [] }
 
     // Mapas para lookup O(1)
     const grupoATorneo: Record<string, string> = {}
@@ -114,18 +79,12 @@ export default function TorneosPage() {
       if (tid) inscritosPorTorneo[tid] = (inscritosPorTorneo[tid] || 0) + 1
     }
 
-    const jugadorNombre: Record<string, string> = {}
-    for (const j of (jugadores || [])) jugadorNombre[j.id] = j.nombre
-
-    const campeonPorTorneo: Record<string, string> = {}
-    for (const f of (finales || [])) {
-      if (f.ganador && jugadorNombre[f.ganador]) campeonPorTorneo[f.torneo_id] = jugadorNombre[f.ganador]
-    }
-
     const lista = torneosData.map(t => ({
       ...t,
       inscritos: inscritosPorTorneo[t.id] || 0,
-      campeon:   campeonPorTorneo[t.id] || null,
+      campeon: Array.isArray(t.campeon)
+        ? (t.campeon[0] as { nombre?: string } | undefined)?.nombre
+        : (t.campeon as { nombre?: string } | null)?.nombre,
     }))
     if (id) torneosCache[`${id}:${mostrarArchivados ? 'archivados' : 'activos'}`] = lista
     setTorneos(lista)

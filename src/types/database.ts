@@ -172,7 +172,6 @@ export interface Database {
           email: string | null
           telefono: string | null
           categoria: string | null
-          elo: number | null
           sesiones_usadas: number | null
           sesiones_limite: number | null
           estado: string | null
@@ -191,7 +190,6 @@ export interface Database {
           email?: string | null
           telefono?: string | null
           categoria?: string | null
-          elo?: number | null
           sesiones_usadas?: number | null
           sesiones_limite?: number | null
           estado?: string | null
@@ -210,7 +208,6 @@ export interface Database {
           email?: string | null
           telefono?: string | null
           categoria?: string | null
-          elo?: number | null
           sesiones_usadas?: number | null
           sesiones_limite?: number | null
           estado?: string | null
@@ -554,6 +551,8 @@ export interface Database {
           premio_tercero: number | null
           cabeza_serie_1: string | null
           cabeza_serie_2: string | null
+          campeon_id: string | null
+          subcampeon_id: string | null
         }
         Insert: {
           id?: string
@@ -574,6 +573,8 @@ export interface Database {
           premio_tercero?: number | null
           cabeza_serie_1?: string | null
           cabeza_serie_2?: string | null
+          campeon_id?: string | null
+          subcampeon_id?: string | null
         }
         Update: {
           id?: string
@@ -594,12 +595,58 @@ export interface Database {
           premio_tercero?: number | null
           cabeza_serie_1?: string | null
           cabeza_serie_2?: string | null
+          campeon_id?: string | null
+          subcampeon_id?: string | null
         }
         Relationships: [
           { foreignKeyName: 'torneos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneos_cabeza_serie_1_fkey'; columns: ['cabeza_serie_1']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneos_cabeza_serie_2_fkey'; columns: ['cabeza_serie_2']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneos_campeon_id_fkey'; columns: ['campeon_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneos_subcampeon_id_fkey'; columns: ['subcampeon_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
+      }
+      torneo_felicitaciones: {
+        Row: {
+          id: string
+          torneo_id: string
+          jugador_id: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          torneo_id: string
+          jugador_id: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          torneo_id?: string
+          jugador_id?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'torneo_felicitaciones_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_felicitaciones_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
+      }
+      notificaciones_leidas: {
+        Row: {
+          user_id: string
+          notificacion_id: string
+          leida_en: string
+        }
+        Insert: {
+          user_id: string
+          notificacion_id: string
+          leida_en?: string
+        }
+        Update: {
+          user_id?: string
+          notificacion_id?: string
+          leida_en?: string
+        }
+        Relationships: []
       }
       torneo_grupos: {
         Row: {
@@ -769,8 +816,6 @@ export interface Database {
           sets_a: number | null
           sets_b: number | null
           detalle_sets: Json | null
-          elo_cambio_a: number | null
-          elo_cambio_b: number | null
           torneo_id: string | null
           arbitro_id: string | null
           fecha: string | null
@@ -784,8 +829,6 @@ export interface Database {
           sets_a?: number | null
           sets_b?: number | null
           detalle_sets?: Json | null
-          elo_cambio_a?: number | null
-          elo_cambio_b?: number | null
           torneo_id?: string | null
           arbitro_id?: string | null
           fecha?: string | null
@@ -799,8 +842,6 @@ export interface Database {
           sets_a?: number | null
           sets_b?: number | null
           detalle_sets?: Json | null
-          elo_cambio_a?: number | null
-          elo_cambio_b?: number | null
           torneo_id?: string | null
           arbitro_id?: string | null
           fecha?: string | null
@@ -811,46 +852,6 @@ export interface Database {
           { foreignKeyName: 'partidos_jugador_b_fkey'; columns: ['jugador_b']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'partidos_ganador_fkey'; columns: ['ganador']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'partidos_arbitro_id_fkey'; columns: ['arbitro_id']; referencedRelation: 'usuarios'; referencedColumns: ['id'] },
-        ]
-      }
-      historial_elo: {
-        Row: {
-          id: string
-          jugador_id: string | null
-          club_id: string | null
-          torneo_id: string | null
-          partido_id: string | null
-          elo_antes: number | null
-          elo_despues: number | null
-          posicion: string | null
-          fecha: string | null
-        }
-        Insert: {
-          id?: string
-          jugador_id?: string | null
-          club_id?: string | null
-          torneo_id?: string | null
-          partido_id?: string | null
-          elo_antes?: number | null
-          elo_despues?: number | null
-          posicion?: string | null
-          fecha?: string | null
-        }
-        Update: {
-          id?: string
-          jugador_id?: string | null
-          club_id?: string | null
-          torneo_id?: string | null
-          partido_id?: string | null
-          elo_antes?: number | null
-          elo_despues?: number | null
-          posicion?: string | null
-          fecha?: string | null
-        }
-        Relationships: [
-          { foreignKeyName: 'historial_elo_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
-          { foreignKeyName: 'historial_elo_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
-          { foreignKeyName: 'historial_elo_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
         ]
       }
       evaluaciones_trimestrales: {
@@ -917,7 +918,6 @@ export interface Database {
           categoria: string
           posicion: string
           fecha: string
-          puntos_elo: number | null
           creado_en: string | null
         }
         Insert: {
@@ -928,7 +928,6 @@ export interface Database {
           categoria: string
           posicion: string
           fecha: string
-          puntos_elo?: number | null
           creado_en?: string | null
         }
         Update: {
@@ -939,7 +938,6 @@ export interface Database {
           categoria?: string
           posicion?: string
           fecha?: string
-          puntos_elo?: number | null
           creado_en?: string | null
         }
         Relationships: [
@@ -1376,6 +1374,34 @@ export interface Database {
       ajustar_sesiones: {
         Args: { p_jugador_id: string; p_delta: number }
         Returns: undefined
+      }
+      registrar_asistencia_segura: {
+        Args: { p_jugador_id: string; p_fecha?: string; p_hora?: string }
+        Returns: string
+      }
+      eliminar_asistencia_segura: {
+        Args: { p_asistencia_id: string }
+        Returns: undefined
+      }
+      obtener_club_asistencia: {
+        Args: { p_club_id: string }
+        Returns: { nombre: string }[]
+      }
+      registrar_asistencia_rut: {
+        Args: { p_club_id: string; p_rut: string }
+        Returns: { jugador_nombre: string; hora_registro: string; ya_registrada: boolean }[]
+      }
+      cambiar_reserva_clase: {
+        Args: { p_clase_id: string; p_confirmar: boolean }
+        Returns: string
+      }
+      contar_reservas_clases: {
+        Args: { p_clase_ids: string[] }
+        Returns: { clase_id: string; total: number }[]
+      }
+      confirmar_feedback_jugador: {
+        Args: { p_evaluacion_id: string }
+        Returns: boolean
       }
     }
     Enums: {}

@@ -248,8 +248,9 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
   // desarrollo del torneo: todas las llaves de playoff por fase (jugadas y por jugar).
   // Mientras el torneo sigue en fase de grupos el cuadro se está armando (cupos
   // aún por definir): en público recién se muestra al entrar de lleno a playoffs.
+  const faseTorneo = torneo?.fase ?? ''
   const llavesPorFase = useMemo(() => {
-    if ((torneo?.fase ?? '') === 'grupos') return []
+    if (faseTorneo === 'grupos') return []
     const playoff = partidos.filter(p => !p.grupo_id && p.fase && FASE_LABELS[p.fase] && p.fase !== 'grupos')
     const secc: { fase: string; titulo: string; partidos: Partido[] }[] = []
     for (const fase of Object.keys(FASE_LABELS)) {
@@ -257,7 +258,7 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
       if (ps.length) secc.push({ fase, titulo: FASE_LABELS[fase], partidos: ps })
     }
     return secc
-  }, [partidos, torneo?.fase])
+  }, [partidos, faseTorneo])
 
   return (
     <div style={{ minHeight: '100vh', background: '#a9bac8', padding: '16px 12px 40px' }}>

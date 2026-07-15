@@ -64,7 +64,6 @@ async function main() {
       email: `jugador.prueba${i + 1}@test.cmsports.cl`,
       telefono: `9${rndInt(10000000, 99999999)}`,
       categoria: rnd(CATEGORIAS),
-      elo: rndInt(1000, 1600),
       sesiones_usadas: 0,
       sesiones_limite: 12,
       estado,

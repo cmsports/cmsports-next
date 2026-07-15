@@ -49,7 +49,7 @@ src/
 ├── components/ui/      # Componentes reutilizables
 ├── lib/
 │   ├── supabase/       # Clientes SSR (server.ts, client.ts, proxy.ts)
-│   ├── domain/         # Lógica de negocio pura (elo.ts, finanzas.ts, torneos.ts)
+│   ├── domain/         # Lógica de negocio pura (finanzas.ts, torneos.ts)
 │   └── validations/    # Esquemas Zod
 ├── types/database.ts   # Tipos generados de Supabase
 └── proxy.ts            # Protección de rutas por rol

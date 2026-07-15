@@ -284,47 +284,6 @@ export function TableroFecha({
     doc.save(`liga_fecha${fecha?.numero}_por_${orden}.pdf`)
   }
 
-  async function exportarHojasDePartido() {
-    const { default: jsPDF } = await import('jspdf')
-    const doc = new jsPDF()
-    const filas = [...partidosVisibles].sort((a, b) => (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? ''))
-
-    filas.forEach((p, i) => {
-      if (i > 0) doc.addPage()
-      let y = 18
-      doc.setFontSize(16)
-      doc.setFont('helvetica', 'bold')
-      doc.text(fecha?.ligaNombre ?? 'Liga', 14, y)
-      y += 10
-      doc.setFontSize(11)
-      doc.setFont('helvetica', 'normal')
-      const linea = (label: string, valor: string) => { doc.text(`${label}: ${valor}`, 14, y); y += 7 }
-      linea('Fecha', String(fecha?.numero ?? ''))
-      linea('División', p.divisionNombre)
-      linea('Mesa', String(mesas.find(m => m.id === p.mesaId)?.numero ?? '—'))
-      linea('Horario', p.bloqueHorario ?? '—')
-      linea('Jugador A', nombres[p.jugadorAId] ?? '—')
-      linea('Jugador B', nombres[p.jugadorBId] ?? '—')
-      linea('Árbitro', p.arbitroId ? nombres[p.arbitroId] ?? '—' : '—')
-
-      y += 6
-      doc.setFont('helvetica', 'bold')
-      doc.text('Sets', 14, y)
-      y += 8
-      doc.setFont('helvetica', 'normal')
-      for (let s = 1; s <= 5; s++) {
-        doc.text(`Set ${s}:  ____  -  ____`, 14, y)
-        y += 8
-      }
-      y += 4
-      doc.text('Resultado final:  ____  -  ____', 14, y); y += 10
-      doc.text('Ganador: ______________________________', 14, y); y += 10
-      doc.text('Observaciones: ________________________________________________', 14, y)
-    })
-
-    doc.save(`liga_fecha${fecha?.numero}_hojas_de_partido.pdf`)
-  }
-
   if (loading) return <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>Cargando...</div>
   if (!fecha) return <div style={{ padding:24, color: muted, fontSize:13 }}>Fecha no encontrada</div>
 

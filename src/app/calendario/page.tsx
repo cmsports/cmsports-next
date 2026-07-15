@@ -32,6 +32,8 @@ export default function CalendarioPage() {
   const [modalEvento, setModalEvento] = useState(false)
   const [reservasJugador, setReservasJugador] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
+  const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  const [reservaLoading, setReservaLoading] = useState<string | null>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -46,21 +48,45 @@ export default function CalendarioPage() {
     cargarMes()
   }, [clubId, mes, anio])
 
+  useEffect(() => {
+    if (!clubId) return
+    const recargar = () => {
+      void cargarMes()
+      if (perfil?.jugador_id) void cargarReservasJugador(perfil.jugador_id)
+    }
+    const canal = supabase
+      .channel(`calendario-${clubId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'eventos' }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clases' }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'torneos' }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, recargar)
+      .subscribe()
+    return () => { void supabase.removeChannel(canal) }
+  }, [clubId, mes, anio, perfil?.jugador_id])
+
   async function cargarMes() {
     const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
     const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
-    const [{ data: ev }, { data: cl }, { data: tr }] = await Promise.all([
+    const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
       supabase.from('eventos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
       supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
       supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
     ])
+    if (evError || clError || trError) {
+      setMensaje({ tipo: 'error', texto: evError?.message || clError?.message || trError?.message || 'No fue posible cargar el calendario' })
+      return
+    }
     setEventos(ev || [])
     setClases(cl || [])
     setTorneos(tr || [])
   }
 
   async function cargarReservasJugador(jugadorId: string) {
-    const { data } = await supabase.from('reservas').select('clase_id').eq('jugador_id', jugadorId).eq('estado', 'confirmado')
+    const { data, error } = await supabase.from('reservas').select('clase_id').eq('jugador_id', jugadorId).eq('estado', 'confirmado')
+    if (error) {
+      setMensaje({ tipo: 'error', texto: error.message })
+      return
+    }
     setReservasJugador(new Set((data || []).map((r: any) => r.clase_id)))
   }
 
@@ -79,11 +105,15 @@ export default function CalendarioPage() {
 
   async function agregarEvento() {
     if (!form.titulo || !diaSeleccionado) return
-    await supabase.from('eventos').insert({
+    const { error } = await supabase.from('eventos').insert({
       club_id: clubId, titulo: form.titulo, tipo: form.tipo,
       fecha_inicio: diaSeleccionado, hora_inicio: form.horaInicio || null,
       hora_fin: form.horaFin || null, descripcion: form.descripcion || null
     })
+    if (error) {
+      setMensaje({ tipo: 'error', texto: error.message })
+      return
+    }
     setModalEvento(false)
     setForm({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
     cargarMes()
@@ -91,22 +121,42 @@ export default function CalendarioPage() {
 
   async function eliminarEvento(id: string) {
     if (!confirm('¿Eliminar este evento?')) return
-    await supabase.from('eventos').delete().eq('id', id)
+    const { error } = await supabase.from('eventos').delete().eq('id', id)
+    if (error) {
+      setMensaje({ tipo: 'error', texto: error.message })
+      return
+    }
     cargarMes()
   }
 
   async function reservarClase(claseId: string) {
     if (!perfil?.jugador_id) return
-    const { data: jug } = await supabase.from('jugadores').select('sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single()
-    if (jug && jug.sesiones_usadas >= jug.sesiones_limite) { alert('No tienes sesiones disponibles este mes'); return }
-    await supabase.from('reservas').insert({ clase_id: claseId, jugador_id: perfil.jugador_id })
+    setReservaLoading(claseId)
+    setMensaje(null)
+    const { error } = await supabase.rpc('cambiar_reserva_clase', { p_clase_id: claseId, p_confirmar: true })
+    if (error) {
+      setMensaje({ tipo: 'error', texto: error.message })
+      setReservaLoading(null)
+      return
+    }
     cargarReservasJugador(perfil.jugador_id)
+    setMensaje({ tipo: 'ok', texto: 'Reserva confirmada' })
+    setReservaLoading(null)
   }
 
   async function cancelarReserva(claseId: string) {
     if (!perfil?.jugador_id) return
-    await supabase.from('reservas').update({ estado:'cancelado' }).eq('clase_id', claseId).eq('jugador_id', perfil.jugador_id)
+    setReservaLoading(claseId)
+    setMensaje(null)
+    const { error } = await supabase.rpc('cambiar_reserva_clase', { p_clase_id: claseId, p_confirmar: false })
+    if (error) {
+      setMensaje({ tipo: 'error', texto: error.message })
+      setReservaLoading(null)
+      return
+    }
     cargarReservasJugador(perfil.jugador_id)
+    setMensaje({ tipo: 'ok', texto: 'Reserva cancelada' })
+    setReservaLoading(null)
   }
 
   const primerDia = new Date(anio, mes, 1).getDay()
@@ -147,6 +197,17 @@ export default function CalendarioPage() {
           <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
         </div>
       </div>
+
+      {mensaje && (
+        <div style={{
+          background: mensaje.tipo === 'ok' ? '#f0fdf4' : '#fef2f2',
+          border: `1px solid ${mensaje.tipo === 'ok' ? '#bbf7d0' : '#fecaca'}`,
+          borderRadius: 10, padding: '10px 14px', marginBottom: 14,
+          color: mensaje.tipo === 'ok' ? '#16a34a' : '#dc2626', fontSize: 13,
+        }}>
+          {mensaje.texto}
+        </div>
+      )}
 
       <div style={{ display:'grid', gridTemplateColumns: diaSeleccionado ? '1fr 320px' : '1fr', gap:20 }}>
         {/* Calendario */}
@@ -202,8 +263,8 @@ export default function CalendarioPage() {
                 </div>
                 {esJugador && (
                   reservasJugador.has(c.id)
-                    ? <button onClick={() => cancelarReserva(c.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', width:'100%' }}>✕ Cancelar reserva</button>
-                    : <button onClick={() => reservarClase(c.id)} style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', width:'100%' }}>✓ Voy a ir</button>
+                    ? <button onClick={() => cancelarReserva(c.id)} disabled={reservaLoading === c.id} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:6, padding:'5px 12px', fontSize:11, cursor: reservaLoading === c.id ? 'not-allowed' : 'pointer', width:'100%', opacity: reservaLoading === c.id ? 0.6 : 1 }}>{reservaLoading === c.id ? 'Guardando...' : '✕ Cancelar reserva'}</button>
+                    : <button onClick={() => reservarClase(c.id)} disabled={reservaLoading === c.id} style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:6, padding:'5px 12px', fontSize:11, cursor: reservaLoading === c.id ? 'not-allowed' : 'pointer', width:'100%', opacity: reservaLoading === c.id ? 0.6 : 1 }}>{reservaLoading === c.id ? 'Guardando...' : '✓ Voy a ir'}</button>
                 )}
               </div>
             ))}
