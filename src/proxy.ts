@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
+import { MODULOS_CLUB, puedeAccederModulo } from '@/lib/auth/modulos-rutas'
 
 const publicRoutes = ['/login', '/registro']
 // Accesibles siempre, con o sin sesión — el link de invite/recovery crea sesión
@@ -64,7 +65,7 @@ export async function proxy(request: NextRequest) {
   // Get user role for route protection
   const { data: perfil } = await supabase
     .from('perfiles')
-    .select('rol')
+    .select('rol,club_id')
     .eq('id', user.id)
     .single()
 
@@ -117,6 +118,28 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)
     return NextResponse.redirect(url)
+  }
+
+  // Un módulo deshabilitado tampoco puede abrirse escribiendo su URL directa.
+  const moduloProtegido = !puedeAccederModulo(pathname, [])
+  if (moduloProtegido) {
+    let modulosHabilitados: readonly string[] = []
+    if (perfil?.club_id) {
+      const { data: club, error: clubError } = await supabase
+        .from('clubes')
+        .select('modulos_habilitados')
+        .eq('id', perfil.club_id)
+        .single()
+      if (!clubError && club) {
+        modulosHabilitados = club.modulos_habilitados ?? MODULOS_CLUB
+      }
+    }
+
+    if (!puedeAccederModulo(pathname, modulosHabilitados)) {
+      const url = request.nextUrl.clone()
+      url.pathname = getRolRedirect(rol)
+      return NextResponse.redirect(url)
+    }
   }
 
   return supabaseResponse
