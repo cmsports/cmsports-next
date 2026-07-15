@@ -393,32 +393,42 @@ function circleMethodRounds(n: number): Array<Array<[number, number]>> {
 }
 
 // Greedy de cadena: ordena los partidos de una fecha para minimizar permanencia.
-// En cada paso prioriza el partido que comparte jugador con el anterior (cadena).
-// Desempate: mayor peso = jugadores con más partidos pendientes en esa fecha.
+// Prioridades:
+//   1. Cadena directa (comparte jugador con el anterior)
+//   2. Cadena rota → elegir el candidato que cierre la mayor cantidad de ventanas abiertas
+//      (menos jugadores quedarán esperando sin partido)
+//   3. Desempate: mayor peso = jugadores con más partidos pendientes (posibilidad de cadena larga)
 function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[] {
+  if (matchesFecha.length === 0) return []
   const pendientes = [...matchesFecha]
   const secuencia: PartidoAProgramar[] = []
-  // Jugadores que ya empezaron en esta fecha pero aún tienen partidos pendientes
   const ventanaAbierta = new Set<string>()
 
-  while (pendientes.length > 0) {
-    const pxj = new Map<string, number>()
+  const contarPendientes = () => {
+    const m = new Map<string, number>()
     for (const p of pendientes) {
-      pxj.set(p.jugadorAId, (pxj.get(p.jugadorAId) ?? 0) + 1)
-      pxj.set(p.jugadorBId, (pxj.get(p.jugadorBId) ?? 0) + 1)
+      m.set(p.jugadorAId, (m.get(p.jugadorAId) ?? 0) + 1)
+      m.set(p.jugadorBId, (m.get(p.jugadorBId) ?? 0) + 1)
     }
+    return m
+  }
+
+  while (pendientes.length > 0) {
+    const pxj = contarPendientes()
     const peso = (p: PartidoAProgramar) => (pxj.get(p.jugadorAId) ?? 0) + (pxj.get(p.jugadorBId) ?? 0)
 
     let candidatos = pendientes
+    let usarCostoCierre = false
+
     if (secuencia.length > 0) {
       const ult = secuencia[secuencia.length - 1]
       const jugUlt = new Set([ult.jugadorAId, ult.jugadorBId])
-      // Prioridad 1: cadena directa (comparte jugador con el partido anterior)
       const cadena = pendientes.filter(p => jugUlt.has(p.jugadorAId) || jugUlt.has(p.jugadorBId))
       if (cadena.length > 0) {
         candidatos = cadena
       } else {
-        // Prioridad 2 (cadena rota): cerrar ventanas abiertas antes de arrancar nuevos
+        // Cadena rota: usar costo de cierre para elegir el mejor reinicio
+        usarCostoCierre = true
         const urgentes = pendientes.filter(
           p => ventanaAbierta.has(p.jugadorAId) || ventanaAbierta.has(p.jugadorBId),
         )
@@ -428,18 +438,30 @@ function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[
 
     let mejor = candidatos[0]
     let mejorPeso = peso(mejor)
+    // Cuando la cadena se rompe, minimizar cuántas ventanas quedan abiertas tras elegir este partido
+    // (un jugador con ventana abierta que NO está en el partido elegido espera un bloque más)
+    let mejorCosto = usarCostoCierre
+      ? [...ventanaAbierta].filter(j => j !== mejor.jugadorAId && j !== mejor.jugadorBId).length
+      : 0
+
     for (let i = 1; i < candidatos.length; i++) {
-      const pw = peso(candidatos[i])
-      if (pw > mejorPeso) { mejor = candidatos[i]; mejorPeso = pw }
+      const c = candidatos[i]
+      const pw = peso(c)
+      if (usarCostoCierre) {
+        const costo = [...ventanaAbierta].filter(j => j !== c.jugadorAId && j !== c.jugadorBId).length
+        if (costo < mejorCosto || (costo === mejorCosto && pw > mejorPeso)) {
+          mejor = c; mejorPeso = pw; mejorCosto = costo
+        }
+      } else {
+        if (pw > mejorPeso) { mejor = c; mejorPeso = pw }
+      }
     }
 
     secuencia.push(mejor)
     pendientes.splice(pendientes.indexOf(mejor), 1)
 
-    // Actualizar ventana abierta: agregar los que acaban de jugar
     for (const jid of [mejor.jugadorAId, mejor.jugadorBId]) {
       ventanaAbierta.add(jid)
-      // Si ese jugador ya no tiene más partidos pendientes, cerrar su ventana
       if (!pendientes.some(p => p.jugadorAId === jid || p.jugadorBId === jid)) {
         ventanaAbierta.delete(jid)
       }
@@ -450,7 +472,10 @@ function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[
 }
 
 // Programa una división completa en su mesa asignada.
-// Devuelve partidos con fecha, mesa y bloque asignados (arbitroId = null).
+// Estrategia: agrupar rondas completas por fecha para concentrar los partidos de cada
+// jugador en la menor cantidad de fechas posible. Aplica `ordenarPorCadena` dentro de
+// cada fecha para que los partidos de cada jugador sean consecutivos (sin huecos largos).
+// Los partidos que no entran en ninguna fecha van a sinAsignar (ajuste manual).
 export function programarDivision(
   partidos: PartidoAProgramar[],
   jugadorIds: string[],
@@ -460,49 +485,42 @@ export function programarDivision(
 ): { programados: PartidoProgramado[]; sinAsignar: PartidoAProgramar[] } {
   if (partidos.length === 0) return { programados: [], sinAsignar: [] }
 
-  // Lookup por par canónico (independiente del orden A/B en BD)
   const porPar = new Map<string, PartidoAProgramar>()
   for (const p of partidos) {
     porPar.set([p.jugadorAId, p.jugadorBId].sort().join('~'), p)
   }
 
-  // Secuencia global según circle method
-  const secuencia: PartidoAProgramar[] = []
+  // Construir lista de rondas según circle method
+  const rondas: PartidoAProgramar[][] = []
   const vistos = new Set<string>()
   for (const ronda of circleMethodRounds(jugadorIds.length)) {
+    const matchesRonda: PartidoAProgramar[] = []
     for (const [iA, iB] of ronda) {
       const key = [jugadorIds[iA], jugadorIds[iB]].sort().join('~')
       const p = porPar.get(key)
-      if (p && !vistos.has(p.id)) { secuencia.push(p); vistos.add(p.id) }
+      if (p && !vistos.has(p.id)) { matchesRonda.push(p); vistos.add(p.id) }
     }
+    if (matchesRonda.length > 0) rondas.push(matchesRonda)
   }
-  // Partidos no cubiertos por el circle method (jugadores nuevos sin ronda asignada)
+  // Partidos no cubiertos (jugadores extra sin ronda asignada)
+  const extra: PartidoAProgramar[] = []
   for (const p of partidos) {
-    if (!vistos.has(p.id)) { secuencia.push(p); vistos.add(p.id) }
+    if (!vistos.has(p.id)) extra.push(p)
   }
+  if (extra.length > 0) rondas.push(extra)
 
-  const total = secuencia.length
+  // Empacar rondas completas en fechas: una ronda entra completa o no entra.
+  // Esto garantiza que cada jugador tenga sus partidos concentrados en pocas fechas.
   const capacidad = bloques.length
-  const base = Math.floor(total / numFechas)
-  const extra = total % numFechas  // primeras `extra` fechas reciben un partido más
-
   const programados: PartidoProgramado[] = []
   const sinAsignar: PartidoAProgramar[] = []
-  let cursor = 0
 
-  for (let f = 0; f < numFechas && cursor < total; f++) {
-    const target = base + (f < extra ? 1 : 0)
-    const cant = Math.min(target, capacidad)
-    const slice = secuencia.slice(cursor, cursor + cant)
-    cursor += cant
+  let f = 0
+  let matchesFecha: PartidoAProgramar[] = []
 
-    // Overflow: partidos que no caben en esta fecha (target > capacidad)
-    if (target > cant) {
-      sinAsignar.push(...secuencia.slice(cursor, cursor + (target - cant)))
-      cursor += target - cant
-    }
-
-    const ordenados = ordenarPorCadena(slice)
+  const cerrarFecha = () => {
+    if (matchesFecha.length === 0) return
+    const ordenados = ordenarPorCadena(matchesFecha)
     for (let b = 0; b < ordenados.length; b++) {
       programados.push({
         ...ordenados[b],
@@ -512,20 +530,49 @@ export function programarDivision(
         arbitroId: null,
       })
     }
+    f++
+    matchesFecha = []
   }
 
-  // Partidos restantes que no entraron en ninguna fecha
-  if (cursor < total) sinAsignar.push(...secuencia.slice(cursor))
+  for (const ronda of rondas) {
+    if (f >= numFechas) {
+      // Sin fechas disponibles: esta ronda queda sin programar
+      sinAsignar.push(...ronda)
+      continue
+    }
+
+    if (matchesFecha.length + ronda.length <= capacidad) {
+      // La ronda entra completa en la fecha actual
+      matchesFecha.push(...ronda)
+    } else {
+      // No entra: cerrar fecha actual (si tiene partidos) y abrir una nueva
+      cerrarFecha()
+      if (f >= numFechas) {
+        sinAsignar.push(...ronda)
+      } else if (ronda.length <= capacidad) {
+        matchesFecha.push(...ronda)
+      } else {
+        // Ronda más grande que la capacidad: programar lo que quepa, resto a sinAsignar
+        matchesFecha.push(...ronda.slice(0, capacidad))
+        sinAsignar.push(...ronda.slice(capacidad))
+      }
+    }
+  }
+  // Cerrar la última fecha si tiene partidos
+  if (matchesFecha.length > 0 && f < numFechas) cerrarFecha()
+  else sinAsignar.push(...matchesFecha)
 
   return { programados, sinAsignar }
 }
 
-// Asigna árbitros priorizando eficiencia operacional (HC-04):
-// - Candidato adyacente al partido (bloque t-1 o t+1): delta = 0
-// - Candidato cuya ventana [primera, última] ya contiene t: delta = 0
-// - Candidato fuera de ventana: delta = distancia al borde más cercano
-// - Sin actividad en la fecha: último recurso (delta = ∞)
-// La ventana del árbitro elegido se actualiza para reflejar su nuevo compromiso.
+// Asigna árbitros con regla de adyacencia estricta:
+// - Prioridad 1: jugador del partido anterior (bloque i-1) que no juega en el actual
+//   → ya terminó su partido, sigue en la mesa de todas formas
+// - Prioridad 2: jugador del partido siguiente (bloque i+1) que no juega en el actual
+//   → está por jugar y ya está llegando al salón
+// - Fallback: cualquier jugador de la división con menos veces arbitrado
+//   (solo si no hay nadie adyacente disponible)
+// Desempate dentro de cada prioridad: menor cantidad de veces que ha arbitrado.
 export function asignarArbitrosEficiente(
   programados: PartidoProgramado[],
   jugadoresPorDivision: Map<string, string[]>,
@@ -543,63 +590,44 @@ export function asignarArbitrosEficiente(
   const resultado: PartidoProgramado[] = []
 
   for (const partidos of grupos.values()) {
-    const ordenados = [...partidos].sort(
+    const seq = [...partidos].sort(
       (a, b) => (bIdx.get(a.bloqueHorario) ?? 0) - (bIdx.get(b.bloqueHorario) ?? 0),
     )
-    const roster = jugadoresPorDivision.get(partidos[0].divisionId) ?? []
-
-    // Bloques de actividad por jugador (jugar o arbitrar); se actualiza en tiempo real
-    const actDe = new Map<string, Set<number>>()
-    for (const p of ordenados) {
-      const bi = bIdx.get(p.bloqueHorario) ?? 0
-      for (const jid of [p.jugadorAId, p.jugadorBId]) {
-        if (!actDe.has(jid)) actDe.set(jid, new Set())
-        actDe.get(jid)!.add(bi)
-      }
-    }
-
+    const roster = jugadoresPorDivision.get(seq[0].divisionId) ?? []
     const vecesArb = new Map<string, number>()
 
-    for (const partido of ordenados) {
-      const bi = bIdx.get(partido.bloqueHorario) ?? 0
+    const menosArbitrado = (candidatos: string[]) =>
+      candidatos.reduce((best, c) =>
+        (vecesArb.get(c) ?? 0) < (vecesArb.get(best) ?? 0) ? c : best,
+      )
+
+    for (let i = 0; i < seq.length; i++) {
+      const partido = seq[i]
       const jugando = new Set([partido.jugadorAId, partido.jugadorBId])
 
-      let mejor: string | null = null
-      let mejorDelta = Infinity
-      let mejorVeces = Infinity
+      // Jugadores del bloque anterior (recién terminaron, siguen en el salón)
+      const delAnterior = i > 0
+        ? [seq[i - 1].jugadorAId, seq[i - 1].jugadorBId].filter(j => !jugando.has(j))
+        : []
 
-      for (const c of roster) {
-        if (jugando.has(c)) continue
-        const act = actDe.get(c)
-        const veces = vecesArb.get(c) ?? 0
+      // Jugadores del bloque siguiente (están llegando, van a jugar)
+      const delSiguiente = i < seq.length - 1
+        ? [seq[i + 1].jugadorAId, seq[i + 1].jugadorBId].filter(j => !jugando.has(j))
+        : []
 
-        let delta: number
-        if (!act || act.size === 0) {
-          delta = 10000 + veces  // único motivo para venir → descartado si hay otra opción
-        } else {
-          const min = Math.min(...act)
-          const max = Math.max(...act)
-          if (act.has(bi - 1) || act.has(bi + 1)) {
-            delta = 0             // adyacente → ya va a estar
-          } else if (bi >= min && bi <= max) {
-            delta = 0             // dentro de su ventana → sin costo extra
-          } else {
-            delta = bi < min ? min - bi : bi - max
-          }
-        }
+      const adyacentes = [...new Set([...delAnterior, ...delSiguiente])]
 
-        if (delta < mejorDelta || (delta === mejorDelta && veces < mejorVeces)) {
-          mejorDelta = delta; mejor = c; mejorVeces = veces
-        }
+      let arbitro: string | null = null
+      if (adyacentes.length > 0) {
+        arbitro = menosArbitrado(adyacentes)
+      } else {
+        // Fallback: cualquier jugador de la división que no esté jugando
+        const disponibles = roster.filter(j => !jugando.has(j))
+        if (disponibles.length > 0) arbitro = menosArbitrado(disponibles)
       }
 
-      if (mejor) {
-        vecesArb.set(mejor, (vecesArb.get(mejor) ?? 0) + 1)
-        if (!actDe.has(mejor)) actDe.set(mejor, new Set())
-        actDe.get(mejor)!.add(bi)
-      }
-
-      resultado.push({ ...partido, arbitroId: mejor })
+      if (arbitro) vecesArb.set(arbitro, (vecesArb.get(arbitro) ?? 0) + 1)
+      resultado.push({ ...partido, arbitroId: arbitro })
     }
   }
 
