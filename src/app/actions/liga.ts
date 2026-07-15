@@ -245,28 +245,37 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   const { ligaId } = params
   const db = supabase as any
 
-  // Liberar partidos sin slot en el reajuste para que el motor pueda redistribuirlos
-  // (los que tienen mesa_id asignada fueron colocados manualmente y se respetan)
-  const { data: fechaAjustePrecheck } = await supabase
+  // Fetch reajuste id primero (necesario para la 2da query paralela)
+  const { data: fechaAjusteInfo } = await supabase
     .from('liga_fechas').select('id').eq('liga_id', ligaId).eq('es_ajuste', true).single()
-  if (fechaAjustePrecheck) {
-    await supabase
-      .from('liga_partidos')
-      .update({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null })
-      .eq('liga_id', ligaId)
-      .eq('fecha_id', fechaAjustePrecheck.id)
-      .is('mesa_id', null)
-      .not('estado', 'in', '("finalizado","walkover")')
-      .is('deleted_at', null)
-  }
+  const fechaAjusteId = fechaAjusteInfo?.id ?? null
 
-  // 4 queries independientes en paralelo
-  const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawPendientes }] = await Promise.all([
+  // 5 queries en paralelo: config + fechas + mesas + sin-fecha + sinAsignar-en-reajuste
+  // Se recogen partidos pendientes de DOS fuentes:
+  //   1. fecha_id = null (nunca programados)
+  //   2. en reajuste sin mesa asignada (sinAsignar de una corrida anterior)
+  const sinAsignarQuery = fechaAjusteId
+    ? db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture')
+        .eq('liga_id', ligaId).eq('fecha_id', fechaAjusteId).is('mesa_id', null)
+        .not('estado', 'in', '("finalizado","walkover")').is('deleted_at', null)
+        .order('orden_fixture', { ascending: true })
+    : Promise.resolve({ data: [] })
+
+  const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawDesdefNull }, { data: rawDesdeAjuste }] = await Promise.all([
     db.from('ligas').select('total_fechas, bloque_minutos, mesas_count').eq('id', ligaId).single(),
     supabase.from('liga_fechas').select('id, numero').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero', { ascending: true }),
     supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
     db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture').eq('liga_id', ligaId).is('fecha_id', null).not('estado', 'in', '("finalizado","walkover")').is('deleted_at', null).order('orden_fixture', { ascending: true }),
+    sinAsignarQuery,
   ])
+
+  // Combinar y deduplicar (un partido no puede estar en ambas fuentes, pero por seguridad)
+  const seen = new Set<string>()
+  const rawPendientes: Array<{ id: string; division_id: string; jugador_a_id: string; jugador_b_id: string; orden_fixture: number }> = []
+  for (const p of [...(rawDesdefNull || []), ...(rawDesdeAjuste || [])]) {
+    if (!seen.has(p.id)) { seen.add(p.id); rawPendientes.push(p) }
+  }
+  rawPendientes.sort((a, b) => a.orden_fixture - b.orden_fixture)
 
   const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
   const totalFechas: number = ligaConfig?.total_fechas ?? 5
