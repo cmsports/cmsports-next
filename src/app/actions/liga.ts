@@ -926,3 +926,95 @@ export async function programarEnReajuste(params: { ligaId: string }) {
 
   return { success: true, total: exitosos }
 }
+
+// ─── Asignar partido a mano desde el fixture ──────────────────────────────────
+// El usuario elige fecha + bloque; la acción busca la mesa de la división,
+// valida que no haya conflicto (HC-01) y guarda.
+export async function asignarPartidoManual(params: {
+  partidoId: string
+  fechaId: string
+  bloqueHorario: string
+}) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { partidoId, fechaId, bloqueHorario } = params
+
+  const { data: partido } = await supabase
+    .from('liga_partidos')
+    .select('id, liga_id, division_id, estado')
+    .eq('id', partidoId)
+    .single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (['finalizado', 'walkover'].includes(partido.estado)) {
+    return { error: 'No se puede reubicar un partido ya resuelto' }
+  }
+
+  // Mesa de la división: buscar en partidos ya programados de esa división
+  const { data: mesaRef } = await supabase
+    .from('liga_partidos')
+    .select('mesa_id')
+    .eq('division_id', partido.division_id)
+    .not('mesa_id', 'is', null)
+    .neq('id', partidoId)
+    .limit(1)
+    .single()
+
+  let mesaId: string | null = mesaRef?.mesa_id ?? null
+  if (!mesaId) {
+    // Sin referencia: asignar por orden de división
+    const [{ data: divisiones }, { data: mesas }] = await Promise.all([
+      supabase.from('liga_divisiones').select('id, orden').eq('liga_id', partido.liga_id).order('orden'),
+      supabase.from('liga_mesas').select('id').eq('liga_id', partido.liga_id).order('numero'),
+    ])
+    const idx = (divisiones || []).findIndex((d: any) => d.id === partido.division_id)
+    const arr = mesas || []
+    if (arr.length) mesaId = arr[Math.max(0, idx) % arr.length]?.id ?? arr[0].id
+  }
+  if (!mesaId) return { error: 'Esta liga no tiene mesas configuradas' }
+
+  // HC-01: verificar que nadie más ocupe esa mesa/bloque en esa fecha
+  const { data: conflicto } = await supabase
+    .from('liga_partidos')
+    .select('id')
+    .eq('fecha_id', fechaId)
+    .eq('mesa_id', mesaId)
+    .eq('bloque_horario', bloqueHorario)
+    .neq('id', partidoId)
+    .is('deleted_at', null)
+    .limit(1)
+    .single()
+  if (conflicto) return { error: 'Ese horario ya está ocupado en esa mesa' }
+
+  const { error } = await supabase
+    .from('liga_partidos')
+    .update({ fecha_id: fechaId, mesa_id: mesaId, bloque_horario: bloqueHorario })
+    .eq('id', partidoId)
+  if (error) return { error: 'No se pudo asignar: ' + error.message }
+
+  return { success: true }
+}
+
+// ─── Desprogramar un partido individual ───────────────────────────────────────
+export async function desprogramarPartido(params: { partidoId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { data: partido } = await supabase
+    .from('liga_partidos')
+    .select('id, estado')
+    .eq('id', params.partidoId)
+    .single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (['finalizado', 'walkover'].includes(partido.estado)) {
+    return { error: 'No se puede desprogramar un partido ya resuelto' }
+  }
+
+  const { error } = await supabase
+    .from('liga_partidos')
+    .update({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null })
+    .eq('id', params.partidoId)
+  if (error) return { error: 'No se pudo desprogramar: ' + error.message }
+
+  return { success: true }
+}

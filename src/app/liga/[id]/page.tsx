@@ -492,7 +492,7 @@ export default function LigaDetallePage() {
                 )}
               </div>
 
-              <FixtureDivision key={`${division.id}-${division.fixture_generado}`} divisionId={division.id} nombres={nombrePorId} />
+              <FixtureDivision key={`${division.id}-${division.fixture_generado}`} divisionId={division.id} ligaId={ligaId} nombres={nombrePorId} />
             </div>
           </div>}
 
