@@ -46,7 +46,7 @@ export default function FechaProgramacionPage() {
           ← Volver a {liga.nombre || 'la liga'}
         </button>
       )}
-      <TableroFecha fechaId={fechaId} />
+      <TableroFecha fechaId={fechaId} ligaId={liga?.id ?? ''} />
     </AppLayout>
   )
 }
