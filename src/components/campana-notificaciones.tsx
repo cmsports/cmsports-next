@@ -21,6 +21,7 @@ interface Notificacion {
 const CACHE_MS = 60_000
 const notifCache: Record<string, { ts: number; data: Notificacion[] }> = {}
 const notifRequests: Record<string, Promise<Notificacion[]>> = {}
+let secuenciaCanal = 0
 
 function cacheKey(perfil: any) {
   return [perfil?.id || perfil?.email || 'anon', perfil?.rol || '', perfil?.club_id || '', perfil?.jugador_id || ''].join(':')
@@ -265,7 +266,11 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
       })
     }
     const canal = supabase
-      .channel(`campana-${perfil.id}`)
+      // El layout monta una campana móvil y otra de escritorio. Supabase
+      // reutiliza canales con el mismo nombre y lanza un error si el segundo
+      // intenta agregar listeners después de subscribe(). Cada montaje necesita
+      // un nombre propio, también durante remounts rápidos de React.
+      .channel(`campana-${perfil.id}-${++secuenciaCanal}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'evaluaciones_trimestrales', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'torneos', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'torneo_felicitaciones' }, refrescar)
