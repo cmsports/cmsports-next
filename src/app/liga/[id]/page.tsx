@@ -543,7 +543,7 @@ export default function LigaDetallePage() {
             </div>
 
             {fechaSeleccionada ? (
-              <TableroFecha key={`${fechaSeleccionada}-${programacionKey}`} fechaId={fechaSeleccionada} divisionId={division.id} />
+              <TableroFecha key={`${fechaSeleccionada}-${programacionKey}`} fechaId={fechaSeleccionada} divisionId={division.id} ligaId={ligaId} />
             ) : (
               <div style={{ fontSize:13, color: hint }}>Sin fechas disponibles. Usa "Programar fecha" para asignar partidos a fechas.</div>
             )}

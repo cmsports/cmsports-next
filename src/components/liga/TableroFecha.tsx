@@ -33,17 +33,17 @@ interface PartidoBoard {
   divisionNombre: string
 }
 
-interface Mesa {
-  id: string
-  numero: number
-}
+interface Mesa { id: string; numero: number }
 
-// Tablero de una fecha (drag&drop de mesas/horarios + registro de resultado
-// + cambio de árbitro + export PDF). Si se pasa `divisionId`, filtra la
-// grilla a los partidos de esa división (uso embebido en la pestaña
-// "Programación" de una división). Sin `divisionId`, muestra todos los
-// partidos de todas las divisiones — es la vista operativa del juez.
-export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisionId?: string }) {
+export function TableroFecha({
+  fechaId,
+  divisionId,
+  ligaId,
+}: {
+  fechaId: string
+  divisionId?: string
+  ligaId: string
+}) {
   const [fecha, setFecha] = useState<{ numero: number; estado: string; ligaId: string; ligaNombre: string } | null>(null)
   const [bloques, setBloques] = useState<string[]>(() => generarBloquesHorario())
   const [mesas, setMesas] = useState<Mesa[]>([])
@@ -61,37 +61,36 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
   const [guardandoAccion, setGuardandoAccion] = useState(false)
 
   const cargar = useCallback(async () => {
-    // RT1: fecha + liga en un solo join (bloque_minutos incluido — evita RT extra)
-    const { data: fechaData } = await supabase
-      .from('liga_fechas')
-      .select('numero, estado, liga_id, ligas(nombre, bloque_minutos)')
-      .eq('id', fechaId)
-      .single()
+    const db = supabase as any
+
+    // RT1: 5 queries en paralelo — ligaId ya conocido, no hay round-trip secuencial
+    const [{ data: fechaData }, { data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: jugadoresData }] = await Promise.all([
+      supabase.from('liga_fechas').select('numero, estado, liga_id, ligas(nombre, bloque_minutos)').eq('id', fechaId).single(),
+      supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
+      db.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId).is('deleted_at', null),
+      supabase.from('liga_divisiones').select('id, nombre').eq('liga_id', ligaId),
+      supabase.from('jugadores').select('id, nombre'),
+    ])
     if (!fechaData) { setLoading(false); return }
 
     const ligaRel = (Array.isArray(fechaData.ligas) ? fechaData.ligas[0] : fechaData.ligas) as Record<string, unknown> | null
     setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: String(ligaRel?.nombre ?? '') })
     setBloques(generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, Number(ligaRel?.bloque_minutos ?? 30)))
 
-    const db = supabase as any
+    // RT2: divJug filtrado por divisiones de ESTA liga (evita mezclar jugadores de otras ligas)
+    const divisionIds = (divisionesData || []).map((d: any) => d.id)
+    const { data: divJugData } = divisionIds.length > 0
+      ? await supabase.from('liga_division_jugadores').select('division_id, jugador_id').in('division_id', divisionIds)
+      : { data: [] as any[] }
 
-    // RT2: todo en paralelo — partidos, mesas, divisiones, jugadores (sin RT secuencial al final)
-    const [{ data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: divJugData }, { data: jugadoresData }] = await Promise.all([
-      supabase.from('liga_mesas').select('id, numero').eq('liga_id', fechaData.liga_id).order('numero', { ascending: true }),
-      db.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId).is('deleted_at', null),
-      supabase.from('liga_divisiones').select('id, nombre').eq('liga_id', fechaData.liga_id),
-      supabase.from('liga_division_jugadores').select('division_id, jugador_id'),
-      supabase.from('jugadores').select('id, nombre'),  // RLS filtra por club
-    ])
-    const partidosData = (rawPartidos || []) as Array<{
+    const nombreDivisionPorId = new Map((divisionesData || []).map((d: any) => [d.id, d.nombre]))
+    setMesas(mesasData || [])
+
+    const lista: PartidoBoard[] = ((rawPartidos || []) as Array<{
       id: string; division_id: string; mesa_id: string | null; bloque_horario: string | null
       jugador_a_id: string; jugador_b_id: string; arbitro_id: string | null
       estado: string; sets_a: number | null; sets_b: number | null
-    }>
-
-    const nombreDivisionPorId = new Map((divisionesData || []).map(d => [d.id, d.nombre]))
-    setMesas(mesasData || [])
-    const lista: PartidoBoard[] = partidosData.map(p => ({
+    }>).map(p => ({
       id: p.id,
       divisionId: p.division_id,
       mesaId: p.mesa_id,
@@ -117,13 +116,12 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
     setNombres(mapa)
 
     setLoading(false)
-  }, [fechaId])
+  }, [fechaId, ligaId])
 
   useEffect(() => { cargar() }, [cargar])
 
   const partidosVisibles = divisionId ? partidos.filter(p => p.divisionId === divisionId) : partidos
 
-  // Cuando se muestra una sola división, ocultar mesas vacías (cada división usa 1 mesa)
   const mesasVisibles = divisionId
     ? mesas.filter(m => partidosVisibles.some(p => p.mesaId === m.id))
     : mesas
@@ -146,6 +144,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
     const anterior = partidos.find(p => p.id === partidoId)
     if (!anterior) return
 
+    // Optimistic update para drag & drop
     setPartidos(prev => prev.map(p => (p.id === partidoId ? { ...p, mesaId, bloqueHorario: bloque } : p)))
 
     const res = await moverPartidoLiga({ partidoId, fechaId, mesaId, bloqueHorario: bloque })
@@ -158,11 +157,13 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
   async function handleIniciarFecha() {
     const res = await iniciarFecha({ fechaId })
     if (res.error) { setError(res.error); return }
-    cargar()
+    // Optimistic: fecha → en_juego (sin recargar todo)
+    setFecha(prev => prev ? { ...prev, estado: 'en_juego' } : prev)
   }
 
+  // Registrar resultado disponible independiente del estado de la fecha
   function abrirResultado(partido: PartidoBoard) {
-    if (fecha?.estado !== 'en_juego' || ['finalizado', 'walkover'].includes(partido.estado)) return
+    if (['finalizado', 'walkover'].includes(partido.estado)) return
     setPartidoResultado(partido)
     setSetsA('3')
     setSetsB('0')
@@ -170,42 +171,73 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
 
   async function handleGuardarResultado() {
     if (!partidoResultado) return
-    setGuardandoResultado(true)
-    setError('')
-    const res = await registrarResultadoPartido({ partidoId: partidoResultado.id, setsA: Number(setsA), setsB: Number(setsB) })
-    setGuardandoResultado(false)
-    if (res.error) { setError(res.error); return }
+    const partSnap = { ...partidoResultado }
+    const sA = Number(setsA), sB = Number(setsB)
+
+    // Cierra modal y actualiza inmediatamente (optimistic)
     setPartidoResultado(null)
-    cargar()
+    setPartidos(prev => prev.map(p =>
+      p.id === partSnap.id ? { ...p, estado: 'finalizado', setsA: sA, setsB: sB } : p,
+    ))
+
+    setGuardandoResultado(true)
+    const res = await registrarResultadoPartido({ partidoId: partSnap.id, setsA: sA, setsB: sB })
+    setGuardandoResultado(false)
+
+    if (res.error) {
+      setError(res.error)
+      setPartidos(prev => prev.map(p => p.id === partSnap.id ? partSnap : p))
+    }
   }
 
   async function handleWalkover(ganadorId: string) {
     if (!partidoResultado) return
-    setGuardandoAccion(true)
-    setError('')
-    const res = await registrarWalkover({ partidoId: partidoResultado.id, ganadorId })
-    setGuardandoAccion(false)
-    if (res.error) { setError(res.error); return }
+    const partSnap = { ...partidoResultado }
+
     setPartidoResultado(null)
-    cargar()
+    setPartidos(prev => prev.map(p => p.id === partSnap.id ? { ...p, estado: 'walkover' } : p))
+
+    setGuardandoAccion(true)
+    const res = await registrarWalkover({ partidoId: partSnap.id, ganadorId })
+    setGuardandoAccion(false)
+
+    if (res.error) {
+      setError(res.error)
+      setPartidos(prev => prev.map(p => p.id === partSnap.id ? partSnap : p))
+    }
   }
 
   async function handleReprogramar() {
     if (!partidoResultado) return
-    setGuardandoAccion(true)
-    setError('')
-    const res = await reprogramarPartidoAFecha5({ partidoId: partidoResultado.id })
-    setGuardandoAccion(false)
-    if (res.error) { setError(res.error); return }
+    const partSnap = { ...partidoResultado }
+
+    // Quitar de esta fecha visualmente (se mueve a reajuste)
     setPartidoResultado(null)
-    cargar()
+    setPartidos(prev => prev.filter(p => p.id !== partSnap.id))
+
+    setGuardandoAccion(true)
+    const res = await reprogramarPartidoAFecha5({ partidoId: partSnap.id })
+    setGuardandoAccion(false)
+
+    if (res.error) {
+      setError(res.error)
+      setPartidos(prev => [...prev, partSnap])
+    }
   }
 
   async function handleCambiarArbitro(partidoId: string, arbitroId: string) {
     setError('')
+    const anterior = partidos.find(p => p.id === partidoId)
+
+    // Optimistic update — sin recargar
+    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, arbitroId: arbitroId || null } : p))
+    setEditandoArbitroId(null)
+
     const res = await cambiarArbitroPartido({ partidoId, arbitroId: arbitroId || null })
-    if (res.error) { setError(res.error); return }
-    cargar()
+    if (res.error) {
+      setError(res.error)
+      if (anterior) setPartidos(prev => prev.map(p => p.id === partidoId ? anterior : p))
+    }
   }
 
   async function exportarProgramacion(orden: 'fecha' | 'mesa') {
@@ -326,7 +358,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
       </div>
 
       {error && (
-        <div style={{ background:'#fef2f2', color:'#dc2626', borderRadius:10, padding:'10px 14px', fontSize:13, marginBottom:14 }}>{error}</div>
+        <div onClick={() => setError('')} style={{ background:'#fef2f2', color:'#dc2626', borderRadius:10, padding:'10px 14px', fontSize:13, marginBottom:14, cursor:'pointer' }}>{error}</div>
       )}
 
       <div style={{ ...card, overflow:'hidden' }}>
@@ -350,7 +382,8 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
                   </td>
                   {mesasVisibles.map(mesa => {
                     const partido = partidoEn(mesa.id, bloque)
-                    const clickeable = fecha.estado === 'en_juego' && partido && !['finalizado', 'walkover'].includes(partido.estado)
+                    // Clic para resultado disponible siempre (no solo en en_juego)
+                    const clickeable = partido && !['finalizado', 'walkover'].includes(partido.estado)
                     const bg = !partido ? 'transparent'
                       : partido.estado === 'finalizado' ? '#f0fdf4'
                       : partido.estado === 'walkover' ? '#fffbeb'
@@ -384,7 +417,6 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
                                   onClick={e => e.stopPropagation()}
                                   onChange={async e => {
                                     await handleCambiarArbitro(partido.id, e.target.value)
-                                    setEditandoArbitroId(null)
                                   }}
                                   style={{ width:'100%', marginTop:2, fontSize:10, color: text, background:'#ffffff', border:'1px solid #4f46e5', borderRadius:4, outline:'none' }}
                                 >
@@ -430,7 +462,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
         </div>
       </div>
 
-      {/* Partidos sin programar: tienen fecha_id asignada pero mesa/bloque nulos */}
+      {/* Partidos sin programar */}
       {(() => {
         const sinProgramar = partidosVisibles.filter(p => !p.mesaId || !p.bloqueHorario)
         if (!sinProgramar.length) return null

@@ -158,19 +158,15 @@ export async function asignarJugadoresDivision(params: {
     })),
   )
 
-  // Anular partidos no jugados de jugadores removidos
-  for (const { a, b } of partidosAAnular) {
-    const partido = allPartidos.find(
+  // Anular partidos no jugados de jugadores removidos (batch, 1 round-trip)
+  const idsAAnular = partidosAAnular
+    .map(({ a, b }) => allPartidos.find(
       p => (p.jugador_a_id === a && p.jugador_b_id === b) || (p.jugador_a_id === b && p.jugador_b_id === a),
-    )
-    if (!partido) continue
-    const { error: errSoft } = await db
-      .from('liga_partidos')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', partido.id)
-    if (errSoft) {
-      await supabase.from('liga_partidos').delete().eq('id', partido.id)
-    }
+    ))
+    .filter((p): p is (typeof allPartidos)[number] => !!p)
+    .map(p => p.id)
+  if (idsAAnular.length > 0) {
+    await db.from('liga_partidos').update({ deleted_at: new Date().toISOString() }).in('id', idsAAnular)
   }
 
   // Crear partidos nuevos para pares que no existían
@@ -355,29 +351,25 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   const fechaIdPorNumero = new Map(fechas.map(f => [f.numero, f.id]))
   const mesaIdPorNumero = new Map(mesasActivas.map(m => [m.numero, m.id]))
 
-  // Guardar en lotes; capturar errores individuales (p.ej. HC-01 trigger)
+  // Guardar todos en paralelo (1 round-trip); capturar errores individuales
+  const resultadosUpdate = await Promise.all(
+    conArbitros.map(p =>
+      supabase
+        .from('liga_partidos')
+        .update({
+          fecha_id: fechaIdPorNumero.get(p.fechaNumero) ?? null,
+          mesa_id: mesaIdPorNumero.get(p.mesaNumero) ?? null,
+          bloque_horario: p.bloqueHorario,
+          arbitro_id: p.arbitroId,
+        })
+        .eq('id', p.id)
+        .then(r => ({ id: p.id, error: r.error })),
+    ),
+  )
   let programadosExitosos = 0
-  const tamanoLote = 25
-  for (let i = 0; i < conArbitros.length; i += tamanoLote) {
-    const lote = conArbitros.slice(i, i + tamanoLote)
-    const resultados = await Promise.all(
-      lote.map(p =>
-        supabase
-          .from('liga_partidos')
-          .update({
-            fecha_id: fechaIdPorNumero.get(p.fechaNumero) ?? null,
-            mesa_id: mesaIdPorNumero.get(p.mesaNumero) ?? null,
-            bloque_horario: p.bloqueHorario,
-            arbitro_id: p.arbitroId,
-          })
-          .eq('id', p.id)
-          .then(r => ({ id: p.id, error: r.error })),
-      ),
-    )
-    for (const r of resultados) {
-      if (r.error) sinAsignarIds.push(r.id)
-      else programadosExitosos++
-    }
+  for (const r of resultadosUpdate) {
+    if (r.error) sinAsignarIds.push(r.id)
+    else programadosExitosos++
   }
 
   // Asignar los partidos que no caben en fechas regulares a la fecha de reajuste
@@ -854,16 +846,17 @@ export async function programarEnReajuste(params: { ligaId: string }) {
     orden_fixture: number; fecha_id: string | null; mesa_id: string | null
   }>
 
-  // Los que NO están ya en reajuste: moverlos ahí sin mesa/bloque
+  // Los que NO están ya en reajuste: moverlos ahí sin mesa/bloque (batches paralelos)
   const toMoveIds = todos.filter(p => p.fecha_id !== fechaAjuste.id).map(p => p.id)
   if (toMoveIds.length > 0) {
-    const lote = 50
-    for (let i = 0; i < toMoveIds.length; i += lote) {
-      await supabase
-        .from('liga_partidos')
-        .update({ fecha_id: fechaAjuste.id, mesa_id: null, bloque_horario: null, arbitro_id: null })
-        .in('id', toMoveIds.slice(i, i + lote))
-    }
+    await Promise.all(
+      Array.from({ length: Math.ceil(toMoveIds.length / 50) }, (_, i) =>
+        supabase
+          .from('liga_partidos')
+          .update({ fecha_id: fechaAjuste.id, mesa_id: null, bloque_horario: null, arbitro_id: null })
+          .in('id', toMoveIds.slice(i * 50, (i + 1) * 50)),
+      ),
+    )
   }
 
   // Todos los que van a quedar en reajuste sin programar (incluye ya-en-reajuste sin mesa)
@@ -909,20 +902,16 @@ export async function programarEnReajuste(params: { ligaId: string }) {
   const conArbitros = asignarArbitrosEficiente(todosProgramados, jugadoresPorDivision, bloques)
   const mesaIdPorNumero = new Map(mesas.map(m => [m.numero, m.id]))
 
-  let exitosos = 0
-  const tam = 25
-  for (let i = 0; i < conArbitros.length; i += tam) {
-    const resultados = await Promise.all(
-      conArbitros.slice(i, i + tam).map(p =>
-        supabase.from('liga_partidos').update({
-          mesa_id: mesaIdPorNumero.get(p.mesaNumero) ?? null,
-          bloque_horario: p.bloqueHorario,
-          arbitro_id: p.arbitroId,
-        }).eq('id', p.id).then(r => ({ error: r.error }))
-      )
-    )
-    exitosos += resultados.filter(r => !r.error).length
-  }
+  const reajusteResults = await Promise.all(
+    conArbitros.map(p =>
+      supabase.from('liga_partidos').update({
+        mesa_id: mesaIdPorNumero.get(p.mesaNumero) ?? null,
+        bloque_horario: p.bloqueHorario,
+        arbitro_id: p.arbitroId,
+      }).eq('id', p.id).then(r => ({ error: r.error })),
+    ),
+  )
+  const exitosos = reajusteResults.filter(r => !r.error).length
 
   return { success: true, total: exitosos }
 }
