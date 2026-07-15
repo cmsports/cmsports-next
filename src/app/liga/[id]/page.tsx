@@ -68,6 +68,7 @@ export default function LigaDetallePage() {
 
   const [programando, setProgramando] = useState(false)
   const [programacionKey, setProgramacionKey] = useState(0)
+  const [fixtureKey, setFixtureKey] = useState(0)
   const [diffAbierto, setDiffAbierto] = useState(false)
   const [diffData, setDiffData] = useState<DiffDivision | null>(null)
   const [pendingDivision, setPendingDivision] = useState<Division | null>(null)
@@ -138,6 +139,10 @@ export default function LigaDetallePage() {
     if (!nombreDivision.trim()) return
     const res = await crearDivision({ ligaId, nombre: nombreDivision, orden: divisiones.length })
     if (res.error) { setMensaje(res.error); return }
+    // Optimista: agregar inmediatamente sin esperar cargar()
+    const nueva: Division = { id: res.divisionId!, nombre: nombreDivision.trim(), orden: divisiones.length, fixture_generado: false, capacidad_max: null }
+    setDivisiones(prev => [...prev, nueva])
+    setDivisionActiva(res.divisionId!)
     setNombreDivision('')
     setFormNuevaDivision(false)
     cargar()
@@ -192,6 +197,9 @@ export default function LigaDetallePage() {
       cargar()
       return
     }
+    // Optimista: marcar fixture_generado=true y forzar remount de FixtureDivision
+    setDivisiones(prev => prev.map(d => d.id === division.id ? { ...d, fixture_generado: true } : d))
+    setFixtureKey(k => k + 1)
     setMensaje(`${ids.length} jugadores registrados · ${fixtureRes.totalPartidos} partidos en el fixture`)
     cargar()
   }
@@ -218,6 +226,7 @@ export default function LigaDetallePage() {
       }
     }
 
+    setFixtureKey(k => k + 1)
     setAplicandoDiff(false)
     setMensaje(partes.length ? `Guardado — ${partes.join(', ')}` : 'Jugadores guardados')
     setDiffAbierto(false)
@@ -561,7 +570,7 @@ export default function LigaDetallePage() {
                 )}
               </div>
 
-              <FixtureDivision key={`${division.id}-${division.fixture_generado}`} divisionId={division.id} ligaId={ligaId} nombres={nombrePorId} />
+              <FixtureDivision key={`${division.id}-${division.fixture_generado}-${fixtureKey}`} divisionId={division.id} ligaId={ligaId} nombres={nombrePorId} />
             </div>
           </div>}
 
