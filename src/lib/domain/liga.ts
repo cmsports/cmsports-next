@@ -596,6 +596,19 @@ export function asignarArbitrosEficiente(
     const roster = jugadoresPorDivision.get(seq[0].divisionId) ?? []
     const vecesArb = new Map<string, number>()
 
+    // Índices de bloque donde cada jugador JUEGA en esta fecha.
+    // Se usa para no asignar árbitro a alguien cuyo último partido ya pasó
+    // (lo obligaría a quedarse cuando ya se iba a ir).
+    const bloquesJugador = new Map<string, number[]>()
+    for (let pi = 0; pi < seq.length; pi++) {
+      for (const j of [seq[pi].jugadorAId, seq[pi].jugadorBId]) {
+        if (!bloquesJugador.has(j)) bloquesJugador.set(j, [])
+        bloquesJugador.get(j)!.push(pi)
+      }
+    }
+    const tienePartidoMasTarde = (j: string, desdeIdx: number) =>
+      (bloquesJugador.get(j) ?? []).some(bi => bi > desdeIdx)
+
     const menosArbitrado = (candidatos: string[]) =>
       candidatos.reduce((best, c) =>
         (vecesArb.get(c) ?? 0) < (vecesArb.get(best) ?? 0) ? c : best,
@@ -605,12 +618,17 @@ export function asignarArbitrosEficiente(
       const partido = seq[i]
       const jugando = new Set([partido.jugadorAId, partido.jugadorBId])
 
-      // Jugadores del bloque anterior (recién terminaron, siguen en el salón)
+      // Bloque anterior: solo incluir si AÚN TIENEN partidos después del bloque
+      // actual → siguen en el salón de todas formas, no hay costo de permanencia.
+      // Si su último partido fue el bloque anterior, están a punto de irse;
+      // obligarlos a arbitrar extiende su permanencia innecesariamente.
       const delAnterior = i > 0
-        ? [seq[i - 1].jugadorAId, seq[i - 1].jugadorBId].filter(j => !jugando.has(j))
+        ? [seq[i - 1].jugadorAId, seq[i - 1].jugadorBId].filter(
+            j => !jugando.has(j) && tienePartidoMasTarde(j, i),
+          )
         : []
 
-      // Jugadores del bloque siguiente (están llegando, van a jugar)
+      // Bloque siguiente: van a llegar para jugar, estarán presentes de todas formas.
       const delSiguiente = i < seq.length - 1
         ? [seq[i + 1].jugadorAId, seq[i + 1].jugadorBId].filter(j => !jugando.has(j))
         : []
@@ -621,9 +639,12 @@ export function asignarArbitrosEficiente(
       if (adyacentes.length > 0) {
         arbitro = menosArbitrado(adyacentes)
       } else {
-        // Fallback: cualquier jugador de la división que no esté jugando
+        // Fallback: cualquier jugador de la división que no esté jugando,
+        // priorizando a quienes aún tienen partidos pendientes (ya van a estar ahí).
         const disponibles = roster.filter(j => !jugando.has(j))
-        if (disponibles.length > 0) arbitro = menosArbitrado(disponibles)
+        const conPendientes = disponibles.filter(j => tienePartidoMasTarde(j, i - 1))
+        const candidatos = conPendientes.length > 0 ? conPendientes : disponibles
+        if (candidatos.length > 0) arbitro = menosArbitrado(candidatos)
       }
 
       if (arbitro) vecesArb.set(arbitro, (vecesArb.get(arbitro) ?? 0) + 1)
