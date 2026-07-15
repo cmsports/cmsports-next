@@ -1,12 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { createClient } from '@/lib/supabase/client'
 import { ExternalLink, ShoppingBag } from 'lucide-react'
 
 const WA = '56922515010'
+const AUMENTO_PRECIO = 2000
+const DESCUENTO_CLUB = 1000
 
 const productos = [
   { name: 'Yinhe 01 Pro', cat: 'Madero', marca: 'Yinhe', desc: 'Madero profesional 5+2 capas. Velocidad y control para juego ofensivo.', precio: 60000, img: '/tienda/1.png' },
@@ -28,6 +31,16 @@ function formatPrecio(n: number) {
 export default function TiendaPage() {
   const { perfil } = usePerfil()
   const [filtro, setFiltro] = useState('Todos')
+  const [clubNombre, setClubNombre] = useState('tu club')
+
+  useEffect(() => {
+    if (!perfil?.club_id) return
+    const supabase = createClient()
+    supabase.from('clubes').select('nombre').eq('id', perfil.club_id).single()
+      .then(({ data }) => {
+        if (data?.nombre) setClubNombre(data.nombre)
+      })
+  }, [perfil?.club_id])
 
   const filtrados = filtro === 'Todos' ? productos : productos.filter(p => p.cat === filtro)
 
@@ -51,7 +64,7 @@ export default function TiendaPage() {
             Tienda <span style={{ color: '#c8102e' }}>DoubleTT</span>
           </h1>
           <p style={{ fontSize: 14, opacity: 0.8, marginTop: 6, maxWidth: 500 }}>
-            Equipamiento profesional de tenis de mesa. Miembros CmSports tienen descuento exclusivo — menciónalo al cotizar.
+            Todos los jugadores de <strong>{clubNombre}</strong> tienen $1.000 de descuento en cada producto.
           </p>
         </div>
 
@@ -75,7 +88,11 @@ export default function TiendaPage() {
           gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
           gap: 16,
         }}>
-          {filtrados.map(p => (
+          {filtrados.map(p => {
+            const precioLista = p.precio + AUMENTO_PRECIO
+            const precioClub = precioLista - DESCUENTO_CLUB
+            const mensajeWhatsApp = `Hola DoubleTT! Vengo de parte del club ${clubNombre}. Quiero consultar por ${p.name}. Precio lista: ${formatPrecio(precioLista)}. Descuento jugadores del club: ${formatPrecio(DESCUENTO_CLUB)}. Precio final: ${formatPrecio(precioClub)}.`
+            return (
             <div key={p.name} style={{
               background: '#fff', borderRadius: 14, overflow: 'hidden',
               border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column',
@@ -93,11 +110,19 @@ export default function TiendaPage() {
                 </span>
                 <h3 style={{ fontSize: 15, fontWeight: 700, margin: '4px 0', color: '#0f172a' }}>{p.name}</h3>
                 <p style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4, flex: 1 }}>{p.desc}</p>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#c8102e', marginTop: 8 }} className="tabular-nums">
-                  {formatPrecio(p.precio)}
+                <div style={{ marginTop: 8 }} className="tabular-nums">
+                  <div style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'line-through' }}>
+                    Antes {formatPrecio(precioLista)}
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#c8102e' }}>
+                    {formatPrecio(precioClub)}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#16a34a' }}>
+                    Descuento club: -{formatPrecio(DESCUENTO_CLUB)}
+                  </div>
                 </div>
                 <a
-                  href={`https://wa.me/${WA}?text=${encodeURIComponent('Hola DoubleTT! Vengo de parte de CmSports. Quiero consultar por:' + p.name)}`}
+                  href={`https://wa.me/${WA}?text=${encodeURIComponent(mensajeWhatsApp)}`}
                   target="_blank" rel="noopener noreferrer"
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -110,7 +135,8 @@ export default function TiendaPage() {
                 </a>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Aviso más productos */}
@@ -125,7 +151,7 @@ export default function TiendaPage() {
             Si buscas algo que no está acá, pregunta directamente por WhatsApp.
           </p>
           <a
-            href={`https://wa.me/${WA}?text=${encodeURIComponent('Hola DoubleTT! Vengo de parte de CmSports. Quiero consultar por un producto que no está en la tienda.')}`}
+            href={`https://wa.me/${WA}?text=${encodeURIComponent(`Hola DoubleTT! Vengo de parte del club ${clubNombre}. Quiero consultar por un producto que no está en la tienda. Tengo el descuento de $1.000 asociado a los jugadores del club.`)}`}
             target="_blank" rel="noopener noreferrer"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
