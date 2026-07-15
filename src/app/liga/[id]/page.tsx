@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
 import {
-  crearDivision,
+  crearDivision, actualizarCapacidadDivision,
   asignarJugadoresDivision, calcularDiffFixtureDivision,
   generarFixtureDivisionAction, generarProgramacionLiga, limpiarProgramacionLiga,
   iniciarFecha, crearJugadorExternoLiga,
@@ -73,6 +73,10 @@ export default function LigaDetallePage() {
   const [pendingDivision, setPendingDivision] = useState<Division | null>(null)
   const [aplicandoDiff, setAplicandoDiff] = useState(false)
 
+  const [editandoCupo, setEditandoCupo] = useState(false)
+  const [nuevoCupo, setNuevoCupo] = useState('')
+  const [guardandoCupo, setGuardandoCupo] = useState(false)
+
   const [pagoModalAbierto, setPagoModalAbierto] = useState(false)
   const [jugadorPagando, setJugadorPagando] = useState<Jugador | null>(null)
   const [montoTotal, setMontoTotal] = useState('')
@@ -128,6 +132,8 @@ export default function LigaDetallePage() {
     if (divisionActiva) cargarPagos(divisionActiva)
   }, [divisionActiva, cargarPagos])
 
+  useEffect(() => { setEditandoCupo(false) }, [divisionActiva])
+
   async function handleCrearDivision() {
     if (!nombreDivision.trim()) return
     const res = await crearDivision({ ligaId, nombre: nombreDivision, orden: divisiones.length })
@@ -135,6 +141,18 @@ export default function LigaDetallePage() {
     setNombreDivision('')
     setFormNuevaDivision(false)
     cargar()
+  }
+
+  async function handleGuardarCupo() {
+    if (!division) return
+    const cap = nuevoCupo.trim() === '' ? null : parseInt(nuevoCupo)
+    if (cap !== null && (isNaN(cap) || cap < 2)) { setMensaje('El cupo mínimo es 2 jugadores'); return }
+    setGuardandoCupo(true)
+    const res = await actualizarCapacidadDivision({ divisionId: division.id, capacidadMax: cap })
+    setGuardandoCupo(false)
+    if (res.error) { setMensaje(res.error); return }
+    setDivisiones(prev => prev.map(d => d.id === division.id ? { ...d, capacidad_max: cap } : d))
+    setEditandoCupo(false)
   }
 
   function toggleJugadorDivision(division: Division, jugadorId: string) {
@@ -396,8 +414,47 @@ export default function LigaDetallePage() {
           {subTab === 'jugadores' && <div>
             <div style={{ ...card, padding:20 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexWrap:'wrap', gap:10 }}>
-                <div style={{ fontSize:13, color: muted }}>
-                  {jugadoresDeDivision.length}{division.capacidad_max ? ` / ${division.capacidad_max}` : ''} inscritos
+                <div style={{ fontSize:13, color: muted, display:'flex', alignItems:'center', gap:5 }}>
+                  <span style={{ fontVariantNumeric:'tabular-nums' }}>{jugadoresDeDivision.length}</span>
+                  <span style={{ color: hint }}>/</span>
+                  {editandoCupo ? (
+                    <>
+                      <input
+                        autoFocus
+                        type="number"
+                        min={Math.max(2, jugadoresDeDivision.length)}
+                        value={nuevoCupo}
+                        onChange={e => setNuevoCupo(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleGuardarCupo()
+                          if (e.key === 'Escape') setEditandoCupo(false)
+                        }}
+                        style={{ width:56, background:'#f4f7fa', border:'1px solid #c7d2e0', borderRadius:6, padding:'2px 6px', fontSize:13, color: text, outline:'none' }}
+                        placeholder="—"
+                      />
+                      <button onClick={handleGuardarCupo} disabled={guardandoCupo}
+                        style={{ background:'#16a34a', color:'white', border:'none', borderRadius:6, padding:'2px 9px', fontSize:12, fontWeight:600, cursor:'pointer', opacity: guardandoCupo ? 0.6 : 1 }}>
+                        {guardandoCupo ? '…' : '✓'}
+                      </button>
+                      <button onClick={() => setEditandoCupo(false)}
+                        style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:6, padding:'2px 8px', fontSize:12, color: muted, cursor:'pointer' }}>
+                        ✕
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontVariantNumeric:'tabular-nums' }}>
+                        {division.capacidad_max ?? '∞'}
+                      </span>
+                      <button
+                        onClick={() => { setNuevoCupo(division.capacidad_max ? String(division.capacidad_max) : ''); setEditandoCupo(true) }}
+                        title="Editar cupo de la división"
+                        style={{ background:'transparent', border:'none', color: hint, cursor:'pointer', padding:'0 2px', fontSize:11, lineHeight:1 }}>
+                        ✎
+                      </button>
+                    </>
+                  )}
+                  <span style={{ color: muted }}>inscritos</span>
                 </div>
                 <span style={{
                   background: division.fixture_generado ? '#f0fdf4' : '#f4f7fa',

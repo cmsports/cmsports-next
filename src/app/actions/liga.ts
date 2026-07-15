@@ -638,6 +638,35 @@ export async function crearDivision(params: { ligaId: string; nombre: string; or
   return { success: true, divisionId: data.id }
 }
 
+export async function actualizarCapacidadDivision(params: {
+  divisionId: string
+  capacidadMax: number | null
+}) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { divisionId, capacidadMax } = params
+  if (capacidadMax !== null && capacidadMax < 2) return { error: 'El cupo mínimo es 2 jugadores' }
+
+  if (capacidadMax !== null) {
+    const { count } = await supabase
+      .from('liga_division_jugadores')
+      .select('jugador_id', { count: 'exact', head: true })
+      .eq('division_id', divisionId)
+    if ((count ?? 0) > capacidadMax) {
+      return { error: `Ya hay ${count} jugadores inscritos. El nuevo cupo no puede ser menor.` }
+    }
+  }
+
+  const { error } = await supabase
+    .from('liga_divisiones')
+    .update({ capacidad_max: capacidadMax })
+    .eq('id', divisionId)
+  if (error) return { error: 'No se pudo actualizar el cupo: ' + error.message }
+
+  return { success: true }
+}
+
 export async function crearMesa(params: { ligaId: string; numero: number }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
