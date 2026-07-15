@@ -3,9 +3,8 @@
 import {
   generarFixtureDivision,
   generarBloquesHorario,
-  distribuirEnFechas,
-  programarFecha,
-  asignarArbitros,
+  programarDivision,
+  asignarArbitrosEficiente,
   validarMovimientoPartido,
   normalizarBloque,
   esResultadoBo5Valido,
@@ -339,24 +338,15 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
 
   for (const [divId, partidosDiv] of porDivision) {
     const mesaNumero = mesaPorDivision.get(divId) ?? mesasActivas[0].numero
-    const capacidadPorFechaDiv = bloques.length  // 1 mesa fija × N bloques
-    const { fechas: chunksDiv, sobrantes: sobrantesDiv } = distribuirEnFechas(
-      partidosDiv, fechas.length, capacidadPorFechaDiv,
+    const jugadoresDiv = jugadoresPorDivision.get(divId) ?? []
+    const { programados: progDiv, sinAsignar: sinDiv } = programarDivision(
+      partidosDiv, jugadoresDiv, fechas.length, bloques, mesaNumero,
     )
-    sinAsignarIds.push(...sobrantesDiv.map(p => p.id))
-
-    let carryOver: PartidoAProgramar[] = []
-    for (let i = 0; i < fechas.length; i++) {
-      const cola = [...carryOver, ...chunksDiv[i]]
-      if (cola.length === 0) continue
-      const { programados, sinAsignar } = programarFecha(cola, fechas[i].numero, [mesaNumero], bloques)
-      todosProgramados.push(...programados)
-      carryOver = i < fechas.length - 1 ? sinAsignar : []
-      if (i === fechas.length - 1) sinAsignarIds.push(...sinAsignar.map(p => p.id))
-    }
+    todosProgramados.push(...progDiv)
+    sinAsignarIds.push(...sinDiv.map(p => p.id))
   }
 
-  const conArbitros = asignarArbitros(todosProgramados, jugadoresPorDivision)
+  const conArbitros = asignarArbitrosEficiente(todosProgramados, jugadoresPorDivision, bloques)
 
   const fechaIdPorNumero = new Map(fechas.map(f => [f.numero, f.id]))
   const mesaIdPorNumero = new Map(mesasActivas.map(m => [m.numero, m.id]))

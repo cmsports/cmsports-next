@@ -354,6 +354,306 @@ export function asignarArbitros(
   return resultado
 }
 
+// ─── Motor de eficiencia operacional (single-mesa por división) ───────────────
+//
+// Principio rector: eficiencia > equilibrio. Minimizar la permanencia total
+// de cada jugador en el recinto (= último bloque activo − primer bloque activo).
+//
+// Algoritmo en tres fases:
+//   1. Circle method: genera n-1 rondas donde cada jugador aparece exactamente
+//      una vez. Garantiza que partidos consecutivos de rondas adyacentes
+//      comparten jugador → base natural para encadenar.
+//   2. Greedy de cadena dentro de cada fecha: re-ordena el slice de partidos
+//      de la fecha priorizando continuidad (partido siguiente comparte jugador
+//      con el anterior). Desempate: jugador con más partidos pendientes entra
+//      primero y se va antes.
+//   3. Árbitros por ventana de actividad: para el partido del bloque t se
+//      elige el candidato cuya ventana [primera_actividad, última_actividad]
+//      ya contenga t (delta permanencia = 0), o el que menos la extienda.
+
+// Circle method (Berge): devuelve n-1 rondas de pares de índices.
+// Para n par: cada ronda tiene n/2 partidos; para n impar: (n-1)/2.
+function circleMethodRounds(n: number): Array<Array<[number, number]>> {
+  const m = n % 2 === 0 ? n : n + 1
+  const arr = Array.from({ length: m }, (_, i) => i)
+  const rounds: Array<Array<[number, number]>> = []
+  for (let r = 0; r < m - 1; r++) {
+    const ronda: Array<[number, number]> = []
+    for (let k = 0; k < m / 2; k++) {
+      const a = arr[k], b = arr[m - 1 - k]
+      if (a < n && b < n) ronda.push([a, b])
+    }
+    rounds.push(ronda)
+    // Rotar: mantener arr[0] fijo, rotar arr[1..m-1] a la derecha
+    const last = arr[m - 1]
+    for (let i = m - 1; i > 1; i--) arr[i] = arr[i - 1]
+    arr[1] = last
+  }
+  return rounds
+}
+
+// Greedy de cadena: ordena los partidos de una fecha para minimizar permanencia.
+// En cada paso prioriza el partido que comparte jugador con el anterior (cadena).
+// Desempate: mayor peso = jugadores con más partidos pendientes en esa fecha.
+function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[] {
+  const pendientes = [...matchesFecha]
+  const secuencia: PartidoAProgramar[] = []
+  // Jugadores que ya empezaron en esta fecha pero aún tienen partidos pendientes
+  const ventanaAbierta = new Set<string>()
+
+  while (pendientes.length > 0) {
+    const pxj = new Map<string, number>()
+    for (const p of pendientes) {
+      pxj.set(p.jugadorAId, (pxj.get(p.jugadorAId) ?? 0) + 1)
+      pxj.set(p.jugadorBId, (pxj.get(p.jugadorBId) ?? 0) + 1)
+    }
+    const peso = (p: PartidoAProgramar) => (pxj.get(p.jugadorAId) ?? 0) + (pxj.get(p.jugadorBId) ?? 0)
+
+    let candidatos = pendientes
+    if (secuencia.length > 0) {
+      const ult = secuencia[secuencia.length - 1]
+      const jugUlt = new Set([ult.jugadorAId, ult.jugadorBId])
+      // Prioridad 1: cadena directa (comparte jugador con el partido anterior)
+      const cadena = pendientes.filter(p => jugUlt.has(p.jugadorAId) || jugUlt.has(p.jugadorBId))
+      if (cadena.length > 0) {
+        candidatos = cadena
+      } else {
+        // Prioridad 2 (cadena rota): cerrar ventanas abiertas antes de arrancar nuevos
+        const urgentes = pendientes.filter(
+          p => ventanaAbierta.has(p.jugadorAId) || ventanaAbierta.has(p.jugadorBId),
+        )
+        if (urgentes.length > 0) candidatos = urgentes
+      }
+    }
+
+    let mejor = candidatos[0]
+    let mejorPeso = peso(mejor)
+    for (let i = 1; i < candidatos.length; i++) {
+      const pw = peso(candidatos[i])
+      if (pw > mejorPeso) { mejor = candidatos[i]; mejorPeso = pw }
+    }
+
+    secuencia.push(mejor)
+    pendientes.splice(pendientes.indexOf(mejor), 1)
+
+    // Actualizar ventana abierta: agregar los que acaban de jugar
+    for (const jid of [mejor.jugadorAId, mejor.jugadorBId]) {
+      ventanaAbierta.add(jid)
+      // Si ese jugador ya no tiene más partidos pendientes, cerrar su ventana
+      if (!pendientes.some(p => p.jugadorAId === jid || p.jugadorBId === jid)) {
+        ventanaAbierta.delete(jid)
+      }
+    }
+  }
+
+  return secuencia
+}
+
+// Programa una división completa en su mesa asignada.
+// Devuelve partidos con fecha, mesa y bloque asignados (arbitroId = null).
+export function programarDivision(
+  partidos: PartidoAProgramar[],
+  jugadorIds: string[],
+  numFechas: number,
+  bloques: string[],
+  mesaNumero: number,
+): { programados: PartidoProgramado[]; sinAsignar: PartidoAProgramar[] } {
+  if (partidos.length === 0) return { programados: [], sinAsignar: [] }
+
+  // Lookup por par canónico (independiente del orden A/B en BD)
+  const porPar = new Map<string, PartidoAProgramar>()
+  for (const p of partidos) {
+    porPar.set([p.jugadorAId, p.jugadorBId].sort().join('~'), p)
+  }
+
+  // Secuencia global según circle method
+  const secuencia: PartidoAProgramar[] = []
+  const vistos = new Set<string>()
+  for (const ronda of circleMethodRounds(jugadorIds.length)) {
+    for (const [iA, iB] of ronda) {
+      const key = [jugadorIds[iA], jugadorIds[iB]].sort().join('~')
+      const p = porPar.get(key)
+      if (p && !vistos.has(p.id)) { secuencia.push(p); vistos.add(p.id) }
+    }
+  }
+  // Partidos no cubiertos por el circle method (jugadores nuevos sin ronda asignada)
+  for (const p of partidos) {
+    if (!vistos.has(p.id)) { secuencia.push(p); vistos.add(p.id) }
+  }
+
+  const total = secuencia.length
+  const capacidad = bloques.length
+  const base = Math.floor(total / numFechas)
+  const extra = total % numFechas  // primeras `extra` fechas reciben un partido más
+
+  const programados: PartidoProgramado[] = []
+  const sinAsignar: PartidoAProgramar[] = []
+  let cursor = 0
+
+  for (let f = 0; f < numFechas && cursor < total; f++) {
+    const target = base + (f < extra ? 1 : 0)
+    const cant = Math.min(target, capacidad)
+    const slice = secuencia.slice(cursor, cursor + cant)
+    cursor += cant
+
+    // Overflow: partidos que no caben en esta fecha (target > capacidad)
+    if (target > cant) {
+      sinAsignar.push(...secuencia.slice(cursor, cursor + (target - cant)))
+      cursor += target - cant
+    }
+
+    const ordenados = ordenarPorCadena(slice)
+    for (let b = 0; b < ordenados.length; b++) {
+      programados.push({
+        ...ordenados[b],
+        fechaNumero: f + 1,
+        mesaNumero,
+        bloqueHorario: bloques[b],
+        arbitroId: null,
+      })
+    }
+  }
+
+  // Partidos restantes que no entraron en ninguna fecha
+  if (cursor < total) sinAsignar.push(...secuencia.slice(cursor))
+
+  return { programados, sinAsignar }
+}
+
+// Asigna árbitros priorizando eficiencia operacional (HC-04):
+// - Candidato adyacente al partido (bloque t-1 o t+1): delta = 0
+// - Candidato cuya ventana [primera, última] ya contiene t: delta = 0
+// - Candidato fuera de ventana: delta = distancia al borde más cercano
+// - Sin actividad en la fecha: último recurso (delta = ∞)
+// La ventana del árbitro elegido se actualiza para reflejar su nuevo compromiso.
+export function asignarArbitrosEficiente(
+  programados: PartidoProgramado[],
+  jugadoresPorDivision: Map<string, string[]>,
+  bloques: string[],
+): PartidoProgramado[] {
+  const bIdx = new Map(bloques.map((b, i) => [b, i]))
+
+  const grupos = new Map<string, PartidoProgramado[]>()
+  for (const p of programados) {
+    const k = `${p.divisionId}::${p.fechaNumero}`
+    if (!grupos.has(k)) grupos.set(k, [])
+    grupos.get(k)!.push(p)
+  }
+
+  const resultado: PartidoProgramado[] = []
+
+  for (const partidos of grupos.values()) {
+    const ordenados = [...partidos].sort(
+      (a, b) => (bIdx.get(a.bloqueHorario) ?? 0) - (bIdx.get(b.bloqueHorario) ?? 0),
+    )
+    const roster = jugadoresPorDivision.get(partidos[0].divisionId) ?? []
+
+    // Bloques de actividad por jugador (jugar o arbitrar); se actualiza en tiempo real
+    const actDe = new Map<string, Set<number>>()
+    for (const p of ordenados) {
+      const bi = bIdx.get(p.bloqueHorario) ?? 0
+      for (const jid of [p.jugadorAId, p.jugadorBId]) {
+        if (!actDe.has(jid)) actDe.set(jid, new Set())
+        actDe.get(jid)!.add(bi)
+      }
+    }
+
+    const vecesArb = new Map<string, number>()
+
+    for (const partido of ordenados) {
+      const bi = bIdx.get(partido.bloqueHorario) ?? 0
+      const jugando = new Set([partido.jugadorAId, partido.jugadorBId])
+
+      let mejor: string | null = null
+      let mejorDelta = Infinity
+      let mejorVeces = Infinity
+
+      for (const c of roster) {
+        if (jugando.has(c)) continue
+        const act = actDe.get(c)
+        const veces = vecesArb.get(c) ?? 0
+
+        let delta: number
+        if (!act || act.size === 0) {
+          delta = 10000 + veces  // único motivo para venir → descartado si hay otra opción
+        } else {
+          const min = Math.min(...act)
+          const max = Math.max(...act)
+          if (act.has(bi - 1) || act.has(bi + 1)) {
+            delta = 0             // adyacente → ya va a estar
+          } else if (bi >= min && bi <= max) {
+            delta = 0             // dentro de su ventana → sin costo extra
+          } else {
+            delta = bi < min ? min - bi : bi - max
+          }
+        }
+
+        if (delta < mejorDelta || (delta === mejorDelta && veces < mejorVeces)) {
+          mejorDelta = delta; mejor = c; mejorVeces = veces
+        }
+      }
+
+      if (mejor) {
+        vecesArb.set(mejor, (vecesArb.get(mejor) ?? 0) + 1)
+        if (!actDe.has(mejor)) actDe.set(mejor, new Set())
+        actDe.get(mejor)!.add(bi)
+      }
+
+      resultado.push({ ...partido, arbitroId: mejor })
+    }
+  }
+
+  return resultado
+}
+
+// Simulación para verificar el algoritmo. Devuelve métricas por fecha.
+// Uso: simularProgramacion(12) en la consola de Node o en un test.
+export function simularProgramacion(numJugadores: number = 12): void {
+  const jugadores = Array.from({ length: numJugadores }, (_, i) => `J${String(i).padStart(2, '0')}`)
+  const fixtures = generarFixtureDivision(jugadores)
+  const partidos: PartidoAProgramar[] = fixtures.map((f, i) => ({
+    id: `p${i}`,
+    divisionId: 'div1',
+    jugadorAId: f.jugadorA,
+    jugadorBId: f.jugadorB,
+    ordenFixture: f.orden,
+  }))
+  const bloques = generarBloquesHorario()
+  const { programados, sinAsignar } = programarDivision(partidos, jugadores, 5, bloques, 1)
+  const jugPorDiv = new Map([['div1', jugadores]])
+  const conArbs = asignarArbitrosEficiente(programados, jugPorDiv, bloques)
+
+  const bIdx = new Map(bloques.map((b, i) => [b, i]))
+  const porFecha = new Map<number, PartidoProgramado[]>()
+  for (const p of conArbs) {
+    if (!porFecha.has(p.fechaNumero)) porFecha.set(p.fechaNumero, [])
+    porFecha.get(p.fechaNumero)!.push(p)
+  }
+
+  console.log(`\n=== Simulación ${numJugadores} jugadores · ${partidos.length} partidos ===\n`)
+
+  let totalConflictos = 0
+  for (const [f, ps] of [...porFecha.entries()].sort((a, b) => a[0] - b[0])) {
+    const primera = new Map<string, number>()
+    const ultima = new Map<string, number>()
+    for (const p of ps) {
+      const bi = bIdx.get(p.bloqueHorario) ?? 0
+      for (const jid of [p.jugadorAId, p.jugadorBId]) {
+        if (primera.get(jid) === undefined || bi < primera.get(jid)!) primera.set(jid, bi)
+        if (ultima.get(jid) === undefined || bi > ultima.get(jid)!) ultima.set(jid, bi)
+      }
+    }
+    const perms = [...primera.keys()].map(j => (ultima.get(j) ?? 0) - (primera.get(j) ?? 0))
+    const avg = perms.length ? (perms.reduce((a, b) => a + b, 0) / perms.length).toFixed(1) : '—'
+    const max = perms.length ? Math.max(...perms) : 0
+    const conflictos = ps.filter(p => p.arbitroId && (p.arbitroId === p.jugadorAId || p.arbitroId === p.jugadorBId)).length
+    const sinArb = ps.filter(p => !p.arbitroId).length
+    totalConflictos += conflictos
+    console.log(`  Fecha ${f}: ${ps.length} partidos | permanencia avg=${avg} max=${max} bloques | conflictos HC-04=${conflictos} | sin árbitro=${sinArb}`)
+  }
+  console.log(`\n  Sin programar: ${sinAsignar.length} | Conflictos totales: ${totalConflictos}`)
+}
+
 // ─── Diff de fixture (F2) ──────────────────────────────────────────────────
 // Calcula qué cambia al modificar jugadores de una división con fixture ya
 // generado. Función pura — no toca la BD, solo compara sets.
