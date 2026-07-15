@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
-import { crearLiga } from '@/app/actions/liga'
+import { crearLiga, eliminarLiga } from '@/app/actions/liga'
 
 const supabase = createClient()
 
@@ -40,6 +40,8 @@ export default function LigaPage() {
   const [montoInscripcion, setMontoInscripcion] = useState('')
   const [creando, setCreando] = useState(false)
   const [error, setError] = useState('')
+  const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
+  const [eliminandoId, setEliminandoId] = useState<string | null>(null)
 
   async function cargar(clubId: string) {
     const { data } = await supabase.from('ligas').select('id, nombre, estado, creado_en').eq('club_id', clubId).order('creado_en', { ascending: false })
@@ -76,6 +78,15 @@ export default function LigaPage() {
     if (res.ligaId) router.push(`/liga/${res.ligaId}`)
   }
 
+  async function handleEliminar(ligaId: string) {
+    setEliminandoId(ligaId)
+    const res = await eliminarLiga({ ligaId })
+    setEliminandoId(null)
+    setConfirmandoId(null)
+    if (res.error) { setError(res.error); return }
+    setLigas(prev => prev.filter(l => l.id !== ligaId))
+  }
+
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
@@ -93,23 +104,55 @@ export default function LigaPage() {
           + Nueva liga
         </button>
       </div>
+      {error && (
+        <div onClick={() => setError('')} style={{ background:'#fef2f2', color:'#dc2626', borderRadius:10, padding:'10px 14px', fontSize:13, marginBottom:14, cursor:'pointer' }}>
+          {error}
+        </div>
+      )}
       <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
         {ligas.map(liga => {
           const est = estadoConfig[liga.estado] || { color: muted, bg: '#f4f7fa', label: liga.estado }
+          const confirmando = confirmandoId === liga.id
+          const eliminando = eliminandoId === liga.id
           return (
             <div
               key={liga.id}
-              onClick={() => router.push(`/liga/${liga.id}`)}
-              style={{ ...card, padding:20, cursor:'pointer' }}
+              onClick={() => { if (!confirmando) router.push(`/liga/${liga.id}`) }}
+              style={{ ...card, padding:20, cursor: confirmando ? 'default' : 'pointer' }}
             >
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-                <div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
+                <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:4 }}>{liga.nombre}</div>
                   <div style={{ fontSize:12, color: muted }}>Creada el {new Date(liga.creado_en).toLocaleDateString('es-CL')}</div>
                 </div>
-                <span style={{ background: est.bg, color: est.color, padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
-                  {est.label}
-                </span>
+                <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+                  <span style={{ background: est.bg, color: est.color, padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>
+                    {est.label}
+                  </span>
+                  {confirmando ? (
+                    <div style={{ display:'flex', gap:6, alignItems:'center' }} onClick={e => e.stopPropagation()}>
+                      <span style={{ fontSize:12, color:'#dc2626', fontWeight:500, whiteSpace:'nowrap' }}>¿Eliminar?</span>
+                      <button
+                        onClick={() => handleEliminar(liga.id)}
+                        disabled={eliminando}
+                        style={{ background:'#dc2626', color:'white', border:'none', borderRadius:6, padding:'4px 10px', fontSize:12, fontWeight:600, cursor: eliminando ? 'default' : 'pointer', opacity: eliminando ? 0.6 : 1, whiteSpace:'nowrap' }}>
+                        {eliminando ? '...' : 'Sí, borrar'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmandoId(null)}
+                        style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 10px', fontSize:12, color: muted, cursor:'pointer' }}>
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={e => { e.stopPropagation(); setConfirmandoId(liga.id) }}
+                      title="Eliminar liga"
+                      style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:6, padding:'4px 8px', fontSize:13, color:'#dc2626', cursor:'pointer', lineHeight:1 }}>
+                      🗑
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )

@@ -572,6 +572,42 @@ export async function crearJugadorExternoLiga(params: { nombre: string; rut?: st
 
 // ─── CRUD básico de ligas/divisiones/mesas (módulo visible) ────────────────
 
+export async function eliminarLiga(params: { ligaId: string }) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { ligaId } = params
+  const db = supabase as any
+
+  // Verificar propiedad
+  const { data: liga } = await supabase.from('ligas').select('id, club_id').eq('id', ligaId).single()
+  if (!liga || liga.club_id !== clubId) return { error: 'Liga no encontrada o sin permiso' }
+
+  // Obtener IDs de divisiones para eliminar hijos
+  const { data: divs } = await supabase.from('liga_divisiones').select('id').eq('liga_id', ligaId)
+  const divisionIds = (divs || []).map((d: { id: string }) => d.id)
+
+  // Eliminar en orden correcto (hijos antes que padres)
+  if (divisionIds.length > 0) {
+    await Promise.all([
+      db.from('liga_jugador_pagos').delete().in('division_id', divisionIds),
+      db.from('liga_division_jugadores').delete().in('division_id', divisionIds),
+    ])
+  }
+  await Promise.all([
+    db.from('liga_partidos').delete().eq('liga_id', ligaId),
+    supabase.from('liga_fechas').delete().eq('liga_id', ligaId),
+    supabase.from('liga_mesas').delete().eq('liga_id', ligaId),
+  ])
+  if (divisionIds.length > 0) {
+    await supabase.from('liga_divisiones').delete().eq('liga_id', ligaId)
+  }
+  const { error } = await supabase.from('ligas').delete().eq('id', ligaId)
+  if (error) return { error: 'No se pudo eliminar: ' + error.message }
+
+  return { success: true }
+}
+
 export async function crearLiga(params: {
   nombre: string
   numDivisiones?: number
