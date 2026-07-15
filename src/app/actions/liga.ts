@@ -250,7 +250,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     db.from('ligas').select('total_fechas, bloque_minutos, mesas_count').eq('id', ligaId).single(),
     supabase.from('liga_fechas').select('id, numero').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero', { ascending: true }),
     supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
-    db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture').eq('liga_id', ligaId).is('fecha_id', null).is('deleted_at', null).order('orden_fixture', { ascending: true }),
+    db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture').eq('liga_id', ligaId).is('fecha_id', null).not('estado', 'in', '("finalizado","walkover")').is('deleted_at', null).order('orden_fixture', { ascending: true }),
   ])
 
   const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
