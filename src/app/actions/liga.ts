@@ -245,6 +245,21 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   const { ligaId } = params
   const db = supabase as any
 
+  // Liberar partidos sin slot en el reajuste para que el motor pueda redistribuirlos
+  // (los que tienen mesa_id asignada fueron colocados manualmente y se respetan)
+  const { data: fechaAjustePrecheck } = await supabase
+    .from('liga_fechas').select('id').eq('liga_id', ligaId).eq('es_ajuste', true).single()
+  if (fechaAjustePrecheck) {
+    await supabase
+      .from('liga_partidos')
+      .update({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null })
+      .eq('liga_id', ligaId)
+      .eq('fecha_id', fechaAjustePrecheck.id)
+      .is('mesa_id', null)
+      .not('estado', 'in', '("finalizado","walkover")')
+      .is('deleted_at', null)
+  }
+
   // 4 queries independientes en paralelo
   const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawPendientes }] = await Promise.all([
     db.from('ligas').select('total_fechas, bloque_minutos, mesas_count').eq('id', ligaId).single(),
