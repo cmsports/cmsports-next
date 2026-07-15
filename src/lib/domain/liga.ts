@@ -97,20 +97,67 @@ export function calcularRankingDivision(
   for (const fila of statsMap.values()) fila.ds = fila.sf - fila.sc
 
   const filas = Array.from(statsMap.values())
+
+  // Fase 1: orden primario por estadísticas agregadas.
+  // Criterios transitivos — nunca producen ciclos, sort es estable.
   filas.sort((a, b) => {
     if (b.pts !== a.pts) return b.pts - a.pts
     if (b.pg !== a.pg) return b.pg - a.pg
     if (b.ds !== a.ds) return b.ds - a.ds
-    if (b.sf !== a.sf) return b.sf - a.sf
-    const directo = partidos.find(
-      p =>
-        (p.jugadorAId === a.jugadorId && p.jugadorBId === b.jugadorId) ||
-        (p.jugadorAId === b.jugadorId && p.jugadorBId === a.jugadorId),
-    )
-    if (directo?.ganadorId === a.jugadorId) return -1
-    if (directo?.ganadorId === b.jugadorId) return 1
-    return 0
+    return b.sf - a.sf
   })
+
+  // Fase 2: para cada grupo de jugadores con estadísticas idénticas, aplicar
+  // desempate por enfrentamiento directo mediante mini-ranking dentro del grupo.
+  // Usar sort-comparator con find() aquí sería no-transitivo para ciclos
+  // (A > B > C > A), produciendo orden indefinido en JS. El mini-ranking calcula
+  // puntos/DS/SF solo entre los empatados: en un ciclo perfecto quedan iguales
+  // y el orden del Fase 1 se preserva (estable y reproducible).
+  const claveOrden = (f: FilaRanking) => `${f.pts}|${f.pg}|${f.ds}|${f.sf}`
+  let i = 0
+  while (i < filas.length) {
+    let j = i + 1
+    while (j < filas.length && claveOrden(filas[j]) === claveOrden(filas[i])) j++
+
+    if (j - i > 1) {
+      const grupo = filas.slice(i, j)
+      const grupoIds = new Set(grupo.map(f => f.jugadorId))
+      const partidosGrupo = partidos.filter(
+        p => grupoIds.has(p.jugadorAId) && grupoIds.has(p.jugadorBId),
+      )
+
+      if (partidosGrupo.length > 0) {
+        const mini = new Map<string, { pts: number; ds: number; sf: number }>()
+        for (const id of grupoIds) mini.set(id, { pts: 0, ds: 0, sf: 0 })
+
+        for (const p of partidosGrupo) {
+          const mg = mini.get(p.ganadorId)
+          const perdedorId = p.ganadorId === p.jugadorAId ? p.jugadorBId : p.jugadorAId
+          const mp = mini.get(perdedorId)
+          if (!mg || !mp) continue
+          mg.pts += 3
+          mp.pts += p.esWalkover ? 0 : 1
+          if (!p.esWalkover && p.setsA !== null && p.setsB !== null) {
+            const sG = p.ganadorId === p.jugadorAId ? p.setsA : p.setsB
+            const sP = p.ganadorId === p.jugadorAId ? p.setsB : p.setsA
+            mg.sf += sG; mg.ds += sG - sP
+            mp.sf += sP; mp.ds += sP - sG
+          }
+        }
+
+        grupo.sort((a, b) => {
+          const ma = mini.get(a.jugadorId)!
+          const mb = mini.get(b.jugadorId)!
+          if (mb.pts !== ma.pts) return mb.pts - ma.pts
+          if (mb.ds !== ma.ds) return mb.ds - ma.ds
+          return mb.sf - ma.sf
+        })
+        for (let k = 0; k < grupo.length; k++) filas[i + k] = grupo[k]
+      }
+    }
+
+    i = j
+  }
 
   return filas
 }

@@ -715,6 +715,42 @@ export async function registrarResultadoPartido(params: {
   return { success: true, ganadorId }
 }
 
+// Corrige el resultado de un partido ya resuelto (finalizado o walkover).
+// Convierte cualquier estado previo a "finalizado" con el nuevo marcador.
+export async function editarResultadoPartido(params: {
+  partidoId: string
+  setsA: number
+  setsB: number
+}) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { partidoId, setsA, setsB } = params
+  if (!esResultadoBo5Valido(setsA, setsB)) {
+    return { error: 'Marcador inválido. Resultados permitidos en Mejor de 5: 3-0, 3-1, 3-2, 0-3, 1-3, 2-3' }
+  }
+
+  const { data: partido } = await supabase
+    .from('liga_partidos')
+    .select('id, jugador_a_id, jugador_b_id, estado')
+    .eq('id', partidoId)
+    .single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (!['finalizado', 'walkover'].includes(partido.estado)) {
+    return { error: 'Solo se puede editar un resultado ya registrado' }
+  }
+
+  const ganadorId = determinarGanadorBo5(setsA, setsB, partido.jugador_a_id, partido.jugador_b_id)
+
+  const { error } = await (supabase as any)
+    .from('liga_partidos')
+    .update({ sets_a: setsA, sets_b: setsB, ganador_id: ganadorId, estado: 'finalizado', es_walkover: false })
+    .eq('id', partidoId)
+  if (error) return { error: 'No se pudo actualizar: ' + error.message }
+
+  return { success: true, ganadorId }
+}
+
 // ─── Partidos no jugados ───────────────────────────────────────────────────
 // Resolución obligatoria: Walkover (cuenta como victoria/derrota normal) o
 // reprogramación a Fecha 5 (sin puntos ni sets, queda "pendiente").
@@ -738,11 +774,15 @@ export async function registrarWalkover(params: { partidoId: string; ganadorId: 
     return { error: 'El ganador del walkover debe ser uno de los dos jugadores del partido' }
   }
 
-  const { error } = await supabase
+  // Guard atómico: solo escribe si sigue abierto (evita doble walkover concurrente)
+  const { data: actualizado, error } = await supabase
     .from('liga_partidos')
     .update({ ganador_id: ganadorId, estado: 'walkover', es_walkover: true, sets_a: null, sets_b: null })
     .eq('id', partidoId)
+    .not('estado', 'in', '("finalizado","walkover")')
+    .select('id')
   if (error) return { error: 'No se pudo registrar el walkover: ' + error.message }
+  if (!actualizado?.length) return { error: 'Este partido ya fue resuelto' }
 
   return { success: true, ganadorId }
 }
