@@ -1,6 +1,6 @@
 'use client'
 
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -33,6 +33,7 @@ export default function VivoTorneoPage() {
   const storeKey = `vivo:${codigo}`
 
   const [snap, setSnap] = useState<Snapshot | null>(null)
+  const claveSnapshot = useMemo(() => snap ? firmaSnapshotTorneoVivo(snap) : '', [snap])
   const [estado, setEstado] = useState<'cargando' | 'ok' | 'no-encontrado'>('cargando')
   // identidad del espectador: se guarda en localStorage por torneo
   const [yo, setYo] = useState<{ jugadorId: string | null; nombre: string } | null>(null)
@@ -48,20 +49,37 @@ export default function VivoTorneoPage() {
     if (!codigo || peticionEnCursoRef.current === codigo) return
     peticionEnCursoRef.current = codigo
     try {
-      const { data, error } = await supabase.rpc('torneo_publico', { p_codigo: codigo })
+      const leerSnapshot = async () => {
+        const { data, error } = await supabase.rpc('torneo_publico', { p_codigo: codigo })
+        if (error) return null
+        return normalizarSnapshotTorneoVivo(data)
+      }
+      let snapshot = await leerSnapshot()
       if (!activoRef.current || codigoActualRef.current !== codigo) return
-      const snapshot = normalizarSnapshotTorneoVivo(data)
-      if (error || !snapshot) {
+      if (!snapshot) {
         // Solo mostrar "no encontrado" en la carga inicial. Durante el polling
         // se conserva el último snapshot bueno ante cualquier error transitorio.
         if (!cargadoRef.current) setEstado('no-encontrado')
         return
       }
+
+      let firma = firmaSnapshotTorneoVivo(snapshot)
+      if (cargadoRef.current && firma !== firmaRef.current) {
+        // Marcar un ganador realiza varias escrituras consecutivas. Esperamos
+        // brevemente y confirmamos el snapshot para no pintar el instante
+        // intermedio entre el partido resuelto y la llave siguiente.
+        await new Promise(resolve => setTimeout(resolve, 350))
+        if (!activoRef.current || codigoActualRef.current !== codigo) return
+        const confirmado = await leerSnapshot()
+        if (!confirmado) return
+        snapshot = confirmado
+        firma = firmaSnapshotTorneoVivo(confirmado)
+      }
+
       cargadoRef.current = true
-      const firma = firmaSnapshotTorneoVivo(snapshot)
       if (firma !== firmaRef.current) {
         firmaRef.current = firma
-        startTransition(() => setSnap(snapshot))
+        setSnap(snapshot)
       }
       setEstado('ok')
     } catch {
@@ -137,7 +155,7 @@ export default function VivoTorneoPage() {
   if (paso === 'gate') return <Gate jugadores={snap.jugadores} onListo={guardarIdentidad} irCorreo={() => setPaso('correo')} />
   if (paso === 'correo') return <Correo codigo={codigo} onListo={guardarIdentidad} volver={() => setPaso('gate')} />
 
-  return <Vivo snap={snap} yo={yo} cambiar={() => { try { localStorage.removeItem(storeKey) } catch { /* noop */ }; setYo(null); setPaso('gate') }} />
+  return <Vivo key={claveSnapshot} snap={snap} yo={yo} cambiar={() => { try { localStorage.removeItem(storeKey) } catch { /* noop */ }; setYo(null); setPaso('gate') }} />
 }
 
 // ── Paso 1: ¿quién eres? — elegir nombre para seguir tus partidos ──

@@ -1,17 +1,19 @@
 'use client'
 
 import { useEffect } from 'react'
+import * as Sentry from '@sentry/nextjs'
 
 let ultimoReintentoAutomatico = 0
 
-export default function ErrorTorneoVivo({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function ErrorTorneoVivo({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
+    Sentry.captureException(error, { tags: { area: 'torneo-vivo' } })
     const ahora = Date.now()
     if (ahora - ultimoReintentoAutomatico < 15_000) return
     ultimoReintentoAutomatico = ahora
     const timer = setTimeout(reset, 400)
     return () => clearTimeout(timer)
-  }, [reset])
+  }, [error, reset])
 
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#a9bac8', padding: 20 }}>
