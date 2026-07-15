@@ -430,6 +430,42 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
         </div>
       </div>
 
+      {/* Partidos sin programar: tienen fecha_id asignada pero mesa/bloque nulos */}
+      {(() => {
+        const sinProgramar = partidosVisibles.filter(p => !p.mesaId || !p.bloqueHorario)
+        if (!sinProgramar.length) return null
+        return (
+          <div style={{ marginTop:16, ...card, padding:16 }}>
+            <div style={{ fontSize:13, fontWeight:600, color: muted, marginBottom:4 }}>
+              Sin programar ({sinProgramar.length})
+            </div>
+            <div style={{ fontSize:11, color: hint, marginBottom:10 }}>
+              {fecha.estado === 'programada' ? 'Arrastra un partido hacia una celda de la grilla para ubicarlo' : 'Partidos pendientes de ubicación'}
+            </div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+              {sinProgramar.map(partido => (
+                <div
+                  key={partido.id}
+                  draggable={fecha.estado === 'programada'}
+                  onDragStart={() => setDraggingId(partido.id)}
+                  onDragEnd={() => setDraggingId(null)}
+                  style={{
+                    borderRadius:8, border:'1px dashed #94a3b8', background:'#f8fafc', padding:'8px 12px',
+                    cursor: fecha.estado === 'programada' ? 'grab' : 'default',
+                    minWidth:170, opacity: draggingId === partido.id ? 0.4 : 1,
+                  }}
+                >
+                  <div style={{ fontSize:12, fontWeight:600, color: text }}>
+                    {nombres[partido.jugadorAId] ?? '—'} vs {nombres[partido.jugadorBId] ?? '—'}
+                  </div>
+                  <div style={{ fontSize:10, color: hint, marginTop:2 }}>{partido.divisionNombre}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Modal resultado */}
       {partidoResultado && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
@@ -471,7 +507,7 @@ export function TableroFecha({ fechaId, divisionId }: { fechaId: string; divisio
                   Walkover: gana {nombres[partidoResultado.jugadorBId] ?? 'Jugador B'}
                 </button>
                 <button disabled={guardandoAccion} onClick={handleReprogramar} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
-                  Reprogramar a Fecha 5
+                  Reprogramar a fecha de reajuste
                 </button>
               </div>
             </div>

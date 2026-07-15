@@ -356,6 +356,23 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     }
   }
 
+  // Asignar los partidos que no caben en fechas regulares a la fecha de reajuste
+  if (sinAsignarIds.length > 0) {
+    const { data: fechaAjuste } = await supabase
+      .from('liga_fechas')
+      .select('id')
+      .eq('liga_id', ligaId)
+      .eq('es_ajuste', true)
+      .single()
+
+    if (fechaAjuste) {
+      await supabase
+        .from('liga_partidos')
+        .update({ fecha_id: fechaAjuste.id, mesa_id: null, bloque_horario: null, arbitro_id: null })
+        .in('id', sinAsignarIds)
+    }
+  }
+
   return {
     success: true,
     totalProgramados: programadosExitosos,
