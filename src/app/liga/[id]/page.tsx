@@ -10,7 +10,7 @@ import {
   asignarJugadoresDivision, calcularDiffFixtureDivision,
   generarFixtureDivisionAction, generarProgramacionLiga, limpiarProgramacionLiga,
   iniciarFecha, crearJugadorExternoLiga,
-  terminarFechaAction, programarEnReajuste,
+  terminarFechaAction, programarEnReajuste, programarNuevosPartidosDivision,
 } from '@/app/actions/liga'
 import { registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
@@ -200,13 +200,25 @@ export default function LigaDetallePage() {
     const ids = divisionJugadores[division.id] || []
     setAplicandoDiff(true)
     const res = await asignarJugadoresDivision({ divisionId: division.id, jugadorIds: ids })
+    if (res.error) { setMensaje(res.error); setAplicandoDiff(false); return }
+
+    const partes: string[] = []
+    if (res.jugadoresAgregados) partes.push(`${res.jugadoresAgregados} jugador${res.jugadoresAgregados !== 1 ? 'es' : ''} agregado${res.jugadoresAgregados !== 1 ? 's' : ''}`)
+    if (res.jugadoresRemovidos) partes.push(`${res.jugadoresRemovidos} removido${res.jugadoresRemovidos !== 1 ? 's' : ''}`)
+    if (res.partidosAnulados) partes.push(`${res.partidosAnulados} partido${res.partidosAnulados !== 1 ? 's' : ''} anulado${res.partidosAnulados !== 1 ? 's' : ''}`)
+
+    // Nuevos partidos → programarlos automáticamente en los huecos reales de cada fecha
+    if ((res.partidosCreados ?? 0) > 0) {
+      const progRes = await programarNuevosPartidosDivision({ ligaId, divisionId: division.id })
+      if (progRes.error) {
+        partes.push(`${res.partidosCreados} partido${(res.partidosCreados ?? 0) !== 1 ? 's' : ''} creado${(res.partidosCreados ?? 0) !== 1 ? 's' : ''} (pendiente programar: ${progRes.error})`)
+      } else {
+        if (progRes.programados) partes.push(`${progRes.programados} partido${progRes.programados !== 1 ? 's' : ''} programado${progRes.programados !== 1 ? 's' : ''} en fechas`)
+        if ((progRes.enReajuste ?? 0) > 0) partes.push(`${progRes.enReajuste} pasan a fecha de ajuste`)
+      }
+    }
+
     setAplicandoDiff(false)
-    if (res.error) { setMensaje(res.error); return }
-    const partes = []
-    if (res.jugadoresAgregados) partes.push(`${res.jugadoresAgregados} jugadores agregados`)
-    if (res.jugadoresRemovidos) partes.push(`${res.jugadoresRemovidos} removidos`)
-    if (res.partidosCreados) partes.push(`${res.partidosCreados} partidos nuevos`)
-    if (res.partidosAnulados) partes.push(`${res.partidosAnulados} partidos anulados`)
     setMensaje(partes.length ? `Guardado — ${partes.join(', ')}` : 'Jugadores guardados')
     setDiffAbierto(false)
     cargar()

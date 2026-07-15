@@ -1053,6 +1053,116 @@ export async function asignarPartidoManual(params: {
   return { success: true }
 }
 
+// ─── Programar partidos sin fecha de una división (post add-jugador) ─────────
+// Busca los partidos con fecha_id=null de la división, verifica slot a slot
+// cuáles están libres en las fechas regulares (mesa sin ocupar + jugadores sin
+// conflicto) y los asigna. El sobrante va a la fecha de ajuste.
+// A diferencia de generarProgramacionLiga, conoce el ocupado real en BD antes
+// de asignar → nunca produce conflictos HC-01/HC-03.
+export async function programarNuevosPartidosDivision(params: { ligaId: string; divisionId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { ligaId, divisionId } = params
+  const db = supabase as any
+
+  const [
+    { data: ligaConfig },
+    { data: fechasReg },
+    { data: fechaAjuste },
+    { data: mesaRef },
+    { data: rawNuevos },
+  ] = await Promise.all([
+    db.from('ligas').select('bloque_minutos').eq('id', ligaId).single(),
+    supabase.from('liga_fechas').select('id, numero').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero'),
+    supabase.from('liga_fechas').select('id').eq('liga_id', ligaId).eq('es_ajuste', true).single(),
+    db.from('liga_partidos').select('mesa_id').eq('division_id', divisionId).not('mesa_id', 'is', null).limit(1).single(),
+    db.from('liga_partidos')
+      .select('id, jugador_a_id, jugador_b_id')
+      .eq('division_id', divisionId)
+      .is('fecha_id', null)
+      .is('deleted_at', null)
+      .not('estado', 'in', '("finalizado","walkover")'),
+  ])
+
+  if (!rawNuevos?.length) return { success: true, programados: 0, enReajuste: 0 }
+
+  const mesaId: string | null = mesaRef?.mesa_id ?? null
+  if (!mesaId) return { error: 'Esta división no tiene mesa asignada. Generá la programación general primero.' }
+
+  const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
+  const fechaIds = (fechasReg || []).map((f: { id: string }) => f.id)
+  if (!fechaIds.length) return { error: 'No hay fechas regulares configuradas' }
+
+  // Leer schedule actual de TODAS las fechas regulares para conocer ocupación real
+  const { data: existentes } = await db
+    .from('liga_partidos')
+    .select('fecha_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id')
+    .eq('liga_id', ligaId)
+    .in('fecha_id', fechaIds)
+    .not('bloque_horario', 'is', null)
+    .is('deleted_at', null)
+
+  // ocupadosMesa[fechaId] = set de bloques ya tomados en la mesa de esta división
+  // jugandoSlot[fechaId::bloque] = set de jugadores jugando en ese slot (toda la liga)
+  const ocupadosMesa = new Map<string, Set<string>>()
+  const jugandoSlot = new Map<string, Set<string>>()
+
+  for (const p of (existentes || []) as Array<{ fecha_id: string; mesa_id: string; bloque_horario: string; jugador_a_id: string; jugador_b_id: string }>) {
+    const bl = normalizarBloque(p.bloque_horario)
+    if (!bl) continue
+    if (p.mesa_id === mesaId) {
+      if (!ocupadosMesa.has(p.fecha_id)) ocupadosMesa.set(p.fecha_id, new Set())
+      ocupadosMesa.get(p.fecha_id)!.add(bl)
+    }
+    const slot = `${p.fecha_id}::${bl}`
+    if (!jugandoSlot.has(slot)) jugandoSlot.set(slot, new Set())
+    jugandoSlot.get(slot)!.add(p.jugador_a_id)
+    jugandoSlot.get(slot)!.add(p.jugador_b_id)
+  }
+
+  const nuevos = (rawNuevos || []) as Array<{ id: string; jugador_a_id: string; jugador_b_id: string }>
+  const aProgramar: Array<{ id: string; fechaId: string; bloqueHorario: string }> = []
+  const aReajusteIds: string[] = []
+
+  for (const m of nuevos) {
+    let asignado = false
+    outer: for (const fecha of (fechasReg || []) as Array<{ id: string; numero: number }>) {
+      const ocup = ocupadosMesa.get(fecha.id) ?? new Set<string>()
+      for (const bloque of bloques) {
+        if (ocup.has(bloque)) continue
+        const slot = `${fecha.id}::${bloque}`
+        const jugando = jugandoSlot.get(slot) ?? new Set<string>()
+        if (jugando.has(m.jugador_a_id) || jugando.has(m.jugador_b_id)) continue
+
+        aProgramar.push({ id: m.id, fechaId: fecha.id, bloqueHorario: bloque })
+        ocup.add(bloque)
+        ocupadosMesa.set(fecha.id, ocup)
+        const s2 = jugandoSlot.get(slot) ?? new Set<string>()
+        s2.add(m.jugador_a_id); s2.add(m.jugador_b_id)
+        jugandoSlot.set(slot, s2)
+        asignado = true
+        break outer
+      }
+    }
+    if (!asignado) aReajusteIds.push(m.id)
+  }
+
+  await Promise.all([
+    ...aProgramar.map(p =>
+      supabase.from('liga_partidos').update({
+        fecha_id: p.fechaId, mesa_id: mesaId, bloque_horario: p.bloqueHorario,
+      }).eq('id', p.id),
+    ),
+    ...(aReajusteIds.length > 0 && fechaAjuste
+      ? [supabase.from('liga_partidos').update({ fecha_id: fechaAjuste.id }).in('id', aReajusteIds)]
+      : []),
+  ])
+
+  return { success: true, programados: aProgramar.length, enReajuste: aReajusteIds.length }
+}
+
 // ─── Desprogramar un partido individual ───────────────────────────────────────
 export async function desprogramarPartido(params: { partidoId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
