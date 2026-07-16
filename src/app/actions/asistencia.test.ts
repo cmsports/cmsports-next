@@ -27,8 +27,6 @@ describe('asistencia entre roles', () => {
     expect(mocks.rpc).toHaveBeenCalledOnce()
     expect(mocks.rpc).toHaveBeenCalledWith('registrar_asistencia_segura', {
       p_jugador_id: 'jugador-1',
-      p_fecha: '2026-07-15',
-      p_hora: '18:30',
     })
   })
 

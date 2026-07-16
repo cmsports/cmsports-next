@@ -15,11 +15,12 @@ export async function registrarAsistenciaAction(
   if (clubId !== perfil.club_id) return { error: 'Acceso denegado' }
   if (!esStaff && jugadorId !== perfil.jugador_id) return { error: 'Acceso denegado' }
 
-  const { data, error } = await supabase.rpc('registrar_asistencia_segura', {
-    p_jugador_id: jugadorId,
-    p_fecha: fecha,
-    p_hora: hora,
-  })
+  // Para el jugador, PostgreSQL fija fecha y hora en America/Santiago.
+  // Así no dependemos del UTC ni del reloj configurado en su dispositivo.
+  const args = esStaff
+    ? { p_jugador_id: jugadorId, p_fecha: fecha, p_hora: hora }
+    : { p_jugador_id: jugadorId }
+  const { data, error } = await supabase.rpc('registrar_asistencia_segura', args)
   if (error) return { error: error.message }
 
   return { ok: true, asistenciaId: data as string }

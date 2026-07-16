@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -44,8 +45,8 @@ export default function PerfilPage() {
   const router = useRouter()
 
   const trimestre = `Q${Math.ceil((new Date().getMonth() + 1) / 3)}-${new Date().getFullYear()}`
-  const hoy = new Date().toISOString().slice(0, 10)
-  const hora = new Date().toTimeString().slice(0, 5)
+  const hoy = fechaChile()
+  const hora = horaChile()
 
   useEffect(() => {
     async function cargar() {

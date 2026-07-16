@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
 import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
+import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import {
   guardarJugadoresCache,
   obtenerJugadoresCache,
@@ -45,14 +46,14 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const [pendientesCount, setPendientesCount] = useState(0)
 
-  const [fechaVista, setFechaVista] = useState(() => new Date().toISOString().slice(0, 10))
+  const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
   const [cargandoDia, setCargandoDia] = useState(false)
 
   const router = useRouter()
   const online = useOnlineStatus()
-  const hoy = new Date().toISOString().slice(0, 10)
-  const hora = new Date().toTimeString().slice(0, 5)
+  const hoy = fechaChile()
+  const hora = horaChile()
   const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
