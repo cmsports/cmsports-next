@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck, Mail } from 'lucide-react'
+import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck, Mail, Trash2 } from 'lucide-react'
 import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
-import { crearClub, actualizarModulosClub } from '@/app/actions/superadmin'
+import { crearClub, actualizarModulosClub, eliminarClub } from '@/app/actions/superadmin'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { formatCLP } from '@/lib/domain/finanzas'
 import { Settings } from 'lucide-react'
@@ -43,6 +43,10 @@ export default function SuperadminPage() {
   const [errorModulos, setErrorModulos] = useState('')
   const [errorCrear, setErrorCrear] = useState('')
   const [mensajeExito, setMensajeExito] = useState('')
+  const [clubAEliminar, setClubAEliminar] = useState<{ id: string; nombre: string } | null>(null)
+  const [confirmacionEliminar, setConfirmacionEliminar] = useState('')
+  const [eliminando, setEliminando] = useState(false)
+  const [errorEliminar, setErrorEliminar] = useState('')
   const router = useRouter()
 
   async function handleCrearClub() {
@@ -65,7 +69,7 @@ export default function SuperadminPage() {
     setModalOpen(false)
     setForm({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '', adminNombre: '', adminEmail: '', passwordProvisoria: '' })
     setModulosForm([...TODOS_MODULOS])
-    setMensajeExito('Club creado y correo de bienvenida enviado al administrador.')
+    setMensajeExito('Club y cuenta administradora creados correctamente.')
     await recargar()
   }
 
@@ -100,6 +104,19 @@ export default function SuperadminPage() {
     await supabase.from('perfiles').update({ club_id: clubId }).eq('id', perfil.id)
     await refetchPerfil()
     router.push('/dashboard')
+  }
+
+  async function handleEliminarClub() {
+    if (!clubAEliminar || confirmacionEliminar !== clubAEliminar.nombre) return
+    setEliminando(true)
+    setErrorEliminar('')
+    const res = await eliminarClub({ clubId: clubAEliminar.id, confirmacion: confirmacionEliminar })
+    setEliminando(false)
+    if (res?.error) { setErrorEliminar(res.error); return }
+    setClubAEliminar(null)
+    setConfirmacionEliminar('')
+    setMensajeExito('Club, datos, archivos y cuentas asociadas eliminados.')
+    await recargar()
   }
 
   if (loading) return (
@@ -195,10 +212,39 @@ export default function SuperadminPage() {
               }}>
                 <Settings size={13} /> Módulos
               </button>
+              <button aria-label={`Eliminar ${c.nombre}`} title="Eliminar club" onClick={() => { setClubAEliminar({ id: c.id, nombre: c.nombre }); setConfirmacionEliminar(''); setErrorEliminar('') }} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 10px',
+                background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: 7, color: '#dc2626', cursor: 'pointer',
+              }}>
+                <Trash2 size={13} />
+              </button>
             </div>
           </div>
         ))}
       </div>
+
+      {clubAEliminar && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 12 }} onClick={() => !eliminando && setClubAEliminar(null)}>
+          <div style={{ ...card, padding: 20, width: 440, maxWidth: '100%' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: '#991b1b', marginBottom: 8 }}>Eliminar club definitivamente</h2>
+            <p style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginBottom: 12 }}>
+              Se borrarán todos los jugadores, profesores, torneos, pagos, archivos y cuentas de acceso asociadas. Esta acción no se puede deshacer.
+            </p>
+            <label style={{ display: 'block', fontSize: 12, color: '#334155', marginBottom: 5 }}>
+              Escribe <strong>{clubAEliminar.nombre}</strong> para confirmar:
+            </label>
+            <input autoFocus value={confirmacionEliminar} onChange={e => setConfirmacionEliminar(e.target.value)} disabled={eliminando}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '9px 10px', border: '1px solid #cbd5e1', borderRadius: 7, fontSize: 13 }} />
+            {errorEliminar && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 8 }}>{errorEliminar}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button onClick={() => setClubAEliminar(null)} disabled={eliminando} style={{ padding: '8px 13px', border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={handleEliminarClub} disabled={eliminando || confirmacionEliminar !== clubAEliminar.nombre} style={{ padding: '8px 13px', border: 'none', borderRadius: 7, background: '#dc2626', color: '#fff', fontWeight: 600, cursor: 'pointer', opacity: eliminando || confirmacionEliminar !== clubAEliminar.nombre ? 0.5 : 1 }}>
+                {eliminando ? 'Eliminando...' : 'Eliminar definitivamente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalOpen && (
         <div style={{

@@ -80,6 +80,58 @@ export async function crearClub(input: {
   return { success: true }
 }
 
+async function eliminarCarpetaClub(admin: ReturnType<typeof createAdminClient>, bucket: string, clubId: string) {
+  while (true) {
+    const { data, error } = await admin.storage.from(bucket).list(clubId, { limit: 100 })
+    if (error) return error
+    const archivos = (data || []).filter(item => item.id).map(item => `${clubId}/${item.name}`)
+    if (!archivos.length) return null
+    const { error: removeError } = await admin.storage.from(bucket).remove(archivos)
+    if (removeError) return removeError
+  }
+}
+
+export async function eliminarClub(input: { clubId: string; confirmacion: string }) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  if (!z.string().uuid().safeParse(input.clubId).success) return { error: 'Club inválido' }
+
+  const { data: club, error: clubError } = await supabase.from('clubes')
+    .select('id,nombre').eq('id', input.clubId).single()
+  if (clubError || !club) return { error: 'Club no encontrado' }
+  if (input.confirmacion.trim() !== club.nombre) return { error: 'El nombre de confirmación no coincide' }
+
+  const admin = createAdminClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: perfiles, error: perfilesError } = await admin.from('perfiles')
+    .select('id').eq('club_id', club.id)
+  if (perfilesError) return { error: 'No se pudieron identificar las cuentas del club' }
+  const cuentas = (perfiles || []).map(perfil => perfil.id).filter(id => id !== user?.id)
+
+  if (user?.id) {
+    const { error } = await admin.from('perfiles').update({ club_id: null }).eq('id', user.id).eq('rol', 'superadmin')
+    if (error) return { error: 'No se pudo liberar el acceso del superadmin' }
+  }
+
+  for (const bucket of ['flyer-referencias', 'galeria-fotos']) {
+    const error = await eliminarCarpetaClub(admin, bucket, club.id)
+    if (error) return { error: `No se pudieron eliminar los archivos del club: ${error.message}` }
+  }
+
+  const { error: deleteError } = await admin.from('clubes').delete().eq('id', club.id)
+  if (deleteError) return { error: `No se pudo eliminar el club: ${deleteError.message}` }
+
+  let cuentasFallidas = 0
+  for (const cuentaId of cuentas) {
+    const { error } = await admin.auth.admin.deleteUser(cuentaId)
+    if (error) cuentasFallidas++
+  }
+  if (cuentasFallidas) return { error: `El club fue eliminado, pero ${cuentasFallidas} cuenta(s) asociada(s) no pudieron borrarse` }
+
+  revalidatePath('/superadmin')
+  return { success: true }
+}
+
 export async function actualizarModulosClub(input: { clubId: string; modulos: string[] }) {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }

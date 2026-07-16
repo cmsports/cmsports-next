@@ -19,29 +19,35 @@ export async function crearJugador(params: {
   if (authErr) return { error: authErr }
 
   const { nombre, rut, email, password, telefono, ...planFields } = params
-  if (!email.trim()) return { error: 'El email es obligatorio' }
+  const emailNormalizado = email.trim().toLowerCase()
+  if (!emailNormalizado) return { error: 'El email es obligatorio' }
   if (password.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
 
   const { data: nuevoJugador, error } = await supabase.from('jugadores').insert({
-    club_id: clubId, nombre: nombre.trim(), rut: rut || null, email: email.trim(), telefono: telefono || null,
+    club_id: clubId, nombre: nombre.trim(), rut: rut || null, email: emailNormalizado, telefono: telefono || null,
     ...planFields, sesiones_usadas: 0, estado: 'activo', es_externo: false,
   }).select().single()
   if (error || !nuevoJugador) return { error: 'Error al crear: ' + error?.message }
 
   const admin = createAdminClient()
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
-    email: email.trim(), password, email_confirm: true,
+    email: emailNormalizado, password, email_confirm: true,
   })
   if (createError || !creado?.user) {
-    return { success: true, cuentaError: createError?.message || 'No se pudo crear la cuenta de acceso' }
+    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    return { error: createError?.message?.toLowerCase().includes('already')
+      ? 'Ese email ya tiene una cuenta'
+      : 'No se pudo crear la cuenta de acceso' }
   }
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
-    id: creado.user.id, club_id: clubId, nombre: nombre.trim(), email: email.trim(),
+    id: creado.user.id, club_id: clubId, nombre: nombre.trim(), email: emailNormalizado,
     rol: 'jugador', jugador_id: nuevoJugador.id,
   })
   if (perfilError) {
-    return { success: true, cuentaError: 'Cuenta creada pero falló crear el perfil: ' + perfilError.message }
+    await admin.auth.admin.deleteUser(creado.user.id)
+    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    return { error: 'No se pudo vincular la cuenta del jugador' }
   }
 
   return { success: true }

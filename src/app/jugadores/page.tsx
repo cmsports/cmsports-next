@@ -124,8 +124,7 @@ export default function JugadoresPage() {
     } else {
       const res = await crearJugador({ nombre: form.nombre, rut: form.rut, email: form.email, password: form.password, telefono: form.telefono, ...planFields })
       if (res.error) { mostrarToast(res.error); setGuardando(false); return }
-      if (res.cuentaError) mostrarToast('Jugador creado, pero falló la cuenta de acceso: ' + res.cuentaError)
-      else mostrarToast('Jugador creado exitosamente, ya puede iniciar sesión')
+      mostrarToast('Jugador creado exitosamente, ya puede iniciar sesión')
     }
 
     setGuardando(false)
