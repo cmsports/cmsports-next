@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { registrarAsistenciaAction } from '@/app/actions/asistencia'
-import { confirmarFeedbackAction } from '@/app/actions/feedback'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
@@ -297,15 +296,20 @@ export default function PerfilPage() {
     const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
     if (!evalActual) return
     setAceptandoCompromiso(true)
-    const resultado = await confirmarFeedbackAction({ evaluacionId: evalActual.id })
-    if (resultado.error) {
-      setMensaje({ tipo: 'error', texto: resultado.error })
+    setMensaje(null)
+    try {
+      const { error } = await supabase.rpc('confirmar_feedback_jugador', { p_evaluacion_id: evalActual.id })
+      if (error) {
+        setMensaje({ tipo: 'error', texto: `No se pudo aceptar el compromiso: ${error.message}` })
+        return
+      }
+      setEvaluaciones(prev => prev.map(ev => ev.id === evalActual.id ? { ...ev, firmado_alumno: true } : ev))
+      setMensaje({ tipo: 'ok', texto: 'Compromiso aceptado correctamente' })
+    } catch {
+      setMensaje({ tipo: 'error', texto: 'Ocurrió un error al aceptar el compromiso. Intenta nuevamente.' })
+    } finally {
       setAceptandoCompromiso(false)
-      return
     }
-    const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugador.id).order('creado_en', { ascending: false }).limit(2)
-    setEvaluaciones(evs || [])
-    setAceptandoCompromiso(false)
   }
 
   async function enviarFelicitaciones() {
