@@ -13,6 +13,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { Download } from 'lucide-react'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip)
 
@@ -113,8 +114,8 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
   const activosCount = jugadoresActivos.length
 
   const dias = useMemo(() => {
-    const hoy = new Date().toISOString().slice(0, 10)
-    const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
+    const hoy = fechaChile()
+    const inicioMes = `${hoy.slice(0, 7)}-01`
     const fechas = new Set([
       ...diasEntrenamiento.filter(fecha => fecha >= inicioMes && fecha <= hoy),
       ...filas.filter(f => f.fecha >= inicioMes && f.fecha <= hoy).map(f => f.fecha),
@@ -143,7 +144,7 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
   const deltaPromedio = puntos.length > 1 ? Math.round((puntos[puntos.length - 1].valor - puntos[puntos.length - 2].valor) * 10) / 10 : 0
 
   const diaMasVisitado = useMemo(() => {
-    const inicioMesStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
+    const inicioMesStr = `${fechaChile().slice(0, 7)}-01`
     const porDiaSemana: Record<number, number> = {}
     filas.filter(f => f.fecha >= inicioMesStr).forEach(f => { const ds = f.date.getDay(); porDiaSemana[ds] = (porDiaSemana[ds] || 0) + 1 })
     let maxDia = -1, maxCount = 0
@@ -158,7 +159,7 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
   }, [filas, jugadoresActivos])
 
   const sinAsistenciaMes = useMemo(() => {
-    const inicioMesStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
+    const inicioMesStr = `${fechaChile().slice(0, 7)}-01`
     const presentes = new Set(filas.filter(f => f.fecha >= inicioMesStr).map(f => f.jugador_id))
     return jugadoresActivos.filter(j => !presentes.has(j.id))
   }, [filas, jugadoresActivos])
