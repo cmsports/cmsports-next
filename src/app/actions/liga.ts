@@ -683,12 +683,19 @@ export async function iniciarFecha(params: { fechaId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { data: fecha } = await supabase.from('liga_fechas').select('id, estado').eq('id', params.fechaId).single()
+  const { data: fecha } = await supabase.from('liga_fechas').select('id, liga_id, estado').eq('id', params.fechaId).single()
   if (!fecha) return { error: 'Fecha no encontrada' }
   if (fecha.estado !== 'programada') return { error: 'Solo se puede iniciar una fecha que esté en estado "Programada"' }
 
   const { error } = await supabase.from('liga_fechas').update({ estado: 'en_juego' }).eq('id', params.fechaId)
   if (error) return { error: 'No se pudo iniciar la fecha: ' + error.message }
+
+  // Primera fecha iniciada → liga pasa a "en_curso" (solo si sigue en planificación)
+  await (supabase as any)
+    .from('ligas')
+    .update({ estado: 'en_curso' })
+    .eq('id', fecha.liga_id)
+    .eq('estado', 'planificacion')
 
   return { success: true }
 }
@@ -839,7 +846,7 @@ export async function reprogramarPartidoAFecha5(params: { partidoId: string }) {
 // Marca la fecha como "finalizada". Si tras esto todas las fechas regulares
 // están terminadas, devuelve todasTerminadas=true para que el cliente
 // dispare programarEnReajuste automáticamente.
-export async function terminarFechaAction(params: { fechaId: string }) {
+export async function terminarFechaAction(params: { fechaId: string; forzar?: boolean }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
@@ -849,13 +856,29 @@ export async function terminarFechaAction(params: { fechaId: string }) {
     .eq('id', params.fechaId)
     .single()
   if (!fecha) return { error: 'Fecha no encontrada' }
-  if (fecha.es_ajuste) return { error: 'La fecha de reajuste no se puede terminar manualmente' }
+
+  // Validar partidos pendientes (a menos que el usuario haya confirmado forzar)
+  if (!params.forzar) {
+    const { count } = await (supabase as any)
+      .from('liga_partidos')
+      .select('id', { count: 'exact', head: true })
+      .eq('fecha_id', params.fechaId)
+      .not('estado', 'in', '("finalizado","walkover","anulado")')
+      .is('deleted_at', null)
+    if ((count ?? 0) > 0) return { pendientes: count as number }
+  }
 
   const { error } = await supabase
     .from('liga_fechas')
     .update({ estado: 'finalizada' })
     .eq('id', params.fechaId)
   if (error) return { error: 'No se pudo terminar la fecha: ' + error.message }
+
+  // Fecha de reajuste: cierra la liga completa
+  if (fecha.es_ajuste) {
+    await supabase.from('ligas').update({ estado: 'finalizada' }).eq('id', fecha.liga_id)
+    return { success: true, todasTerminadas: false, ligaFinalizada: true, ligaId: fecha.liga_id }
+  }
 
   // Verificar si todas las fechas regulares quedaron finalizadas
   const { data: regularFechas } = await supabase
@@ -866,7 +889,7 @@ export async function terminarFechaAction(params: { fechaId: string }) {
 
   const todasTerminadas = (regularFechas || []).every(f => f.estado === 'finalizada')
 
-  return { success: true, todasTerminadas, ligaId: fecha.liga_id }
+  return { success: true, todasTerminadas, ligaFinalizada: false, ligaId: fecha.liga_id }
 }
 
 // ─── Programar partidos no jugados en la fecha de reajuste ───────────────────

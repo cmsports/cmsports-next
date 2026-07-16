@@ -7,6 +7,22 @@ import { generarBloquesHorario, normalizarBloque, BLOQUE_INICIO, BLOQUE_FIN } fr
 
 const supabase = createClient()
 
+const AVATAR_BG = [
+  ['#6366f1','#818cf8'],['#8b5cf6','#a78bfa'],['#ec4899','#f472b6'],
+  ['#ef4444','#f87171'],['#f97316','#fb923c'],['#f59e0b','#fbbf24'],
+  ['#10b981','#34d399'],['#06b6d4','#22d3ee'],['#3b82f6','#60a5fa'],
+  ['#84cc16','#a3e635'],
+]
+function avatarBg(name: string) {
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
+  const [c1, c2] = AVATAR_BG[Math.abs(h) % AVATAR_BG.length]
+  return `linear-gradient(135deg, ${c1}, ${c2})`
+}
+function initials(name: string) {
+  const p = name.trim().split(/\s+/)
+  return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
+}
+
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
@@ -184,67 +200,121 @@ export function FixtureDivision({
   )
 
   const jugados = partidos.filter(p => p.estado === 'finalizado' || p.estado === 'walkover').length
+  const progPct = partidos.length > 0 ? Math.round((jugados / partidos.length) * 100) : 0
 
   return (
     <div style={{ marginTop:20, borderTop:'1px solid #e2e8f0', paddingTop:16 }}>
+      {/* Error pill */}
       {errorMsg && (
-        <div onClick={() => setErrorMsg('')} style={{ background:'#fff1f2', color:'#e11d48', borderRadius:8, padding:'8px 12px', fontSize:12, marginBottom:10, cursor:'pointer' }}>
-          {errorMsg}
+        <div
+          onClick={() => setErrorMsg('')}
+          style={{
+            background:'#fff1f2', color:'#e11d48',
+            borderRadius:99, padding:'7px 14px',
+            fontSize:12, marginBottom:12, cursor:'pointer',
+            display:'inline-flex', alignItems:'center', gap:6,
+            border:'1px solid #fecdd3', fontWeight:500,
+          }}
+        >
+          ⚠️ {errorMsg}
         </div>
       )}
 
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-        <div style={{ fontSize:12, fontWeight:600, color:muted }}>Calendario completo — {partidos.length} partidos</div>
-        <div style={{ fontSize:11, color:hint }}>{jugados} / {partidos.length} jugados</div>
+      {/* Header con barra de progreso */}
+      <div style={{ marginBottom:14 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:7 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:muted }}>
+            Calendario completo — {partidos.length} partidos
+          </div>
+          <div style={{
+            fontSize:12, fontWeight:700,
+            color: jugados === partidos.length ? '#059669' : muted,
+          }}>
+            {jugados} / {partidos.length} jugados
+          </div>
+        </div>
+        <div style={{ height:6, background:'#e2e8f0', borderRadius:99, overflow:'hidden' }}>
+          <div style={{
+            height:'100%',
+            width:`${progPct}%`,
+            background:'linear-gradient(90deg,#6366f1,#10b981)',
+            borderRadius:99,
+            transition:'width 0.4s ease',
+          }} />
+        </div>
       </div>
 
-      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
         {partidos.map(p => {
           const jugado = p.estado === 'finalizado' || p.estado === 'walkover'
+          const esWalkover = p.estado === 'walkover'
           const nombreA = nombres[p.jugadorAId] ?? '—'
           const nombreB = nombres[p.jugadorBId] ?? '—'
           const ganadorNombre = p.ganadorId ? (nombres[p.ganadorId] ?? '').split(' ')[0] : null
           const resStr = jugado && p.setsA !== null && p.setsB !== null
             ? `${p.setsA}–${p.setsB}`
             : p.estado === 'walkover' ? 'W/O' : null
-          const fechaLabel = p.fechaNumero != null
-            ? `F${p.fechaNumero}${p.bloqueHorario ? ` · ${p.bloqueHorario}` : ''}`
-            : 'Sin fecha'
           const fSelActual = selFecha[p.id] ?? ''
           const bSelActual = selBloque[p.id] ?? ''
+
+          const borderColor = jugado
+            ? esWalkover ? '#f59e0b' : '#10b981'
+            : '#e2e8f0'
+          const cardBg = jugado
+            ? esWalkover ? '#fffbeb' : '#f0fdf4'
+            : '#ffffff'
 
           return (
             <div
               key={p.id}
               style={{
-                borderRadius:8, fontSize:12,
-                background: jugado ? '#f0fdf4' : '#f8fafc',
-                border: `1px solid ${jugado ? '#bbf7d0' : '#e2e8f0'}`,
+                borderRadius:10,
+                background: cardBg,
+                border:`1px solid ${borderColor}`,
+                borderLeft:`4px solid ${borderColor}`,
+                overflow:'hidden',
+                fontSize:12,
               }}
             >
               {/* Fila principal */}
-              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 12px' }}>
-                <span style={{ width:90, flexShrink:0, fontWeight:600, color: p.fechaId ? muted : hint, fontSize:11, whiteSpace:'nowrap' }}>
-                  {fechaLabel}
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 12px' }}>
+                {/* Chip de fecha */}
+                <span style={{
+                  flexShrink:0,
+                  background: p.fechaId ? '#6366f1' : '#94a3b8',
+                  color:'white',
+                  borderRadius:99, padding:'2px 9px',
+                  fontSize:10, fontWeight:700,
+                  whiteSpace:'nowrap', letterSpacing:'0.3px',
+                }}>
+                  {p.fechaNumero != null
+                    ? `F${p.fechaNumero}${p.bloqueHorario ? ` · ${p.bloqueHorario}` : ''}`
+                    : 'Sin fecha'}
                 </span>
+
+                {/* Jugadores */}
                 <span style={{ flex:1, color:text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                   <span style={{ fontWeight: p.ganadorId === p.jugadorAId ? 700 : 400 }}>{nombreA}</span>
-                  <span style={{ color:hint, margin:'0 5px' }}>{jugado ? 'contra' : 'vs'}</span>
+                  <span style={{ color:hint, margin:'0 6px' }}>vs</span>
                   <span style={{ fontWeight: p.ganadorId === p.jugadorBId ? 700 : 400 }}>{nombreB}</span>
                 </span>
 
+                {/* Resultado o selector */}
                 {jugado ? (
                   <button
                     onClick={() => abrirEdicion(p)}
                     title="Clic para ver / editar resultado"
                     style={{
-                      flexShrink:0, fontWeight:700, color:'#16a34a', fontVariantNumeric:'tabular-nums',
-                      background:'transparent', border:'none', cursor:'pointer', padding:'2px 4px',
-                      fontSize:12, display:'flex', alignItems:'center', gap:4,
+                      flexShrink:0, fontWeight:700,
+                      background:'#dcfce7', color:'#15803d',
+                      border:'1px solid #86efac',
+                      borderRadius:8, cursor:'pointer',
+                      padding:'4px 10px', fontSize:12,
+                      display:'flex', alignItems:'center', gap:5,
                     }}
                   >
-                    {resStr}{ganadorNombre ? ` (${ganadorNombre})` : ''}
-                    <span style={{ fontSize:10, color:hint, fontWeight:400 }}>✎</span>
+                    <span>{resStr}{ganadorNombre ? ` (${ganadorNombre})` : ''}</span>
+                    <span style={{ fontSize:10, color:'#4ade80' }}>✎</span>
                   </button>
                 ) : (
                   <div style={{ display:'flex', gap:5, alignItems:'center', flexShrink:0 }}>
@@ -260,13 +330,13 @@ export function FixtureDivision({
                       onClick={() => handleGuardar(p)}
                       disabled={!resultados[p.id] || guardandoId === p.id}
                       style={{
-                        background: resultados[p.id] ? '#16a34a' : '#e2e8f0',
+                        background: resultados[p.id] ? '#10b981' : '#e2e8f0',
                         color: resultados[p.id] ? 'white' : hint,
-                        border:'none', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:600,
+                        border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:700,
                         cursor: resultados[p.id] ? 'pointer' : 'default',
                       }}
                     >
-                      {guardandoId === p.id ? '...' : 'OK'}
+                      {guardandoId === p.id ? '...' : '✓ OK'}
                     </button>
                   </div>
                 )}
@@ -274,7 +344,11 @@ export function FixtureDivision({
 
               {/* Sub-fila de programación (solo partidos no jugados) */}
               {!jugado && (
-                <div style={{ display:'flex', gap:6, padding:'0 12px 8px', alignItems:'center', flexWrap:'wrap' }}>
+                <div style={{
+                  display:'flex', gap:5, padding:'6px 12px 9px',
+                  alignItems:'center', flexWrap:'wrap',
+                  borderTop:'1px solid #f1f5f9',
+                }}>
                   <select
                     value={fSelActual}
                     onChange={e => { setSelFecha(prev => ({ ...prev, [p.id]: e.target.value })); setSelBloque(prev => ({ ...prev, [p.id]: '' })) }}
@@ -302,20 +376,24 @@ export function FixtureDivision({
                     onClick={() => handleAsignar(p)}
                     disabled={!fSelActual || !bSelActual || asignandoId === p.id}
                     style={{
-                      background: fSelActual && bSelActual ? '#4f46e5' : '#e2e8f0',
+                      background: fSelActual && bSelActual ? '#6366f1' : '#e2e8f0',
                       color: fSelActual && bSelActual ? 'white' : hint,
-                      border:'none', borderRadius:6, padding:'3px 10px', fontSize:11, fontWeight:600,
+                      border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, fontWeight:600,
                       cursor: fSelActual && bSelActual ? 'pointer' : 'default',
                     }}
                   >
-                    {asignandoId === p.id ? '...' : 'Asignar'}
+                    {asignandoId === p.id ? '...' : '📅 Asignar'}
                   </button>
 
                   {p.fechaId && (
                     <button
                       onClick={() => handleDesprogramar(p)}
                       disabled={desprogramandoId === p.id}
-                      style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:6, padding:'3px 10px', fontSize:11, color:'#dc2626', cursor:'pointer' }}
+                      style={{
+                        background:'transparent', border:'1px solid #fecaca',
+                        borderRadius:6, padding:'4px 10px', fontSize:11,
+                        color:'#dc2626', cursor:'pointer', fontWeight:500,
+                      }}
                     >
                       {desprogramandoId === p.id ? '...' : '× Desprogramar'}
                     </button>
@@ -329,66 +407,86 @@ export function FixtureDivision({
 
       {/* Modal editar resultado */}
       {editando && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}
-          onClick={e => { if (e.target === e.currentTarget) setEditando(null) }}>
-          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:400, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
-            <div style={{ fontSize:15, fontWeight:700, color:text, marginBottom:4 }}>Editar resultado</div>
-
-            <div style={{ fontSize:12, color:muted, marginBottom:14 }}>
-              {editando.divisionNombre}
-              {editando.fechaNumero != null && (
-                <span> · F{editando.fechaNumero}{editando.bloqueHorario ? ` · ${editando.bloqueHorario}` : ''}</span>
-              )}
-            </div>
-
-            <div style={{ fontWeight:600, color:text, marginBottom:16, fontSize:14 }}>
-              {nombres[editando.jugadorAId] ?? '—'}
-              <span style={{ color:hint, fontWeight:400, margin:'0 8px' }}>vs</span>
-              {nombres[editando.jugadorBId] ?? '—'}
-            </div>
-
-            {/* resultado actual */}
-            <div style={{ background:'#f4f7fa', borderRadius:10, padding:'10px 14px', fontSize:12, color:muted, marginBottom:18 }}>
-              Resultado actual:{' '}
-              <strong style={{ color:text }}>
-                {editando.estado === 'walkover'
-                  ? `Walkover → gana ${editando.ganadorId ? (nombres[editando.ganadorId] ?? '—') : '—'}`
-                  : editando.setsA !== null
-                  ? `${editando.setsA}–${editando.setsB} (gana ${editando.ganadorId ? (nombres[editando.ganadorId] ?? '—') : '—'})`
-                  : 'Sin resultado'}
-              </strong>
-            </div>
-
-            <div style={{ marginBottom:20 }}>
-              <label style={{ fontSize:12, color:muted, display:'block', marginBottom:6 }}>Nuevo resultado</label>
-              <select
-                value={editRes}
-                onChange={e => setEditRes(e.target.value)}
-                style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color:text, fontSize:14, outline:'none' }}
-              >
-                {RESULTADOS_BO5.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <div style={{ fontSize:11, color:hint, marginTop:6 }}>
-                {(() => {
-                  const [sA, sB] = editRes.split('-').map(Number)
-                  const ganId = sA > sB ? editando.jugadorAId : editando.jugadorBId
-                  return `Gana: ${nombres[ganId] ?? '—'}`
-                })()}
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}
+          onClick={e => { if (e.target === e.currentTarget) setEditando(null) }}
+        >
+          <div style={{
+            background:'#fff', borderRadius:18,
+            width:'100%', maxWidth:400,
+            boxShadow:'0 16px 48px rgba(15,23,42,0.22)',
+            overflow:'hidden',
+          }}>
+            {/* Header con gradiente */}
+            <div style={{ background:'linear-gradient(135deg,#4f46e5,#7c3aed)', padding:'20px 24px 18px' }}>
+              <div style={{ fontSize:12, color:'rgba(255,255,255,0.65)', marginBottom:4 }}>
+                {editando.divisionNombre}
+                {editando.fechaNumero != null && (
+                  <span> · F{editando.fechaNumero}{editando.bloqueHorario ? ` · ${editando.bloqueHorario}` : ''}</span>
+                )}
+              </div>
+              <div style={{ fontSize:16, fontWeight:700, color:'white', marginBottom:8 }}>
+                ✏️ Editar resultado
+              </div>
+              <div style={{ fontSize:13, color:'rgba(255,255,255,0.9)', fontWeight:600 }}>
+                {nombres[editando.jugadorAId] ?? '—'}
+                <span style={{ opacity:0.55, fontWeight:400, margin:'0 8px' }}>vs</span>
+                {nombres[editando.jugadorBId] ?? '—'}
               </div>
             </div>
 
-            <div style={{ display:'flex', gap:10 }}>
-              <button
-                onClick={() => setEditando(null)}
-                style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color:muted, fontSize:14, cursor:'pointer' }}>
-                Cancelar
-              </button>
-              <button
-                onClick={handleEditarResultado}
-                disabled={guardandoEdit}
-                style={{ flex:1, padding:11, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer', opacity: guardandoEdit ? 0.6 : 1 }}>
-                {guardandoEdit ? 'Guardando...' : 'Guardar cambio'}
-              </button>
+            <div style={{ padding:'20px 24px' }}>
+              {/* Resultado actual */}
+              <div style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px', fontSize:12, color:muted, marginBottom:18 }}>
+                Resultado actual:{' '}
+                <strong style={{ color:text }}>
+                  {editando.estado === 'walkover'
+                    ? `Walkover → gana ${editando.ganadorId ? (nombres[editando.ganadorId] ?? '—') : '—'}`
+                    : editando.setsA !== null
+                    ? `${editando.setsA}–${editando.setsB} (gana ${editando.ganadorId ? (nombres[editando.ganadorId] ?? '—') : '—'})`
+                    : 'Sin resultado'}
+                </strong>
+              </div>
+
+              <div style={{ marginBottom:20 }}>
+                <label style={{ fontSize:12, color:muted, display:'block', marginBottom:6 }}>Nuevo resultado</label>
+                <select
+                  value={editRes}
+                  onChange={e => setEditRes(e.target.value)}
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color:text, fontSize:14, outline:'none' }}
+                >
+                  {RESULTADOS_BO5.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <div style={{ fontSize:11, color:hint, marginTop:6 }}>
+                  {(() => {
+                    const [sA, sB] = editRes.split('-').map(Number)
+                    const ganId = sA > sB ? editando.jugadorAId : editando.jugadorBId
+                    return `Gana: ${nombres[ganId] ?? '—'}`
+                  })()}
+                </div>
+              </div>
+
+              <div style={{ display:'flex', gap:10 }}>
+                <button
+                  onClick={() => setEditando(null)}
+                  style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color:muted, fontSize:14, cursor:'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleEditarResultado}
+                  disabled={guardandoEdit}
+                  style={{
+                    flex:1, padding:11,
+                    background:'linear-gradient(135deg,#4f46e5,#7c3aed)',
+                    border:'none', borderRadius:8, color:'white',
+                    fontSize:14, fontWeight:600, cursor:'pointer',
+                    opacity: guardandoEdit ? 0.6 : 1,
+                  }}
+                >
+                  {guardandoEdit ? 'Guardando...' : 'Guardar cambio'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

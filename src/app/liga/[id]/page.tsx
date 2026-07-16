@@ -16,21 +16,42 @@ import { registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
-import type { DiffDivision } from '@/lib/domain/liga'
+import { calcularRankingDivision } from '@/lib/domain/liga'
+import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/liga'
 
 const supabase = createClient()
 
-const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, boxShadow: '0 4px 20px rgba(15,23,42,0.10)' } as const
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
 const inputStyle = { background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' } as const
 
+const AVATAR_BG_D = [
+  ['#6366f1','#818cf8'],['#8b5cf6','#a78bfa'],['#ec4899','#f472b6'],
+  ['#ef4444','#f87171'],['#f97316','#fb923c'],['#f59e0b','#fbbf24'],
+  ['#10b981','#34d399'],['#06b6d4','#22d3ee'],['#3b82f6','#60a5fa'],
+  ['#84cc16','#a3e635'],
+]
+function avatarBgD(name: string) {
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
+  const [c1, c2] = AVATAR_BG_D[Math.abs(h) % AVATAR_BG_D.length]
+  return `linear-gradient(135deg, ${c1}, ${c2})`
+}
+function initialsD(name: string) {
+  const p = name.trim().split(/\s+/)
+  return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
+}
+
+// Color de acento por división (cycling)
+const DIV_ACCENT = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f43f5e','#84cc16']
+
 interface Division { id: string; nombre: string; orden: number; fixture_generado: boolean; capacidad_max: number | null }
 interface Fecha { id: string; numero: number; es_ajuste: boolean; estado: string }
 interface Jugador { id: string; nombre: string; es_externo: boolean | null }
 interface PagoResumen { id: string; monto_total: number; monto_pagado: number; estado: string }
+interface PodioDivision { id: string; nombre: string; top4: Array<{ pos: number; jugadorId: string; pts: number; pg: number }> }
 
 type SubTab = 'jugadores' | 'programacion' | 'ranking'
 
@@ -77,6 +98,11 @@ export default function LigaDetallePage() {
   const [editandoCupo, setEditandoCupo] = useState(false)
   const [nuevoCupo, setNuevoCupo] = useState('')
   const [guardandoCupo, setGuardandoCupo] = useState(false)
+
+  const [podioAbierto, setPodioAbierto] = useState(false)
+  const [podioDivisiones, setPodioDivisiones] = useState<PodioDivision[]>([])
+  const [loadingPodio, setLoadingPodio] = useState(false)
+  const [confirmPendientes, setConfirmPendientes] = useState<{ fechaId: string; cantidad: number } | null>(null)
 
   const [pagoModalAbierto, setPagoModalAbierto] = useState(false)
   const [jugadorPagando, setJugadorPagando] = useState<Jugador | null>(null)
@@ -134,6 +160,46 @@ export default function LigaDetallePage() {
   }, [divisionActiva, cargarPagos])
 
   useEffect(() => { setEditandoCupo(false) }, [divisionActiva])
+
+  useEffect(() => {
+    if (!podioAbierto) return
+    setLoadingPodio(true)
+    setPodioDivisiones([])
+    const db = supabase as any
+    Promise.all(
+      divisiones.map(async (div) => {
+        const [{ data: dj }, { data: rawPartidos }] = await Promise.all([
+          supabase.from('liga_division_jugadores').select('jugador_id').eq('division_id', div.id),
+          db.from('liga_partidos')
+            .select('jugador_a_id, jugador_b_id, ganador_id, es_walkover, sets_a, sets_b')
+            .eq('division_id', div.id)
+            .in('estado', ['finalizado', 'walkover'])
+            .is('deleted_at', null),
+        ])
+        const jugIds = (dj || []).map((j: { jugador_id: string }) => j.jugador_id)
+        const partidos: PartidoFinalizado[] = (rawPartidos || [])
+          .filter((p: any) => p.ganador_id)
+          .map((p: any) => ({
+            jugadorAId: p.jugador_a_id,
+            jugadorBId: p.jugador_b_id,
+            ganadorId: p.ganador_id,
+            esWalkover: p.es_walkover ?? false,
+            setsA: p.sets_a ?? 0,
+            setsB: p.sets_b ?? 0,
+          }))
+        const ranking = calcularRankingDivision(jugIds, partidos)
+        return {
+          id: div.id,
+          nombre: div.nombre,
+          top4: ranking.slice(0, 4).map((r: FilaRanking, i: number) => ({ pos: i + 1, jugadorId: r.jugadorId, pts: r.pts, pg: r.pg })),
+        }
+      })
+    ).then(results => {
+      setPodioDivisiones(results)
+      setLoadingPodio(false)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [podioAbierto])
 
   async function handleCrearDivision() {
     if (!nombreDivision.trim()) return
@@ -258,10 +324,22 @@ export default function LigaDetallePage() {
     cargar()
   }
 
-  async function handleTerminarFecha(fechaId: string) {
+  async function handleTerminarFecha(fechaId: string, forzar = false) {
     setProgramando(true)
-    const res = await terminarFechaAction({ fechaId })
+    const res = await terminarFechaAction({ fechaId, forzar })
+    if ('pendientes' in res && (res.pendientes ?? 0) > 0) {
+      setProgramando(false)
+      setConfirmPendientes({ fechaId, cantidad: res.pendientes! })
+      return
+    }
     if (res.error) { setMensaje(res.error); setProgramando(false); return }
+    if (res.ligaFinalizada) {
+      setProgramando(false)
+      setMensaje('¡Liga finalizada!')
+      setPodioAbierto(true)
+      cargar()
+      return
+    }
     if (res.todasTerminadas) {
       const rRes = await programarEnReajuste({ ligaId })
       setProgramando(false)
@@ -340,31 +418,71 @@ export default function LigaDetallePage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <h1 style={{ fontSize:20, fontWeight:600, color: text, marginBottom:18 }}>{liga.nombre}</h1>
+      {/* Header de liga */}
+      <div style={{ background:'linear-gradient(135deg,#1e1b4b,#312e81)', borderRadius:16, padding:'20px 24px', marginBottom:18, boxShadow:'0 4px 20px rgba(30,27,75,0.35)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
+          <div>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)', fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', marginBottom:4 }}>🏓 Liga activa</div>
+            <h1 style={{ fontSize:22, fontWeight:800, color:'white', margin:0, letterSpacing:'-0.5px' }}>{liga.nombre}</h1>
+          </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            <div style={{
+              background:'rgba(255,255,255,0.12)', borderRadius:10, padding:'8px 14px',
+              display:'flex', flexDirection:'column', alignItems:'center', backdropFilter:'blur(4px)',
+              border:'1px solid rgba(255,255,255,0.15)',
+            }}>
+              <span style={{ fontSize:16, fontWeight:800, color:'white' }}>{divisiones.length}</span>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>DIV</span>
+            </div>
+            <div style={{
+              background:'rgba(255,255,255,0.12)', borderRadius:10, padding:'8px 14px',
+              display:'flex', flexDirection:'column', alignItems:'center', backdropFilter:'blur(4px)',
+              border:'1px solid rgba(255,255,255,0.15)',
+            }}>
+              <span style={{ fontSize:16, fontWeight:800, color:'white' }}>{fechas.length}</span>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>FECHAS</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {mensaje && (
-        <div style={{ background:'#ede9fe', color:'#3730a3', borderRadius:10, padding:'10px 14px', fontSize:13, marginBottom:18, cursor:'pointer' }} onClick={() => setMensaje('')}>
-          {mensaje}
+        <div style={{
+          background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'white',
+          borderRadius:12, padding:'12px 16px', fontSize:13, marginBottom:18,
+          cursor:'pointer', boxShadow:'0 4px 14px rgba(79,70,229,0.35)',
+          display:'flex', alignItems:'center', gap:10,
+        }} onClick={() => setMensaje('')}>
+          <span style={{ fontSize:16 }}>✅</span>
+          <span style={{ flex:1 }}>{mensaje}</span>
+          <span style={{ opacity:0.7, fontSize:16 }}>×</span>
         </div>
       )}
 
       {/* Selector de división con "+" inline */}
       <div style={{ display:'flex', gap:8, marginBottom:18, flexWrap:'wrap', alignItems:'center' }}>
-        {divisiones.map(d => (
-          <button key={d.id} onClick={() => setDivisionActiva(d.id)}
-            style={{
-              padding:'8px 16px', borderRadius:8, border:'1px solid #e2e8f0', cursor:'pointer', fontSize:13, fontWeight:600,
-              background: divisionActiva === d.id ? '#3730a3' : '#ffffff',
-              color: divisionActiva === d.id ? '#ffffff' : muted,
-            }}>
-            {d.nombre}
-          </button>
-        ))}
+        {divisiones.map((d, idx) => {
+          const accent = DIV_ACCENT[idx % DIV_ACCENT.length]
+          const isActive = divisionActiva === d.id
+          return (
+            <button key={d.id} onClick={() => setDivisionActiva(d.id)}
+              style={{
+                padding:'8px 18px', borderRadius:20, cursor:'pointer', fontSize:13, fontWeight:700,
+                background: isActive ? accent : '#ffffff',
+                color: isActive ? 'white' : muted,
+                boxShadow: isActive ? `0 4px 12px ${accent}55` : '0 1px 4px rgba(0,0,0,0.08)',
+                border: isActive ? 'none' : '1px solid #e2e8f0',
+                transition:'all 0.15s',
+              }}>
+              {d.nombre}
+            </button>
+          )
+        })}
         {!formNuevaDivision ? (
           <button
             onClick={() => setFormNuevaDivision(true)}
-            style={{ padding:'7px 12px', borderRadius:8, border:'1px dashed #c7d2e0', cursor:'pointer', fontSize:12, fontWeight:600, color:'#4f46e5', background:'transparent' }}>
-            + División
+            style={{ padding:'7px 14px', borderRadius:20, border:'1px dashed #c7d2e0', cursor:'pointer', fontSize:12, fontWeight:700, color:'#6366f1', background:'transparent' }}>
+            ＋ División
           </button>
         ) : (
           <div style={{ display:'flex', gap:6, alignItems:'center' }}>
@@ -400,14 +518,21 @@ export default function LigaDetallePage() {
       {division && (
         <div>
           {/* Sub-pestañas */}
-          <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:18, maxWidth:420 }}>
+          <div style={{ display:'flex', background:'#f1f5f9', borderRadius:12, padding:4, marginBottom:18, maxWidth:460, gap:2 }}>
             {([
-              { key:'jugadores', label:'Jugadores' },
-              { key:'programacion', label:'Programación' },
-              { key:'ranking', label:'Ranking' },
+              { key:'jugadores',    label:'👥 Jugadores' },
+              { key:'programacion', label:'📅 Programación' },
+              { key:'ranking',      label:'🏆 Ranking' },
             ] as { key: SubTab; label: string }[]).map(t => (
               <div key={t.key} onClick={() => setSubTab(t.key)}
-                style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background: subTab===t.key?'#ffffff':'transparent', color: subTab===t.key?'#3730a3':muted, transition:'all 0.15s' }}>
+                style={{
+                  flex:1, padding:'9px 6px', textAlign:'center', borderRadius:9, cursor:'pointer',
+                  fontSize:12, fontWeight:700,
+                  background: subTab===t.key ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
+                  color: subTab===t.key ? 'white' : muted,
+                  boxShadow: subTab===t.key ? '0 2px 8px rgba(99,102,241,0.35)' : 'none',
+                  transition:'all 0.15s',
+                }}>
                 {t.label}
               </div>
             ))}
@@ -477,30 +602,34 @@ export default function LigaDetallePage() {
                       const pago = pagos[jid]
                       const estado = pago?.estado ?? 'pendiente'
                       const color = SEMAFORO[estado] ?? SEMAFORO.pendiente
-                      const label = estado === 'pagado' ? 'Pagado' : estado === 'parcial' ? 'Parcial' : 'Pendiente'
+                      const label = estado === 'pagado' ? '✅ Pagado' : estado === 'parcial' ? '⚡ Parcial' : '⏳ Pendiente'
+                      const avatarStyle = { background: avatarBgD(nombre) }
                       return (
-                        <div key={jid} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 10px', background:'#f4f7fa', borderRadius:8 }}>
-                          <span style={{ width:9, height:9, borderRadius:'50%', background: color, flexShrink:0 }} />
-                          <span style={{ flex:1, fontSize:13, color: text }}>{nombre}</span>
+                        <div key={jid} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'#f8faff', borderRadius:10, border:'1px solid #e8edf5' }}>
+                          {/* Avatar */}
+                          <div style={{
+                            width:34, height:34, borderRadius:'50%', ...avatarStyle,
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            flexShrink:0, fontSize:12, fontWeight:800, color:'white',
+                            boxShadow:'0 2px 6px rgba(0,0,0,0.15)',
+                          }}>
+                            {initialsD(nombre)}
+                          </div>
+                          <span style={{ flex:1, fontSize:13, fontWeight:600, color: text }}>{nombre}</span>
                           {pago && (
-                            <span style={{ fontSize:11, color: muted, fontVariantNumeric:'tabular-nums' }}>
+                            <span style={{ fontSize:11, color: muted, fontVariantNumeric:'tabular-nums', fontFamily:'monospace' }}>
                               ${pago.monto_pagado.toLocaleString('es-CL')} / ${pago.monto_total.toLocaleString('es-CL')}
                             </span>
                           )}
-                          <span style={{ background: `${color}22`, color, padding:'2px 8px', borderRadius:20, fontSize:10, fontWeight:600, whiteSpace:'nowrap' }}>{label}</span>
+                          <span style={{ background: `${color}20`, color, padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:700, whiteSpace:'nowrap', border:`1px solid ${color}40` }}>{label}</span>
                           <button
                             onClick={() => { const j = jugadoresClub.find(x => x.id === jid); if (j) abrirPagoModal(j) }}
-                            style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:6, padding:'3px 8px', fontSize:11, color:'#4f46e5', cursor:'pointer', whiteSpace:'nowrap' }}>
-                            + Pago
+                            style={{ background:'transparent', border:'1px solid #c7d2fe', borderRadius:8, padding:'4px 10px', fontSize:11, fontWeight:700, color:'#6366f1', cursor:'pointer', whiteSpace:'nowrap' }}>
+                            💰 Pago
                           </button>
                         </div>
                       )
                     })}
-                  </div>
-                  <div style={{ display:'flex', gap:12, marginTop:6, fontSize:11, color: hint }}>
-                    <span>● Verde = pagado</span>
-                    <span>● Amarillo = parcial</span>
-                    <span>● Gris = pendiente</span>
                   </div>
                 </div>
               )}
@@ -539,13 +668,16 @@ export default function LigaDetallePage() {
                   onClick={() => handleRegistrarJugadores(division)}
                   disabled={aplicandoDiff}
                   style={{
-                    background: jugadoresDeDivision.length >= 2 ? '#4f46e5' : '#e2e8f0',
+                    background: jugadoresDeDivision.length >= 2
+                      ? 'linear-gradient(135deg,#6366f1,#8b5cf6)'
+                      : '#e2e8f0',
                     color: jugadoresDeDivision.length >= 2 ? 'white' : hint,
-                    border:'none', borderRadius:8, padding:'9px 20px', fontSize:13, fontWeight:600,
+                    border:'none', borderRadius:10, padding:'10px 22px', fontSize:13, fontWeight:700,
                     cursor: aplicandoDiff || jugadoresDeDivision.length < 2 ? 'not-allowed' : 'pointer',
                     opacity: aplicandoDiff ? 0.6 : 1,
+                    boxShadow: jugadoresDeDivision.length >= 2 ? '0 4px 14px rgba(99,102,241,0.4)' : 'none',
                   }}>
-                  {aplicandoDiff ? 'Guardando...' : 'Registrar jugadores'}
+                  {aplicandoDiff ? 'Guardando...' : '💾 Registrar jugadores'}
                 </button>
                 {jugadoresDeDivision.length < 2 && (
                   <div style={{ fontSize:11, color: hint, marginTop:6 }}>Seleccioná al menos 2 jugadores</div>
@@ -560,41 +692,93 @@ export default function LigaDetallePage() {
           {subTab === 'programacion' && <div>
             {/* Barra: selector de fecha + acciones */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14, flexWrap:'wrap', gap:10 }}>
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-                <span style={{ fontSize:12, color: muted, alignSelf:'center' }}>Fecha:</span>
-                {fechas.map(f => (
-                  <button key={f.id} onClick={() => setFechaSeleccionada(f.id)}
-                    style={{
-                      padding:'5px 12px', borderRadius:8, border:'1px solid #e2e8f0', cursor:'pointer', fontSize:12, fontWeight:600,
-                      background: fechaSeleccionada === f.id ? '#ede9fe' : '#ffffff',
-                      color: fechaSeleccionada === f.id ? '#3730a3' : muted,
-                    }}>
-                    {f.numero}{f.es_ajuste ? ' (ajuste)' : ''}
-                  </button>
-                ))}
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+                <span style={{ fontSize:11, color: hint, alignSelf:'center', fontWeight:600, letterSpacing:'0.5px', textTransform:'uppercase' }}>Fecha</span>
+                {fechas.map(f => {
+                  const isSelected = fechaSeleccionada === f.id
+                  const isAjuste = f.es_ajuste
+                  return (
+                    <button key={f.id} onClick={() => setFechaSeleccionada(f.id)}
+                      style={{
+                        padding:'5px 14px', borderRadius:20, border:'none', cursor:'pointer', fontSize:12, fontWeight:700,
+                        background: isSelected
+                          ? (isAjuste ? 'linear-gradient(135deg,#7c3aed,#6366f1)' : 'linear-gradient(135deg,#6366f1,#818cf8)')
+                          : '#f1f5f9',
+                        color: isSelected ? 'white' : muted,
+                        boxShadow: isSelected ? '0 2px 8px rgba(99,102,241,0.4)' : 'none',
+                        transition:'all 0.15s',
+                      }}>
+                      {isAjuste ? '⚡' : `F${f.numero}`}
+                    </button>
+                  )
+                })}
               </div>
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
                 {fechaActual?.es_ajuste ? (
-                  <button
-                    onClick={handleProgramarReajuste}
-                    disabled={programando}
-                    style={{ background: programando ? '#e2e8f0' : '#7c3aed', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
-                    {programando ? 'Programando...' : 'Programar Reajuste'}
-                  </button>
+                  <>
+                    {fechaActual.estado !== 'finalizada' && (
+                      <button
+                        onClick={handleProgramarReajuste}
+                        disabled={programando}
+                        style={{
+                          background: programando ? '#e2e8f0' : 'linear-gradient(135deg,#7c3aed,#6366f1)',
+                          color: programando ? hint : 'white', border:'none', borderRadius:10,
+                          padding:'7px 16px', fontSize:12, fontWeight:700, cursor: programando ? 'default' : 'pointer',
+                          boxShadow: programando ? 'none' : '0 3px 10px rgba(124,58,237,0.4)',
+                        }}>
+                        ⚡ {programando ? 'Programando...' : 'Programar Reajuste'}
+                      </button>
+                    )}
+                    {fechaSeleccionada && fechaActual.estado !== 'finalizada' && (
+                      <button
+                        onClick={() => handleTerminarFecha(fechaSeleccionada)}
+                        disabled={programando}
+                        style={{
+                          background: programando ? '#e2e8f0' : 'linear-gradient(135deg,#dc2626,#ef4444)',
+                          color: programando ? hint : 'white', border:'none', borderRadius:10,
+                          padding:'7px 16px', fontSize:12, fontWeight:700, cursor: programando ? 'default' : 'pointer',
+                          boxShadow: programando ? 'none' : '0 3px 10px rgba(220,38,38,0.4)',
+                        }}>
+                        🏁 {programando ? 'Terminando...' : 'Terminar Liga'}
+                      </button>
+                    )}
+                    {fechaActual.estado === 'finalizada' && (
+                      <button
+                        onClick={() => setPodioAbierto(true)}
+                        style={{
+                          background:'linear-gradient(135deg,#f59e0b,#f97316)',
+                          color:'white', border:'none', borderRadius:10,
+                          padding:'7px 16px', fontSize:12, fontWeight:700, cursor:'pointer',
+                          boxShadow:'0 3px 10px rgba(245,158,11,0.4)',
+                        }}>
+                        🏆 Ver Podio
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <>
                     <button
                       onClick={handleGenerarProgramacion}
                       disabled={programando}
-                      style={{ background: programando ? '#e2e8f0' : '#4f46e5', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
-                      {programando ? 'Programando...' : 'Programar fecha'}
+                      style={{
+                        background: programando ? '#e2e8f0' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                        color: programando ? hint : 'white', border:'none', borderRadius:10,
+                        padding:'7px 16px', fontSize:12, fontWeight:700, cursor: programando ? 'default' : 'pointer',
+                        boxShadow: programando ? 'none' : '0 3px 10px rgba(99,102,241,0.4)',
+                      }}>
+                      📅 {programando ? 'Programando...' : 'Programar fecha'}
                     </button>
                     {fechaSeleccionada && fechaActual?.estado !== 'finalizada' && (
                       <button
                         onClick={() => handleTerminarFecha(fechaSeleccionada)}
                         disabled={programando}
-                        style={{ background: programando ? '#e2e8f0' : '#dc2626', color: programando ? hint : 'white', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor: programando ? 'default' : 'pointer' }}>
-                        Terminar Fecha
+                        style={{
+                          background: programando ? '#e2e8f0' : 'linear-gradient(135deg,#dc2626,#ef4444)',
+                          color: programando ? hint : 'white', border:'none', borderRadius:10,
+                          padding:'7px 16px', fontSize:12, fontWeight:700, cursor: programando ? 'default' : 'pointer',
+                          boxShadow: programando ? 'none' : '0 3px 10px rgba(220,38,38,0.4)',
+                        }}>
+                        🏁 Terminar Fecha
                       </button>
                     )}
                   </>
@@ -675,6 +859,84 @@ export default function LigaDetallePage() {
                 disabled={aplicandoDiff}
                 style={{ flex:1, padding:11, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor: aplicandoDiff ? 'default' : 'pointer', opacity: aplicandoDiff ? 0.6 : 1 }}>
                 {aplicandoDiff ? 'Aplicando...' : 'Confirmar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal confirmar cierre con partidos pendientes ────────────────── */}
+      {confirmPendientes && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300 }}>
+          <div style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, maxWidth:400, width:'100%', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:8 }}>Partidos sin registrar</div>
+            <div style={{ fontSize:13, color: muted, marginBottom:20 }}>
+              {confirmPendientes.cantidad === 1
+                ? 'Hay 1 partido sin resultado en esta fecha.'
+                : `Hay ${confirmPendientes.cantidad} partidos sin resultado en esta fecha.`}{' '}
+              Si la terminás ahora esos partidos quedarán sin resolver y no contarán en el ranking.
+            </div>
+            <div style={{ display:'flex', gap:10 }}>
+              <button
+                onClick={() => setConfirmPendientes(null)}
+                style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
+                Volver
+              </button>
+              <button
+                onClick={() => { const id = confirmPendientes.fechaId; setConfirmPendientes(null); handleTerminarFecha(id, true) }}
+                style={{ flex:1, padding:11, background:'#dc2626', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+                Terminar igual
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal podio / liga finalizada ────────────────────────────────── */}
+      {podioAbierto && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300 }}
+          onClick={e => { if (e.target === e.currentTarget) setPodioAbierto(false) }}>
+          <div style={{ background:'#fff', borderRadius:20, padding:32, maxWidth:540, width:'100%', maxHeight:'85vh', overflow:'auto', boxShadow:'0 24px 64px rgba(15,23,42,0.3)' }}>
+            <div style={{ textAlign:'center', marginBottom:24 }}>
+              <div style={{ fontSize:48, lineHeight:1, marginBottom:10 }}>🏆</div>
+              <div style={{ fontSize:22, fontWeight:700, color: text }}>{liga?.nombre}</div>
+              <div style={{ fontSize:13, color: muted, marginTop:4 }}>Liga finalizada</div>
+            </div>
+
+            {loadingPodio ? (
+              <div style={{ textAlign:'center', color: hint, fontSize:13, padding:24 }}>Calculando resultados finales...</div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+                {podioDivisiones.map(div => (
+                  <div key={div.id}>
+                    <div style={{ fontSize:11, fontWeight:600, color: muted, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>{div.nombre}</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                      {div.top4.length === 0 ? (
+                        <div style={{ fontSize:12, color: hint, padding:'6px 0' }}>Sin resultados registrados</div>
+                      ) : div.top4.map(fila => {
+                        const emblema = ['🥇', '🥈', '🥉', '4°'][fila.pos - 1]
+                        const bgColor = fila.pos === 1 ? '#fffbeb' : fila.pos === 3 ? '#fff7ed' : '#f8fafc'
+                        const borderColor = fila.pos === 1 ? '#fde68a' : '#e2e8f0'
+                        return (
+                          <div key={fila.jugadorId} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', background: bgColor, border:`1px solid ${borderColor}`, borderRadius:10 }}>
+                            <span style={{ fontSize:20, width:28, flexShrink:0, textAlign:'center' }}>{emblema}</span>
+                            <span style={{ flex:1, fontWeight:600, color: text, fontSize:14 }}>{nombrePorId[fila.jugadorId] ?? '—'}</span>
+                            <span style={{ fontSize:12, color: muted, fontVariantNumeric:'tabular-nums' }}>{fila.pts} pts · {fila.pg}V</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop:24 }}>
+              <button
+                onClick={() => setPodioAbierto(false)}
+                style={{ width:'100%', padding:12, background:'#f4f7fa', border:'none', borderRadius:8, color: muted, fontSize:14, cursor:'pointer', fontWeight:500 }}>
+                Cerrar
               </button>
             </div>
           </div>
