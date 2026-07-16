@@ -6,8 +6,16 @@ const migracion = readFileSync(
   new URL('../../../supabase/migrations/032_asistencia_reservas.sql', import.meta.url),
   'utf8'
 )
+const migracionMetodos = readFileSync(
+  new URL('../../../supabase/migrations/037_asistencia_metodos.sql', import.meta.url),
+  'utf8',
+)
 
 describe('seguridad de asistencia y reservas', () => {
+  it('permite los métodos usados por autorregistro y kiosco RUT', () => {
+    expect(migracionMetodos).toContain("'autoregistro'")
+    expect(migracionMetodos).toContain("'rut'")
+  })
   it('el kiosco envía un único RUT al RPC y no descarga jugadores', () => {
     expect(kiosco).toContain("rpc('registrar_asistencia_rut'")
     expect(kiosco).not.toContain("from('jugadores')")
