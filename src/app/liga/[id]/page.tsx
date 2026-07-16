@@ -520,7 +520,7 @@ export default function LigaDetallePage() {
       )}
 
       {/* Selector de división con "+" inline */}
-      <div style={{ display:'flex', gap:8, marginBottom:18, flexWrap:'wrap', alignItems:'center' }}>
+      <div className="liga-fade liga-fade-d1" style={{ display:'flex', gap:8, marginBottom:18, flexWrap:'wrap', alignItems:'center' }}>
         {divisiones.map((d, idx) => {
           const accent = DIV_ACCENT[idx % DIV_ACCENT.length]
           const isActive = divisionActiva === d.id
@@ -528,10 +528,10 @@ export default function LigaDetallePage() {
             <button key={d.id} onClick={() => setDivisionActiva(d.id)}
               style={{
                 padding:'8px 18px', borderRadius:20, cursor:'pointer', fontSize:13, fontWeight:700,
-                background: isActive ? accent : '#ffffff',
-                color: isActive ? 'white' : muted,
-                boxShadow: isActive ? `0 4px 12px ${accent}55` : '0 1px 4px rgba(0,0,0,0.08)',
-                border: isActive ? 'none' : '1px solid #e2e8f0',
+                background: isActive ? accent : (dm ? '#1e293b' : '#ffffff'),
+                color: isActive ? 'white' : (dm ? '#94a3b8' : muted),
+                boxShadow: isActive ? `0 4px 12px ${accent}55` : (dm ? 'none' : '0 1px 4px rgba(0,0,0,0.08)'),
+                border: isActive ? 'none' : `1px solid ${dm ? '#334155' : '#e2e8f0'}`,
                 transition:'all 0.15s',
               }}>
               {d.nombre}
@@ -578,7 +578,7 @@ export default function LigaDetallePage() {
       {division && (
         <div>
           {/* Sub-pestañas */}
-          <div style={{ display:'flex', background:'#f1f5f9', borderRadius:12, padding:4, marginBottom:18, maxWidth:460, gap:2 }}>
+          <div className="liga-fade liga-fade-d2" style={{ display:'flex', background: dm ? '#1e293b' : '#f1f5f9', borderRadius:12, padding:4, marginBottom:18, maxWidth:460, gap:2, border: `1px solid ${dm ? '#334155' : 'transparent'}` }}>
             {([
               { key:'jugadores',    label:'👥 Jugadores' },
               { key:'programacion', label:'📅 Programación' },
@@ -589,7 +589,7 @@ export default function LigaDetallePage() {
                   flex:1, padding:'9px 6px', textAlign:'center', borderRadius:9, cursor:'pointer',
                   fontSize:12, fontWeight:700,
                   background: subTab===t.key ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
-                  color: subTab===t.key ? 'white' : muted,
+                  color: subTab===t.key ? 'white' : (dm ? '#94a3b8' : muted),
                   boxShadow: subTab===t.key ? '0 2px 8px rgba(99,102,241,0.35)' : 'none',
                   transition:'all 0.15s',
                 }}>
@@ -602,9 +602,9 @@ export default function LigaDetallePage() {
           {subTab === 'jugadores' && <div className="liga-fade">
             <div style={{ background: cardBg, border:`1px solid ${cardBorder}`, borderRadius:16, boxShadow:'0 4px 20px rgba(15,23,42,0.10)', padding:20 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexWrap:'wrap', gap:10 }}>
-                <div style={{ fontSize:13, color: muted, display:'flex', alignItems:'center', gap:5 }}>
+                <div style={{ fontSize:13, color: mutedColor, display:'flex', alignItems:'center', gap:5 }}>
                   <span style={{ fontVariantNumeric:'tabular-nums' }}>{jugadoresDeDivision.length}</span>
-                  <span style={{ color: hint }}>/</span>
+                  <span style={{ color: mutedColor }}>/</span>
                   {editandoCupo ? (
                     <>
                       <input
@@ -645,9 +645,10 @@ export default function LigaDetallePage() {
                   <span style={{ color: muted }}>inscritos</span>
                 </div>
                 <span style={{
-                  background: division.fixture_generado ? '#f0fdf4' : '#f4f7fa',
-                  color: division.fixture_generado ? '#16a34a' : muted,
+                  background: division.fixture_generado ? '#f0fdf4' : (dm ? '#0f172a' : '#f4f7fa'),
+                  color: division.fixture_generado ? '#16a34a' : mutedColor,
                   padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap',
+                  border: `1px solid ${division.fixture_generado ? '#bbf7d0' : (dm ? '#334155' : 'transparent')}`,
                 }}>
                   {division.fixture_generado ? 'Fixture generado' : 'Sin fixture'}
                 </span>
@@ -749,10 +750,10 @@ export default function LigaDetallePage() {
                 </div>
               )}
 
-              <div style={{ fontSize:12, color: muted, fontWeight:600, marginBottom:6 }}>Editar inscriptos</div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:8, maxHeight:280, overflow:'auto', padding:12, background:'#f4f7fa', borderRadius:10, marginBottom:10 }}>
+              <div style={{ fontSize:12, color: mutedColor, fontWeight:600, marginBottom:6 }}>Editar inscriptos</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:8, maxHeight:280, overflow:'auto', padding:12, background: dm ? '#0f172a' : '#f4f7fa', borderRadius:10, marginBottom:10, border:`1px solid ${dm ? '#334155' : 'transparent'}` }}>
                 {jugadoresClub.map(j => (
-                  <label key={j.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color: text, cursor:'pointer' }}>
+                  <label key={j.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color: txtColor, cursor:'pointer' }}>
                     <input
                       type="checkbox"
                       checked={jugadoresDeDivision.includes(j.id)}
