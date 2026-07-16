@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
@@ -21,10 +21,6 @@ describe('crearClub desde Superadmin', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.stubEnv('RESEND_API_KEY', 'resend_test')
-    vi.stubEnv('RESEND_FROM_EMAIL', 'CmSports <acceso@cmsports.test>')
-    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://cmsports.test')
-
     clubInsert.mockReturnValue({
       select: vi.fn().mockReturnValue({
         single: vi.fn().mockResolvedValue({ data: club, error: null }),
@@ -48,15 +44,9 @@ describe('crearClub desde Superadmin', () => {
         throw new Error(`Tabla inesperada: ${tabla}`)
       }),
     })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
   })
 
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    vi.unstubAllGlobals()
-  })
-
-  it('crea club, cuenta admin, perfil vinculado y correo de acceso', async () => {
+  it('crea club, cuenta admin y perfil vinculado', async () => {
     const resultado = await crearClub({
       nombre: 'Club Integración',
       ciudad: 'Santiago',
@@ -68,7 +58,7 @@ describe('crearClub desde Superadmin', () => {
       passwordProvisoria: 'ClaveSegura123!',
     })
 
-    expect(resultado).toEqual({ success: true, emailEnviado: true })
+    expect(resultado).toEqual({ success: true })
     expect(clubInsert).toHaveBeenCalledWith(expect.objectContaining({
       nombre: 'Club Integración',
       modulos_habilitados: ['torneos', 'mensualidades', 'finanzas'],
@@ -84,7 +74,6 @@ describe('crearClub desde Superadmin', () => {
       email: 'admin@ejemplo.cl',
       rol: 'admin',
     }), { onConflict: 'id' })
-    expect(fetch).toHaveBeenCalledWith('https://api.resend.com/emails', expect.objectContaining({ method: 'POST' }))
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/superadmin')
   })
 })
