@@ -322,6 +322,13 @@ export function TableroFecha({
       }
     }
 
+    // ── Watermark diagonal ──────────────────────────────────
+    doc.setGState(doc.GState({ opacity: 0.04 }))
+    doc.setFontSize(52); doc.setFont('helvetica', 'bold')
+    doc.setTextColor(99, 102, 241)
+    doc.text('CmSports', W / 2, H / 2, { align: 'center', angle: 45 })
+    doc.setGState(doc.GState({ opacity: 1 }))
+
     doc.save(`fecha${f.numero}_horarios.pdf`)
   }
 
@@ -527,6 +534,13 @@ export function TableroFecha({
     doc.text('Firma árbitro:', M + 3, y + OBS_H - 2)
     doc.line(M + 28, y + OBS_H - 1.5, M + 90, y + OBS_H - 1.5)
 
+    // ── Watermark diagonal ──────────────────────────────────
+    doc.setGState(doc.GState({ opacity: 0.04 }))
+    doc.setFontSize(48); doc.setFont('helvetica', 'bold')
+    doc.setTextColor(10, 155, 108)
+    doc.text('CmSports', W / 2, H / 2, { align: 'center', angle: 45 })
+    doc.setGState(doc.GState({ opacity: 1 }))
+
     doc.save(`fecha${f.numero}_por_mesa.pdf`)
   }
 
@@ -670,40 +684,59 @@ export function TableroFecha({
                               onDragStart={() => setDraggingId(partido.id)}
                               onDragEnd={() => setDraggingId(null)}
                               style={{
-                                borderRadius: 10,
-                                background: partido.estado === 'finalizado' ? '#f0fdf4'
-                                  : partido.estado === 'walkover' ? '#fffbeb' : '#ffffff',
+                                borderRadius: 12,
+                                background: partido.estado === 'finalizado'
+                                  ? 'linear-gradient(135deg,#f0fdf4,#dcfce7)'
+                                  : partido.estado === 'walkover' ? 'linear-gradient(135deg,#fffbeb,#fef9c3)'
+                                  : '#ffffff',
                                 border: `1px solid ${
                                   partido.estado === 'finalizado' ? '#86efac'
-                                  : partido.estado === 'walkover' ? '#fcd34d' : '#e2e8f0'}`,
+                                  : partido.estado === 'walkover' ? '#fcd34d' : '#e8edf5'}`,
                                 padding: '10px 12px',
                                 cursor: fecha.estado === 'programada' ? 'grab' : clickeable ? 'pointer' : 'default',
-                                opacity: draggingId === partido.id ? 0.5 : 1,
+                                opacity: draggingId === partido.id ? 0.45 : 1,
                                 borderLeft: `4px solid ${dc}`,
+                                boxShadow: partido.estado === 'finalizado' ? '0 2px 8px rgba(16,185,129,0.12)' : draggingId === partido.id ? 'none' : '0 2px 8px rgba(15,23,42,0.06)',
+                                transition: 'opacity 0.15s, box-shadow 0.15s',
                               }}
                             >
-                              {/* División chip */}
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: dc, flexShrink: 0 }} />
+                              {/* División chip con fondo */}
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginBottom: 8, background: `${dc}18`, borderRadius: 20, padding: '2px 8px 2px 5px' }}>
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: dc, flexShrink: 0, boxShadow: `0 0 4px ${dc}88` }} />
                                 <span style={{ fontSize: 10, color: dc, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>{partido.divisionNombre}</span>
                               </div>
 
-                              {/* Jugadores */}
-                              <div onClick={() => abrirResultado(partido)} style={{ fontSize: 13, fontWeight: 700, color: ink, lineHeight: 1.3, marginBottom: 4 }}>
-                                {nombres[partido.jugadorAId] ?? '—'}
-                                <span style={{ color: hint, fontWeight: 400, fontSize: 11, margin: '0 4px' }}>vs</span>
-                                {nombres[partido.jugadorBId] ?? '—'}
+                              {/* Jugadores con mini avatar chips */}
+                              <div onClick={() => abrirResultado(partido)} style={{ cursor: clickeable ? 'pointer' : 'default' }}>
+                                {[partido.jugadorAId, partido.jugadorBId].map((jid, ji) => {
+                                  const nm = nombres[jid] ?? '—'
+                                  const inits = nm !== '—' ? (nm.trim().split(/\s+/).length >= 2 ? (nm.trim().split(/\s+/)[0][0] + nm.trim().split(/\s+/).slice(-1)[0][0]).toUpperCase() : nm.slice(0,2).toUpperCase()) : '?'
+                                  return (
+                                    <div key={jid} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: ji === 0 ? 3 : 0 }}>
+                                      <div style={{ width: 20, height: 20, borderRadius: '50%', background: dc, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: 'white', flexShrink: 0, opacity: 0.85 }}>{inits}</div>
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nm}</span>
+                                      {ji === 0 && <span style={{ fontSize: 9, color: hint, flexShrink: 0, marginLeft: 'auto' }}>vs</span>}
+                                    </div>
+                                  )
+                                })}
                               </div>
 
-                              {/* Resultado o árbitro */}
+                              {/* Resultado con mini set bars */}
                               {partido.estado === 'finalizado' && (
-                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: '#dcfce7', border: '1px solid #86efac', borderRadius: 6, padding: '2px 8px' }}>
-                                  <span style={{ fontSize: 11, fontWeight: 800, color: '#15803d', fontFamily: 'monospace' }}>{partido.setsA}–{partido.setsB}</span>
-                                  <span style={{ fontSize: 10 }}>✅</span>
+                                <div style={{ marginTop: 8 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#dcfce7', border: '1px solid #86efac', borderRadius: 8, padding: '4px 8px' }}>
+                                    <span style={{ fontSize: 13, fontWeight: 900, color: '#15803d', fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>{partido.setsA}–{partido.setsB}</span>
+                                    <div style={{ flex: 1, display: 'flex', gap: 2, alignItems: 'center' }}>
+                                      {Array.from({ length: Math.max(Number(partido.setsA) || 0, Number(partido.setsB) || 0) }).map((_, si) => (
+                                        <div key={si} style={{ height: 4, flex: 1, borderRadius: 2, background: si < (partido.setsA ?? 0) ? '#059669' : si < (partido.setsB ?? 0) ? '#94a3b8' : '#e2e8f0', transition: 'background 0.2s' }} />
+                                      ))}
+                                    </div>
+                                    <span style={{ fontSize: 12 }}>✅</span>
+                                  </div>
                                 </div>
                               )}
                               {partido.estado === 'walkover' && (
-                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fef9c3', border: '1px solid #fcd34d', borderRadius: 6, padding: '2px 8px' }}>
+                                <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fef9c3', border: '1px solid #fcd34d', borderRadius: 8, padding: '4px 10px' }}>
                                   <span style={{ fontSize: 11, fontWeight: 700, color: '#a16207' }}>🏳️ Walkover</span>
                                 </div>
                               )}
@@ -716,7 +749,7 @@ export function TableroFecha({
                                     onBlur={() => setEditandoArbitroId(null)}
                                     onClick={e => e.stopPropagation()}
                                     onChange={async e => { await handleCambiarArbitro(partido.id, e.target.value) }}
-                                    style={{ width: '100%', marginTop: 6, fontSize: 11, color: ink, background: '#ffffff', border: '1px solid #6366f1', borderRadius: 6, outline: 'none', padding: '2px 4px' }}
+                                    style={{ width: '100%', marginTop: 7, fontSize: 11, color: ink, background: '#ffffff', border: '1px solid #6366f1', borderRadius: 6, outline: 'none', padding: '2px 4px' }}
                                   >
                                     <option value="">Sin árbitro</option>
                                     {roster.filter(id => id !== partido.jugadorAId && id !== partido.jugadorBId).map(id => (
@@ -724,22 +757,26 @@ export function TableroFecha({
                                     ))}
                                   </select>
                                 ) : (
-                                  <div onClick={e => { e.stopPropagation(); setEditandoArbitroId(partido.id) }} style={{ fontSize: 10, color: muted, marginTop: 5, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {partido.arbitroId ? `👤 ${nombres[partido.arbitroId] ?? '—'}` : '👤 Sin árbitro'}
+                                  <div onClick={e => { e.stopPropagation(); setEditandoArbitroId(partido.id) }} style={{ fontSize: 10, color: muted, marginTop: 7, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, padding: '3px 6px', background: '#f8fafc', borderRadius: 6 }}>
+                                    <span style={{ fontSize: 12 }}>👤</span>
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                      {partido.arbitroId ? `${nombres[partido.arbitroId] ?? '—'}` : 'Asignar árbitro'}
                                     </span>
-                                    <span style={{ color: hint, flexShrink: 0 }}>✎</span>
+                                    <span style={{ color: hint, flexShrink: 0, fontSize: 11 }}>✎</span>
                                   </div>
                                 )
                               ) : partido.arbitroId && partido.estado !== 'finalizado' && partido.estado !== 'walkover' ? (
-                                <div style={{ fontSize: 10, color: muted, marginTop: 5 }}>👤 {nombres[partido.arbitroId] ?? '—'}</div>
+                                <div style={{ fontSize: 10, color: muted, marginTop: 7, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontSize: 12 }}>👤</span>
+                                  <span style={{ fontWeight: 600 }}>{nombres[partido.arbitroId] ?? '—'}</span>
+                                </div>
                               ) : null}
                             </div>
                           ) : (
                             <div style={{
-                              height: 52, borderRadius: 10,
+                              height: 52, borderRadius: 12,
                               border: '1.5px dashed #e2e8f0',
-                              background: '#f8fafc',
+                              background: 'linear-gradient(135deg,#f8fafc,#f1f5f9)',
                             }} />
                           )}
                         </td>

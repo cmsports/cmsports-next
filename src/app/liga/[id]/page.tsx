@@ -26,6 +26,92 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
+// ── Helpers visuales ─────────────────────────────────────────────────────
+
+function CountUp({ to, duration = 700 }: { to: number; duration?: number }) {
+  const [val, setVal] = useState(0)
+  useEffect(() => {
+    if (!to) { setVal(0); return }
+    const s = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - s) / duration)
+      setVal(Math.round(to * t))
+      if (t < 1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, [to, duration])
+  return <>{val}</>
+}
+
+function launchConfetti(colors?: string[]) {
+  if (typeof window === 'undefined') return
+  const canvas = document.createElement('canvas')
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999'
+  document.body.appendChild(canvas)
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
+  if (!ctx) { canvas.remove(); return }
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight
+  const C = colors || ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','white']
+  const p = Array.from({ length: 160 }, () => ({
+    x: Math.random() * canvas.width, y: -20,
+    vx: (Math.random() - 0.5) * 6, vy: Math.random() * 4 + 1.5,
+    color: C[Math.floor(Math.random() * C.length)],
+    w: Math.random() * 10 + 4, h: Math.random() * 6 + 3,
+    rot: Math.random() * 360, rv: (Math.random() - 0.5) * 8, alpha: 1,
+  }))
+  let frame: number; let ms = 0; const maxMs = 4500
+  function draw() {
+    ms += 16
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    p.forEach(q => {
+      q.x += q.vx; q.y += q.vy; q.rot += q.rv; q.vy += 0.07
+      if (ms > maxMs - 1000) q.alpha = Math.max(0, q.alpha - 0.025)
+      ctx.save(); ctx.globalAlpha = q.alpha
+      ctx.translate(q.x, q.y); ctx.rotate(q.rot * Math.PI / 180)
+      ctx.fillStyle = q.color; ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h)
+      ctx.restore()
+    })
+    if (ms < maxMs && p.some(q => q.y < canvas.height + 50)) frame = requestAnimationFrame(draw)
+    else { try { canvas.remove() } catch {} }
+  }
+  frame = requestAnimationFrame(draw)
+  setTimeout(() => { cancelAnimationFrame(frame); try { canvas.remove() } catch {} }, maxMs + 200)
+}
+
+function ligaHeader(name: string, estado: string): string {
+  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
+  if (estado === 'finalizada') return 'linear-gradient(135deg,#1e2938,#374151)'
+  const PALETTES: [string, string][] = [
+    ['#1e1b4b','#312e81'],['#0f2e5e','#1e3a6e'],['#1a0533','#3b0764'],
+    ['#0a2e1a','#0e4620'],['#2d0a3b','#4a1173'],['#0a2040','#112e58'],
+  ]
+  const [from, to] = PALETTES[Math.abs(h) % PALETTES.length]
+  if (estado === 'en_curso') return `linear-gradient(135deg,${from},#065f46)`
+  return `linear-gradient(135deg,${from},${to})`
+}
+
+function ripple(e: React.MouseEvent<HTMLButtonElement>) {
+  const btn = e.currentTarget
+  const r = document.createElement('span')
+  const rect = btn.getBoundingClientRect()
+  const size = Math.max(rect.width, rect.height)
+  r.style.cssText = `position:absolute;border-radius:50%;width:${size}px;height:${size}px;top:${e.clientY - rect.top - size / 2}px;left:${e.clientX - rect.left - size / 2}px;background:rgba(255,255,255,0.25);animation:ripple-anim 0.55s linear forwards;pointer-events:none`
+  btn.style.position = 'relative'; btn.style.overflow = 'hidden'
+  btn.appendChild(r)
+  setTimeout(() => { try { r.remove() } catch {} }, 600)
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const days = Math.floor(diff / 86400000)
+  if (days === 0) return 'hoy'
+  if (days === 1) return 'ayer'
+  if (days < 7) return `hace ${days} días`
+  if (days < 30) return `hace ${Math.floor(days / 7)} semana${Math.floor(days / 7) > 1 ? 's' : ''}`
+  if (days < 365) return `hace ${Math.floor(days / 30)} mes${Math.floor(days / 30) > 1 ? 'es' : ''}`
+  return `hace ${Math.floor(days / 365)} año${Math.floor(days / 365) > 1 ? 's' : ''}`
+}
+
 const inputStyle = { background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' } as const
 
 const AVATAR_BG_D = [
@@ -66,7 +152,7 @@ export default function LigaDetallePage() {
   const ligaId = params.id
   const { perfil, loading: authLoading } = usePerfil()
 
-  const [liga, setLiga] = useState<{ nombre: string; montoInscripcionDefault: number | null } | null>(null)
+  const [liga, setLiga] = useState<{ nombre: string; montoInscripcionDefault: number | null; estado: string } | null>(null)
   const [divisiones, setDivisiones] = useState<Division[]>([])
   const [fechas, setFechas] = useState<Fecha[]>([])
   const [jugadoresClub, setJugadoresClub] = useState<Jugador[]>([])
@@ -116,11 +202,12 @@ export default function LigaDetallePage() {
   const [darkMode, setDarkMode] = useState(false)
   const [filtroJugador, setFiltroJugador] = useState('')
   const [hoveredJugador, setHoveredJugador] = useState<string | null>(null)
+  const [compact, setCompact] = useState(false)
 
   const cargar = useCallback(async () => {
     // 5 queries en paralelo — RLS filtra por club sin necesitar club_id explícito
     const [{ data: ligaData }, { data: divs }, { data: fch }, { data: jugs }, { data: dj }] = await Promise.all([
-      (supabase as any).from('ligas').select('nombre, monto_inscripcion_default').eq('id', ligaId).single(),
+      (supabase as any).from('ligas').select('nombre, monto_inscripcion_default, estado').eq('id', ligaId).single(),
       supabase.from('liga_divisiones').select('id, nombre, orden, fixture_generado, capacidad_max').eq('liga_id', ligaId).order('orden'),
       supabase.from('liga_fechas').select('id, numero, es_ajuste, estado').eq('liga_id', ligaId).order('numero'),
       supabase.from('jugadores').select('id, nombre, es_externo').eq('estado', 'activo').order('nombre'),
@@ -128,7 +215,7 @@ export default function LigaDetallePage() {
     ])
     if (!ligaData) { setLoading(false); return }
 
-    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null })
+    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null, estado: ligaData.estado ?? 'planificacion' })
     setDivisiones(divs || [])
     setFechas(fch || [])
     setJugadoresClub(jugs || [])
@@ -171,6 +258,19 @@ export default function LigaDetallePage() {
     const t = setTimeout(() => setMensaje(''), 5000)
     return () => clearTimeout(t)
   }, [mensaje])
+
+  // Keyboard shortcuts: J=jugadores, P=programacion, R=ranking
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return
+      if (!divisionActiva) return
+      if (e.key === 'j' || e.key === 'J') setSubTab('jugadores')
+      else if (e.key === 'p' || e.key === 'P') setSubTab('programacion')
+      else if (e.key === 'r' || e.key === 'R') setSubTab('ranking')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [divisionActiva])
 
   useEffect(() => {
     if (!podioAbierto) return
@@ -347,6 +447,7 @@ export default function LigaDetallePage() {
     if (res.ligaFinalizada) {
       setProgramando(false)
       setMensaje('¡Liga finalizada!')
+      launchConfetti(['#f59e0b','#ef4444','#6366f1','#10b981','#f97316','white','#3b82f6'])
       setPodioAbierto(true)
       cargar()
       return
@@ -356,10 +457,12 @@ export default function LigaDetallePage() {
       setProgramando(false)
       if (rRes.error) { setMensaje(`Fecha terminada · Error al programar reajuste: ${rRes.error}`); return }
       setMensaje(`Todas las fechas terminadas — ${rRes.total ?? 0} partidos programados en fecha de reajuste`)
+      launchConfetti()
       setProgramacionKey(k => k + 1)
     } else {
       setProgramando(false)
       setMensaje('Fecha terminada')
+      launchConfetti()
     }
     cargar()
   }
@@ -450,8 +553,13 @@ export default function LigaDetallePage() {
   return (
     <AppLayout perfil={perfil}>
       <style>{`
+        *{font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',system-ui,sans-serif}
         @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        @keyframes ripple-anim{0%{transform:scale(0);opacity:1}100%{transform:scale(2.5);opacity:0}}
+        @keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.4)}50%{box-shadow:0 0 0 6px rgba(16,185,129,0)}}
+        @keyframes pulse-indigo{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,0.5)}50%{box-shadow:0 0 0 8px rgba(99,102,241,0)}}
+        @keyframes slide-in-right{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
         .liga-fade{animation:fadeUp 0.35s ease both}
         .liga-fade-d1{animation-delay:0.05s}
         .liga-fade-d2{animation-delay:0.12s}
@@ -459,35 +567,48 @@ export default function LigaDetallePage() {
         .liga-fade-d4{animation-delay:0.28s}
         .lig-tab:hover{opacity:0.85}
         .lig-jug-row:hover{box-shadow:0 3px 12px rgba(99,102,241,0.18)!important;transform:translateY(-1px);transition:all 0.15s}
-        @keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.4)}50%{box-shadow:0 0 0 6px rgba(16,185,129,0)}}
         .chip-en-curso{animation:pulse-green 2s infinite}
+        .lig-stepper-node{transition:transform 0.15s,box-shadow 0.15s}
+        .lig-stepper-node:hover{transform:scale(1.12)}
+        .btn-pulse{animation:pulse-indigo 2s infinite}
+        .lig-tab-active{animation:slide-in-right 0.2s ease both}
+        @media print{
+          .liga-no-print{display:none!important}
+          .liga-fade{animation:none!important}
+          *{box-shadow:none!important;text-shadow:none!important}
+          body{background:white!important}
+        }
       `}</style>
 
       {/* Wrapper con dark mode */}
       <div style={{ background: pageBg, minHeight:'100%', margin: dm ? '-1rem' : undefined, padding: dm ? '1rem' : undefined, transition:'background 0.3s' }}>
 
       {/* Header de liga */}
-      <div className="liga-fade" style={{ background:'linear-gradient(135deg,#1e1b4b,#312e81)', borderRadius:16, padding:'20px 24px', marginBottom:18, boxShadow:'0 4px 20px rgba(30,27,75,0.35)' }}>
+      <div className="liga-fade" style={{ background: ligaHeader(liga.nombre, liga.estado), borderRadius:16, padding:'20px 24px', marginBottom:18, boxShadow:'0 4px 24px rgba(15,23,42,0.4)', transition:'background 0.5s ease' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
           <div>
-            <div style={{ fontSize:11, color:'rgba(255,255,255,0.55)', fontWeight:600, letterSpacing:'1px', textTransform:'uppercase', marginBottom:4 }}>🏓 Liga activa</div>
-            <h1 style={{ fontSize:22, fontWeight:800, color:'white', margin:0, letterSpacing:'-0.5px' }}>{liga.nombre}</h1>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+              <span style={{ fontSize:11, color:'rgba(255,255,255,0.55)', fontWeight:600, letterSpacing:'1px', textTransform:'uppercase' }}>🏓 Liga activa</span>
+              {liga.estado === 'finalizada' && <span style={{ background:'rgba(148,163,184,0.25)', color:'rgba(255,255,255,0.85)', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, border:'1px solid rgba(255,255,255,0.2)' }}>✅ Finalizada</span>}
+              {liga.estado === 'en_curso' && <span style={{ background:'rgba(16,185,129,0.25)', color:'#6ee7b7', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20, border:'1px solid rgba(16,185,129,0.4)' }}>▶ En curso</span>}
+            </div>
+            <h1 style={{ fontSize:22, fontWeight:800, color:'white', margin:0, letterSpacing:'-0.5px', textShadow:'0 1px 4px rgba(0,0,0,0.25)' }}>{liga.nombre}</h1>
           </div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
             <div style={{
-              background:'rgba(255,255,255,0.12)', borderRadius:10, padding:'8px 14px',
+              background:'rgba(255,255,255,0.12)', borderRadius:10, padding:'8px 16px',
               display:'flex', flexDirection:'column', alignItems:'center', backdropFilter:'blur(4px)',
-              border:'1px solid rgba(255,255,255,0.15)',
+              border:'1px solid rgba(255,255,255,0.18)',
             }}>
-              <span style={{ fontSize:16, fontWeight:800, color:'white' }}>{divisiones.length}</span>
+              <span style={{ fontSize:18, fontWeight:800, color:'white', fontVariantNumeric:'tabular-nums' }}><CountUp to={divisiones.length} /></span>
               <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>DIV</span>
             </div>
             <div style={{
-              background:'rgba(255,255,255,0.12)', borderRadius:10, padding:'8px 14px',
+              background:'rgba(255,255,255,0.12)', borderRadius:10, padding:'8px 16px',
               display:'flex', flexDirection:'column', alignItems:'center', backdropFilter:'blur(4px)',
-              border:'1px solid rgba(255,255,255,0.15)',
+              border:'1px solid rgba(255,255,255,0.18)',
             }}>
-              <span style={{ fontSize:16, fontWeight:800, color:'white' }}>{fechas.length}</span>
+              <span style={{ fontSize:18, fontWeight:800, color:'white', fontVariantNumeric:'tabular-nums' }}><CountUp to={fechas.length} /></span>
               <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>FECHAS</span>
             </div>
             {/* Toggle dark mode */}
@@ -507,15 +628,23 @@ export default function LigaDetallePage() {
       </div>
 
       {mensaje && (
-        <div style={{
-          background:'linear-gradient(135deg,#4f46e5,#7c3aed)', color:'white',
-          borderRadius:12, padding:'12px 16px', fontSize:13, marginBottom:18,
-          cursor:'pointer', boxShadow:'0 4px 14px rgba(79,70,229,0.35)',
-          display:'flex', alignItems:'center', gap:10,
-        }} onClick={() => setMensaje('')}>
-          <span style={{ fontSize:16 }}>✅</span>
-          <span style={{ flex:1 }}>{mensaje}</span>
-          <span style={{ opacity:0.7, fontSize:16 }}>×</span>
+        <div
+          className="liga-fade"
+          style={{
+            background: mensaje.includes('finalizada') || mensaje.includes('Liga finalizada')
+              ? 'linear-gradient(135deg,#d97706,#b45309)'
+              : 'linear-gradient(135deg,#4f46e5,#7c3aed)',
+            color:'white', borderRadius:14, padding:'13px 16px', fontSize:13, marginBottom:18,
+            cursor:'pointer', boxShadow:'0 6px 20px rgba(79,70,229,0.4)',
+            display:'flex', alignItems:'center', gap:12,
+            border:'1px solid rgba(255,255,255,0.15)',
+          }}
+          onClick={() => setMensaje('')}>
+          <div style={{ width:32, height:32, borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16, flexShrink:0 }}>
+            {mensaje.includes('Error') || mensaje.includes('error') ? '⚠️' : mensaje.includes('finalizada') || mensaje.includes('Liga') ? '🏆' : '✅'}
+          </div>
+          <span style={{ flex:1, fontWeight:600 }}>{mensaje}</span>
+          <span style={{ opacity:0.6, fontSize:18, fontWeight:300 }}>×</span>
         </div>
       )}
 
@@ -577,30 +706,60 @@ export default function LigaDetallePage() {
 
       {division && (
         <div>
-          {/* Sub-pestañas */}
-          <div className="liga-fade liga-fade-d2" style={{ display:'flex', background: dm ? '#1e293b' : '#f1f5f9', borderRadius:12, padding:4, marginBottom:18, maxWidth:460, gap:2, border: `1px solid ${dm ? '#334155' : 'transparent'}` }}>
-            {([
-              { key:'jugadores',    label:'👥 Jugadores' },
-              { key:'programacion', label:'📅 Programación' },
-              { key:'ranking',      label:'🏆 Ranking' },
-            ] as { key: SubTab; label: string }[]).map(t => (
-              <div key={t.key} onClick={() => setSubTab(t.key)}
-                style={{
-                  flex:1, padding:'9px 6px', textAlign:'center', borderRadius:9, cursor:'pointer',
-                  fontSize:12, fontWeight:700,
-                  background: subTab===t.key ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
-                  color: subTab===t.key ? 'white' : (dm ? '#94a3b8' : muted),
-                  boxShadow: subTab===t.key ? '0 2px 8px rgba(99,102,241,0.35)' : 'none',
-                  transition:'all 0.15s',
-                }}>
-                {t.label}
-              </div>
-            ))}
+          {/* Sub-pestañas — sticky + keyboard hints */}
+          <div className="liga-fade liga-fade-d2 liga-no-print" style={{ position:'sticky', top:0, zIndex:10, display:'flex', flexDirection:'column', gap:4, marginBottom:18 }}>
+            <div style={{ display:'flex', background: dm ? 'rgba(15,23,42,0.95)' : 'rgba(241,245,249,0.95)', backdropFilter:'blur(10px)', borderRadius:12, padding:4, gap:2, border: `1px solid ${dm ? '#334155' : '#e2e8f0'}`, boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
+              {([
+                { key:'jugadores',    label:'👥 Jugadores',    hint:'J' },
+                { key:'programacion', label:'📅 Programación', hint:'P' },
+                { key:'ranking',      label:'🏆 Ranking',      hint:'R' },
+              ] as { key: SubTab; label: string; hint: string }[]).map(t => (
+                <div key={t.key} onClick={() => setSubTab(t.key)}
+                  className={subTab===t.key ? 'lig-tab-active' : ''}
+                  style={{
+                    flex:1, padding:'9px 6px', textAlign:'center', borderRadius:9, cursor:'pointer',
+                    fontSize:12, fontWeight:700,
+                    background: subTab===t.key ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
+                    color: subTab===t.key ? 'white' : (dm ? '#94a3b8' : muted),
+                    boxShadow: subTab===t.key ? '0 2px 8px rgba(99,102,241,0.35)' : 'none',
+                    transition:'all 0.18s', position:'relative',
+                  }}>
+                  {t.label}
+                  <span style={{
+                    position:'absolute', top:4, right:6, fontSize:8, fontWeight:700,
+                    color: subTab===t.key ? 'rgba(255,255,255,0.5)' : (dm ? '#475569' : '#cbd5e1'),
+                    letterSpacing:'0.5px',
+                  }}>{t.hint}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* ── Tab Jugadores ─────────────────────────────────────────────── */}
           {subTab === 'jugadores' && <div className="liga-fade">
             <div style={{ background: cardBg, border:`1px solid ${cardBorder}`, borderRadius:16, boxShadow:'0 4px 20px rgba(15,23,42,0.10)', padding:20 }}>
+              {/* Progress bar de inscripción */}
+              {division.capacidad_max && (
+                <div style={{ marginBottom:14 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
+                    <span style={{ fontSize:11, fontWeight:600, color: mutedColor }}>Inscripción</span>
+                    <span style={{ fontSize:11, fontWeight:700, color: jugadoresDeDivision.length >= division.capacidad_max ? '#059669' : mutedColor, fontVariantNumeric:'tabular-nums' }}>
+                      {jugadoresDeDivision.length} / {division.capacidad_max}
+                    </span>
+                  </div>
+                  <div style={{ height:6, background: dm ? '#334155' : '#e2e8f0', borderRadius:99, overflow:'hidden' }}>
+                    <div style={{
+                      height:'100%',
+                      width:`${Math.min(100, Math.round(jugadoresDeDivision.length / division.capacidad_max * 100))}%`,
+                      background: jugadoresDeDivision.length >= division.capacidad_max
+                        ? 'linear-gradient(90deg,#059669,#10b981)'
+                        : 'linear-gradient(90deg,#6366f1,#8b5cf6)',
+                      borderRadius:99, transition:'width 0.6s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
+
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexWrap:'wrap', gap:10 }}>
                 <div style={{ fontSize:13, color: mutedColor, display:'flex', alignItems:'center', gap:5 }}>
                   <span style={{ fontVariantNumeric:'tabular-nums' }}>{jugadoresDeDivision.length}</span>
@@ -657,20 +816,29 @@ export default function LigaDetallePage() {
               {jugadoresDeDivision.length > 0 && (
                 <div style={{ marginBottom:14 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:8 }}>
-                    <div style={{ fontSize:12, color: mutedColor, fontWeight:600 }}>Inscripción y pagos</div>
-                    {/* Búsqueda rápida (punto 12) */}
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <div style={{ fontSize:12, color: mutedColor, fontWeight:600 }}>Inscripción y pagos</div>
+                      <button
+                        onClick={() => setCompact(c => !c)}
+                        title={compact ? 'Vista expandida' : 'Vista compacta'}
+                        style={{ background: compact ? '#e0e7ff' : (dm ? '#334155' : '#f1f5f9'), border:'none', borderRadius:6, padding:'3px 8px', fontSize:10, fontWeight:700, color: compact ? '#4f46e5' : mutedColor, cursor:'pointer' }}>
+                        {compact ? '⊞ Normal' : '⊟ Compact'}
+                      </button>
+                    </div>
                     <input
-                      placeholder="🔍 Buscar jugador..."
+                      placeholder="🔍 Buscar..."
                       value={filtroJugador}
                       onChange={e => setFiltroJugador(e.target.value)}
                       style={{
                         background: inputBg, border:`1px solid ${cardBorder}`,
                         borderRadius:20, padding:'4px 12px', fontSize:12, color: txtColor,
-                        outline:'none', width:160,
+                        outline:'none', width:140,
                       }}
                     />
                   </div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {/* Lista con scroll shadow */}
+                  <div style={{ position:'relative' }}>
+                  <div style={{ display:'flex', flexDirection:'column', gap: compact ? 3 : 6, maxHeight: compact ? 200 : 320, overflowY:'auto', paddingRight:2 }}>
                     {jugadoresDeDivision
                       .filter(jid => !filtroJugador || (nombrePorId[jid] ?? '').toLowerCase().includes(filtroJugador.toLowerCase()))
                       .map((jid, idx) => {
@@ -687,9 +855,9 @@ export default function LigaDetallePage() {
                           className="liga-fade lig-jug-row"
                           style={{
                             animationDelay: `${idx * 0.04}s`,
-                            display:'flex', alignItems:'center', gap:10,
-                            padding:'10px 12px', background: rowBg,
-                            borderRadius:10, border:`1px solid ${rowBorder}`,
+                            display:'flex', alignItems:'center', gap: compact ? 8 : 10,
+                            padding: compact ? '6px 10px' : '10px 12px', background: rowBg,
+                            borderRadius: compact ? 8 : 10, border:`1px solid ${rowBorder}`,
                             position:'relative', cursor:'default',
                             transition:'all 0.15s',
                           }}
@@ -697,6 +865,7 @@ export default function LigaDetallePage() {
                           onMouseLeave={() => setHoveredJugador(null)}
                         >
                           {/* Avatar */}
+                          {!compact && (
                           <div style={{
                             width:34, height:34, borderRadius:'50%', ...avatarStyle,
                             display:'flex', alignItems:'center', justifyContent:'center',
@@ -705,6 +874,7 @@ export default function LigaDetallePage() {
                           }}>
                             {initialsD(nombre)}
                           </div>
+                          )}
                           <span style={{ flex:1, fontSize:13, fontWeight:600, color: txtColor }}>{nombre}</span>
                           {pago && (
                             <span style={{ fontSize:11, color: mutedColor, fontVariantNumeric:'tabular-nums', fontFamily:'monospace' }}>
@@ -747,10 +917,20 @@ export default function LigaDetallePage() {
                       )
                     })}
                   </div>
+                  {/* Scroll shadow */}
+                  <div style={{ position:'absolute', bottom:0, left:0, right:0, height:32, background:`linear-gradient(to top, ${dm ? '#1e293b' : '#ffffff'}, transparent)`, pointerEvents:'none', borderRadius:'0 0 10px 10px' }} />
+                  </div>
                 </div>
               )}
 
-              <div style={{ fontSize:12, color: mutedColor, fontWeight:600, marginBottom:6 }}>Editar inscriptos</div>
+              {/* Separador decorativo */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12, marginTop:4 }}>
+                <div style={{ flex:1, height:1, background:`linear-gradient(90deg, transparent, ${dm ? '#334155' : '#e2e8f0'})` }} />
+                <span style={{ fontSize:10, color: hint, fontWeight:600, letterSpacing:'1px' }}>✦ EDITAR</span>
+                <div style={{ flex:1, height:1, background:`linear-gradient(90deg, ${dm ? '#334155' : '#e2e8f0'}, transparent)` }} />
+              </div>
+
+              <div style={{ fontSize:12, color: mutedColor, fontWeight:600, marginBottom:6 }}>Inscriptos</div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:8, maxHeight:280, overflow:'auto', padding:12, background: dm ? '#0f172a' : '#f4f7fa', borderRadius:10, marginBottom:10, border:`1px solid ${dm ? '#334155' : 'transparent'}` }}>
                 {jugadoresClub.map(j => (
                   <label key={j.id} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color: txtColor, cursor:'pointer' }}>
@@ -808,44 +988,49 @@ export default function LigaDetallePage() {
           {subTab === 'programacion' && <div className="liga-fade">
             {/* Barra: selector de fecha + acciones */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14, flexWrap:'wrap', gap:10 }}>
-              <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-                <span style={{ fontSize:11, color: hint, alignSelf:'center', fontWeight:600, letterSpacing:'0.5px', textTransform:'uppercase' }}>Fecha</span>
-                {fechas.map(f => {
+              {/* Stepper de fechas */}
+              <div style={{ display:'flex', alignItems:'flex-start', overflowX:'auto', padding:'4px 0 2px', gap:0, scrollbarWidth:'none' }}>
+                <span style={{ fontSize:11, color: hint, fontWeight:700, letterSpacing:'0.5px', textTransform:'uppercase', alignSelf:'center', flexShrink:0, marginRight:10 }}>FECHAS</span>
+                {fechas.map((f, idx) => {
                   const isSelected = fechaSeleccionada === f.id
                   const isAjuste = f.es_ajuste
-                  const chipAccent =
-                    f.estado === 'finalizada' ? '#3b82f6'
-                    : f.estado === 'en_curso'  ? '#10b981'
-                    : isAjuste ? '#7c3aed'
-                    : '#6366f1'
-                  const chipLabel =
-                    f.estado === 'finalizada' ? `✓ ${isAjuste ? '⚡' : `F${f.numero}`}`
-                    : f.estado === 'en_curso'  ? `▶ ${isAjuste ? '⚡' : `F${f.numero}`}`
-                    : (isAjuste ? '⚡' : `F${f.numero}`)
+                  const isDone = f.estado === 'finalizada'
+                  const isActive = f.estado === 'en_curso' || f.estado === 'en_juego'
+                  const color = isDone ? '#3b82f6' : isActive ? '#10b981' : isAjuste ? '#7c3aed' : '#6366f1'
+                  const icon = isDone ? '✓' : isActive ? '▶' : isAjuste ? '⚡' : String(f.numero)
+                  const isLast = idx === fechas.length - 1
                   return (
-                    <button key={f.id}
-                      onClick={() => setFechaSeleccionada(f.id)}
-                      className={f.estado === 'en_curso' && !isSelected ? 'chip-en-curso' : ''}
-                      style={{
-                        padding:'5px 14px', borderRadius:20, cursor:'pointer', fontSize:12, fontWeight:700,
-                        background: isSelected
-                          ? `linear-gradient(135deg,${chipAccent},${chipAccent}cc)`
-                          : f.estado === 'finalizada' ? '#eff6ff'
-                          : f.estado === 'en_curso' ? '#ecfdf5'
-                          : (dm ? '#1e293b' : '#f1f5f9'),
-                        color: isSelected ? 'white'
-                          : f.estado === 'finalizada' ? '#3b82f6'
-                          : f.estado === 'en_curso' ? '#059669'
-                          : mutedColor,
-                        boxShadow: isSelected ? `0 2px 10px ${chipAccent}55` : 'none',
-                        border: isSelected ? 'none'
-                          : f.estado === 'finalizada' ? '1px solid #bfdbfe'
-                          : f.estado === 'en_curso' ? '1px solid #a7f3d0'
-                          : `1px solid ${dm ? '#334155' : '#e2e8f0'}`,
-                        transition:'all 0.15s',
-                      }}>
-                      {chipLabel}
-                    </button>
+                    <div key={f.id} style={{ display:'flex', alignItems:'center', flexShrink:0 }}>
+                      <div
+                        style={{ display:'flex', flexDirection:'column', alignItems:'center', cursor:'pointer', gap:4 }}
+                        onClick={() => setFechaSeleccionada(f.id)}>
+                        <div
+                          className={`lig-stepper-node${isActive && !isSelected ? ' chip-en-curso' : ''}`}
+                          style={{
+                            width: isSelected ? 38 : 30, height: isSelected ? 38 : 30,
+                            borderRadius:'50%',
+                            background: isSelected ? color : isDone ? `${color}22` : (dm ? '#1e293b' : '#f1f5f9'),
+                            border: `2.5px solid ${isSelected ? color : isDone || isActive ? color : (dm ? '#475569' : '#cbd5e1')}`,
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            color: isSelected ? 'white' : isDone || isActive ? color : mutedColor,
+                            fontSize: isSelected ? 14 : 12, fontWeight:800,
+                            boxShadow: isSelected ? `0 4px 14px ${color}60` : 'none',
+                            transition:'all 0.2s',
+                          }}>
+                          {icon}
+                        </div>
+                        <div style={{ fontSize:10, color: isSelected ? color : mutedColor, fontWeight: isSelected ? 700 : 600, whiteSpace:'nowrap', lineHeight:1 }}>
+                          {isAjuste ? 'Ajuste' : `F${f.numero}`}
+                        </div>
+                      </div>
+                      {!isLast && (
+                        <div style={{
+                          width:20, height:2, flexShrink:0, marginBottom:14,
+                          background: isDone ? color : (dm ? '#334155' : '#e2e8f0'),
+                          transition:'background 0.3s',
+                        }} />
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -894,13 +1079,15 @@ export default function LigaDetallePage() {
                 ) : (
                   <>
                     <button
-                      onClick={handleGenerarProgramacion}
+                      onClick={e => { ripple(e); handleGenerarProgramacion() }}
                       disabled={programando}
+                      className={!programando ? 'btn-pulse' : ''}
                       style={{
                         background: programando ? '#e2e8f0' : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
                         color: programando ? hint : 'white', border:'none', borderRadius:10,
-                        padding:'7px 16px', fontSize:12, fontWeight:700, cursor: programando ? 'default' : 'pointer',
-                        boxShadow: programando ? 'none' : '0 3px 10px rgba(99,102,241,0.4)',
+                        padding:'8px 18px', fontSize:12, fontWeight:700, cursor: programando ? 'default' : 'pointer',
+                        boxShadow: programando ? 'none' : '0 4px 14px rgba(99,102,241,0.45)',
+                        position:'relative', overflow:'hidden',
                       }}>
                       📅 {programando ? 'Programando...' : 'Programar fecha'}
                     </button>

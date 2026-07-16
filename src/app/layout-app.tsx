@@ -136,7 +136,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'linear-gradient(160deg,#f0f4ff 0%,#f8fafc 40%,#f0fdf4 100%)' }}>
 
       {/* ── SIDEBAR DESKTOP ── */}
       <aside className="sidebar" style={{

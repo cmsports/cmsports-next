@@ -6,6 +6,8 @@ import { calcularRankingDivision, type FilaRanking, type PartidoFinalizado } fro
 
 const supabase = createClient()
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 const AVATAR_BG = [
   ['#6366f1','#818cf8'],['#8b5cf6','#a78bfa'],['#ec4899','#f472b6'],
   ['#ef4444','#f87171'],['#f97316','#fb923c'],['#f59e0b','#fbbf24'],
@@ -22,22 +24,78 @@ function initials(name: string) {
   return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
 }
 
-const PODIO_CONFIG = [
-  { bg: 'linear-gradient(135deg,#fffbeb,#fef3c7)', border: '2px solid #f59e0b', shadow: '0 6px 20px rgba(245,158,11,0.25)', badgeColor: '#f59e0b', medal: '🥇', label: '1°' },
-  { bg: 'linear-gradient(135deg,#f8fafc,#e2e8f0)', border: '2px solid #94a3b8', shadow: '0 4px 14px rgba(148,163,184,0.2)', badgeColor: '#64748b', medal: '🥈', label: '2°' },
-  { bg: 'linear-gradient(135deg,#fff7ed,#fed7aa)', border: '2px solid #f97316', shadow: '0 4px 14px rgba(249,115,22,0.2)', badgeColor: '#ea580c', medal: '🥉', label: '3°' },
+const DIV_COLORS = [
+  '#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6',
+  '#06b6d4','#f43f5e','#84cc16','#ec4899','#3b82f6',
 ]
-const cardStyle = (i: number) => {
-  if (i < 3) return { background: PODIO_CONFIG[i].bg, border: PODIO_CONFIG[i].border, boxShadow: PODIO_CONFIG[i].shadow }
-  return { background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }
+function divColor(nombre: string) {
+  let h = 0; for (const c of nombre) h = (h * 31 + c.charCodeAt(0)) | 0
+  return DIV_COLORS[Math.abs(h) % DIV_COLORS.length]
 }
-const ptsBadgeColor = (i: number) => i < 3 ? PODIO_CONFIG[i].badgeColor : '#6366f1'
-const MEDALS = ['🥇', '🥈', '🥉']
+
+function hexAlpha(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+function CountUp({ to, duration = 800 }: { to: number; duration?: number }) {
+  const [val, setVal] = useState(0)
+  useEffect(() => {
+    if (!to) { setVal(0); return }
+    const s = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - s) / duration)
+      // easeOutExpo
+      const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
+      setVal(Math.round(to * eased))
+      if (t < 1) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  }, [to, duration])
+  return <>{val}</>
+}
 
 export function RankingDivision({ divisionId, nombreDivision }: { divisionId: string; nombreDivision: string }) {
   const [ranking, setRanking] = useState<FilaRanking[]>([])
   const [nombres, setNombres] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+
+  const accent = divColor(nombreDivision)
+
+  const PODIO_CONFIG = [
+    {
+      bg: `linear-gradient(135deg,${hexAlpha(accent, 0.08)},${hexAlpha(accent, 0.16)})`,
+      border: `2px solid ${hexAlpha(accent, 0.5)}`,
+      shadow: `0 8px 24px ${hexAlpha(accent, 0.28)}`,
+      badgeColor: accent,
+      medal: '🥇', label: '1°',
+    },
+    {
+      bg: 'linear-gradient(135deg,#f8fafc,#e2e8f0)',
+      border: '2px solid #94a3b8',
+      shadow: '0 5px 16px rgba(148,163,184,0.22)',
+      badgeColor: '#64748b',
+      medal: '🥈', label: '2°',
+    },
+    {
+      bg: 'linear-gradient(135deg,#fff7ed,#fed7aa)',
+      border: '2px solid #f97316',
+      shadow: '0 4px 14px rgba(249,115,22,0.2)',
+      badgeColor: '#ea580c',
+      medal: '🥉', label: '3°',
+    },
+  ]
+
+  // Sombra escalada por rango
+  const rankShadow = (i: number) => {
+    if (i === 0) return `0 10px 32px ${hexAlpha(accent, 0.3)}, 0 2px 8px rgba(0,0,0,0.1)`
+    if (i === 1) return '0 6px 20px rgba(148,163,184,0.25), 0 2px 6px rgba(0,0,0,0.08)'
+    if (i === 2) return '0 5px 16px rgba(249,115,22,0.2), 0 2px 4px rgba(0,0,0,0.06)'
+    const factor = Math.max(0, 1 - (i - 3) * 0.08)
+    return `0 ${Math.round(3 * factor)}px ${Math.round(8 * factor)}px rgba(0,0,0,${(0.04 * factor).toFixed(2)})`
+  }
 
   const cargar = useCallback(async () => {
     const db = supabase as any
@@ -55,10 +113,6 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
       es_walkover: boolean; sets_a: number | null; sets_b: number | null
     }>
 
-    // Usar la unión de division_jugadores + IDs que aparecen en partidos como
-    // lista base, para que ningún partido quede sin contar si un jugador no
-    // está en liga_division_jugadores (bug: calcularRankingDivision saltea el
-    // partido entero si cualquiera de los dos jugadores falta en el Map).
     const divJugIds = (dj || []).map(j => j.jugador_id)
     const partidoJugIds = partidosData.flatMap(p => [p.jugador_a_id, p.jugador_b_id])
     const jugadorIds = Array.from(new Set([...divJugIds, ...partidoJugIds]))
@@ -93,7 +147,11 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
     const doc = new jsPDF()
     const W = doc.internal.pageSize.getWidth()
 
-    doc.setFillColor(79, 70, 229)
+    // Header con color de división
+    const r = parseInt(accent.slice(1, 3), 16)
+    const g = parseInt(accent.slice(3, 5), 16)
+    const b = parseInt(accent.slice(5, 7), 16)
+    doc.setFillColor(r, g, b)
     doc.rect(0, 0, W, 32, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(20)
@@ -113,7 +171,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
         row.ds > 0 ? `+${row.ds}` : row.ds,
       ]),
       theme: 'striped',
-      headStyles: { fillColor: [14, 165, 233] },
+      headStyles: { fillColor: [r, g, b] },
       margin: { left: 14, right: 14 },
     })
 
@@ -122,34 +180,53 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
 
   if (loading) return (
     <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-      Cargando...
+      <div style={{ width: 40, height: 40, borderRadius: '50%', border: `3px solid ${accent}40`, borderTop: `3px solid ${accent}`, margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      Cargando ranking...
     </div>
   )
 
   return (
     <div>
+      <style>{`
+        @keyframes gold-glow{0%,100%{box-shadow:0 0 0 0 ${hexAlpha(accent, 0.6)},0 4px 12px rgba(0,0,0,0.18)}50%{box-shadow:0 0 0 10px ${hexAlpha(accent, 0)},0 4px 12px rgba(0,0,0,0.18)}}
+        .rank-avatar-1{animation:gold-glow 2.5s ease-in-out infinite}
+        @keyframes fadeUp-rank{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        .rank-card{animation:fadeUp-rank 0.3s ease both}
+      `}</style>
+
       {/* Leyenda + botón PDF */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ fontSize: 11, color: '#94a3b8', letterSpacing: '0.5px', fontWeight: 500 }}>
-          PJ · PG · PP · DS · PTS
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: accent }} />
+          <span style={{ fontSize: 11, color: '#94a3b8', letterSpacing: '0.5px', fontWeight: 600 }}>
+            {nombreDivision} · PJ · PG · PP · DS · PTS
+          </span>
         </div>
         <button
           onClick={exportarPDF}
           style={{
             background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0',
             borderRadius: 8, padding: '7px 14px', fontSize: 13, cursor: 'pointer',
-            fontWeight: 600,
+            fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6,
           }}
         >
-          📄 Exportar PDF
+          📄 PDF
         </button>
       </div>
 
       {/* Lista de jugadores */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {ranking.length === 0 && (
-          <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
-            Aún no hay resultados registrados en esta división
+          <div style={{ padding: '48px 24px', textAlign: 'center', background: '#f8fafc', borderRadius: 16, border: '2px dashed #e2e8f0' }}>
+            <svg width="72" height="72" viewBox="0 0 72 72" fill="none" style={{ margin: '0 auto 16px', display: 'block', opacity: 0.35 }}>
+              <circle cx="36" cy="36" r="32" fill={hexAlpha(accent, 0.12)} stroke={accent} strokeWidth="2" strokeDasharray="6 4" />
+              <text x="36" y="44" textAnchor="middle" fontSize="28" fill={accent}>🏆</text>
+            </svg>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#64748b', marginBottom: 6 }}>Sin resultados aún</div>
+            <div style={{ fontSize: 12, color: '#94a3b8', maxWidth: 240, margin: '0 auto' }}>
+              Registrá resultados en la pestaña Programación para ver el ranking
+            </div>
           </div>
         )}
 
@@ -159,16 +236,22 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
           const bg = nombre !== '—' ? avatarBg(nombre) : 'linear-gradient(135deg,#94a3b8,#64748b)'
           const dsColor = row.ds > 0 ? '#059669' : row.ds < 0 ? '#dc2626' : '#94a3b8'
           const dsStr = row.ds > 0 ? `+${row.ds}` : String(row.ds)
-          const badgeColor = ptsBadgeColor(i)
+          const isPodio = i < 3
+          const cfg = isPodio ? PODIO_CONFIG[i] : null
+          const badgeColor = cfg ? cfg.badgeColor : '#6366f1'
           const maxPts = ranking[0]?.pts ?? 1
           const pctBar = Math.round((row.pts / maxPts) * 100)
-          const isPodio = i < 3
+          const MEDALS = ['🥇', '🥈', '🥉']
 
           return (
             <div
               key={row.jugadorId}
+              className="rank-card"
               style={{
-                ...cardStyle(i),
+                animationDelay: `${i * 0.06}s`,
+                background: cfg ? cfg.bg : '#ffffff',
+                border: cfg ? cfg.border : '1px solid #e2e8f0',
+                boxShadow: rankShadow(i),
                 borderRadius: isPodio ? 16 : 12,
                 padding: isPodio ? '16px 18px' : '10px 14px',
                 display: 'flex',
@@ -182,46 +265,51 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
                 {isPodio ? (
                   <span style={{ fontSize: i === 0 ? 30 : 24, lineHeight: 1 }}>{MEDALS[i]}</span>
                 ) : (
-                  <span style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>{i + 1}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
                 )}
               </div>
 
-              {/* Avatar con iniciales */}
-              <div style={{
-                width: isPodio ? (i === 0 ? 52 : 44) : 36,
-                height: isPodio ? (i === 0 ? 52 : 44) : 36,
-                borderRadius: '50%', background: bg,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-                fontSize: isPodio ? (i === 0 ? 18 : 15) : 12,
-                fontWeight: 800, color: 'white',
-                boxShadow: isPodio ? '0 3px 10px rgba(0,0,0,0.22)' : '0 2px 6px rgba(0,0,0,0.15)',
-                letterSpacing: '0.5px',
-                border: isPodio ? `3px solid white` : 'none',
-              }}>
+              {/* Avatar */}
+              <div
+                className={i === 0 ? 'rank-avatar-1' : ''}
+                style={{
+                  width: isPodio ? (i === 0 ? 54 : 46) : 36,
+                  height: isPodio ? (i === 0 ? 54 : 46) : 36,
+                  borderRadius: '50%', background: bg,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                  fontSize: isPodio ? (i === 0 ? 19 : 16) : 12,
+                  fontWeight: 800, color: 'white',
+                  letterSpacing: '0.5px',
+                  border: i === 0 ? `3px solid ${accent}` : isPodio ? '3px solid white' : 'none',
+                }}>
                 {inits}
               </div>
 
               {/* Nombre + barra de progreso */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontWeight: 700, color: '#0f172a',
-                  fontSize: isPodio ? (i === 0 ? 16 : 14) : 13,
+                  fontWeight: 800, color: '#0f172a',
+                  fontSize: isPodio ? (i === 0 ? 17 : 15) : 13,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>
                   {nombre}
                 </div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
                   {row.pj}PJ · {row.pg}V · {row.pp}D
                 </div>
                 {isPodio && (
-                  <div style={{ marginTop:5, height:4, background:'rgba(0,0,0,0.08)', borderRadius:2, overflow:'hidden' }}>
-                    <div style={{ height:'100%', width:`${pctBar}%`, background: badgeColor, borderRadius:2, transition:'width 0.6s ease' }} />
+                  <div style={{ marginTop: 6, height: 4, background: 'rgba(0,0,0,0.07)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', width: `${pctBar}%`, borderRadius: 2,
+                      background: `linear-gradient(90deg,${badgeColor},${badgeColor}cc)`,
+                      transition: 'width 0.8s cubic-bezier(0.23,1,0.32,1)',
+                    }} />
                   </div>
                 )}
               </div>
 
-              {/* DS coloreado */}
+              {/* DS badge */}
               <div style={{
                 fontSize: 11, fontWeight: 700, color: dsColor,
                 background: `${dsColor}18`,
@@ -232,16 +320,17 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
                 DS {dsStr}
               </div>
 
-              {/* Badge de puntos */}
+              {/* Badge de puntos con count-up */}
               <div style={{
-                background: badgeColor, color: 'white',
-                borderRadius: 10, padding: isPodio ? '6px 14px' : '4px 10px',
+                background: `linear-gradient(135deg,${badgeColor},${badgeColor}cc)`,
+                color: 'white', borderRadius: 12,
+                padding: isPodio ? '7px 16px' : '4px 10px',
                 flexShrink: 0,
                 boxShadow: `0 3px 10px ${badgeColor}55`,
-                textAlign: 'center', minWidth: isPodio ? 52 : 40,
+                textAlign: 'center', minWidth: isPodio ? 56 : 40,
               }}>
-                <div style={{ fontSize: isPodio ? (i === 0 ? 22 : 18) : 14, fontWeight: 800, fontFamily: 'monospace', lineHeight: 1 }}>
-                  {row.pts}
+                <div style={{ fontSize: isPodio ? (i === 0 ? 24 : 19) : 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                  {isPodio ? <CountUp to={row.pts} duration={900 + i * 150} /> : row.pts}
                 </div>
                 <div style={{ fontSize: 8, fontWeight: 700, opacity: 0.85, letterSpacing: '0.8px', marginTop: 2 }}>
                   PTS
