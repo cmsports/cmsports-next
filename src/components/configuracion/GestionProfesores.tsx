@@ -48,9 +48,9 @@ export default function GestionProfesores({ clubId }: { clubId: string }) {
         <span style={{ fontSize: 14, fontWeight: 600 }}>Profesores</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <input placeholder="Nombre completo" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} style={input} />
-        <input type="email" placeholder="Correo de acceso" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={input} />
-        <input placeholder="Especialidad (opcional)" value={form.especialidad} onChange={e => setForm({ ...form, especialidad: e.target.value })} style={input} />
+        <input name="profesor-nombre" autoComplete="off" placeholder="Nombre completo" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} style={input} />
+        <input name="profesor-email" type="email" autoComplete="off" placeholder="Correo de acceso" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={input} />
+        <input name="profesor-especialidad" autoComplete="off" placeholder="Especialidad (opcional)" value={form.especialidad} onChange={e => setForm({ ...form, especialidad: e.target.value })} style={input} />
         <input type="password" placeholder="Contraseña inicial (mínimo 6)" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={input} />
       </div>
       {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 10 }}>{error}</div>}
