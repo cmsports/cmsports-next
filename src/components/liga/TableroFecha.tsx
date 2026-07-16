@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { generarBloquesHorario, normalizarBloque, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
 import {
@@ -683,6 +684,7 @@ export function TableroFecha({
                               draggable={fecha.estado === 'programada'}
                               onDragStart={() => setDraggingId(partido.id)}
                               onDragEnd={() => setDraggingId(null)}
+                              onClick={fecha.estado !== 'programada' ? () => abrirResultado(partido) : undefined}
                               style={{
                                 borderRadius: 12,
                                 background: partido.estado === 'finalizado'
@@ -707,7 +709,7 @@ export function TableroFecha({
                               </div>
 
                               {/* Jugadores con mini avatar chips */}
-                              <div onClick={() => abrirResultado(partido)} style={{ cursor: clickeable ? 'pointer' : 'default' }}>
+                              <div style={{ cursor: clickeable ? 'pointer' : 'default' }}>
                                 {[partido.jugadorAId, partido.jugadorBId].map((jid, ji) => {
                                   const nm = nombres[jid] ?? '—'
                                   const inits = nm !== '—' ? (nm.trim().split(/\s+/).length >= 2 ? (nm.trim().split(/\s+/)[0][0] + nm.trim().split(/\s+/).slice(-1)[0][0]).toUpperCase() : nm.slice(0,2).toUpperCase()) : '?'
@@ -833,9 +835,9 @@ export function TableroFecha({
       })()}
 
       {/* ── Modal resultado ─────────────────────────────────────────────── */}
-      {partidoResultado && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 440, boxShadow: '0 24px 60px rgba(15,23,42,0.3)', overflow: 'hidden' }}>
+      {partidoResultado && typeof document !== 'undefined' && createPortal(
+        <div onClick={() => setPartidoResultado(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 440, margin: '0 16px', boxShadow: '0 24px 60px rgba(15,23,42,0.3)', overflow: 'hidden' }}>
             {/* Header del modal */}
             <div style={{ background: 'linear-gradient(135deg,#1e1b4b,#4f46e5)', padding: '20px 24px' }}>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
@@ -893,7 +895,7 @@ export function TableroFecha({
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   )
 }
