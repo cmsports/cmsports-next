@@ -4,11 +4,10 @@ const mocks = vi.hoisted(() => ({ requireAdminClub: vi.fn(), createAdminClient: 
 vi.mock('@/lib/auth/require', () => ({ requireAdminClub: mocks.requireAdminClub }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.createAdminClient }))
 
-import { encrypt } from '@/lib/crypto'
 import { aprobarSolicitud } from './solicitudes'
 
 describe('aprobarSolicitud', () => {
-  const createUser = vi.fn()
+  const inviteUserByEmail = vi.fn()
   const deleteUser = vi.fn()
   const perfilUpsert = vi.fn()
   const jugadorDeleteEq = vi.fn().mockResolvedValue({ error: null })
@@ -16,12 +15,11 @@ describe('aprobarSolicitud', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.stubEnv('ENCRYPTION_KEY', 'a'.repeat(64))
-    const password = encrypt('ClaveElegida123!')
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://cmsports.example')
     const supabase = {
       from: vi.fn((tabla: string) => {
         if (tabla === 'solicitudes_jugador') return {
-          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { password }, error: null }) }) }) }),
+          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'solicitud-id', estado: 'pendiente' }, error: null }) }) }) }),
           update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: solicitudUpdateClubEq }) }),
         }
         if (tabla === 'jugadores') return {
@@ -32,9 +30,9 @@ describe('aprobarSolicitud', () => {
       }),
     }
     mocks.requireAdminClub.mockResolvedValue({ error: null, supabase, clubId: 'club-id' })
-    createUser.mockResolvedValue({ data: { user: { id: 'usuario-id' } }, error: null })
+    inviteUserByEmail.mockResolvedValue({ data: { user: { id: 'usuario-id' } }, error: null })
     perfilUpsert.mockResolvedValue({ error: null })
-    mocks.createAdminClient.mockReturnValue({ auth: { admin: { createUser, deleteUser } }, from: vi.fn(() => ({ upsert: perfilUpsert })) })
+    mocks.createAdminClient.mockReturnValue({ auth: { admin: { inviteUserByEmail, deleteUser } }, from: vi.fn(() => ({ upsert: perfilUpsert })) })
   })
 
   const input = {
@@ -42,16 +40,19 @@ describe('aprobarSolicitud', () => {
     categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: 2, mensualidad: 25000, sesiones_limite: 8,
   }
 
-  it('activa la cuenta con la contraseña elegida por el jugador', async () => {
+  it('envía una invitación sin manejar la contraseña del jugador', async () => {
     const resultado = await aprobarSolicitud(input)
-    expect(resultado).toEqual(expect.objectContaining({ success: true, cuentaCreada: true, passwordPropia: true }))
-    expect(createUser).toHaveBeenCalledWith({ email: 'pedrito@email.cl', password: 'ClaveElegida123!', email_confirm: true })
+    expect(resultado).toEqual(expect.objectContaining({ success: true, cuentaCreada: true, invitacionEnviada: true }))
+    expect(inviteUserByEmail).toHaveBeenCalledWith('pedrito@email.cl', {
+      redirectTo: 'https://cmsports.example/auth/callback?next=/crear-contrasena',
+      data: { nombre: 'Pedrito' },
+    })
     expect(perfilUpsert).toHaveBeenCalledWith(expect.objectContaining({ rol: 'jugador', jugador_id: 'jugador-id', email: 'pedrito@email.cl' }))
     expect(solicitudUpdateClubEq).toHaveBeenCalledWith('club_id', 'club-id')
   })
 
-  it('revierte el jugador si Auth no puede crear la cuenta', async () => {
-    createUser.mockResolvedValue({ data: { user: null }, error: { message: 'Auth failed' } })
+  it('revierte el jugador si no puede enviar la invitación', async () => {
+    inviteUserByEmail.mockResolvedValue({ data: { user: null }, error: { message: 'Auth failed' } })
     await expect(aprobarSolicitud(input)).resolves.toEqual({ error: 'No se pudo crear la cuenta de acceso del jugador.' })
     expect(jugadorDeleteEq).toHaveBeenCalledWith('id', 'jugador-id')
   })

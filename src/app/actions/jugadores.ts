@@ -1,8 +1,8 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { decrypt, generarPassword } from '@/lib/crypto'
 import { requireAdminClub } from '@/lib/auth/require'
+import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
 
 type PlanFields = {
   categoria: string
@@ -13,15 +13,18 @@ type PlanFields = {
 }
 
 export async function crearJugador(params: {
-  nombre: string; rut: string; email: string; password: string; telefono: string
+  nombre: string; rut: string; email: string; telefono: string
 } & PlanFields) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { nombre, rut, email, password, telefono, ...planFields } = params
+  const { nombre, rut, email, telefono, ...planFields } = params
   const emailNormalizado = email.trim().toLowerCase()
   if (!emailNormalizado) return { error: 'El email es obligatorio' }
-  if (password.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
+  let redirectTo: string
+  try { redirectTo = getInviteRedirectUrl() } catch {
+    return { error: 'Falta configurar NEXT_PUBLIC_APP_URL para enviar invitaciones.' }
+  }
 
   const { data: nuevoJugador, error } = await supabase.from('jugadores').insert({
     club_id: clubId, nombre: nombre.trim(), rut: rut || null, email: emailNormalizado, telefono: telefono || null,
@@ -30,8 +33,9 @@ export async function crearJugador(params: {
   if (error || !nuevoJugador) return { error: 'Error al crear: ' + error?.message }
 
   const admin = createAdminClient()
-  const { data: creado, error: createError } = await admin.auth.admin.createUser({
-    email: emailNormalizado, password, email_confirm: true,
+  const { data: creado, error: createError } = await admin.auth.admin.inviteUserByEmail(emailNormalizado, {
+    redirectTo,
+    data: { nombre: nombre.trim() },
   })
   if (createError || !creado?.user) {
     await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
@@ -50,7 +54,7 @@ export async function crearJugador(params: {
     return { error: 'No se pudo vincular la cuenta del jugador' }
   }
 
-  return { success: true }
+  return { success: true, invitacionEnviada: true }
 }
 
 export async function crearAccesoJugador(params: { jugadorId: string }) {
@@ -65,49 +69,33 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
   const { data: existente } = await admin.from('perfiles').select('id').eq('jugador_id', params.jugadorId).maybeSingle()
   if (existente) return { error: 'Este jugador ya tiene una cuenta de acceso' }
 
-  const { data: solicitud } = await admin.from('solicitudes_jugador')
-    .select('id,password').eq('club_id', clubId).eq('email', jugador.email)
-    .not('password', 'is', null).order('creado_en', { ascending: false }).limit(1).maybeSingle()
-
-  let passwordPropia = !!solicitud?.password
-  let password = generarPassword()
-  if (solicitud?.password) {
-    try {
-      password = decrypt(solicitud.password)
-    } catch {
-      passwordPropia = false
-    }
+  let redirectTo: string
+  try { redirectTo = getInviteRedirectUrl() } catch {
+    return { error: 'Falta configurar NEXT_PUBLIC_APP_URL para enviar invitaciones.' }
   }
 
-  const { data: creado, error: createError } = await admin.auth.admin.createUser({
-    email: jugador.email, password, email_confirm: true,
+  const { data: creado, error: createError } = await admin.auth.admin.inviteUserByEmail(jugador.email, {
+    redirectTo,
+    data: { nombre: jugador.nombre },
   })
 
-  let userId = creado?.user?.id
+  const userId = creado?.user?.id
   if (createError || !userId) {
-    if (!createError?.message?.toLowerCase().includes('already')) {
-      return { error: 'No se pudo crear la cuenta: ' + (createError?.message || 'error desconocido') }
-    }
-    let page = 1
-    while (!userId) {
-      const { data: lista } = await admin.auth.admin.listUsers({ page, perPage: 200 })
-      if (!lista?.users.length) break
-      userId = lista.users.find(u => u.email === jugador.email)?.id
-      page++
-    }
-    if (!userId) return { error: 'El email ya está registrado pero no se pudo encontrar la cuenta' }
-    passwordPropia = true
+    return { error: createError?.message?.toLowerCase().includes('already')
+      ? 'Ese email ya tiene una cuenta. Usa recuperación de contraseña o soporte.'
+      : 'No se pudo enviar la invitación: ' + (createError?.message || 'error desconocido') }
   }
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
     id: userId, club_id: clubId, nombre: jugador.nombre, email: jugador.email,
     rol: 'jugador', jugador_id: params.jugadorId,
   })
-  if (perfilError) return { error: 'Cuenta creada pero falló crear el perfil: ' + perfilError.message }
+  if (perfilError) {
+    await admin.auth.admin.deleteUser(userId)
+    return { error: 'No se pudo vincular la cuenta: ' + perfilError.message }
+  }
 
-  if (solicitud) await admin.from('solicitudes_jugador').update({ password: null }).eq('id', solicitud.id)
-
-  return { success: true, password: passwordPropia ? undefined : password }
+  return { success: true, invitacionEnviada: true }
 }
 
 export async function editarJugador(params: {

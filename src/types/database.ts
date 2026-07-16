@@ -1367,6 +1367,17 @@ export interface Database {
     }
     Views: {}
     Functions: {
+      crear_solicitud_jugador: {
+        Args: {
+          p_codigo: string
+          p_club_id: string
+          p_nombre: string
+          p_rut: string
+          p_email: string
+          p_telefono?: string | null
+        }
+        Returns: string
+      }
       validar_invitacion: {
         Args: { p_codigo: string; p_club_id?: string | null }
         Returns: { club_id: string; club_nombre: string }[]

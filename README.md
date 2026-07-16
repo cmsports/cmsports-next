@@ -37,6 +37,7 @@ Abre [http://localhost:3000](http://localhost:3000).
 | `NEXT_PUBLIC_SUPABASE_URL` | Sí | URL del proyecto Supabase |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sí | Clave pública (anon) de Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | Sí | Clave de servicio — solo se usa en el servidor (invitaciones de usuarios, Server Actions administrativas). Nunca debe exponerse al cliente |
+| `NEXT_PUBLIC_APP_URL` | Sí | URL pública de la aplicación; se usa para los enlaces seguros de invitación y recuperación |
 | `OPENAI_API_KEY` | Opcional | Generación de flyers con IA (`/api/generar-flyer-ia`) |
 | `RESEND_API_KEY` | Opcional | Envío de emails de monitoreo (`/api/monitor-email`) |
 | `VERCEL_MONITOR_TOKEN` | Opcional | Autenticación del endpoint de monitoreo |

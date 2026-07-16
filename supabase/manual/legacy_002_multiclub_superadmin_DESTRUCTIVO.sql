@@ -1,4 +1,5 @@
 -- ============================================================
+-- ARCHIVO HISTÓRICO DESTRUCTIVO — NO EJECUTAR EN PRODUCCIÓN
 -- CmSports — Multi-club + rol superadmin + limpieza de datos
 -- ============================================================
 -- INSTRUCCIONES:

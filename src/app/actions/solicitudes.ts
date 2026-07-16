@@ -2,7 +2,7 @@
 
 import { requireAdminClub } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { decrypt, generarPassword } from '@/lib/crypto'
+import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
 
 export async function aprobarSolicitud(params: {
   solicitudId: string
@@ -22,22 +22,19 @@ export async function aprobarSolicitud(params: {
   const { solicitudId, nombre, rut, email, telefono, ...planFields } = params
   const emailNormalizado = email.trim().toLowerCase()
 
-  // Traer la solicitud para recuperar la contraseña que eligió el jugador
   const { data: sol } = await supabase
     .from('solicitudes_jugador')
-    .select('password')
+    .select('id,estado')
     .eq('id', solicitudId)
     .eq('club_id', clubId)
     .single()
 
+  if (!sol || sol.estado !== 'pendiente') return { error: 'La solicitud ya no está pendiente' }
   if (!emailNormalizado) return { error: 'La solicitud no tiene un correo válido' }
 
-  let passwordPropia = false
-  let password = generarPassword()
-  if (sol?.password) {
-    try { password = decrypt(sol.password); passwordPropia = true } catch {
-      return { error: 'No se pudo recuperar la contraseña elegida. Pide al jugador enviar nuevamente la solicitud.' }
-    }
+  let redirectTo: string
+  try { redirectTo = getInviteRedirectUrl() } catch {
+    return { error: 'Falta configurar NEXT_PUBLIC_APP_URL para enviar invitaciones.' }
   }
 
   const { data: nuevoJugador, error: insertErr } = await supabase.from('jugadores').insert({
@@ -49,8 +46,9 @@ export async function aprobarSolicitud(params: {
   const jugador = { nombre, email: emailNormalizado, telefono: telefono || null }
 
   const admin = createAdminClient()
-  const { data: creado, error: createError } = await admin.auth.admin.createUser({
-    email: emailNormalizado, password, email_confirm: true,
+  const { data: creado, error: createError } = await admin.auth.admin.inviteUserByEmail(emailNormalizado, {
+    redirectTo,
+    data: { nombre },
   })
 
   const userId = creado?.user?.id
@@ -71,7 +69,7 @@ export async function aprobarSolicitud(params: {
   }
 
   const { error: aprobarError } = await supabase.from('solicitudes_jugador')
-    .update({ estado: 'aprobado', password: null }).eq('id', solicitudId).eq('club_id', clubId)
+    .update({ estado: 'aprobado' }).eq('id', solicitudId).eq('club_id', clubId)
   if (aprobarError) {
     await admin.auth.admin.deleteUser(userId)
     await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
@@ -81,9 +79,7 @@ export async function aprobarSolicitud(params: {
   return {
     success: true,
     cuentaCreada: true,
-    passwordPropia,
-    // Solo se devuelve una contraseña si tuvimos que generarla (el jugador no eligió una)
-    password: passwordPropia ? undefined : password,
+    invitacionEnviada: true,
     jugador,
   }
 }

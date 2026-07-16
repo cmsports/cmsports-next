@@ -25,7 +25,7 @@ export default function SolicitudesPage() {
   const [modalAprobar, setModalAprobar] = useState<any>(null)
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
   const [aprobando, setAprobando]     = useState(false)
-  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; password?: string; cuentaCreada?: boolean }>(null)
+  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; cuentaCreada?: boolean }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -81,7 +81,6 @@ export default function SolicitudesPage() {
       nombre: res.jugador?.nombre ?? s.nombre,
       email: res.jugador?.email ?? (s.email || null),
       telefono: res.jugador?.telefono ?? (s.telefono || null),
-      password: res.password,
       cuentaCreada: res.cuentaCreada,
     })
   }
@@ -89,10 +88,7 @@ export default function SolicitudesPage() {
   function linkWhatsApp(info: NonNullable<typeof aprobadoInfo>) {
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const tel = (info.telefono || '').replace(/[^0-9]/g, '')
-    const credencial = info.password
-      ? `esta contraseña temporal: ${info.password}`
-      : 'la contraseña que elegiste al registrarte'
-    const msg = `¡Hola ${info.nombre}! 🏓 Tu cuenta en CmSports ya está activa. Entra en ${origin}/login con tu correo (${info.email ?? ''}) y ${credencial}. ¡Nos vemos en el club!`
+    const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud en CmSports fue aprobada. Revisa el correo enviado a ${info.email ?? ''} y usa el enlace para crear tu contraseña. Luego podrás entrar en ${origin}/login. ¡Nos vemos en el club!`
     return `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`
   }
 
@@ -272,19 +268,12 @@ export default function SolicitudesPage() {
             <h2 style={{ fontSize: 16, fontWeight: 600, color: text, textAlign: 'center', marginBottom: 6 }}>Jugador aprobado</h2>
             {aprobadoInfo.cuentaCreada ? (
               <p style={{ fontSize: 13, color: muted, textAlign: 'center', marginBottom: 18 }}>
-                La cuenta de <strong>{aprobadoInfo.nombre}</strong> ya está activa. Puede entrar con su correo y su contraseña.
+                Enviamos a <strong>{aprobadoInfo.email}</strong> un enlace para que {aprobadoInfo.nombre} cree su contraseña.
               </p>
             ) : (
               <p style={{ fontSize: 13, color: '#d97706', textAlign: 'center', marginBottom: 18 }}>
                 No se pudo confirmar la cuenta de acceso.
               </p>
-            )}
-
-            {aprobadoInfo.password && (
-              <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px', marginBottom: 16, textAlign: 'center' }}>
-                <div style={{ fontSize: 11, color: muted, marginBottom: 4 }}>Contraseña temporal generada (compártela con el jugador)</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: text, fontFamily: 'monospace', letterSpacing: 1 }}>{aprobadoInfo.password}</div>
-              </div>
             )}
 
             <div style={{ display: 'flex', gap: 10 }}>

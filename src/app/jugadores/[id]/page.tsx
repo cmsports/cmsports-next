@@ -51,7 +51,6 @@ export default function JugadorDetallePage() {
   const [guardandoExterno, setGuardandoExterno] = useState(false)
   const [tieneCuenta, setTieneCuenta] = useState(true)
   const [creandoAcceso, setCreandoAcceso] = useState(false)
-  const [accesoPassword, setAccesoPassword] = useState('')
   const [accesoError, setAccesoError] = useState('')
   const [accesoExito, setAccesoExito] = useState(false)
 
@@ -245,7 +244,6 @@ export default function JugadorDetallePage() {
     const res = await crearAccesoJugador({ jugadorId })
     setCreandoAcceso(false)
     if (res.error) { setAccesoError(res.error); return }
-    setAccesoPassword(res.password || '')
     setAccesoExito(true)
     setTieneCuenta(true)
   }
@@ -314,11 +312,7 @@ export default function JugadorDetallePage() {
 
         {esAdmin && (accesoError || accesoExito) && (
           <div style={{ marginTop:10, background: accesoError ? 'rgba(220,38,38,0.25)' : 'rgba(34,197,94,0.25)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#fff' }}>
-            {accesoError ? accesoError : accesoPassword ? (
-              <>✓ Cuenta creada. Contraseña: <b style={{ fontFamily:'monospace' }}>{accesoPassword}</b> — envíasela a {jugador.email}.</>
-            ) : (
-              <>✓ Cuenta creada con la contraseña que el jugador eligió al pedir la solicitud. Ya puede entrar con {jugador.email}.</>
-            )}
+            {accesoError ? accesoError : <>✓ Invitación enviada a {jugador.email}. El jugador debe usar ese enlace para crear su contraseña.</>}
           </div>
         )}
         {esAdmin && datosError && !editContacto && !editPlan && (
