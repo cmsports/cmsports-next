@@ -31,6 +31,7 @@ export default function TorneosExternosPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
   const [guardando, setGuardando] = useState(false)
+  const [formError, setFormError] = useState('')
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -49,7 +50,9 @@ export default function TorneosExternosPage() {
 
   async function guardar() {
     const clubNombre = form.club === 'Otro' ? form.clubNombre : form.club
-    if (!clubNombre || !form.fecha) return
+    if (!clubNombre) { setFormError('Seleccioná un club o ingresá el nombre'); return }
+    if (!form.fecha) { setFormError('Ingresá la fecha del torneo'); return }
+    setFormError('')
     setGuardando(true)
 
     const { error } = await supabase.from('torneos_externos').insert({
@@ -109,7 +112,7 @@ export default function TorneosExternosPage() {
               </span>
             </div>
             <div style={{ textAlign:'right' }}>
-              <div style={{ fontSize:12, color: muted }}>{POSICION_LABEL[t.posicion] || t.posicion}</div>
+              <div style={{ fontSize:12, color: muted }}>{t.fecha}</div>
             </div>
           </div>
         </div>
@@ -163,8 +166,9 @@ export default function TorneosExternosPage() {
                 type="date" value={form.fecha} onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} />
             </div>
 
+            {formError && <div style={{ color:'#dc2626', fontSize:12, marginBottom:10, padding:'8px 10px', background:'#fef2f2', borderRadius:7, border:'1px solid #fecaca' }}>{formError}</div>}
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={() => { setModalOpen(false); setFormError('') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
               <button onClick={guardar} disabled={guardando} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
                 {guardando ? 'Guardando...' : 'Registrar'}
               </button>

@@ -23,12 +23,17 @@ export default function GestionProfesores({ clubId }: { clubId: string }) {
   useEffect(() => { cargar() }, [clubId])
 
   async function crear() {
-    setGuardando(true); setError(''); setMensaje('')
+    setError(''); setMensaje('')
+    if (!form.nombre.trim()) { setError('El nombre es obligatorio'); return }
+    if (!form.email.trim()) { setError('El correo es obligatorio'); return }
+    if (form.password.length < 6) { setError('La contrase\u00F1a debe tener al menos 6 caracteres'); return }
+    setGuardando(true)
     const res = await crearProfesor({ ...form, email: form.email.replace(/[\s\u200B-\u200D\uFEFF]/g, '').toLowerCase() })
     setGuardando(false)
     if (res.error) { setError(res.error); return }
     setForm({ nombre: '', email: '', especialidad: '', password: '' })
     setMensaje('Profesor y cuenta de acceso creados correctamente.')
+    setTimeout(() => setMensaje(''), 4000)
     await cargar()
   }
 

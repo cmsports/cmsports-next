@@ -39,6 +39,7 @@ export default function SolicitudesPage() {
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
+    if (perfil.rol !== 'admin') { router.push('/dashboard'); return }
     if (perfil.club_id) {
       cargarSolicitudes(perfil.club_id).then(() => setLoading(false))
     } else {

@@ -156,8 +156,12 @@ export default function RedesSocialesPage() {
     }
   }, [authLoading, perfil])
 
-  function guardarInfoClubSiCambio(nuevaDireccion: string, nuevoTelefono: string) {
-    actualizarInfoClubAction(nuevaDireccion, nuevoTelefono)
+  async function guardarInfoClubSiCambio(nuevaDireccion: string, nuevoTelefono: string) {
+    try {
+      await actualizarInfoClubAction(nuevaDireccion, nuevoTelefono)
+    } catch (e) {
+      console.error('Error al guardar datos del club:', e)
+    }
   }
 
   function actualizarCategoria(i: number, campo: keyof Categoria, valor: string) {

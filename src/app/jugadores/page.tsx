@@ -299,7 +299,7 @@ export default function JugadoresPage() {
                 <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Contraseña *</label>
                 <input
                   style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-                  type="text" placeholder="Mínimo 6 caracteres"
+                  type="password" placeholder="Mínimo 6 caracteres"
                   value={form.password}
                   onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))}
                 />

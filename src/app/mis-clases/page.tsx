@@ -31,7 +31,8 @@ export default function MisClasesPage() {
 
   const inicioSemana = new Date(hoy)
   const diaSemana = hoy.getDay()
-  inicioSemana.setDate(hoy.getDate() - diaSemana + semanaOffset * 7)
+  const diasDesLunes = diaSemana === 0 ? 6 : diaSemana - 1
+  inicioSemana.setDate(hoy.getDate() - diasDesLunes + semanaOffset * 7)
   const finSemana = new Date(inicioSemana)
   finSemana.setDate(inicioSemana.getDate() + 6)
 

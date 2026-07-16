@@ -70,6 +70,7 @@ export default function DashboardProfesorPage() {
     async function cargar() {
       if (authLoading) return
       if (!perfil) { router.push('/login'); return }
+      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor') { router.push('/dashboard'); return }
       if (perfil.club_id) await cargarDatos(perfil)
       setLoading(false)
     }
@@ -86,7 +87,7 @@ export default function DashboardProfesorPage() {
     <AppLayout perfil={perfil}>
       <div style={{ marginBottom:16 }}>
         <div style={{ fontSize:20, fontWeight:600, color: text, marginBottom:4 }}>
-          Buen día, {perfil?.nombre?.split(' ')[0] || 'Profesor'}
+          {hoy.getHours() < 12 ? 'Buenos días' : hoy.getHours() < 20 ? 'Buenas tardes' : 'Buenas noches'}, {perfil?.nombre?.split(' ')[0] || 'Profesor'}
         </div>
         <div style={{ fontSize:13, color: muted }}>
           {diasSemana[hoy.getDay()]} {hoy.getDate()} de {meses[hoy.getMonth()]} {hoy.getFullYear()}
