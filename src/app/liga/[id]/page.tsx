@@ -554,13 +554,13 @@ export default function LigaDetallePage() {
     <AppLayout perfil={perfil}>
       <style>{`
         *{font-family:-apple-system,BlinkMacSystemFont,'Inter','Segoe UI',system-ui,sans-serif}
-        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1}}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
         @keyframes ripple-anim{0%{transform:scale(0);opacity:1}100%{transform:scale(2.5);opacity:0}}
         @keyframes pulse-green{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.4)}50%{box-shadow:0 0 0 6px rgba(16,185,129,0)}}
         @keyframes pulse-indigo{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,0.5)}50%{box-shadow:0 0 0 8px rgba(99,102,241,0)}}
-        @keyframes slide-in-right{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
-        .liga-fade{animation:fadeUp 0.35s ease both}
+        @keyframes slide-in-right{from{opacity:0;transform:translateX(20px)}to{opacity:1}}
+        .liga-fade{animation:fadeUp 0.35s ease backwards}
         .liga-fade-d1{animation-delay:0.05s}
         .liga-fade-d2{animation-delay:0.12s}
         .liga-fade-d3{animation-delay:0.20s}
@@ -571,7 +571,7 @@ export default function LigaDetallePage() {
         .lig-stepper-node{transition:transform 0.15s,box-shadow 0.15s}
         .lig-stepper-node:hover{transform:scale(1.12)}
         .btn-pulse{animation:pulse-indigo 2s infinite}
-        .lig-tab-active{animation:slide-in-right 0.2s ease both}
+        .lig-tab-active{animation:slide-in-right 0.2s ease backwards}
         @media print{
           .liga-no-print{display:none!important}
           .liga-fade{animation:none!important}
