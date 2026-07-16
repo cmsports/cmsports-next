@@ -7,7 +7,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 
 const profesorSchema = z.object({
   nombre: z.string().trim().min(2, 'Ingresa el nombre del profesor'),
-  email: z.string().trim().email('Ingresa un correo válido'),
+  email: z.string().transform(value => value.replace(/[\s\u200B-\u200D\uFEFF]/g, '').toLowerCase()).pipe(z.string().email('Ingresa un correo válido')),
   especialidad: z.string().trim(),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
 })
@@ -18,7 +18,7 @@ export async function crearProfesor(input: z.infer<typeof profesorSchema>) {
   const parsed = profesorSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const data = parsed.data
-  const email = data.email.toLowerCase()
+  const email = data.email
   const admin = createAdminClient()
 
   const { data: usuario, error: usuarioError } = await admin.auth.admin.createUser({

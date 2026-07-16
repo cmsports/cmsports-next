@@ -28,7 +28,7 @@ describe('crearProfesor', () => {
   })
 
   it('crea Auth, registro de profesor y perfil con rol profesor', async () => {
-    const resultado = await crearProfesor({ nombre: 'Profe Uno', email: ' PROFE@EJEMPLO.CL ', especialidad: 'Técnica', password: 'secreto' })
+    const resultado = await crearProfesor({ nombre: 'Profe Uno', email: ' PROFE\u200B@EJEMPLO.CL ', especialidad: 'Técnica', password: 'secreto' })
     expect(resultado).toEqual({ success: true })
     expect(createUser).toHaveBeenCalledWith(expect.objectContaining({ email: 'profe@ejemplo.cl', password: 'secreto', email_confirm: true }))
     expect(profesorInsert).toHaveBeenCalledWith(expect.objectContaining({ nombre: 'Profe Uno', email: 'profe@ejemplo.cl', activo: true }))

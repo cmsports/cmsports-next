@@ -24,7 +24,7 @@ export default function GestionProfesores({ clubId }: { clubId: string }) {
 
   async function crear() {
     setGuardando(true); setError(''); setMensaje('')
-    const res = await crearProfesor(form)
+    const res = await crearProfesor({ ...form, email: form.email.replace(/[\s\u200B-\u200D\uFEFF]/g, '').toLowerCase() })
     setGuardando(false)
     if (res.error) { setError(res.error); return }
     setForm({ nombre: '', email: '', especialidad: '', password: '' })
