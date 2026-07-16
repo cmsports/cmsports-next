@@ -118,6 +118,10 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
     if (error) return { error: `No se pudieron eliminar los archivos del club: ${error.message}` }
   }
 
+  // Esta relación histórica no tiene ON DELETE CASCADE en producción.
+  const { error: invitacionesError } = await admin.from('invitaciones').delete().eq('club_id', club.id)
+  if (invitacionesError) return { error: `No se pudieron eliminar las invitaciones del club: ${invitacionesError.message}` }
+
   const { error: deleteError } = await admin.from('clubes').delete().eq('id', club.id)
   if (deleteError) return { error: `No se pudo eliminar el club: ${deleteError.message}` }
 

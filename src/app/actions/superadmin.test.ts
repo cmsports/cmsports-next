@@ -10,7 +10,7 @@ vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidatePath }))
 vi.mock('@/lib/auth/require', () => ({ requireSuperadmin: mocks.requireSuperadmin }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.createAdminClient }))
 
-import { crearClub } from './superadmin'
+import { crearClub, eliminarClub } from './superadmin'
 
 describe('crearClub desde Superadmin', () => {
   const club = { id: '11111111-1111-4111-8111-111111111111', nombre: 'Club Integración' }
@@ -75,5 +75,45 @@ describe('crearClub desde Superadmin', () => {
       rol: 'admin',
     }), { onConflict: 'id' })
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/superadmin')
+  })
+})
+
+describe('eliminarClub desde Superadmin', () => {
+  it('elimina invitaciones antes de borrar el club y luego las cuentas', async () => {
+    const club = { id: '11111111-1111-4111-8111-111111111111', nombre: 'Club Prueba' }
+    const borrarInvitaciones = vi.fn().mockResolvedValue({ error: null })
+    const borrarClub = vi.fn().mockResolvedValue({ error: null })
+    const deleteUser = vi.fn().mockResolvedValue({ error: null })
+    const perfilUpdateEqRol = vi.fn().mockResolvedValue({ error: null })
+
+    mocks.requireSuperadmin.mockResolvedValue({
+      error: null,
+      supabase: {
+        auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'superadmin-id' } } }) },
+        from: vi.fn(() => ({
+          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: club, error: null }) }) }),
+        })),
+      },
+    })
+
+    mocks.createAdminClient.mockReturnValue({
+      storage: { from: vi.fn(() => ({ list: vi.fn().mockResolvedValue({ data: [], error: null }), remove: vi.fn() })) },
+      auth: { admin: { deleteUser } },
+      from: vi.fn((tabla: string) => {
+        if (tabla === 'perfiles') return {
+          select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 'cuenta-id' }], error: null }) }),
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: perfilUpdateEqRol }) }),
+        }
+        if (tabla === 'invitaciones') return { delete: vi.fn().mockReturnValue({ eq: borrarInvitaciones }) }
+        if (tabla === 'clubes') return { delete: vi.fn().mockReturnValue({ eq: borrarClub }) }
+        throw new Error(`Tabla inesperada: ${tabla}`)
+      }),
+    })
+
+    await expect(eliminarClub({ clubId: club.id, confirmacion: club.nombre })).resolves.toEqual({ success: true })
+    expect(borrarInvitaciones).toHaveBeenCalledWith('club_id', club.id)
+    expect(borrarClub).toHaveBeenCalledWith('id', club.id)
+    expect(borrarInvitaciones.mock.invocationCallOrder[0]).toBeLessThan(borrarClub.mock.invocationCallOrder[0])
+    expect(deleteUser).toHaveBeenCalledWith('cuenta-id')
   })
 })

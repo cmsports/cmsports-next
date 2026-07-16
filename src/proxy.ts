@@ -8,13 +8,13 @@ const publicRoutes = ['/login', '/registro']
 const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
 const superadminRoutes = ['/superadmin']
-const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/configuracion']
+const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes']
 // El profesor necesita abrir el listado y la ficha para evaluar. Las acciones
 // administrativas dentro de esas pantallas siguen reservadas al admin.
 const staffRoutes = ['/redes-sociales', '/jugadores']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
-const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/tienda']
+const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/tienda', '/configuracion']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'

@@ -114,9 +114,10 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const mobileNav = mobileNavRaw.filter(item => !item.modulo || tiene(item.modulo))
 
   const mobileNavHrefs = new Set(mobileNav.map((item) => item.href))
-  const masItems = nav.filter(
+  const masItemsBase = nav.filter(
     (item): item is { label: string; icon: any; href: string } => !('section' in item) && !mobileNavHrefs.has(item.href),
   )
+  const masItems = [...masItemsBase, { label: 'Configuración', icon: Settings, href: '/configuracion' }]
 
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
   const rolLabel = perfil?.rol === 'superadmin' ? 'Superadmin' : perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
@@ -214,15 +215,13 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <CampanaNotificaciones perfil={perfil} placement="top" />
-            {esAdminOSuperadmin && (
-              <Link href="/configuracion" style={{
+            <Link href="/configuracion" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: 32, height: 32, borderRadius: 7, color: '#64748b',
                 background: 'transparent', textDecoration: 'none',
               }} title="Configuración">
                 <Settings size={16} strokeWidth={1.8} />
-              </Link>
-            )}
+            </Link>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
             <div style={{

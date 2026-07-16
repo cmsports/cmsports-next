@@ -8,6 +8,8 @@ import { createClient } from '@/lib/supabase/client'
 import { actualizarClubAction } from '@/app/actions/club'
 import { subirLogoAction, actualizarInfoClubAction } from '@/app/actions/redes-sociales'
 import { Building2, Upload, Loader2, Check, Lock } from 'lucide-react'
+import GestionProfesores from '@/components/configuracion/GestionProfesores'
+import PerfilPersonalConfig from '@/components/configuracion/PerfilPersonalConfig'
 
 const C = {
   card: '#ffffff', border: '#e2e8f0',
@@ -21,7 +23,7 @@ const labelStyle = { fontSize: 12, fontWeight: 600, color: C.text, marginBottom:
 const inputStyle = { width: '100%', padding: '9px 11px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, outline: 'none', boxSizing: 'border-box' } as const
 
 export default function ConfiguracionPage() {
-  const { perfil, loading: authLoading } = usePerfil()
+  const { perfil, loading: authLoading, refetchPerfil } = usePerfil()
   const router = useRouter()
 
   const [nombre, setNombre] = useState('')
@@ -47,7 +49,7 @@ export default function ConfiguracionPage() {
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.rol !== 'admin') { router.push('/dashboard'); return }
+    if (perfil.rol !== 'admin') { setLoading(false); return }
     if (!perfil.club_id) { setLoading(false); return }
 
     const supabase = createClient()
@@ -143,11 +145,14 @@ export default function ConfiguracionPage() {
   return (
     <AppLayout perfil={perfil}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>Configuración del club</h1>
-        <p style={{ fontSize: 12, color: C.hint }}>Datos generales, mensualidad base y logo de tu club</p>
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>Configuración</h1>
+        <p style={{ fontSize: 12, color: C.hint }}>Administra tus datos y seguridad{perfil?.rol === 'admin' ? ', además de la configuración del club' : ''}</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 16, maxWidth: 760 }}>
+      {perfil && <PerfilPersonalConfig perfil={perfil} refetchPerfil={refetchPerfil} />}
+
+      {perfil?.rol === 'admin' && <>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 16, maxWidth: 760, marginTop: 16 }}>
         <div style={cardStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <Building2 size={16} color={C.sky} />
@@ -230,6 +235,9 @@ export default function ConfiguracionPage() {
           <input ref={logoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onSubirLogo} />
         </div>
       </div>
+
+      {perfil.club_id && <GestionProfesores clubId={perfil.club_id} />}
+      </>}
 
       {/* ── Cambiar contraseña ── */}
       <div style={{ maxWidth: 760, marginTop: 16 }}>
