@@ -53,7 +53,7 @@ export default function TorneoDetallePage() {
   const [qrOpen, setQrOpen] = useState(false)
   const [busquedaMesa, setBusquedaMesa] = useState('')
   const [rutMesa, setRutMesa] = useState('')
-  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'pendiente'>('efectivo')
+  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'pendiente'>('pendiente')
   const [pagoLoading, setPagoLoading] = useState<string|null>(null)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
   const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
