@@ -29,13 +29,20 @@ export async function registrarSolicitud(input: {
   })
   if (!inv?.length) return { error: 'Link de invitación inválido o expirado' }
 
+  let passwordCifrada: string
+  try {
+    passwordCifrada = encrypt(parsed.data.password)
+  } catch {
+    return { error: 'No se pudo proteger la contraseña. Intenta nuevamente en unos minutos.' }
+  }
+
   const { error } = await supabase.from('solicitudes_jugador').insert({
     club_id: parsed.data.club_id,
     nombre: parsed.data.nombre,
     rut: parsed.data.rut,
     email: parsed.data.email || null,
     telefono: parsed.data.telefono || null,
-    password: encrypt(input.password),
+    password: passwordCifrada,
   })
 
   if (error) return { error: 'Error al enviar solicitud. Intenta de nuevo.' }

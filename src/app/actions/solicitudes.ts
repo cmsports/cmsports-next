@@ -20,6 +20,7 @@ export async function aprobarSolicitud(params: {
   if (authErr) return { error: authErr }
 
   const { solicitudId, nombre, rut, email, telefono, ...planFields } = params
+  const emailNormalizado = email.trim().toLowerCase()
 
   // Traer la solicitud para recuperar la contraseña que eligió el jugador
   const { data: sol } = await supabase
@@ -29,57 +30,53 @@ export async function aprobarSolicitud(params: {
     .eq('club_id', clubId)
     .single()
 
+  if (!emailNormalizado) return { error: 'La solicitud no tiene un correo válido' }
+
+  let passwordPropia = false
+  let password = generarPassword()
+  if (sol?.password) {
+    try { password = decrypt(sol.password); passwordPropia = true } catch {
+      return { error: 'No se pudo recuperar la contraseña elegida. Pide al jugador enviar nuevamente la solicitud.' }
+    }
+  }
+
   const { data: nuevoJugador, error: insertErr } = await supabase.from('jugadores').insert({
-    club_id: clubId, nombre, rut: rut || null, email: email || null, telefono: telefono || null,
+    club_id: clubId, nombre, rut: rut || null, email: emailNormalizado, telefono: telefono || null,
     ...planFields, sesiones_usadas: 0, estado: 'activo', es_externo: false,
   }).select('id').single()
   if (insertErr || !nuevoJugador) return { error: 'Error al crear jugador: ' + (insertErr?.message ?? '') }
 
-  await supabase.from('solicitudes_jugador').update({ estado: 'aprobado' }).eq('id', solicitudId)
-
-  const jugador = { nombre, email: email || null, telefono: telefono || null }
-
-  // Sin email no hay forma de crear una cuenta de acceso
-  if (!email) {
-    return { success: true, cuentaError: 'La solicitud no tiene email; el jugador quedó creado pero sin acceso.', jugador }
-  }
-
-  // Crear la cuenta de login con la contraseña que el jugador eligió al registrarse
-  let passwordPropia = false
-  let password = generarPassword()
-  if (sol?.password) {
-    try { password = decrypt(sol.password); passwordPropia = true } catch { passwordPropia = false }
-  }
+  const jugador = { nombre, email: emailNormalizado, telefono: telefono || null }
 
   const admin = createAdminClient()
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
-    email, password, email_confirm: true,
+    email: emailNormalizado, password, email_confirm: true,
   })
 
-  let userId = creado?.user?.id
+  const userId = creado?.user?.id
   if (createError || !userId) {
-    // Si el email ya existía, buscar la cuenta y vincularla (conserva su contraseña previa)
-    if (!createError?.message?.toLowerCase().includes('already')) {
-      return { success: true, cuentaError: 'Jugador creado, pero no se pudo crear su cuenta: ' + (createError?.message ?? ''), jugador }
-    }
-    let page = 1
-    while (!userId) {
-      const { data: lista } = await admin.auth.admin.listUsers({ page, perPage: 200 })
-      if (!lista?.users.length) break
-      userId = lista.users.find(u => u.email === email)?.id
-      page++
-    }
-    if (!userId) return { success: true, cuentaError: 'El email ya está registrado pero no se pudo vincular la cuenta.', jugador }
-    passwordPropia = true
+    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    return { error: createError?.message?.toLowerCase().includes('already')
+      ? 'Ese correo ya tiene una cuenta. Usa otro correo o recupera su contraseña.'
+      : 'No se pudo crear la cuenta de acceso del jugador.' }
   }
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
-    id: userId, club_id: clubId, nombre, email, rol: 'jugador', jugador_id: nuevoJugador.id,
+    id: userId, club_id: clubId, nombre, email: emailNormalizado, rol: 'jugador', jugador_id: nuevoJugador.id,
   })
-  if (perfilError) return { success: true, cuentaError: 'Cuenta creada pero falló el perfil: ' + perfilError.message, jugador }
+  if (perfilError) {
+    await admin.auth.admin.deleteUser(userId)
+    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    return { error: 'No se pudo vincular el perfil de acceso del jugador.' }
+  }
 
-  // Ya no se necesita la contraseña guardada
-  await supabase.from('solicitudes_jugador').update({ password: null }).eq('id', solicitudId)
+  const { error: aprobarError } = await supabase.from('solicitudes_jugador')
+    .update({ estado: 'aprobado', password: null }).eq('id', solicitudId).eq('club_id', clubId)
+  if (aprobarError) {
+    await admin.auth.admin.deleteUser(userId)
+    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    return { error: 'No se pudo finalizar la aprobación. Intenta nuevamente.' }
+  }
 
   return {
     success: true,

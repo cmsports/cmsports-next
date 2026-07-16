@@ -25,7 +25,7 @@ export default function SolicitudesPage() {
   const [modalAprobar, setModalAprobar] = useState<any>(null)
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
   const [aprobando, setAprobando]     = useState(false)
-  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; password?: string; cuentaError?: string; cuentaCreada?: boolean }>(null)
+  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; password?: string; cuentaCreada?: boolean }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -81,7 +81,6 @@ export default function SolicitudesPage() {
       email: res.jugador?.email ?? (s.email || null),
       telefono: res.jugador?.telefono ?? (s.telefono || null),
       password: res.password,
-      cuentaError: res.cuentaError,
       cuentaCreada: res.cuentaCreada,
     })
   }
@@ -276,7 +275,7 @@ export default function SolicitudesPage() {
               </p>
             ) : (
               <p style={{ fontSize: 13, color: '#d97706', textAlign: 'center', marginBottom: 18 }}>
-                {aprobadoInfo.cuentaError || 'El jugador quedó creado. Puedes crear su acceso desde su ficha cuando quieras.'}
+                No se pudo confirmar la cuenta de acceso.
               </p>
             )}
 
