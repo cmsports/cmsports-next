@@ -204,6 +204,13 @@ export function TableroFecha({
     function rgb(hex: string): [number,number,number] {
       return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]
     }
+    function tint(dc: [number,number,number], op: number): [number,number,number] {
+      return [
+        Math.round(255*(1-op)+dc[0]*op),
+        Math.round(255*(1-op)+dc[1]*op),
+        Math.round(255*(1-op)+dc[2]*op),
+      ]
+    }
 
     // ── Header ──────────────────────────────────────────────
     doc.setFillColor(22, 20, 60)
@@ -271,8 +278,10 @@ export function TableroFecha({
         const arb = p.arbitroId ? nombres[p.arbitroId] ?? '' : ''
         const cy = y + RH / 2 + 1
 
-        // Fondo alterno
-        if (i % 2 === 0) { doc.setFillColor(250, 251, 255); doc.rect(M, y, CW, RH, 'F') }
+        // Fondo tintado por división
+        const lt = tint(dc, 0.08)
+        doc.setFillColor(lt[0], lt[1], lt[2])
+        doc.rect(M, y, CW, RH, 'F')
 
         // Stripe de división
         doc.setFillColor(dc[0], dc[1], dc[2])
@@ -289,7 +298,7 @@ export function TableroFecha({
         doc.text(p.divisionNombre, M + 23, cy)
 
         // Jugador A
-        doc.setTextColor(10, 18, 38); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+        doc.setTextColor(10, 18, 38); doc.setFontSize(8.5); doc.setFont('times', 'bold')
         doc.text(jA, M + 55, cy)
 
         // vs
@@ -298,7 +307,7 @@ export function TableroFecha({
         doc.text('vs', W / 2 + 3, cy, { align: 'center' })
 
         // Jugador B
-        doc.setTextColor(10, 18, 38); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
+        doc.setTextColor(10, 18, 38); doc.setFontSize(8.5); doc.setFont('times', 'bold')
         doc.text(jB, W / 2 + 9, cy)
 
         // Árbitro — negro, claro, tamaño visible
@@ -323,195 +332,200 @@ export function TableroFecha({
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const W = doc.internal.pageSize.getWidth()
     const H = doc.internal.pageSize.getHeight()
-    const M = 12
+    const M = 10
     const CW = W - 2 * M
     const hoy = new Date().toLocaleDateString('es-CL', { day:'numeric', month:'long', year:'numeric' })
 
     function rgb(hex: string): [number,number,number] {
       return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]
     }
-
-    // Dimensiones caja de puntaje
-    const BW = 16
-    const BH = 8
-    const bCenter = W / 2
-    const bL = bCenter - BW - 6
-    const bR = bCenter + 6
-
-    // Altura fija de cada tarjeta de partido
-    const CARD_H = 1.5 + 2.5 + 7 + 1.5 + 8 + 5 * (BH + 2) + 2.5 + (BH + 1) + 2.5 + 8 + 2.5
-
-    const mesasOrdenadas = [...mesasVisibles]
-      .filter(m => partidosVisibles.some(p => p.mesaId === m.id && p.bloqueHorario))
-      .sort((a, b) => a.numero - b.numero)
-
-    function matchesDeMesa(mesaId: string) {
-      return partidosVisibles
-        .filter(p => p.mesaId === mesaId && p.bloqueHorario)
-        .sort((a, b) => (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? ''))
+    function tint(dc: [number,number,number], op: number): [number,number,number] {
+      return [
+        Math.round(255*(1-op)+dc[0]*op),
+        Math.round(255*(1-op)+dc[1]*op),
+        Math.round(255*(1-op)+dc[2]*op),
+      ]
     }
 
-    function drawPageFooter(mesaNum: number) {
-      doc.setFillColor(248, 250, 252)
-      doc.rect(0, H - 9, W, 9, 'F')
-      doc.setDrawColor(220, 230, 242); doc.setLineWidth(0.2)
-      doc.line(M, H - 9, W - M, H - 9)
-      doc.setTextColor(148, 163, 184); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
-      doc.text(`${f.ligaNombre} · Fecha ${f.numero} · Mesa ${mesaNum}`, W / 2, H - 3.5, { align: 'center' })
+    // Column geometry
+    const STRIPE = 3
+    const C_HORA = 18
+    const C_JUG  = 60
+    const C_SET  = 10
+    const C_RES  = 14
+    const C_ARB  = CW - STRIPE - C_HORA - C_JUG - 5*C_SET - C_RES  // 45mm
+    const RH = 12   // row height per match
+    const TH = 7    // table column header row
+    const MH = 7    // mesa sub-header row
+
+    const xStripe = M
+    const xHora   = M + STRIPE
+    const xJug    = xHora + C_HORA
+    const xS      = (i: number) => xJug + C_JUG + i * C_SET
+    const xRes    = xJug + C_JUG + 5*C_SET
+    const xArb    = xRes + C_RES
+    const xR      = W - M
+
+    // Sort all matches: by mesa number, then by horario
+    const allMatches = [...partidosVisibles]
+      .filter(p => p.bloqueHorario && p.mesaId)
+      .sort((a, b) => {
+        const mn = (p: PartidoBoard) => mesas.find(m => m.id === p.mesaId)?.numero ?? 0
+        const diff = mn(a) - mn(b)
+        return diff !== 0 ? diff : (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? '')
+      })
+
+    if (allMatches.length === 0) return
+
+    // Group by mesa
+    const mesaGrupos: { mesa: Mesa; matches: PartidoBoard[] }[] = []
+    for (const p of allMatches) {
+      const mesa = mesas.find(m => m.id === p.mesaId)
+      if (!mesa) continue
+      const last = mesaGrupos[mesaGrupos.length - 1]
+      if (last?.mesa.id === mesa.id) last.matches.push(p)
+      else mesaGrupos.push({ mesa, matches: [p] })
     }
 
-    function drawMesaHeader(mesaNum: number): number {
-      doc.setFillColor(18, 16, 55)
-      doc.rect(0, 0, W, 28, 'F')
-      doc.setFillColor(16, 185, 129)
-      doc.rect(0, 25, W, 3, 'F')
+    // ── Página: header fijo ───────────────────────────────────────────
+    const HEADER_H = 26
+    doc.setFillColor(18, 16, 55)
+    doc.rect(0, 0, W, HEADER_H, 'F')
+    doc.setFillColor(16, 185, 129)
+    doc.rect(0, HEADER_H - 3, W, 3, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(14); doc.setFont('helvetica', 'bold')
+    doc.text(f.ligaNombre, M, 11)
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+    doc.setTextColor(160, 220, 200)
+    doc.text(`Fecha ${f.numero}  ·  Programación por mesa  ·  ${hoy}`, M, 20)
 
-      // Indicador de mesa (rect redondeado manual con rect simple)
-      doc.setFillColor(16, 185, 129)
-      doc.rect(M, 4, 20, 19, 'F')
-      doc.setTextColor(255, 255, 255)
-      doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-      doc.text('MESA', M + 10, 9.5, { align: 'center' })
-      doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-      doc.text(String(mesaNum), M + 10, 19, { align: 'center' })
+    // ── Footer fijo ───────────────────────────────────────────────────
+    const FOOTER_H = 8
+    doc.setFillColor(248, 250, 252)
+    doc.rect(0, H - FOOTER_H, W, FOOTER_H, 'F')
+    doc.setDrawColor(215, 225, 240); doc.setLineWidth(0.2)
+    doc.line(M, H - FOOTER_H, xR, H - FOOTER_H)
+    doc.setTextColor(148, 163, 184); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
+    doc.text(`${f.ligaNombre} · Fecha ${f.numero}`, W/2, H - 2.5, { align: 'center' })
 
-      // Liga + fecha
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.setTextColor(255, 255, 255)
-      doc.text(f.ligaNombre, M + 25, 13)
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-      doc.setTextColor(155, 220, 200)
-      doc.text(`Fecha ${f.numero}  ·  ${hoy}`, M + 25, 21)
+    // ── Tabla header (columnas) ────────────────────────────────────────
+    let y = HEADER_H
+    doc.setFillColor(49, 46, 129)
+    doc.rect(M, y, CW, TH, 'F')
+    doc.setTextColor(190, 198, 255); doc.setFontSize(6); doc.setFont('helvetica', 'bold')
+    const chY = y + TH/2 + 0.8
+    doc.text('HORA', xHora + C_HORA/2, chY, { align: 'center' })
+    doc.text('JUGADORES', xJug + C_JUG/2, chY, { align: 'center' })
+    for (let s = 1; s <= 5; s++) doc.text(`S${s}`, xS(s-1) + C_SET/2, chY, { align: 'center' })
+    doc.text('RES', xRes + C_RES/2, chY, { align: 'center' })
+    doc.text('ÁRBITRO', xArb + C_ARB/2, chY, { align: 'center' })
+    y += TH
 
-      drawPageFooter(mesaNum)
-      return 31
-    }
-
-    function drawContHeader(mesaNum: number): number {
-      doc.setFillColor(235, 242, 255)
-      doc.rect(0, 0, W, 13, 'F')
-      doc.setDrawColor(196, 210, 250); doc.setLineWidth(0.3)
-      doc.line(0, 13, W, 13)
-      doc.setTextColor(49, 46, 129); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
-      doc.text(`Mesa ${mesaNum}  ·  Fecha ${f.numero}  ·  continuación`, M, 9)
-      drawPageFooter(mesaNum)
-      return 16
-    }
-
-    function drawMatchCard(p: PartidoBoard, y: number): number {
-      const dc = rgb(divColor(p.divisionNombre))
-      const jA = nombres[p.jugadorAId] ?? '—'
-      const jB = nombres[p.jugadorBId] ?? '—'
-      const arb = p.arbitroId ? nombres[p.arbitroId] ?? '' : ''
-
-      // Borde de la tarjeta
-      doc.setFillColor(255, 255, 255)
-      doc.rect(M, y, CW, CARD_H, 'F')
-      doc.setDrawColor(212, 222, 238); doc.setLineWidth(0.3)
-      doc.rect(M, y, CW, CARD_H, 'S')
-
-      // Stripe color división
-      doc.setFillColor(dc[0], dc[1], dc[2])
-      doc.rect(M, y, CW, 1.5, 'F')
-
-      let cy = y + 1.5 + 2.5
-
-      // ── Info: división | horario | árbitro ──
-      doc.setFillColor(dc[0], dc[1], dc[2])
-      doc.rect(M + 3, cy + 0.5, 4, 5, 'F')
-      doc.setTextColor(dc[0], dc[1], dc[2]); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
-      doc.text(p.divisionNombre, M + 9, cy + 4.5)
-
-      doc.setTextColor(49, 46, 129); doc.setFontSize(9.5); doc.setFont('helvetica', 'bold')
-      doc.text(p.bloqueHorario ?? '—', W / 2, cy + 4.5, { align: 'center' })
-
-      // Árbitro visible
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-      doc.setTextColor(25, 35, 60)
-      if (arb) doc.text(`Árb: ${arb}`, W - M - 3, cy + 4.5, { align: 'right' })
-      cy += 7
-
-      // Separador
-      doc.setDrawColor(222, 230, 244); doc.setLineWidth(0.4)
-      doc.line(M + 3, cy, W - M - 3, cy)
-      cy += 1.5
-
-      // ── Nombres jugadores ──
-      doc.setTextColor(8, 14, 32); doc.setFontSize(11); doc.setFont('helvetica', 'bold')
-      doc.text(jA, M + 5, cy + 6)
-      doc.text(jB, W - M - 5, cy + 6, { align: 'right' })
-      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal')
-      doc.setTextColor(168, 182, 208)
-      doc.text('vs', W / 2, cy + 6, { align: 'center' })
-      cy += 8
-
-      // ── Sets (5 filas con cajas) ──
-      for (let s = 1; s <= 5; s++) {
-        doc.setTextColor(100, 116, 148); doc.setFontSize(8.5)
-        doc.setFont('helvetica', s <= 3 ? 'bold' : 'normal')
-        doc.text(`Set ${s}`, M + 5, cy + BH / 2 + 1.5)
-
-        // Caja A
-        doc.setFillColor(248, 250, 255)
-        doc.setDrawColor(158, 178, 210); doc.setLineWidth(0.7)
-        doc.rect(bL, cy, BW, BH, 'FD')
-
-        // Guión
-        doc.setTextColor(168, 182, 208); doc.setFontSize(10)
-        doc.text('—', bCenter, cy + BH / 2 + 1.5, { align: 'center' })
-
-        // Caja B
-        doc.setFillColor(248, 250, 255)
-        doc.rect(bR, cy, BW, BH, 'FD')
-
-        cy += BH + 2
-      }
-      cy += 2.5
-
-      // ── Resultado (cajas resaltadas) ──
-      doc.setFillColor(235, 240, 255)
-      doc.setDrawColor(dc[0], dc[1], dc[2]); doc.setLineWidth(0.9)
-      doc.rect(bL, cy, BW, BH + 1, 'FD')
-      doc.setFillColor(235, 240, 255)
-      doc.rect(bR, cy, BW, BH + 1, 'FD')
-
-      doc.setTextColor(49, 46, 129); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-      doc.text('RESULTADO', M + 5, cy + (BH + 1) / 2 + 1.5)
-      doc.setTextColor(148, 163, 184); doc.setFontSize(10)
-      doc.text('—', bCenter, cy + (BH + 1) / 2 + 1.5, { align: 'center' })
-      cy += BH + 3.5
-
-      // ── Ganador + firma ──
-      doc.setTextColor(49, 46, 129); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
-      doc.text('GANADOR:', M + 5, cy + 5)
-      doc.setDrawColor(172, 190, 215); doc.setLineWidth(0.5)
-      doc.line(M + 28, cy + 5.5, W / 2 + 6, cy + 5.5)
-      doc.setTextColor(148, 163, 184); doc.setFontSize(7); doc.setFont('helvetica', 'normal')
-      doc.text('Firma árb:', W / 2 + 10, cy + 5)
-      doc.line(W / 2 + 28, cy + 5.5, W - M - 3, cy + 5.5)
-
-      return y + CARD_H
-    }
-
-    let firstPage = true
-    for (const mesa of mesasOrdenadas) {
-      const matches = matchesDeMesa(mesa.id)
-      if (!matches.length) continue
-      if (!firstPage) doc.addPage()
-      firstPage = false
-
-      let y = drawMesaHeader(mesa.numero)
-      const GAP = 4
+    // ── Sección de datos por mesa ──────────────────────────────────────
+    for (const { mesa, matches } of mesaGrupos) {
+      // Mesa sub-header
+      doc.setFillColor(10, 155, 108)
+      doc.rect(M, y, CW, MH, 'F')
+      doc.setTextColor(255, 255, 255); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+      doc.text(`◉  Mesa ${mesa.numero}`, M + 4, y + MH/2 + 1)
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
+      doc.setTextColor(200, 240, 224)
+      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR, y + MH/2 + 1, { align: 'right' })
+      y += MH
 
       for (let i = 0; i < matches.length; i++) {
-        if (y + CARD_H > H - 12) {
-          doc.addPage()
-          y = drawContHeader(mesa.numero)
+        const p = matches[i]
+        const dc = rgb(divColor(p.divisionNombre))
+        const lt = tint(dc, 0.08)
+        const jA = nombres[p.jugadorAId] ?? '—'
+        const jB = nombres[p.jugadorBId] ?? '—'
+        const arb = p.arbitroId ? nombres[p.arbitroId] ?? '' : ''
+        const rMid = y + RH/2
+
+        // Fondo tintado por división
+        doc.setFillColor(lt[0], lt[1], lt[2])
+        doc.rect(M, y, CW, RH, 'F')
+
+        // Division stripe
+        doc.setFillColor(dc[0], dc[1], dc[2])
+        doc.rect(xStripe, y, STRIPE, RH, 'F')
+
+        // Hora (centrado verticalmente)
+        doc.setTextColor(28, 40, 78); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
+        doc.text(p.bloqueHorario ?? '—', xHora + C_HORA/2, rMid + 1, { align: 'center' })
+
+        // División (pequeño, arriba del jugador A)
+        doc.setTextColor(dc[0], dc[1], dc[2]); doc.setFontSize(5.5); doc.setFont('helvetica', 'bold')
+        doc.text(p.divisionNombre, xJug + 2, y + 3)
+
+        // Jugador A — times bold
+        doc.setFont('times', 'bold')
+        doc.setTextColor(8, 18, 42); doc.setFontSize(8)
+        doc.text(jA, xJug + 2, y + RH/2 - 0.5, { maxWidth: C_JUG - 4 })
+
+        // Jugador B — times italic
+        doc.setFont('times', 'italic')
+        doc.setTextColor(45, 58, 95); doc.setFontSize(7.5)
+        doc.text(jB, xJug + 2, y + RH - 2.5, { maxWidth: C_JUG - 4 })
+
+        // Mid-row divider
+        doc.setDrawColor(185, 200, 220); doc.setLineWidth(0.2)
+        doc.line(xJug, rMid, xR, rMid)
+
+        // Set boxes (5 columnas)
+        for (let s = 0; s < 5; s++) {
+          const xsCol = xS(s)
+          doc.setFillColor(255, 255, 255)
+          doc.setDrawColor(168, 188, 212); doc.setLineWidth(0.35)
+          // Caja A (top half)
+          doc.rect(xsCol + 0.8, y + 0.8, C_SET - 1.6, RH/2 - 1, 'FD')
+          // Caja B (bottom half)
+          doc.rect(xsCol + 0.8, rMid + 0.5, C_SET - 1.6, RH/2 - 1.3, 'FD')
         }
-        y = drawMatchCard(matches[i], y)
-        if (i < matches.length - 1) y += GAP
+
+        // Resultado boxes (resaltados)
+        doc.setFillColor(238, 242, 255)
+        doc.setDrawColor(dc[0], dc[1], dc[2]); doc.setLineWidth(0.5)
+        doc.rect(xRes + 0.5, y + 0.8, C_RES - 1, RH/2 - 1, 'FD')
+        doc.rect(xRes + 0.5, rMid + 0.5, C_RES - 1, RH/2 - 1.3, 'FD')
+
+        // Árbitro
+        if (arb) {
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(30, 45, 75); doc.setFontSize(6.5)
+          doc.text(arb, xArb + 2, rMid + 1, { maxWidth: C_ARB - 4 })
+        }
+
+        // Vertical column lines
+        doc.setDrawColor(172, 190, 212); doc.setLineWidth(0.25)
+        for (const x of [xHora, xJug, xS(0), xS(1), xS(2), xS(3), xS(4), xRes, xArb]) {
+          doc.line(x, y, x, y + RH)
+        }
+
+        // Row bottom border
+        doc.setDrawColor(165, 185, 210); doc.setLineWidth(0.4)
+        doc.line(M, y + RH, xR, y + RH)
+
+        y += RH
       }
     }
+
+    // ── Observaciones ─────────────────────────────────────────────────
+    y += 4
+    const OBS_H = 22
+    doc.setFillColor(252, 253, 255)
+    doc.rect(M, y, CW, OBS_H, 'F')
+    doc.setDrawColor(198, 212, 230); doc.setLineWidth(0.35)
+    doc.rect(M, y, CW, OBS_H, 'S')
+    doc.setTextColor(92, 112, 142); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+    doc.text('Observaciones:', M + 3, y + 6)
+    doc.setDrawColor(198, 212, 230); doc.setLineWidth(0.3)
+    doc.line(M + 3, y + 11, xR - 3, y + 11)
+    doc.line(M + 3, y + 17, xR - 3, y + 17)
+    doc.setTextColor(135, 155, 185); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
+    doc.text('Firma árbitro:', M + 3, y + OBS_H - 2)
+    doc.line(M + 28, y + OBS_H - 1.5, M + 90, y + OBS_H - 1.5)
 
     doc.save(`fecha${f.numero}_por_mesa.pdf`)
   }
