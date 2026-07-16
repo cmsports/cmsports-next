@@ -154,6 +154,34 @@ export default function PerfilPage() {
 
   useEffect(() => { esCampeonRef.current = esCampeon }, [esCampeon])
 
+  // Mantiene visible al instante el feedback enviado mientras el alumno está en su perfil.
+  useEffect(() => {
+    if (!perfil?.jugador_id) return
+    const jugadorId = perfil.jugador_id
+
+    async function recargarEvaluaciones() {
+      const { data: evs } = await supabase
+        .from('evaluaciones_trimestrales')
+        .select('*')
+        .eq('jugador_id', jugadorId)
+        .order('creado_en', { ascending: false })
+        .limit(2)
+      setEvaluaciones(evs || [])
+    }
+
+    const canal = supabase
+      .channel(`feedback-perfil-${perfil.id}-${jugadorId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'evaluaciones_trimestrales',
+        filter: `jugador_id=eq.${jugadorId}`,
+      }, recargarEvaluaciones)
+      .subscribe()
+
+    return () => { void supabase.removeChannel(canal) }
+  }, [perfil?.id, perfil?.jugador_id])
+
   // Realtime — suscripción al torneo activo
   useEffect(() => {
     if (!torneoActivo?.id || !jugador?.id) return

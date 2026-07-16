@@ -75,7 +75,7 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         .select('*').eq('jugador_id', perfil.jugador_id).eq('periodo_trimestre', trimestreActual).maybeSingle()
       if (evaluacion?.feedback_profesor && !evaluacion.firmado_alumno) {
         const texto = evaluacion.feedback_profesor
-        notificaciones.push({ id: `feedback-${evaluacion.id}-${versionTexto(texto)}`, tipo: 'aviso', titulo: 'Tienes feedback nuevo', mensaje: texto.length > 90 ? texto.slice(0, 90) + '…' : texto, fecha: hoy, leida: false, color: '#4f46e5' })
+        notificaciones.push({ id: `feedback-${evaluacion.id}-${versionTexto(texto)}`, tipo: 'aviso', titulo: 'Tienes feedback nuevo', mensaje: texto.length > 90 ? texto.slice(0, 90) + '…' : texto, fecha: hoy, leida: false, color: '#4f46e5', href: '/perfil' })
       }
 
       const { data: eventosProximos } = await supabase.from('eventos')
@@ -378,7 +378,7 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
                         onClick={(e) => { e.stopPropagation(); setOpen(false); router.push(n.href!) }}
                         style={{ marginTop: 8, background: '#ede9fe', color: '#3730a3', border: '1px solid #c4b5fd', borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
                       >
-                        Ver en Solicitudes →
+                        {n.href === '/perfil' ? 'Ver feedback →' : 'Ver en Solicitudes →'}
                       </button>
                     )}
                   </div>
