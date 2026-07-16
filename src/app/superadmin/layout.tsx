@@ -14,6 +14,7 @@ const nav = [
 type SuperadminContextValue = {
   perfil: any
   clubes: any[]
+  administradores: Record<string, { nombre: string | null; email: string | null }>
   conteos: Record<string, number>
   loadingClubes: boolean
   recargarClubes: () => Promise<void>
@@ -27,6 +28,7 @@ export function useClubesSuperadmin() {
   const ctx = useContext(PerfilContext)
   return {
     clubes: ctx?.clubes || [],
+    administradores: ctx?.administradores || {},
     conteos: ctx?.conteos || {},
     loading: ctx?.loadingClubes ?? true,
     recargar: ctx?.recargarClubes ?? (async () => {}),
@@ -39,15 +41,17 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
   const [perfil, setPerfil] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [clubes, setClubes] = useState<any[]>([])
+  const [administradores, setAdministradores] = useState<Record<string, { nombre: string | null; email: string | null }>>({})
   const [conteos, setConteos] = useState<Record<string, number>>({})
   const [loadingClubes, setLoadingClubes] = useState(true)
 
   async function recargarClubes() {
     setLoadingClubes(true)
     const supabase = createClient()
-    const [{ data: c }, { data: j }] = await Promise.all([
+    const [{ data: c }, { data: j }, { data: admins }] = await Promise.all([
       supabase.from('clubes').select('*').order('nombre'),
       supabase.from('jugadores').select('club_id'),
+      supabase.from('perfiles').select('club_id,nombre,email').eq('rol', 'admin'),
     ])
     setClubes(c || [])
     const counts: Record<string, number> = {}
@@ -55,6 +59,13 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
       counts[row.club_id] = (counts[row.club_id] || 0) + 1
     }
     setConteos(counts)
+    const adminsPorClub: Record<string, { nombre: string | null; email: string | null }> = {}
+    for (const admin of admins || []) {
+      if (admin.club_id && !adminsPorClub[admin.club_id]) {
+        adminsPorClub[admin.club_id] = { nombre: admin.nombre, email: admin.email }
+      }
+    }
+    setAdministradores(adminsPorClub)
     setLoadingClubes(false)
   }
 
@@ -91,7 +102,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'SA'
 
   return (
-    <PerfilContext.Provider value={{ perfil, clubes, conteos, loadingClubes, recargarClubes }}>
+    <PerfilContext.Provider value={{ perfil, clubes, administradores, conteos, loadingClubes, recargarClubes }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9' }}>
         <aside style={{
           width: 220, background: '#ffffff', borderRight: '1px solid #e2e8f0',

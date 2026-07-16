@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck } from 'lucide-react'
+import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck, Mail } from 'lucide-react'
 import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
 import { crearClub, actualizarModulosClub } from '@/app/actions/superadmin'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
@@ -31,7 +31,7 @@ const TODOS_MODULOS = MODULOS_OPCIONALES.map(m => m.key)
 export default function SuperadminPage() {
   const perfil = usePerfilSuperadmin()
   const { refetchPerfil } = usePerfil()
-  const { clubes, conteos, loading, recargar } = useClubesSuperadmin()
+  const { clubes, administradores, conteos, loading, recargar } = useClubesSuperadmin()
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ nombre: '', ciudad: '', deporte: 'tenis de mesa', planMensual: '', adminNombre: '', adminEmail: '', passwordProvisoria: '' })
   const [modulosForm, setModulosForm] = useState<string[]>([...TODOS_MODULOS])
@@ -167,6 +167,12 @@ export default function SuperadminPage() {
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
               {conteos[c.id] ?? 0} jugador{(conteos[c.id] ?? 0) === 1 ? '' : 'es'}
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#64748b', marginBottom: 4, minWidth: 0 }}>
+              <Mail size={12} style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={administradores[c.id]?.email || 'Sin administrador asociado'}>
+                {administradores[c.id]?.email || 'Sin administrador asociado'}
+              </span>
+            </div>
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
               {c.plan_mensual > 0 ? `Plan: ${formatCLP(c.plan_mensual)}/mes` : 'Plan por definir'}
               <span style={{ color: c.estado_pago === 'pagado' ? '#16a34a' : c.estado_pago === 'atrasado' ? '#dc2626' : '#d97706' }}>
@@ -197,11 +203,12 @@ export default function SuperadminPage() {
       {modalOpen && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 12,
         }} onClick={() => setModalOpen(false)}>
-          <div style={{ ...card, padding: 20, width: 360 }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 14 }}>Crear club nuevo</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ ...card, padding: 16, width: 520, maxWidth: '100%', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 10 }}>Crear club nuevo</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="crear-club-grid">
               <input placeholder="Nombre del club" value={form.nombre}
                 onChange={e => setForm({ ...form, nombre: e.target.value })}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
@@ -211,6 +218,7 @@ export default function SuperadminPage() {
               <input placeholder="Deporte" value={form.deporte}
                 onChange={e => setForm({ ...form, deporte: e.target.value })}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 5 }}>Plan mensual (opcional)</div>
                 <input placeholder="Déjalo vacío para definirlo después" type="number" min="0" value={form.planMensual}
@@ -218,9 +226,9 @@ export default function SuperadminPage() {
                   style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
                 <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>El club se crea con pago pendiente. Puedes definir o editar el monto posteriormente en Finanzas.</div>
               </div>
-              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10, marginTop: 2 }}>
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>Administrador del club</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div className="crear-club-admin-grid">
                   <input placeholder="Nombre del administrador" value={form.adminNombre}
                     onChange={e => setForm({ ...form, adminNombre: e.target.value })}
                     style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
@@ -234,7 +242,7 @@ export default function SuperadminPage() {
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 6 }}>Módulos</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
                   {MODULOS_OPCIONALES.map(m => (
                     <label key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
                       <input type="checkbox" checked={modulosForm.includes(m.key)}
@@ -260,6 +268,14 @@ export default function SuperadminPage() {
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardando ? 0.6 : 1,
               }}>{guardando ? 'Creando...' : 'Crear'}</button>
             </div>
+            <style jsx>{`
+              .crear-club-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+              .crear-club-grid input, .crear-club-admin-grid input { min-width: 0; }
+              .crear-club-admin-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+              @media (max-width: 640px) {
+                .crear-club-grid, .crear-club-admin-grid { grid-template-columns: 1fr; }
+              }
+            `}</style>
           </div>
         </div>
       )}
