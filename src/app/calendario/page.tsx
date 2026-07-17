@@ -1,8 +1,8 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
@@ -20,14 +20,31 @@ const coloresEvento: Record<string, string> = {
   entrenamiento:'#16a34a', torneo:'#4f46e5', feriado:'#dc2626', pago:'#d97706', otro:'#64748b', clase:'#f43f5e'
 }
 
+function fechaValida(valor: string | null) {
+  if (!valor || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return null
+  const fecha = new Date(`${valor}T12:00:00`)
+  return Number.isNaN(fecha.getTime()) ? null : valor
+}
+
 export default function CalendarioPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8', color:hint }}>Cargando...</div>}>
+      <CalendarioContent />
+    </Suspense>
+  )
+}
+
+function CalendarioContent() {
   const { perfil, loading: authLoading } = usePerfil()
-  const [mes, setMes] = useState(new Date().getMonth())
-  const [anio, setAnio] = useState(new Date().getFullYear())
+  const searchParams = useSearchParams()
+  const fechaInicial = fechaValida(searchParams.get('fecha'))
+  const calendarioInicial = fechaInicial ? new Date(`${fechaInicial}T12:00:00`) : new Date()
+  const [mes, setMes] = useState(calendarioInicial.getMonth())
+  const [anio, setAnio] = useState(calendarioInicial.getFullYear())
   const [eventos, setEventos] = useState<any[]>([])
   const [clases, setClases] = useState<any[]>([])
   const [torneos, setTorneos] = useState<any[]>([])
-  const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
+  const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(fechaInicial)
   const [modalEvento, setModalEvento] = useState(false)
   const [reservasJugador, setReservasJugador] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
@@ -35,6 +52,17 @@ export default function CalendarioPage() {
   const [reservaLoading, setReservaLoading] = useState<string | null>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
+
+  useEffect(() => {
+    if (!fechaInicial) return
+    const id = window.setTimeout(() => {
+      const destino = new Date(`${fechaInicial}T12:00:00`)
+      setMes(destino.getMonth())
+      setAnio(destino.getFullYear())
+      setDiaSeleccionado(fechaInicial)
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [fechaInicial])
 
   const cargarMes = useCallback(async () => {
     if (!clubId) return
