@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { trimestreActual } from '@/lib/domain/trimestre'
 
 const supabase = createClient()
 
@@ -44,8 +45,7 @@ export default function DashboardProfesorPage() {
       if (!perfil) { router.push('/login'); return }
       if (perfil.rol !== 'admin' && perfil.rol !== 'profesor') { router.push('/dashboard'); return }
       if (perfil.club_id) {
-        const fechaActual = new Date()
-        const trimestre = `Q${Math.ceil((fechaActual.getMonth()+1)/3)}-${fechaActual.getFullYear()}`
+        const trimestre = trimestreActual(hoy)
         const [{ data: jugadores }, { data: clasesHoy }, { data: evals }, { data: asist5 }] = await Promise.all([
           supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', perfil.club_id).eq('estado', 'activo').neq('es_externo', true),
           supabase.from('clases').select('*').eq('club_id', perfil.club_id).gte('fecha', hoyISO).lte('fecha', domingoISO).order('fecha').order('hora_inicio'),

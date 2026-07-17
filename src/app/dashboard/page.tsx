@@ -272,7 +272,9 @@ export default function DashboardPage() {
       {/* ── Cabecera ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>Dashboard</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>
+            {new Date().getHours() < 12 ? 'Buenos días' : new Date().getHours() < 20 ? 'Buenas tardes' : 'Buenas noches'}{perfil?.nombre ? `, ${perfil.nombre.split(' ')[0]}` : ''}
+          </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <p style={{ fontSize: 12, color: C.hint }}>
               {new Date().toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}

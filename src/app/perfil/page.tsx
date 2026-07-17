@@ -7,8 +7,7 @@ import AppLayout from '@/app/layout-app'
 import { registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
-
-const supabase = createClient()
+import { trimestreActual } from '@/lib/domain/trimestre'
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
 const text = '#0f172a'
@@ -39,12 +38,14 @@ export default function PerfilPage() {
   const [yaFelicite, setYaFelicite] = useState(false)
   const [felicitacionesCount, setFelicitacionesCount] = useState(0)
   const [esCampeon, setEsCampeon] = useState(false)
+  const [supabase] = useState(() => createClient())
   const prevPartidosRef = useRef<any[]>([])
   const prevFaseRef = useRef<string | null>(null)
   const esCampeonRef = useRef(false)
+  const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const router = useRouter()
 
-  const trimestre = `Q${Math.ceil((new Date().getMonth() + 1) / 3)}-${new Date().getFullYear()}`
+  const trimestre = trimestreActual()
   const hoy = fechaChile()
   const hora = horaChile()
 
@@ -143,13 +144,15 @@ export default function PerfilPage() {
     if (result.error) {
       setMensaje({ tipo: 'error', texto: result.error })
       setRegistrando(false)
-      setTimeout(() => setMensaje(null), 6000)
+      if (msgTimerRef.current) clearTimeout(msgTimerRef.current)
+      msgTimerRef.current = setTimeout(() => setMensaje(null), 6000)
       return
     }
     setMensaje({ tipo: 'ok', texto: '¡Asistencia registrada!' })
     setYaRegistroHoy(true)
     setRegistrando(false)
-    setTimeout(() => setMensaje(null), 4000)
+    if (msgTimerRef.current) clearTimeout(msgTimerRef.current)
+    msgTimerRef.current = setTimeout(() => setMensaje(null), 4000)
   }
 
   useEffect(() => { esCampeonRef.current = esCampeon }, [esCampeon])

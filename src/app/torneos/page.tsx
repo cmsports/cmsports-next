@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
-import { eliminarTorneo, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
+import { archivarTorneo, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
@@ -193,7 +193,7 @@ export default function TorneosPage() {
                       onClick={async e => {
                         e.stopPropagation()
                         if (!confirm(`¿Archivar "${t.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
-                        const res = await eliminarTorneo({ torneoId: t.id })
+                        const res = await archivarTorneo({ torneoId: t.id })
                         if (res.error) { alert(res.error); return }
                         await cargarTorneos()
                       }}

@@ -17,12 +17,13 @@ import {
   volverAGrupos as volverAGruposAction,
   corregirResultadoPlayoff,
   intercambiarJugadores,
-  eliminarTorneo,
+  archivarTorneo,
   guardarPremios,
   inscribirEnMesa,
   actualizarCabezasSerie,
   moverJugadorEntreGrupos,
   reordenarJugadorEnGrupo,
+  quitarJugadorDeMesa,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayout } from '@/lib/domain/torneos'
@@ -57,7 +58,11 @@ export default function TorneoDetallePage() {
   const [pagoLoading, setPagoLoading] = useState<string|null>(null)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
   const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
-  const [criterioEmpate, setCriterioEmpate] = useState<'sets'|'puntos'>('sets')
+  const [criterioEmpate, setCriterioEmpate] = useState<'sets'|'puntos'>(() => {
+    if (typeof window === 'undefined') return 'sets'
+    return (localStorage.getItem('criterioEmpate') as 'sets'|'puntos') || 'sets'
+  })
+  const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
@@ -155,6 +160,10 @@ export default function TorneoDetallePage() {
     return () => mq.removeEventListener('change', on)
   }, [])
 
+  useEffect(() => {
+    localStorage.setItem('criterioEmpate', criterioEmpate)
+  }, [criterioEmpate])
+
   // Arma/rellena las llaves apenas cierra cada grupo, sin esperar a que terminen
   // todos. Solo corre durante la fase de grupos; es idempotente (solo rellena
   // cupos vacios) y se dispara cuando cambian clasificados o reglas del layout,
@@ -189,7 +198,7 @@ export default function TorneoDetallePage() {
         }
         return cargarTorneo()
       })
-      .catch(err => { console.error('sincronizarLlaves throw:', err) })
+      .catch(err => { console.error('sincronizarLlaves throw:', err); ultimaSyncRef.current = '' })
       .finally(() => { sincronizandoRef.current = false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partidos, grupos, empateManual, torneo?.fase, torneo?.cabeza_serie_1, torneo?.cabeza_serie_2, perfil?.rol, loading, authLoading])
@@ -476,7 +485,7 @@ export default function TorneoDetallePage() {
         {esAdmin && (
           <button onClick={async () => {
             if (!confirm(`¿Archivar "${torneo?.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
-            const res = await eliminarTorneo({ torneoId })
+            const res = await archivarTorneo({ torneoId })
             if (res.error) { alert(res.error); return }
             router.push('/torneos')
           }} style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'6px 14px', color:'#dc2626', fontSize:13, cursor:'pointer' }}>
@@ -1412,21 +1421,20 @@ export default function TorneoDetallePage() {
                   setRutMesa('')
                   if (e.target.value.length > 1 && perfil?.club_id) {
                     const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
-                    ;(window as any).__jugSuggestions = data || []
-                    setBusquedaMesa(e.target.value)
+                    setJugSuggestions(data || [])
                   } else {
-                    ;(window as any).__jugSuggestions = []
+                    setJugSuggestions([])
                   }
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleInscribirEnMesa()}
               />
-              {busquedaMesa.length > 1 && (window as any).__jugSuggestions?.length > 0 && (
+              {busquedaMesa.length > 1 && jugSuggestions.length > 0 && (
                 <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden', boxShadow:'0 4px 12px rgba(15,23,42,0.1)' }}>
-                  {((window as any).__jugSuggestions || []).map((j: any) => (
+                  {jugSuggestions.map((j: any) => (
                     <div key={j.id} onClick={() => {
                       setBusquedaMesa(j.nombre)
                       setRutMesa(j.rut || '')
-                      ;(window as any).__jugSuggestions = []
+                      setJugSuggestions([])
                     }} style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:13 }}>
                       <span style={{ color: text }}>{j.nombre}</span>
                       <span style={{ color: muted, fontSize:11, marginLeft:8 }}>{j.categoria}</span>
@@ -1507,7 +1515,8 @@ export default function TorneoDetallePage() {
                     })()}
                     {/* Quitar */}
                     <button onClick={async () => {
-                      await supabase.from('grupo_jugadores').delete().eq('jugador_id', j.jugador_id).in('grupo_id', grupos.map((g:any)=>g.id))
+                      const res = await quitarJugadorDeMesa({ torneoId, jugadorId: j.jugador_id })
+                      if (res.error) { alert(res.error); return }
                       setJugadoresInscritos(prev => prev.filter((x:any) => x.jugador_id !== j.jugador_id))
                     }} style={{ background:'transparent', border:'none', color:'#dc2626', cursor:'pointer', fontSize:14 }}>✕</button>
                   </div>

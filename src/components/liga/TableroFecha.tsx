@@ -165,6 +165,8 @@ export function TableroFecha({
 
   async function handleWalkover(ganadorId: string) {
     if (!partidoResultado) return
+    const ganadorNombre = nombres[ganadorId] ?? ganadorId
+    if (!confirm(`¿Registrar walkover a favor de ${ganadorNombre}?\n\nEsta acción cuenta como victoria/derrota en el ranking y no tiene deshacer.`)) return
     const partSnap = { ...partidoResultado }
     setPartidoResultado(null)
     setPartidos(prev => prev.map(p => p.id === partSnap.id ? { ...p, estado: 'walkover' } : p))

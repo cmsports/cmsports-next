@@ -8,6 +8,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearAccesoJugador } from '@/app/actions/jugadores'
 import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
+import { trimestreActual } from '@/lib/domain/trimestre'
 
 const supabase = createClient()
 
@@ -64,7 +65,7 @@ export default function JugadorDetallePage() {
   const params = useParams()
   const jugadorId = params.id as string
 
-  const trimestre = `Q${Math.ceil((new Date().getMonth()+1)/3)}-${new Date().getFullYear()}`
+  const trimestre = trimestreActual()
 
   useEffect(() => {
     async function cargar() {

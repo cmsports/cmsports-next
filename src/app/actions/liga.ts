@@ -351,25 +351,29 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
   const fechaIdPorNumero = new Map(fechas.map(f => [f.numero, f.id]))
   const mesaIdPorNumero = new Map(mesasActivas.map(m => [m.numero, m.id]))
 
-  // Guardar todos en paralelo (1 round-trip); capturar errores individuales
-  const resultadosUpdate = await Promise.all(
-    conArbitros.map(p =>
-      supabase
-        .from('liga_partidos')
-        .update({
-          fecha_id: fechaIdPorNumero.get(p.fechaNumero) ?? null,
-          mesa_id: mesaIdPorNumero.get(p.mesaNumero) ?? null,
-          bloque_horario: p.bloqueHorario,
-          arbitro_id: p.arbitroId,
-        })
-        .eq('id', p.id)
-        .then(r => ({ id: p.id, error: r.error })),
-    ),
-  )
+  // Guardar todos en un único upsert (1 round-trip en lugar de N)
+  const { error: upsertErr } = await supabase
+    .from('liga_partidos')
+    .upsert(
+      conArbitros.map(p => ({
+        id: p.id,
+        liga_id: ligaId,
+        division_id: p.divisionId,
+        jugador_a_id: p.jugadorAId,
+        jugador_b_id: p.jugadorBId,
+        orden_fixture: p.ordenFixture,
+        fecha_id: fechaIdPorNumero.get(p.fechaNumero) ?? null,
+        mesa_id: mesaIdPorNumero.get(p.mesaNumero) ?? null,
+        bloque_horario: p.bloqueHorario,
+        arbitro_id: p.arbitroId,
+      })),
+      { onConflict: 'id' },
+    )
   let programadosExitosos = 0
-  for (const r of resultadosUpdate) {
-    if (r.error) sinAsignarIds.push(r.id)
-    else programadosExitosos++
+  if (upsertErr) {
+    sinAsignarIds.push(...conArbitros.map(p => p.id))
+  } else {
+    programadosExitosos = conArbitros.length
   }
 
   // Asignar los partidos que no caben en fechas regulares a la fecha de reajuste
