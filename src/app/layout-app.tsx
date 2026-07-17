@@ -175,7 +175,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               overflow: 'hidden',
             }}>
               {clubLogoUrl
-                ? <Image src={clubLogoUrl} alt={clubNombre || 'Club'} width={32} height={32} style={{ objectFit: 'contain' }} />
+                ? <img src={clubLogoUrl} alt={clubNombre || 'Club'} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 3 }} />
                 : <Image src="/logo.png" alt="CmSports" width={22} height={22} style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
               }
             </div>

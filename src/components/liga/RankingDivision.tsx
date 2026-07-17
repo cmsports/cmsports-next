@@ -63,6 +63,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
   const [ranking, setRanking] = useState<FilaRanking[]>([])
   const [nombres, setNombres] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const accent = divColor(nombreDivision)
 
@@ -100,45 +101,56 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
   }
 
   const cargar = useCallback(async () => {
-    const db = supabase as any
-    const [{ data: dj }, { data: rawPartidos }] = await Promise.all([
-      supabase.from('liga_division_jugadores').select('jugador_id').eq('division_id', divisionId),
-      db
-        .from('liga_partidos')
-        .select('jugador_a_id, jugador_b_id, ganador_id, es_walkover, sets_a, sets_b')
-        .eq('division_id', divisionId)
-        .in('estado', ['finalizado', 'walkover'])
-        .is('deleted_at', null),
-    ])
-    const partidosData = (rawPartidos || []) as Array<{
-      jugador_a_id: string; jugador_b_id: string; ganador_id: string | null
-      es_walkover: boolean; sets_a: number | null; sets_b: number | null
-    }>
+    setError(null)
+    try {
+      const db = supabase as any
+      const [res1, res2] = await Promise.all([
+        supabase.from('liga_division_jugadores').select('jugador_id').eq('division_id', divisionId),
+        db
+          .from('liga_partidos')
+          .select('jugador_a_id, jugador_b_id, ganador_id, es_walkover, sets_a, sets_b')
+          .eq('division_id', divisionId)
+          .in('estado', ['finalizado', 'walkover'])
+          .not('estado', 'eq', 'anulado'),
+      ])
 
-    const divJugIds = (dj || []).map(j => j.jugador_id)
-    const partidoJugIds = partidosData.flatMap(p => [p.jugador_a_id, p.jugador_b_id])
-    const jugadorIds = Array.from(new Set([...divJugIds, ...partidoJugIds]))
+      const dj = res1?.data
+      const rawPartidos = res2?.data
 
-    const partidos: PartidoFinalizado[] = partidosData
-      .filter(p => p.ganador_id)
-      .map(p => ({
-        jugadorAId: p.jugador_a_id,
-        jugadorBId: p.jugador_b_id,
-        ganadorId: p.ganador_id as string,
-        esWalkover: p.es_walkover,
-        setsA: p.sets_a,
-        setsB: p.sets_b,
-      }))
+      const partidosData = (rawPartidos || []) as Array<{
+        jugador_a_id: string; jugador_b_id: string; ganador_id: string | null
+        es_walkover: boolean; sets_a: number | null; sets_b: number | null
+      }>
 
-    setRanking(calcularRankingDivision(jugadorIds, partidos))
+      const divJugIds = (dj || []).map((j: { jugador_id: string }) => j.jugador_id)
+      const partidoJugIds = partidosData.flatMap(p => [p.jugador_a_id, p.jugador_b_id])
+      const jugadorIds = Array.from(new Set([...divJugIds, ...partidoJugIds]))
 
-    if (jugadorIds.length) {
-      const { data: jugadoresData } = await supabase.from('jugadores').select('id, nombre').in('id', jugadorIds)
-      const mapa: Record<string, string> = {}
-      for (const j of jugadoresData || []) mapa[j.id] = j.nombre
-      setNombres(mapa)
+      const partidos: PartidoFinalizado[] = partidosData
+        .filter(p => p.ganador_id)
+        .map(p => ({
+          jugadorAId: p.jugador_a_id,
+          jugadorBId: p.jugador_b_id,
+          ganadorId: p.ganador_id as string,
+          esWalkover: p.es_walkover ?? false,
+          setsA: p.sets_a,
+          setsB: p.sets_b,
+        }))
+
+      setRanking(calcularRankingDivision(jugadorIds, partidos))
+
+      if (jugadorIds.length) {
+        const { data: jugadoresData } = await supabase.from('jugadores').select('id, nombre').in('id', jugadorIds)
+        const mapa: Record<string, string> = {}
+        for (const j of jugadoresData || []) mapa[j.id] = j.nombre
+        setNombres(mapa)
+      }
+    } catch (err) {
+      console.error('Error cargando ranking:', err)
+      setError('No se pudo cargar el ranking. Intentá de nuevo.')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [divisionId])
 
   useEffect(() => {
@@ -188,6 +200,17 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
       <div style={{ width: 40, height: 40, borderRadius: '50%', border: `3px solid ${accent}40`, borderTop: `3px solid ${accent}`, margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       Cargando ranking...
+    </div>
+  )
+
+  if (error) return (
+    <div style={{ padding: '32px 24px', textAlign: 'center', background: '#fef2f2', borderRadius: 16, border: '1px solid #fecaca' }}>
+      <div style={{ fontSize: 28, marginBottom: 12 }}>⚠️</div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#dc2626', marginBottom: 8 }}>{error}</div>
+      <button onClick={() => { setLoading(true); void cargar() }}
+        style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginTop: 4 }}>
+        Reintentar
+      </button>
     </div>
   )
 
@@ -244,7 +267,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
           const isPodio = i < 3
           const cfg = isPodio ? PODIO_CONFIG[i] : null
           const badgeColor = cfg ? cfg.badgeColor : '#6366f1'
-          const maxPts = ranking[0]?.pts ?? 1
+          const maxPts = Math.max(1, ranking[0]?.pts ?? 0)
           const pctBar = Math.round((row.pts / maxPts) * 100)
           const MEDALS = ['🥇', '🥈', '🥉']
 

@@ -31,6 +31,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const pagoOperacionId = useRef<string | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<'todos'|'pagado'|'pendiente'|'atrasado'>('todos')
   const [busqueda, setBusqueda] = useState('')
+  const [clubNombre, setClubNombre] = useState('')
   const clubId = perfil?.club_id ?? null
 
   useEffect(() => {
@@ -40,8 +41,11 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
 
   useEffect(() => {
     if (!clubId) return
-    supabase.from('clubes').select('mensualidad_base').eq('id', clubId).single()
-      .then(({ data }) => { if (data?.mensualidad_base) setMontoPago(String(data.mensualidad_base)) })
+    supabase.from('clubes').select('nombre,mensualidad_base').eq('id', clubId).single()
+      .then(({ data }) => {
+        if (data?.mensualidad_base) setMontoPago(String(data.mensualidad_base))
+        if (data?.nombre) setClubNombre(data.nombre)
+      })
   }, [clubId])
 
   async function cargarMensualidades(cid?: string) {
@@ -241,9 +245,12 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                   <tr key={j.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
                     <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>
                       {j.nombre}
-                      {j.telefono && (
-                        <a href={`https://wa.me/${j.telefono.replace(/[^0-9]/g,'')}`} target="_blank"
-                          style={{ marginLeft:8, fontSize:11, color:'#16a34a', textDecoration:'none' }} title="WhatsApp">💬</a>
+                      {j.telefono && estado !== 'pagado' && (
+                        <a
+                          href={`https://wa.me/${j.telefono.replace(/[^0-9]/g,'')}?text=${encodeURIComponent(`Hola ${j.nombre.split(' ')[0]}! 👋 Te contactamos desde ${clubNombre || 'el club'}. Tu mensualidad de ${mesesN[mes-1]} ${anio}${mens?.monto ? ` ($${Number(mens.monto).toLocaleString('es-CL')})` : ''} figura como *${estado === 'atrasado' ? 'atrasada ⚠️' : 'pendiente ⏳'}*. Por favor regularizá tu pago cuando puedas. ¡Gracias! 🏓`)}`}
+                          target="_blank"
+                          style={{ marginLeft:8, fontSize:11, color:'#16a34a', textDecoration:'none' }}
+                          title="Enviar recordatorio por WhatsApp">💬</a>
                       )}
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{j.sesiones_limite} ses.</td>
