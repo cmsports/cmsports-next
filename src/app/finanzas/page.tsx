@@ -17,6 +17,7 @@ const hint = '#94a3b8'
 
 const catLabel: Record<string, string> = {
   mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo',
+  inscripcion_liga:'Inscripción liga', premio_torneo:'Premio torneo',
   arriendo_cancha:'Arriendo cancha', donacion:'Donación', otro_ingreso:'Otro ingreso',
   sueldo_profesor:'Sueldo profesor', sueldo_staff:'Sueldo staff',
   material_deportivo:'Material deportivo', servicios_basicos:'Servicios básicos',
@@ -147,20 +148,47 @@ function FinanzasContent() {
   }
 
   async function exportarExcel() {
-    const { utils, writeFile } = await import('xlsx')
-    const datos = movimientosFiltrados.map(m => ({
-      'Fecha': m.fecha,
-      'Tipo': m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto',
-      'Categoría': catLabel[m.categoria] || m.categoria,
-      'Descripción': m.descripcion,
-      'Monto': m.monto,
-      'Registrado por': m.registrado_por_nombre || 'Admin',
-      'Mes correspondiente': m.mes_correspondiente || '',
-      'Año correspondiente': m.anio_correspondiente || ''
-    }))
-    const ws = utils.json_to_sheet(datos)
+    const XLSX = await import('xlsx-js-style')
+    const { utils, writeFile } = XLSX
+
+    const headers = ['Fecha','Tipo','Categoría','Descripción','Monto (CLP)','Registrado por']
+    const rows = movimientosFiltrados.map(m => [
+      m.fecha,
+      m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto',
+      catLabel[m.categoria] || m.categoria,
+      m.descripcion || '',
+      m.monto,
+      m.registrado_por_nombre || 'Admin',
+    ])
+
+    const headerStyle = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '3730A3' } }, alignment: { horizontal: 'center' } }
+    const ingresoStyle = { fill: { fgColor: { rgb: 'F0FDF4' } } }
+    const gastoStyle   = { fill: { fgColor: { rgb: 'FEF2F2' } } }
+    const montoStyle   = { numFmt: '#,##0', alignment: { horizontal: 'right' } }
+    const montoIngreso = { ...ingresoStyle, numFmt: '#,##0', alignment: { horizontal: 'right' } }
+    const montoGasto   = { ...gastoStyle,   numFmt: '#,##0', alignment: { horizontal: 'right' } }
+
+    const wsData: any[][] = [
+      headers.map(h => ({ v: h, s: headerStyle })),
+      ...rows.map((r, i) => {
+        const esIngreso = movimientosFiltrados[i].tipo === 'ingreso'
+        const bg = esIngreso ? ingresoStyle : gastoStyle
+        return r.map((v, ci) => ({ v, s: ci === 4 ? (esIngreso ? montoIngreso : montoGasto) : bg }))
+      }),
+    ]
+
+    const resumen = [
+      [],
+      [{ v: 'RESUMEN', s: { font: { bold: true } } }],
+      [{ v: 'Total ingresos', s: { font: { bold: true } } }, { v: ingresos, s: { ...montoIngreso, fill: { fgColor: { rgb: 'DCFCE7' } } } }],
+      [{ v: 'Total gastos',   s: { font: { bold: true } } }, { v: gastos,   s: { ...montoGasto,   fill: { fgColor: { rgb: 'FEE2E2' } } } }],
+      [{ v: 'Saldo neto',     s: { font: { bold: true } } }, { v: ingresos - gastos, s: { ...montoStyle, font: { bold: true } } }],
+    ]
+
+    const ws = utils.aoa_to_sheet([...wsData, ...resumen])
+    ws['!cols'] = [{ wch: 12 }, { wch: 10 }, { wch: 22 }, { wch: 36 }, { wch: 14 }, { wch: 20 }]
     const wb = utils.book_new()
-    utils.book_append_sheet(wb, ws, 'Finanzas')
+    utils.book_append_sheet(wb, ws, `${mesesN[mes-1]} ${anio}`)
     writeFile(wb, `finanzas_${mesesN[mes-1]}_${anio}.xlsx`)
   }
 

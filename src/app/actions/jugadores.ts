@@ -129,3 +129,17 @@ export async function eliminarJugador(params: { jugadorId: string }) {
   if (error) return { error: 'Error al eliminar' }
   return { success: true }
 }
+
+export async function resetearPasswordJugador(params: { jugadorId: string; nuevaPassword: string }) {
+  const { error: authErr, clubId } = await requireAdminClub()
+  if (authErr || !clubId) return { error: authErr || 'No autorizado' }
+  if (params.nuevaPassword.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
+
+  const admin = createAdminClient()
+  const { data: perfilData } = await admin.from('perfiles').select('id').eq('jugador_id', params.jugadorId).eq('club_id', clubId).maybeSingle()
+  if (!perfilData) return { error: 'Este jugador no tiene cuenta de acceso' }
+
+  const { error } = await admin.auth.admin.updateUserById(perfilData.id, { password: params.nuevaPassword })
+  if (error) return { error: 'No se pudo cambiar la contraseña: ' + error.message }
+  return { success: true }
+}
