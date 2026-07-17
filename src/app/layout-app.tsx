@@ -70,10 +70,10 @@ const mobileNavProfesor = [
 ]
 
 const mobileNavJugador = [
-  { label: 'Perfil',     icon: User,          href: '/perfil' },
-  { label: 'Asistencia', icon: ClipboardCheck, href: '/asistencia',    modulo: 'asistencia' },
-  { label: 'Mis clases', icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
-  { label: 'Mi cuenta',  icon: CreditCard,    href: '/estado-cuenta', modulo: 'mensualidades' },
+  { label: 'Perfil',     icon: User,           href: '/perfil' },
+  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia',    modulo: 'asistencia' },
+  { label: 'Mis clases', icon: BookOpen,        href: '/mis-clases',    modulo: 'clases' },
+  { label: 'Torneos',    icon: Trophy,          href: '/torneos-externos', modulo: 'torneos' },
 ]
 
 type NavLink = { label: string; icon: LucideIcon; href: string; modulo?: string }
