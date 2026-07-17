@@ -37,6 +37,7 @@ export default function JugadorDetallePage() {
   const [evaluaciones, setEvaluaciones] = useState<any[]>([])
   const [tab, setTab] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [errorCarga, setErrorCarga] = useState('')
   const [guardandoFeedback, setGuardandoFeedback] = useState(false)
   const [feedbackError, setFeedbackError] = useState('')
   const [feedbackExito, setFeedbackExito] = useState('')
@@ -83,29 +84,35 @@ export default function JugadorDetallePage() {
       const mesActual = new Date().getMonth() + 1
       const anioActual = new Date().getFullYear()
 
-      const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
-        supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
-        supabase.from('torneo_partidos').select('*,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
-        supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
-        supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
-        perfil.rol === 'admin'
-          ? supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
-          : Promise.resolve({ data: null }),
-      ])
+      try {
+        const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
+          supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
+          supabase.from('torneo_partidos').select('*,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
+          supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
+          supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
+          perfil.rol === 'admin'
+            ? supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
+            : Promise.resolve({ data: null }),
+        ])
 
-      if (perfil.rol === 'admin') {
-        const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
-        setTieneCuenta(!!perfilJugador)
+        if (perfil.rol === 'admin') {
+          const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
+          setTieneCuenta(!!perfilJugador)
+        }
+
+        if (!j) { setErrorCarga('No se encontró el jugador o no tenés acceso.'); setLoading(false); return }
+
+        setJugador(j)
+        setPartidos(e || [])
+        setExternos(ext || [])
+        setEvaluaciones(evs || [])
+        setMensualidadActual(mens)
+
+        const evalActual = evs?.find((ev: any) => ev.periodo_trimestre === trimestre)
+        if (evalActual) setFeedbackForm({ feedback: evalActual.feedback_profesor || '', meta: evalActual.meta_proximo_periodo || '' })
+      } catch {
+        setErrorCarga('No se pudieron cargar los datos del jugador. Verificá tu conexión.')
       }
-
-      setJugador(j)
-      setPartidos(e || [])
-      setExternos(ext || [])
-      setEvaluaciones(evs || [])
-      setMensualidadActual(mens)
-
-      const evalActual = evs?.find((ev: any) => ev.periodo_trimestre === trimestre)
-      if (evalActual) setFeedbackForm({ feedback: evalActual.feedback_profesor || '', meta: evalActual.meta_proximo_periodo || '' })
 
       setLoading(false)
     }
@@ -257,6 +264,15 @@ export default function JugadorDetallePage() {
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
     </div>
+  )
+
+  if (errorCarga) return (
+    <AppLayout perfil={perfil}>
+      <div style={{ padding:40, textAlign:'center' }}>
+        <div style={{ fontSize:16, color:'#dc2626', marginBottom:12 }}>⚠️ {errorCarga}</div>
+        <button onClick={() => { setErrorCarga(''); setLoading(true); }} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'10px 20px', fontSize:13, cursor:'pointer' }}>Reintentar</button>
+      </div>
+    </AppLayout>
   )
 
   if (!jugador) return (

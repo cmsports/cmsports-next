@@ -65,6 +65,7 @@ function FinanzasContent() {
     profesorId: '', mesCorr: String(new Date().getMonth()+1), anioCorr: String(new Date().getFullYear())
   })
   const [guardando, setGuardando] = useState(false)
+  const [errorMovimiento, setErrorMovimiento] = useState('')
   const movimientoOperacionId = useRef<string | null>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -140,8 +141,9 @@ function FinanzasContent() {
     })
 
     setGuardando(false)
-    if (resultado.error) return
+    if (resultado.error) { setErrorMovimiento(resultado.error); return }
     movimientoOperacionId.current = null
+    setErrorMovimiento('')
     setModalOpen(false)
     setForm({ tipo:'ingreso', categoria:'mensualidad', descripcion:'', monto:'', fecha:new Date().toISOString().slice(0,10), profesorId:'', mesCorr:String(new Date().getMonth()+1), anioCorr:String(new Date().getFullYear()) })
     cargarMovimientos()
@@ -492,8 +494,13 @@ function FinanzasContent() {
                 type="number" placeholder="25000" value={form.monto} onChange={e => setForm(f => ({ ...f, monto: e.target.value }))} />
             </div>
 
+            {errorMovimiento && (
+              <div style={{ marginBottom:12, padding:'10px 14px', borderRadius:8, fontSize:12, fontWeight:500, background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca' }}>
+                {errorMovimiento}
+              </div>
+            )}
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={() => { setModalOpen(false); setErrorMovimiento('') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
               <button onClick={guardarMovimiento} disabled={guardando} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
                 {guardando ? 'Guardando...' : 'Guardar'}
               </button>

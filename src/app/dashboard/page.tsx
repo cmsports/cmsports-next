@@ -74,6 +74,7 @@ export default function DashboardPage() {
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
   const [desgloseGastos, setDesgloseGastos]       = useState<{ categoria: string; monto: number }[]>([])
   const [loading, setLoading]       = useState(true)
+  const [errorDatos, setErrorDatos] = useState(false)
   const [ddOpen, setDdOpen]         = useState(false)
   const [retencionOpen, setRetencionOpen] = useState(false)
   const [tooltip, setTooltip]       = useState<string | null>(null)
@@ -245,6 +246,8 @@ export default function DashboardPage() {
             void cargarInactivos(clubId)
           }
         })
+      }).catch(() => {
+        if (!cancelado) { setErrorDatos(true); setLoading(false) }
       })
     })
     return () => {
@@ -341,7 +344,7 @@ export default function DashboardPage() {
           icon={<Users size={18} color={C.sky} />}
           iconBg={C.skyL}
           label="👥 Jugadores activos"
-          value={kpis.activos || 0}
+          value={errorDatos ? '—' : (kpis.activos || 0)}
           valueColor={C.text}
           tooltip={tooltip} tooltipId="activos" setTooltip={setTooltip}
           tooltipText="Jugadores con estado activo en el club. No incluye externos ni suspendidos."
@@ -353,7 +356,7 @@ export default function DashboardPage() {
             icon={<TrendingUp size={18} color={(kpis.utilidadPorAlumno || 0) >= 0 ? C.green : C.red} />}
             iconBg={(kpis.utilidadPorAlumno || 0) >= 0 ? C.greenL : C.redL}
             label="📈 Utilidad por alumno"
-            value={fmt(kpis.utilidadPorAlumno || 0)}
+            value={errorDatos ? '—' : fmt(kpis.utilidadPorAlumno || 0)}
             valueColor={(kpis.utilidadPorAlumno || 0) >= 0 ? C.green : C.red}
             tooltip={tooltip} tooltipId="utilidad" setTooltip={setTooltip}
             tooltipText={'(Ingresos − Gastos) ÷ Alumnos activos\n\n↑ Sube cuando los ingresos crecen sin aumento proporcional de gastos.\n↓ Baja cuando los gastos aumentan o ingresan alumnos sin generar ingresos.'}
@@ -390,11 +393,11 @@ export default function DashboardPage() {
                 texto="% de alumnos activos con mensualidad pendiente o atrasada. <10% saludable, 10–25% atención, >25% crítico. Haz clic para ver deudores." />
             </div>
             <div style={{ fontSize: 26, fontWeight: 600, color: tmColor, fontVariantNumeric: 'tabular-nums' }}>
-              {kpis.tm || 0}%
+              {errorDatos ? '—' : `${kpis.tm || 0}%`}
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>⚠️ Tasa de morosidad</div>
             <div style={{ marginTop: 6, fontSize: 11, color: tmColor, fontWeight: 500 }}>
-              {(kpis.morosos?.length || 0)} deudores · ver lista →
+              {errorDatos ? 'datos no disponibles' : `${kpis.morosos?.length || 0} deudores · ver lista →`}
             </div>
           </div>
         )}
@@ -405,7 +408,7 @@ export default function DashboardPage() {
             icon={<DollarSign size={18} color={C.green} />}
             iconBg={C.greenL}
             label="💰 Ingresos este mes"
-            value={fmt(kpis.ingresos || 0)}
+            value={errorDatos ? '—' : fmt(kpis.ingresos || 0)}
             valueColor={C.green}
             tooltip={tooltip} tooltipId="ingresos" setTooltip={setTooltip}
             tooltipText="Suma de todos los movimientos de tipo ingreso del mes actual."
@@ -428,7 +431,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>💸 Gastos este mes</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
-                {fmt(kpis.gastos || 0)}
+                {errorDatos ? '—' : fmt(kpis.gastos || 0)}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
                 {desgloseGastos.length === 0 ? (

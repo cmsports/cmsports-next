@@ -38,6 +38,9 @@ export default function SolicitudesPage() {
   const [modalAprobar, setModalAprobar] = useState<any>(null)
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
   const [aprobando, setAprobando]     = useState(false)
+  const [errorAprobar, setErrorAprobar] = useState('')
+  const [rechazandoId, setRechazandoId] = useState<string|null>(null)
+  const [errorRechazar, setErrorRechazar] = useState('')
   const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; cuentaCreada?: boolean }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -88,7 +91,8 @@ export default function SolicitudesPage() {
       mensualidad: parseInt(planForm.mensualidad) || 0, sesiones_limite: ses,
     })
     setAprobando(false)
-    if (res.error) { alert(res.error); return }
+    if (res.error) { setErrorAprobar(res.error); return }
+    setErrorAprobar('')
     setModalAprobar(null)
     void cargarSolicitudes()
     setAprobadoInfo({
@@ -108,7 +112,11 @@ export default function SolicitudesPage() {
 
   async function rechazar(id: string) {
     if (!confirm('¿Rechazar esta solicitud?')) return
-    await rechazarSolicitud({ solicitudId: id })
+    setRechazandoId(id)
+    setErrorRechazar('')
+    const res = await rechazarSolicitud({ solicitudId: id })
+    setRechazandoId(null)
+    if (res?.error) { setErrorRechazar('No se pudo rechazar: ' + res.error); return }
     void cargarSolicitudes()
   }
 
@@ -134,6 +142,13 @@ export default function SolicitudesPage() {
           <p style={{ fontSize: 12, color: hint, marginTop: 2 }}>Gestiona las inscripciones al club</p>
         </div>
       </div>
+
+      {errorRechazar && (
+        <div style={{ marginBottom:16, padding:'12px 16px', borderRadius:8, fontSize:13, background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          {errorRechazar}
+          <button onClick={() => setErrorRechazar('')} style={{ background:'none', border:'none', color:'#dc2626', fontSize:16, cursor:'pointer', padding:'0 4px' }}>✕</button>
+        </div>
+      )}
 
       {/* Link de invitación */}
       <div style={{ ...card, padding: 20, marginBottom: 20 }}>
@@ -187,12 +202,12 @@ export default function SolicitudesPage() {
                     <td style={{ padding: '12px 16px' }}>
                       {s.estado === 'pendiente' && (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => { setModalAprobar(s); setPlanForm({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' }) }}
+                          <button onClick={() => { setModalAprobar(s); setPlanForm({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' }); setErrorAprobar('') }}
                             style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
                             <UserCheck size={12} /> Aprobar
                           </button>
-                          <button onClick={() => rechazar(s.id)}
-                            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, padding: '5px 8px', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <button onClick={() => rechazar(s.id)} disabled={rechazandoId === s.id}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, padding: '5px 8px', fontSize: 11, cursor: rechazandoId === s.id ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', opacity: rechazandoId === s.id ? 0.6 : 1 }}>
                             <XCircle size={12} />
                           </button>
                         </div>
@@ -264,8 +279,13 @@ export default function SolicitudesPage() {
                 onChange={e => setPlanForm(f => ({ ...f, mensualidad: e.target.value }))} />
             </div>
 
+            {errorAprobar && (
+              <div style={{ marginBottom:12, padding:'10px 14px', borderRadius:8, fontSize:12, fontWeight:500, background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca' }}>
+                {errorAprobar}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setModalAprobar(null)} style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={() => { setModalAprobar(null); setErrorAprobar('') }} style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={confirmarAprobar} disabled={aprobando} style={{ flex: 1, padding: 11, background: '#f43f5e', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 {aprobando ? 'Aprobando...' : 'Aprobar jugador'}
               </button>
