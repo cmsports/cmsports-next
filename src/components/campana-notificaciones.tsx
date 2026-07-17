@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Bell } from 'lucide-react'
 import { planVencido } from '@/lib/domain/suscripciones'
+import { trimestreActual } from '@/lib/domain/trimestre'
 
 interface Notificacion {
   id: string
@@ -70,9 +71,9 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         notificaciones.push({ id: `mens-atrasada-${anioActual}-${mesActual}`, tipo: 'mensualidad', titulo: 'Mensualidad atrasada', mensaje: 'Tienes una mensualidad atrasada. Contacta al administrador.', fecha: hoy, leida: false, color: '#dc2626' })
       }
 
-      const trimestreActual = `Q${Math.ceil((new Date().getMonth() + 1) / 3)}-${new Date().getFullYear()}`
+      const trimestre = trimestreActual()
       const { data: evaluacion } = await supabase.from('evaluaciones_trimestrales')
-        .select('*').eq('jugador_id', perfil.jugador_id).eq('periodo_trimestre', trimestreActual).maybeSingle()
+        .select('*').eq('jugador_id', perfil.jugador_id).eq('periodo_trimestre', trimestre).maybeSingle()
       if (evaluacion?.feedback_profesor && !evaluacion.firmado_alumno) {
         const texto = evaluacion.feedback_profesor
         notificaciones.push({ id: `feedback-${evaluacion.id}-${versionTexto(texto)}`, tipo: 'aviso', titulo: 'Tienes feedback nuevo', mensaje: texto.length > 90 ? texto.slice(0, 90) + '…' : texto, fecha: hoy, leida: false, color: '#4f46e5', href: '/perfil' })
@@ -117,8 +118,7 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         notificaciones.push({ id: `clases-hoy-${hoy}`, tipo: 'clase', titulo: `${clasesHoy.length} clase${clasesHoy.length > 1 ? 's' : ''} hoy`, mensaje: clasesHoy.map((c: any) => `${c.hora_inicio?.slice(0, 5)} ${c.contenido}`).join(' · '), fecha: hoy, leida: false, color: '#4f46e5' })
       }
 
-      const trimestre = Math.ceil((new Date().getMonth() + 1) / 3)
-      const periodo   = `Q${trimestre}-${new Date().getFullYear()}`
+      const periodo = trimestreActual()
       const { data: jugadores } = await supabase.from('jugadores').select('id').eq('club_id', perfil.club_id).eq('estado', 'activo').neq('es_externo', true)
       const { data: evaluados }  = await supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo)
       const sinEvaluar = (jugadores?.length || 0) - (evaluados?.length || 0)
@@ -162,8 +162,7 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         })
       }
 
-      const trimestre = Math.ceil((new Date().getMonth() + 1) / 3)
-      const periodo   = `Q${trimestre}-${new Date().getFullYear()}`
+      const periodo = trimestreActual()
       const { data: evsConFeedback } = await supabase.from('evaluaciones_trimestrales')
         .select('*, jugadores(nombre)').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo).not('feedback_profesor', 'is', null)
       const aceptados = (evsConFeedback || []).filter((ev: any) => ev.firmado_alumno)

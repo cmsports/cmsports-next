@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { trimestreActual } from '@/lib/domain/trimestre'
 
 const supabase = createClient()
 
@@ -39,7 +40,7 @@ export default function DashboardProfesorPage() {
   const cincoDiasAtrasISO = cincoDiasAtras.toISOString().slice(0, 10)
 
   async function cargarDatos(p: any) {
-    const trimestre = `Q${Math.ceil((hoy.getMonth()+1)/3)}-${hoy.getFullYear()}`
+    const trimestre = trimestreActual(hoy)
 
     const [{ data: jugadores }, { data: clasesHoy }, { data: evals }, { data: asist5 }] = await Promise.all([
       supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', p.club_id).eq('estado', 'activo').neq('es_externo', true),

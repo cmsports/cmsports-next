@@ -1079,7 +1079,7 @@ export async function inscribirEnMesa(params: {
   return { success: true, jugadorId, jugadorNombre }
 }
 
-export async function eliminarTorneo(params: { torneoId: string }) {
+export async function archivarTorneo(params: { torneoId: string }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr || !supabase) return { error: authErr }
 
@@ -1092,6 +1092,31 @@ export async function eliminarTorneo(params: { torneoId: string }) {
     .eq('club_id', perfil!.club_id!)
   if (error) return { error: `No se pudo archivar: ${error.message}` }
 
+  return { success: true }
+}
+
+export const eliminarTorneo = archivarTorneo
+
+export async function quitarJugadorDeMesa(params: { torneoId: string; jugadorId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr || !supabase) return { error: authErr }
+
+  const { torneoId, jugadorId } = params
+
+  const { data: grupos } = await supabase
+    .from('torneo_grupos')
+    .select('id')
+    .eq('torneo_id', torneoId)
+
+  if (!grupos?.length) return { success: true }
+
+  const { error } = await supabase
+    .from('grupo_jugadores')
+    .delete()
+    .eq('jugador_id', jugadorId)
+    .in('grupo_id', grupos.map(g => g.id))
+
+  if (error) return { error: `No se pudo quitar al jugador: ${error.message}` }
   return { success: true }
 }
 

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(git push)",
+      "PowerShell(git add src/app/actions/liga.ts src/app/liga/[id]/page.tsx)",
+      "Bash(npx tsc *)",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -notmatch \"sentry|vitest|solicitudes|xlsx|vitest.config\" } | Select-Object -First 20)",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -notmatch \"sentry|vitest|solicitudes|xlsx\" })",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; $output = npx tsc --noEmit 2>&1; $filtered = $output | Where-Object { $_ -notmatch \"sentry|vitest|solicitudes|xlsx\" }; $filtered)",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"TableroFecha|liga.id\" } | Select-Object -First 20)",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; npx tsc --noEmit 2>&1 | Select-String \"error TS\" | Where-Object { $_ -notmatch \"sentry|vitest|xlsx|solicitudes\" } | Select-Object -First 20)",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; npx tsc --noEmit 2>&1 | Out-String | Select-String -Pattern \"liga\" -AllMatches | ForEach-Object { $_.Matches | ForEach-Object { $_.Value } })",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; npx tsc --noEmit 2>&1 | Out-File -FilePath \"tsc_out.txt\" -Encoding utf8; Get-Content \"tsc_out.txt\" | Where-Object { $_ -match \"liga\" -and $_ -match \"error\" }; Remove-Item \"tsc_out.txt\")",
+      "Read(//c/Users/Benja/.claude/projects/c--Users-Benja-OneDrive-Documentos-lucho-carpetita-cmsports-next/memory/**)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "PowerShell(cd \"c:\\\\Users\\\\Benja\\\\OneDrive\\\\Documentos\\\\lucho carpetita\\\\cmsports-next\"; npx tsc --noEmit 2>&1 | Out-File tsc_out.txt -Encoding utf8; Get-Content tsc_out.txt | Where-Object { $_ -match \"liga\" -and $_ -match \"error\" }; Remove-Item tsc_out.txt)",
+      "Bash(git rebase *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Benja\\.claude\\projects\\c--Users-Benja-OneDrive-Documentos-lucho-carpetita-cmsports-next\\memory"
+    ]
+  }
+}

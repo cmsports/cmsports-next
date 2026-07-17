@@ -36,6 +36,12 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     cargarMensualidades(clubId).then(() => setLoading(false))
   }, [clubId, mes, anio])
 
+  useEffect(() => {
+    if (!clubId) return
+    supabase.from('clubs').select('mensualidad_base').eq('id', clubId).single()
+      .then(({ data }) => { if (data?.mensualidad_base) setMontoPago(String(data.mensualidad_base)) })
+  }, [clubId])
+
   async function cargarMensualidades(cid?: string) {
     const id = cid || clubId
     const [{ data: j }, { data: m }] = await Promise.all([
@@ -45,11 +51,18 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     setJugadores(j || [])
     setMensualidades(m || [])
 
-    const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
-    if (sinMens.length > 0) {
-      await generarMensualidadesPendientes({ jugadorIds: sinMens.map(jug => jug.id), mes, anio })
-      const { data: mActual } = await supabase.from('mensualidades').select('*').eq('club_id', id).eq('mes', mes).eq('anio', anio)
-      setMensualidades(mActual || [])
+    // Auto-generar registros pendientes solo para el mes actual para no crear
+    // filas históricas al navegar a meses anteriores
+    const mesActual = new Date().getMonth() + 1
+    const anioActual = new Date().getFullYear()
+    const esMesActual = mes === mesActual && anio === anioActual
+    if (esMesActual) {
+      const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
+      if (sinMens.length > 0) {
+        await generarMensualidadesPendientes({ jugadorIds: sinMens.map(jug => jug.id), mes, anio })
+        const { data: mActual2 } = await supabase.from('mensualidades').select('*').eq('club_id', id).eq('mes', mes).eq('anio', anio)
+        setMensualidades(mActual2 || [])
+      }
     }
   }
 
