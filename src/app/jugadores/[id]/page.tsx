@@ -89,10 +89,10 @@ export default function JugadorDetallePage() {
         const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
           supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('*,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
-          supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
-          supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
+          supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
+          supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
           perfil.rol === 'admin'
-            ? supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
+            ? supabase.from('mensualidades').select('id,jugador_id,mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
             : Promise.resolve({ data: null }),
         ])
 
@@ -167,7 +167,7 @@ export default function JugadorDetallePage() {
       setGuardandoFeedback(false)
       return
     }
-    const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2)
+    const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2)
     setEvaluaciones(evs || [])
     setFeedbackExito('Feedback guardado. El jugador debe confirmarlo.')
     setGuardandoFeedback(false)

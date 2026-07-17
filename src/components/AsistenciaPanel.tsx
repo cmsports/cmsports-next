@@ -450,7 +450,7 @@ function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, ho
       const supabase = createClient()
       const inicio = new Date(anio, mes, 1).toISOString().slice(0, 10)
       const fin = new Date(anio, mes + 1, 0).toISOString().slice(0, 10)
-      const { data } = await supabase.from('asistencia').select('fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
+      const { data } = await supabase.from('asistencia').select('fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).limit(200)
       const dias = new Set((data || []).map((d: any) => d.fecha))
       setDiasConDatos(dias)
     }

@@ -29,6 +29,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const [montoPago, setMontoPago] = useState('25000')
   const [registrandoPago, setRegistrandoPago] = useState(false)
   const pagoOperacionId = useRef<string | null>(null)
+  const clubInfoCargada = useRef(false)
   const [filtroEstado, setFiltroEstado] = useState<'todos'|'pagado'|'pendiente'|'atrasado'>('todos')
   const [busqueda, setBusqueda] = useState('')
   const [clubNombre, setClubNombre] = useState('')
@@ -36,23 +37,25 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
 
   useEffect(() => {
     if (!clubId) return
-    cargarMensualidades(clubId).then(() => setLoading(false))
+    const tasks: Promise<any>[] = [cargarMensualidades(clubId)]
+    if (!clubInfoCargada.current) {
+      clubInfoCargada.current = true
+      tasks.push(
+        supabase.from('clubes').select('nombre,mensualidad_base').eq('id', clubId).single()
+          .then(({ data }) => {
+            if (data?.mensualidad_base) setMontoPago(String(data.mensualidad_base))
+            if (data?.nombre) setClubNombre(data.nombre)
+          })
+      )
+    }
+    Promise.all(tasks).then(() => setLoading(false))
   }, [clubId, mes, anio])
-
-  useEffect(() => {
-    if (!clubId) return
-    supabase.from('clubes').select('nombre,mensualidad_base').eq('id', clubId).single()
-      .then(({ data }) => {
-        if (data?.mensualidad_base) setMontoPago(String(data.mensualidad_base))
-        if (data?.nombre) setClubNombre(data.nombre)
-      })
-  }, [clubId])
 
   async function cargarMensualidades(cid?: string) {
     const id = cid || clubId
     const [{ data: j }, { data: m }] = await Promise.all([
-      supabase.from('jugadores').select('*').eq('club_id', id).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
-      supabase.from('mensualidades').select('*').eq('club_id', id).eq('mes', mes).eq('anio', anio)
+      supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite').eq('club_id', id).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
+      supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
     ])
     setJugadores(j || [])
     setMensualidades(m || [])
@@ -66,7 +69,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
       if (sinMens.length > 0) {
         await generarMensualidadesPendientes({ jugadorIds: sinMens.map(jug => jug.id), mes, anio })
-        const { data: mActual2 } = await supabase.from('mensualidades').select('*').eq('club_id', id).eq('mes', mes).eq('anio', anio)
+        const { data: mActual2 } = await supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
         setMensualidades(mActual2 || [])
       }
     }
@@ -113,7 +116,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
 
   async function exportarExcel() {
     const { utils, writeFile } = await import('xlsx')
-    const { data: historial } = await supabase.from('mensualidades').select('*').eq('club_id', clubId).order('anio').order('mes')
+    const { data: historial } = await supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado,fecha_pago,metodo,notas').eq('club_id', clubId).order('anio').order('mes')
     const wb = utils.book_new()
 
     const mensualidadPorJugador = new Map(mensualidades.map(m => [m.jugador_id, m]))

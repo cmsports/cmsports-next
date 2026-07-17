@@ -28,8 +28,8 @@ export default function EstadoCuentaPage() {
   const cargar = useCallback(async () => {
     if (!perfil?.jugador_id) return
     const [{ data: m }, { data: h }] = await Promise.all([
-      supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
-      supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(12),
+      supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago,notas').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
+      supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago,notas').eq('jugador_id', perfil.jugador_id).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(12),
     ])
     setMensualidad(m)
     setHistorial(h || [])
