@@ -257,7 +257,11 @@ export default function TorneoDetallePage() {
         body: JSON.stringify({ partidoId, ganadorId }),
       }).then(r => r.json())
       if (res.error) { setPartidos(previo); alert(res.error); return }
-      await cargarTorneo()
+      // No llamamos cargarTorneo() aquí: el update optimista ya actualiza
+      // partidos state y calcularStats() re-deriva el ranking instantáneamente.
+      // Llamar cargarTorneo() sobrescribía el estado optimista con data del
+      // servidor antes de que el lag de Supabase propagara el write → ranking
+      // volvía a 0 pts por un momento y luego requería otro reload.
     } catch {
       setPartidos(previo)
     } finally {

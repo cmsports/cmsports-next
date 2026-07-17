@@ -125,8 +125,23 @@ export async function eliminarJugador(params: { jugadorId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
+  const admin = createAdminClient()
+
+  // Buscar el perfil ANTES de borrar para obtener el user_id de Auth
+  const { data: perfilJugador } = await admin.from('perfiles')
+    .select('id')
+    .eq('jugador_id', params.jugadorId)
+    .maybeSingle()
+
   const { error } = await supabase.from('jugadores').delete().eq('id', params.jugadorId)
-  if (error) return { error: 'Error al eliminar' }
+  if (error) return { error: 'Error al eliminar jugador' }
+
+  // Si tenía cuenta de acceso, limpiar perfil y usuario de Auth para no dejar fantasmas
+  if (perfilJugador?.id) {
+    await admin.from('perfiles').delete().eq('id', perfilJugador.id)
+    await admin.auth.admin.deleteUser(perfilJugador.id)
+  }
+
   return { success: true }
 }
 

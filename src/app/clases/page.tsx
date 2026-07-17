@@ -51,6 +51,9 @@ export default function ClasesPage() {
   const [reservas, setReservas] = useState<any[]>([])
   const [cargaInicialCompleta, setCargaInicialCompleta] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [guardandoClase, setGuardandoClase] = useState(false)
+  const [errorClase, setErrorClase] = useState('')
+  const [confirmEliminar, setConfirmEliminar] = useState<string|null>(null)
   const [form, setForm] = useState({ fecha:'', profesorId:'', inicio:'', fin:'', contenido:'', grupo:'' })
   const [semanaOffset, setSemanaOffset] = useState(0)
   const router = useRouter()
@@ -97,27 +100,33 @@ export default function ClasesPage() {
 
   async function guardarClase(publicar: boolean) {
     if (!form.fecha || !form.inicio || !form.contenido) return
+    setGuardandoClase(true)
+    setErrorClase('')
     const diasMap: Record<number,string> = { 0:'domingo',1:'lunes',2:'martes',3:'miercoles',4:'jueves',5:'viernes',6:'sabado' }
     const diaSemana = diasMap[new Date(form.fecha+'T12:00:00').getDay()]
-    await supabase.from('clases').insert({
+    const { error } = await supabase.from('clases').insert({
       club_id: clubId, fecha: form.fecha, dia_semana: diaSemana,
       profesor_id: form.profesorId || null, hora_inicio: form.inicio,
       hora_fin: form.fin || null, contenido: form.contenido,
       grupo: form.grupo || null, publicada: publicar
     })
+    setGuardandoClase(false)
+    if (error) { setErrorClase('No se pudo guardar la clase: ' + error.message); return }
     setModalOpen(false)
     setForm({ fecha:'', profesorId:'', inicio:'', fin:'', contenido:'', grupo:'' })
     cargarClases(semanaOffset)
   }
 
   async function publicarClase(id: string) {
-    await supabase.from('clases').update({ publicada: true }).eq('id', id)
+    const { error } = await supabase.from('clases').update({ publicada: true }).eq('id', id)
+    if (error) { setErrorClase('No se pudo publicar la clase: ' + error.message); return }
     cargarClases(semanaOffset)
   }
 
   async function eliminarClase(id: string) {
-    if (!confirm('¿Eliminar esta clase?')) return
-    await supabase.from('clases').delete().eq('id', id)
+    const { error } = await supabase.from('clases').delete().eq('id', id)
+    setConfirmEliminar(null)
+    if (error) { setErrorClase('No se pudo eliminar la clase: ' + error.message); return }
     cargarClases(semanaOffset)
   }
 
@@ -165,6 +174,13 @@ export default function ClasesPage() {
         )}
       </div>
 
+      {errorClase && (
+        <div style={{ marginBottom:16, padding:'12px 16px', borderRadius:8, fontSize:13, background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          {errorClase}
+          <button onClick={() => setErrorClase('')} style={{ background:'none', border:'none', color:'#dc2626', fontSize:16, cursor:'pointer', padding:'0 4px' }}>✕</button>
+        </div>
+      )}
+
       {Object.keys(porFecha).length === 0 ? (
         <div style={{ ...card, padding:40, textAlign:'center', color: hint, fontSize:13 }}>
           Sin clases programadas
@@ -208,7 +224,15 @@ export default function ClasesPage() {
                       {!c.publicada && (
                         <button onClick={() => publicarClase(c.id)} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Publicar</button>
                       )}
-                      <button onClick={() => eliminarClase(c.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
+                      {confirmEliminar === c.id ? (
+                        <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                          <span style={{ fontSize:10, color:'#dc2626' }}>¿Eliminar?</span>
+                          <button onClick={() => eliminarClase(c.id)} style={{ background:'#dc2626', color:'white', border:'none', borderRadius:4, padding:'4px 8px', fontSize:10, cursor:'pointer', fontWeight:600 }}>Sí</button>
+                          <button onClick={() => setConfirmEliminar(null)} style={{ background:'#f4f7fa', color:muted, border:'none', borderRadius:4, padding:'4px 8px', fontSize:10, cursor:'pointer' }}>No</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmEliminar(c.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -250,10 +274,15 @@ export default function ClasesPage() {
                 {profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
               </select>
             </div>
+            {errorClase && (
+              <div style={{ marginBottom:12, padding:'10px 14px', borderRadius:8, fontSize:12, fontWeight:500, background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca' }}>
+                {errorClase}
+              </div>
+            )}
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={() => guardarClase(false)} style={{ flex:1, padding:11, background:'#ede9fe', border:'none', borderRadius:8, color:'#3730a3', fontSize:13, cursor:'pointer', fontWeight:500 }}>Borrador</button>
-              <button onClick={() => guardarClase(true)} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>Publicar</button>
+              <button onClick={() => { setModalOpen(false); setErrorClase('') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={() => guardarClase(false)} disabled={guardandoClase} style={{ flex:1, padding:11, background:'#ede9fe', border:'none', borderRadius:8, color:'#3730a3', fontSize:13, cursor:'pointer', fontWeight:500 }}>Borrador</button>
+              <button onClick={() => guardarClase(true)} disabled={guardandoClase} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>{guardandoClase ? 'Guardando...' : 'Publicar'}</button>
             </div>
           </div>
         </div>

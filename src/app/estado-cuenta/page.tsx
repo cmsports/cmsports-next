@@ -57,6 +57,11 @@ export default function EstadoCuentaPage() {
       setComprMsg({ tipo: 'error', texto: 'No se pudo subir el archivo. Envíalo directamente por WhatsApp al admin.' })
       return
     }
+    // Guardar la URL pública en notas para que el admin pueda verla desde MensualidadesPanel
+    const { data: urlData } = supabase.storage.from('comprobantes').getPublicUrl(path)
+    if (urlData?.publicUrl) {
+      await supabase.from('mensualidades').update({ notas: urlData.publicUrl }).eq('id', mensualidad.id)
+    }
     setComprMsg({ tipo: 'ok', texto: '¡Comprobante enviado correctamente! El admin lo revisará pronto.' })
   }
 
