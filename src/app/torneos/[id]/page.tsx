@@ -34,9 +34,8 @@ import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayoutNumerado } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
-import { descargarExcelTorneo } from '@/lib/torneo-excel'
-import { descargarInformeFinancieroPdf } from '@/lib/torneo-informe-pdf'
-import { QRCodeSVG } from 'qrcode.react'
+import dynamic from 'next/dynamic'
+const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.QRCodeSVG })), { ssr: false })
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 
 const supabase = createClient()
@@ -539,7 +538,10 @@ export default function TorneoDetallePage() {
         )}
         {esAdmin && faseActual !== 'inscripcion' && (
           <button
-            onClick={() => descargarExcelTorneo({ torneo, grupos, partidos, statsDeGrupo: (id) => calcularStats(id), faseLabel, fasesOrden })}
+            onClick={async () => {
+              const { descargarExcelTorneo } = await import('@/lib/torneo-excel')
+              descargarExcelTorneo({ torneo, grupos, partidos, statsDeGrupo: (id) => calcularStats(id), faseLabel, fasesOrden })
+            }}
             title="Descargar respaldo del torneo en Excel (una hoja por fase)"
             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             📊 Descargar Excel
@@ -1489,7 +1491,7 @@ export default function TorneoDetallePage() {
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setInformeOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer' }}>Cancelar</button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const pFinal = partidos.find(p => p.fase === 'final' && p.ganador)
                   const campeon1 = pFinal ? (pFinal as any).jg : null
                   const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : null
@@ -1506,6 +1508,7 @@ export default function TorneoDetallePage() {
                   const gastos = gastosGestion
                     .filter(g => g.tipo.trim() && g.monto)
                     .map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 }))
+                  const { descargarInformeFinancieroPdf } = await import('@/lib/torneo-informe-pdf')
                   descargarInformeFinancieroPdf({
                     torneoNombre: torneo?.nombre || 'Torneo',
                     cuota, totalInscritos, pagados, recaudado, proyectado,
