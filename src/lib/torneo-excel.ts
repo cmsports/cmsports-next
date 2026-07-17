@@ -2,7 +2,7 @@
 // Usa `xlsx-js-style` (fork de `xlsx` con estilos de celda, misma API).
 
 type Jugador = { id: string; nombre: string }
-type StatFila = { jugador: Jugador; pts: number; pg: number; pp: number; sets: number; puntos: number }
+type StatFila = { jugador: Jugador; pts: number; pg: number; pp: number }
 
 type Args = {
   torneo: any
@@ -90,17 +90,17 @@ export async function descargarExcelTorneo({ torneo, grupos, partidos, statsDeGr
       const { ordenados } = statsDeGrupo(grupo.id)
       const partidosGrupo = partidos.filter((p) => p.grupo_id === grupo.id)
 
-      merges.push({ s: { r: rows.length, c: 0 }, e: { r: rows.length, c: 5 } })
-      opFila.push({ r: rows.length, cols: 6, s: S.seccion })
+      merges.push({ s: { r: rows.length, c: 0 }, e: { r: rows.length, c: 4 } })
+      opFila.push({ r: rows.length, cols: 5, s: S.seccion })
       rows.push([`Grupo ${grupo.nombre}`])
 
-      opFila.push({ r: rows.length, cols: 6, s: S.header })
-      rows.push(['Pos', 'Jugador', 'G', 'P', 'Puntos', 'Sets'])
+      opFila.push({ r: rows.length, cols: 5, s: S.header })
+      rows.push(['Pos', 'Jugador', 'G', 'P', 'Puntos'])
 
       ordenados.forEach((j, i) => {
         const r = rows.length
-        rows.push([i === 0 ? '🥇 1°' : i === 1 ? '🥈 2°' : `${i + 1}°`, j.jugador?.nombre || '—', j.pg, j.pp, j.pts, j.sets])
-        opFila.push({ r, cols: 6, s: S.celdaCentro })
+        rows.push([i === 0 ? '🥇 1°' : i === 1 ? '🥈 2°' : `${i + 1}°`, j.jugador?.nombre || '—', j.pg, j.pp, j.pts])
+        opFila.push({ r, cols: 5, s: S.celdaCentro })
         ops.push({ r, c: 1, s: S.celda })
         if (i === 0) ops.push({ r, c: 0, s: S.oro })
         else if (i === 1) ops.push({ r, c: 0, s: S.plata })
@@ -122,7 +122,7 @@ export async function descargarExcelTorneo({ torneo, grupos, partidos, statsDeGr
       rows.push([], [])
     }
     const wsG = utils.aoa_to_sheet(rows)
-    wsG['!cols'] = [{ wch: 22 }, { wch: 8 }, { wch: 22 }, { wch: 24 }, { wch: 10 }, { wch: 8 }]
+    wsG['!cols'] = [{ wch: 22 }, { wch: 8 }, { wch: 22 }, { wch: 24 }, { wch: 10 }]
     wsG['!merges'] = merges
     opFila.forEach((o) => setFila(wsG, o.r, o.cols, o.s))
     ops.forEach((o) => set(wsG, o.r, o.c, o.s))

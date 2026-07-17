@@ -3,13 +3,13 @@
 import {
   seedingSerpenteo,
   generarRoundRobin,
-  generarSiguienteFase,
   siguienteFase,
   construirLlavesLayout,
   calcularNumGrupos,
   calcularNumGruposTardios,
   calcularStatsGrupo,
   derivarPodioFinal,
+  nombreGrupo,
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
@@ -27,15 +27,50 @@ function ordenarMiembros<T extends { orden?: number | null; jugador_id?: string 
   return [...miembros].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(a.jugador_id ?? '').localeCompare(String(b.jugador_id ?? '')))
 }
 
+export async function crearTorneo(params: {
+  nombre: string
+  fecha: string
+  cuota: number
+}) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+  if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
+
+  const nombre = params.nombre.trim()
+  const cuota = Number(params.cuota)
+  if (!nombre) return { error: 'Ingresa el nombre del torneo' }
+  const fechaObjeto = new Date(`${params.fecha}T00:00:00Z`)
+  const fechaValida = /^\d{4}-\d{2}-\d{2}$/.test(params.fecha) &&
+    !Number.isNaN(fechaObjeto.getTime()) && fechaObjeto.toISOString().slice(0, 10) === params.fecha
+  if (!fechaValida) return { error: 'Ingresa una fecha válida' }
+  if (!Number.isSafeInteger(cuota) || cuota < 0) return { error: 'La cuota debe ser un monto igual o mayor a $0' }
+
+  const { data, error } = await supabase.from('torneos').insert({
+    club_id: perfil.club_id,
+    nombre,
+    formato: 'grupos',
+    estado: 'en_curso',
+    fase: 'inscripcion',
+    fecha_inicio: params.fecha,
+    cuota_inscripcion: cuota,
+    precio_entrada: cuota,
+    inscripcion_abierta: true,
+  }).select('id').single()
+
+  if (error || !data) return { error: error?.message || 'No se pudo crear el torneo' }
+  return { success: true, torneoId: data.id }
+}
+
 async function calcularClasificadosDesdeBD(
   supabase: AdminSupabase,
   torneoId: string,
 ): Promise<{ clasificados: ClasificadoGrupo[] } | { error: string }> {
   const { data: grupos } = await supabase
     .from('torneo_grupos')
-    .select('id, nombre')
+    .select('id, nombre, desempate_primero_id, desempate_segundo_id')
     .eq('torneo_id', torneoId)
     .neq('nombre', 'MESA')
+    .order('orden', { nullsFirst: false })
     .order('nombre')
 
   if (!grupos?.length) return { clasificados: [] }
@@ -44,7 +79,7 @@ async function calcularClasificadosDesdeBD(
   const [{ data: miembros }, { data: partidos }] = await Promise.all([
     supabase
       .from('grupo_jugadores')
-      .select('grupo_id, jugador_id, jugadores(id,nombre)')
+      .select('grupo_id, jugador_id, orden, jugadores(id,nombre)')
       .in('grupo_id', grupoIds),
     supabase
       .from('torneo_partidos')
@@ -56,8 +91,7 @@ async function calcularClasificadosDesdeBD(
 
   const clasificados: ClasificadoGrupo[] = []
   for (const grupo of grupos) {
-    const jugadoresGrupo: JugadorTorneo[] = (miembros || [])
-      .filter(m => m.grupo_id === grupo.id)
+    const jugadoresGrupo: JugadorTorneo[] = ordenarMiembros((miembros || []).filter(m => m.grupo_id === grupo.id))
       .map(m => {
         const j = Array.isArray(m.jugadores) ? m.jugadores[0] : m.jugadores
         return j ? { id: j.id, nombre: j.nombre ?? '' } : null
@@ -80,7 +114,31 @@ async function calcularClasificadosDesdeBD(
       })),
     )
     if (hayTripleEmpate) {
-      return { error: `El grupo ${grupo.nombre ?? ''} quedo con triple empate. Resuelve ese desempate antes de sincronizar llaves.` }
+      const idsGrupo = new Set(jugadoresGrupo.map(j => j.id))
+      const puntosCorte = stats[1]?.pts
+      const empatadosCorte = new Set(stats.filter(s => s.pts === puntosCorte).map(s => s.jugadorId))
+      const encimaCorte = stats.filter(s => puntosCorte != null && s.pts > puntosCorte)
+      const ordenManualValido = encimaCorte.length === 1
+        ? grupo.desempate_primero_id === encimaCorte[0].jugadorId && !!grupo.desempate_segundo_id && empatadosCorte.has(grupo.desempate_segundo_id)
+        : !!grupo.desempate_primero_id && !!grupo.desempate_segundo_id && empatadosCorte.has(grupo.desempate_primero_id) && empatadosCorte.has(grupo.desempate_segundo_id)
+      if (
+        !grupo.desempate_primero_id ||
+        !grupo.desempate_segundo_id ||
+        grupo.desempate_primero_id === grupo.desempate_segundo_id ||
+        !idsGrupo.has(grupo.desempate_primero_id) ||
+        !idsGrupo.has(grupo.desempate_segundo_id) ||
+        !ordenManualValido
+      ) {
+        // El grupo aún no está listo. No bloquea que otras ramas completas
+        // empiecen su playoff; simplemente conserva sus cupos pendientes.
+        continue
+      }
+      clasificados.push({
+        grupoId: grupo.id,
+        primeroId: grupo.desempate_primero_id,
+        segundoId: grupo.desempate_segundo_id,
+      })
+      continue
     }
     if (stats[0]?.jugadorId && stats[1]?.jugadorId) {
       clasificados.push({ grupoId: grupo.id, primeroId: stats[0].jugadorId, segundoId: stats[1].jugadorId })
@@ -94,7 +152,6 @@ async function propagarGanadorPlayoff(
   supabase: AdminSupabase,
   partido: { torneo_id: string | null; fase: string | null; orden: number | null },
   ganadorId: string,
-  actualizarFase = true,
 ) {
   if (!partido.torneo_id || !partido.fase || partido.fase === 'grupos') return
   const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
@@ -102,7 +159,7 @@ async function propagarGanadorPlayoff(
 
   const ordenSiguiente = Math.floor((partido.orden ?? 0) / 2)
   const slotGanador = (partido.orden ?? 0) % 2 === 0 ? 'jugador_a' : 'jugador_b'
-  const { data: existentes } = await supabase
+  const { data: existentes, error: buscarError } = await supabase
     .from('torneo_partidos')
     .select('id, jugador_a, jugador_b, ganador')
     .eq('torneo_id', partido.torneo_id)
@@ -110,6 +167,7 @@ async function propagarGanadorPlayoff(
     .eq('orden', ordenSiguiente)
     .order('creado_en', { ascending: true })
     .limit(1)
+  if (buscarError) return 'No se pudo consultar la llave siguiente'
 
   const existente = existentes?.[0]
   if (existente) {
@@ -117,10 +175,11 @@ async function propagarGanadorPlayoff(
       const updateSlot = slotGanador === 'jugador_a'
         ? { jugador_a: ganadorId }
         : { jugador_b: ganadorId }
-      await supabase.from('torneo_partidos').update(updateSlot).eq('id', existente.id)
+      const { error } = await supabase.from('torneo_partidos').update(updateSlot).eq('id', existente.id)
+      if (error) return 'No se pudo completar la llave siguiente'
     }
   } else {
-    await supabase.from('torneo_partidos').insert({
+    const { error: insertError } = await supabase.from('torneo_partidos').insert({
       torneo_id: partido.torneo_id,
       fase: faseSiguiente,
       orden: ordenSiguiente,
@@ -128,11 +187,52 @@ async function propagarGanadorPlayoff(
       jugador_b: slotGanador === 'jugador_b' ? ganadorId : null,
       ganador: null,
     })
+    // Dos llaves pueden terminar casi al mismo tiempo e intentar crear el mismo
+    // partido siguiente. El índice único deja una sola fila; el segundo proceso
+    // recupera esa fila y completa su slot.
+    if (insertError?.code === '23505') {
+      const { data: concurrente, error: concurrenteError } = await supabase
+        .from('torneo_partidos')
+        .select('id, ganador')
+        .eq('torneo_id', partido.torneo_id)
+        .eq('fase', faseSiguiente)
+        .eq('orden', ordenSiguiente)
+        .maybeSingle()
+      if (concurrenteError || !concurrente) return 'No se pudo recuperar la llave siguiente'
+      if (concurrente && !concurrente.ganador) {
+        const updateSlot = slotGanador === 'jugador_a'
+          ? { jugador_a: ganadorId }
+          : { jugador_b: ganadorId }
+        const { error } = await supabase.from('torneo_partidos').update(updateSlot).eq('id', concurrente.id)
+        if (error) return 'No se pudo completar la llave siguiente'
+      }
+    } else if (insertError) {
+      return 'No se pudo crear la llave siguiente'
+    }
   }
+  return null
+}
 
-  if (actualizarFase) {
-    await supabase.from('torneos').update({ fase: faseSiguiente }).eq('id', partido.torneo_id)
-  }
+async function avanzarFaseSiEstaCompleta(
+  supabase: AdminSupabase,
+  partido: { torneo_id: string | null; fase: string | null },
+) {
+  if (!partido.torneo_id || !partido.fase || partido.fase === 'grupos') return null
+  const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
+  if (!faseSiguiente) return null
+
+  const { data: ronda } = await supabase
+    .from('torneo_partidos')
+    .select('ganador')
+    .eq('torneo_id', partido.torneo_id)
+    .eq('fase', partido.fase)
+  if (!ronda?.length || ronda.some(p => !p.ganador)) return
+
+  await supabase
+    .from('torneos')
+    .update({ fase: faseSiguiente })
+    .eq('id', partido.torneo_id)
+    .eq('fase', partido.fase)
 }
 
 export async function corregirResultadoGrupos(params: { partidoId: string; nuevoGanadorId: string }) {
@@ -145,6 +245,7 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
   if (!partido) return { error: 'Partido no encontrado' }
   if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
   if (partido.fase !== 'grupos') return { error: 'Solo se pueden corregir partidos de grupos' }
+  if (nuevoGanadorId !== partido.jugador_a && nuevoGanadorId !== partido.jugador_b) return { error: 'El ganador debe pertenecer al partido' }
   if (partido.ganador === nuevoGanadorId) return { success: true }
 
   const anteriorGanadorId: string = partido.ganador
@@ -153,12 +254,26 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
 
   const { data: llavesExistentes } = await supabase
     .from('torneo_partidos')
-    .select('id, ganador, jugador_b')
+    .select('id,fase,orden,ganador,jugador_b,slot_a_grupo_id,slot_b_grupo_id')
     .eq('torneo_id', torneoIdPartido)
     .neq('fase', 'grupos')
 
-  if (llavesExistentes?.some(llaveFueJugada)) {
-    return { error: 'No se puede corregir grupos porque ya hay llaves jugadas. Vuelve a grupos o corrige primero la llave afectada para no romper el arbolito.' }
+  if (llavesExistentes?.length && partido.grupo_id) {
+    const afectadas = llavesExistentes.filter(p =>
+      p.slot_a_grupo_id === partido.grupo_id || p.slot_b_grupo_id === partido.grupo_id,
+    )
+    const esLegacy = !llavesExistentes.some(p => p.slot_a_grupo_id || p.slot_b_grupo_id)
+    if ((esLegacy && llavesExistentes.some(llaveFueJugada)) || afectadas.some(llaveFueJugada)) {
+      return { error: 'La rama de este grupo ya fue jugada. Retrocede primero sus resultados de playoff.' }
+    }
+    for (const llave of afectadas.filter(p => p.ganador && !p.jugador_b)) {
+      const faseSiguiente = siguienteFase(llave.fase as FaseOrden)
+      if (!faseSiguiente || llave.orden == null) continue
+      const { data: siguiente } = await supabase.from('torneo_partidos')
+        .select('ganador').eq('torneo_id', torneoIdPartido).eq('fase', faseSiguiente)
+        .eq('orden', Math.floor(llave.orden / 2)).maybeSingle()
+      if (siguiente?.ganador) return { error: 'La rama con BYE ya fue jugada. Retrocede esa rama primero.' }
+    }
   }
 
   // Revertir stats en grupo_jugadores
@@ -173,16 +288,20 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
 
   // Limpiar ganador actual antes de reusar marcarGanadorPartido
   await supabase.from('torneo_partidos').update({ ganador: null }).eq('id', partidoId)
+  if (partido.grupo_id) {
+    await supabase.from('torneo_grupos').update({
+      desempate_primero_id: null,
+      desempate_segundo_id: null,
+    }).eq('id', partido.grupo_id)
+  }
 
   // Aplicar nuevo resultado (reutiliza la lógica existente)
   const marcado = await marcarGanadorPartido({ partidoId, ganadorId: nuevoGanadorId })
   if (marcado.error) return marcado
 
   if (llavesExistentes?.length) {
-    const recalculo = await calcularClasificadosDesdeBD(supabase, torneoIdPartido)
-    if ('error' in recalculo) return recalculo
-    const sync = await sincronizarLlaves({ torneoId: torneoIdPartido, clasificados: recalculo.clasificados })
-    if (sync.error) return sync
+    const sync = await sincronizarLlaves({ torneoId: torneoIdPartido })
+    if ('error' in sync && sync.error) return sync
   }
 
   return marcado
@@ -197,6 +316,17 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
   const { data: partido } = await supabase.from('torneo_partidos').select('*').eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (partido.ganador) return { error: 'El partido ya tiene ganador' }
+  if (!partido.jugador_a || !partido.jugador_b) return { error: 'Los BYE avanzan automáticamente y no se marcan manualmente' }
+  if (ganadorId !== partido.jugador_a && ganadorId !== partido.jugador_b) return { error: 'El ganador debe ser uno de los jugadores del partido' }
+
+  if (partido.fase !== 'grupos') {
+    const { error } = await supabase.rpc('marcar_ganador_playoff_seguro', {
+      p_partido_id: partidoId,
+      p_ganador_id: ganadorId,
+    })
+    if (error) return { error: error.message }
+    return { success: true }
+  }
 
   const perdedorId = partido.jugador_a === ganadorId ? partido.jugador_b : partido.jugador_a
 
@@ -228,6 +358,7 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
   }
 
   await propagarGanadorPlayoff(supabase, partido, ganadorId)
+  await avanzarFaseSiEstaCompleta(supabase, partido)
 
   return { success: true }
 }
@@ -249,14 +380,69 @@ export async function actualizarCabezasSerie(params: {
     .select('ganador,jugador_b')
     .eq('torneo_id', torneoId)
     .neq('fase', 'grupos')
-  if (llaves?.some(llaveFueJugada)) {
-    return { error: 'No se pueden cambiar los cabezas de serie porque el bracket ya tiene partidos jugados' }
+  if (llaves?.length) {
+    return { error: 'No se pueden cambiar los cabezas de serie después de crear el bracket' }
   }
 
   const { error } = await supabase.from('torneos')
     .update({ cabeza_serie_1: cabezaSerie1 || null, cabeza_serie_2: cabezaSerie2 || null })
     .eq('id', torneoId)
   if (error) return { error: 'No se pudo guardar' }
+  return { success: true }
+}
+
+export async function guardarDesempateGrupo(params: {
+  torneoId: string
+  grupoId: string
+  primeroId: string | null
+  segundoId: string | null
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, grupoId, primeroId, segundoId } = params
+  if ((primeroId && !segundoId) || (!primeroId && segundoId)) return { error: 'Debes definir 1° y 2° juntos' }
+  if (primeroId && primeroId === segundoId) return { error: 'El 1° y 2° deben ser jugadores distintos' }
+
+  const { data: grupo } = await supabase.from('torneo_grupos')
+    .select('id').eq('id', grupoId).eq('torneo_id', torneoId).single()
+  if (!grupo) return { error: 'Grupo no encontrado' }
+
+  const { count: llavesCreadas } = await supabase.from('torneo_partidos')
+    .select('id', { count: 'exact', head: true }).eq('torneo_id', torneoId).neq('fase', 'grupos')
+  if ((llavesCreadas ?? 0) > 0) return { error: 'Vuelve a grupos antes de cambiar un desempate' }
+
+  if (primeroId && segundoId) {
+    const [{ data: miembros }, { data: partidosGrupo }] = await Promise.all([
+      supabase.from('grupo_jugadores').select('jugador_id,orden,jugadores(id,nombre)').eq('grupo_id', grupoId),
+      supabase.from('torneo_partidos').select('jugador_a,jugador_b,ganador').eq('torneo_id', torneoId).eq('grupo_id', grupoId).eq('fase', 'grupos'),
+    ])
+    if (!partidosGrupo?.length || partidosGrupo.some(p => !p.jugador_a || !p.jugador_b || !p.ganador)) {
+      return { error: 'Completa todos los partidos del grupo antes de resolver el empate' }
+    }
+    const jugadoresGrupo: JugadorTorneo[] = ordenarMiembros(miembros || []).map(m => {
+      const jugador = Array.isArray(m.jugadores) ? m.jugadores[0] : m.jugadores
+      return jugador ? { id: jugador.id, nombre: jugador.nombre ?? '' } : null
+    }).filter((j): j is JugadorTorneo => !!j)
+    const { stats, hayTripleEmpate } = calcularStatsGrupo(jugadoresGrupo, partidosGrupo.map(p => ({
+      jugadorA: p.jugador_a!, jugadorB: p.jugador_b!, ganador: p.ganador,
+    })))
+    if (!hayTripleEmpate) return { error: 'Este grupo no requiere desempate manual' }
+
+    const puntosCorte = stats[1]?.pts
+    const empatadosCorte = new Set(stats.filter(s => s.pts === puntosCorte).map(s => s.jugadorId))
+    const encimaCorte = stats.filter(s => puntosCorte != null && s.pts > puntosCorte)
+    const valido = encimaCorte.length === 1
+      ? primeroId === encimaCorte[0].jugadorId && empatadosCorte.has(segundoId)
+      : empatadosCorte.has(primeroId) && empatadosCorte.has(segundoId)
+    if (!valido) return { error: 'El orden elegido no corresponde a los jugadores empatados por la clasificación' }
+  }
+
+  const { error } = await supabase.from('torneo_grupos').update({
+    desempate_primero_id: primeroId,
+    desempate_segundo_id: segundoId,
+  }).eq('id', grupoId)
+  if (error) return { error: 'No se pudo guardar el desempate' }
   return { success: true }
 }
 
@@ -271,6 +457,10 @@ export async function moverJugadorEntreGrupos(params: {
 
   const { torneoId, jugadorId, grupoOrigenId, grupoDestinoId } = params
   if (grupoOrigenId === grupoDestinoId) return { success: true }
+
+  const { data: bracket } = await supabase.from('torneo_partidos')
+    .select('id').eq('torneo_id', torneoId).neq('fase', 'grupos').limit(1)
+  if (bracket?.length) return { error: 'No se pueden cambiar grupos después de crear el bracket' }
 
   const { data: partidosAfectados } = await supabase
     .from('torneo_partidos')
@@ -335,6 +525,10 @@ export async function reordenarJugadorEnGrupo(params: {
   if (authErr) return { error: authErr }
 
   const { torneoId, grupoId, jugadorId, direccion } = params
+
+  const { data: bracket } = await supabase.from('torneo_partidos')
+    .select('id').eq('torneo_id', torneoId).neq('fase', 'grupos').limit(1)
+  if (bracket?.length) return { error: 'No se puede reordenar grupos después de crear el bracket' }
 
   const { data: partidosGrupo } = await supabase
     .from('torneo_partidos')
@@ -412,6 +606,10 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   if (jugadores.length < CONFIG.TORNEO_MIN_JUGADORES) {
     return { error: `Se requieren al menos ${CONFIG.TORNEO_MIN_JUGADORES} jugadores` }
   }
+  const numGrupos = calcularNumGrupos(jugadores.length)
+  if (numGrupos > CONFIG.TORNEO_MAX_GRUPOS) {
+    return { error: `El máximo soportado es ${CONFIG.TORNEO_MAX_GRUPOS} grupos (${CONFIG.TORNEO_MAX_CLASIFICADOS} clasificados)` }
+  }
 
   // Limpiar partidos viejos del torneo (evita FK orphans y duplicación de grupos)
   await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
@@ -420,12 +618,11 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     await supabase.from('torneo_grupos').delete().eq('id', gid)
   }
 
-  const numGrupos = calcularNumGrupos(jugadores.length)
   const nuevosGrupos: { id: string; nombre: string }[] = []
   for (let i = 0; i < numGrupos; i++) {
     const { data: g } = await supabase
       .from('torneo_grupos')
-      .insert({ torneo_id: torneoId, nombre: String.fromCharCode(65 + i) })
+      .insert({ torneo_id: torneoId, nombre: nombreGrupo(i), orden: i })
       .select('id, nombre')
       .single()
     if (g) nuevosGrupos.push({ id: g.id, nombre: g.nombre ?? '' })
@@ -458,18 +655,19 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   return { success: true, numGrupos }
 }
 
-// Construye/rellena el cuadro a medida que terminan los grupos, sin re-generar:
-// crea el esqueleto (tamaño fijo = 2 clasificados por grupo) la primera vez y
-// después solo rellena cupos vacíos, respetando resultados jugados y arrastres.
-// El cliente manda solo los grupos ya cerrados (con su 1° y 2° resueltos).
+// Construye el cuadro desde la mitad de los grupos cerrados. La clasificación
+// se recalcula en el servidor y los cupos restantes se agregan al árbol fijo.
 export async function sincronizarLlaves(params: {
   torneoId: string
-  clasificados: { grupoId: string; primeroId: string; segundoId: string }[]
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { torneoId, clasificados } = params
+  const { torneoId } = params
+
+  const calculo = await calcularClasificadosDesdeBD(supabase, torneoId)
+  if ('error' in calculo) return calculo
+  const clasificados = calculo.clasificados
 
   if (clasificados.some(c => c.primeroId === c.segundoId)) {
     return { error: 'Hay un grupo con el mismo jugador como 1° y 2°. Revisa la tabla del grupo antes de armar llaves.' }
@@ -486,68 +684,109 @@ export async function sincronizarLlaves(params: {
   if (!torneo) return { error: 'Torneo no encontrado' }
 
   const { data: gruposRaw } = await supabase
-    .from('torneo_grupos').select('id, nombre').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('nombre')
+    .from('torneo_grupos').select('id, nombre, orden').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('orden', { nullsFirst: false }).order('nombre')
   const grupos = gruposRaw || []
   const numGrupos = grupos.length
   if (numGrupos < 2) return { error: 'Se requieren al menos 2 grupos' }
+  if (numGrupos > CONFIG.TORNEO_MAX_GRUPOS) {
+    return { error: `El bracket admite hasta ${CONFIG.TORNEO_MAX_GRUPOS} grupos` }
+  }
 
-  // Grupo (por orden alfabético) al que pertenece cada cabeza de serie protegido.
+  const todosCompletos = clasificados.length === numGrupos
   const idxByGrupoId = new Map(grupos.map((g, i) => [g.id, i]))
   const { data: miembros } = await supabase
-    .from('grupo_jugadores').select('jugador_id, grupo_id').in('grupo_id', grupos.map(g => g.id))
-  const grupoIdxDe = (jid?: string | null): number | null => {
-    if (!jid) return null
-    const m = (miembros || []).find(x => x.jugador_id === jid)
-    return m?.grupo_id ? (idxByGrupoId.get(m.grupo_id) ?? null) : null
-  }
-  const c1 = grupoIdxDe(torneo.cabeza_serie_1)
-  const c2 = grupoIdxDe(torneo.cabeza_serie_2)
+    .from('grupo_jugadores')
+    .select('jugador_id,grupo_id')
+    .in('grupo_id', grupos.map(g => g.id))
+  const gruposCerrados = new Set(clasificados.map(c => c.grupoId))
 
-  const layout = construirLlavesLayout(numGrupos, c1, c2)
+  const slotDe = (jid?: string | null): { grupoIdx: number; pos: 1 | 2 } | null => {
+    if (!jid) return null
+    const clasificado = clasificados.find(c => c.primeroId === jid || c.segundoId === jid)
+    const grupoIdx = clasificado ? idxByGrupoId.get(clasificado.grupoId) : null
+    if (grupoIdx == null || !clasificado) return null
+    return { grupoIdx, pos: clasificado.primeroId === jid ? 1 : 2 }
+  }
+  const c1 = slotDe(torneo.cabeza_serie_1)
+  const c2 = slotDe(torneo.cabeza_serie_2)
 
   const { data: bracketExistente } = await supabase
     .from('torneo_partidos')
-    .select('id, fase, ganador, jugador_a, jugador_b')
+    .select('id, fase, ganador, jugador_a, jugador_b, slot_a_grupo_id')
     .eq('torneo_id', torneoId)
     .neq('fase', 'grupos')
 
+  if (!bracketExistente?.length) {
+    const minimoCerrados = Math.ceil(numGrupos / 2)
+    if (clasificados.length < minimoCerrados) {
+      return { success: true, todosCompletos: false, bracketCreado: false, minimoCerrados }
+    }
+
+    // Antes de congelar el árbol deben conocerse las posiciones reales de los
+    // cabezas. Si no clasificaron, basta con que su grupo ya esté cerrado.
+    for (const cabezaId of [torneo.cabeza_serie_1, torneo.cabeza_serie_2]) {
+      if (!cabezaId) continue
+      const grupoCabeza = (miembros || []).find(m => m.jugador_id === cabezaId)?.grupo_id
+      if (grupoCabeza && !gruposCerrados.has(grupoCabeza)) {
+        return { success: true, todosCompletos: false, bracketCreado: false, esperandoCabezas: true }
+      }
+    }
+  }
+
+  const gruposListosIdx = clasificados
+    .map(c => idxByGrupoId.get(c.grupoId))
+    .filter((i): i is number => i != null)
+  const layout = construirLlavesLayout(numGrupos, c1, c2, gruposListosIdx)
+  if (!layout.matches.length) return { error: 'No se pudo construir un bracket válido' }
+
   const hayLlavesJugadas = !!bracketExistente?.some(llaveFueJugada)
-  const debeReconstruirEsqueleto = !!bracketExistente?.length && !hayLlavesJugadas && (
+  const tieneMetadatos = !!bracketExistente?.some(p => p.slot_a_grupo_id)
+  const debeReconstruirEsqueleto = !!bracketExistente?.length && !tieneMetadatos && !hayLlavesJugadas && (
     bracketExistente.some(p => p.fase !== layout.faseInicial) ||
     bracketExistente.length !== layout.matches.length
   )
 
   if (debeReconstruirEsqueleto) {
-    await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
+    const { error } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
+    if (error) return { error: 'No se pudo reconstruir el bracket anterior' }
   }
 
-  const realDe = (slot: { grupoIdx: number; pos: 1 | 2 } | null): string | null => {
-    if (!slot) return null
-    const g = grupos[slot.grupoIdx]
-    const c = clasificados.find(x => x.grupoId === g?.id)
+  const realDe = (grupoId: string | null | undefined, pos: number | null | undefined): string | null => {
+    if (!grupoId || (pos !== 1 && pos !== 2)) return null
+    const c = clasificados.find(x => x.grupoId === grupoId)
     if (!c) return null
-    return slot.pos === 1 ? c.primeroId : c.segundoId
+    return pos === 1 ? c.primeroId : c.segundoId
   }
 
-  const { data: existentes } = await supabase
-    .from('torneo_partidos').select('id, orden, jugador_a, jugador_b, ganador')
+  const { data: existentes, error: buscarError } = await supabase
+    .from('torneo_partidos').select('id, orden, jugador_a, jugador_b, ganador,slot_a_grupo_id,slot_a_posicion,slot_b_grupo_id,slot_b_posicion')
     .eq('torneo_id', torneoId).eq('fase', layout.faseInicial)
+  if (buscarError) return { error: 'No se pudo consultar el bracket actual' }
 
   if (!existentes || existentes.length === 0) {
     // Primera vez: crear el esqueleto completo de la ronda inicial.
     const inserts = layout.matches.map(m => {
-      const a = realDe(m.a)
+      const grupoA = m.a ? grupos[m.a.grupoIdx]?.id ?? null : null
+      const grupoB = m.b ? grupos[m.b.grupoIdx]?.id ?? null : null
+      const a = realDe(grupoA, m.a?.pos)
       const esBye = m.b === null
       return {
         torneo_id: torneoId,
         fase: layout.faseInicial,
         jugador_a: a,
-        jugador_b: esBye ? null : realDe(m.b),
+        jugador_b: esBye ? null : realDe(grupoB, m.b?.pos),
         ganador: esBye && a ? a : null, // BYE ya conocido avanza solo
         orden: m.orden,
+        slot_a_grupo_id: grupoA,
+        slot_a_posicion: m.a?.pos ?? null,
+        slot_b_grupo_id: grupoB,
+        slot_b_posicion: m.b?.pos ?? null,
       }
     })
-    if (inserts.length) await supabase.from('torneo_partidos').insert(inserts)
+    if (inserts.length) {
+      const { error } = await supabase.from('torneo_partidos').insert(inserts)
+      if (error) return { error: 'No se pudo crear el bracket inicial' }
+    }
   } else {
     // Rellenar solo cupos vacíos de partidos aún no jugados (no pisa arrastres).
     const byOrden = new Map(existentes.map(r => [r.orden, r]))
@@ -555,87 +794,71 @@ export async function sincronizarLlaves(params: {
       const row = byOrden.get(m.orden)
       if (!row || llaveFueJugada(row)) continue
       const upd: { jugador_a?: string | null; jugador_b?: string | null; ganador?: string | null } = {}
-      const a = realDe(m.a)
-      const b = m.b === null ? null : realDe(m.b)
-      if (!hayLlavesJugadas) {
-        if (row.jugador_a !== a) upd.jugador_a = a
-        if (row.jugador_b !== b) upd.jugador_b = b
-        const ganadorEsperado = m.b === null && a ? a : null
-        if (row.ganador !== ganadorEsperado) upd.ganador = ganadorEsperado
-      } else if (row.jugador_a == null) {
-        if (a) {
-          upd.jugador_a = a
-          if (m.b === null) upd.ganador = a // BYE
-        }
+      const fallbackA = m.a ? grupos[m.a.grupoIdx]?.id ?? null : null
+      const fallbackB = m.b ? grupos[m.b.grupoIdx]?.id ?? null : null
+      const grupoA = row.slot_a_grupo_id ?? fallbackA
+      const posA = row.slot_a_posicion ?? m.a?.pos
+      const grupoB = row.slot_b_grupo_id ?? fallbackB
+      const posB = row.slot_b_posicion ?? m.b?.pos
+      const a = realDe(grupoA, posA)
+      const esBye = !grupoB || !posB
+      const b = esBye ? null : realDe(grupoB, posB)
+
+      if (row.jugador_a !== a) upd.jugador_a = a
+      if (row.jugador_b !== b) upd.jugador_b = b
+      const ganadorEsperado = esBye && a ? a : null
+      if (row.ganador !== ganadorEsperado) upd.ganador = ganadorEsperado
+      if (Object.keys(upd).length) {
+        const { error } = await supabase.from('torneo_partidos').update(upd).eq('id', row.id)
+        if (error) return { error: 'No se pudo completar un cupo del bracket' }
       }
-      if (hayLlavesJugadas && !row.ganador && m.b !== null && row.jugador_b == null) {
-        if (b) upd.jugador_b = b
-      }
-      if (Object.keys(upd).length) await supabase.from('torneo_partidos').update(upd).eq('id', row.id)
     }
   }
 
   // Marcar clasificados — ambos avanzan al bracket.
   const clasificadosIds = clasificados.flatMap(c => [c.primeroId, c.segundoId])
   if (grupos.length) {
-    await supabase.from('grupo_jugadores').update({ clasificado: false }).in('grupo_id', grupos.map(g => g.id))
+    const { error } = await supabase.from('grupo_jugadores').update({ clasificado: false }).in('grupo_id', grupos.map(g => g.id))
+    if (error) return { error: 'No se pudo actualizar la clasificación del torneo' }
   }
   if (clasificadosIds.length) {
-    await supabase.from('grupo_jugadores').update({ clasificado: true }).in('jugador_id', clasificadosIds)
+    const { error } = await supabase.from('grupo_jugadores').update({ clasificado: true })
+      .in('grupo_id', grupos.map(g => g.id))
+      .in('jugador_id', clasificadosIds)
+    if (error) return { error: 'No se pudo guardar los jugadores clasificados' }
   }
 
-  // Solo se entra de lleno a playoffs cuando TODOS los grupos cerraron.
-  const todosCompletos = clasificados.length === numGrupos
-  if (todosCompletos && torneo.fase === 'grupos') {
-    await supabase.from('torneos').update({ fase: layout.faseInicial, estado: 'en_curso' }).eq('id', torneoId)
-  }
-
-  // Los BYE ya tienen ganador automático. Al cerrar todos los grupos deben
-  // ocupar su slot de la fase siguiente igual que un ganador manual.
-  if (todosCompletos) {
-    const { data: rondaInicial } = await supabase.from('torneo_partidos')
-      .select('torneo_id,fase,orden,ganador,jugador_b')
-      .eq('torneo_id', torneoId)
-      .eq('fase', layout.faseInicial)
-      .order('orden')
-    for (const partido of rondaInicial || []) {
-      if (partido.ganador && !partido.jugador_b) {
-        await propagarGanadorPlayoff(supabase, partido, partido.ganador, false)
-      }
+  // Los BYE ya conocidos avanzan automáticamente a la fase siguiente igual
+  // que un ganador manual, incluso mientras siguen abiertos otros grupos.
+  const { data: rondaInicial } = await supabase.from('torneo_partidos')
+    .select('torneo_id,fase,orden,ganador,jugador_b')
+    .eq('torneo_id', torneoId)
+    .eq('fase', layout.faseInicial)
+    .order('orden')
+  for (const partido of rondaInicial || []) {
+    if (partido.ganador && !partido.jugador_b) {
+      const propagacionError = await propagarGanadorPlayoff(supabase, partido, partido.ganador)
+      if (propagacionError) return { error: propagacionError }
     }
   }
 
-  return { success: true, faseInicial: layout.faseInicial, todosCompletos }
-}
+  if (todosCompletos && torneo.fase === 'grupos') {
+    const { data: rondasPlayoff } = await supabase.from('torneo_partidos')
+      .select('fase,ganador')
+      .eq('torneo_id', torneoId)
+      .neq('fase', 'grupos')
+    const desde = CONFIG.FASES_ORDEN.indexOf(layout.faseInicial)
+    let faseObjetivo: FaseOrden = layout.faseInicial
+    for (const fase of CONFIG.FASES_ORDEN.slice(Math.max(0, desde))) {
+      const ronda = (rondasPlayoff || []).filter(p => p.fase === fase)
+      if (!ronda.length) break
+      faseObjetivo = fase
+      if (ronda.some(p => !p.ganador)) break
+    }
+    await supabase.from('torneos').update({ fase: faseObjetivo, estado: 'en_curso' }).eq('id', torneoId)
+  }
 
-export async function avanzarSiguienteFase(params: {
-  torneoId: string
-  faseActual: FaseOrden
-  ganadores: { id: string; nombre: string }[]
-}) {
-  const { error: authErr, supabase } = await requireAdmin()
-  if (authErr) return { error: authErr }
-
-  const { torneoId, faseActual, ganadores } = params
-
-  const { data: torneoRow } = await supabase.from('torneos').select('cabeza_serie_1, cabeza_serie_2').eq('id', torneoId).single()
-
-  const partidosNuevos = generarSiguienteFase(ganadores, faseActual, torneoRow?.cabeza_serie_1, torneoRow?.cabeza_serie_2)
-  if (!partidosNuevos.length) return { error: 'No se pudo generar la siguiente fase' }
-
-  const fase = partidosNuevos[0].fase
-  const inserts = partidosNuevos.map(p => ({
-    torneo_id: torneoId,
-    fase: p.fase,
-    jugador_a: p.jugadorA,
-    jugador_b: p.jugadorB,
-    ganador: p.ganador ?? null,
-    orden: p.orden,
-  }))
-  await supabase.from('torneo_partidos').insert(inserts)
-  await supabase.from('torneos').update({ fase }).eq('id', torneoId)
-
-  return { success: true, fase }
+  return { success: true, faseInicial: layout.faseInicial, todosCompletos, bracketCreado: true }
 }
 
 export async function corregirResultadoPlayoff(params: { partidoId: string; nuevoGanadorId: string }) {
@@ -650,29 +873,12 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
   if (partido.fase === 'grupos') return { error: 'Usa corregirResultadoGrupos para partidos de grupos' }
   if (partido.ganador === nuevoGanadorId) return { success: true }
 
-  const torneoId: string = partido.torneo_id ?? partidoId
-  const fasePartido = partido.fase as FaseOrden
-
-  const faseSiguiente = siguienteFase(fasePartido)
-  if (faseSiguiente) {
-    const ordenSiguiente = Math.floor((partido.orden ?? 0) / 2)
-    const { data: siguientePartido } = await supabase
-      .from('torneo_partidos')
-      .select('id, ganador')
-      .eq('torneo_id', torneoId)
-      .eq('fase', faseSiguiente)
-      .eq('orden', ordenSiguiente)
-      .maybeSingle()
-    if (siguientePartido?.ganador) {
-      return { error: 'No se puede cambiar este ganador porque la siguiente llave ya fue jugada. Corrige primero la siguiente fase.' }
-    }
-  }
-
-  // Limpiar ganador actual y actualizar fase del torneo
-  await supabase.from('torneo_partidos').update({ ganador: null }).eq('id', partidoId)
-  await supabase.from('torneos').update({ fase: fasePartido }).eq('id', torneoId)
-
-  return marcarGanadorPartido({ partidoId, ganadorId: nuevoGanadorId })
+  const { error } = await supabase.rpc('corregir_resultado_playoff_seguro', {
+    p_partido_id: partidoId,
+    p_nuevo_ganador_id: nuevoGanadorId,
+  })
+  if (error) return { error: error.message }
+  return { success: true }
 }
 
 export async function volverAGrupos(params: { torneoId: string }) {
@@ -788,8 +994,8 @@ export async function generarGruposTardios(params: {
     .select('ganador,jugador_b')
     .eq('torneo_id', torneoId)
     .neq('fase', 'grupos')
-  if (llavesJugadas?.some(llaveFueJugada)) {
-    return { error: 'No se pueden agregar tardíos porque el bracket ya tiene partidos jugados' }
+  if (llavesJugadas?.length) {
+    return { error: 'No se pueden agregar tardíos después de crear el bracket' }
   }
 
   const cabezasTardias = [...new Set(cabezasDeSerie.filter(id => jugadores.some(j => j.id === id)))]
@@ -817,7 +1023,7 @@ export async function generarGruposTardios(params: {
   }
 
   const { data: gruposExistentes } = await supabase
-    .from('torneo_grupos').select('id, nombre').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('nombre')
+    .from('torneo_grupos').select('id, nombre, orden').eq('torneo_id', torneoId).neq('nombre', 'MESA').order('orden', { nullsFirst: false }).order('nombre')
 
   // 1 jugador: meter en grupo existente con menos integrantes
   if (jugadores.length === 1) {
@@ -848,16 +1054,17 @@ export async function generarGruposTardios(params: {
   }
 
   // 2+ jugadores: crear grupo nuevo
-  const letrasUsadas = (gruposExistentes || []).map(g => g.nombre ?? '')
-  const ultimaLetra = letrasUsadas.sort().pop() || '@'
-  const letraBase = ultimaLetra.charCodeAt(0) + 1
+  const siguienteOrden = (gruposExistentes || []).reduce((max, g) => Math.max(max, g.orden ?? -1), -1) + 1
 
   const numGrupos = calcularNumGruposTardios(jugadores.length)
+  if ((gruposExistentes?.length ?? 0) + numGrupos > CONFIG.TORNEO_MAX_GRUPOS) {
+    return { error: `No se pueden superar ${CONFIG.TORNEO_MAX_GRUPOS} grupos en un torneo` }
+  }
   const nuevosGrupos: { id: string; nombre: string }[] = []
   for (let i = 0; i < numGrupos; i++) {
     const { data: g } = await supabase
       .from('torneo_grupos')
-      .insert({ torneo_id: torneoId, nombre: String.fromCharCode(letraBase + i) })
+      .insert({ torneo_id: torneoId, nombre: nombreGrupo(siguienteOrden + i), orden: siguienteOrden + i })
       .select('id, nombre')
       .single()
     if (g) nuevosGrupos.push({ id: g.id, nombre: g.nombre ?? '' })
@@ -946,6 +1153,68 @@ export async function actualizarEstadoPago(params: {
   return { success: true }
 }
 
+export async function subirPagosPendientesAFinanzas(params: {
+  torneoId: string
+  jugadorIds: string[]
+  metodoPago: 'efectivo' | 'transferencia'
+}) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+  if (!perfil.club_id) return { error: 'Perfil sin club asignado.' }
+
+  const jugadorIds = Array.from(new Set(params.jugadorIds)).filter(Boolean)
+  if (!jugadorIds.length) return { error: 'Selecciona al menos un pago.' }
+
+  const { data: torneo } = await supabase
+    .from('torneos')
+    .select('id,nombre,cuota_inscripcion,fase,estado,club_id')
+    .eq('id', params.torneoId)
+    .eq('club_id', perfil.club_id)
+    .single()
+  if (!torneo) return { error: 'Torneo no encontrado.' }
+  if (torneo.fase !== 'finalizado' || torneo.estado !== 'finalizado') {
+    return { error: 'Esta opción solo está disponible al finalizar el torneo.' }
+  }
+  const cuotaInscripcion = torneo.cuota_inscripcion || 0
+  if (cuotaInscripcion <= 0) return { error: 'El torneo no tiene cuota de inscripción.' }
+
+  const { data: pagosActuales } = await supabase
+    .from('torneo_pagos')
+    .select('id,jugador_id,estado')
+    .eq('torneo_id', params.torneoId)
+    .in('jugador_id', jugadorIds)
+
+  const yaPagados = new Set((pagosActuales || []).filter(p => p.estado === 'pagado').map(p => p.jugador_id).filter((id): id is string => !!id))
+  const idsNuevos = jugadorIds.filter(id => !yaPagados.has(id))
+  if (!idsNuevos.length) return { error: 'Los pagos seleccionados ya estaban registrados.' }
+
+  const fecha = new Date().toISOString().slice(0, 10)
+  const existentes = new Map((pagosActuales || []).map(p => [p.jugador_id, p.id]))
+  for (const jugadorId of idsNuevos) {
+    const valores = { estado: 'pagado', metodo_pago: params.metodoPago, fecha_pago: fecha }
+    const idPago = existentes.get(jugadorId)
+    const { error } = idPago
+      ? await supabase.from('torneo_pagos').update(valores).eq('id', idPago)
+      : await supabase.from('torneo_pagos').insert({ torneo_id: params.torneoId, jugador_id: jugadorId, ...valores })
+    if (error) return { error: 'No se pudieron actualizar todos los pagos.' }
+  }
+
+  const monto = idsNuevos.length * cuotaInscripcion
+  const { error: movimientoError } = await supabase.from('movimientos').insert({
+    club_id: perfil.club_id,
+    torneo_id: params.torneoId,
+    tipo: 'ingreso',
+    categoria: 'inscripcion_torneo',
+    descripcion: `Pago pendiente Torneo — ${torneo.nombre} (${idsNuevos.length}, ${params.metodoPago})`,
+    monto,
+    fecha,
+    registrado_por_nombre: perfil.nombre || 'Admin',
+  })
+  if (movimientoError) return { error: 'Pagos actualizados, pero no se pudo crear el movimiento en Finanzas.' }
+
+  return { success: true, cantidad: idsNuevos.length, monto }
+}
+
 export async function intercambiarJugadores(params: {
   torneoId: string
   slotA: { partidoId: string; posicion: 'jugador_a' | 'jugador_b' }
@@ -957,33 +1226,93 @@ export async function intercambiarJugadores(params: {
   const { torneoId, slotA, slotB } = params
   if (slotA.partidoId === slotB.partidoId && slotA.posicion === slotB.posicion) return { success: true }
 
-  const ids = Array.from(new Set([slotA.partidoId, slotB.partidoId]))
-  const { data: ps } = await supabase
-    .from('torneo_partidos')
-    .select('id, torneo_id, jugador_a, jugador_b, ganador')
-    .in('id', ids)
-    .eq('torneo_id', torneoId)
+  const ids = [...new Set([slotA.partidoId, slotB.partidoId])]
+  const { data: filas } = await supabase.from('torneo_partidos')
+    .select('id,torneo_id,fase,orden,jugador_a,jugador_b,ganador,slot_a_grupo_id,slot_a_posicion,slot_b_grupo_id,slot_b_posicion')
+    .in('id', ids).eq('torneo_id', torneoId)
+  if (!filas || filas.length !== ids.length) return { error: 'No se encontraron ambos cupos' }
 
-  if (!ps || ps.length !== ids.length) return { error: 'Partidos no encontrados' }
-  if (ps.some((p) => p.ganador)) return { error: 'No se puede mover jugadores en partidos ya jugados' }
+  const origen = filas.find(p => p.id === slotA.partidoId)
+  const destino = filas.find(p => p.id === slotB.partidoId)
+  if (!origen || !destino || origen.fase !== destino.fase || origen.fase === 'grupos') {
+    return { error: 'Solo puedes intercambiar cupos de la misma ronda inicial' }
+  }
 
-  const pa = ps.find((p) => p.id === slotA.partidoId)
-  const pb = ps.find((p) => p.id === slotB.partidoId)
-  if (!pa || !pb) return { error: 'Partidos no encontrados' }
+  const { data: torneo, error: torneoError } = await supabase.from('torneos')
+    .select('cabeza_serie_1,cabeza_serie_2').eq('id', torneoId).single()
+  if (torneoError || !torneo) return { error: 'No se pudo validar los cabezas de serie' }
+  const cabezas = new Set([torneo.cabeza_serie_1, torneo.cabeza_serie_2].filter(Boolean))
+  const tieneByeProtegido = (fila: typeof origen) =>
+    !fila.slot_b_grupo_id && !!fila.jugador_a && cabezas.has(fila.jugador_a)
+  if (tieneByeProtegido(origen) || tieneByeProtegido(destino)) {
+    return { error: 'El BYE de un cabeza de serie está protegido' }
+  }
 
-  const jugA: string | null = slotA.posicion === 'jugador_a' ? pa.jugador_a : pa.jugador_b
-  const jugB: string | null = slotB.posicion === 'jugador_a' ? pb.jugador_a : pb.jugador_b
+  const { data: fases } = await supabase.from('torneo_partidos')
+    .select('fase').eq('torneo_id', torneoId).neq('fase', 'grupos')
+  const faseInicial = CONFIG.FASES_ORDEN.find(f => (fases || []).some(p => p.fase === f))
+  if (!faseInicial || origen.fase !== faseInicial) return { error: 'Las rondas siguientes deben respetar el árbol de ganadores' }
+  if (llaveFueJugada(origen) || llaveFueJugada(destino)) return { error: 'No puedes mover una llave que ya fue jugada' }
 
-  if (!jugA || !jugB) return { error: 'Slot sin jugador, no se puede intercambiar' }
+  type Fila = typeof origen
+  const leerSlot = (fila: Fila, posicion: 'jugador_a' | 'jugador_b') => posicion === 'jugador_a'
+    ? { jugador: fila.jugador_a, grupoId: fila.slot_a_grupo_id, posicion: fila.slot_a_posicion }
+    : { jugador: fila.jugador_b, grupoId: fila.slot_b_grupo_id, posicion: fila.slot_b_posicion }
+  const cupoOrigen = leerSlot(origen, slotA.posicion)
+  const cupoDestino = leerSlot(destino, slotB.posicion)
+  if (!cupoOrigen.jugador || !cupoDestino.jugador || !cupoOrigen.grupoId || !cupoDestino.grupoId) {
+    return { error: 'Solo se pueden mover jugadores ya definidos' }
+  }
+  if (cupoOrigen.posicion !== cupoDestino.posicion) {
+    return { error: 'Intercambia primero con primero o segundo con segundo' }
+  }
 
-  const updateA = slotA.posicion === 'jugador_a' ? { jugador_a: jugB } : { jugador_b: jugB }
-  const updateB = slotB.posicion === 'jugador_a' ? { jugador_a: jugA } : { jugador_b: jugA }
+  const aplicar = (fila: Fila, posicion: 'jugador_a' | 'jugador_b', nuevo: typeof cupoOrigen): Fila => {
+    const siguiente = { ...fila }
+    if (posicion === 'jugador_a') {
+      siguiente.jugador_a = nuevo.jugador
+      siguiente.slot_a_grupo_id = nuevo.grupoId
+      siguiente.slot_a_posicion = nuevo.posicion
+    } else {
+      siguiente.jugador_b = nuevo.jugador
+      siguiente.slot_b_grupo_id = nuevo.grupoId
+      siguiente.slot_b_posicion = nuevo.posicion
+    }
+    siguiente.ganador = !siguiente.slot_b_grupo_id && siguiente.jugador_a ? siguiente.jugador_a : null
+    return siguiente
+  }
+  const origenNuevo = aplicar(origen, slotA.posicion, cupoDestino)
+  const destinoNuevo = aplicar(destino, slotB.posicion, cupoOrigen)
 
-  await Promise.all([
-    supabase.from('torneo_partidos').update(updateA).eq('id', slotA.partidoId),
-    supabase.from('torneo_partidos').update(updateB).eq('id', slotB.partidoId),
-  ])
+  for (const fila of [origenNuevo, destinoNuevo]) {
+    if (fila.slot_a_grupo_id && fila.slot_b_grupo_id) {
+      if (fila.slot_a_grupo_id === fila.slot_b_grupo_id) return { error: 'No se puede enfrentar jugadores del mismo grupo' }
+      if (fila.slot_a_posicion === fila.slot_b_posicion) return { error: 'Cada llave debe enfrentar un primero contra un segundo' }
+    }
+  }
 
+  const validarBye = async (fila: Fila) => {
+    if (!fila.ganador || fila.jugador_b || !fila.fase || fila.orden == null) return null
+    const faseSiguiente = siguienteFase(fila.fase as FaseOrden)
+    if (!faseSiguiente) return null
+    const { data: siguiente } = await supabase.from('torneo_partidos')
+      .select('ganador').eq('torneo_id', torneoId).eq('fase', faseSiguiente)
+      .eq('orden', Math.floor(fila.orden / 2)).maybeSingle()
+    return siguiente?.ganador ? 'El jugador con BYE ya disputó la siguiente ronda' : null
+  }
+  for (const fila of [origen, destino]) {
+    const bloqueo = await validarBye(fila)
+    if (bloqueo) return { error: bloqueo }
+  }
+
+  const { error } = await supabase.rpc('intercambiar_cupos_bracket_seguro', {
+    p_torneo_id: torneoId,
+    p_partido_a_id: slotA.partidoId,
+    p_posicion_a: slotA.posicion,
+    p_partido_b_id: slotB.partidoId,
+    p_posicion_b: slotB.posicion,
+  })
+  if (error) return { error: error.message }
   return { success: true }
 }
 

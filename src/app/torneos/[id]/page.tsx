@@ -9,14 +9,13 @@ import {
   corregirResultadoGrupos,
   cerrarInscripcionYGenerarGrupos,
   sincronizarLlaves as sincronizarLlavesAction,
-  avanzarSiguienteFase as avanzarSiguienteFaseAction,
   finalizarTorneo as finalizarTorneoAction,
   generarGruposTardios,
   actualizarEstadoPago,
+  subirPagosPendientesAFinanzas,
   limpiarGruposHuerfanos,
   volverAGrupos as volverAGruposAction,
   corregirResultadoPlayoff,
-  intercambiarJugadores,
   archivarTorneo,
   guardarPremios,
   inscribirEnMesa,
@@ -25,6 +24,8 @@ import {
   reordenarJugadorEnGrupo,
   quitarJugadorDeMesa,
   enviarRecaudacionAFinanzas,
+  guardarDesempateGrupo,
+  intercambiarJugadores,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayout } from '@/lib/domain/torneos'
@@ -57,19 +58,18 @@ export default function TorneoDetallePage() {
   const [rutMesa, setRutMesa] = useState('')
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'pendiente'>('pendiente')
   const [pagoLoading, setPagoLoading] = useState<string|null>(null)
+  const [pagosSeleccionados, setPagosSeleccionados] = useState<Set<string>>(new Set())
+  const [metodoPagosFinales, setMetodoPagosFinales] = useState<'efectivo'|'transferencia'>('efectivo')
+  const [subiendoPagos, setSubiendoPagos] = useState(false)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
   const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
-  const [criterioEmpate, setCriterioEmpate] = useState<'sets'|'puntos'>(() => {
-    if (typeof window === 'undefined') return 'sets'
-    return (localStorage.getItem('criterioEmpate') as 'sets'|'puntos') || 'sets'
-  })
   const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
   const [partidoPlayoffEditando, setPartidoPlayoffEditando] = useState<string|null>(null)
-  const [dragSlot, setDragSlot] = useState<{partidoId:string; posicion:'jugador_a'|'jugador_b'; jugadorId:string}|null>(null)
-  const [dragOver, setDragOver] = useState<{partidoId:string; posicion:'jugador_a'|'jugador_b'}|null>(null)
+  const [dragSlot, setDragSlot] = useState<{ partidoId: string; posicion: 'jugador_a' | 'jugador_b' } | null>(null)
+  const [dragOver, setDragOver] = useState<{ partidoId: string; posicion: 'jugador_a' | 'jugador_b' } | null>(null)
   const [inscribiendo, setInscribiendo] = useState(false)
   const [premio1, setPremio1] = useState('')
   const [premio2, setPremio2] = useState('')
@@ -108,7 +108,7 @@ export default function TorneoDetallePage() {
       { data: gj },
     ] = await Promise.all([
       supabase.from('torneos').select('*').eq('id', torneoId).single(),
-      supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).order('nombre'),
+      supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('*,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('*').eq('torneo_id', torneoId),
       supabase.from('grupo_jugadores').select('*,jugadores(id,nombre),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
@@ -162,23 +162,16 @@ export default function TorneoDetallePage() {
     return () => mq.removeEventListener('change', on)
   }, [])
 
-  useEffect(() => {
-    localStorage.setItem('criterioEmpate', criterioEmpate)
-  }, [criterioEmpate])
-
-  // Arma/rellena las llaves apenas cierra cada grupo, sin esperar a que terminen
-  // todos. Solo corre durante la fase de grupos; es idempotente (solo rellena
-  // cupos vacios) y se dispara cuando cambian clasificados o reglas del layout,
-  // sin depender de si el cuadro existe para no entrar en bucle.
+  // Crea el esqueleto al cerrar al menos la mitad de los grupos y luego va
+  // completando los cupos restantes sin regenerar el árbol.
   useEffect(() => {
     if (loading || authLoading) return
     if (perfil?.rol !== 'admin') return
     if (torneo?.fase !== 'grupos') return
 
     const clasificados = calcularClasificados()
-    if (!clasificados.length) return
-
     const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
+    if (!gruposReales.length || clasificados.length < Math.ceil(gruposReales.length / 2)) return
     const firmaLayout = [
       torneo?.cabeza_serie_1 ?? '',
       torneo?.cabeza_serie_2 ?? '',
@@ -189,9 +182,9 @@ export default function TorneoDetallePage() {
 
     sincronizandoRef.current = true
     ultimaSyncRef.current = firma
-    sincronizarLlavesAction({ torneoId, clasificados })
+    sincronizarLlavesAction({ torneoId })
       .then(res => {
-        if (res?.error) {
+        if ('error' in res && res.error) {
           // ponytail: NO resetear ultimaSyncRef aquí (causaba bucle de
           // alerts si el server fallaba). Marcela usa el botón manual si
           // quiere reintentar.
@@ -203,7 +196,7 @@ export default function TorneoDetallePage() {
       .catch(err => { console.error('sincronizarLlaves throw:', err); ultimaSyncRef.current = '' })
       .finally(() => { sincronizandoRef.current = false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partidos, grupos, empateManual, torneo?.fase, torneo?.cabeza_serie_1, torneo?.cabeza_serie_2, perfil?.rol, loading, authLoading])
+  }, [partidos, grupos, torneo?.fase, torneo?.cabeza_serie_1, torneo?.cabeza_serie_2, perfil?.rol, loading, authLoading])
 
   useEffect(() => {
     if (torneo?.id) {
@@ -313,32 +306,34 @@ export default function TorneoDetallePage() {
     const jugsGrupo = jugadores.filter((j: any) => j.grupo_id === grupoId)
     const partidosGrupo = partidos.filter(p => p.grupo_id === grupoId)
 
-    const stats: Record<string, { jugador: any, pts: number, pg: number, pp: number, sets: number, puntos: number, orden: number }> = {}
+    const stats: Record<string, { jugador: any, pts: number, pg: number, pp: number, orden: number }> = {}
     jugsGrupo.forEach((j: any) => {
-      stats[j.jugador_id] = { jugador: j.jugadores, pts: 0, pg: 0, pp: 0, sets: 0, puntos: 0, orden: j.orden ?? 0 }
+      stats[j.jugador_id] = { jugador: j.jugadores, pts: 0, pg: 0, pp: 0, orden: j.orden ?? 0 }
     })
 
     partidosGrupo.filter(p => p.ganador).forEach(p => {
       if (stats[p.ganador]) { stats[p.ganador].pts += 2; stats[p.ganador].pg += 1 }
       const perd = p.jugador_a === p.ganador ? p.jugador_b : p.jugador_a
       if (stats[perd]) stats[perd].pp += 1
-      if (p.sets_ganador) stats[p.ganador] && (stats[p.ganador].sets += p.sets_ganador)
-      if (p.puntos_ganador) stats[p.ganador] && (stats[p.ganador].puntos += p.puntos_ganador)
     })
 
     const ordenados = Object.values(stats).sort((a: any, b: any) => {
       if (b.pts !== a.pts) return b.pts - a.pts
-      if (criterioEmpate === 'sets' && b.sets !== a.sets) return b.sets - a.sets
-      if (criterioEmpate !== 'sets' && b.puntos !== a.puntos) return b.puntos - a.puntos
-      if (b.puntos !== a.puntos) return b.puntos - a.puntos
+      const directo = partidosGrupo.find(p =>
+        (p.jugador_a === a.jugador?.id && p.jugador_b === b.jugador?.id) ||
+        (p.jugador_a === b.jugador?.id && p.jugador_b === a.jugador?.id),
+      )
+      if (directo?.ganador === a.jugador?.id) return -1
+      if (directo?.ganador === b.jugador?.id) return 1
       return a.orden - b.orden
     })
 
-    const primerPts = ordenados[0]?.pts
-    const empatados = ordenados.filter(j => j.pts === primerPts)
+    const puntosCorte = ordenados[1]?.pts
+    const empatados = ordenados.filter(j => j.pts === puntosCorte)
     const hayTripleEmpate = empatados.length >= 3
 
-    return { stats, ordenados, hayTripleEmpate, empatados }
+    const primeroFijo = hayTripleEmpate ? ordenados.find(j => j.pts > puntosCorte) ?? null : null
+    return { stats, ordenados, hayTripleEmpate, empatados, primeroFijo }
   }
 
   // Grupos ya cerrados (todos sus partidos jugados y sin triple empate pendiente)
@@ -354,10 +349,9 @@ export default function TorneoDetallePage() {
       let primeroId: string | undefined
       let segundoId: string | undefined
       if (hayTripleEmpate) {
-        const m = empateManual[grupo.id]
-        if (!m?.primero || !m?.segundo || m.primero.id === m.segundo.id) continue // sin resolver → aún no clasifica
-        primeroId = m.primero.id
-        segundoId = m.segundo.id
+        primeroId = grupo.desempate_primero_id
+        segundoId = grupo.desempate_segundo_id
+        if (!primeroId || !segundoId || primeroId === segundoId) continue
       } else {
         primeroId = ordenados[0]?.jugador?.id
         segundoId = ordenados[1]?.jugador?.id
@@ -369,25 +363,15 @@ export default function TorneoDetallePage() {
 
   async function armarBracketAhora() {
     const clasificados = calcularClasificados()
-    if (!clasificados.length) { alert('Ningún grupo cerrado todavía (todos sus partidos con ganador y sin triple empate pendiente).'); return }
-    const res = await sincronizarLlavesAction({ torneoId, clasificados })
-    if (res?.error) { alert(`No se pudo armar el bracket: ${res.error}`); return }
+    const totalGrupos = grupos.filter((g: any) => g.nombre !== 'MESA').length
+    const minimo = Math.ceil(totalGrupos / 2)
+    if (!totalGrupos || clasificados.length < minimo) { alert(`Debes cerrar al menos ${minimo} grupos antes de armar el bracket.`); return }
+    const res = await sincronizarLlavesAction({ torneoId })
+    if ('error' in res && res.error) { alert(`No se pudo armar el bracket: ${res.error}`); return }
+    if ('esperandoCabezas' in res && res.esperandoCabezas) { alert('Primero deben terminar los grupos de los cabezas de serie.'); return }
     ultimaSyncRef.current = ''
     await cargarTorneo()
     setTabActiva('bracket')
-  }
-
-  async function avanzarSiguienteFase(faseActual: string) {
-    const todos = partidos
-      .filter(p => p.fase === faseActual && p.ganador)
-      .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
-      .map((p: any) => p.ganador === p.jugador_a ? p.ja : p.jb)
-      .filter(Boolean)
-      .map((j: any) => ({ id: j.id, nombre: j.nombre }))
-
-    const res = await avanzarSiguienteFaseAction({ torneoId, faseActual: faseActual as FaseOrden, ganadores: todos })
-    if (res.error) { alert(res.error); return }
-    await cargarTorneo()
   }
 
   async function corregirPlayoff(partidoId: string, nuevoGanadorId: string) {
@@ -402,17 +386,6 @@ export default function TorneoDetallePage() {
     const res = await volverAGruposAction({ torneoId })
     if (res.error) { alert(res.error); return }
     setTabActiva('grupos')
-    await cargarTorneo()
-  }
-
-  async function handleSwap(targetPartidoId: string, targetPosicion: 'jugador_a' | 'jugador_b') {
-    if (!dragSlot) return
-    if (dragSlot.partidoId === targetPartidoId && dragSlot.posicion === targetPosicion) { setDragSlot(null); setDragOver(null); return }
-    const src = dragSlot
-    setDragSlot(null)
-    setDragOver(null)
-    const res = await intercambiarJugadores({ torneoId, slotA: { partidoId: src.partidoId, posicion: src.posicion }, slotB: { partidoId: targetPartidoId, posicion: targetPosicion } })
-    if (res.error) { alert(res.error); return }
     await cargarTorneo()
   }
 
@@ -452,26 +425,52 @@ export default function TorneoDetallePage() {
   // Layout determinista del cuadro (mismo sembrado que el servidor), para poder
   // etiquetar los cupos vacíos con su grupo/posición y distinguir BYE reales de
   // cupos aún por definir.
-  const idxCabeza = (jid?: string | null): number | null => {
+  const clasificadosActuales = calcularClasificados()
+  const slotCabeza = (jid?: string | null): { grupoIdx: number; pos: 1 | 2 } | null => {
     if (!jid) return null
-    const m = jugadores.find((j: any) => j.jugador_id === jid)
-    if (!m) return null
-    const idx = gruposReales.findIndex((g: any) => g.id === m.grupo_id)
-    return idx >= 0 ? idx : null
+    const c = clasificadosActuales.find(x => x.primeroId === jid || x.segundoId === jid)
+    if (!c) return null
+    const grupoIdx = gruposReales.findIndex((g: any) => g.id === c.grupoId)
+    if (grupoIdx < 0) return null
+    return { grupoIdx, pos: c.primeroId === jid ? 1 : 2 }
+  }
+
+  async function intercambiarCupos(partidoId: string, posicion: 'jugador_a' | 'jugador_b') {
+    if (!dragSlot) return
+    const origen = dragSlot
+    setDragSlot(null)
+    setDragOver(null)
+    if (origen.partidoId === partidoId && origen.posicion === posicion) return
+    const res = await intercambiarJugadores({
+      torneoId,
+      slotA: origen,
+      slotB: { partidoId, posicion },
+    })
+    if (res.error) { alert(res.error); return }
+    await cargarTorneo()
   }
   const llavesLayout = gruposReales.length >= 2
-    ? construirLlavesLayout(gruposReales.length, idxCabeza(torneo?.cabeza_serie_1), idxCabeza(torneo?.cabeza_serie_2))
+    ? construirLlavesLayout(gruposReales.length, slotCabeza(torneo?.cabeza_serie_1), slotCabeza(torneo?.cabeza_serie_2))
     : null
   const byeOrdenesInicial = new Set((llavesLayout?.matches || []).filter(m => m.b === null).map(m => m.orden))
-  const etiquetaCupo = (fase: string, orden: number, pos: 'a' | 'b'): string => {
-    if (!llavesLayout || fase !== llavesLayout.faseInicial) return 'Por definir'
-    const m = llavesLayout.matches.find(x => x.orden === orden)
+  const etiquetaCupo = (partido: any, pos: 'a' | 'b'): string => {
+    const grupoId = pos === 'a' ? partido.slot_a_grupo_id : partido.slot_b_grupo_id
+    const posicion = pos === 'a' ? partido.slot_a_posicion : partido.slot_b_posicion
+    if (grupoId && (posicion === 1 || posicion === 2)) {
+      return `Grupo ${gruposReales.find((g: any) => g.id === grupoId)?.nombre ?? ''} · ${posicion}°`
+    }
+    if (!llavesLayout || partido.fase !== llavesLayout.faseInicial) return 'Por definir'
+    const m = llavesLayout.matches.find(x => x.orden === partido.orden)
     const slot = pos === 'a' ? m?.a : m?.b
-    if (!slot) return 'Por definir'
-    return `Grupo ${gruposReales[slot.grupoIdx]?.nombre ?? ''} · ${slot.pos}°`
+    return slot ? `Grupo ${gruposReales[slot.grupoIdx]?.nombre ?? ''} · ${slot.pos}°` : 'Por definir'
   }
-  const esByeMatch = (fase: string, orden: number, jugadorB: string | null): boolean =>
-    (llavesLayout && fase === llavesLayout.faseInicial) ? byeOrdenesInicial.has(orden) : jugadorB === null
+  const esByeMatch = (partido: any): boolean => {
+    if (partido.slot_a_grupo_id) return !partido.slot_b_grupo_id
+    if (llavesLayout && partido.fase === llavesLayout.faseInicial) {
+      return byeOrdenesInicial.has(partido.orden ?? 0)
+    }
+    return false
+  }
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
@@ -495,7 +494,7 @@ export default function TorneoDetallePage() {
           </button>
         )}
         <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0, flex:'1 1 auto' }}>{torneo?.nombre}</h1>
-        <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseLabel[faseActual] || faseActual}</span>
+        <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseActual === 'grupos' && hayBracket ? 'Grupos + playoffs' : (faseLabel[faseActual] || faseActual)}</span>
         {torneo?.codigo && (
           <button
             onClick={() => setQrOpen(true)}
@@ -533,9 +532,6 @@ export default function TorneoDetallePage() {
             style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             🔄 Armar bracket ahora
           </button>
-        )}
-        {esAdmin && esPlayoffs && todosJugadosFase && faseActual !== 'final' && faseActual !== 'finalizado' && (
-          <button onClick={() => avanzarSiguienteFase(faseActual)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Siguiente fase →</button>
         )}
         {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
@@ -600,15 +596,6 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
-      {/* Criterio empate */}
-      {faseActual === 'grupos' && esAdmin && (
-        <div style={{ ...card, padding:'10px 16px', marginBottom:16, display:'flex', alignItems:'center', gap:12 }}>
-          <span style={{ fontSize:12, color: muted }}>Criterio de desempate:</span>
-          <button onClick={() => setCriterioEmpate('sets')} style={{ background: criterioEmpate==='sets'?'#4f46e5':'#f4f7fa', color: criterioEmpate==='sets'?'white': muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 12px', fontSize:12, cursor:'pointer' }}>Sets ganados</button>
-          <button onClick={() => setCriterioEmpate('puntos')} style={{ background: criterioEmpate==='puntos'?'#4f46e5':'#f4f7fa', color: criterioEmpate==='puntos'?'white': muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 12px', fontSize:12, cursor:'pointer' }}>Puntos</button>
-        </div>
-      )}
-
       {/* BOTÓN INSCRIPCIÓN TARDÍA */}
       {esAdmin && (faseActual === 'grupos' || fasesOrden.includes(faseActual)) && (
         <div style={{ marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
@@ -639,7 +626,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* FASE GRUPOS */}
-      {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && esAdmin && (
+      {faseActual === 'grupos' && !hayBracket && esAdmin && (
         <div style={{ ...card, padding:'14px 16px', marginBottom:16, display:'flex', gap:16, flexWrap:'wrap', alignItems:'flex-end' }}>
           <div>
             <div style={{ fontSize:11, color: muted, marginBottom:4 }}>⭐ Cabeza de serie 1°</div>
@@ -678,14 +665,18 @@ export default function TorneoDetallePage() {
       {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16, marginBottom:16 }}>
           {grupos.filter((g: any) => g.nombre !== 'MESA').map(grupo => {
-            const { ordenados, hayTripleEmpate, empatados } = calcularStats(grupo.id)
+            const { ordenados, hayTripleEmpate, empatados, primeroFijo } = calcularStats(grupo.id)
             const partidosGrupo = partidos.filter(p => p.grupo_id === grupo.id)
             const grupoConResultados = partidosGrupo.some((p: any) => !!p.ganador)
+            const desempateResuelto = !!grupo.desempate_primero_id && !!grupo.desempate_segundo_id && grupo.desempate_primero_id !== grupo.desempate_segundo_id
+            const nombreDesempate = (id: string | null | undefined) => ordenados.find((j: any) => j.jugador?.id === id)?.jugador?.nombre || '—'
+            const primeroSeleccionado = empateManual[grupo.id]?.primero ?? primeroFijo?.jugador ?? null
+            const opcionesDesempate = primeroFijo ? [primeroFijo, ...empatados] : empatados
 
             return (
               <div key={grupo.id} style={{ ...card, overflow:'hidden' }}
-                onDragOver={esAdmin ? (e) => e.preventDefault() : undefined}
-                onDrop={esAdmin ? (e) => {
+                onDragOver={esAdmin && !hayBracket ? (e) => e.preventDefault() : undefined}
+                onDrop={esAdmin && !hayBracket ? (e) => {
                   e.preventDefault()
                   if (dragJugadorGrupo) moverAGrupo(dragJugadorGrupo.jugadorId, dragJugadorGrupo.grupoId, grupo.id)
                   setDragJugadorGrupo(null)
@@ -693,14 +684,14 @@ export default function TorneoDetallePage() {
               >
                 <div style={{ padding:'12px 16px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <span style={{ fontSize:14, fontWeight:600, color: text }}>Grupo {grupo.nombre}</span>
-                  {hayTripleEmpate && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && partidosGrupo.some((p:any) => p.ganador) && <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
-                  {hayTripleEmpate && empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto</span>}
+                  {hayTripleEmpate && !desempateResuelto && partidosGrupo.some((p:any) => p.ganador) && <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
+                  {hayTripleEmpate && desempateResuelto && <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto y guardado</span>}
                 </div>
                 {ordenados.map((j: any, i: number) => (
                   <div key={`${grupo.id}-${j.jugador?.id ?? i}`}
-                    draggable={esAdmin && !!j.jugador?.id}
-                    onDragStart={esAdmin && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
-                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: esAdmin ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
+                    draggable={esAdmin && !hayBracket && !!j.jugador?.id}
+                    onDragStart={esAdmin && !hayBracket && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
+                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: esAdmin && !hayBracket ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
                     <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text }}>{j.jugador?.nombre||'—'}</div>
@@ -714,7 +705,7 @@ export default function TorneoDetallePage() {
                           </span>
                         : <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10 }}>Pend.</span>
                     })()}
-                    {esAdmin && !grupoConResultados && (
+                    {esAdmin && !hayBracket && !grupoConResultados && (
                       <div style={{ display:'flex', gap:4 }}>
                         <button
                           onClick={(e) => {
@@ -743,44 +734,59 @@ export default function TorneoDetallePage() {
                   </div>
                 ))}
                 {/* PANEL TRIPLE EMPATE */}
-                {hayTripleEmpate && partidosGrupo.some((p:any) => p.ganador) && !(empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo && empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id) && esAdmin && (
+                {hayTripleEmpate && partidosGrupo.every((p:any) => !!p.ganador) && !desempateResuelto && esAdmin && (
                   <div style={{ background:'#fff7ed', borderTop:'1px solid #fed7aa', padding:'12px 16px' }}>
                     <div style={{ fontSize:12, color:'#f43f5e', fontWeight:600, marginBottom:8 }}>⚠️ Triple empate — elige el orden manualmente</div>
                     <div style={{ fontSize:11, color: muted, marginBottom:10 }}>Revisa las papeletas y marca quién queda 1° y quién queda 2°</div>
-                    {empatados.map((j: any, idx: number) => (
+                    {opcionesDesempate.map((j: any, idx: number) => (
                       <div key={`${grupo.id}-empate-${j.jugador?.id ?? idx}`} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
                         <span style={{ fontSize:12, color: text, flex:1 }}>{j.jugador?.nombre}</span>
                         <button
+                          disabled={!!primeroFijo && primeroFijo.jugador?.id !== j.jugador?.id}
                           onClick={() => setEmpateManual((prev: any) => {
                             const actual = prev[grupo.id] || {}
                             return { ...prev, [grupo.id]: { ...actual, primero: j.jugador } }
                           })}
-                          style={{ background: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#fbbf24' : '#f4f7fa', color: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#0f172a' : muted, border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', fontWeight:600 }}>
+                          style={{ background: primeroSeleccionado?.id === j.jugador?.id ? '#fbbf24' : '#f4f7fa', color: primeroSeleccionado?.id === j.jugador?.id ? '#0f172a' : muted, border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor:primeroFijo && primeroFijo.jugador?.id !== j.jugador?.id?'not-allowed':'pointer', fontWeight:600 }}>
                           🥇 1°
                         </button>
                         <button
-                          disabled={empateManual[grupo.id]?.primero?.id === j.jugador?.id}
-                          onClick={() => setEmpateManual((prev: any) => {
-                            const actual = prev[grupo.id] || {}
-                            if (actual.primero?.id === j.jugador?.id) return prev
-                            return { ...prev, [grupo.id]: { ...actual, segundo: j.jugador } }
-                          })}
-                          style={{ background: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#94a3b8' : '#f4f7fa', color: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#0f172a' : empateManual[grupo.id]?.primero?.id === j.jugador?.id ? '#cbd5e1' : muted, border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor: empateManual[grupo.id]?.primero?.id === j.jugador?.id ? 'not-allowed' : 'pointer', fontWeight:600 }}>
+                          disabled={primeroSeleccionado?.id === j.jugador?.id}
+                          onClick={async () => {
+                            const primero = primeroSeleccionado
+                            if (!primero?.id || primero.id === j.jugador?.id) return
+                            const res = await guardarDesempateGrupo({
+                              torneoId,
+                              grupoId: grupo.id,
+                              primeroId: primero.id,
+                              segundoId: j.jugador.id,
+                            })
+                            if (res.error) { alert(res.error); return }
+                            setEmpateManual((prev: any) => ({ ...prev, [grupo.id]: undefined }))
+                            ultimaSyncRef.current = ''
+                            await cargarTorneo()
+                          }}
+                          style={{ background: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#94a3b8' : '#f4f7fa', color: empateManual[grupo.id]?.segundo?.id === j.jugador?.id ? '#0f172a' : primeroSeleccionado?.id === j.jugador?.id ? '#cbd5e1' : muted, border:'none', borderRadius:6, padding:'4px 8px', fontSize:10, cursor: primeroSeleccionado?.id === j.jugador?.id ? 'not-allowed' : 'pointer', fontWeight:600 }}>
                           🥈 2°
                         </button>
                       </div>
                     ))}
-                    {empateManual[grupo.id]?.primero && !empateManual[grupo.id]?.segundo && (
+                    {primeroSeleccionado && !empateManual[grupo.id]?.segundo && (
                       <div style={{ marginTop:8, padding:'8px', background:'#ede9fe', borderRadius:8, fontSize:11, color:'#3730a3', textAlign:'center' }}>
-                        ✓ 1°: {empateManual[grupo.id].primero.nombre} — Ahora elige quién queda 2°
+                        ✓ 1°: {primeroSeleccionado.nombre} — Ahora elige quién queda 2°
                       </div>
                     )}
-                    {empateManual[grupo.id]?.primero && empateManual[grupo.id]?.segundo &&
-                      empateManual[grupo.id].primero.id !== empateManual[grupo.id].segundo.id && (
-                      <div style={{ marginTop:8, padding:'8px', background:'#f0fdf4', borderRadius:8, fontSize:12, color:'#16a34a', textAlign:'center' }}>
-                        ✓ Resuelto — 1°: {empateManual[grupo.id].primero.nombre} · 2°: {empateManual[grupo.id].segundo.nombre}
-                      </div>
-                    )}
+                  </div>
+                )}
+                {hayTripleEmpate && desempateResuelto && esAdmin && (
+                  <div style={{ background:'#f0fdf4', borderTop:'1px solid #bbf7d0', padding:'10px 16px', display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ flex:1, fontSize:11, color:'#166534' }}>1° {nombreDesempate(grupo.desempate_primero_id)} · 2° {nombreDesempate(grupo.desempate_segundo_id)}</span>
+                    {!hayBracket && <button onClick={async () => {
+                      const res = await guardarDesempateGrupo({ torneoId, grupoId: grupo.id, primeroId: null, segundoId: null })
+                      if (res.error) { alert(res.error); return }
+                      ultimaSyncRef.current = ''
+                      await cargarTorneo()
+                    }} style={{ border:'1px solid #86efac', background:'#fff', color:'#166534', borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer' }}>Cambiar</button>}
                   </div>
                 )}
                 <div style={{ padding:'8px 16px' }}>
@@ -844,17 +850,17 @@ export default function TorneoDetallePage() {
           <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16, flexWrap:'wrap' }}>
             <div style={{ flex:1, background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#3730a3' }}>
               {faseActual === 'grupos'
-                ? '💡 Las llaves se van llenando solas al cerrar cada grupo. Arrastra un jugador para reordenar los cupos ya definidos.'
-                : '💡 Haz clic en el nombre del ganador para registrar el resultado'}
+                ? '💡 Bracket en paralelo: los grupos cerrados llenan sus cupos. Puedes jugar ramas listas y arrastrar cupos equivalentes aún no jugados.'
+                : '💡 Haz clic para marcar ganador. En la ronda inicial puedes arrastrar cupos equivalentes mientras su rama no esté jugada.'}
             </div>
             {esAdmin && faseActual === 'grupos' && (
               <button onClick={armarBracketAhora} title="Fuerza el armado/rellenado con los grupos ya cerrados" style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
                 🔄 Armar bracket ahora
               </button>
             )}
-            {esAdmin && esPlayoffs && faseActual !== 'finalizado' && (
+            {esAdmin && hayBracket && faseActual !== 'finalizado' && (
               <button onClick={volverAGrupos} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
-                ⚠️ Volver a grupos
+                ⚠️ Reiniciar bracket
               </button>
             )}
           </div>
@@ -869,8 +875,11 @@ export default function TorneoDetallePage() {
             // Fase tope a mostrar: durante el armado la fase del torneo aún es
             // "grupos" (no está en fasesOrden), así que caemos a la fase inicial
             // del cuadro para poder dibujar la primera ronda que se va llenando.
+            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => partidos.some(p => p.fase === f))
             const faseTope = faseActual === 'finalizado'
               ? fasesOrden[fasesOrden.length - 1]
+              : faseActual === 'grupos' && ultimaFaseConPartidos
+                ? ultimaFaseConPartidos
               : (fasesOrden as readonly string[]).includes(faseActual)
                 ? faseActual
                 : (llavesLayout?.faseInicial ?? faseActual)
@@ -904,10 +913,11 @@ export default function TorneoDetallePage() {
                         </div>
                         {ps.map((p, i) => {
                           const top = cy(i, N) - CARD_H / 2
-                          const isBye = esByeMatch(p.fase, p.orden ?? 0, p.jugador_b)
+                          const isBye = esByeMatch(p)
                           const editandoEste = partidoPlayoffEditando === p.id
                           const showEdit = !!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado'
                           const rowH = showEdit ? `${Math.floor((CARD_H - 20) / 2)}px` : '50%'
+                          const puedeMover = esAdmin && p.fase === llavesLayout?.faseInicial && !(p.ganador && p.jugador_b)
 
                           return (
                             <div key={p.id} style={{ position: 'absolute', left: 0, right: 0, top, height: CARD_H, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,0.07)' }}>
@@ -928,16 +938,15 @@ export default function TorneoDetallePage() {
                                 <>
                                   <div
                                     onClick={() => esAdmin && !p.ganador && !isBye && p.jugador_a && marcarGanador(p.id, p.jugador_a)}
-                                    draggable={esAdmin && !p.ganador && !!p.jugador_a ? true : undefined}
-                                    onDragStart={esAdmin && !p.ganador && p.jugador_a ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_a', jugadorId: p.jugador_a }) : undefined}
-                                    onDragOver={esAdmin && !p.ganador ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_a' }) } : undefined}
-                                    onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_a') } : undefined}
-                                    onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
+                                    draggable={puedeMover && !!p.jugador_a}
+                                    onDragStart={puedeMover && p.jugador_a ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_a' }) : undefined}
+                                    onDragOver={puedeMover && p.jugador_a ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_a' }) } : undefined}
+                                    onDrop={puedeMover && p.jugador_a ? (e) => { e.preventDefault(); intercambiarCupos(p.id, 'jugador_a') } : undefined}
                                     onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye && p.jugador_a ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.4 : 1 }}>
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: puedeMover && p.jugador_a ? 'grab' : esAdmin && !p.ganador && !isBye && p.jugador_a ? 'pointer' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.45 : 1 }}>
                                     <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                       <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
-                                      {(p as any).ja?.nombre || etiquetaCupo(p.fase, p.orden ?? 0, 'a')}
+                                      {(p as any).ja?.nombre || etiquetaCupo(p, 'a')}
                                     </span>
                                     {!!p.ganador && p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                   </div>
@@ -946,16 +955,15 @@ export default function TorneoDetallePage() {
                                   ) : (
                                     <div
                                       onClick={() => esAdmin && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}
-                                      draggable={esAdmin && !p.ganador && !!p.jugador_b ? true : undefined}
-                                      onDragStart={esAdmin && !p.ganador && p.jugador_b ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_b', jugadorId: p.jugador_b }) : undefined}
-                                      onDragOver={esAdmin && !p.ganador ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_b' }) } : undefined}
-                                      onDrop={esAdmin && !p.ganador ? (e) => { e.preventDefault(); handleSwap(p.id, 'jugador_b') } : undefined}
-                                      onDragLeave={(e) => { if (!(e.currentTarget as HTMLDivElement).contains(e.relatedTarget as Node)) setDragOver(null) }}
+                                      draggable={puedeMover && !!p.jugador_b}
+                                      onDragStart={puedeMover && p.jugador_b ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_b' }) : undefined}
+                                      onDragOver={puedeMover && p.jugador_b ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_b' }) } : undefined}
+                                      onDrop={puedeMover && p.jugador_b ? (e) => { e.preventDefault(); intercambiarCupos(p.id, 'jugador_b') } : undefined}
                                       onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                      style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', cursor: esAdmin && !p.ganador && p.jugador_b ? 'grab' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', outline: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '2px solid #93c5fd' : 'none', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.4 : 1 }}>
+                                      style={{ height: rowH, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 10px', cursor: puedeMover && p.jugador_b ? 'grab' : esAdmin && !p.ganador && p.jugador_b ? 'pointer' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.45 : 1 }}>
                                       <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                         <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
-                                        {(p as any).jb?.nombre || etiquetaCupo(p.fase, p.orden ?? 0, 'b')}
+                                        {(p as any).jb?.nombre || etiquetaCupo(p, 'b')}
                                       </span>
                                       {!!p.ganador && p.ganador === p.jugador_b && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                     </div>
@@ -1003,8 +1011,11 @@ export default function TorneoDetallePage() {
           {/* Bracket móvil: lista por fase (liviana). Mismo dato que el SVG, sin
               divs absolutos ni SVG → no hay OOM. Tocas el nombre para marcar. */}
           {isMobile && (() => {
+            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => partidos.some(p => p.fase === f))
             const faseTope = faseActual === 'finalizado'
               ? fasesOrden[fasesOrden.length - 1]
+              : faseActual === 'grupos' && ultimaFaseConPartidos
+                ? ultimaFaseConPartidos
               : (fasesOrden as readonly string[]).includes(faseActual)
                 ? faseActual
                 : (llavesLayout?.faseInicial ?? faseActual)
@@ -1014,7 +1025,7 @@ export default function TorneoDetallePage() {
             if (!fasesVis.length) return null
 
             const nombre = (p: any, pos: 'a' | 'b') =>
-              (pos === 'a' ? p.ja?.nombre : p.jb?.nombre) || etiquetaCupo(p.fase, p.orden ?? 0, pos)
+              (pos === 'a' ? p.ja?.nombre : p.jb?.nombre) || etiquetaCupo(p, pos)
 
             return fasesVis.map(fase => {
               const ps = partidos.filter(p => p.fase === fase).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
@@ -1023,7 +1034,7 @@ export default function TorneoDetallePage() {
                   <div style={{ fontSize: 11, color: muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>{faseLabel[fase]}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {ps.map((p, i) => {
-                      const isBye = esByeMatch(p.fase, p.orden ?? 0, p.jugador_b)
+                      const isBye = esByeMatch(p)
                       const editando = partidoPlayoffEditando === p.id
                       const definidoA = !!(p as any).ja?.nombre
                       const definidoB = !!(p as any).jb?.nombre
@@ -1300,6 +1311,30 @@ export default function TorneoDetallePage() {
       {esAdmin && cuota > 0 && (faseActual === 'grupos' || fasesOrden.includes(faseActual) || faseActual === 'finalizado') && (
         <div style={{ ...card, padding:16, marginBottom:16, marginTop:16 }}>
           <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💳 Pagos pendientes</div>
+          {faseActual === 'finalizado' && jugadoresUnicos.some((j: any) => !pagos.some(p => p.jugador_id === j.jugador_id && p.estado === 'pagado')) && (
+            <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:12, marginBottom:10 }}>
+              <div style={{ fontSize:12, color:muted, marginBottom:10 }}>Selecciona quienes pagaron después del cierre y súbelos inmediatamente a Finanzas.</div>
+              <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                {(['efectivo','transferencia'] as const).map(metodo => (
+                  <button key={metodo} onClick={() => setMetodoPagosFinales(metodo)} style={{ background:metodoPagosFinales === metodo ? '#4f46e5' : '#fff', color:metodoPagosFinales === metodo ? '#fff' : muted, border:'1px solid #cbd5e1', borderRadius:7, padding:'7px 10px', fontSize:11, cursor:'pointer' }}>
+                    {metodo === 'efectivo' ? '💵 Efectivo' : '💳 Transferencia'}
+                  </button>
+                ))}
+                <button disabled={!pagosSeleccionados.size || subiendoPagos} onClick={async () => {
+                  setSubiendoPagos(true)
+                  try {
+                    const res = await subirPagosPendientesAFinanzas({ torneoId, jugadorIds:Array.from(pagosSeleccionados), metodoPago:metodoPagosFinales })
+                    if (res.error) { alert(res.error); return }
+                    setPagosSeleccionados(new Set())
+                    await cargarTorneo()
+                    alert(`✓ ${res.cantidad} pago(s) subido(s) a Finanzas`)
+                  } finally { setSubiendoPagos(false) }
+                }} style={{ marginLeft:'auto', background:!pagosSeleccionados.size || subiendoPagos ? '#94a3b8' : '#16a34a', color:'#fff', border:'none', borderRadius:7, padding:'8px 12px', fontSize:11, fontWeight:700, cursor:!pagosSeleccionados.size || subiendoPagos ? 'not-allowed' : 'pointer' }}>
+                  {subiendoPagos ? 'Subiendo...' : `Subir a Finanzas (${pagosSeleccionados.size})`}
+                </button>
+              </div>
+            </div>
+          )}
           {jugadoresUnicos.filter((j: any) => {
             const pago = pagos.find(p => p.jugador_id === j.jugador_id)
             return !pago || pago.estado !== 'pagado'
@@ -1310,9 +1345,10 @@ export default function TorneoDetallePage() {
                 return !pago || pago.estado !== 'pagado'
               }).map((j: any) => (
               <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
+                {faseActual === 'finalizado' && <input type="checkbox" checked={pagosSeleccionados.has(j.jugador_id)} onChange={e => setPagosSeleccionados(prev => { const next = new Set(prev); if (e.target.checked) next.add(j.jugador_id); else next.delete(j.jugador_id); return next })} />}
                 <div style={{ flex:1, fontSize:13, color: text }}>{j.jugadores?.nombre||'—'}</div>
                 <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
-                {(['efectivo', 'transferencia'] as const).map(metodo => (
+                {faseActual !== 'finalizado' && (['efectivo', 'transferencia'] as const).map(metodo => (
                   <button key={metodo} disabled={pagoLoading === j.jugador_id} onClick={async () => {
                     if (pagoLoading) return
                     setPagoLoading(j.jugador_id)

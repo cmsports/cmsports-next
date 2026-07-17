@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
-import { archivarTorneo, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
+import { archivarTorneo, crearTorneo as crearTorneoAction, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 const supabase = createClient()
@@ -92,21 +92,16 @@ export default function TorneosPage() {
 
   async function crearTorneo() {
     if (!nombre || !fecha) return
-    const { data, error } = await supabase.from('torneos').insert({
-      club_id: clubId, nombre, formato: 'grupos', estado: 'en_curso',
-      fase: 'inscripcion', fecha_inicio: fecha,
-      cuota_inscripcion: parseInt(cuota) || 0,
-      precio_entrada: parseInt(cuota) || 0,
-      inscripcion_abierta: true
-    }).select().single()
-    if (error) { alert('Error: ' + error.message); return }
+    const monto = Number(cuota)
+    if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
+    const res = await crearTorneoAction({ nombre, fecha, cuota: monto })
+    if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
     setNombre(''); setFecha(''); setCuota('0')
-    router.push(`/torneos/${data.id}`)
+    router.push(`/torneos/${res.torneoId}`)
   }
 
   const esAdmin = perfil?.rol === 'admin'
-  const puedeCrear = esAdmin || perfil?.rol === 'profesor'
 
   const estadoConfig: Record<string, { color: string; bg: string; emoji: string }> = {
     en_curso: { color: '#16a34a', bg: '#f0fdf4', emoji: '🟢' },
@@ -137,7 +132,7 @@ export default function TorneosPage() {
               {mostrarArchivados ? 'Ver activos' : 'Ver archivados'}
             </button>
           )}
-          {puedeCrear && !mostrarArchivados && (
+          {esAdmin && !mostrarArchivados && (
             <button
               onClick={() => setModalOpen(true)}
               style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}
@@ -264,7 +259,7 @@ export default function TorneosPage() {
             <div style={{ marginBottom:20 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Cuota de inscripción (CLP)</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-                type="number" placeholder="5000" value={cuota} onChange={e => setCuota(e.target.value)} />
+                type="number" min="0" step="1" placeholder="5000" value={cuota} onChange={e => setCuota(e.target.value)} />
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>

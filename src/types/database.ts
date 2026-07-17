@@ -658,21 +658,32 @@ export interface Database {
           torneo_id: string | null
           nombre: string | null
           creado_en: string | null
+          desempate_primero_id: string | null
+          desempate_segundo_id: string | null
+          orden: number | null
         }
         Insert: {
           id?: string
           torneo_id?: string | null
           nombre?: string | null
           creado_en?: string | null
+          desempate_primero_id?: string | null
+          desempate_segundo_id?: string | null
+          orden?: number | null
         }
         Update: {
           id?: string
           torneo_id?: string | null
           nombre?: string | null
           creado_en?: string | null
+          desempate_primero_id?: string | null
+          desempate_segundo_id?: string | null
+          orden?: number | null
         }
         Relationships: [
           { foreignKeyName: 'torneo_grupos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_grupos_desempate_primero_id_fkey'; columns: ['desempate_primero_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_grupos_desempate_segundo_id_fkey'; columns: ['desempate_segundo_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
       torneo_jugadores: {
@@ -711,6 +722,10 @@ export interface Database {
           jugador_a: string | null
           jugador_b: string | null
           ganador: string | null
+          slot_a_grupo_id: string | null
+          slot_a_posicion: number | null
+          slot_b_grupo_id: string | null
+          slot_b_posicion: number | null
           orden: number | null
           creado_en: string | null
         }
@@ -722,6 +737,10 @@ export interface Database {
           jugador_a?: string | null
           jugador_b?: string | null
           ganador?: string | null
+          slot_a_grupo_id?: string | null
+          slot_a_posicion?: number | null
+          slot_b_grupo_id?: string | null
+          slot_b_posicion?: number | null
           orden?: number | null
           creado_en?: string | null
         }
@@ -733,12 +752,18 @@ export interface Database {
           jugador_a?: string | null
           jugador_b?: string | null
           ganador?: string | null
+          slot_a_grupo_id?: string | null
+          slot_a_posicion?: number | null
+          slot_b_grupo_id?: string | null
+          slot_b_posicion?: number | null
           orden?: number | null
           creado_en?: string | null
         }
         Relationships: [
           { foreignKeyName: 'torneo_partidos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneo_partidos_grupo_id_fkey'; columns: ['grupo_id']; referencedRelation: 'torneo_grupos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_partidos_slot_a_grupo_id_fkey'; columns: ['slot_a_grupo_id']; referencedRelation: 'torneo_grupos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_partidos_slot_b_grupo_id_fkey'; columns: ['slot_b_grupo_id']; referencedRelation: 'torneo_grupos'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneo_partidos_jugador_a_fkey'; columns: ['jugador_a']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneo_partidos_jugador_b_fkey'; columns: ['jugador_b']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneo_partidos_ganador_fkey'; columns: ['ganador']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
@@ -1419,6 +1444,24 @@ export interface Database {
     }
     Views: {}
     Functions: {
+      marcar_ganador_playoff_seguro: {
+        Args: { p_partido_id: string; p_ganador_id: string }
+        Returns: Json
+      }
+      corregir_resultado_playoff_seguro: {
+        Args: { p_partido_id: string; p_nuevo_ganador_id: string }
+        Returns: Json
+      }
+      intercambiar_cupos_bracket_seguro: {
+        Args: {
+          p_torneo_id: string
+          p_partido_a_id: string
+          p_posicion_a: string
+          p_partido_b_id: string
+          p_posicion_b: string
+        }
+        Returns: Json
+      }
       crear_solicitud_jugador: {
         Args: {
           p_codigo: string

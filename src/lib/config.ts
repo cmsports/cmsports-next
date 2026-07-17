@@ -12,6 +12,8 @@ export const CONFIG = {
 
   TORNEO_MIN_JUGADORES: 4,
   TORNEO_JUGADORES_POR_GRUPO: 3,
+  TORNEO_MAX_GRUPOS: 32,
+  TORNEO_MAX_CLASIFICADOS: 64,
 
   FASES_ORDEN: ['avance', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'final'] as const,
 

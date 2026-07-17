@@ -11,8 +11,6 @@ export interface GrupoStats {
   pts: number
   pg: number
   pp: number
-  setsGanados: number
-  puntosGanados: number
 }
 
 export interface PartidoGenerado {
@@ -59,6 +57,17 @@ export function calcularNumGruposTardios(total: number): number {
   return Math.ceil(total / 4)
 }
 
+export function nombreGrupo(indice: number): string {
+  let numero = indice + 1
+  let nombre = ''
+  while (numero > 0) {
+    numero--
+    nombre = String.fromCharCode(65 + (numero % 26)) + nombre
+    numero = Math.floor(numero / 26)
+  }
+  return nombre
+}
+
 export function seedingSerpenteo(
   jugadores: JugadorTorneo[],
   numGrupos: number,
@@ -103,10 +112,7 @@ export function calcularStatsGrupo(
     jugadorA: string
     jugadorB: string
     ganador: string | null
-    setsGanador?: number
-    puntosGanador?: number
   }>,
-  criterioEmpate: 'sets' | 'puntos' = 'sets',
 ): { stats: GrupoStats[]; hayTripleEmpate: boolean } {
   const statsMap: Record<string, GrupoStats> = {}
   for (const j of jugadores) {
@@ -116,8 +122,6 @@ export function calcularStatsGrupo(
       pts: 0,
       pg: 0,
       pp: 0,
-      setsGanados: 0,
-      puntosGanados: 0,
     }
   }
 
@@ -127,23 +131,40 @@ export function calcularStatsGrupo(
     if (statsMap[p.ganador]) {
       statsMap[p.ganador].pts += 2
       statsMap[p.ganador].pg += 1
-      if (p.setsGanador) statsMap[p.ganador].setsGanados += p.setsGanador
-      if (p.puntosGanador) statsMap[p.ganador].puntosGanados += p.puntosGanador
     }
     if (statsMap[perdedor]) {
       statsMap[perdedor].pp += 1
     }
   }
 
-  const ordenados = Object.values(statsMap).sort((a, b) => {
-    if (b.pts !== a.pts) return b.pts - a.pts
-    if (criterioEmpate === 'sets') return b.setsGanados - a.setsGanados
-    return b.puntosGanados - a.puntosGanados
-  })
+  const ordenOriginal = new Map(jugadores.map((j, i) => [j.id, i]))
+  const porPuntos = new Map<number, GrupoStats[]>()
+  for (const stat of Object.values(statsMap)) {
+    const grupo = porPuntos.get(stat.pts) ?? []
+    grupo.push(stat)
+    porPuntos.set(stat.pts, grupo)
+  }
 
-  const primerPts = ordenados[0]?.pts ?? 0
-  const empatados = ordenados.filter(j => j.pts === primerPts)
-  const hayTripleEmpate = empatados.length >= 3
+  const ordenados: GrupoStats[] = []
+  for (const puntos of [...porPuntos.keys()].sort((a, b) => b - a)) {
+    const empatados = porPuntos.get(puntos) ?? []
+    empatados.sort((a, b) => {
+      if (empatados.length === 2) {
+        const directo = partidos.find(p =>
+          (p.jugadorA === a.jugadorId && p.jugadorB === b.jugadorId) ||
+          (p.jugadorA === b.jugadorId && p.jugadorB === a.jugadorId),
+        )
+        if (directo?.ganador === a.jugadorId) return -1
+        if (directo?.ganador === b.jugadorId) return 1
+      }
+      return (ordenOriginal.get(a.jugadorId) ?? 0) - (ordenOriginal.get(b.jugadorId) ?? 0)
+    })
+    ordenados.push(...empatados)
+  }
+
+  const puntosCorte = ordenados[1]?.pts
+  const empatadosEnCorte = puntosCorte == null ? [] : ordenados.filter(j => j.pts === puntosCorte)
+  const hayTripleEmpate = empatadosEnCorte.length >= 3
 
   return { stats: ordenados, hayTripleEmpate }
 }
@@ -258,6 +279,143 @@ function posicionarCuposEspejo(
   return posiciones
 }
 
+interface CupoBracket {
+  jugador: JugadorTorneo
+  grupoIdx: number
+  pos: 1 | 2
+}
+
+interface UnidadBracket {
+  a: CupoBracket
+  b: CupoBracket | null
+}
+
+function claveCupo(cupo: CupoBracket | null | undefined): string {
+  return cupo ? `${cupo.grupoIdx}:${cupo.pos}` : ''
+}
+
+// Construye el cuadro por mitades. El 1° y 2° de cada grupo quedan en mitades
+// opuestas; por eso cualquier partido real de la ronda inicial siempre cruza
+// un 1° con un 2° de otro grupo. Los BYE se reparten de forma compatible entre
+// ambas posiciones y priorizan los cabezas de serie cuando existe cupo.
+function construirBracketPorGrupos(
+  primeros: JugadorTorneo[],
+  segundos: JugadorTorneo[],
+  semilla1Id?: string | null,
+  semilla2Id?: string | null,
+  gruposListos: Set<number> = new Set(),
+): PartidoGenerado[] {
+  const numGrupos = primeros.length
+  if (numGrupos < 2 || segundos.length !== numGrupos) return []
+
+  const total = numGrupos * 2
+  const tam = calcularTamanoBracket(total)
+  const totalPartidos = tam / 2
+  const partidosPorMitad = totalPartidos / 2
+  const fase = determinarFaseInicial(tam)
+
+  const cupos: CupoBracket[] = []
+  for (let grupoIdx = 0; grupoIdx < numGrupos; grupoIdx++) {
+    cupos.push({ jugador: primeros[grupoIdx], grupoIdx, pos: 1 })
+    cupos.push({ jugador: segundos[grupoIdx], grupoIdx, pos: 2 })
+  }
+  const porJugador = new Map(cupos.map(c => [c.jugador.id, c]))
+  const cabeza1 = semilla1Id ? porJugador.get(semilla1Id) ?? null : null
+  const cabeza2 = semilla2Id ? porJugador.get(semilla2Id) ?? null : null
+
+  // Cantidad de primeros que deben quedar en la mitad superior. Con impares,
+  // la mitad superior recibe uno más; esto determina el reparto válido de BYE.
+  const construirMitades = (primerosMitad0: number, protegerAmbas: boolean): Set<number> | null => {
+    const forzados0 = new Set<number>()
+    const forzados1 = new Set<number>()
+    const fijar = (cabeza: CupoBracket | null, mitadCabeza: 0 | 1) => {
+      if (!cabeza) return
+      const mitadPrimero = cabeza.pos === 1 ? mitadCabeza : (1 - mitadCabeza) as 0 | 1
+      if (mitadPrimero === 0) forzados0.add(cabeza.grupoIdx)
+      else forzados1.add(cabeza.grupoIdx)
+    }
+    fijar(cabeza1, 0)
+    if (protegerAmbas) fijar(cabeza2, 1)
+    if ([...forzados0].some(g => forzados1.has(g))) return null
+    if (forzados0.size > primerosMitad0 || forzados1.size > numGrupos - primerosMitad0) return null
+
+    const resultado = new Set(forzados0)
+    const objetivoListos = Math.min(primerosMitad0, Math.ceil(gruposListos.size / 2))
+    for (const g of [...gruposListos].sort((a, b) => a - b)) {
+      if (resultado.size >= primerosMitad0) break
+      const listosActuales = [...resultado].filter(x => gruposListos.has(x)).length
+      if (!forzados1.has(g) && listosActuales < objetivoListos) resultado.add(g)
+    }
+    for (let g = 0; g < numGrupos && resultado.size < primerosMitad0; g++) {
+      if (!forzados1.has(g) && !gruposListos.has(g)) resultado.add(g)
+    }
+    for (let g = 0; g < numGrupos && resultado.size < primerosMitad0; g++) {
+      if (!forzados1.has(g)) resultado.add(g)
+    }
+    return resultado.size === primerosMitad0 ? resultado : null
+  }
+  // Se intenta separar ambos cabezas. Si la regla 1° vs 2° lo hace imposible
+  // (por ejemplo, dos grupos y cabezas 1A/2B), prevalece el cruce deportivo.
+  const tamanosMitad0 = [...new Set([Math.ceil(numGrupos / 2), Math.floor(numGrupos / 2)])]
+  const grupoEnMitad0 = tamanosMitad0.map(n => construirMitades(n, true)).find(Boolean)
+    ?? tamanosMitad0.map(n => construirMitades(n, false)).find(Boolean)
+    ?? new Set(Array.from({ length: Math.ceil(numGrupos / 2) }, (_, i) => i))
+
+  const esCabeza = (c: CupoBracket) => c.jugador.id === semilla1Id || c.jugador.id === semilla2Id
+  const ordenarPrioridad = (lista: CupoBracket[]) => [...lista].sort((a, b) => {
+    const pa = a.jugador.id === semilla1Id ? 0 : a.jugador.id === semilla2Id ? 1 : 2
+    const pb = b.jugador.id === semilla1Id ? 0 : b.jugador.id === semilla2Id ? 1 : 2
+    const la = gruposListos.has(a.grupoIdx) ? 0 : 1
+    const lb = gruposListos.has(b.grupoIdx) ? 0 : 1
+    return pa - pb || la - lb || a.grupoIdx - b.grupoIdx || a.pos - b.pos
+  })
+
+  const unidadesPorMitad: UnidadBracket[][] = [[], []]
+  for (const mitad of [0, 1] as const) {
+    const primerosMitad = cupos.filter(c => c.pos === 1 && (grupoEnMitad0.has(c.grupoIdx) ? 0 : 1) === mitad)
+    const segundosMitad = cupos.filter(c => c.pos === 2 && (grupoEnMitad0.has(c.grupoIdx) ? 1 : 0) === mitad)
+    const vaciosMitad = totalPartidos - numGrupos
+    const byePrimeros = (vaciosMitad + primerosMitad.length - segundosMitad.length) / 2
+    const byeSegundos = vaciosMitad - byePrimeros
+
+    if (!Number.isInteger(byePrimeros) || byePrimeros < 0 || byeSegundos < 0) return []
+
+    const primerosOrdenados = ordenarPrioridad(primerosMitad)
+    const segundosOrdenados = ordenarPrioridad(segundosMitad)
+    const primerosBye = primerosOrdenados.slice(0, byePrimeros)
+    const segundosBye = segundosOrdenados.slice(0, byeSegundos)
+    const primerosJuegan = primerosOrdenados.slice(byePrimeros)
+    const segundosJuegan = segundosOrdenados.slice(byeSegundos)
+    if (primerosJuegan.length !== segundosJuegan.length) return []
+
+    const unidades: UnidadBracket[] = [
+      ...primerosBye.map(a => ({ a, b: null })),
+      ...segundosBye.map(a => ({ a, b: null })),
+      ...primerosJuegan.map((a, i) => ({ a, b: segundosJuegan[i] })),
+    ]
+    if (unidades.length !== partidosPorMitad) return []
+
+    unidades.sort((x, y) => {
+      const px = x.a.jugador.id === semilla1Id || x.b?.jugador.id === semilla1Id
+        ? 0
+        : x.a.jugador.id === semilla2Id || x.b?.jugador.id === semilla2Id ? 1 : 2
+      const py = y.a.jugador.id === semilla1Id || y.b?.jugador.id === semilla1Id
+        ? 0
+        : y.a.jugador.id === semilla2Id || y.b?.jugador.id === semilla2Id ? 1 : 2
+      return px - py || Number(!esCabeza(x.a)) - Number(!esCabeza(y.a)) || claveCupo(x.a).localeCompare(claveCupo(y.a))
+    })
+    unidadesPorMitad[mitad] = unidades
+  }
+
+  return [...unidadesPorMitad[0], ...unidadesPorMitad[1]].map((u, orden) => ({
+    jugadorA: u.a.jugador.id,
+    jugadorB: u.b?.jugador.id ?? null,
+    ganador: u.b ? null : u.a.jugador.id,
+    fase,
+    orden,
+  }))
+}
+
 // ─── Playoffs ──────────────────────────────────────────────────────────────
 
 export function calcularTamanoBracket(numClasificados: number): number {
@@ -291,6 +449,9 @@ export function generarBracketEspejo(
   if (total < 2) return []
   const tam = calcularTamanoBracket(total)
   const faseInicialNueva = determinarFaseInicial(tam)
+  if (primeros.length === segundos.length && primeros.length >= 2) {
+    return construirBracketPorGrupos(primeros, segundos, semilla1Id, semilla2Id)
+  }
   return construirBracketDesdePosiciones(
     posicionarCuposEspejo(primeros, segundos, semilla1Id, semilla2Id),
     faseInicialNueva,
@@ -321,17 +482,23 @@ export interface LlavesLayout { faseInicial: FaseOrden; matches: LlaveMatch[] }
 
 export function construirLlavesLayout(
   numGrupos: number,
-  cabeza1GrupoIdx?: number | null,
-  cabeza2GrupoIdx?: number | null,
+  cabeza1?: number | LlaveSlot | null,
+  cabeza2?: number | LlaveSlot | null,
+  gruposListos: number[] = [],
 ): LlavesLayout {
   const primeros = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:1`, nombre: '' }))
   const segundos = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:2`, nombre: '' }))
-  // Los cabezas de serie protegidos se anclan al 1° de su grupo.
-  const c1 = cabeza1GrupoIdx != null ? `${cabeza1GrupoIdx}:1` : null
-  let c2 = cabeza2GrupoIdx != null ? `${cabeza2GrupoIdx}:1` : null
+  const normalizar = (cabeza?: number | LlaveSlot | null): LlaveSlot | null => {
+    if (cabeza == null) return null
+    return typeof cabeza === 'number' ? { grupoIdx: cabeza, pos: 1 } : cabeza
+  }
+  const slot1 = normalizar(cabeza1)
+  const slot2 = normalizar(cabeza2)
+  const c1 = slot1 ? `${slot1.grupoIdx}:${slot1.pos}` : null
+  let c2 = slot2 ? `${slot2.grupoIdx}:${slot2.pos}` : null
   if (c2 && c2 === c1) c2 = null
 
-  const bracket = generarBracketConAvance(primeros, segundos, c1, c2)
+  const bracket = construirBracketPorGrupos(primeros, segundos, c1, c2, new Set(gruposListos))
   const parse = (id: string | null | undefined): LlaveSlot | null => {
     if (!id) return null
     const [g, p] = id.split(':')

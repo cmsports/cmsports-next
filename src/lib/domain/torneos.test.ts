@@ -12,6 +12,7 @@ import {
   construirLlavesLayout,
   calcularStatsGrupo,
   derivarPodioFinal,
+  nombreGrupo,
   type JugadorTorneo,
 } from './torneos'
 
@@ -53,6 +54,44 @@ describe('derivarPodioFinal', () => {
   })
 })
 
+describe('clasificación de grupos sin sets ni puntos', () => {
+  it('un empate de dos jugadores se resuelve por el enfrentamiento directo', () => {
+    const js = jugadores(4)
+    const { stats, hayTripleEmpate } = calcularStatsGrupo(js, [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j1' },
+      { jugadorA: 'j0', jugadorB: 'j2', ganador: 'j0' },
+      { jugadorA: 'j0', jugadorB: 'j3', ganador: 'j0' },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1' },
+      { jugadorA: 'j1', jugadorB: 'j3', ganador: 'j3' },
+      { jugadorA: 'j2', jugadorB: 'j3', ganador: 'j2' },
+    ])
+    expect(hayTripleEmpate).toBe(false)
+    expect(stats.slice(0, 2).map(s => s.jugadorId)).toEqual(['j1', 'j0'])
+  })
+
+  it('un empate de tres líderes exige resolución manual', () => {
+    const { hayTripleEmpate } = calcularStatsGrupo(jugadores(3), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0' },
+      { jugadorA: 'j0', jugadorB: 'j2', ganador: 'j2' },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1' },
+    ])
+    expect(hayTripleEmpate).toBe(true)
+  })
+
+  it('detecta empate triple por el segundo cupo con líder único', () => {
+    const { stats, hayTripleEmpate } = calcularStatsGrupo(jugadores(4), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0' },
+      { jugadorA: 'j0', jugadorB: 'j2', ganador: 'j0' },
+      { jugadorA: 'j0', jugadorB: 'j3', ganador: 'j0' },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1' },
+      { jugadorA: 'j1', jugadorB: 'j3', ganador: 'j3' },
+      { jugadorA: 'j2', jugadorB: 'j3', ganador: 'j2' },
+    ])
+    expect(stats[0].jugadorId).toBe('j0')
+    expect(hayTripleEmpate).toBe(true)
+  })
+})
+
 describe('calcularNumGruposTardios', () => {
   it('mantiene entre 2 y 4 tardíos en un solo grupo', () => {
     expect(calcularNumGruposTardios(2)).toBe(1)
@@ -63,6 +102,15 @@ describe('calcularNumGruposTardios', () => {
     expect(calcularNumGruposTardios(5)).toBe(2)
     expect(calcularNumGruposTardios(8)).toBe(2)
     expect(calcularNumGruposTardios(9)).toBe(3)
+  })
+})
+
+describe('nombreGrupo', () => {
+  it('continúa correctamente después de la Z', () => {
+    expect(nombreGrupo(0)).toBe('A')
+    expect(nombreGrupo(25)).toBe('Z')
+    expect(nombreGrupo(26)).toBe('AA')
+    expect(nombreGrupo(31)).toBe('AF')
   })
 })
 
@@ -176,6 +224,110 @@ describe('generarBracketConAvance', () => {
 })
 
 describe('construirLlavesLayout', () => {
+  it('con la mitad de grupos cerrados deja ramas completas listas para jugar', () => {
+    const gruposListos = [0, 1, 2, 3]
+    const { matches } = construirLlavesLayout(8, null, null, gruposListos)
+    const listos = new Set(gruposListos)
+    const jugables = matches.filter(m =>
+      m.a && m.b && listos.has(m.a.grupoIdx) && listos.has(m.b.grupoIdx),
+    )
+    expect(jugables.length).toBeGreaterThan(0)
+    expect(jugables.every(m => m.a!.pos !== m.b!.pos && m.a!.grupoIdx !== m.b!.grupoIdx)).toBe(true)
+  })
+
+  it('siempre cruza 1° contra 2° de otro grupo', () => {
+    for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
+      const { matches } = construirLlavesLayout(numGrupos, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
+      for (const partido of matches.filter(m => m.a && m.b)) {
+        expect(partido.a!.pos).not.toBe(partido.b!.pos)
+        expect(partido.a!.grupoIdx).not.toBe(partido.b!.grupoIdx)
+      }
+    }
+  })
+
+  it('mantiene un cuadro válido aunque las cabezas terminen 1° o 2°', () => {
+    for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
+      for (const pos1 of [1, 2] as const) {
+        for (const pos2 of [1, 2] as const) {
+          const { matches } = construirLlavesLayout(
+            numGrupos,
+            { grupoIdx: 0, pos: pos1 },
+            { grupoIdx: 1, pos: pos2 },
+          )
+          expect(matches).toHaveLength(calcularTamanoBracket(numGrupos * 2) / 2)
+          const cupos = matches.flatMap(m => [m.a, m.b]).filter(Boolean)
+          expect(new Set(cupos.map(c => `${c!.grupoIdx}:${c!.pos}`)).size).toBe(numGrupos * 2)
+          for (const partido of matches.filter(m => m.a && m.b)) {
+            expect(partido.a!.pos).not.toBe(partido.b!.pos)
+            expect(partido.a!.grupoIdx).not.toBe(partido.b!.grupoIdx)
+          }
+        }
+      }
+    }
+  })
+
+  it('separa cabezas de grupos distintos para 3 o más grupos', () => {
+    for (let numGrupos = 3; numGrupos <= 32; numGrupos++) {
+      for (const pos1 of [1, 2] as const) {
+        for (const pos2 of [1, 2] as const) {
+          const layoutCabezas = construirLlavesLayout(
+            numGrupos,
+            { grupoIdx: 0, pos: pos1 },
+            { grupoIdx: 1, pos: pos2 },
+          )
+          const pos = new Map<string, number>()
+          layoutCabezas.matches.forEach((m, i) => {
+            if (m.a) pos.set(`${m.a.grupoIdx}:${m.a.pos}`, i * 2)
+            if (m.b) pos.set(`${m.b.grupoIdx}:${m.b.pos}`, i * 2 + 1)
+          })
+          const mitad = layoutCabezas.matches.length
+          expect(Math.floor(pos.get(`0:${pos1}`)! / mitad))
+            .not.toBe(Math.floor(pos.get(`1:${pos2}`)! / mitad))
+        }
+      }
+    }
+  })
+
+  it('reparte los BYE entre primeros y segundos sin romper los cruces', () => {
+    for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
+      const { matches } = construirLlavesLayout(numGrupos)
+      const tamano = calcularTamanoBracket(numGrupos * 2)
+      const byesEsperados = tamano - numGrupos * 2
+      const byes = matches.filter(m => m.a && !m.b).map(m => m.a!)
+      expect(byes).toHaveLength(byesEsperados)
+      expect(byes.filter(s => s.pos === 1)).toHaveLength(byesEsperados / 2)
+      expect(byes.filter(s => s.pos === 2)).toHaveLength(byesEsperados / 2)
+    }
+  })
+
+  it('prioriza BYE para cabezas de serie cuando hay cupo compatible', () => {
+    const tres = construirLlavesLayout(3, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
+    const byesTres = tres.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`)
+    expect(byesTres).toContain('0:1')
+    expect(byesTres).not.toContain('1:1') // solo existe un BYE para primeros
+
+    const cinco = construirLlavesLayout(5, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
+    const byesCinco = cinco.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`)
+    expect(byesCinco).toContain('0:1')
+    expect(byesCinco).toContain('1:1')
+
+    const posicionesMixtas = construirLlavesLayout(5, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 2 })
+    const byesMixtos = posicionesMixtas.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`)
+    expect(byesMixtos).toContain('0:1')
+    expect(byesMixtos).toContain('1:2')
+  })
+
+  it('ubica primero y segundo del mismo grupo en mitades opuestas para 2 a 32 grupos', () => {
+    for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
+      const { matches, posiciones } = posicionesLayout(numGrupos, 0, 1)
+      const mitad = matches.length
+      for (let g = 0; g < numGrupos; g++) {
+        expect(Math.floor(posiciones.get(`${g}:1`)! / mitad))
+          .not.toBe(Math.floor(posiciones.get(`${g}:2`)! / mitad))
+      }
+    }
+  })
+
   it('todos los cupos de todos los grupos aparecen exactamente una vez', () => {
     const numGrupos = 4 // 8 clasificados → cuadro de 8, sin BYE
     const { faseInicial, matches } = construirLlavesLayout(numGrupos)
