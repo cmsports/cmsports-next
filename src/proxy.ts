@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 import { MODULOS_CLUB, puedeAccederModulo } from '@/lib/auth/modulos-rutas'
+import { esAdminDeClub } from '@/lib/auth/roles'
 
 const publicRoutes = ['/login', '/registro']
 // Accesibles siempre, con o sin sesión — el link de invite/recovery crea sesión
@@ -91,8 +92,7 @@ export async function proxy(request: NextRequest) {
 
   if (
     adminRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) &&
-    rol !== 'admin' &&
-    rol !== 'superadmin'
+    !esAdminDeClub(rol)
   ) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)

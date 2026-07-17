@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
@@ -9,6 +10,7 @@ import { actualizarClubAction } from '@/app/actions/club'
 import { subirLogoAction, actualizarInfoClubAction } from '@/app/actions/redes-sociales'
 import { Building2, Upload, Loader2, Check, Lock } from 'lucide-react'
 import GestionProfesores from '@/components/configuracion/GestionProfesores'
+import GestionKioscos from '@/components/configuracion/GestionKioscos'
 import PerfilPersonalConfig from '@/components/configuracion/PerfilPersonalConfig'
 
 const C = {
@@ -34,7 +36,7 @@ export default function ConfiguracionPage() {
   const [telefono, setTelefono] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [subiendoLogo, setSubiendoLogo] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [clubCargadoId, setClubCargadoId] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -49,12 +51,13 @@ export default function ConfiguracionPage() {
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.rol !== 'admin') { setLoading(false); return }
-    if (!perfil.club_id) { setLoading(false); return }
+    if (perfil.rol !== 'admin' || !perfil.club_id) return
 
+    let activo = true
     const supabase = createClient()
     supabase.from('clubes').select('nombre,ciudad,deporte,mensualidad_base,direccion,telefono,logo_url')
       .eq('id', perfil.club_id).single().then(({ data }) => {
+        if (!activo) return
         if (data) {
           setNombre(data.nombre || '')
           setCiudad(data.ciudad || '')
@@ -64,9 +67,10 @@ export default function ConfiguracionPage() {
           setTelefono(data.telefono || '')
           setLogoUrl(data.logo_url || null)
         }
-        setLoading(false)
+        setClubCargadoId(perfil.club_id)
       })
-  }, [authLoading, perfil])
+    return () => { activo = false }
+  }, [authLoading, perfil, router])
 
   async function guardar() {
     setGuardando(true)
@@ -136,7 +140,11 @@ export default function ConfiguracionPage() {
     setTimeout(() => setPwExito(false), 3000)
   }
 
-  if (authLoading || loading) return (
+  const loading = authLoading || (
+    perfil?.rol === 'admin' && !!perfil.club_id && clubCargadoId !== perfil.club_id
+  )
+
+  if (loading) return (
     <AppLayout perfil={perfil}>
       <div style={{ color: C.hint, fontSize: 14 }}>Cargando...</div>
     </AppLayout>
@@ -221,7 +229,7 @@ export default function ConfiguracionPage() {
             display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
           }}>
             {logoUrl
-              ? <img src={logoUrl} alt="Logo del club" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ? <Image src={logoUrl} alt="Logo del club" width={640} height={120} unoptimized style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               : <Building2 size={28} color={C.skyD} />}
           </div>
           <button onClick={() => logoInputRef.current?.click()} disabled={subiendoLogo} style={{
@@ -237,6 +245,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {perfil.club_id && <GestionProfesores clubId={perfil.club_id} />}
+      {perfil.club_id && <GestionKioscos />}
       </>}
 
       {/* ── Cambiar contraseña ── */}

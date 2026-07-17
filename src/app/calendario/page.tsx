@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -28,7 +28,6 @@ export default function CalendarioPage() {
   const [clases, setClases] = useState<any[]>([])
   const [torneos, setTorneos] = useState<any[]>([])
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [modalEvento, setModalEvento] = useState(false)
   const [reservasJugador, setReservasJugador] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
@@ -37,16 +36,62 @@ export default function CalendarioPage() {
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
+  const cargarMes = useCallback(async () => {
+    if (!clubId) return
+    const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
+    const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
+    const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
+      supabase.from('eventos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+      supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
+      supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
+    ])
+    if (evError || clError || trError) {
+      setMensaje({ tipo: 'error', texto: evError?.message || clError?.message || trError?.message || 'No fue posible cargar el calendario' })
+      return
+    }
+    setEventos(ev || [])
+    setClases(cl || [])
+    setTorneos(tr || [])
+  }, [anio, clubId, mes])
+
+  const cargarReservasJugador = useCallback(async (jugadorId: string) => {
+    const { data, error } = await supabase.from('reservas').select('clase_id').eq('jugador_id', jugadorId).eq('estado', 'confirmado')
+    if (error) {
+      setMensaje({ tipo: 'error', texto: error.message })
+      return
+    }
+    setReservasJugador(new Set((data || []).map(r => r.clase_id)))
+  }, [])
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    setLoading(false)
-  }, [authLoading, perfil])
+  }, [authLoading, perfil, router])
 
   useEffect(() => {
     if (!clubId) return
-    cargarMes()
-  }, [clubId, mes, anio])
+    let activo = true
+    const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
+    const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
+
+    async function cargar() {
+      const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
+        supabase.from('eventos').select('*').eq('club_id', clubId!).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+        supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId!).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
+        supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId!).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
+      ])
+      if (!activo) return
+      if (evError || clError || trError) {
+        setMensaje({ tipo: 'error', texto: evError?.message || clError?.message || trError?.message || 'No fue posible cargar el calendario' })
+        return
+      }
+      setEventos(ev || [])
+      setClases(cl || [])
+      setTorneos(tr || [])
+    }
+
+    void cargar()
+    return () => { activo = false }
+  }, [anio, clubId, mes])
 
   useEffect(() => {
     if (!clubId) return
@@ -62,37 +107,26 @@ export default function CalendarioPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, recargar)
       .subscribe()
     return () => { void supabase.removeChannel(canal) }
-  }, [clubId, mes, anio, perfil?.jugador_id])
-
-  async function cargarMes() {
-    const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
-    const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
-    const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
-      supabase.from('eventos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-      supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
-      supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
-    ])
-    if (evError || clError || trError) {
-      setMensaje({ tipo: 'error', texto: evError?.message || clError?.message || trError?.message || 'No fue posible cargar el calendario' })
-      return
-    }
-    setEventos(ev || [])
-    setClases(cl || [])
-    setTorneos(tr || [])
-  }
-
-  async function cargarReservasJugador(jugadorId: string) {
-    const { data, error } = await supabase.from('reservas').select('clase_id').eq('jugador_id', jugadorId).eq('estado', 'confirmado')
-    if (error) {
-      setMensaje({ tipo: 'error', texto: error.message })
-      return
-    }
-    setReservasJugador(new Set((data || []).map((r: any) => r.clase_id)))
-  }
+  }, [cargarMes, cargarReservasJugador, clubId, perfil?.jugador_id])
 
   useEffect(() => {
-    if (perfil?.jugador_id) cargarReservasJugador(perfil.jugador_id)
-  }, [perfil])
+    const jugadorId = perfil?.jugador_id
+    if (!jugadorId) return
+    let activo = true
+
+    async function cargar() {
+      const { data, error } = await supabase.from('reservas').select('clase_id').eq('jugador_id', jugadorId!).eq('estado', 'confirmado')
+      if (!activo) return
+      if (error) {
+        setMensaje({ tipo: 'error', texto: error.message })
+        return
+      }
+      setReservasJugador(new Set((data || []).map(r => r.clase_id)))
+    }
+
+    void cargar()
+    return () => { activo = false }
+  }, [perfil?.jugador_id])
 
   function cambiarMes(dir: number) {
     let nuevoMes = mes + dir
@@ -182,7 +216,7 @@ export default function CalendarioPage() {
 
   const itemsDelDia = diaSeleccionado ? (diasConItems[diaSeleccionado] || []) : []
 
-  if (loading) return (
+  if (authLoading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
     </div>

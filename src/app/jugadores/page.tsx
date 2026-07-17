@@ -50,17 +50,39 @@ export default function JugadoresPage() {
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.club_id) {
-      const cached = jugadoresCache[perfil.club_id]
-      if (cached) {
+    const id = perfil.club_id
+    let activo = true
+
+    async function cargarInicial() {
+      if (!id) {
+        if (activo) setLoading(false)
+        return
+      }
+      const cached = jugadoresCache[id]
+      if (cached && activo) {
         setJugadores(cached)
         setLoading(false)
       }
-      cargarJugadores(perfil.club_id).then(() => setLoading(false))
-    } else {
+      const { data, error } = await supabase
+        .from('jugadores')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado')
+        .eq('club_id', id)
+        .neq('es_externo', true)
+        .order('nombre')
+      if (!activo) return
+      if (error) {
+        setToast('Error al cargar jugadores')
+        setTimeout(() => setToast(''), 3000)
+      } else {
+        jugadoresCache[id] = data || []
+        setJugadores(data || [])
+      }
       setLoading(false)
     }
-  }, [authLoading, perfil])
+
+    void cargarInicial()
+    return () => { activo = false }
+  }, [authLoading, perfil, router])
 
   async function cargarJugadores(cid?: string) {
     const id = cid || clubId

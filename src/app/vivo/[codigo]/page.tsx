@@ -205,14 +205,14 @@ function Gate({ jugadores, onListo, irCorreo }: {
   )
 }
 
-// ── Paso 2: no aparezco → dejo mi nombre → aviso al club ──
-// Solo el nombre: sirve para seguir el torneo con tu nombre y para avisarle al
-// club. El club confirma la inscripción y reingresa al jugador con RUT y pago.
+// ── Paso 2: no aparezco → dejo identidad → aviso al club ──
+// El correo evita mezclar personas homónimas y solicitudes de otros torneos.
 function Correo({ codigo, onListo, volver }: {
   codigo: string
   onListo: (i: { jugadorId: string | null; nombre: string }) => void; volver: () => void
 }) {
   const [nombre, setNombre] = useState('')
+  const [email, setEmail] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState('')
   const [enviado, setEnviado] = useState(false)
@@ -220,12 +220,14 @@ function Correo({ codigo, onListo, volver }: {
   async function enviar() {
     setError('')
     if (nombre.trim().length < 2) { setError('Ingresa tu nombre'); return }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Ingresa un correo válido'); return }
     setEnviando(true)
-    const { error: e } = await supabase.rpc('solicitar_inscripcion_torneo', {
-      p_codigo: codigo, p_nombre: nombre.trim(),
+    const { data, error: e } = await supabase.rpc('solicitar_inscripcion_torneo', {
+      p_codigo: codigo, p_nombre: nombre.trim(), p_email: email.trim().toLowerCase(),
     })
     setEnviando(false)
-    if (e) { setError('No se pudo enviar. Intenta de nuevo.'); return }
+    const resultado = data as { ok?: boolean } | null
+    if (e || !resultado?.ok) { setError('No se pudo enviar. Intenta más tarde.'); return }
     setEnviado(true)
   }
 
@@ -246,11 +248,15 @@ function Correo({ codigo, onListo, volver }: {
       <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380 }}>
         <h1 style={{ fontSize: 19, fontWeight: 800, color: text, margin: 0, textAlign: 'center' }}>No apareces en la lista</h1>
         <p style={{ fontSize: 12.5, color: muted, marginTop: 6, marginBottom: 18, textAlign: 'center' }}>
-          Deja tu nombre para seguir el torneo. Le avisamos al club para que confirme tu inscripción.
+          Deja tu nombre y correo. Le avisamos al club para que confirme tu inscripción.
         </p>
 
         <label style={lbl}>Nombre y apellido
           <input value={nombre} onChange={e => setNombre(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviar() }} placeholder="Ej: Juan Pérez" style={inp} />
+        </label>
+
+        <label style={lbl}>Correo
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviar() }} placeholder="juan@correo.cl" autoComplete="email" style={inp} />
         </label>
 
         {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 4, marginBottom: 6 }}>{error}</div>}

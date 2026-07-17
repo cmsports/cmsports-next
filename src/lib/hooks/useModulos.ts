@@ -45,8 +45,18 @@ export function ModulosProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!clubId) return
-    cargar(clubId)
-  }, [clubId, cargar])
+    let activo = true
+    const supabase = createClient()
+    void supabase.from('clubes').select('modulos_habilitados').eq('id', clubId).single()
+      .then(({ data }) => {
+        if (!activo) return
+        setEstado({
+          clubId,
+          modulos: data?.modulos_habilitados ?? ALL_MODULOS,
+        })
+      })
+    return () => { activo = false }
+  }, [clubId])
 
   useEffect(() => {
     const actualizar = (event: Event) => {

@@ -1,120 +1,98 @@
 'use server'
 
 import { requireAdminClub } from '@/lib/auth/require'
+import {
+  generarMensualidadesSchema,
+  mensualidadIdSchema,
+  pagoMensualidadSchema,
+  revertirMensualidadSchema,
+  validationError,
+} from '@/lib/validation/finanzas'
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+type ResultadoMensualidad = { mensualidad_id: string; movimiento_id?: string; estado: string }
 
 export async function registrarPago(params: {
   jugadorId: string
-  jugadorNombre: string
+  jugadorNombre?: string
   mensualidadId: string | null
   mes: number
   anio: number
   monto: number
   metodo: string
-  registradoPor: string
+  registradoPor?: string
+  idempotencyKey?: string
 }) {
-  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  const validacion = pagoMensualidadSchema.safeParse(params)
+  if (!validacion.success) return { error: validationError(validacion.error) }
+
+  const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { jugadorId, jugadorNombre, mensualidadId, mes, anio, monto, metodo, registradoPor } = params
-  const fechaPago = new Date().toISOString().slice(0, 10)
-
-  if (mensualidadId) {
-    const { error } = await supabase.from('mensualidades').update({
-      estado: 'pagado',
-      fecha_pago: fechaPago,
-      monto,
-      metodo,
-    }).eq('id', mensualidadId).eq('club_id', clubId)
-
-    if (error) return { error: 'Error al actualizar mensualidad' }
-  } else {
-    const { error } = await supabase.from('mensualidades').insert({
-      club_id: clubId,
-      jugador_id: jugadorId,
-      mes,
-      anio,
-      estado: 'pagado',
-      fecha_pago: fechaPago,
-      monto,
-      metodo,
-    })
-
-    if (error) return { error: 'Error al crear mensualidad' }
-  }
-
-  const { error: movError } = await supabase.from('movimientos').insert({
-    club_id: clubId,
-    tipo: 'ingreso',
-    categoria: 'mensualidad',
-    descripcion: `Mensualidad ${jugadorNombre} — ${MESES[mes - 1]} ${anio}`,
-    monto,
-    fecha: fechaPago,
-    jugador_id: jugadorId,
-    mes_correspondiente: mes,
-    anio_correspondiente: anio,
-    registrado_por_nombre: registradoPor,
+  const input = validacion.data
+  const { data, error } = await supabase.rpc('registrar_pago_mensualidad_atomico', {
+    p_mensualidad_id: input.mensualidadId,
+    p_jugador_id: input.jugadorId,
+    p_mes: input.mes,
+    p_anio: input.anio,
+    p_monto: input.monto,
+    p_metodo: input.metodo,
+    p_idempotency_key: input.idempotencyKey ?? crypto.randomUUID(),
   })
+  if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago' }
 
-  if (movError) return { error: 'Pago registrado pero falló el movimiento financiero' }
-
-  return { success: true }
+  const resultado = data as unknown as ResultadoMensualidad
+  return { success: true, mensualidadId: resultado.mensualidad_id, movimientoId: resultado.movimiento_id }
 }
 
-export async function generarMensualidadesPendientes(params: {
-  jugadorIds: string[]
-  mes: number
-  anio: number
-}) {
-  const { error: authErr, supabase, clubId } = await requireAdminClub()
+export async function generarMensualidadesPendientes(params: { jugadorIds: string[]; mes: number; anio: number }) {
+  const validacion = generarMensualidadesSchema.safeParse(params)
+  if (!validacion.success) return { error: validationError(validacion.error) }
+  if (!validacion.data.jugadorIds.length) return { success: true, creadas: 0 }
+
+  const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { jugadorIds, mes, anio } = params
-  if (!jugadorIds.length) return { success: true }
-
-  const { error } = await supabase.from('mensualidades').insert(
-    jugadorIds.map(jugadorId => ({ club_id: clubId, jugador_id: jugadorId, mes, anio, estado: 'pendiente' }))
-  )
-  if (error) return { error: 'Error al generar mensualidades' }
-  return { success: true }
+  const { data, error } = await supabase.rpc('generar_mensualidades_jugadores_seguro', {
+    p_jugador_ids: validacion.data.jugadorIds,
+    p_mes: validacion.data.mes,
+    p_anio: validacion.data.anio,
+  })
+  if (error) return { error: error.message }
+  return { success: true, creadas: data ?? 0 }
 }
 
 export async function marcarAtrasado(params: { mensualidadId: string }) {
-  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  const validacion = mensualidadIdSchema.safeParse(params)
+  if (!validacion.success) return { error: validationError(validacion.error) }
+
+  const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { error } = await supabase.from('mensualidades').update({ estado: 'atrasado' }).eq('id', params.mensualidadId).eq('club_id', clubId)
-  if (error) return { error: 'Error al marcar atrasado' }
+  const { error } = await supabase.rpc('marcar_mensualidad_atrasada_seguro', {
+    p_mensualidad_id: validacion.data.mensualidadId,
+  })
+  if (error) return { error: error.message }
   return { success: true }
 }
 
 export async function revertirPago(params: {
   mensualidadId: string
-  jugadorId: string
-  mes: number
-  anio: number
+  jugadorId?: string
+  mes?: number
+  anio?: number
+  idempotencyKey?: string
 }) {
-  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  const validacion = revertirMensualidadSchema.safeParse(params)
+  if (!validacion.success) return { error: validationError(validacion.error) }
+
+  const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { mensualidadId, jugadorId, mes, anio } = params
-
-  const { error } = await supabase.from('mensualidades').update({
-    estado: 'pendiente',
-    fecha_pago: null,
-    monto: null,
-    metodo: null,
-  }).eq('id', mensualidadId).eq('club_id', clubId)
-
-  if (error) return { error: 'Error al revertir mensualidad' }
-
-  await supabase.from('movimientos').delete()
-    .eq('club_id', clubId)
-    .eq('jugador_id', jugadorId)
-    .eq('categoria', 'mensualidad')
-    .eq('mes_correspondiente', mes)
-    .eq('anio_correspondiente', anio)
-
+  const input = validacion.data
+  const { data, error } = await supabase.rpc('revertir_pago_mensualidad_atomico', {
+    p_mensualidad_id: input.mensualidadId,
+    p_idempotency_key: input.idempotencyKey ?? crypto.randomUUID(),
+  })
+  if (error || !data) return { error: error?.message ?? 'No se pudo revertir el pago' }
   return { success: true }
 }

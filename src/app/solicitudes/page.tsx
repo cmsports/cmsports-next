@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
@@ -15,6 +15,19 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 const muted = '#64748b'
 const text  = '#0f172a'
 const hint  = '#94a3b8'
+
+async function obtenerSolicitudes(clubId: string) {
+  let { data: invitaciones } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
+  if (!invitaciones?.length) {
+    await supabase.from('invitaciones').insert({ club_id: clubId })
+    const { data } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
+    invitaciones = data
+  }
+  const codigo = invitaciones?.[0]?.codigo || ''
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
+  return { link: `${origin}/registro?club=${clubId}&code=${codigo}`, solicitudes: solicitudes || [] }
+}
 
 export default function SolicitudesPage() {
   const { perfil, loading: authLoading } = usePerfil()
@@ -36,31 +49,32 @@ export default function SolicitudesPage() {
     { label: '$40.000', valor: 40000, ent: 4 },
   ]
 
+  const cargarSolicitudes = useCallback(async (cid?: string) => {
+    const id = cid || clubId
+    if (!id) return
+    const resultado = await obtenerSolicitudes(id)
+    setLink(resultado.link)
+    setSolicitudes(resultado.solicitudes)
+  }, [clubId])
+
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.rol !== 'admin') { router.push('/dashboard'); return }
-    if (perfil.club_id) {
-      cargarSolicitudes(perfil.club_id).then(() => setLoading(false))
-    } else {
+    if (!perfil.club_id) return
+    let activo = true
+
+    async function cargarInicial() {
+      const resultado = await obtenerSolicitudes(perfil!.club_id!)
+      if (!activo) return
+      setLink(resultado.link)
+      setSolicitudes(resultado.solicitudes)
       setLoading(false)
     }
-  }, [authLoading, perfil])
 
-  async function cargarSolicitudes(cid?: string) {
-    const id = cid || clubId
-    let { data: inv } = await supabase.from('invitaciones').select('*').eq('club_id', id).eq('activa', true).limit(1)
-    if (!inv?.length) {
-      await supabase.from('invitaciones').insert({ club_id: id })
-      const { data: newInv } = await supabase.from('invitaciones').select('*').eq('club_id', id).eq('activa', true).limit(1)
-      inv = newInv
-    }
-    const codigo = inv?.[0]?.codigo || ''
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    setLink(`${origin}/registro?club=${id}&code=${codigo}`)
-    const { data } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', id).order('creado_en', { ascending: false })
-    setSolicitudes(data || [])
-  }
+    void cargarInicial()
+    return () => { activo = false }
+  }, [authLoading, perfil, router])
 
   async function confirmarAprobar() {
     if (!modalAprobar) return
@@ -76,7 +90,7 @@ export default function SolicitudesPage() {
     setAprobando(false)
     if (res.error) { alert(res.error); return }
     setModalAprobar(null)
-    cargarSolicitudes()
+    void cargarSolicitudes()
     setAprobadoInfo({
       nombre: res.jugador?.nombre ?? s.nombre,
       email: res.jugador?.email ?? (s.email || null),
@@ -95,7 +109,7 @@ export default function SolicitudesPage() {
   async function rechazar(id: string) {
     if (!confirm('¿Rechazar esta solicitud?')) return
     await rechazarSolicitud({ solicitudId: id })
-    cargarSolicitudes()
+    void cargarSolicitudes()
   }
 
   async function copiarLink() {
@@ -110,7 +124,7 @@ export default function SolicitudesPage() {
     rechazado: { bg: '#fef2f2', color: '#dc2626' },
   }
 
-  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e8edf4' }}><div style={{ color: hint }}>Cargando...</div></div>
+  if (authLoading || (!!clubId && loading)) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e8edf4' }}><div style={{ color: hint }}>Cargando...</div></div>
 
   return (
     <AppLayout perfil={perfil}>

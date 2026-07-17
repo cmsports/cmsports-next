@@ -43,7 +43,7 @@ export default function EstadoCuentaPage() {
       setLoading(false)
     }
     cargar()
-  }, [authLoading, perfil])
+  }, [anioActual, authLoading, mesActual, perfil, router])
 
   async function subirComprobante(file: File) {
     if (!perfil?.jugador_id || !mensualidad?.id) return

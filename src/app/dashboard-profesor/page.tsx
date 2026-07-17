@@ -38,44 +38,36 @@ export default function DashboardProfesorPage() {
   cincoDiasAtras.setDate(hoy.getDate() - 5)
   const cincoDiasAtrasISO = cincoDiasAtras.toISOString().slice(0, 10)
 
-  async function cargarDatos(p: any) {
-    const trimestre = `Q${Math.ceil((hoy.getMonth()+1)/3)}-${hoy.getFullYear()}`
-
-    const [{ data: jugadores }, { data: clasesHoy }, { data: evals }, { data: asist5 }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', p.club_id).eq('estado', 'activo').neq('es_externo', true),
-      supabase.from('clases').select('*').eq('club_id', p.club_id)
-        .gte('fecha', hoyISO).lte('fecha', domingoISO)
-        .order('fecha').order('hora_inicio'),
-      supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', p.club_id).eq('periodo_trimestre', trimestre),
-      supabase.from('asistencia').select('jugador_id').eq('club_id', p.club_id).gte('fecha', cincoDiasAtrasISO)
-    ])
-
-    setTotalAlumnos(jugadores?.length || 0)
-    setClases(clasesHoy || [])
-
-    const evalIds = new Set((evals || []).map(e => e.jugador_id))
-    const sinEval = (jugadores || []).filter(j => !evalIds.has(j.id))
-    setEvalPendientes(sinEval.length)
-
-    const asistIds = new Set((asist5 || []).map(a => a.jugador_id))
-    const ausentes = (jugadores || []).filter(j => !asistIds.has(j.id))
-
-    const nuevasAlertas = []
-    if (sinEval.length > 0) nuevasAlertas.push({ tipo:'warning', msg:`${sinEval.length} alumno${sinEval.length>1?'s':''} sin evaluación trimestral (${trimestre})`, data: sinEval, key:'eval' })
-    if (ausentes.length > 0) nuevasAlertas.push({ tipo:'error', msg:`${ausentes.length} alumno${ausentes.length>1?'s':''} sin asistir en los últimos 5 días`, data: ausentes, key:'ausentes' })
-    setAlertas(nuevasAlertas)
-  }
-
   useEffect(() => {
     async function cargar() {
       if (authLoading) return
       if (!perfil) { router.push('/login'); return }
       if (perfil.rol !== 'admin' && perfil.rol !== 'profesor') { router.push('/dashboard'); return }
-      if (perfil.club_id) await cargarDatos(perfil)
+      if (perfil.club_id) {
+        const fechaActual = new Date()
+        const trimestre = `Q${Math.ceil((fechaActual.getMonth()+1)/3)}-${fechaActual.getFullYear()}`
+        const [{ data: jugadores }, { data: clasesHoy }, { data: evals }, { data: asist5 }] = await Promise.all([
+          supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', perfil.club_id).eq('estado', 'activo').neq('es_externo', true),
+          supabase.from('clases').select('*').eq('club_id', perfil.club_id).gte('fecha', hoyISO).lte('fecha', domingoISO).order('fecha').order('hora_inicio'),
+          supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', perfil.club_id).eq('periodo_trimestre', trimestre),
+          supabase.from('asistencia').select('jugador_id').eq('club_id', perfil.club_id).gte('fecha', cincoDiasAtrasISO),
+        ])
+        setTotalAlumnos(jugadores?.length || 0)
+        setClases(clasesHoy || [])
+        const evalIds = new Set((evals || []).map(e => e.jugador_id))
+        const sinEval = (jugadores || []).filter(j => !evalIds.has(j.id))
+        setEvalPendientes(sinEval.length)
+        const asistIds = new Set((asist5 || []).map(a => a.jugador_id))
+        const ausentes = (jugadores || []).filter(j => !asistIds.has(j.id))
+        const nuevasAlertas = []
+        if (sinEval.length > 0) nuevasAlertas.push({ tipo:'warning', msg:`${sinEval.length} alumno${sinEval.length>1?'s':''} sin evaluación trimestral (${trimestre})`, data: sinEval, key:'eval' })
+        if (ausentes.length > 0) nuevasAlertas.push({ tipo:'error', msg:`${ausentes.length} alumno${ausentes.length>1?'s':''} sin asistir en los últimos 5 días`, data: ausentes, key:'ausentes' })
+        setAlertas(nuevasAlertas)
+      }
       setLoading(false)
     }
-    cargar()
-  }, [authLoading, perfil])
+    void cargar()
+  }, [authLoading, cincoDiasAtrasISO, domingoISO, hoyISO, perfil, router])
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>

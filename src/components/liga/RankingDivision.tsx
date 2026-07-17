@@ -43,18 +43,20 @@ function hexAlpha(hex: string, alpha: number): string {
 function CountUp({ to, duration = 800 }: { to: number; duration?: number }) {
   const [val, setVal] = useState(0)
   useEffect(() => {
-    if (!to) { setVal(0); return }
+    if (!to) return
+    let frame: number
     const s = performance.now()
     const tick = (now: number) => {
       const t = Math.min(1, (now - s) / duration)
       // easeOutExpo
       const eased = t === 1 ? 1 : 1 - Math.pow(2, -10 * t)
       setVal(Math.round(to * eased))
-      if (t < 1) requestAnimationFrame(tick)
+      if (t < 1) frame = requestAnimationFrame(tick)
     }
-    requestAnimationFrame(tick)
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
   }, [to, duration])
-  return <>{val}</>
+  return <>{to ? val : 0}</>
 }
 
 export function RankingDivision({ divisionId, nombreDivision }: { divisionId: string; nombreDivision: string }) {
@@ -139,7 +141,10 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
     setLoading(false)
   }, [divisionId])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void cargar() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [cargar])
 
   async function exportarPDF() {
     const { default: jsPDF } = await import('jspdf')

@@ -488,6 +488,7 @@ export interface Database {
           mes_correspondiente: number | null
           anio_correspondiente: number | null
           registrado_por_nombre: string | null
+          mensualidad_id: string | null
         }
         Insert: {
           id?: string
@@ -505,6 +506,7 @@ export interface Database {
           mes_correspondiente?: number | null
           anio_correspondiente?: number | null
           registrado_por_nombre?: string | null
+          mensualidad_id?: string | null
         }
         Update: {
           id?: string
@@ -522,11 +524,13 @@ export interface Database {
           mes_correspondiente?: number | null
           anio_correspondiente?: number | null
           registrado_por_nombre?: string | null
+          mensualidad_id?: string | null
         }
         Relationships: [
           { foreignKeyName: 'movimientos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
           { foreignKeyName: 'movimientos_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'movimientos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'movimientos_mensualidad_id_fkey'; columns: ['mensualidad_id']; referencedRelation: 'mensualidades'; referencedColumns: ['id'] },
           { foreignKeyName: 'movimientos_registrado_por_fkey'; columns: ['registrado_por']; referencedRelation: 'usuarios'; referencedColumns: ['id'] },
           { foreignKeyName: 'movimientos_profesor_id_fkey'; columns: ['profesor_id']; referencedRelation: 'profesores'; referencedColumns: ['id'] },
         ]
@@ -957,6 +961,9 @@ export interface Database {
           creado_en: string | null
           password: string | null
           pago: string | null
+          torneo_id: string | null
+          identidad_hash: string | null
+          origen: string | null
         }
         Insert: {
           id?: string
@@ -969,6 +976,9 @@ export interface Database {
           creado_en?: string | null
           password?: string | null
           pago?: string | null
+          torneo_id?: string | null
+          identidad_hash?: string | null
+          origen?: string | null
         }
         Update: {
           id?: string
@@ -981,9 +991,51 @@ export interface Database {
           creado_en?: string | null
           password?: string | null
           pago?: string | null
+          torneo_id?: string | null
+          identidad_hash?: string | null
+          origen?: string | null
         }
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+          { foreignKeyName: 'solicitudes_jugador_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+        ]
+      }
+      kioscos_asistencia: {
+        Row: {
+          id: string
+          club_id: string
+          nombre: string
+          token_hash: string
+          activo: boolean
+          creado_por: string
+          creado_en: string
+          rotado_en: string
+          ultimo_uso_en: string | null
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          nombre: string
+          token_hash: string
+          activo?: boolean
+          creado_por: string
+          creado_en?: string
+          rotado_en?: string
+          ultimo_uso_en?: string | null
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          nombre?: string
+          token_hash?: string
+          activo?: boolean
+          creado_por?: string
+          creado_en?: string
+          rotado_en?: string
+          ultimo_uso_en?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: 'kioscos_asistencia_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
         ]
       }
       invitaciones: {
@@ -1376,7 +1428,7 @@ export interface Database {
           p_email: string
           p_telefono?: string | null
         }
-        Returns: string
+        Returns: string | null
       }
       validar_invitacion: {
         Args: { p_codigo: string; p_club_id?: string | null }
@@ -1399,8 +1451,36 @@ export interface Database {
         Returns: { nombre: string }[]
       }
       registrar_asistencia_rut: {
-        Args: { p_club_id: string; p_rut: string }
+        Args: { p_club_id: string; p_rut: string; p_token: string }
         Returns: { jugador_nombre: string; hora_registro: string; ya_registrada: boolean }[]
+      }
+      autorizar_kiosco_asistencia: {
+        Args: { p_club_id: string; p_token: string }
+        Returns: { club_nombre: string; kiosco_nombre: string }[]
+      }
+      crear_o_rotar_kiosco_asistencia: {
+        Args: { p_nombre: string; p_kiosco_id?: string | null }
+        Returns: Json
+      }
+      listar_kioscos_asistencia: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          club_id: string
+          nombre: string
+          activo: boolean
+          creado_en: string
+          rotado_en: string
+          ultimo_uso_en: string | null
+        }[]
+      }
+      revocar_kiosco_asistencia: {
+        Args: { p_kiosco_id: string }
+        Returns: boolean
+      }
+      solicitar_inscripcion_torneo: {
+        Args: { p_codigo: string; p_nombre: string; p_email: string }
+        Returns: Json
       }
       cambiar_reserva_clase: {
         Args: { p_clase_id: string; p_confirmar: boolean }
@@ -1413,6 +1493,60 @@ export interface Database {
       confirmar_feedback_jugador: {
         Args: { p_evaluacion_id: string }
         Returns: boolean
+      }
+      registrar_pago_liga_atomico: {
+        Args: {
+          p_division_id: string
+          p_jugador_id: string
+          p_monto_total: number
+          p_monto_abono: number
+          p_fecha: string
+          p_metodo: string | null
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      anular_ultimo_abono_liga_atomico: {
+        Args: { p_pago_id: string; p_idempotency_key: string }
+        Returns: Json
+      }
+      registrar_pago_mensualidad_atomico: {
+        Args: {
+          p_mensualidad_id: string | null
+          p_jugador_id: string
+          p_mes: number
+          p_anio: number
+          p_monto: number
+          p_metodo: string
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      revertir_pago_mensualidad_atomico: {
+        Args: { p_mensualidad_id: string; p_idempotency_key: string }
+        Returns: Json
+      }
+      registrar_movimiento_financiero_atomico: {
+        Args: {
+          p_tipo: string
+          p_categoria: string
+          p_descripcion: string
+          p_monto: number
+          p_fecha: string
+          p_profesor_id: string | null
+          p_mes_correspondiente: number | null
+          p_anio_correspondiente: number | null
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      generar_mensualidades_jugadores_seguro: {
+        Args: { p_jugador_ids: string[]; p_mes: number; p_anio: number }
+        Returns: number
+      }
+      marcar_mensualidad_atrasada_seguro: {
+        Args: { p_mensualidad_id: string }
+        Returns: undefined
       }
     }
     Enums: {}

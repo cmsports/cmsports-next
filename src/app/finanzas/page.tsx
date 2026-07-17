@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -64,6 +64,7 @@ function FinanzasContent() {
     profesorId: '', mesCorr: String(new Date().getMonth()+1), anioCorr: String(new Date().getFullYear())
   })
   const [guardando, setGuardando] = useState(false)
+  const movimientoOperacionId = useRef<string | null>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -120,6 +121,7 @@ function FinanzasContent() {
   async function guardarMovimiento() {
     if (!form.monto || !form.fecha) return
     setGuardando(true)
+    movimientoOperacionId.current ??= crypto.randomUUID()
 
     let descripcion = form.descripcion
     if (esSueldo && !descripcion) {
@@ -128,14 +130,17 @@ function FinanzasContent() {
     }
     if (!descripcion) descripcion = catLabel[form.categoria] || form.categoria
 
-    await registrarMovimiento({
+    const resultado = await registrarMovimiento({
       tipo: form.tipo, categoria: form.categoria,
       descripcion, monto: parseInt(form.monto), fecha: form.fecha,
       ...(esSueldo && form.profesorId ? { profesorId: form.profesorId } : {}),
-      ...(esSueldo ? { mesCorrespondiente: parseInt(form.mesCorr), anioCorrespondiente: parseInt(form.anioCorr) } : {})
+      ...(esSueldo ? { mesCorrespondiente: parseInt(form.mesCorr), anioCorrespondiente: parseInt(form.anioCorr) } : {}),
+      idempotencyKey: movimientoOperacionId.current,
     })
 
     setGuardando(false)
+    if (resultado.error) return
+    movimientoOperacionId.current = null
     setModalOpen(false)
     setForm({ tipo:'ingreso', categoria:'mensualidad', descripcion:'', monto:'', fecha:new Date().toISOString().slice(0,10), profesorId:'', mesCorr:String(new Date().getMonth()+1), anioCorr:String(new Date().getFullYear()) })
     cargarMovimientos()

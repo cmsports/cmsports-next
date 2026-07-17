@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
@@ -198,6 +198,7 @@ export default function LigaDetallePage() {
   const [metodoPago, setMetodoPago] = useState('')
   const [registrandoPago, setRegistrandoPago] = useState(false)
   const [pagoError, setPagoError] = useState('')
+  const pagoOperacionId = useRef<string | null>(null)
 
   const [darkMode, setDarkMode] = useState(false)
   const [filtroJugador, setFiltroJugador] = useState('')
@@ -478,6 +479,7 @@ export default function LigaDetallePage() {
   }
 
   function abrirPagoModal(jugador: Jugador) {
+    pagoOperacionId.current = crypto.randomUUID()
     setJugadorPagando(jugador)
     setPagoError('')
     const pagoExistente = pagos[jugador.id]
@@ -510,9 +512,11 @@ export default function LigaDetallePage() {
       metodo: metodoPago || undefined,
       nombreJugador: jugadorPagando.nombre,
       nombreLiga: liga.nombre,
+      idempotencyKey: pagoOperacionId.current ?? undefined,
     })
     setRegistrandoPago(false)
     if (res.error) { setPagoError(res.error); return }
+    pagoOperacionId.current = null
     setPagoModalAbierto(false)
     await cargarPagos(divisionActiva)
     setMensaje(`Pago registrado — ${jugadorPagando.nombre}: $${ma.toLocaleString('es-CL')}`)

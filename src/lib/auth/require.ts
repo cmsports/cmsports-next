@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { esAdminDeClub } from '@/lib/auth/roles'
 
 // Helpers de autorización compartidos por las Server Actions.
 // Antes cada archivo tenía su propia copia — un solo lugar donde auditar
@@ -11,7 +12,7 @@ export async function requireAdminClub() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null, nombre: null, userId: null }
   const { data: perfil } = await supabase.from('perfiles').select('club_id,rol,nombre').eq('id', user.id).single()
-  if (!perfil || perfil.rol !== 'admin' || !perfil.club_id) {
+  if (!perfil || !esAdminDeClub(perfil.rol) || !perfil.club_id) {
     return { error: 'Acceso denegado' as const, supabase: null, clubId: null, nombre: null, userId: null }
   }
   return { error: null, supabase, clubId: perfil.club_id, nombre: perfil.nombre, userId: user.id }
@@ -23,7 +24,7 @@ export async function requireAdmin() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' as const, supabase: null, perfil: null }
   const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,nombre').eq('id', user.id).single()
-  if (!perfil || perfil.rol !== 'admin') return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
+  if (!perfil || !esAdminDeClub(perfil.rol)) return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
   return { error: null, supabase, perfil }
 }
 

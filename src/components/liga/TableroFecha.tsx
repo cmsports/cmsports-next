@@ -114,7 +114,10 @@ export function TableroFecha({
     setLoading(false)
   }, [fechaId, ligaId])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void cargar() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [cargar])
 
   const partidosVisibles = divisionId ? partidos.filter(p => p.divisionId === divisionId) : partidos
   const mesasVisibles = divisionId

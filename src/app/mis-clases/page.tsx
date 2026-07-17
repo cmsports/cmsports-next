@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -20,7 +20,6 @@ export default function MisClasesPage() {
   const [clases, setClases] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
   const [reservas, setReservas] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
   const [semanaOffset, setSemanaOffset] = useState(0)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const [reservaLoading, setReservaLoading] = useState<string | null>(null)
@@ -37,20 +36,23 @@ export default function MisClasesPage() {
   finSemana.setDate(inicioSemana.getDate() + 6)
 
   const formatFecha = (d: Date) => d.toISOString().slice(0,10)
-
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    setLoading(false)
-  }, [authLoading, perfil])
+  }, [authLoading, perfil, router])
 
-  async function cargarClases() {
-    const inicio = formatFecha(inicioSemana)
-    const fin = formatFecha(finSemana)
-
+  const cargarClases = useCallback(async () => {
+    if (!perfil?.club_id) return
+    const fechaBase = new Date()
+    fechaBase.setHours(0, 0, 0, 0)
+    const distanciaLunes = fechaBase.getDay() === 0 ? 6 : fechaBase.getDay() - 1
+    const inicioCarga = new Date(fechaBase)
+    inicioCarga.setDate(fechaBase.getDate() - distanciaLunes + semanaOffset * 7)
+    const finCarga = new Date(inicioCarga)
+    finCarga.setDate(inicioCarga.getDate() + 6)
     const [{ data: cl, error: clasesError }, { data: pr, error: profesoresError }] = await Promise.all([
       supabase.from('clases').select('*').eq('club_id', perfil?.club_id).eq('publicada', true)
-        .gte('fecha', inicio).lte('fecha', fin).order('fecha').order('hora_inicio'),
+        .gte('fecha', formatFecha(inicioCarga)).lte('fecha', formatFecha(finCarga)).order('fecha').order('hora_inicio'),
       supabase.from('profesores').select('*').eq('club_id', perfil?.club_id)
     ])
     if (clasesError || profesoresError) {
@@ -82,14 +84,15 @@ export default function MisClasesPage() {
         setMensaje({ tipo: 'error', texto: error.message })
         return
       }
-      setReservas(new Set((res || []).map((r: any) => r.clase_id)))
+      setReservas(new Set((res || []).map(r => r.clase_id)))
     }
-  }
+  }, [perfil?.club_id, perfil?.jugador_id, semanaOffset])
 
   useEffect(() => {
     if (!perfil?.club_id) return
-    void cargarClases()
-  }, [perfil, semanaOffset])
+    const carga = window.setTimeout(() => { void cargarClases() }, 0)
+    return () => window.clearTimeout(carga)
+  }, [cargarClases, perfil?.club_id])
 
   useEffect(() => {
     if (!perfil?.club_id) return
@@ -103,7 +106,7 @@ export default function MisClasesPage() {
       }, () => { void cargarClases() })
       .subscribe()
     return () => { void supabase.removeChannel(canal) }
-  }, [perfil?.club_id, semanaOffset])
+  }, [cargarClases, perfil?.club_id])
 
   async function toggleReserva(clase: any) {
     if (!perfil?.jugador_id) return
@@ -139,7 +142,7 @@ export default function MisClasesPage() {
 
   const misReservasCount = clases.filter(c => reservas.has(c.id)).length
 
-  if (loading) return (
+  if (authLoading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
     </div>

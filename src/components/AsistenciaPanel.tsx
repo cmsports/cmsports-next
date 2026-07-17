@@ -4,7 +4,7 @@
 // embeberlo como tab dentro de Jugadores. El wrapper AppLayout ahora vive
 // afuera (en la página que lo usa).
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
@@ -32,6 +32,10 @@ function formatFechaLarga(fecha: string) {
   return new Date(fecha + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
+function marcaTiempoActual() {
+  return Date.now()
+}
+
 export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [jugadores, setJugadores] = useState<any[]>([])
   const [asistencias, setAsistencias] = useState<any[]>([])
@@ -56,50 +60,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const hora = horaChile()
   const clubId = perfil?.club_id ?? null
 
-  useEffect(() => {
-    async function cargar() {
-      if (!perfil) { router.push('/login'); return }
-      if (perfil.rol === 'jugador' && perfil.jugador_id) {
-        const supabase = createClient()
-        const { data: j } = await supabase.from('jugadores').select('*').eq('id', perfil.jugador_id).single()
-        setJugadorPropio(j)
-      }
-      if (perfil.club_id) {
-        if (navigator.onLine) await sincronizarCola(perfil.club_id)
-        await cargarDatos(perfil.club_id)
-      }
-      setLoading(false)
-    }
-    cargar()
-  }, [perfil])
-
-  useEffect(() => {
-    if (online && clubId) {
-      sincronizarCola(clubId).then(() => { cargarDatos() })
-    }
-  }, [online])
-
-  useEffect(() => {
-    if (!clubId || !fechaVista || fechaVista === hoy) return
-    cargarAsistenciasDia(fechaVista)
-  }, [fechaVista, clubId])
-
-  useEffect(() => {
-    if (!clubId) return
-    const canal = supabase
-      .channel(`asistencia-panel-${clubId}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'asistencia',
-      }, () => {
-        void cargarDatos(clubId)
-        if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
-      })
-      .subscribe()
-
-    return () => { void supabase.removeChannel(canal) }
-  }, [clubId, fechaVista])
-
-  async function sincronizarCola(cid?: string) {
+  const sincronizarCola = useCallback(async (cid?: string) => {
     const id = cid || clubId
     if (!id) return
     const cola = await obtenerCola()
@@ -108,9 +69,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       const result = await registrarAsistenciaAction(item.clubId, item.jugadorId, item.fecha, item.hora)
       if (!result.error) await quitarDeCola(item.id)
     }
-  }
+  }, [clubId])
 
-  async function cargarDatos(cid?: string) {
+  const cargarDatos = useCallback(async (cid?: string) => {
     const id = cid || clubId
     if (!id) return
     const cola = await obtenerCola()
@@ -155,16 +116,60 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (perfil?.jugador_id) {
       setYaRegistroHoy((a || []).some((as: any) => as.jugador_id === perfil.jugador_id) || pendientesHoy.some(p => p.jugadorId === perfil.jugador_id))
     }
-  }
+  }, [clubId, hoy, perfil])
 
-  async function cargarAsistenciasDia(fecha: string) {
+  const cargarAsistenciasDia = useCallback(async (fecha: string) => {
     if (!clubId) return
     setCargandoDia(true)
     const { data, error } = await supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
     if (error) setMensaje({ tipo: 'error', texto: error.message })
     setAsistenciasDia(data || [])
     setCargandoDia(false)
-  }
+  }, [clubId])
+
+  useEffect(() => {
+    async function cargar() {
+      if (!perfil) { router.push('/login'); return }
+      if (perfil.rol === 'jugador' && perfil.jugador_id) {
+        const cliente = createClient()
+        const { data: j } = await cliente.from('jugadores').select('*').eq('id', perfil.jugador_id).single()
+        setJugadorPropio(j)
+      }
+      if (perfil.club_id) {
+        if (navigator.onLine) await sincronizarCola(perfil.club_id)
+        await cargarDatos(perfil.club_id)
+      }
+      setLoading(false)
+    }
+    void cargar()
+  }, [cargarDatos, perfil, router, sincronizarCola])
+
+  useEffect(() => {
+    if (online && clubId) {
+      void sincronizarCola(clubId).then(() => cargarDatos(clubId))
+    }
+  }, [cargarDatos, clubId, online, sincronizarCola])
+
+  useEffect(() => {
+    if (!clubId || !fechaVista || fechaVista === hoy) return
+    const carga = window.setTimeout(() => { void cargarAsistenciasDia(fechaVista) }, 0)
+    return () => window.clearTimeout(carga)
+  }, [cargarAsistenciasDia, clubId, fechaVista, hoy])
+
+  useEffect(() => {
+    if (!clubId) return
+    const canal = supabase
+      .channel(`asistencia-panel-${clubId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'asistencia',
+      }, () => {
+        void cargarDatos(clubId)
+        if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
+      })
+      .subscribe()
+
+    return () => { void supabase.removeChannel(canal) }
+  }, [cargarAsistenciasDia, cargarDatos, clubId, fechaVista, hoy])
 
   async function registrarAsistencia(jugadorId: string) {
     if (asistencias.find(a => a.jugador_id === jugadorId)) return
@@ -179,7 +184,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         fecha: hoy,
         hora,
         jugadorNombre: jug?.nombre || '',
-        creadoEn: Date.now(),
+        creadoEn: marcaTiempoActual(),
       }
       await encolarAsistencia(item)
       setAsistencias(prev => [...prev, { id: item.id, jugador_id: jugadorId, hora, pendienteSync: true }])
@@ -219,7 +224,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         fecha: hoy,
         hora,
         jugadorNombre: jugadorPropio.nombre || '',
-        creadoEn: Date.now(),
+        creadoEn: marcaTiempoActual(),
       }
       await encolarAsistencia(item)
       setAsistencias(prev => [...prev, { id: item.id, jugador_id: jugadorPropio.id, hora, pendienteSync: true }])

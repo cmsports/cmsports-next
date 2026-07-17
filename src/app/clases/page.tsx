@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -27,12 +27,29 @@ function fmtISO(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
+async function obtenerProgramacion(offset: number, clubId: string) {
+  const lunes = getInicioSemana(offset)
+  const domingo = new Date(lunes)
+  domingo.setDate(lunes.getDate() + 6)
+  const [{ data: clases }, { data: profesores }] = await Promise.all([
+    supabase.from('clases').select('*').eq('club_id', clubId)
+      .gte('fecha', fmtISO(lunes)).lte('fecha', fmtISO(domingo))
+      .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
+    supabase.from('profesores').select('*').eq('club_id', clubId).eq('activo', true),
+  ])
+  const claseIds = (clases || []).map(clase => clase.id)
+  const { data: reservas } = claseIds.length > 0
+    ? await supabase.from('reservas').select('clase_id,estado').in('clase_id', claseIds)
+    : { data: [] }
+  return { clases: clases || [], profesores: profesores || [], reservas: reservas || [] }
+}
+
 export default function ClasesPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [clases, setClases] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
   const [reservas, setReservas] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [cargaInicialCompleta, setCargaInicialCompleta] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState({ fecha:'', profesorId:'', inicio:'', fin:'', contenido:'', grupo:'' })
   const [semanaOffset, setSemanaOffset] = useState(0)
@@ -42,40 +59,33 @@ export default function ClasesPage() {
   const mesesLargo = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
   const mesesCorto = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
 
+  const cargarClases = useCallback(async (offset: number, cid?: string) => {
+    const id = cid || clubId
+    if (!id) return
+    const programacion = await obtenerProgramacion(offset, id)
+    setClases(programacion.clases)
+    setProfesores(programacion.profesores)
+    setReservas(programacion.reservas)
+  }, [clubId])
+
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.club_id) {
-      cargarClases(semanaOffset, perfil.club_id).then(() => setLoading(false))
-    } else {
-      setLoading(false)
+    if (!perfil.club_id) return
+    let activo = true
+
+    async function cargarInicial() {
+      const programacion = await obtenerProgramacion(semanaOffset, perfil!.club_id!)
+      if (!activo) return
+      setClases(programacion.clases)
+      setProfesores(programacion.profesores)
+      setReservas(programacion.reservas)
+      setCargaInicialCompleta(true)
     }
-  }, [authLoading, perfil])
 
-  useEffect(() => {
-    if (!clubId) return
-    cargarClases(semanaOffset)
-  }, [semanaOffset])
-
-  async function cargarClases(offset: number, cid?: string) {
-    const id = cid || clubId
-    const lunes = getInicioSemana(offset)
-    const domingo = new Date(lunes)
-    domingo.setDate(lunes.getDate() + 6)
-    const [{ data: cl }, { data: pr }] = await Promise.all([
-      supabase.from('clases').select('*').eq('club_id', id)
-        .gte('fecha', fmtISO(lunes)).lte('fecha', fmtISO(domingo))
-        .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
-      supabase.from('profesores').select('*').eq('club_id', id).eq('activo', true),
-    ])
-    const claseIds = (cl || []).map(c => c.id)
-    const { data: res } = claseIds.length > 0
-      ? await supabase.from('reservas').select('clase_id,estado').in('clase_id', claseIds)
-      : { data: [] }
-    setClases(cl || [])
-    setProfesores(pr || [])
-    setReservas(res || [])
-  }
+    void cargarInicial()
+    return () => { activo = false }
+  }, [authLoading, perfil, router, semanaOffset])
 
   const lunes = getInicioSemana(semanaOffset)
   const domingo = new Date(lunes)
@@ -122,7 +132,7 @@ export default function ClasesPage() {
     porFecha[f].push(c)
   })
 
-  if (loading) return (
+  if (authLoading || (!!clubId && !cargaInicialCompleta)) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
     </div>

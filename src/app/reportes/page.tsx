@@ -54,13 +54,14 @@ export default function ReportesPage() {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
     if (perfil.rol !== 'admin') { router.push('/dashboard'); return }
-    setLoading(false)
+    let vigente = true
     supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', perfil.club_id).order('nombre').then(({ data }) => {
+      if (!vigente) return
       setJugadores(data || [])
+      setLoading(false)
     })
-  }, [authLoading, perfil])
-
-  useEffect(() => { setPreview(null) }, [categoria, tipo, mes, trimestre, semestre, anio, jugadorId])
+    return () => { vigente = false }
+  }, [authLoading, perfil, router])
 
   function getRango(): { inicio: string, fin: string, titulo: string } {
     if (tipo === 'mensual') {
@@ -375,7 +376,7 @@ export default function ReportesPage() {
         <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Tipo de reporte</div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:10 }}>
           {categoriasReporte.map(c => (
-            <button key={c.key} onClick={() => setCategoria(c.key)}
+            <button key={c.key} onClick={() => { setCategoria(c.key); setPreview(null) }}
               style={{ padding:'14px 12px', borderRadius:10, border: categoria === c.key ? '2px solid #4f46e5' : '1px solid #e2e8f0', background: categoria === c.key ? '#ede9fe' : '#f8fafc', cursor:'pointer', textAlign:'left', transition:'all .15s' }}>
               <div style={{ fontSize:18, marginBottom:4 }}>{c.icon}</div>
               <div style={{ fontSize:13, fontWeight:600, color: categoria === c.key ? '#4f46e5' : text }}>{c.label}</div>
@@ -391,7 +392,7 @@ export default function ReportesPage() {
 
         <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
           {(['mensual','trimestral','semestral','anual'] as TipoReporte[]).map(t => (
-            <button key={t} onClick={() => setTipo(t)}
+            <button key={t} onClick={() => { setTipo(t); setPreview(null) }}
               style={{ padding:'8px 16px', borderRadius:8, border:'1px solid #e2e8f0', background: tipo===t ? '#4f46e5' : '#f4f7fa', color: tipo===t ? 'white' : muted, fontSize:13, cursor:'pointer', fontWeight: tipo===t ? 600 : 400, textTransform:'capitalize' }}>
               {t}
             </button>
@@ -403,7 +404,7 @@ export default function ReportesPage() {
             <div style={{ flex:1, minWidth:140 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mes</label>
               <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                value={mes} onChange={e => setMes(parseInt(e.target.value))}>
+                value={mes} onChange={e => { setMes(parseInt(e.target.value)); setPreview(null) }}>
                 {mesesN.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
               </select>
             </div>
@@ -412,7 +413,7 @@ export default function ReportesPage() {
             <div style={{ flex:1, minWidth:140 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Trimestre</label>
               <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                value={trimestre} onChange={e => setTrimestre(parseInt(e.target.value))}>
+                value={trimestre} onChange={e => { setTrimestre(parseInt(e.target.value)); setPreview(null) }}>
                 <option value={1}>Q1 — Ene, Feb, Mar</option>
                 <option value={2}>Q2 — Abr, May, Jun</option>
                 <option value={3}>Q3 — Jul, Ago, Sep</option>
@@ -424,7 +425,7 @@ export default function ReportesPage() {
             <div style={{ flex:1, minWidth:140 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Semestre</label>
               <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                value={semestre} onChange={e => setSemestre(parseInt(e.target.value))}>
+                value={semestre} onChange={e => { setSemestre(parseInt(e.target.value)); setPreview(null) }}>
                 <option value={1}>1er Semestre (Ene - Jun)</option>
                 <option value={2}>2do Semestre (Jul - Dic)</option>
               </select>
@@ -433,7 +434,7 @@ export default function ReportesPage() {
           <div style={{ flex:1, minWidth:120 }}>
             <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Año</label>
             <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-              value={anio} onChange={e => setAnio(parseInt(e.target.value))}>
+              value={anio} onChange={e => { setAnio(parseInt(e.target.value)); setPreview(null) }}>
               {[2024, 2025, 2026, 2027].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
@@ -444,7 +445,7 @@ export default function ReportesPage() {
           <div style={{ marginTop:14 }}>
             <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Jugador</label>
             <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-              value={jugadorId} onChange={e => setJugadorId(e.target.value)}>
+              value={jugadorId} onChange={e => { setJugadorId(e.target.value); setPreview(null) }}>
               <option value="">— Seleccionar jugador —</option>
               {jugadores.map(j => <option key={j.id} value={j.id}>{j.nombre} ({j.categoria || 'Sin cat.'}) {j.estado !== 'activo' ? `[${j.estado}]` : ''}</option>)}
             </select>

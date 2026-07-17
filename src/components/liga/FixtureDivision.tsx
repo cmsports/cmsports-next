@@ -7,22 +7,6 @@ import { generarBloquesHorario, normalizarBloque, BLOQUE_INICIO, BLOQUE_FIN } fr
 
 const supabase = createClient()
 
-const AVATAR_BG = [
-  ['#6366f1','#818cf8'],['#8b5cf6','#a78bfa'],['#ec4899','#f472b6'],
-  ['#ef4444','#f87171'],['#f97316','#fb923c'],['#f59e0b','#fbbf24'],
-  ['#10b981','#34d399'],['#06b6d4','#22d3ee'],['#3b82f6','#60a5fa'],
-  ['#84cc16','#a3e635'],
-]
-function avatarBg(name: string) {
-  let h = 0; for (const c of name) h = (h * 31 + c.charCodeAt(0)) | 0
-  const [c1, c2] = AVATAR_BG[Math.abs(h) % AVATAR_BG.length]
-  return `linear-gradient(135deg, ${c1}, ${c2})`
-}
-function initials(name: string) {
-  const p = name.trim().split(/\s+/)
-  return p.length >= 2 ? (p[0][0] + p[p.length - 1][0]).toUpperCase() : name.slice(0, 2).toUpperCase()
-}
-
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
@@ -126,7 +110,10 @@ export function FixtureDivision({
     setLoading(false)
   }, [divisionId, ligaId])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void cargar() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [cargar])
 
   async function handleGuardar(partido: PartidoFila) {
     const val = resultados[partido.id]

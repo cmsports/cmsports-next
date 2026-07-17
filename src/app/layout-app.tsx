@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useState, useEffect } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
@@ -12,6 +13,7 @@ import {
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, Camera, ShoppingBag, Settings,
 } from 'lucide-react'
+import type { Perfil } from '@/types'
 
 const navAdmin = [
   { section: 'Principal' },
@@ -74,31 +76,36 @@ const mobileNavJugador = [
   { label: 'Mi cuenta',  icon: CreditCard,    href: '/estado-cuenta', modulo: 'mensualidades' },
 ]
 
-type NavItem = { section: string } | { label: string; icon: any; href: string; modulo?: string }
+type NavLink = { label: string; icon: LucideIcon; href: string; modulo?: string }
+type NavItem = { section: string } | NavLink
 
 const clubNombreCache: Record<string, string> = {}
 
-export default function AppLayout({ children, perfil }: { children: React.ReactNode; perfil: any }) {
+export default function AppLayout({ children, perfil }: { children: React.ReactNode; perfil: Perfil | null }) {
   const router = useRouter()
   const pathname = usePathname()
+  const clubId = perfil?.club_id ?? ''
   const [masOpen, setMasOpen] = useState(false)
-  const [clubNombre, setClubNombre] = useState(() => clubNombreCache[perfil?.club_id] || '')
+  const [clubCargado, setClubCargado] = useState<{ id: string; nombre: string } | null>(null)
   const { tiene } = useModulos()
 
   useEffect(() => {
-    if (!perfil?.club_id) return
-    if (clubNombreCache[perfil.club_id]) {
-      setClubNombre(clubNombreCache[perfil.club_id])
-      return
-    }
+    if (!clubId) return
+    if (clubNombreCache[clubId]) return
+    let activo = true
     const supabase = createClient()
-    supabase.from('clubes').select('nombre').eq('id', perfil.club_id).single()
+    supabase.from('clubes').select('nombre').eq('id', clubId).single()
       .then(({ data }) => {
+        if (!activo) return
         const nombre = data?.nombre || ''
-        clubNombreCache[perfil.club_id] = nombre
-        setClubNombre(nombre)
+        clubNombreCache[clubId] = nombre
+        setClubCargado({ id: clubId, nombre })
       })
-  }, [perfil?.club_id])
+    return () => { activo = false }
+  }, [clubId])
+
+  const clubNombre = clubNombreCache[clubId]
+    ?? (clubCargado?.id === clubId ? clubCargado.nombre : '')
 
   const esAdminOSuperadmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
   const navRaw: NavItem[] = esAdminOSuperadmin ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
@@ -115,7 +122,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
 
   const mobileNavHrefs = new Set(mobileNav.map((item) => item.href))
   const masItemsBase = nav.filter(
-    (item): item is { label: string; icon: any; href: string } => !('section' in item) && !mobileNavHrefs.has(item.href),
+    (item): item is NavLink => !('section' in item) && !mobileNavHrefs.has(item.href),
   )
   const masItems = [...masItemsBase, { label: 'Configuración', icon: Settings, href: '/configuracion' }]
 

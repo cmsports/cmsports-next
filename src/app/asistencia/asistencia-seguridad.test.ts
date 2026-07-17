@@ -10,16 +10,33 @@ const migracionMetodos = readFileSync(
   new URL('../../../supabase/migrations/037_asistencia_metodos.sql', import.meta.url),
   'utf8',
 )
+const migracionKiosco = readFileSync(
+  new URL('../../../supabase/migrations/042_seguridad_kiosco_y_solicitudes.sql', import.meta.url),
+  'utf8',
+)
 
 describe('seguridad de asistencia y reservas', () => {
   it('permite los métodos usados por autorregistro y kiosco RUT', () => {
     expect(migracionMetodos).toContain("'autoregistro'")
     expect(migracionMetodos).toContain("'rut'")
   })
-  it('el kiosco envía un único RUT al RPC y no descarga jugadores', () => {
+  it('el kiosco envía RUT y token al RPC y no descarga jugadores', () => {
     expect(kiosco).toContain("rpc('registrar_asistencia_rut'")
+    expect(kiosco).toContain('p_token: token')
+    expect(kiosco).toContain("rpc('autorizar_kiosco_asistencia'")
+    expect(kiosco).toContain('cmsports_kiosco_token_')
     expect(kiosco).not.toContain("from('jugadores')")
     expect(kiosco).not.toContain("select('id,nombre,sesiones_usadas,sesiones_limite,estado,rut')")
+    expect(kiosco).not.toContain('setMensaje(error.message)')
+  })
+
+  it('revoca la firma anónima antigua y almacena solo el hash del secreto', () => {
+    expect(migracionKiosco).toContain('token_hash text NOT NULL UNIQUE')
+    expect(migracionKiosco).toContain("digest(convert_to(v_token, 'UTF8'), 'sha256')")
+    expect(kiosco).toContain('window.location.hash.slice(1)')
+    expect(kiosco).not.toContain('?autorizar=')
+    expect(migracionKiosco).toMatch(/REVOKE ALL ON FUNCTION public\.registrar_asistencia_rut\(uuid, text\)[\s\S]*FROM PUBLIC, anon, authenticated/)
+    expect(migracionKiosco).toContain('asistencia-token')
   })
 
   it('registra asistencia y sesiones dentro de la misma función SQL', () => {

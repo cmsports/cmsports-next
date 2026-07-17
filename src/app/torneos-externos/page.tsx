@@ -46,7 +46,7 @@ export default function TorneosExternosPage() {
       setLoading(false)
     }
     cargar()
-  }, [authLoading, perfil])
+  }, [authLoading, perfil, router])
 
   async function guardar() {
     const clubNombre = form.club === 'Otro' ? form.clubNombre : form.club

@@ -133,7 +133,7 @@ export default function PerfilPage() {
       setLoading(false)
     }
     cargar()
-  }, [authLoading, perfil])
+  }, [authLoading, perfil, hoy, router])
 
   async function handleMarcarAsistencia() {
     if (!jugador || !perfil?.club_id) return

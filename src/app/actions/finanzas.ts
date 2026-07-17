@@ -1,6 +1,7 @@
 'use server'
 
 import { requireAdminClub } from '@/lib/auth/require'
+import { movimientoSchema, validationError } from '@/lib/validation/finanzas'
 
 export async function registrarMovimiento(params: {
   tipo: string
@@ -11,17 +12,26 @@ export async function registrarMovimiento(params: {
   profesorId?: string
   mesCorrespondiente?: number
   anioCorrespondiente?: number
+  idempotencyKey?: string
 }) {
-  const { error: authErr, supabase, clubId, nombre } = await requireAdminClub()
+  const validacion = movimientoSchema.safeParse(params)
+  if (!validacion.success) return { error: validationError(validacion.error) }
+
+  const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { tipo, categoria, descripcion, monto, fecha, profesorId, mesCorrespondiente, anioCorrespondiente } = params
-  const { error } = await supabase.from('movimientos').insert({
-    club_id: clubId, tipo, categoria, descripcion, monto, fecha,
-    registrado_por_nombre: nombre || 'Admin',
-    ...(profesorId ? { profesor_id: profesorId } : {}),
-    ...(mesCorrespondiente && anioCorrespondiente ? { mes_correspondiente: mesCorrespondiente, anio_correspondiente: anioCorrespondiente } : {}),
+  const input = validacion.data
+  const { data, error } = await supabase.rpc('registrar_movimiento_financiero_atomico', {
+    p_tipo: input.tipo,
+    p_categoria: input.categoria,
+    p_descripcion: input.descripcion,
+    p_monto: input.monto,
+    p_fecha: input.fecha,
+    p_profesor_id: input.profesorId ?? null,
+    p_mes_correspondiente: input.mesCorrespondiente ?? null,
+    p_anio_correspondiente: input.anioCorrespondiente ?? null,
+    p_idempotency_key: input.idempotencyKey ?? crypto.randomUUID(),
   })
-  if (error) return { error: 'Error al registrar movimiento: ' + error.message }
-  return { success: true }
+  if (error || !data) return { error: error?.message ?? 'No se pudo registrar el movimiento' }
+  return { success: true, movimientoId: (data as unknown as { movimiento_id: string }).movimiento_id }
 }

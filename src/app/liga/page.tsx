@@ -49,18 +49,22 @@ export default function LigaPage() {
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
 
-  async function cargar(clubId: string) {
-    const { data } = await supabase.from('ligas').select('id, nombre, estado, creado_en').eq('club_id', clubId).order('creado_en', { ascending: false })
-    setLigas(data || [])
-    setLoading(false)
-  }
-
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.club_id) cargar(perfil.club_id)
-    else setLoading(false)
-  }, [authLoading, perfil])
+    if (!perfil.club_id) return
+
+    let vigente = true
+    supabase.from('ligas').select('id, nombre, estado, creado_en')
+      .eq('club_id', perfil.club_id)
+      .order('creado_en', { ascending: false })
+      .then(({ data }) => {
+        if (!vigente) return
+        setLigas(data || [])
+        setLoading(false)
+      })
+    return () => { vigente = false }
+  }, [authLoading, perfil, router])
 
   async function handleCrear() {
     if (!nombre.trim()) return
@@ -86,7 +90,7 @@ export default function LigaPage() {
     setLigas(prev => prev.filter(l => l.id !== ligaId))
   }
 
-  if (loading) return (
+  if (authLoading || (Boolean(perfil?.club_id) && loading)) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
     </div>

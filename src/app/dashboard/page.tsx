@@ -221,7 +221,7 @@ export default function DashboardPage() {
     if (!perfil) { router.push('/login'); return }
     if (perfil.rol === 'jugador')  { router.push('/perfil'); return }
     if (perfil.rol === 'profesor') { router.push('/dashboard-profesor'); return }
-    if (!perfil.club_id) { setLoading(false); return }
+    if (!perfil.club_id) return
 
     const clubId = perfil.club_id
     const cached = dashboardCache[clubId]
@@ -236,21 +236,26 @@ export default function DashboardPage() {
     }
 
     let cancelado = false
-    cargarDatos(clubId).then(() => {
-      if (!cancelado) setLoading(false)
-      scheduleIdle(() => {
-        if (!cancelado) {
-          cargarDesgloseGastos(clubId)
-          cargarInactivos(clubId)
-        }
+    const cancelarCarga = scheduleIdle(() => {
+      void cargarDatos(clubId).then(() => {
+        if (!cancelado) setLoading(false)
+        scheduleIdle(() => {
+          if (!cancelado) {
+            void cargarDesgloseGastos(clubId)
+            void cargarInactivos(clubId)
+          }
+        })
       })
     })
-    return () => { cancelado = true }
+    return () => {
+      cancelado = true
+      if (typeof cancelarCarga === 'function') cancelarCarga()
+    }
   }, [authLoading, perfil, router])
 
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
-  if (loading) return (
+  if (authLoading || (Boolean(perfil?.club_id) && loading)) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>
       <div style={{ color: C.hint, fontSize: 14 }}>Cargando...</div>
     </div>
@@ -650,21 +655,19 @@ function TooltipBtn({ id, texto, tooltip, setTooltip }: {
 
 /* ── LinkInvitacion ── */
 function LinkInvitacion({ clubId }: { clubId: string }) {
-  const [link, setLink]     = useState('')
+  const [linkCargado, setLinkCargado] = useState<{ clubId: string; valor: string } | null>(null)
   const [copiado, setCopiado] = useState(false)
+  const link = linkCache[clubId] || (linkCargado?.clubId === clubId ? linkCargado.valor : '')
 
   useEffect(() => {
     if (!clubId) return
-    if (linkCache[clubId]) {
-      setLink(linkCache[clubId])
-      return
-    }
+    if (linkCache[clubId]) return
     async function cargar() {
       const { codigo } = await obtenerLinkInvitacion()
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
       const invitacion = `${origin}/registro?club=${clubId}&code=${codigo || ''}`
       linkCache[clubId] = invitacion
-      setLink(invitacion)
+      setLinkCargado({ clubId, valor: invitacion })
     }
     scheduleIdle(cargar)
   }, [clubId])

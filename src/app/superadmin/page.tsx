@@ -100,6 +100,7 @@ export default function SuperadminPage() {
   }
 
   async function gestionarClub(clubId: string) {
+    if (!perfil?.id) return
     setGestionandoId(clubId)
     await supabase.from('perfiles').update({ club_id: clubId }).eq('id', perfil.id)
     await refetchPerfil()

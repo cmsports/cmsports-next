@@ -7,7 +7,7 @@
 }
 
 body {
-  font-family: 'Geist', 'Inter', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
   background: #f1f5f9;
   color: #0f172a;
   min-height: 100vh;

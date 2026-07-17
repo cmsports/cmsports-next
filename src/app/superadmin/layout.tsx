@@ -1,10 +1,14 @@
 'use client'
 
-import { useEffect, useState, createContext, useContext } from 'react'
+import { useCallback, useEffect, useState, createContext, useContext } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
 import { Building2, Wallet, LogOut } from 'lucide-react'
+import type { Tables } from '@/types/database'
+
+type Perfil = Tables<'perfiles'>
+type Club = Tables<'clubes'>
 
 const nav = [
   { label: 'Clubes', icon: Building2, href: '/superadmin' },
@@ -12,8 +16,8 @@ const nav = [
 ]
 
 type SuperadminContextValue = {
-  perfil: any
-  clubes: any[]
+  perfil: Perfil | null
+  clubes: Club[]
   administradores: Record<string, { nombre: string | null; email: string | null }>
   conteos: Record<string, number>
   loadingClubes: boolean
@@ -38,14 +42,14 @@ export function useClubesSuperadmin() {
 export default function SuperadminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const [perfil, setPerfil] = useState<any>(null)
+  const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [loading, setLoading] = useState(true)
-  const [clubes, setClubes] = useState<any[]>([])
+  const [clubes, setClubes] = useState<Club[]>([])
   const [administradores, setAdministradores] = useState<Record<string, { nombre: string | null; email: string | null }>>({})
   const [conteos, setConteos] = useState<Record<string, number>>({})
   const [loadingClubes, setLoadingClubes] = useState(true)
 
-  async function recargarClubes() {
+  const recargarClubes = useCallback(async () => {
     setLoadingClubes(true)
     const supabase = createClient()
     const [{ data: c }, { data: j }, { data: admins }] = await Promise.all([
@@ -67,7 +71,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
     }
     setAdministradores(adminsPorClub)
     setLoadingClubes(false)
-  }
+  }, [])
 
   useEffect(() => {
     async function cargar() {
@@ -78,10 +82,10 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
       if (p?.rol !== 'superadmin') { router.push('/login'); return }
       setPerfil(p)
       setLoading(false)
-      recargarClubes()
+      void recargarClubes()
     }
-    cargar()
-  }, [])
+    void cargar()
+  }, [recargarClubes, router])
 
   async function cerrarSesion() {
     const supabase = createClient()

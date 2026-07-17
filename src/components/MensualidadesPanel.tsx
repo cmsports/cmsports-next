@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago } from '@/app/actions/mensualidades'
@@ -27,6 +27,8 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const [modalPago, setModalPago] = useState<any>(null)
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [montoPago, setMontoPago] = useState('25000')
+  const [registrandoPago, setRegistrandoPago] = useState(false)
+  const pagoOperacionId = useRef<string | null>(null)
   const [filtroEstado, setFiltroEstado] = useState<'todos'|'pagado'|'pendiente'|'atrasado'>('todos')
   const [busqueda, setBusqueda] = useState('')
   const clubId = perfil?.club_id ?? null
@@ -63,12 +65,19 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   }
 
   async function marcarPagado(jugadorId: string, mensId: string) {
+    if (registrandoPago) return
+    setRegistrandoPago(true)
+    pagoOperacionId.current ??= crypto.randomUUID()
     const jugador = jugadores.find(j => j.id === jugadorId)
     const monto = parseInt(montoPago) || 25000
-    await registrarPago({
+    const resultado = await registrarPago({
       jugadorId, jugadorNombre: jugador?.nombre || '', mensualidadId: mensId || null,
       mes, anio, monto, metodo: metodoPago, registradoPor: perfil?.nombre || 'Admin',
+      idempotencyKey: pagoOperacionId.current,
     })
+    setRegistrandoPago(false)
+    if (resultado.error) return
+    pagoOperacionId.current = null
     setModalPago(null)
     cargarMensualidades()
     onPagoRegistrado?.()
@@ -237,7 +246,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                         {estado !== 'pagado' && (
-                          <button onClick={() => { setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre }); setMontoPago(String(j.sesiones_limite === 16 ? 40000 : j.sesiones_limite === 12 ? 30000 : j.sesiones_limite === 8 ? 25000 : 15000)) }}
+                          <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre }); setMontoPago(String(j.sesiones_limite === 16 ? 40000 : j.sesiones_limite === 12 ? 30000 : j.sesiones_limite === 8 ? 25000 : 15000)) }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
                             ✅ Marcar pagado
                           </button>
@@ -290,7 +299,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setModalPago(null)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId)} style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>Confirmar</button>
+              <button disabled={registrandoPago} onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId)} style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>{registrandoPago ? 'Registrando...' : 'Confirmar'}</button>
             </div>
           </div>
         </div>
