@@ -59,6 +59,7 @@ export default function JugadorDetallePage() {
   const [passwordNueva, setPasswordNueva] = useState('')
   const [cambiandoPassword, setCambiandoPassword] = useState(false)
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
+  const [recargaVersion, setRecargaVersion] = useState(0)
 
   const PRESETS = [
     { label:'$15.000', valor:15000, ent:1 },
@@ -117,7 +118,20 @@ export default function JugadorDetallePage() {
       setLoading(false)
     }
     cargar()
-  }, [authLoading, perfil, jugadorId])
+  }, [authLoading, perfil, jugadorId, recargaVersion, router, trimestre])
+
+  useEffect(() => {
+    if (!jugadorId || !perfil?.club_id || !['admin', 'profesor'].includes(perfil.rol || '')) return
+    const recargar = () => setRecargaVersion(version => version + 1)
+    const canal = supabase
+      .channel(`jugador-detalle-${perfil.id}-${jugadorId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores', filter: `id=eq.${jugadorId}` }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'evaluaciones_trimestrales', filter: `jugador_id=eq.${jugadorId}` }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'torneos_externos', filter: `jugador_id=eq.${jugadorId}` }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mensualidades', filter: `jugador_id=eq.${jugadorId}` }, recargar)
+      .subscribe()
+    return () => { void supabase.removeChannel(canal) }
+  }, [jugadorId, perfil?.club_id, perfil?.id, perfil?.rol])
 
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'

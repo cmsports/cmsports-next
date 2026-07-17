@@ -90,6 +90,22 @@ export default function ClasesPage() {
     return () => { activo = false }
   }, [authLoading, perfil, router, semanaOffset])
 
+  useEffect(() => {
+    if (!clubId) return
+    const canal = supabase
+      .channel(`clases-programacion-${clubId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, () => {
+        void cargarClases(semanaOffset, clubId)
+      })
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'clases', filter: `club_id=eq.${clubId}`,
+      }, () => {
+        void cargarClases(semanaOffset, clubId)
+      })
+      .subscribe()
+    return () => { void supabase.removeChannel(canal) }
+  }, [cargarClases, clubId, semanaOffset])
+
   const lunes = getInicioSemana(semanaOffset)
   const domingo = new Date(lunes)
   domingo.setDate(lunes.getDate() + 6)

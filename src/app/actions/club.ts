@@ -42,25 +42,45 @@ export async function actualizarPerfilPersonalAction(input: z.infer<typeof perfi
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' }
-  const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,jugador_id,email').eq('id', user.id).single()
+  const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,jugador_id,nombre,email').eq('id', user.id).single()
   if (!perfil?.club_id) return { error: 'Perfil sin club asociado' }
 
   const data = parsed.data
   const email = data.email.toLowerCase()
   const admin = createAdminClient()
+
+  const restaurarAcceso = async () => admin.auth.admin.updateUserById(user.id, {
+    email: perfil.email || user.email,
+    email_confirm: true,
+    user_metadata: { ...user.user_metadata, nombre: perfil.nombre || user.user_metadata?.nombre },
+  })
+
   const { error: authError } = await admin.auth.admin.updateUserById(user.id, {
-    email, email_confirm: true, user_metadata: { nombre: data.nombre },
+    email, email_confirm: true, user_metadata: { ...user.user_metadata, nombre: data.nombre },
   })
   if (authError) return { error: authError.message.toLowerCase().includes('already') ? 'Ese correo ya está en uso' : 'No se pudo actualizar el acceso' }
 
   const { error: perfilError } = await admin.from('perfiles').update({ nombre: data.nombre, email }).eq('id', user.id)
-  if (perfilError) return { error: 'No se pudo actualizar el perfil' }
+  if (perfilError) {
+    await restaurarAcceso()
+    return { error: 'No se pudo actualizar el perfil; el acceso anterior fue restaurado' }
+  }
+
+  const restaurarPerfilYAcceso = async () => {
+    await Promise.all([
+      admin.from('perfiles').update({ nombre: perfil.nombre, email: perfil.email }).eq('id', user.id),
+      restaurarAcceso(),
+    ])
+  }
 
   if (perfil.rol === 'jugador' && perfil.jugador_id) {
     const { error } = await admin.from('jugadores').update({
       nombre: data.nombre, email, telefono: data.telefono || null, rut: data.rut || null,
     }).eq('id', perfil.jugador_id).eq('club_id', perfil.club_id)
-    if (error) return { error: 'No se pudieron actualizar los datos del jugador' }
+    if (error) {
+      await restaurarPerfilYAcceso()
+      return { error: 'No se pudieron actualizar los datos del jugador; se restauraron los datos anteriores' }
+    }
   }
 
   if (perfil.rol === 'profesor') {
@@ -68,7 +88,10 @@ export async function actualizarPerfilPersonalAction(input: z.infer<typeof perfi
     const { error } = await admin.from('profesores').update({
       nombre: data.nombre, email, especialidad: data.especialidad || null,
     }).eq('club_id', perfil.club_id).eq('email', perfil.email)
-    if (error) return { error: 'No se pudieron actualizar los datos del profesor' }
+    if (error) {
+      await restaurarPerfilYAcceso()
+      return { error: 'No se pudieron actualizar los datos del profesor; se restauraron los datos anteriores' }
+    }
   }
 
   return { success: true }
