@@ -256,13 +256,3 @@ export async function registrarPagoClub(input: {
   return { success: true }
 }
 
-export async function actualizarEstadoPagoClub(input: { clubId: string; estado: 'pagado' | 'pendiente' | 'atrasado' }) {
-  const { error: authErr, supabase } = await requireSuperadmin()
-  if (authErr || !supabase) return { error: authErr }
-  const { error } = await supabase.from('clubes')
-    .update({ estado_pago: input.estado })
-    .eq('id', input.clubId)
-  if (error) return { error: 'Error al actualizar el estado' }
-  revalidatePath('/superadmin/finanzas')
-  return { success: true }
-}

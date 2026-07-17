@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Pencil, Receipt } from 'lucide-react'
+import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Pencil, Receipt, FileDown } from 'lucide-react'
 import { actualizarPlanClub, registrarPagoClub } from '@/app/actions/superadmin'
 import { useClubesSuperadmin } from '../layout'
 import { formatCLP } from '@/lib/domain/finanzas'
@@ -39,6 +39,7 @@ export default function FinanzasSuperadminPage() {
   const [cobradoEsteMes, setCobradoEsteMes] = useState(0)
   const [mensaje, setMensaje] = useState('')
   const [error, setError] = useState('')
+  const [generandoPDF, setGenerandoPDF] = useState(false)
 
   useEffect(() => { cargarPagos() }, [])
 
@@ -105,6 +106,89 @@ export default function FinanzasSuperadminPage() {
     setMensaje('Pago confirmado. El próximo vencimiento fue actualizado.')
   }
 
+  async function generarReportePDF() {
+    setGenerandoPDF(true)
+    const { default: jsPDF } = await import('jspdf')
+    const { default: autoTable } = await import('jspdf-autotable')
+    const doc = new jsPDF()
+    const W = doc.internal.pageSize.getWidth()
+    const fmt = formatCLP
+    const hoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })
+
+    doc.setFillColor(79, 70, 229); doc.rect(0, 0, W, 32, 'F')
+    doc.setTextColor(255, 255, 255); doc.setFontSize(18); doc.setFont('helvetica', 'bold')
+    doc.text('CmSports — Reporte de Finanzas', 14, 20)
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal')
+    doc.text(hoy, W - 14, 20, { align: 'right' })
+
+    let y = 44
+    const mrrTotal = clubes.reduce((a, c) => a + (c.plan_mensual || 0), 0)
+    const planesActivos = clubes.filter(c => c.estado_plan === 'activo').length
+    const pagosVencidos = clubes.filter(c => planVencido(c.estado_plan, c.proximo_vencimiento)).length
+
+    doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
+    doc.text('Resumen', 14, y); y += 8
+    autoTable(doc, {
+      startY: y,
+      head: [['Concepto', 'Valor']],
+      body: [
+        ['MRR total', fmt(mrrTotal)],
+        ['Cobrado este mes', fmt(cobradoEsteMes)],
+        ['Clubes activos', `${planesActivos} de ${clubes.length}`],
+        ['Pagos vencidos', String(pagosVencidos)],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [79, 70, 229] },
+      margin: { left: 14, right: 14 },
+    })
+    y = (doc as any).lastAutoTable.finalY + 12
+
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold')
+    doc.text('Suscripción por club', 14, y); y += 8
+    autoTable(doc, {
+      startY: y,
+      head: [['Club', 'Plan mensual', 'Estado plan', 'Inicio', 'Próx. vencimiento', 'Cobro']],
+      body: clubes.map(c => {
+        const ep = (c.estado_plan || 'prueba') as EstadoPlan
+        const venc = planVencido(c.estado_plan, c.proximo_vencimiento)
+        return [
+          c.nombre,
+          c.plan_mensual > 0 ? fmt(c.plan_mensual) : 'Por definir',
+          PLAN_COLOR[ep]?.label || ep,
+          c.fecha_inicio_plan ? new Date(`${c.fecha_inicio_plan}T12:00:00`).toLocaleDateString('es-CL') : '—',
+          c.proximo_vencimiento ? new Date(`${c.proximo_vencimiento}T12:00:00`).toLocaleDateString('es-CL') : '—',
+          venc ? 'Pago pendiente' : ep === 'activo' ? 'Al día' : 'Sin cobro',
+        ]
+      }),
+      theme: 'striped',
+      headStyles: { fillColor: [14, 165, 233] },
+      margin: { left: 14, right: 14 },
+      styles: { fontSize: 9 },
+    })
+    y = (doc as any).lastAutoTable.finalY + 12
+
+    if (pagos.length > 0) {
+      doc.setFontSize(13); doc.setFont('helvetica', 'bold')
+      doc.text('Últimos pagos recibidos', 14, y); y += 8
+      autoTable(doc, {
+        startY: y,
+        head: [['Club', 'Período', 'Método', 'Monto']],
+        body: pagos.map(p => [
+          p.clubes?.nombre || '—',
+          `${MESES[p.periodo_mes - 1]} ${p.periodo_anio}`,
+          p.metodo || '—',
+          fmt(p.monto),
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [22, 163, 74] },
+        margin: { left: 14, right: 14 },
+      })
+    }
+
+    doc.save(`CmSports_Finanzas_${new Date().toISOString().slice(0, 10)}.pdf`)
+    setGenerandoPDF(false)
+  }
+
   const loading = loadingClubes || loadingPagos
   if (loading) return <div style={{ color: '#94a3b8', fontSize: 14, padding: 24 }}>Cargando...</div>
 
@@ -114,9 +198,19 @@ export default function FinanzasSuperadminPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>Finanzas</h1>
-        <p style={{ fontSize: 12, color: '#94a3b8' }}>Ingresos de CmSports por suscripción de cada club</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div>
+          <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>Finanzas</h1>
+          <p style={{ fontSize: 12, color: '#94a3b8' }}>Ingresos de CmSports por suscripción de cada club</p>
+        </div>
+        <button onClick={generarReportePDF} disabled={generandoPDF} style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '8px 14px', background: '#4f46e5', color: '#fff',
+          border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+          opacity: generandoPDF ? 0.6 : 1,
+        }}>
+          <FileDown size={15} /> {generandoPDF ? 'Generando...' : 'Descargar PDF'}
+        </button>
       </div>
 
       {mensaje && <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 8, background: '#dcfce7', color: '#15803d', fontSize: 13 }}>{mensaje}</div>}
