@@ -92,7 +92,7 @@ export async function proxy(request: NextRequest) {
 
   if (
     adminRoutes.some((r) => pathname === r || pathname.startsWith(r + '/')) &&
-    !esAdminDeClub(rol)
+    !esAdminDeClub(rol) && rol !== 'superadmin'
   ) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)
