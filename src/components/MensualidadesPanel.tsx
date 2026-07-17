@@ -261,11 +261,6 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>
                       {mens?.fecha_pago || '—'}
-                      {mens?.notas?.startsWith('https://') && (
-                        <a href={mens.notas} target="_blank" rel="noopener noreferrer"
-                          style={{ marginLeft:6, fontSize:10, color:'#4f46e5', textDecoration:'none', fontWeight:600 }}
-                          title="Ver comprobante de pago">📎 Comprobante</a>
-                      )}
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:13, color:'#3730a3', fontFamily:'monospace' }}>
                       {mens?.monto ? fmt(mens.monto) : '—'}

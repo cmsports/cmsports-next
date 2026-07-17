@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
@@ -84,8 +84,9 @@ export default function JugadoresPage() {
     return () => { activo = false }
   }, [authLoading, perfil, router])
 
-  async function cargarJugadores(cid?: string) {
+  const cargarJugadores = useCallback(async (cid?: string) => {
     const id = cid || clubId
+    if (!id) return
     const { data, error } = await supabase
       .from('jugadores')
       .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado')
@@ -95,7 +96,22 @@ export default function JugadoresPage() {
     if (error) { mostrarToast('Error al cargar jugadores'); return }
     if (id) jugadoresCache[id] = data || []
     setJugadores(data || [])
-  }
+  }, [clubId])
+
+  useEffect(() => {
+    if (!clubId) return
+    const canal = supabase
+      .channel(`jugadores-listado-${clubId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'jugadores',
+        filter: `club_id=eq.${clubId}`,
+      }, () => {
+        delete jugadoresCache[clubId]
+        void cargarJugadores(clubId)
+      })
+      .subscribe()
+    return () => { void supabase.removeChannel(canal) }
+  }, [cargarJugadores, clubId])
 
   function mostrarToast(msg: string) {
     setToast(msg)
@@ -159,7 +175,7 @@ export default function JugadoresPage() {
     const resultado = await toggleEstadoJugador({ jugadorId: j.id, nuevoEstado })
     if (resultado.error) { mostrarToast(resultado.error); return }
     mostrarToast(`Jugador ${nuevoEstado === 'activo' ? 'activado' : 'bloqueado'}`)
-    cargarJugadores()
+    void cargarJugadores()
   }
 
   async function eliminar(id: string) {
@@ -167,7 +183,7 @@ export default function JugadoresPage() {
     const resultado = await eliminarJugador({ jugadorId: id })
     if (resultado.error) { mostrarToast(resultado.error); return }
     mostrarToast('Jugador eliminado')
-    cargarJugadores()
+    void cargarJugadores()
   }
 
   async function exportarExcel() {

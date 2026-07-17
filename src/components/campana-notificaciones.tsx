@@ -129,6 +129,7 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         { data: evaluados },
         { data: evsConFeedback },
         { data: torneos },
+        { data: reservasProfesor },
       ] = await Promise.all([
         supabase.from('clases')
           .select('id,hora_inicio,contenido').eq('club_id', perfil.club_id).eq('publicada', true).eq('fecha', hoy).order('hora_inicio'),
@@ -138,11 +139,30 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
           .select('id,firmado_alumno,jugadores(nombre)').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo).not('feedback_profesor', 'is', null),
         supabase.from('torneos')
           .select('id,nombre,fecha_inicio').eq('club_id', perfil.club_id).in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy).limit(2),
+        supabase.from('reservas')
+          .select('id,estado,creado_en,jugadores(nombre),clases!inner(id,club_id,contenido,fecha,hora_inicio)')
+          .eq('clases.club_id', perfil.club_id).gte('clases.fecha', hoy)
+          .order('creado_en', { ascending: false }).limit(20),
       ])
 
       if (clasesHoy?.length) {
         notificaciones.push({ id: `clases-hoy-${hoy}`, tipo: 'clase', titulo: `${clasesHoy.length} clase${clasesHoy.length > 1 ? 's' : ''} hoy`, mensaje: clasesHoy.map((c: any) => `${c.hora_inicio?.slice(0, 5)} ${c.contenido}`).join(' · '), fecha: hoy, leida: false, color: '#4f46e5', href: `/calendario?fecha=${hoy}` })
       }
+
+      reservasProfesor?.forEach((reserva: any) => {
+        const clase = reserva.clases
+        const confirmada = reserva.estado === 'confirmado'
+        notificaciones.push({
+          id: `reserva-profesor-${reserva.id}-${reserva.estado || 'pendiente'}`,
+          tipo: 'clase',
+          titulo: confirmada ? 'Jugador confirmó una clase' : 'Jugador canceló una clase',
+          mensaje: `${reserva.jugadores?.nombre || 'Un jugador'} · ${clase?.contenido || 'Clase'}${clase?.fecha ? ` · ${clase.fecha}` : ''}`,
+          fecha: reserva.creado_en || clase?.fecha || hoy,
+          leida: false,
+          color: confirmada ? '#16a34a' : '#d97706',
+          href: `/calendario?fecha=${clase?.fecha || hoy}`,
+        })
+      })
 
       const sinEvaluar = (jugadores?.length || 0) - (evaluados?.length || 0)
       if (sinEvaluar > 0) {
@@ -165,8 +185,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
 
     if (rol === 'admin') {
       const desdeActividad = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      const mesActual = new Date().getMonth() + 1
-      const anioActual = new Date().getFullYear()
       const periodo = trimestreActual()
 
       const { data: clubPlan } = await supabase.from('clubes')
@@ -192,7 +210,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
         { data: eventosRecientes },
         { data: jugadoresRecientes },
         { data: reservasRecientes },
-        { data: comprobantes },
         { data: torneosAdmin },
         { data: evsConFeedback },
         { data: solicitudes },
@@ -217,10 +234,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
           .select('id,estado,creado_en,jugadores(nombre),clases!inner(id,club_id,contenido,fecha,hora_inicio)')
           .eq('clases.club_id', perfil.club_id).gte('creado_en', desdeActividad)
           .order('creado_en', { ascending: false }).limit(15),
-        supabase.from('mensualidades')
-          .select('id,mes,anio,estado,monto,notas,creado_en,jugadores(nombre)')
-          .eq('club_id', perfil.club_id).eq('mes', mesActual).eq('anio', anioActual)
-          .not('notas', 'is', null).in('estado', ['pendiente', 'atrasado']).limit(20),
         supabase.from('torneos')
           .select('id,nombre,fecha_inicio,estado').eq('club_id', perfil.club_id)
           .in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy)
@@ -244,21 +257,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
           leida: false,
           color: esIngreso ? '#16a34a' : '#dc2626',
           href: '/finanzas',
-        })
-      })
-
-      comprobantes?.forEach((mens: any) => {
-        const comprobante = mens.notas || ''
-        if (!/^https?:\/\//i.test(comprobante)) return
-        notificaciones.push({
-          id: `comprobante-${mens.id}-${versionTexto(comprobante)}`,
-          tipo: 'mensualidad',
-          titulo: 'Nuevo comprobante de pago',
-          mensaje: `${mens.jugadores?.nombre || 'Un jugador'} envió su comprobante de mensualidad por ${formatoMonto(mens.monto)}.`,
-          fecha: mens.creado_en || hoy,
-          leida: false,
-          color: '#16a34a',
-          href: '/finanzas?tab=mensualidades',
         })
       })
 

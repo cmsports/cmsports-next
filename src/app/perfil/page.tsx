@@ -59,16 +59,7 @@ export default function PerfilPage() {
         const anioActual = new Date().getFullYear()
 
         // Ronda 1 — todo en paralelo, incluyendo el check de torneo activo
-        const [
-          { data: j },
-          { data: a },
-          { data: participaciones },
-          { data: ext },
-          { data: mens },
-          { data: evs },
-          { data: asistHoy },
-          { data: td },
-        ] = await Promise.all([
+        const resultados = await Promise.all([
           supabase.from('jugadores').select('*').eq('id', perfil.jugador_id).single(),
           supabase.from('asistencia').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
           supabase.from('grupo_jugadores').select('torneo_grupos!inner(torneo_id)').eq('jugador_id', perfil.jugador_id),
@@ -82,6 +73,24 @@ export default function PerfilPage() {
                 .order('fecha_inicio', { ascending: false }).limit(1).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
         ])
+
+        const errorInicial = resultados.find(resultado => resultado.error)?.error
+        if (errorInicial) {
+          setMensaje({ tipo: 'error', texto: `No se pudo cargar el perfil: ${errorInicial.message}` })
+          setLoading(false)
+          return
+        }
+
+        const [
+          { data: j },
+          { data: a },
+          { data: participaciones },
+          { data: ext },
+          { data: mens },
+          { data: evs },
+          { data: asistHoy },
+          { data: td },
+        ] = resultados
 
         setJugador(j)
         setAsistencias(a || [])
@@ -134,7 +143,7 @@ export default function PerfilPage() {
       setLoading(false)
     }
     cargar()
-  }, [authLoading, perfil, hoy, router])
+  }, [authLoading, perfil, hoy, router, supabase])
 
   async function handleMarcarAsistencia() {
     if (!jugador || !perfil?.club_id) return
@@ -183,7 +192,7 @@ export default function PerfilPage() {
       .subscribe()
 
     return () => { void supabase.removeChannel(canal) }
-  }, [perfil?.id, perfil?.jugador_id])
+  }, [perfil?.id, perfil?.jugador_id, supabase])
 
   // Realtime — suscripción al torneo activo
   useEffect(() => {
@@ -294,7 +303,7 @@ export default function PerfilPage() {
       })
       .subscribe()
     return () => { supabase.removeChannel(canal) }
-  }, [torneoActivo?.id, jugador?.id])
+  }, [torneoActivo?.id, jugador?.id, supabase])
 
   async function aceptarCompromiso() {
     const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
@@ -370,10 +379,10 @@ export default function PerfilPage() {
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{jugador.categoria}</div>
           </div>
           <button
-            onClick={() => router.push(`/jugadores/${jugador.id}`)}
+            onClick={() => router.push('/configuracion')}
             style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 11, cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}
           >
-            Ver perfil →
+            Editar datos →
           </button>
         </div>
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -20,50 +20,40 @@ export default function EstadoCuentaPage() {
   const [mensualidad, setMensualidad] = useState<any>(null)
   const [historial, setHistorial] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [subiendo, setSubiendo] = useState(false)
-  const [comprMsg, setComprMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   const mesActual = new Date().getMonth() + 1
   const anioActual = new Date().getFullYear()
 
-  useEffect(() => {
-    async function cargar() {
-      if (authLoading) return
-      if (!perfil) { router.push('/login'); return }
-      if (perfil.jugador_id) {
-        const [{ data: m }, { data: h }] = await Promise.all([
-          supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
-          supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(12)
-        ])
-        setMensualidad(m)
-        setHistorial(h || [])
-      }
-      setLoading(false)
-    }
-    cargar()
-  }, [anioActual, authLoading, mesActual, perfil, router])
+  const cargar = useCallback(async () => {
+    if (!perfil?.jugador_id) return
+    const [{ data: m }, { data: h }] = await Promise.all([
+      supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
+      supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(12),
+    ])
+    setMensualidad(m)
+    setHistorial(h || [])
+    setLoading(false)
+  }, [anioActual, mesActual, perfil])
 
-  async function subirComprobante(file: File) {
-    if (!perfil?.jugador_id || !mensualidad?.id) return
-    setSubiendo(true)
-    setComprMsg(null)
-    const ext = file.name.split('.').pop() || 'jpg'
-    const path = `${perfil.jugador_id}/${mensualidad.id}-${Date.now()}.${ext}`
-    const { error } = await supabase.storage.from('comprobantes').upload(path, file, { upsert: true })
-    setSubiendo(false)
-    if (error) {
-      setComprMsg({ tipo: 'error', texto: 'No se pudo subir el archivo. Envíalo directamente por WhatsApp al admin.' })
-      return
-    }
-    // Guardar la URL pública en notas para que el admin pueda verla desde MensualidadesPanel
-    const { data: urlData } = supabase.storage.from('comprobantes').getPublicUrl(path)
-    if (urlData?.publicUrl) {
-      await supabase.from('mensualidades').update({ notas: urlData.publicUrl }).eq('id', mensualidad.id)
-    }
-    setComprMsg({ tipo: 'ok', texto: '¡Comprobante enviado correctamente! El admin lo revisará pronto.' })
-  }
+  useEffect(() => {
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    const carga = window.setTimeout(() => { void cargar() }, 0)
+    return () => window.clearTimeout(carga)
+  }, [authLoading, cargar, perfil, router])
+
+  useEffect(() => {
+    if (!perfil?.jugador_id) return
+    const canal = supabase
+      .channel(`estado-cuenta-${perfil.id}-${perfil.jugador_id}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'mensualidades',
+        filter: `jugador_id=eq.${perfil.jugador_id}`,
+      }, () => { void cargar() })
+      .subscribe()
+    return () => { void supabase.removeChannel(canal) }
+  }, [cargar, perfil?.id, perfil?.jugador_id])
 
   const estado = mensualidad?.estado || 'pendiente'
   const estadoConfig: Record<string, { color: string; bg: string; border: string; label: string }> = {
@@ -94,35 +84,9 @@ export default function EstadoCuentaPage() {
         )}
       </div>
 
-      {/* Subir comprobante */}
       {estado !== 'pagado' && (
-        <div style={{ ...card, padding:20, marginBottom:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:8 }}>Subir comprobante de pago</div>
-          <div style={{ fontSize:12, color: muted, marginBottom:12 }}>Si pagaste por transferencia, adjunta el comprobante aquí</div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf"
-            style={{ display:'none' }}
-            onChange={e => { if (e.target.files?.[0]) subirComprobante(e.target.files[0]) }}
-          />
-
-          {comprMsg && (
-            <div style={{ marginBottom:12, padding:'10px 14px', borderRadius:8, fontSize:12, fontWeight:500,
-              background: comprMsg.tipo === 'ok' ? '#f0fdf4' : '#fef2f2',
-              color: comprMsg.tipo === 'ok' ? '#16a34a' : '#dc2626',
-              border: `1px solid ${comprMsg.tipo === 'ok' ? '#bbf7d0' : '#fecaca'}` }}>
-              {comprMsg.texto}
-            </div>
-          )}
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={subiendo || comprMsg?.tipo === 'ok'}
-            style={{ width:'100%', padding:12, background: comprMsg?.tipo === 'ok' ? '#16a34a' : '#f43f5e', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor: subiendo ? 'wait' : 'pointer', opacity: subiendo ? 0.8 : 1 }}>
-            {subiendo ? 'Subiendo...' : comprMsg?.tipo === 'ok' ? '✓ Enviado' : 'Adjuntar comprobante'}
-          </button>
+        <div style={{ ...card, padding:16, marginBottom:16, color:muted, fontSize:12, lineHeight:1.5 }}>
+          El administrador marcará esta mensualidad como pagada cuando confirme la recepción del pago.
         </div>
       )}
 
