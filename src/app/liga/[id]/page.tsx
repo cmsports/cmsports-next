@@ -277,20 +277,23 @@ export default function LigaDetallePage() {
     if (!podioAbierto) return
     setLoadingPodio(true)
     setPodioDivisiones([])
+    const divIds = divisiones.map(d => d.id)
+    if (divIds.length === 0) { setLoadingPodio(false); return }
     const db = supabase as any
-    Promise.all(
-      divisiones.map(async (div) => {
-        const [{ data: dj }, { data: rawPartidos }] = await Promise.all([
-          supabase.from('liga_division_jugadores').select('jugador_id').eq('division_id', div.id),
-          db.from('liga_partidos')
-            .select('jugador_a_id, jugador_b_id, ganador_id, es_walkover, sets_a, sets_b')
-            .eq('division_id', div.id)
-            .in('estado', ['finalizado', 'walkover'])
-            .is('deleted_at', null),
-        ])
-        const jugIds = (dj || []).map((j: { jugador_id: string }) => j.jugador_id)
-        const partidos: PartidoFinalizado[] = (rawPartidos || [])
-          .filter((p: any) => p.ganador_id)
+    Promise.all([
+      supabase.from('liga_division_jugadores').select('division_id,jugador_id').in('division_id', divIds),
+      db.from('liga_partidos')
+        .select('division_id,jugador_a_id,jugador_b_id,ganador_id,es_walkover,sets_a,sets_b')
+        .in('division_id', divIds)
+        .in('estado', ['finalizado', 'walkover'])
+        .is('deleted_at', null),
+    ]).then(([{ data: djAll }, { data: rawPartidosAll }]: [{ data: any[] | null }, { data: any[] | null }]) => {
+      const results = divisiones.map(div => {
+        const jugIds = (djAll || [])
+          .filter((j: { division_id: string; jugador_id: string }) => j.division_id === div.id)
+          .map((j: { division_id: string; jugador_id: string }) => j.jugador_id)
+        const partidos: PartidoFinalizado[] = (rawPartidosAll || [])
+          .filter((p: any) => p.division_id === div.id && p.ganador_id)
           .map((p: any) => ({
             jugadorAId: p.jugador_a_id,
             jugadorBId: p.jugador_b_id,
@@ -306,7 +309,6 @@ export default function LigaDetallePage() {
           top4: ranking.slice(0, 4).map((r: FilaRanking, i: number) => ({ pos: i + 1, jugadorId: r.jugadorId, pts: r.pts, pg: r.pg })),
         }
       })
-    ).then(results => {
       setPodioDivisiones(results)
       setLoadingPodio(false)
     })
