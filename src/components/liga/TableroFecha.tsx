@@ -66,6 +66,9 @@ export function TableroFecha({
   const [setsB, setSetsB] = useState('0')
   const [guardandoResultado, setGuardandoResultado] = useState(false)
   const [guardandoAccion, setGuardandoAccion] = useState(false)
+  const [montado, setMontado] = useState(false)
+
+  useEffect(() => { setMontado(true) }, [])
 
   const cargar = useCallback(async () => {
     const db = supabase as any
@@ -840,7 +843,8 @@ export function TableroFecha({
       })()}
 
       {/* ── Modal resultado ─────────────────────────────────────────────── */}
-      {partidoResultado && typeof document !== 'undefined' && createPortal(
+      {montado && createPortal(
+        partidoResultado ? (
         <div onClick={() => setPartidoResultado(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 440, margin: '0 16px', boxShadow: '0 24px 60px rgba(15,23,42,0.3)', overflow: 'hidden' }}>
             {/* Header del modal */}
@@ -900,6 +904,7 @@ export function TableroFecha({
             </div>
           </div>
         </div>
+        ) : null
       , document.body)}
     </div>
   )
