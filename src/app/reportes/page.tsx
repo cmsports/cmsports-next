@@ -17,6 +17,7 @@ const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto
 
 const catLabel: Record<string, string> = {
   mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo',
+  inscripcion_liga:'Inscripción liga', premio_torneo:'Premio torneo',
   arriendo_cancha:'Arriendo cancha', donacion:'Donación', otro_ingreso:'Otro ingreso',
   sueldo_profesor:'Sueldo profesor', sueldo_staff:'Sueldo staff',
   material_deportivo:'Material deportivo', servicios_basicos:'Servicios básicos',
@@ -83,12 +84,13 @@ export default function ReportesPage() {
 
   async function cargarDatosGeneral() {
     const { inicio, fin } = getRango()
+    const iniAnio = parseInt(inicio.slice(0, 4)), iniMes = parseInt(inicio.slice(5, 7)), finMes = parseInt(fin.slice(5, 7))
     const [{ data: jug }, { data: mov }, { data: asist }, { data: torn }, { data: mens }] = await Promise.all([
       supabase.from('jugadores').select('*').eq('club_id', clubId),
       supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
       supabase.from('asistencia').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
       supabase.from('torneos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-      supabase.from('mensualidades').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
+      supabase.from('mensualidades').select('*').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes)
     ])
     const activos = (jug || []).filter(j => j.estado === 'activo')
     const ingresos = (mov || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
@@ -110,14 +112,15 @@ export default function ReportesPage() {
   async function cargarDatosJugador() {
     if (!jugadorId) return null
     const { inicio, fin } = getRango()
+    const iniAnio = parseInt(inicio.slice(0, 4)), iniMes = parseInt(inicio.slice(5, 7)), finMes = parseInt(fin.slice(5, 7))
     const [{ data: jugador }, { data: mens }, { data: asist }, { data: torneoJug }, { data: ligaJug }] = await Promise.all([
       supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
-      supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
+      supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }),
       supabase.from('asistencia').select('*').eq('jugador_id', jugadorId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
       supabase.from('torneo_jugadores').select('*, torneos(*)').eq('jugador_id', jugadorId),
       supabase.from('liga_division_jugadores').select('*, liga_divisiones(*, ligas(*))').eq('jugador_id', jugadorId),
     ])
-    const mensPeriodo = (mens || []).filter(m => m.fecha >= inicio && m.fecha <= fin)
+    const mensPeriodo = (mens || []).filter(m => m.anio === iniAnio && m.mes >= iniMes && m.mes <= finMes)
     const pagadas = mensPeriodo.filter(m => m.estado === 'pagado')
     const pendientes = mensPeriodo.filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
     const totalPagado = pagadas.reduce((s, m) => s + (m.monto || 0), 0)
@@ -127,9 +130,10 @@ export default function ReportesPage() {
 
   async function cargarDatosFinanzas() {
     const { inicio, fin } = getRango()
+    const iniAnio = parseInt(inicio.slice(0, 4)), iniMes = parseInt(inicio.slice(5, 7)), finMes = parseInt(fin.slice(5, 7))
     const [{ data: mov }, { data: mens }, { data: jug }] = await Promise.all([
       supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-      supabase.from('mensualidades').select('*, jugadores(nombre,categoria)').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+      supabase.from('mensualidades').select('*, jugadores(nombre,categoria)').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes),
       supabase.from('jugadores').select('id,nombre,estado').eq('club_id', clubId).eq('estado', 'activo')
     ])
     const ingresos = (mov || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
@@ -271,11 +275,15 @@ export default function ReportesPage() {
       if (preview.mensualidades.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
         doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Historial de Mensualidades', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Fecha', 'Monto', 'Estado']], body: preview.mensualidades.map((m: any) => [m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+        autoTable(doc, { startY: y, head: [['Período', 'Monto', 'Estado', 'Fecha pago']], body: preview.mensualidades.map((m: any) => [`${mesesN[m.mes-1]} ${m.anio}`, m.monto ? fmt(m.monto) : '—', m.estado, m.fecha_pago || '—']), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
       }
       y = (doc as any).lastAutoTable.finalY + 10
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Asistencia (período)', 14, y); y += 8
       autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)]], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      if (preview.asistencias.length > 0) {
+        y = (doc as any).lastAutoTable.finalY + 4
+        autoTable(doc, { startY: y, head: [['Fecha', 'Hora']], body: preview.asistencias.map((a: any) => [a.fecha, a.hora || '—']), theme: 'grid', headStyles: { fillColor: [14, 165, 233] }, styles: { fontSize: 9 }, margin: { left: 14, right: 14 } })
+      }
       if (preview.torneos.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
         doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Participación en Torneos', 14, y); y += 8
@@ -309,25 +317,40 @@ export default function ReportesPage() {
       if (preview.pendientes.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
         doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Detalle Mensualidades Pendientes', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Jugador', 'Fecha', 'Monto', 'Estado']], body: preview.pendientes.map((m: any) => [(m as any).jugadores?.nombre || '—', m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), theme: 'striped', headStyles: { fillColor: [220, 38, 38] }, margin: { left: 14, right: 14 } })
+        autoTable(doc, { startY: y, head: [['Jugador', 'Período', 'Monto', 'Estado']], body: preview.pendientes.map((m: any) => [(m as any).jugadores?.nombre || '—', `${mesesN[m.mes-1]} ${m.anio}`, m.monto ? fmt(m.monto) : '—', m.estado]), theme: 'striped', headStyles: { fillColor: [220, 38, 38] }, margin: { left: 14, right: 14 } })
       }
     }
 
     if (categoria === 'asistencia') {
       doc.setTextColor(40, 40, 40)
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Resumen de Asistencia', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.totalAsist)], ['Días con registro', String(preview.diasUnicos)], ['Promedio diario', String(preview.promedioDiario)], ['Jugadores activos', String(preview.activos.length)], ...(preview.diaMasAsistido ? [['Día más asistido', `${preview.diaMasAsistido[0]} (${preview.diaMasAsistido[1]} asist.)`]] : []), ...(preview.diaSemanaMax ? [['Día de semana favorito', `${preview.diaSemanaMax.dia} (${preview.diaSemanaMax.count} asist.)`]] : [])], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.totalAsist)], ['Sesiones registradas', String(preview.diasUnicos)], ['Promedio diario', String(preview.promedioDiario)], ['Jugadores activos', String(preview.activos.length)], ...(preview.diaMasAsistido ? [['Día más concurrido', `${preview.diaMasAsistido[0]} (${preview.diaMasAsistido[1]} personas)`]] : []), ...(preview.diaSemanaMax ? [['Día de semana top', `${preview.diaSemanaMax.dia} (${preview.diaSemanaMax.count} asist.)`]] : [])], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      y = (doc as any).lastAutoTable.finalY + 10
+      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Asistencia por Jugador (detalle completo)', 14, y); y += 8
+      const totalSesiones = preview.diasUnicos || 1
+      const todosLosJugadores = [
+        ...Object.values(preview.porJugador as Record<string, { nombre: string; count: number }>).sort((a, b) => b.count - a.count),
+        ...preview.sinAsistencia.map((j: any) => ({ nombre: j.nombre, count: 0 })),
+      ]
+      autoTable(doc, {
+        startY: y,
+        head: [['#', 'Jugador', 'Asistencias', '% Asistencia']],
+        body: todosLosJugadores.map((j, idx) => [String(idx + 1), j.nombre, String(j.count), `${Math.round((j.count / totalSesiones) * 100)}%`]),
+        theme: 'striped',
+        headStyles: { fillColor: [22, 163, 74] },
+        columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' } },
+        didParseCell: (hookData: any) => {
+          if (hookData.section === 'body' && hookData.column.index === 3) {
+            const pct = parseInt(hookData.cell.raw)
+            if (pct === 0) hookData.cell.styles.textColor = [220, 38, 38]
+            else if (pct >= 80) hookData.cell.styles.textColor = [22, 163, 74]
+          }
+        },
+        margin: { left: 14, right: 14 },
+      })
       y = (doc as any).lastAutoTable.finalY + 10
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Asistencia por Día de Semana', 14, y); y += 8
       autoTable(doc, { startY: y, head: [['Día', 'Asistencias']], body: preview.diasSemana.map((d: string, i: number) => [d, String(preview.porDiaSemana[i])]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
-      y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Top 10 Jugadores por Asistencia', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Jugador', 'Asistencias']], body: preview.topJugadores.map((j: any) => [j.nombre, String(j.count)]), theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
-      if (preview.sinAsistencia.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Jugadores sin Asistencia', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Jugador', 'Categoría']], body: preview.sinAsistencia.map((j: any) => [j.nombre, j.categoria || '—']), theme: 'striped', headStyles: { fillColor: [220, 38, 38] }, margin: { left: 14, right: 14 } })
-      }
     }
 
     if (categoria === 'torneos') {

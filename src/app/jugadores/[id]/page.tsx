@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { crearAccesoJugador } from '@/app/actions/jugadores'
+import { crearAccesoJugador, resetearPasswordJugador } from '@/app/actions/jugadores'
 import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
@@ -54,6 +54,10 @@ export default function JugadorDetallePage() {
   const [creandoAcceso, setCreandoAcceso] = useState(false)
   const [accesoError, setAccesoError] = useState('')
   const [accesoExito, setAccesoExito] = useState(false)
+  const [showPasswordReset, setShowPasswordReset] = useState(false)
+  const [passwordNueva, setPasswordNueva] = useState('')
+  const [cambiandoPassword, setCambiandoPassword] = useState(false)
+  const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
 
   const PRESETS = [
     { label:'$15.000', valor:15000, ent:1 },
@@ -307,6 +311,11 @@ export default function JugadorDetallePage() {
                   {creandoAcceso ? 'Creando...' : '🔑 Crear acceso'}
                 </button>
               )}
+              {puedeEditar && tieneCuenta && (
+                <button onClick={() => { setShowPasswordReset(v => !v); setPasswordMsg(null); setPasswordNueva('') }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>
+                  🔐 Contraseña
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -319,6 +328,46 @@ export default function JugadorDetallePage() {
         {esAdmin && datosError && !editContacto && !editPlan && (
           <div style={{ marginTop:10, background:'rgba(220,38,38,0.25)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#fff' }}>
             {datosError}
+          </div>
+        )}
+        {esAdmin && showPasswordReset && (
+          <div style={{ marginTop:10, background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'12px 14px' }}>
+            <div style={{ fontSize:11, color:'rgba(255,255,255,0.75)', marginBottom:8, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Cambiar contraseña</div>
+            <div style={{ display:'flex', gap:8 }}>
+              <input
+                type="password"
+                placeholder="Nueva contraseña (mín. 6 caracteres)"
+                value={passwordNueva}
+                onChange={e => setPasswordNueva(e.target.value)}
+                style={{ flex:1, background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'8px 10px', color:'#fff', fontSize:12, outline:'none' }}
+              />
+              <button
+                disabled={cambiandoPassword || passwordNueva.length < 6}
+                onClick={async () => {
+                  setCambiandoPassword(true)
+                  setPasswordMsg(null)
+                  const res = await resetearPasswordJugador({ jugadorId, nuevaPassword: passwordNueva })
+                  setCambiandoPassword(false)
+                  if (res.error) { setPasswordMsg({ ok: false, text: res.error }); return }
+                  setPasswordNueva('')
+                  setShowPasswordReset(false)
+                  setPasswordMsg({ ok: true, text: 'Contraseña actualizada correctamente' })
+                }}
+                style={{ background:'rgba(255,255,255,0.25)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'8px 12px', fontSize:12, cursor: cambiandoPassword || passwordNueva.length < 6 ? 'not-allowed' : 'pointer', fontWeight:600, whiteSpace:'nowrap', opacity: passwordNueva.length < 6 ? 0.5 : 1 }}
+              >
+                {cambiandoPassword ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+            {passwordMsg && (
+              <div style={{ marginTop:8, fontSize:11, color: passwordMsg.ok ? '#86efac' : '#fca5a5' }}>
+                {passwordMsg.ok ? '✓ ' : '✗ '}{passwordMsg.text}
+              </div>
+            )}
+          </div>
+        )}
+        {esAdmin && passwordMsg && !showPasswordReset && (
+          <div style={{ marginTop:10, background:'rgba(34,197,94,0.25)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#fff' }}>
+            ✓ {passwordMsg.text}
           </div>
         )}
         <div style={{ display:'grid', gridTemplateColumns: esAdmin ? 'repeat(2,1fr)' : '1fr', gap:10 }}>

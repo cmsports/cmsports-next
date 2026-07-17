@@ -24,6 +24,7 @@ import {
   moverJugadorEntreGrupos,
   reordenarJugadorEnGrupo,
   quitarJugadorDeMesa,
+  enviarRecaudacionAFinanzas,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayout } from '@/lib/domain/torneos'
@@ -77,6 +78,7 @@ export default function TorneoDetallePage() {
   const [premioMetodo, setPremioMetodo] = useState<'efectivo'|'transferencia'>('efectivo')
   const [guardandoPremios, setGuardandoPremios] = useState(false)
   const [modalPremios, setModalPremios] = useState(false)
+  const [enviandoRecaudacion, setEnviandoRecaudacion] = useState(false)
   const [cabezaSerie1, setCabezaSerie1] = useState('')
   const [cabezaSerie2, setCabezaSerie2] = useState('')
   const [guardandoCabezas, setGuardandoCabezas] = useState(false)
@@ -579,6 +581,22 @@ export default function TorneoDetallePage() {
               </div>
             ))}
           </div>
+          {!torneo?.contabilidad_enviada && recaudado > 0 && (
+            <button
+              disabled={enviandoRecaudacion}
+              onClick={async () => {
+                if (!confirm(`¿Registrar ${fmt(recaudado)} en Finanzas?\n\nEfectivo: ${fmt(recaudadoEfectivo)}\nTransferencia: ${fmt(recaudadoTransferencia)}`)) return
+                setEnviandoRecaudacion(true)
+                const res = await enviarRecaudacionAFinanzas({ torneoId, torneoNombre: torneo?.nombre || '', montoEfectivo: recaudadoEfectivo, montoTransferencia: recaudadoTransferencia })
+                setEnviandoRecaudacion(false)
+                if (res.error) { alert(res.error); return }
+                setTorneo((t: any) => ({ ...t, contabilidad_enviada: true }))
+              }}
+              style={{ marginTop:10, width:'100%', padding:'10px', background:'#4f46e5', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: enviandoRecaudacion ? 'not-allowed' : 'pointer', opacity: enviandoRecaudacion ? 0.7 : 1 }}
+            >
+              {enviandoRecaudacion ? 'Registrando...' : `📤 Registrar ${fmt(recaudado)} en Finanzas`}
+            </button>
+          )}
         </div>
       )}
 

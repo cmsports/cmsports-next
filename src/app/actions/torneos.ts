@@ -990,22 +990,34 @@ export async function intercambiarJugadores(params: {
 export async function enviarRecaudacionAFinanzas(params: {
   torneoId: string
   torneoNombre: string
-  monto: number
+  montoEfectivo: number
+  montoTransferencia: number
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  await supabase.from('movimientos').insert({
-    club_id: perfil.club_id,
-    tipo: 'ingreso',
-    categoria: 'inscripcion_torneo',
-    descripcion: `Ingreso Torneo — ${params.torneoNombre}`,
-    monto: params.monto,
-    fecha: new Date().toISOString().slice(0, 10),
-    registrado_por_nombre: perfil.nombre || 'Admin',
-  })
-  await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
+  const total = params.montoEfectivo + params.montoTransferencia
+  if (total <= 0) return { error: 'No hay monto a registrar' }
 
+  const { data: existente } = await supabase.from('movimientos').select('id')
+    .eq('torneo_id', params.torneoId).eq('categoria', 'inscripcion_torneo').limit(1)
+  if (existente && existente.length > 0) {
+    return { error: 'Este torneo ya tiene un registro en Finanzas. Para corregirlo, edita el movimiento directamente desde Finanzas.' }
+  }
+
+  const fecha = new Date().toISOString().slice(0, 10)
+  const movs: any[] = []
+  if (params.montoEfectivo > 0) {
+    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (efectivo) — ${params.torneoNombre}`, monto: params.montoEfectivo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  }
+  if (params.montoTransferencia > 0) {
+    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (transferencia) — ${params.torneoNombre}`, monto: params.montoTransferencia, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  }
+
+  const { error: movErr } = await supabase.from('movimientos').insert(movs)
+  if (movErr) return { error: 'Error al registrar en Finanzas: ' + movErr.message }
+
+  await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
   return { success: true }
 }
 
@@ -1176,7 +1188,7 @@ export async function guardarPremios(params: {
 
   const via = params.metodo === 'transferencia' ? ' (transferencia)' : ' (efectivo)'
 
-  await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero, contabilidad_enviada: true }).eq('id', params.torneoId)
+  await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero }).eq('id', params.torneoId)
 
   const fecha = new Date().toISOString().slice(0, 10)
   type Mov = { club_id: string | null; torneo_id: string; tipo: string; categoria: string; descripcion: string; monto: number; fecha: string; registrado_por_nombre: string }
@@ -1196,7 +1208,10 @@ export async function guardarPremios(params: {
     if (g.monto > 0) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'otro_gasto', descripcion: `${g.tipo} — ${params.torneoNombre}`, monto: g.monto, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   }
 
-  if (movimientos.length) await supabase.from('movimientos').insert(movimientos)
+  if (movimientos.length) {
+    await supabase.from('movimientos').insert(movimientos)
+    await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
+  }
 
   return { success: true }
 }

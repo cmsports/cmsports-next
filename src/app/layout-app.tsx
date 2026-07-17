@@ -80,6 +80,7 @@ type NavLink = { label: string; icon: LucideIcon; href: string; modulo?: string 
 type NavItem = { section: string } | NavLink
 
 const clubNombreCache: Record<string, string> = {}
+const clubLogoCache: Record<string, string | null> = {}
 
 export default function AppLayout({ children, perfil }: { children: React.ReactNode; perfil: Perfil | null }) {
   const router = useRouter()
@@ -87,19 +88,26 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const clubId = perfil?.club_id ?? ''
   const [masOpen, setMasOpen] = useState(false)
   const [clubCargado, setClubCargado] = useState<{ id: string; nombre: string } | null>(null)
+  const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(() => clubLogoCache[clubId] ?? null)
   const { tiene } = useModulos()
 
   useEffect(() => {
     if (!clubId) return
-    if (clubNombreCache[clubId]) return
+    if (clubNombreCache[clubId]) {
+      setClubLogoUrl(clubLogoCache[clubId] ?? null)
+      return
+    }
     let activo = true
     const supabase = createClient()
-    supabase.from('clubes').select('nombre').eq('id', clubId).single()
+    supabase.from('clubes').select('nombre,logo_url').eq('id', clubId).single()
       .then(({ data }) => {
         if (!activo) return
         const nombre = data?.nombre || ''
+        const logo = data?.logo_url ?? null
         clubNombreCache[clubId] = nombre
+        clubLogoCache[clubId] = logo
         setClubCargado({ id: clubId, nombre })
+        setClubLogoUrl(logo)
       })
     return () => { activo = false }
   }, [clubId])
@@ -161,10 +169,15 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 36, height: 36, borderRadius: 8,
-              background: '#4f46e5',
+              background: clubLogoUrl ? '#f8fafc' : '#4f46e5',
+              border: clubLogoUrl ? '1px solid #e2e8f0' : 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              overflow: 'hidden',
             }}>
-              <Image src="/logo.png" alt="CmSports" width={22} height={22} style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+              {clubLogoUrl
+                ? <Image src={clubLogoUrl} alt={clubNombre || 'Club'} width={32} height={32} style={{ objectFit: 'contain' }} />
+                : <Image src="/logo.png" alt="CmSports" width={22} height={22} style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+              }
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.2 }}>CmSports</div>

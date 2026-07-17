@@ -40,7 +40,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
 
   useEffect(() => {
     if (!clubId) return
-    supabase.from('clubs').select('mensualidad_base').eq('id', clubId).single()
+    supabase.from('clubes').select('mensualidad_base').eq('id', clubId).single()
       .then(({ data }) => { if (data?.mensualidad_base) setMontoPago(String(data.mensualidad_base)) })
   }, [clubId])
 
