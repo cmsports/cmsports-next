@@ -10,6 +10,7 @@ import {
   generarBracketConAvance,
   generarSiguienteFase,
   construirLlavesLayout,
+  construirLlavesLayoutNumerado,
   calcularStatsGrupo,
   derivarPodioFinal,
   nombreGrupo,
@@ -150,6 +151,83 @@ describe('seedingSerpenteo', () => {
   it('conserva un sembrado determinista para el mismo orden', () => {
     const lista = jugadores(8)
     expect(seedingSerpenteo(lista, 3)).toEqual(seedingSerpenteo([...lista], 3))
+  })
+  it('respeta el orden numérico explícito de las cabezas', () => {
+    const js = jugadores(8)
+    const asign = seedingSerpenteo(js, 4, ['j3', 'j1', 'j6', 'j0'])
+    expect(['j3', 'j1', 'j6', 'j0'].map(id => asign.find(a => a.jugadorId === id)!.grupoIndex))
+      .toEqual([0, 1, 2, 3])
+  })
+})
+
+describe('construirLlavesLayoutNumerado', () => {
+  const posicionDe = (layout: ReturnType<typeof construirLlavesLayoutNumerado>, grupoIdx: number, pos: 1 | 2) => {
+    const i = layout.matches.findIndex(m =>
+      (m.a?.grupoIdx === grupoIdx && m.a.pos === pos) || (m.b?.grupoIdx === grupoIdx && m.b.pos === pos),
+    )
+    return i
+  }
+
+  it('usa los partidos canónicos del espejo estándar para cuatro cabezas', () => {
+    const layout = construirLlavesLayoutNumerado(4, [
+      { numero: 1, grupoIdx: 0, pos: 1 },
+      { numero: 2, grupoIdx: 1, pos: 1 },
+      { numero: 3, grupoIdx: 2, pos: 1 },
+      { numero: 4, grupoIdx: 3, pos: 1 },
+    ])
+    expect([0, 1, 2, 3].map((g, i) => posicionDe(layout, g, 1)))
+      .toEqual([0, 2, 3, 1])
+  })
+
+  it('prioriza BYE por número dentro de cada posición clasificatoria', () => {
+    const layout = construirLlavesLayoutNumerado(5, [
+      { numero: 1, grupoIdx: 0, pos: 1 },
+      { numero: 2, grupoIdx: 1, pos: 1 },
+      { numero: 3, grupoIdx: 2, pos: 1 },
+      { numero: 4, grupoIdx: 3, pos: 1 },
+      { numero: 5, grupoIdx: 4, pos: 1 },
+    ])
+    const byes = new Set(layout.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`))
+    expect(byes.has('0:1')).toBe(true)
+    expect(byes.has('1:1')).toBe(true)
+    expect(byes.has('2:1')).toBe(true)
+    expect(byes.has('3:1')).toBe(false)
+    expect(byes.has('4:1')).toBe(false)
+  })
+
+  it('conserva invariantes para 2 a 32 grupos y varias semillas', () => {
+    for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
+      const cabezas = Array.from({ length: Math.min(numGrupos, 8) }, (_, i) => ({
+        numero: i + 1,
+        grupoIdx: i,
+        pos: (i % 2 === 0 ? 1 : 2) as 1 | 2,
+      }))
+      const layout = construirLlavesLayoutNumerado(numGrupos, cabezas, Array.from({ length: Math.ceil(numGrupos / 2) }, (_, i) => i))
+      const tam = calcularTamanoBracket(numGrupos * 2)
+      expect(layout.matches).toHaveLength(tam / 2)
+      const cupos = layout.matches.flatMap(m => [m.a, m.b]).filter(Boolean)
+      expect(cupos).toHaveLength(numGrupos * 2)
+      expect(new Set(cupos.map(c => `${c!.grupoIdx}:${c!.pos}`)).size).toBe(numGrupos * 2)
+      for (const m of layout.matches.filter(m => m.a && m.b)) {
+        expect(m.a!.pos).not.toBe(m.b!.pos)
+        expect(m.a!.grupoIdx).not.toBe(m.b!.grupoIdx)
+      }
+      for (let g = 0; g < numGrupos; g++) {
+        const p1 = posicionDe(layout, g, 1)
+        const p2 = posicionDe(layout, g, 2)
+        expect(p1 < layout.matches.length / 2).not.toBe(p2 < layout.matches.length / 2)
+      }
+    }
+  })
+
+  it('es determinista con grupos pendientes', () => {
+    const cabezas = [
+      { numero: 1, grupoIdx: 0, pos: 2 as const },
+      { numero: 2, grupoIdx: 1, pos: 1 as const },
+      { numero: 3, grupoIdx: 2, pos: 1 as const },
+    ]
+    expect(construirLlavesLayoutNumerado(7, cabezas, [0, 1, 2, 3]))
+      .toEqual(construirLlavesLayoutNumerado(7, [...cabezas], [0, 1, 2, 3]))
   })
 })
 

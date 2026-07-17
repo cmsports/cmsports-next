@@ -19,7 +19,10 @@ import {
   archivarTorneo,
   guardarPremios,
   inscribirEnMesa,
-  actualizarCabezasSerie,
+  configurarCabezasSerie,
+  crearGrupoManual,
+  finalizarGrupoManual,
+  eliminarGrupoManualVacio,
   moverJugadorEntreGrupos,
   reordenarJugadorEnGrupo,
   quitarJugadorDeMesa,
@@ -28,12 +31,13 @@ import {
   intercambiarJugadores,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
-import { calcularNumGrupos, construirLlavesLayout } from '@/lib/domain/torneos'
+import { calcularNumGrupos, construirLlavesLayoutNumerado } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
 import { descargarExcelTorneo } from '@/lib/torneo-excel'
 import { descargarInformeFinancieroPdf } from '@/lib/torneo-informe-pdf'
 import { QRCodeSVG } from 'qrcode.react'
+import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -62,7 +66,8 @@ export default function TorneoDetallePage() {
   const [metodoPagosFinales, setMetodoPagosFinales] = useState<'efectivo'|'transferencia'>('efectivo')
   const [subiendoPagos, setSubiendoPagos] = useState(false)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
-  const [cabezasSerie, setCabezasSerie] = useState<Set<string>>(new Set())
+  const [cabezasNumeradas, setCabezasNumeradas] = useState<CabezaSerieJugador[]>([])
+  const [cabezasPersistidas, setCabezasPersistidas] = useState<CabezaSerieJugador[]>([])
   const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
@@ -79,10 +84,12 @@ export default function TorneoDetallePage() {
   const [guardandoPremios, setGuardandoPremios] = useState(false)
   const [modalPremios, setModalPremios] = useState(false)
   const [enviandoRecaudacion, setEnviandoRecaudacion] = useState(false)
-  const [cabezaSerie1, setCabezaSerie1] = useState('')
-  const [cabezaSerie2, setCabezaSerie2] = useState('')
-  const [guardandoCabezas, setGuardandoCabezas] = useState(false)
   const [dragJugadorGrupo, setDragJugadorGrupo] = useState<{ jugadorId: string; grupoId: string } | null>(null)
+  const [moviendoJugadorId, setMoviendoJugadorId] = useState<string | null>(null)
+  const [cerrandoInscripcion, setCerrandoInscripcion] = useState(false)
+  const [generandoTardios, setGenerandoTardios] = useState(false)
+  const [creandoGrupoManual, setCreandoGrupoManual] = useState(false)
+  const [accionGrupoManual, setAccionGrupoManual] = useState<{ grupoId: string; tipo: 'finalizar' | 'cancelar' } | null>(null)
   const [informeOpen, setInformeOpen] = useState(false)
   const [gastosGestion, setGastosGestion] = useState<{ tipo: string; monto: string }[]>([{ tipo: '', monto: '' }])
   // En celu NO montamos el cuadro SVG (divs absolutos + SVG de conectores): con
@@ -106,18 +113,26 @@ export default function TorneoDetallePage() {
       { data: pts },
       { data: pgs },
       { data: gj },
+      { data: cabezasData },
     ] = await Promise.all([
       supabase.from('torneos').select('*').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('*,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('*').eq('torneo_id', torneoId),
       supabase.from('grupo_jugadores').select('*,jugadores(id,nombre),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
+      supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
 
     setTorneo(t)
     setGrupos(g || [])
     setPartidos(pts || [])
     setPagos(pgs || [])
+    const cabezasCargadas = (cabezasData || []).map((c: any) => ({
+      id: c.jugador_id,
+      nombre: Array.isArray(c.jugadores) ? c.jugadores[0]?.nombre || '—' : c.jugadores?.nombre || '—',
+    }))
+    setCabezasNumeradas(cabezasCargadas)
+    setCabezasPersistidas(cabezasCargadas)
 
     const todos = [...(gj || [])].sort((a: any, b: any) =>
       String(a.grupo_id ?? '').localeCompare(String(b.grupo_id ?? '')) ||
@@ -168,13 +183,14 @@ export default function TorneoDetallePage() {
     if (loading || authLoading) return
     if (perfil?.rol !== 'admin') return
     if (torneo?.fase !== 'grupos') return
+    if (cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')) return
 
     const clasificados = calcularClasificados()
     const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
+    if (gruposReales.some((g: any) => g.en_preparacion)) return
     if (!gruposReales.length || clasificados.length < Math.ceil(gruposReales.length / 2)) return
     const firmaLayout = [
-      torneo?.cabeza_serie_1 ?? '',
-      torneo?.cabeza_serie_2 ?? '',
+      cabezasPersistidas.map(c => c.id).join(','),
       gruposReales.map((g: any) => g.id).sort().join(','),
     ].join(':')
     const firma = `${firmaLayout}|${clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')}`
@@ -196,7 +212,7 @@ export default function TorneoDetallePage() {
       .catch(err => { console.error('sincronizarLlaves throw:', err); ultimaSyncRef.current = '' })
       .finally(() => { sincronizandoRef.current = false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partidos, grupos, torneo?.fase, torneo?.cabeza_serie_1, torneo?.cabeza_serie_2, perfil?.rol, loading, authLoading])
+  }, [partidos, grupos, torneo?.fase, cabezasNumeradas, cabezasPersistidas, perfil?.rol, loading, authLoading])
 
   useEffect(() => {
     if (torneo?.id) {
@@ -205,26 +221,25 @@ export default function TorneoDetallePage() {
       const p3 = torneo.premio_tercero?.toString() ?? ''
       setPremio3(p3)
       setPremioTerceroOpen(!!p3)
-      setCabezaSerie1(torneo.cabeza_serie_1 ?? '')
-      setCabezaSerie2(torneo.cabeza_serie_2 ?? '')
     }
-  }, [torneo?.id, torneo?.cabeza_serie_1, torneo?.cabeza_serie_2])
+  }, [torneo?.id])
 
-  async function guardarCabezasSerie(nuevo1: string, nuevo2: string) {
-    setGuardandoCabezas(true)
-    const res = await actualizarCabezasSerie({ torneoId, cabezaSerie1: nuevo1 || null, cabezaSerie2: nuevo2 || null })
-    setGuardandoCabezas(false)
-    if (res.error) { alert(res.error); return }
-    setCabezaSerie1(nuevo1)
-    setCabezaSerie2(nuevo2)
+  async function guardarCabezasNumeradas(jugadorIds: string[]) {
+    const res = await configurarCabezasSerie({ torneoId, jugadorIds })
+    if (res.error) return { error: res.error }
     await cargarTorneo()
+    return {}
   }
-
   async function moverAGrupo(jugadorId: string, grupoOrigenId: string, grupoDestinoId: string) {
-    if (grupoOrigenId === grupoDestinoId) return
-    const res = await moverJugadorEntreGrupos({ torneoId, jugadorId, grupoOrigenId, grupoDestinoId })
-    if (res.error) { alert(res.error); return }
-    await cargarTorneo()
+    if (grupoOrigenId === grupoDestinoId || moviendoJugadorId) return
+    setMoviendoJugadorId(jugadorId)
+    try {
+      const res = await moverJugadorEntreGrupos({ torneoId, jugadorId, grupoOrigenId, grupoDestinoId })
+      if (res.error) { alert(res.error); return }
+      await cargarTorneo()
+    } finally {
+      setMoviendoJugadorId(null)
+    }
   }
 
   async function reordenarEnGrupo(jugadorId: string, grupoId: string, direccion: 'arriba' | 'abajo') {
@@ -285,25 +300,22 @@ export default function TorneoDetallePage() {
     }
   }
 
-  function toggleCabezaSerie(jugadorId: string) {
-    setCabezasSerie(prev => {
-      const next = new Set(prev)
-      if (next.has(jugadorId)) next.delete(jugadorId)
-      else next.add(jugadorId)
-      return next
-    })
-  }
-
   async function cerrarInscripcion() {
     if (!confirm('¿Cerrar inscripción y generar grupos?')) return
-    const res = await cerrarInscripcionYGenerarGrupos({
-      torneoId,
-      cabezasDeSerie: Array.from(cabezasSerie),
-    })
-    if (res.error) { alert(res.error); return }
-    setMesaOpen(false)
-    setCabezasSerie(new Set())
-    await cargarTorneo()
+    if (cerrandoInscripcion) return
+    setCerrandoInscripcion(true)
+    try {
+      if (cabezasConCambios) {
+        const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: cabezasNumeradas.map(c => c.id) })
+        if (guardado.error) { alert(guardado.error); return }
+      }
+      const res = await cerrarInscripcionYGenerarGrupos({ torneoId })
+      if (res.error) { alert(res.error); return }
+      setMesaOpen(false)
+      await cargarTorneo()
+    } finally {
+      setCerrandoInscripcion(false)
+    }
   }
 
   function calcularStats(grupoId: string) {
@@ -370,6 +382,10 @@ export default function TorneoDetallePage() {
     const totalGrupos = grupos.filter((g: any) => g.nombre !== 'MESA').length
     const minimo = Math.ceil(totalGrupos / 2)
     if (!totalGrupos || clasificados.length < minimo) { alert(`Debes cerrar al menos ${minimo} grupos antes de armar el bracket.`); return }
+    if (cabezasConCambios) {
+      const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: cabezasNumeradas.map(c => c.id) })
+      if (guardado.error) { alert(guardado.error); return }
+    }
     const res = await sincronizarLlavesAction({ torneoId })
     if ('error' in res && res.error) { alert(`No se pudo armar el bracket: ${res.error}`); return }
     if ('esperandoCabezas' in res && res.esperandoCabezas) { alert('Primero deben terminar los grupos de los cabezas de serie.'); return }
@@ -401,9 +417,16 @@ export default function TorneoDetallePage() {
   }
 
   const esAdmin = perfil?.rol === 'admin'
+  const candidatosCabezas = Array.from(new Map(
+    [...jugadores, ...jugadoresInscritos]
+      .filter((j: any) => j.jugador_id && j.jugadores?.nombre)
+      .map((j: any) => [j.jugador_id, { id: j.jugador_id, nombre: j.jugadores.nombre }]),
+  ).values()) as CabezaSerieJugador[]
   const cuota = torneo?.cuota_inscripcion || 0
   const jugadoresUnicos: any[] = Array.from(new Map(jugadores.map((j: any) => [j.jugador_id, j])).values())
   const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
+  const grupoEnPreparacion = gruposReales.find((g: any) => g.en_preparacion)
+  const cabezasConCambios = cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')
   const inscritosReales = jugadores.filter((j: any) => gruposReales.some((g: any) => g.id === j.grupo_id))
   const totalInscritos = inscritosReales.length || jugadoresInscritos.length
   const pagados = pagos.filter(p => p.estado === 'pagado').length
@@ -438,6 +461,10 @@ export default function TorneoDetallePage() {
     if (grupoIdx < 0) return null
     return { grupoIdx, pos: c.primeroId === jid ? 1 : 2 }
   }
+  const slotsCabezas = cabezasPersistidas.map((c, indice) => {
+    const slot = slotCabeza(c.id)
+    return slot ? { ...slot, numero: indice + 1 } : null
+  }).filter((c): c is { grupoIdx: number; pos: 1 | 2; numero: number } => !!c)
 
   async function intercambiarCupos(partidoId: string, posicion: 'jugador_a' | 'jugador_b') {
     if (!dragSlot) return
@@ -454,7 +481,7 @@ export default function TorneoDetallePage() {
     await cargarTorneo()
   }
   const llavesLayout = gruposReales.length >= 2
-    ? construirLlavesLayout(gruposReales.length, slotCabeza(torneo?.cabeza_serie_1), slotCabeza(torneo?.cabeza_serie_2))
+    ? construirLlavesLayoutNumerado(gruposReales.length, slotsCabezas)
     : null
   const byeOrdenesInicial = new Set((llavesLayout?.matches || []).filter(m => m.b === null).map(m => m.orden))
   const etiquetaCupo = (partido: any, pos: 'a' | 'b'): string => {
@@ -507,7 +534,7 @@ export default function TorneoDetallePage() {
             📺 En vivo: <span style={{ fontFamily:'monospace', letterSpacing:1 }}>{torneo.codigo}</span> QR
           </button>
         )}
-        {esAdmin && torneo?.inscripcion_abierta && (
+        {esAdmin && torneo?.inscripcion_abierta && !hayBracket && (
           <button onClick={() => setMesaOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
         )}
         {esAdmin && faseActual !== 'inscripcion' && (
@@ -601,11 +628,27 @@ export default function TorneoDetallePage() {
       )}
 
       {/* BOTÓN INSCRIPCIÓN TARDÍA */}
-      {esAdmin && (faseActual === 'grupos' || fasesOrden.includes(faseActual)) && (
+      {esAdmin && faseActual === 'grupos' && !hayBracket && (
         <div style={{ marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           <button onClick={() => setMesaOpen(true)} style={{ background:'#ffffff', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
             + Inscribir jugador adicional
           </button>
+          {faseActual === 'grupos' && !hayBracket && !gruposReales.some((g: any) => g.en_preparacion) && (
+            <button disabled={creandoGrupoManual} onClick={async () => {
+              if (creandoGrupoManual) return
+              setCreandoGrupoManual(true)
+              try {
+                const res = await crearGrupoManual({ torneoId })
+                if (res.error) { alert(res.error); return }
+                alert(`Grupo ${res.nombre} creado en preparación. Agrega 3 o 4 jugadores; los partidos se crearán al finalizarlo.`)
+                await cargarTorneo()
+              } finally {
+                setCreandoGrupoManual(false)
+              }
+            }} style={{ background:'#eef2ff', color:'#4338ca', border:'1px solid #c7d2fe', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:creandoGrupoManual?'not-allowed':'pointer', opacity:creandoGrupoManual?0.6:1 }}>
+              {creandoGrupoManual ? 'Creando grupo…' : '+ Crear grupo vacío'}
+            </button>
+          )}
           {gruposReales.some((g: any) => !jugadores.some((j: any) => j.grupo_id === g.id)) && (
             <button onClick={async () => {
               if (!confirm('¿Eliminar grupos vacíos y sus partidos sin jugar?')) return
@@ -631,38 +674,21 @@ export default function TorneoDetallePage() {
 
       {/* FASE GRUPOS */}
       {faseActual === 'grupos' && !hayBracket && esAdmin && (
-        <div style={{ ...card, padding:'14px 16px', marginBottom:16, display:'flex', gap:16, flexWrap:'wrap', alignItems:'flex-end' }}>
-          <div>
-            <div style={{ fontSize:11, color: muted, marginBottom:4 }}>⭐ Cabeza de serie 1°</div>
-            <select
-              value={cabezaSerie1}
-              disabled={guardandoCabezas}
-              onChange={e => guardarCabezasSerie(e.target.value, cabezaSerie2 === e.target.value ? '' : cabezaSerie2)}
-              style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', color: text, fontSize:13, minWidth:180 }}
-            >
-              <option value="">Sin asignar</option>
-              {jugadores.map((j: any) => (
-                <option key={j.jugadores?.id} value={j.jugadores?.id}>{j.jugadores?.nombre}</option>
-              ))}
-            </select>
+        <div style={{ marginBottom:16 }}>
+          <CabezasSerieEditor
+            cabezas={cabezasNumeradas}
+            candidatos={candidatosCabezas}
+            onChange={setCabezasNumeradas}
+            onGuardar={guardarCabezasNumeradas}
+          />
+          <div style={{ marginTop:6, fontSize:11, color:hint }}>
+            #1 y #2 quedan lo más separados posible; las demás posiciones siguen el espejo del cuadro. Máximo recomendado: una cabeza por grupo.
           </div>
-          <div>
-            <div style={{ fontSize:11, color: muted, marginBottom:4 }}>⭐ Cabeza de serie 2°</div>
-            <select
-              value={cabezaSerie2}
-              disabled={guardandoCabezas}
-              onChange={e => guardarCabezasSerie(cabezaSerie1 === e.target.value ? '' : cabezaSerie1, e.target.value)}
-              style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', color: text, fontSize:13, minWidth:180 }}
-            >
-              <option value="">Sin asignar</option>
-              {jugadores.map((j: any) => (
-                <option key={j.jugadores?.id} value={j.jugadores?.id}>{j.jugadores?.nombre}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ fontSize:11, color: hint, maxWidth:280 }}>
-            Quedan en lados opuestos del cuadro al generar llaves: solo se enfrentan en la final.
-          </div>
+          {cabezasConCambios && (
+            <div role="status" style={{ marginTop:6, color:'#92400e', fontSize:11 }}>
+              Hay cambios sin guardar. El armado automático del bracket está pausado.
+            </div>
+          )}
         </div>
       )}
 
@@ -676,6 +702,7 @@ export default function TorneoDetallePage() {
             const nombreDesempate = (id: string | null | undefined) => ordenados.find((j: any) => j.jugador?.id === id)?.jugador?.nombre || '—'
             const primeroSeleccionado = empateManual[grupo.id]?.primero ?? primeroFijo?.jugador ?? null
             const opcionesDesempate = primeroFijo ? [primeroFijo, ...empatados] : empatados
+            const accionandoGrupo = accionGrupoManual?.grupoId === grupo.id
 
             return (
               <div key={grupo.id} style={{ ...card, overflow:'hidden' }}
@@ -688,9 +715,45 @@ export default function TorneoDetallePage() {
               >
                 <div style={{ padding:'12px 16px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <span style={{ fontSize:14, fontWeight:600, color: text }}>Grupo {grupo.nombre}</span>
+                  {grupo.en_preparacion && (
+                    <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                      <span style={{ background:'#fff7ed', color:'#c2410c', padding:'2px 7px', borderRadius:10, fontSize:10, fontWeight:700 }}>En preparación</span>
+                      <button disabled={ordenados.length < 3 || ordenados.length > 4 || accionandoGrupo} onClick={async () => {
+                        if (accionandoGrupo) return
+                        setAccionGrupoManual({ grupoId: grupo.id, tipo: 'finalizar' })
+                        try {
+                          const res = await finalizarGrupoManual({ torneoId, grupoId: grupo.id })
+                          if (res.error) { alert(res.error); return }
+                          await cargarTorneo()
+                        } finally {
+                          setAccionGrupoManual(null)
+                        }
+                      }} style={{ border:'1px solid #86efac', background:'#f0fdf4', color:'#166534', borderRadius:6, padding:'4px 7px', fontSize:10, cursor:ordenados.length >= 3 && ordenados.length <= 4 && !accionandoGrupo?'pointer':'not-allowed', opacity:ordenados.length >= 3 && ordenados.length <= 4 && !accionandoGrupo?1:0.5 }}>
+                        {accionGrupoManual?.grupoId === grupo.id && accionGrupoManual?.tipo === 'finalizar' ? 'Finalizando…' : `Finalizar (${ordenados.length} jugadores)`}
+                      </button>
+                      {ordenados.length === 0 && <button onClick={async () => {
+                        if (accionandoGrupo) return
+                        setAccionGrupoManual({ grupoId: grupo.id, tipo: 'cancelar' })
+                        try {
+                          const res = await eliminarGrupoManualVacio({ torneoId, grupoId: grupo.id })
+                          if (res.error) { alert(res.error); return }
+                          await cargarTorneo()
+                        } finally {
+                          setAccionGrupoManual(null)
+                        }
+                      }} disabled={accionandoGrupo} style={{ border:'1px solid #fecaca', background:'#fff', color:'#dc2626', borderRadius:6, padding:'4px 7px', fontSize:10, cursor:accionandoGrupo?'not-allowed':'pointer', opacity:accionandoGrupo?0.55:1 }}>
+                        {accionGrupoManual?.grupoId === grupo.id && accionGrupoManual?.tipo === 'cancelar' ? 'Cancelando…' : 'Cancelar'}
+                      </button>}
+                    </div>
+                  )}
                   {hayTripleEmpate && !desempateResuelto && partidosGrupo.some((p:any) => p.ganador) && <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:10 }}>⚠️ Triple empate</span>}
                   {hayTripleEmpate && desempateResuelto && <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 8px', borderRadius:10, fontSize:10 }}>✓ Resuelto y guardado</span>}
                 </div>
+                {grupo.en_preparacion && ordenados.length === 0 && (
+                  <div style={{ padding:'24px 16px', textAlign:'center', color:'#7c3aed', background:'#faf5ff', fontSize:12, borderBottom:'1px dashed #c4b5fd' }}>
+                    {isMobile ? 'Usa “Mover a este grupo” en los jugadores que quieras trasladar.' : 'Arrastra aquí los jugadores que formarán el nuevo grupo.'}
+                  </div>
+                )}
                 {ordenados.map((j: any, i: number) => (
                   <div key={`${grupo.id}-${j.jugador?.id ?? i}`}
                     draggable={esAdmin && !hayBracket && !!j.jugador?.id}
@@ -711,6 +774,19 @@ export default function TorneoDetallePage() {
                     })()}
                     {esAdmin && !hayBracket && !grupoConResultados && (
                       <div style={{ display:'flex', gap:4 }}>
+                        {isMobile && grupoEnPreparacion && grupo.id !== grupoEnPreparacion.id && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              j.jugador?.id && moverAGrupo(j.jugador.id, grupo.id, grupoEnPreparacion.id)
+                            }}
+                            disabled={!j.jugador?.id || !!moviendoJugadorId}
+                            title={`Mover al Grupo ${grupoEnPreparacion.nombre}`}
+                            style={{ minHeight:24, border:'1px solid #c4b5fd', borderRadius:6, background:'#ede9fe', color:'#4338ca', padding:'3px 6px', cursor:moviendoJugadorId?'not-allowed':'pointer', opacity:moviendoJugadorId?0.55:1, fontSize:9, fontWeight:700, whiteSpace:'nowrap' }}
+                          >
+                            {moviendoJugadorId === j.jugador?.id ? 'Moviendo…' : `Mover → ${grupoEnPreparacion.nombre}`}
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -794,7 +870,11 @@ export default function TorneoDetallePage() {
                   </div>
                 )}
                 <div style={{ padding:'8px 16px' }}>
-                  {partidosGrupo.map(p => {
+                  {grupo.en_preparacion ? (
+                    <div style={{ padding:'8px 0', color:'#7c3aed', fontSize:11, textAlign:'center' }}>
+                      Los partidos se habilitarán cuando finalices la preparación del grupo.
+                    </div>
+                  ) : partidosGrupo.map(p => {
                     const jugA = ordenados.find((j: any) => j.jugador?.id === p.jugador_a)
                     const jugB = ordenados.find((j: any) => j.jugador?.id === p.jugador_b)
                     return (
@@ -1443,7 +1523,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* MESA DE INSCRIPCIÓN */}
-      {mesaOpen && (
+      {mesaOpen && !hayBracket && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:24, width:'100%', maxWidth:560, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
@@ -1534,13 +1614,6 @@ export default function TorneoDetallePage() {
                       <div style={{ fontSize:13, color: text, fontWeight:500 }}>{j.jugadores?.nombre||'—'}</div>
                       <div style={{ fontSize:11, color: muted }}>{j.jugadores?.categoria || ''}</div>
                     </div>
-                    {/* Cabeza de serie */}
-                    <button
-                      onClick={() => toggleCabezaSerie(j.jugador_id)}
-                      style={{ background: cabezasSerie.has(j.jugador_id)?'#fffbeb':'transparent', color: cabezasSerie.has(j.jugador_id)?'#d97706': hint, border:`1px solid ${cabezasSerie.has(j.jugador_id)?'#fde68a':'#e2e8f0'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}
-                    >
-                      {cabezasSerie.has(j.jugador_id) ? '⭐ Cabeza de serie' : 'Cabeza de serie'}
-                    </button>
                     {/* Estado pago */}
                     {(torneo?.cuota_inscripcion > 0) && (() => {
                       const pagoActual = pagos.find(p => p.jugador_id === j.jugador_id)
@@ -1573,6 +1646,13 @@ export default function TorneoDetallePage() {
                     })()}
                     {/* Quitar */}
                     <button onClick={async () => {
+                      if (cabezasNumeradas.some(c => c.id === j.jugador_id)) {
+                        const nuevas = cabezasNumeradas.filter(c => c.id !== j.jugador_id)
+                        const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: nuevas.map(c => c.id) })
+                         if (guardado.error) { alert(guardado.error); return }
+                         setCabezasNumeradas(nuevas)
+                         setCabezasPersistidas(nuevas)
+                       }
                       const res = await quitarJugadorDeMesa({ torneoId, jugadorId: j.jugador_id })
                       if (res.error) { alert(res.error); return }
                       setJugadoresInscritos(prev => prev.filter((x:any) => x.jugador_id !== j.jugador_id))
@@ -1582,28 +1662,67 @@ export default function TorneoDetallePage() {
               </div>
             )}
 
+            {!hayBracket && candidatosCabezas.length > 0 && (
+              <div style={{ marginBottom:16 }}>
+                <CabezasSerieEditor
+                  cabezas={cabezasNumeradas}
+                  candidatos={candidatosCabezas}
+                  onChange={setCabezasNumeradas}
+                  onGuardar={guardarCabezasNumeradas}
+                />
+                {cabezasConCambios && faseActual === 'inscripcion' && (
+                  <div role="status" style={{ marginTop:6, color:'#92400e', fontSize:11 }}>
+                    Los cambios pendientes se guardarán automáticamente al cerrar la inscripción.
+                  </div>
+                )}
+              </div>
+            )}
+
             {faseActual === 'inscripcion' ? (
-              <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < 4}
-                style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= 4?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= 4?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4?'pointer':'not-allowed' }}>
-                {jugadoresInscritos.length < 4 ? `Mínimo 4 jugadores (faltan ${4-jugadoresInscritos.length})` : `✓ Cerrar inscripción y generar ${numGruposEstimados} grupos`}
+              <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < 4 || cerrandoInscripcion}
+                style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'pointer':'not-allowed' }}>
+                {cerrandoInscripcion
+                  ? 'Guardando y generando grupos…'
+                  : jugadoresInscritos.length < 4
+                    ? `Mínimo 4 jugadores (faltan ${4-jugadoresInscritos.length})`
+                    : `✓ ${cabezasConCambios ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · generar ${numGruposEstimados} grupos`}
               </button>
             ) : jugadoresInscritos.length > 0 ? (
-              <button onClick={async () => {
-                const msg = jugadoresInscritos.length === 1
-                  ? '¿Agregar al grupo con menos jugadores?'
-                  : `¿Crear grupo(s) con ${jugadoresInscritos.length} jugador(es) tardíos?`
+              <button disabled={generandoTardios} onClick={async () => {
+                if (generandoTardios) return
+                const cantidad = jugadoresInscritos.length
+                const msg = cantidad === 1
+                  ? grupoEnPreparacion
+                    ? `¿Agregar este jugador al Grupo ${grupoEnPreparacion.nombre} en preparación? Si es compatible con las cabezas de serie, quedará listo para finalizar.`
+                    : '¿Agregar este jugador al grupo disponible con menos jugadores?'
+                  : cantidad === 2
+                    ? '¿Crear un grupo con estos 2 jugadores? Quedará en preparación, sin partidos, hasta agregar al menos un tercero y finalizarlo.'
+                    : `¿Crear grupo(s) con ${cantidad} jugador(es) tardíos? Si alguno queda con menos de 3, permanecerá en preparación y sin partidos.`
                 if (!confirm(msg)) return
-                const res = await generarGruposTardios({ torneoId, cabezasDeSerie: Array.from(cabezasSerie) })
-                if (res.error) { alert(res.error); return }
-                setCabezasSerie(new Set())
-                alert(`Jugador(es) asignados a: ${res.nombres}`)
-                setMesaOpen(false)
-                await cargarTorneo()
+                setGenerandoTardios(true)
+                try {
+                  const res = await generarGruposTardios({ torneoId })
+                  if (res.error) { alert(res.error); return }
+                  const quedoEnPreparacion = cantidad === 2 || String(res.nombres || '').includes('(en preparación)')
+                  alert(quedoEnPreparacion
+                    ? `Jugador(es) asignados a: ${res.nombres}. El grupo quedó en preparación: agrega al menos un tercero y luego presiona Finalizar.`
+                    : `Jugador(es) asignados a: ${res.nombres}`)
+                  setMesaOpen(false)
+                  await cargarTorneo()
+                } finally {
+                  setGenerandoTardios(false)
+                }
               }}
-                style={{ width:'100%', padding:12, background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
-                {jugadoresInscritos.length === 1
-                  ? '✓ Agregar al grupo con menos jugadores'
-                  : `✓ Crear grupo(s) con ${jugadoresInscritos.length} jugadores`}
+                style={{ width:'100%', padding:12, background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, fontSize:13, fontWeight:600, cursor:generandoTardios?'not-allowed':'pointer', opacity:generandoTardios?0.6:1 }}>
+                {generandoTardios
+                  ? 'Procesando jugadores…'
+                  : jugadoresInscritos.length === 1
+                    ? grupoEnPreparacion
+                      ? `✓ Completar Grupo ${grupoEnPreparacion.nombre} en preparación`
+                      : '✓ Agregar al grupo disponible con menos jugadores'
+                    : jugadoresInscritos.length === 2
+                      ? '✓ Crear grupo con 2 · quedará en preparación'
+                      : `✓ Crear grupo(s) con ${jugadoresInscritos.length} jugadores`}
               </button>
             ) : (
               <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#3730a3', textAlign:'center' }}>

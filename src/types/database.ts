@@ -661,6 +661,7 @@ export interface Database {
           desempate_primero_id: string | null
           desempate_segundo_id: string | null
           orden: number | null
+          en_preparacion: boolean
         }
         Insert: {
           id?: string
@@ -670,6 +671,7 @@ export interface Database {
           desempate_primero_id?: string | null
           desempate_segundo_id?: string | null
           orden?: number | null
+          en_preparacion?: boolean
         }
         Update: {
           id?: string
@@ -679,6 +681,7 @@ export interface Database {
           desempate_primero_id?: string | null
           desempate_segundo_id?: string | null
           orden?: number | null
+          en_preparacion?: boolean
         }
         Relationships: [
           { foreignKeyName: 'torneo_grupos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
@@ -1023,6 +1026,30 @@ export interface Database {
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
           { foreignKeyName: 'solicitudes_jugador_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+        ]
+      }
+      torneo_cabezas_serie: {
+        Row: {
+          torneo_id: string
+          jugador_id: string
+          numero: number
+          creado_en: string
+        }
+        Insert: {
+          torneo_id: string
+          jugador_id: string
+          numero: number
+          creado_en?: string
+        }
+        Update: {
+          torneo_id?: string
+          jugador_id?: string
+          numero?: number
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'torneo_cabezas_serie_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_cabezas_serie_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
       kioscos_asistencia: {
@@ -1460,6 +1487,10 @@ export interface Database {
           p_partido_b_id: string
           p_posicion_b: string
         }
+        Returns: Json
+      }
+      configurar_cabezas_serie: {
+        Args: { p_torneo_id: string; p_jugador_ids: string[] }
         Returns: Json
       }
       crear_solicitud_jugador: {

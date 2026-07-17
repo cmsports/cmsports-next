@@ -71,11 +71,18 @@ export function nombreGrupo(indice: number): string {
 export function seedingSerpenteo(
   jugadores: JugadorTorneo[],
   numGrupos: number,
-  cabezasDeSerie: Set<string> = new Set(),
+  cabezasDeSerie: readonly string[] | ReadonlySet<string> = [],
 ): SeedResult[] {
-  // Los cabezas de serie van primero; el resto conserva el orden recibido.
-  const cabezas = jugadores.filter(j => cabezasDeSerie.has(j.id))
-  const resto = jugadores.filter(j => !cabezasDeSerie.has(j.id))
+  // Una lista conserva el número/prioridad explícita de las cabezas. Se acepta
+  // Set para mantener compatibilidad con llamadas antiguas.
+  const porId = new Map(jugadores.map(j => [j.id, j]))
+  const idsCabeza = 'has' in cabezasDeSerie
+    ? jugadores.filter(j => cabezasDeSerie.has(j.id)).map(j => j.id)
+    : [...cabezasDeSerie]
+  const idsUnicos = [...new Set(idsCabeza)]
+  const cabezas = idsUnicos.map(id => porId.get(id)).filter((j): j is JugadorTorneo => !!j)
+  const cabezasSet = new Set(cabezas.map(j => j.id))
+  const resto = jugadores.filter(j => !cabezasSet.has(j.id))
   const ordenados = [...cabezas, ...resto]
 
   const asignaciones: SeedResult[] = []
@@ -290,6 +297,17 @@ interface UnidadBracket {
   b: CupoBracket | null
 }
 
+interface SemillaNumeradaJugador {
+  jugadorId: string
+  numero: number
+}
+
+export interface CabezaSerieNumerada {
+  numero: number
+  grupoIdx: number
+  pos: 1 | 2
+}
+
 function claveCupo(cupo: CupoBracket | null | undefined): string {
   return cupo ? `${cupo.grupoIdx}:${cupo.pos}` : ''
 }
@@ -418,6 +436,245 @@ function construirBracketPorGrupos(
 
 // ─── Playoffs ──────────────────────────────────────────────────────────────
 
+function construirBracketPorGruposNumerado(
+  primeros: JugadorTorneo[],
+  segundos: JugadorTorneo[],
+  semillasEntrada: readonly SemillaNumeradaJugador[] = [],
+  gruposListos: Set<number> = new Set(),
+): PartidoGenerado[] {
+  const numGrupos = primeros.length
+  if (numGrupos < 2 || segundos.length !== numGrupos) return []
+  const total = numGrupos * 2
+  const tam = calcularTamanoBracket(total)
+  const totalPartidos = tam / 2
+  const partidosPorMitad = totalPartidos / 2
+  const fase = determinarFaseInicial(tam)
+  const cupos: CupoBracket[] = []
+  for (let grupoIdx = 0; grupoIdx < numGrupos; grupoIdx++) {
+    cupos.push({ jugador: primeros[grupoIdx], grupoIdx, pos: 1 })
+    cupos.push({ jugador: segundos[grupoIdx], grupoIdx, pos: 2 })
+  }
+
+  const idsValidos = new Set(cupos.map(c => c.jugador.id))
+  const semillas = semillasEntrada
+    .filter(s => Number.isInteger(s.numero) && s.numero > 0 && idsValidos.has(s.jugadorId))
+    .sort((a, b) => a.numero - b.numero || a.jugadorId.localeCompare(b.jugadorId))
+    .filter((s, i, arr) => arr.findIndex(x => x.numero === s.numero || x.jugadorId === s.jugadorId) === i)
+  const numeroPorJugador = new Map(semillas.map(s => [s.jugadorId, s.numero]))
+  const semillaDe = (c: CupoBracket | null | undefined) => c ? numeroPorJugador.get(c.jugador.id) ?? null : null
+  const posicionCanonica = (numero: number) => posicionesSembradas(tam)[numero - 1]
+
+  // Orientación lexicográfica por número: se protege #1 antes que #2, etc.
+  const pesos = new Map(semillas.map((s, i) => [s.jugadorId, 2 ** (semillas.length - i)]))
+  const evaluarOrientacion = (cantidadArriba: number) => {
+    const opciones = Array.from({ length: numGrupos }, (_, grupoIdx) => {
+      let arriba = 0
+      let abajo = 0
+      for (const cupo of cupos.filter(c => c.grupoIdx === grupoIdx)) {
+        const numero = semillaDe(cupo)
+        if (!numero || numero > tam) continue
+        const mitadDeseada = posicionCanonica(numero) < tam / 2 ? 0 : 1
+        const peso = pesos.get(cupo.jugador.id) ?? 0
+        const mitadConPrimeroArriba = cupo.pos === 1 ? 0 : 1
+        if (mitadConPrimeroArriba === mitadDeseada) arriba += peso
+        else abajo += peso
+      }
+      return { grupoIdx, arriba, abajo, delta: arriba - abajo }
+    })
+    opciones.sort((a, b) => {
+      if (a.delta !== b.delta) return a.delta > b.delta ? -1 : 1
+      const ready = Number(gruposListos.has(b.grupoIdx)) - Number(gruposListos.has(a.grupoIdx))
+      return ready || a.grupoIdx - b.grupoIdx
+    })
+    const elegidos = new Set(opciones.slice(0, cantidadArriba).map(o => o.grupoIdx))
+    const objetivoListos = Math.min(cantidadArriba, Math.ceil(gruposListos.size / 2))
+    let listosArriba = [...elegidos].filter(g => gruposListos.has(g)).length
+    // Con igual costo de semillas, repartir grupos cerrados entre ambas mitades
+    // deja al menos una rama completa lista para jugar.
+    while (listosArriba > objetivoListos) {
+      const sale = opciones.find(o => elegidos.has(o.grupoIdx) && gruposListos.has(o.grupoIdx))
+      const entra = opciones.find(o => !elegidos.has(o.grupoIdx) && !gruposListos.has(o.grupoIdx) && o.delta === sale?.delta)
+      if (!sale || !entra) break
+      elegidos.delete(sale.grupoIdx)
+      elegidos.add(entra.grupoIdx)
+      listosArriba--
+    }
+    while (listosArriba < objetivoListos) {
+      const sale = opciones.find(o => elegidos.has(o.grupoIdx) && !gruposListos.has(o.grupoIdx))
+      const entra = opciones.find(o => !elegidos.has(o.grupoIdx) && gruposListos.has(o.grupoIdx) && o.delta === sale?.delta)
+      if (!sale || !entra) break
+      elegidos.delete(sale.grupoIdx)
+      elegidos.add(entra.grupoIdx)
+      listosArriba++
+    }
+    const calidad = (orientacion: Set<number>) => {
+      const byes = new Set<string>()
+      const vaciosMitad = totalPartidos - numGrupos
+      for (const mitad of [0, 1] as const) {
+        const primerosMitad = cupos.filter(c => c.pos === 1 && (orientacion.has(c.grupoIdx) ? 0 : 1) === mitad)
+        const segundosMitad = cupos.filter(c => c.pos === 2 && (orientacion.has(c.grupoIdx) ? 1 : 0) === mitad)
+        const byePrimeros = (vaciosMitad + primerosMitad.length - segundosMitad.length) / 2
+        const byeSegundos = vaciosMitad - byePrimeros
+        const prioridad = (a: CupoBracket, b: CupoBracket) => {
+          const sa = semillaDe(a) ?? Number.MAX_SAFE_INTEGER
+          const sb = semillaDe(b) ?? Number.MAX_SAFE_INTEGER
+          return sa - sb || Number(!gruposListos.has(a.grupoIdx)) - Number(!gruposListos.has(b.grupoIdx))
+            || a.grupoIdx - b.grupoIdx
+        }
+        primerosMitad.sort(prioridad).slice(0, byePrimeros).forEach(c => byes.add(claveCupo(c)))
+        segundosMitad.sort(prioridad).slice(0, byeSegundos).forEach(c => byes.add(claveCupo(c)))
+      }
+      const mirror = semillas.map(s => {
+        const cupo = cupos.find(c => c.jugador.id === s.jugadorId)!
+        const mitadReal = cupo.pos === 1
+          ? (orientacion.has(cupo.grupoIdx) ? 0 : 1)
+          : (orientacion.has(cupo.grupoIdx) ? 1 : 0)
+        return mitadReal === (posicionCanonica(s.numero) < tam / 2 ? 0 : 1)
+      })
+      const bye = semillas.map(s => byes.has(claveCupo(cupos.find(c => c.jugador.id === s.jugadorId)!)))
+      // #1/#2 separados es lo primero; luego BYE por número; después el espejo
+      // completo de las semillas restantes.
+      return [mirror[0] ?? true, mirror[1] ?? true, ...bye, ...mirror.slice(2)]
+    }
+    const compararCalidad = (a: boolean[], b: boolean[]) => {
+      for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        if ((a[i] ?? false) !== (b[i] ?? false)) return a[i] ? 1 : -1
+      }
+      return 0
+    }
+    let calidadActual = calidad(elegidos)
+    let mejoro = true
+    while (mejoro) {
+      mejoro = false
+      let mejorSet = elegidos
+      let mejorCalidad = calidadActual
+      const dentro = [...elegidos].sort((a, b) => a - b)
+      const fuera = Array.from({ length: numGrupos }, (_, i) => i).filter(g => !elegidos.has(g))
+      for (const sale of dentro) {
+        for (const entra of fuera) {
+          const candidato = new Set(elegidos)
+          candidato.delete(sale)
+          candidato.add(entra)
+          const calidadCandidata = calidad(candidato)
+          if (compararCalidad(calidadCandidata, mejorCalidad) > 0) {
+            mejorSet = candidato
+            mejorCalidad = calidadCandidata
+          }
+        }
+      }
+      if (mejorSet !== elegidos) {
+        elegidos.clear()
+        mejorSet.forEach(g => elegidos.add(g))
+        calidadActual = mejorCalidad
+        mejoro = true
+      }
+    }
+    listosArriba = [...elegidos].filter(g => gruposListos.has(g)).length
+    return { elegidos, calidad: calidadActual, desbalanceListos: Math.abs(listosArriba - objetivoListos) }
+  }
+  const orientaciones = [...new Set([Math.ceil(numGrupos / 2), Math.floor(numGrupos / 2)])]
+    .map(evaluarOrientacion)
+    .sort((a, b) => {
+      for (let i = 0; i < Math.max(a.calidad.length, b.calidad.length); i++) {
+        if ((a.calidad[i] ?? false) !== (b.calidad[i] ?? false)) return a.calidad[i] ? -1 : 1
+      }
+      if (a.desbalanceListos !== b.desbalanceListos) return a.desbalanceListos - b.desbalanceListos
+      return 0
+    })
+  const grupoEnMitad0 = orientaciones[0]?.elegidos ?? new Set<number>()
+  const ordenarPrioridad = (lista: CupoBracket[]) => [...lista].sort((a, b) => {
+    const pa = semillaDe(a) ?? Number.MAX_SAFE_INTEGER
+    const pb = semillaDe(b) ?? Number.MAX_SAFE_INTEGER
+    const la = gruposListos.has(a.grupoIdx) ? 0 : 1
+    const lb = gruposListos.has(b.grupoIdx) ? 0 : 1
+    return pa - pb || la - lb || a.grupoIdx - b.grupoIdx || a.pos - b.pos
+  })
+
+  const unidadesPorMitad: UnidadBracket[][] = [[], []]
+  for (const mitad of [0, 1] as const) {
+    const primerosMitad = cupos.filter(c => c.pos === 1 && (grupoEnMitad0.has(c.grupoIdx) ? 0 : 1) === mitad)
+    const segundosMitad = cupos.filter(c => c.pos === 2 && (grupoEnMitad0.has(c.grupoIdx) ? 1 : 0) === mitad)
+    const vaciosMitad = totalPartidos - numGrupos
+    const byePrimeros = (vaciosMitad + primerosMitad.length - segundosMitad.length) / 2
+    const byeSegundos = vaciosMitad - byePrimeros
+    if (!Number.isInteger(byePrimeros) || byePrimeros < 0 || byeSegundos < 0) return []
+
+    const primerosOrdenados = ordenarPrioridad(primerosMitad)
+    const segundosOrdenados = ordenarPrioridad(segundosMitad)
+    const primerosBye = primerosOrdenados.slice(0, byePrimeros)
+    const segundosBye = segundosOrdenados.slice(0, byeSegundos)
+    const primerosJuegan = primerosOrdenados.slice(byePrimeros)
+    const segundosDisponibles = segundosOrdenados.slice(byeSegundos)
+    if (primerosJuegan.length !== segundosDisponibles.length) return []
+
+    const parejas = primerosJuegan.map(a => {
+      const seedA = semillaDe(a)
+      segundosDisponibles.sort((x, y) => {
+        const seedX = semillaDe(x)
+        const seedY = semillaDe(y)
+        const preferX = seedA ? Number(seedX != null) : Number(seedX == null)
+        const preferY = seedA ? Number(seedY != null) : Number(seedY == null)
+        return preferX - preferY
+          || (seedX ?? Number.MAX_SAFE_INTEGER) - (seedY ?? Number.MAX_SAFE_INTEGER)
+          || x.grupoIdx - y.grupoIdx
+      })
+      return { a, b: segundosDisponibles.shift()! }
+    })
+    const unidades: UnidadBracket[] = [
+      ...primerosBye.map(a => ({ a, b: null })),
+      ...segundosBye.map(a => ({ a, b: null })),
+      ...parejas,
+    ]
+    if (unidades.length !== partidosPorMitad) return []
+    unidadesPorMitad[mitad] = unidades
+  }
+
+  const asignadas = new Map<number, UnidadBracket>()
+  const semillaPrincipal = (u: UnidadBracket) => {
+    const ns = [semillaDe(u.a), semillaDe(u.b)].filter((n): n is number => n != null)
+    return ns.length ? Math.min(...ns) : null
+  }
+  for (const mitad of [0, 1] as const) {
+    const inicio = mitad * partidosPorMitad
+    const libres = Array.from({ length: partidosPorMitad }, (_, i) => inicio + i)
+    const unidades = unidadesPorMitad[mitad]
+    const sembradas = unidades.filter(u => semillaPrincipal(u) != null)
+      .sort((a, b) => semillaPrincipal(a)! - semillaPrincipal(b)! || claveCupo(a.a).localeCompare(claveCupo(b.a)))
+    for (const unidad of sembradas) {
+      const numero = semillaPrincipal(unidad)!
+      const objetivo = numero <= tam ? Math.floor(posicionCanonica(numero) / 2) : inicio
+      libres.sort((a, b) => {
+        const distancia = (orden: number) => {
+          let x = orden
+          let y = objetivo
+          let pasos = 0
+          while (x !== y && pasos < 16) {
+            x = Math.floor(x / 2)
+            y = Math.floor(y / 2)
+            pasos++
+          }
+          return pasos
+        }
+        return distancia(a) - distancia(b) || Math.abs(a - objetivo) - Math.abs(b - objetivo) || a - b
+      })
+      const orden = libres.shift()
+      if (orden != null) asignadas.set(orden, unidad)
+    }
+    const restantes = unidades.filter(u => !sembradas.includes(u))
+      .sort((a, b) => claveCupo(a.a).localeCompare(claveCupo(b.a)))
+    libres.sort((a, b) => a - b)
+    restantes.forEach((u, i) => asignadas.set(libres[i], u))
+  }
+
+  return [...asignadas.entries()].sort(([a], [b]) => a - b).map(([orden, u]) => ({
+    jugadorA: u.a.jugador.id,
+    jugadorB: u.b?.jugador.id ?? null,
+    ganador: u.b ? null : u.a.jugador.id,
+    fase,
+    orden,
+  }))
+}
+
 export function calcularTamanoBracket(numClasificados: number): number {
   let tam = 2
   while (tam < numClasificados) tam *= 2
@@ -480,25 +737,19 @@ export interface LlaveSlot { grupoIdx: number; pos: 1 | 2 }
 export interface LlaveMatch { orden: number; a: LlaveSlot | null; b: LlaveSlot | null }
 export interface LlavesLayout { faseInicial: FaseOrden; matches: LlaveMatch[] }
 
-export function construirLlavesLayout(
+export function construirLlavesLayoutNumerado(
   numGrupos: number,
-  cabeza1?: number | LlaveSlot | null,
-  cabeza2?: number | LlaveSlot | null,
+  cabezas: readonly CabezaSerieNumerada[] = [],
   gruposListos: number[] = [],
 ): LlavesLayout {
   const primeros = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:1`, nombre: '' }))
   const segundos = Array.from({ length: numGrupos }, (_, i) => ({ id: `${i}:2`, nombre: '' }))
-  const normalizar = (cabeza?: number | LlaveSlot | null): LlaveSlot | null => {
-    if (cabeza == null) return null
-    return typeof cabeza === 'number' ? { grupoIdx: cabeza, pos: 1 } : cabeza
-  }
-  const slot1 = normalizar(cabeza1)
-  const slot2 = normalizar(cabeza2)
-  const c1 = slot1 ? `${slot1.grupoIdx}:${slot1.pos}` : null
-  let c2 = slot2 ? `${slot2.grupoIdx}:${slot2.pos}` : null
-  if (c2 && c2 === c1) c2 = null
-
-  const bracket = construirBracketPorGrupos(primeros, segundos, c1, c2, new Set(gruposListos))
+  const cabezasValidas = cabezas
+    .filter(c => Number.isInteger(c.numero) && c.numero > 0 && c.grupoIdx >= 0 && c.grupoIdx < numGrupos && (c.pos === 1 || c.pos === 2))
+    .sort((a, b) => a.numero - b.numero || a.grupoIdx - b.grupoIdx || a.pos - b.pos)
+    .filter((c, i, arr) => arr.findIndex(x => x.numero === c.numero || (x.grupoIdx === c.grupoIdx && x.pos === c.pos)) === i)
+  const semillas = cabezasValidas.map(c => ({ jugadorId: `${c.grupoIdx}:${c.pos}`, numero: c.numero }))
+  const bracket = construirBracketPorGruposNumerado(primeros, segundos, semillas, new Set(gruposListos))
   const parse = (id: string | null | undefined): LlaveSlot | null => {
     if (!id) return null
     const [g, p] = id.split(':')
@@ -508,6 +759,26 @@ export function construirLlavesLayout(
     faseInicial: (bracket[0]?.fase as FaseOrden) ?? 'final',
     matches: bracket.map(p => ({ orden: p.orden, a: parse(p.jugadorA), b: parse(p.jugadorB) })),
   }
+}
+
+export function construirLlavesLayout(
+  numGrupos: number,
+  cabeza1?: number | LlaveSlot | null,
+  cabeza2?: number | LlaveSlot | null,
+  gruposListos: number[] = [],
+): LlavesLayout {
+  const normalizar = (cabeza?: number | LlaveSlot | null): LlaveSlot | null => {
+    if (cabeza == null) return null
+    return typeof cabeza === 'number' ? { grupoIdx: cabeza, pos: 1 } : cabeza
+  }
+  const slot1 = normalizar(cabeza1)
+  const slot2 = normalizar(cabeza2)
+  const cabezas: CabezaSerieNumerada[] = []
+  if (slot1) cabezas.push({ numero: 1, ...slot1 })
+  if (slot2 && (!slot1 || slot2.grupoIdx !== slot1.grupoIdx || slot2.pos !== slot1.pos)) {
+    cabezas.push({ numero: 2, ...slot2 })
+  }
+  return construirLlavesLayoutNumerado(numGrupos, cabezas, gruposListos)
 }
 
 export function generarSiguienteFase(
