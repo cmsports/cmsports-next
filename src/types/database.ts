@@ -781,6 +781,7 @@ export interface Database {
           metodo_pago: string | null
           fecha_pago: string | null
           creado_en: string | null
+          subido_a_finanzas: boolean
         }
         Insert: {
           id?: string
@@ -790,6 +791,7 @@ export interface Database {
           metodo_pago?: string | null
           fecha_pago?: string | null
           creado_en?: string | null
+          subido_a_finanzas?: boolean
         }
         Update: {
           id?: string
@@ -799,6 +801,7 @@ export interface Database {
           metodo_pago?: string | null
           fecha_pago?: string | null
           creado_en?: string | null
+          subido_a_finanzas?: boolean
         }
         Relationships: [
           { foreignKeyName: 'torneo_pagos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },

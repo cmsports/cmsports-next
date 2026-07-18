@@ -26,7 +26,6 @@ import {
   moverJugadorEntreGrupos,
   reordenarJugadorEnGrupo,
   quitarJugadorDeMesa,
-  enviarRecaudacionAFinanzas,
   guardarDesempateGrupo,
   intercambiarJugadores,
 } from '@/app/actions/torneos'
@@ -62,7 +61,6 @@ export default function TorneoDetallePage() {
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'pendiente'>('pendiente')
   const [pagoLoading, setPagoLoading] = useState<string|null>(null)
   const [pagosSeleccionados, setPagosSeleccionados] = useState<Set<string>>(new Set())
-  const [metodoPagosFinales, setMetodoPagosFinales] = useState<'efectivo'|'transferencia'>('efectivo')
   const [subiendoPagos, setSubiendoPagos] = useState(false)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
   const [cabezasNumeradas, setCabezasNumeradas] = useState<CabezaSerieJugador[]>([])
@@ -470,6 +468,8 @@ export default function TorneoDetallePage() {
   const recaudado = pagados * cuota
   const recaudadoTransferencia = pagos.filter(p => p.estado === 'pagado' && p.metodo_pago === 'transferencia').length * cuota
   const recaudadoEfectivo = recaudado - recaudadoTransferencia
+  const pagosPendientesDeSubir = pagos.filter(p => p.estado === 'pagado' && !p.subido_a_finanzas)
+  const recaudadoPendiente = pagosPendientesDeSubir.length * cuota
   const proyectado = totalInscritos * cuota
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
@@ -628,9 +628,9 @@ export default function TorneoDetallePage() {
         <div style={{ ...card, padding:16, marginBottom:16 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
             <div style={{ fontSize:13, fontWeight:600, color: text }}>💰 Control financiero</div>
-            {torneo?.contabilidad_enviada
-              ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Enviado a Finanzas</span>
-              : <span style={{ background:'#fffbeb', color:'#d97706', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:500 }}>📤 Se enviará con los premios</span>
+            {recaudadoPendiente === 0
+              ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>✓ Al día con Finanzas</span>
+              : <span style={{ background:'#fffbeb', color:'#d97706', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:500 }}>📤 {fmt(recaudadoPendiente)} sin subir</span>
             }
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))', gap:10 }}>
@@ -648,20 +648,20 @@ export default function TorneoDetallePage() {
               </div>
             ))}
           </div>
-          {!torneo?.contabilidad_enviada && recaudado > 0 && (
+          {recaudadoPendiente > 0 && (
             <button
               disabled={enviandoRecaudacion}
               onClick={async () => {
-                if (!confirm(`¿Registrar ${fmt(recaudado)} en Finanzas?\n\nEfectivo: ${fmt(recaudadoEfectivo)}\nTransferencia: ${fmt(recaudadoTransferencia)}`)) return
+                if (!confirm(`¿Subir ${fmt(recaudadoPendiente)} a Finanzas? (${pagosPendientesDeSubir.length} pago(s) que aún no se han subido)`)) return
                 setEnviandoRecaudacion(true)
-                const res = await enviarRecaudacionAFinanzas({ torneoId, torneoNombre: torneo?.nombre || '', montoEfectivo: recaudadoEfectivo, montoTransferencia: recaudadoTransferencia })
+                const res = await subirPagosPendientesAFinanzas({ torneoId })
                 setEnviandoRecaudacion(false)
                 if (res.error) { alert(res.error); return }
-                setTorneo((t: any) => ({ ...t, contabilidad_enviada: true }))
+                await cargarTorneo()
               }}
               style={{ marginTop:10, width:'100%', padding:'10px', background:'#4f46e5', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: enviandoRecaudacion ? 'not-allowed' : 'pointer', opacity: enviandoRecaudacion ? 0.7 : 1 }}
             >
-              {enviandoRecaudacion ? 'Registrando...' : `📤 Registrar ${fmt(recaudado)} en Finanzas`}
+              {enviandoRecaudacion ? 'Subiendo...' : `📤 Subir ${fmt(recaudadoPendiente)} a Finanzas`}
             </button>
           )}
         </div>
@@ -1322,9 +1322,9 @@ export default function TorneoDetallePage() {
               </div>
             </div>
 
-            {torneo?.contabilidad_enviada ? (
+            {(torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null) ? (
               <div style={{ width: '100%', padding: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#16a34a', textAlign: 'center' }}>
-                ✓ Enviado a Finanzas
+                ✓ Premios guardados
               </div>
             ) : (
               <button
@@ -1340,23 +1340,14 @@ export default function TorneoDetallePage() {
               const p1 = premio1 ? parseInt(premio1) : null
               const p2 = premio2 ? parseInt(premio2) : null
               const p3 = premioTerceroOpen && premio3 ? parseInt(premio3) : null
-              const totalPremios = (p1 || 0) + (p2 || 0) + (p3 || 0)
-              const enviarRec = !torneo?.contabilidad_enviada && recaudado > 0
-              const neto = recaudado - totalPremios
               const fmtM = (n: number) => '$' + n.toLocaleString('es-CL')
               return (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
                   <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 4 }}>Confirmar y enviar a Finanzas</div>
-                    <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Esto registrará los movimientos en Finanzas.</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 4 }}>Confirmar premios</div>
+                    <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Esto registrará los gastos de premios en Finanzas. Los ingresos por inscripción se suben aparte, desde "Control financiero" o el panel de pagos.</div>
 
                     <div style={{ background: '#f4f7fa', borderRadius: 10, padding: '14px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 9 }}>
-                      {enviarRec && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                          <span style={{ color: '#16a34a' }}>📥 Ingresos (cuotas)</span>
-                          <strong style={{ color: '#16a34a', fontVariantNumeric: 'tabular-nums' }}>{fmtM(recaudado)}</strong>
-                        </div>
-                      )}
                       {(p1 !== null) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                           <span style={{ color: text }}>🥇 Premio 1°{campeon1 ? ` — ${campeon1.nombre}` : ''}</span>
@@ -1373,12 +1364,6 @@ export default function TorneoDetallePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                           <span style={{ color: text }}>🥉 Premio 3°</span>
                           <strong style={{ color: p3 > 0 ? '#dc2626' : muted, fontVariantNumeric: 'tabular-nums' }}>{p3 > 0 ? `− ${fmtM(p3)}` : '$0'}</strong>
-                        </div>
-                      )}
-                      {enviarRec && (
-                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 9, display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700 }}>
-                          <span style={{ color: neto >= 0 ? '#16a34a' : '#dc2626' }}>Queda para el club</span>
-                          <span style={{ color: neto >= 0 ? '#16a34a' : '#dc2626', fontVariantNumeric: 'tabular-nums' }}>{fmtM(neto)}</span>
                         </div>
                       )}
                     </div>
@@ -1411,7 +1396,7 @@ export default function TorneoDetallePage() {
                       <button
                         onClick={async () => {
                           setGuardandoPremios(true)
-                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, montoRecaudado: recaudado, montoEfectivo: recaudadoEfectivo, montoTransferencia: recaudadoTransferencia, enviarRecaudacion: enviarRec, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
+                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
                           setGuardandoPremios(false)
                           setModalPremios(false)
                           if (res.error) { alert(res.error); return }
@@ -1432,47 +1417,51 @@ export default function TorneoDetallePage() {
       })()}
 
       {/* PAGOS PENDIENTES */}
-      {esAdmin && cuota > 0 && (faseActual === 'grupos' || fasesOrden.includes(faseActual) || faseActual === 'finalizado') && (
+      {esAdmin && cuota > 0 && (
         <div style={{ ...card, padding:16, marginBottom:16, marginTop:16 }}>
-          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💳 Pagos pendientes</div>
-          {faseActual === 'finalizado' && jugadoresUnicos.some((j: any) => !pagos.some(p => p.jugador_id === j.jugador_id && p.estado === 'pagado')) && (
-            <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:12, marginBottom:10 }}>
-              <div style={{ fontSize:12, color:muted, marginBottom:10 }}>Selecciona quienes pagaron después del cierre y súbelos inmediatamente a Finanzas.</div>
-              <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-                {(['efectivo','transferencia'] as const).map(metodo => (
-                  <button key={metodo} onClick={() => setMetodoPagosFinales(metodo)} style={{ background:metodoPagosFinales === metodo ? '#4f46e5' : '#fff', color:metodoPagosFinales === metodo ? '#fff' : muted, border:'1px solid #cbd5e1', borderRadius:7, padding:'7px 10px', fontSize:11, cursor:'pointer' }}>
-                    {metodo === 'efectivo' ? '💵 Efectivo' : '💳 Transferencia'}
-                  </button>
-                ))}
-                <button disabled={!pagosSeleccionados.size || subiendoPagos} onClick={async () => {
-                  setSubiendoPagos(true)
-                  try {
-                    const res = await subirPagosPendientesAFinanzas({ torneoId, jugadorIds:Array.from(pagosSeleccionados), metodoPago:metodoPagosFinales })
-                    if (res.error) { alert(res.error); return }
-                    setPagosSeleccionados(new Set())
-                    await cargarTorneo()
-                    alert(`✓ ${res.cantidad} pago(s) subido(s) a Finanzas`)
-                  } finally { setSubiendoPagos(false) }
-                }} style={{ marginLeft:'auto', background:!pagosSeleccionados.size || subiendoPagos ? '#94a3b8' : '#16a34a', color:'#fff', border:'none', borderRadius:7, padding:'8px 12px', fontSize:11, fontWeight:700, cursor:!pagosSeleccionados.size || subiendoPagos ? 'not-allowed' : 'pointer' }}>
-                  {subiendoPagos ? 'Subiendo...' : `Subir a Finanzas (${pagosSeleccionados.size})`}
-                </button>
-              </div>
+          <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💳 Pagos</div>
+
+          {pagosPendientesDeSubir.length > 0 && (
+            <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:10, padding:12, marginBottom:14 }}>
+              <div style={{ fontSize:12, color:muted, marginBottom:10 }}>Ya pagaron pero aún no se suben a Finanzas. Puedes subir solo algunos ahora y el resto después, cuando terminen de pagar.</div>
+              {pagosPendientesDeSubir.map(p => {
+                const j = jugadoresUnicos.find((x: any) => x.jugador_id === p.jugador_id)
+                return (
+                  <div key={p.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 0' }}>
+                    <input type="checkbox" checked={pagosSeleccionados.has(p.jugador_id)} onChange={e => setPagosSeleccionados(prev => { const next = new Set(prev); if (e.target.checked) next.add(p.jugador_id); else next.delete(p.jugador_id); return next })} />
+                    <div style={{ flex:1, fontSize:13, color: text }}>{j?.jugadores?.nombre || '—'}</div>
+                    <span style={{ fontSize:11, color: muted }}>{p.metodo_pago === 'transferencia' ? '💳 Transferencia' : '💵 Efectivo'}</span>
+                  </div>
+                )
+              })}
+              <button disabled={!pagosSeleccionados.size || subiendoPagos} onClick={async () => {
+                setSubiendoPagos(true)
+                try {
+                  const res = await subirPagosPendientesAFinanzas({ torneoId, jugadorIds:Array.from(pagosSeleccionados) })
+                  if (res.error) { alert(res.error); return }
+                  setPagosSeleccionados(new Set())
+                  await cargarTorneo()
+                  alert(`✓ ${res.cantidad} pago(s) subido(s) a Finanzas`)
+                } finally { setSubiendoPagos(false) }
+              }} style={{ marginTop:8, width:'100%', background:!pagosSeleccionados.size || subiendoPagos ? '#94a3b8' : '#16a34a', color:'#fff', border:'none', borderRadius:7, padding:'8px 12px', fontSize:12, fontWeight:700, cursor:!pagosSeleccionados.size || subiendoPagos ? 'not-allowed' : 'pointer' }}>
+                {subiendoPagos ? 'Subiendo...' : `Subir a Finanzas (${pagosSeleccionados.size})`}
+              </button>
             </div>
           )}
+
           {jugadoresUnicos.filter((j: any) => {
             const pago = pagos.find(p => p.jugador_id === j.jugador_id)
             return !pago || pago.estado !== 'pagado'
           }).length === 0
-            ? <p style={{ fontSize:13, color:'#16a34a' }}>✓ Todos han pagado</p>
+            ? (pagosPendientesDeSubir.length === 0 && <p style={{ fontSize:13, color:'#16a34a' }}>✓ Todos han pagado y están subidos a Finanzas</p>)
             : jugadoresUnicos.filter((j: any) => {
                 const pago = pagos.find(p => p.jugador_id === j.jugador_id)
                 return !pago || pago.estado !== 'pagado'
               }).map((j: any) => (
               <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
-                {faseActual === 'finalizado' && <input type="checkbox" checked={pagosSeleccionados.has(j.jugador_id)} onChange={e => setPagosSeleccionados(prev => { const next = new Set(prev); if (e.target.checked) next.add(j.jugador_id); else next.delete(j.jugador_id); return next })} />}
                 <div style={{ flex:1, fontSize:13, color: text }}>{j.jugadores?.nombre||'—'}</div>
                 <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 8px', borderRadius:10, fontSize:11 }}>Pendiente</span>
-                {faseActual !== 'finalizado' && (['efectivo', 'transferencia'] as const).map(metodo => (
+                {(['efectivo', 'transferencia'] as const).map(metodo => (
                   <button key={metodo} disabled={pagoLoading === j.jugador_id} onClick={async () => {
                     if (pagoLoading) return
                     setPagoLoading(j.jugador_id)

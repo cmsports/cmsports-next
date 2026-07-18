@@ -1393,66 +1393,70 @@ export async function actualizarEstadoPago(params: {
   return { success: true }
 }
 
+/**
+ * Sube a Finanzas los pagos de torneo ya marcados como "pagado" que aún no
+ * se han subido. Se puede llamar varias veces: cada vez sube solo lo nuevo
+ * (los jugadores que pagan después se marcan pagado aparte y se suben en
+ * una siguiente llamada). Si no se pasa `jugadorIds`, sube todos los
+ * pagados pendientes de subir del torneo.
+ */
 export async function subirPagosPendientesAFinanzas(params: {
   torneoId: string
-  jugadorIds: string[]
-  metodoPago: 'efectivo' | 'transferencia'
+  jugadorIds?: string[]
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado.' }
 
-  const jugadorIds = Array.from(new Set(params.jugadorIds)).filter(Boolean)
-  if (!jugadorIds.length) return { error: 'Selecciona al menos un pago.' }
-
   const { data: torneo } = await supabase
     .from('torneos')
-    .select('id,nombre,cuota_inscripcion,fase,estado,club_id')
+    .select('id,nombre,cuota_inscripcion,club_id')
     .eq('id', params.torneoId)
     .eq('club_id', perfil.club_id)
     .single()
   if (!torneo) return { error: 'Torneo no encontrado.' }
-  if (torneo.fase !== 'finalizado' || torneo.estado !== 'finalizado') {
-    return { error: 'Esta opción solo está disponible al finalizar el torneo.' }
-  }
   const cuotaInscripcion = torneo.cuota_inscripcion || 0
   if (cuotaInscripcion <= 0) return { error: 'El torneo no tiene cuota de inscripción.' }
 
-  const { data: pagosActuales } = await supabase
+  let query = supabase
     .from('torneo_pagos')
-    .select('id,jugador_id,estado')
+    .select('id,jugador_id,metodo_pago')
     .eq('torneo_id', params.torneoId)
-    .in('jugador_id', jugadorIds)
-
-  const yaPagados = new Set((pagosActuales || []).filter(p => p.estado === 'pagado').map(p => p.jugador_id).filter((id): id is string => !!id))
-  const idsNuevos = jugadorIds.filter(id => !yaPagados.has(id))
-  if (!idsNuevos.length) return { error: 'Los pagos seleccionados ya estaban registrados.' }
+    .eq('estado', 'pagado')
+    .eq('subido_a_finanzas', false)
+  if (params.jugadorIds) {
+    const jugadorIds = Array.from(new Set(params.jugadorIds)).filter(Boolean)
+    if (!jugadorIds.length) return { error: 'Selecciona al menos un pago.' }
+    query = query.in('jugador_id', jugadorIds)
+  }
+  const { data: elegibles } = await query
+  if (!elegibles || !elegibles.length) return { error: 'No hay pagos pendientes de subir a Finanzas.' }
 
   const fecha = new Date().toISOString().slice(0, 10)
-  const existentes = new Map((pagosActuales || []).map(p => [p.jugador_id, p.id]))
-  for (const jugadorId of idsNuevos) {
-    const valores = { estado: 'pagado', metodo_pago: params.metodoPago, fecha_pago: fecha }
-    const idPago = existentes.get(jugadorId)
-    const { error } = idPago
-      ? await supabase.from('torneo_pagos').update(valores).eq('id', idPago)
-      : await supabase.from('torneo_pagos').insert({ torneo_id: params.torneoId, jugador_id: jugadorId, ...valores })
-    if (error) return { error: 'No se pudieron actualizar todos los pagos.' }
+  const cantTransferencia = elegibles.filter(p => p.metodo_pago === 'transferencia').length
+  const cantEfectivo = elegibles.length - cantTransferencia
+
+  const movs: any[] = []
+  if (cantEfectivo > 0) {
+    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (efectivo) — ${torneo.nombre} (${cantEfectivo})`, monto: cantEfectivo * cuotaInscripcion, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   }
+  if (cantTransferencia > 0) {
+    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (transferencia) — ${torneo.nombre} (${cantTransferencia})`, monto: cantTransferencia * cuotaInscripcion, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
+  }
+  const { error: movimientoError } = await supabase.from('movimientos').insert(movs)
+  if (movimientoError) return { error: 'Error al registrar en Finanzas: ' + movimientoError.message }
 
-  const monto = idsNuevos.length * cuotaInscripcion
-  const { error: movimientoError } = await supabase.from('movimientos').insert({
-    club_id: perfil.club_id,
-    torneo_id: params.torneoId,
-    tipo: 'ingreso',
-    categoria: 'inscripcion_torneo',
-    descripcion: `Pago pendiente Torneo — ${torneo.nombre} (${idsNuevos.length}, ${params.metodoPago})`,
-    monto,
-    fecha,
-    registrado_por_nombre: perfil.nombre || 'Admin',
-  })
-  if (movimientoError) return { error: 'Pagos actualizados, pero no se pudo crear el movimiento en Finanzas.' }
+  const { error: updateError } = await supabase
+    .from('torneo_pagos')
+    .update({ subido_a_finanzas: true })
+    .in('id', elegibles.map(p => p.id))
+  if (updateError) return { error: 'Se registró en Finanzas, pero no se pudo marcar como subido. Revisa manualmente.' }
 
-  return { success: true, cantidad: idsNuevos.length, monto }
+  await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
+
+  const cantidad = elegibles.length
+  const monto = cantidad * cuotaInscripcion
+  return { success: true, cantidad, monto }
 }
 
 export async function intercambiarJugadores(params: {
@@ -1557,40 +1561,6 @@ export async function intercambiarJugadores(params: {
     p_posicion_b: slotB.posicion,
   })
   if (error) return { error: error.message }
-  return { success: true }
-}
-
-export async function enviarRecaudacionAFinanzas(params: {
-  torneoId: string
-  torneoNombre: string
-  montoEfectivo: number
-  montoTransferencia: number
-}) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
-  if (authErr) return { error: authErr }
-
-  const total = params.montoEfectivo + params.montoTransferencia
-  if (total <= 0) return { error: 'No hay monto a registrar' }
-
-  const { data: existente } = await supabase.from('movimientos').select('id')
-    .eq('torneo_id', params.torneoId).eq('categoria', 'inscripcion_torneo').limit(1)
-  if (existente && existente.length > 0) {
-    return { error: 'Este torneo ya tiene un registro en Finanzas. Para corregirlo, edita el movimiento directamente desde Finanzas.' }
-  }
-
-  const fecha = new Date().toISOString().slice(0, 10)
-  const movs: any[] = []
-  if (params.montoEfectivo > 0) {
-    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (efectivo) — ${params.torneoNombre}`, monto: params.montoEfectivo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  }
-  if (params.montoTransferencia > 0) {
-    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (transferencia) — ${params.torneoNombre}`, monto: params.montoTransferencia, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  }
-
-  const { error: movErr } = await supabase.from('movimientos').insert(movs)
-  if (movErr) return { error: 'Error al registrar en Finanzas: ' + movErr.message }
-
-  await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
   return { success: true }
 }
 
@@ -1753,10 +1723,6 @@ export async function guardarPremios(params: {
   primero: number | null
   segundo: number | null
   tercero: number | null
-  montoRecaudado: number
-  montoEfectivo?: number
-  montoTransferencia?: number
-  enviarRecaudacion: boolean
   metodo?: 'efectivo' | 'transferencia'
   gastosGestion?: { tipo: string; monto: number }[]
 }) {
@@ -1771,12 +1737,6 @@ export async function guardarPremios(params: {
   type Mov = { club_id: string | null; torneo_id: string; tipo: string; categoria: string; descripcion: string; monto: number; fecha: string; registrado_por_nombre: string }
   const movimientos: Mov[] = []
 
-  if (params.enviarRecaudacion && params.montoRecaudado > 0) {
-    const efectivo = params.montoEfectivo ?? params.montoRecaudado
-    const transferencia = params.montoTransferencia ?? 0
-    if (efectivo > 0) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Ingreso Torneo (efectivo) — ${params.torneoNombre}`, monto: efectivo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-    if (transferencia > 0) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Ingreso Torneo (transferencia) — ${params.torneoNombre}`, monto: transferencia, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  }
   if (params.primero) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1°${via} — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   if (params.segundo) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2°${via} — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
   if (params.tercero) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3°${via} — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
