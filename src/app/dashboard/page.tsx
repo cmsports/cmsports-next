@@ -8,7 +8,6 @@ import { obtenerLinkInvitacion } from '../actions/dashboard'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import GraficoAsistencia from '@/components/GraficoAsistencia'
 import { useModulos } from '@/lib/hooks/useModulos'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
@@ -272,6 +271,35 @@ export default function DashboardPage() {
 
   return (
     <AppLayout perfil={perfil}>
+
+      {/* ── Auspiciadores ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+        <span style={{ fontSize: 10, color: C.hint, whiteSpace: 'nowrap', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Auspiciadores
+        </span>
+        <div style={{ flex: 1, height: 1, background: C.border }} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {[
+            { id: 1, label: 'Auspiciador 1' },
+            { id: 2, label: 'Auspiciador 2' },
+            { id: 3, label: 'Auspiciador 3' },
+            { id: 4, label: 'Auspiciador 4' },
+          ].map(s => (
+            <div key={s.id} style={{
+              width: 90, height: 40,
+              background: C.card,
+              border: `1px solid ${C.border}`,
+              borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 1px 4px rgba(15,23,42,0.06)',
+              overflow: 'hidden',
+            }}>
+              <span style={{ fontSize: 10, color: C.hint }}>{s.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── Cabecera ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <div>
@@ -416,48 +444,39 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── Gráfico de asistencia + Gastos ── */}
-      {(tiene('asistencia') || tiene('finanzas')) && (
-        <div style={{ display: 'grid', gridTemplateColumns: tiene('asistencia') && tiene('finanzas') ? 'repeat(4,1fr)' : '1fr', gap: 14, marginBottom: 16 }}>
-          {tiene('asistencia') && (
-            <div style={{ gridColumn: tiene('finanzas') ? 'span 3' : 'span 1' }}>
-              {perfil?.club_id && <GraficoAsistencia clubId={perfil.club_id} />}
-            </div>
-          )}
-          {tiene('finanzas') && (
-            <div style={{ gridColumn: 'span 1', background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-                <DollarSign size={16} color={C.red} />
-              </div>
-              <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>💸 Gastos este mes</div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
-                {errorDatos ? '—' : fmt(kpis.gastos || 0)}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-                {desgloseGastos.length === 0 ? (
-                  <div style={{ fontSize: 11, color: C.hint }}>Sin gastos registrados este mes</div>
-                ) : desgloseGastos.slice(0, 4).map(d => {
-                  const pct = (kpis.gastos || 0) > 0 ? Math.round((d.monto / kpis.gastos) * 100) : 0
-                  return (
-                    <div key={d.categoria}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.muted, marginBottom: 3 }}>
-                        <span>{catLabelGasto[d.categoria] || d.categoria}</span>
-                        <span style={{ fontWeight: 600, color: C.text }}>{fmt(d.monto)}</span>
-                      </div>
-                      <div style={{ height: 4, background: C.redL, borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: C.red, borderRadius: 3 }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {/* ── Fila inferior: Gastos + Link + Solicitudes ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
-      {/* ── Fila 2 ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        {/* Gastos este mes */}
+        {tiene('finanzas') && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <DollarSign size={16} color={C.red} />
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>💸 Gastos este mes</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
+              {errorDatos ? '—' : fmt(kpis.gastos || 0)}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+              {desgloseGastos.length === 0 ? (
+                <div style={{ fontSize: 11, color: C.hint }}>Sin gastos registrados este mes</div>
+              ) : desgloseGastos.slice(0, 4).map(d => {
+                const pct = (kpis.gastos || 0) > 0 ? Math.round((d.monto / kpis.gastos) * 100) : 0
+                return (
+                  <div key={d.categoria}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.muted, marginBottom: 3 }}>
+                      <span>{catLabelGasto[d.categoria] || d.categoria}</span>
+                      <span style={{ fontWeight: 600, color: C.text }}>{fmt(d.monto)}</span>
+                    </div>
+                    <div style={{ height: 4, background: C.redL, borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: C.red, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Link de inscripción */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
