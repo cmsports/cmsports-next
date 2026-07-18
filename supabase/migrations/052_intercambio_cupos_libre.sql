@@ -183,6 +183,11 @@ begin
     raise exception 'Un grupo no puede enfrentarse a sí mismo en la misma llave';
   end if;
 
+  -- Limpiar ganador antes de mover para no violar ganador_participante_check
+  update public.torneo_partidos
+  set ganador = null
+  where id in (v_a.id, v_b.id) and ganador is not null;
+
   update public.torneo_partidos set
     jugador_a = case when p_posicion_a = 'jugador_a' then v_jugador_b else jugador_a end,
     jugador_b = case when p_posicion_a = 'jugador_b' then v_jugador_b else jugador_b end,
