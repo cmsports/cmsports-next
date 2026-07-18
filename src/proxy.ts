@@ -26,7 +26,7 @@ function getRolRedirect(rol: string | null): string {
   return '/perfil'
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { user, supabaseResponse, supabase } = await updateSession(request)
   const { pathname } = request.nextUrl
 
