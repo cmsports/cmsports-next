@@ -3,10 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
-import { createClient } from '@/lib/supabase/client'
-
-const BUCKET = 'bibliografia-buin'
-const supabase = createClient()
 
 type Archivo = { name: string; url: string }
 
@@ -23,16 +19,12 @@ export default function BibliografiaTdmPage() {
 
   async function cargar() {
     setCargando(true)
-    const { data } = await supabase.storage.from(BUCKET).list('', { sortBy: { column: 'created_at', order: 'desc' } })
-    if (data) {
-      setArchivos(
-        data
-          .filter(f => f.name !== '.emptyFolderPlaceholder')
-          .map(f => ({
-            name: f.name,
-            url: supabase.storage.from(BUCKET).getPublicUrl(f.name).data.publicUrl,
-          }))
-      )
+    try {
+      const res = await fetch('/api/bibliografia/list')
+      const data = await res.json()
+      setArchivos(Array.isArray(data) ? data : [])
+    } catch {
+      setArchivos([])
     }
     setCargando(false)
   }
@@ -52,7 +44,11 @@ export default function BibliografiaTdmPage() {
 
   async function eliminar(nombre: string) {
     setEliminando(nombre)
-    await supabase.storage.from(BUCKET).remove([nombre])
+    await fetch('/api/bibliografia/delete', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre }),
+    })
     setArchivos(prev => prev.filter(a => a.name !== nombre))
     if (visor?.name === nombre) setVisor(null)
     setEliminando(null)

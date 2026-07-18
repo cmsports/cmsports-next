@@ -4,8 +4,18 @@ import { cookies } from 'next/headers'
 
 const BUCKET = 'bibliografia-buin'
 
+async function ensureBucket(supabase: ReturnType<typeof createAdminClient>) {
+  const { data: buckets } = await supabase.storage.listBuckets()
+  if (!buckets?.some(b => b.name === BUCKET)) {
+    await supabase.storage.createBucket(BUCKET, {
+      public: true,
+      fileSizeLimit: 20971520,
+      allowedMimeTypes: ['image/*'],
+    })
+  }
+}
+
 export async function POST(req: Request) {
-  // Verificar que el usuario es admin
   const cookieStore = await cookies()
   const supabaseAuth = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,11 +36,14 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Sin permiso' }, { status: 403 })
   }
 
+  await ensureBucket(supabase)
+
   const formData = await req.formData()
   const files = formData.getAll('files') as File[]
   if (!files.length) return Response.json({ error: 'Sin archivos' }, { status: 400 })
 
   const resultados: string[] = []
+  const errores: string[] = []
   for (const file of files) {
     const ext = file.name.split('.').pop() ?? 'jpg'
     const nombre = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
@@ -39,7 +52,8 @@ export async function POST(req: Request) {
       .from(BUCKET)
       .upload(nombre, buffer, { contentType: file.type, upsert: false })
     if (!error) resultados.push(nombre)
+    else errores.push(`${file.name}: ${error.message}`)
   }
 
-  return Response.json({ subidos: resultados.length })
+  return Response.json({ subidos: resultados.length, errores })
 }
