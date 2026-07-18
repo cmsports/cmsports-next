@@ -68,6 +68,7 @@ export default function TorneoDetallePage() {
   const [cabezasPersistidas, setCabezasPersistidas] = useState<CabezaSerieJugador[]>([])
   const cabezasPersistidasRef = useRef<CabezaSerieJugador[]>([])
   const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
+  const [jugadorIdSeleccionado, setJugadorIdSeleccionado] = useState<string | null>(null)
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
@@ -333,7 +334,7 @@ export default function TorneoDetallePage() {
     if (inscribiendo || !busquedaMesa.trim()) return
     setInscribiendo(true)
     try {
-      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, rut: rutMesa, metodoPago })
+      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, jugadorId: jugadorIdSeleccionado ?? undefined, rut: rutMesa, metodoPago })
       if (res.error) { alert(res.error); return }
 
       setBusquedaMesa('')
@@ -1598,6 +1599,7 @@ export default function TorneoDetallePage() {
                 onChange={async e => {
                   setBusquedaMesa(e.target.value)
                   setRutMesa('')
+                  setJugadorIdSeleccionado(null)
                   if (e.target.value.length > 1 && perfil?.club_id) {
                     const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
                     setJugSuggestions(data || [])
@@ -1613,6 +1615,7 @@ export default function TorneoDetallePage() {
                     <div key={j.id} onClick={() => {
                       setBusquedaMesa(j.nombre)
                       setRutMesa(j.rut || '')
+                      setJugadorIdSeleccionado(j.id)
                       setJugSuggestions([])
                     }} style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:13 }}>
                       <span style={{ color: text }}>{j.nombre}</span>

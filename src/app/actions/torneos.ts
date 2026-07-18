@@ -1555,13 +1555,14 @@ export async function intercambiarJugadores(params: {
 export async function inscribirEnMesa(params: {
   torneoId: string
   busqueda: string
+  jugadorId?: string
   rut: string
   metodoPago: 'efectivo' | 'transferencia' | 'pendiente'
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { torneoId, busqueda, rut, metodoPago } = params
+  const { torneoId, busqueda, jugadorId: jugadorIdParam, rut, metodoPago } = params
   const nombreBuscado = busqueda.trim()
   if (!nombreBuscado) return { error: 'Nombre vacío' }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
@@ -1572,26 +1573,36 @@ export async function inscribirEnMesa(params: {
     .select('ganador, jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')
   if ((bracket || []).some(llaveFueJugada)) return { error: 'No se pueden inscribir jugadores después de jugar partidos del bracket' }
 
-  const { data: jugsExistentes } = await supabase
-    .from('jugadores').select('id,nombre')
-    .ilike('nombre', `%${nombreBuscado}%`)
-    .eq('club_id', perfil.club_id)
-
   let jugadorId: string
   let jugadorNombre = nombreBuscado
 
-  if (jugsExistentes?.length) {
-    const jug = jugsExistentes[0]
+  if (jugadorIdParam) {
+    // El usuario seleccionó explícitamente del autocomplete — usar ese ID directamente
+    const { data: jug } = await supabase.from('jugadores').select('id,nombre').eq('id', jugadorIdParam).eq('club_id', perfil.club_id).single()
+    if (!jug) return { error: 'Jugador no encontrado' }
     jugadorId = jug.id
     jugadorNombre = jug.nombre ?? jugadorNombre
   } else {
-    const { data: nuevo } = await supabase.from('jugadores').insert({
-      club_id: perfil.club_id, nombre: nombreBuscado,
-      rut: rut || null, categoria: 'principiante', sesiones_limite: 0,
-      es_externo: true,
-    }).select().single()
-    if (!nuevo) return { error: 'No se pudo crear el jugador' }
-    jugadorId = nuevo.id
+    // El usuario escribió el nombre manualmente (Enter sin seleccionar dropdown)
+    // → buscar coincidencia EXACTA primero, si no hay → crear externo
+    const { data: exacto } = await supabase
+      .from('jugadores').select('id,nombre')
+      .ilike('nombre', nombreBuscado)
+      .eq('club_id', perfil.club_id)
+      .maybeSingle()
+
+    if (exacto) {
+      jugadorId = exacto.id
+      jugadorNombre = exacto.nombre ?? jugadorNombre
+    } else {
+      const { data: nuevo } = await supabase.from('jugadores').insert({
+        club_id: perfil.club_id, nombre: nombreBuscado,
+        rut: rut || null, categoria: 'principiante', sesiones_limite: 0,
+        es_externo: true,
+      }).select().single()
+      if (!nuevo) return { error: 'No se pudo crear el jugador' }
+      jugadorId = nuevo.id
+    }
   }
 
   const { data: yaInscrito } = await supabase
