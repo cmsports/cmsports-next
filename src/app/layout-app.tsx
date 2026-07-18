@@ -13,6 +13,7 @@ import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, Camera, ShoppingBag, Settings,
+  Store, Library, BookLock,
 } from 'lucide-react'
 import type { Perfil } from '@/types'
 
@@ -29,6 +30,10 @@ const navAdmin = [
   { section: 'Marketing' },
   { label: 'Redes Sociales', icon: Camera,          href: '/redes-sociales', modulo: 'redes' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',     modulo: 'tienda' },
+  { section: 'Recursos' },
+  { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_buin' },
+  { label: 'Bibliografía TDM', icon: Library,       href: '/bibliografia-tdm', modulo: 'bibliografia' },
+  { label: 'Libro del profe', icon: BookLock,       href: '/libro-profe',    modulo: 'libro_profe' },
 ]
 
 const navProfesor = [
@@ -41,6 +46,10 @@ const navProfesor = [
   { label: 'Torneos',    icon: Trophy,          href: '/torneos',    modulo: 'torneos' },
   { section: 'Tienda' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
+  { section: 'Recursos' },
+  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',    modulo: 'tienda_buin' },
+  { label: 'Bibliografía TDM', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
+  { label: 'Libro del profe', icon: BookLock,   href: '/libro-profe',    modulo: 'libro_profe' },
 ]
 
 const navJugador = [
@@ -54,6 +63,9 @@ const navJugador = [
   { label: 'Calendario',          icon: Calendar,      href: '/calendario',    modulo: 'calendario' },
   { section: 'Tienda' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
+  { section: 'Recursos' },
+  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',      modulo: 'tienda_buin' },
+  { label: 'Bibliografía TDM', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
 ]
 
 const mobileNavAdmin = [
