@@ -42,11 +42,9 @@ export default function BibliografiaTdmPage() {
   async function subir(files: FileList | null) {
     if (!files || files.length === 0) return
     setSubiendo(true)
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop()
-      const nombre = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-      await supabase.storage.from(BUCKET).upload(nombre, file, { upsert: false })
-    }
+    const formData = new FormData()
+    for (const file of Array.from(files)) formData.append('files', file)
+    await fetch('/api/bibliografia/upload', { method: 'POST', body: formData })
     await cargar()
     setSubiendo(false)
     if (inputRef.current) inputRef.current.value = ''
