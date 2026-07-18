@@ -1,8 +1,9 @@
+import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 import { MODULOS_CLUB, puedeAccederModulo } from '@/lib/auth/modulos-rutas'
 import { esAdminDeClub } from '@/lib/auth/roles'
-import { createAdminClient } from '@/lib/supabase/admin'
+import type { Database } from '@/types/database'
 
 const publicRoutes = ['/login', '/registro']
 // Accesibles siempre, con o sin sesión — el link de invite/recovery crea sesión
@@ -151,15 +152,19 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // Verificar si el jugador está bloqueado por morosidad
+  // Verificar si el jugador está bloqueado por morosidad (service role → ignora RLS)
   if (
     rol === 'jugador' &&
     perfil?.jugador_id &&
     pathname !== '/cuenta-bloqueada' &&
     !pathname.startsWith('/api/')
   ) {
-    const admin = createAdminClient()
-    const { data: jug } = await admin
+    const adminSsr = createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { cookies: { getAll: () => [], setAll: () => {} } },
+    )
+    const { data: jug } = await adminSsr
       .from('jugadores')
       .select('estado')
       .eq('id', perfil.jugador_id)
