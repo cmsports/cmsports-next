@@ -1104,7 +1104,12 @@ export default function TorneoDetallePage() {
                                     {!!p.ganador && p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                   </div>
                                   {isBye ? (
-                                    <div style={{ height: rowH, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 11, color: hint, fontStyle: 'italic' }}>BYE</div>
+                                    <div
+                                      onDragOver={puedeMover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_b' }) } : undefined}
+                                      onDrop={puedeMover ? (e) => { e.preventDefault(); intercambiarCupos(p.id, 'jugador_b') } : undefined}
+                                      style={{ height: rowH, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 11, color: hint, fontStyle: 'italic', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : 'transparent' }}>
+                                      BYE
+                                    </div>
                                   ) : (
                                     <div
                                       onClick={() => esAdmin && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}

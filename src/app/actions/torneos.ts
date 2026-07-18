@@ -1482,10 +1482,6 @@ export async function intercambiarJugadores(params: {
     return { error: 'Solo puedes intercambiar cupos de la misma ronda inicial' }
   }
 
-  const lecturaCabezas = await leerCabezasSerie(supabase, torneoId)
-  if (lecturaCabezas.error) return { error: lecturaCabezas.error }
-  const cabezas = new Set(lecturaCabezas.cabezas.map(c => c.jugadorId))
-
   const { data: fases } = await supabase.from('torneo_partidos')
     .select('fase').eq('torneo_id', torneoId).neq('fase', 'grupos')
   const faseInicial = CONFIG.FASES_ORDEN.find(f => (fases || []).some(p => p.fase === f))
@@ -1505,14 +1501,8 @@ export async function intercambiarJugadores(params: {
     : { jugador: fila.jugador_b, grupoId: fila.slot_b_grupo_id, posicion: fila.slot_b_posicion }
   const cupoOrigen = leerSlot(origen, slotA.posicion)
   const cupoDestino = leerSlot(destino, slotB.posicion)
-  if (!cupoOrigen.jugador || !cupoDestino.jugador || !cupoOrigen.grupoId || !cupoDestino.grupoId) {
-    return { error: 'Solo se pueden mover jugadores ya definidos' }
-  }
-  if (cabezas.has(cupoOrigen.jugador) || cabezas.has(cupoDestino.jugador)) {
-    return { error: 'La posición espejo de los cabezas de serie está protegida' }
-  }
-  if (cupoOrigen.posicion !== cupoDestino.posicion) {
-    return { error: 'Intercambia primero con primero o segundo con segundo' }
+  if (!cupoOrigen.jugador && !cupoDestino.jugador) {
+    return { error: 'No hay nada que mover entre esos dos cupos' }
   }
 
   const aplicar = (fila: Fila, posicion: 'jugador_a' | 'jugador_b', nuevo: typeof cupoOrigen): Fila => {
@@ -1533,9 +1523,9 @@ export async function intercambiarJugadores(params: {
   const destinoNuevo = aplicar(destino, slotB.posicion, cupoOrigen)
 
   for (const fila of [origenNuevo, destinoNuevo]) {
-    if (fila.slot_a_grupo_id && fila.slot_b_grupo_id) {
-      if (fila.slot_a_grupo_id === fila.slot_b_grupo_id) return { error: 'No se puede enfrentar jugadores del mismo grupo' }
-      if (fila.slot_a_posicion === fila.slot_b_posicion) return { error: 'Cada llave debe enfrentar un primero contra un segundo' }
+    if (!fila.jugador_a && !fila.jugador_b) return { error: 'Esa llave se quedaría sin ningún jugador' }
+    if (fila.slot_a_grupo_id && fila.slot_b_grupo_id && fila.slot_a_grupo_id === fila.slot_b_grupo_id) {
+      return { error: 'No se puede enfrentar jugadores del mismo grupo' }
     }
   }
 
