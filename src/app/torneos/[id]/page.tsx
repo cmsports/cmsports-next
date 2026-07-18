@@ -798,7 +798,7 @@ export default function TorneoDetallePage() {
                   {grupo.en_preparacion && (
                     <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
                       <span style={{ background:'#fff7ed', color:'#c2410c', padding:'2px 7px', borderRadius:10, fontSize:10, fontWeight:700 }}>En preparación</span>
-                      <button disabled={ordenados.length < 3 || ordenados.length > 4 || accionandoGrupo} onClick={async () => {
+                      <button disabled={ordenados.length < 2 || ordenados.length > 4 || accionandoGrupo} onClick={async () => {
                         if (accionandoGrupo) return
                         setAccionGrupoManual({ grupoId: grupo.id, tipo: 'finalizar' })
                         try {
@@ -808,7 +808,7 @@ export default function TorneoDetallePage() {
                         } finally {
                           setAccionGrupoManual(null)
                         }
-                      }} style={{ border:'1px solid #86efac', background:'#f0fdf4', color:'#166534', borderRadius:6, padding:'4px 7px', fontSize:10, cursor:ordenados.length >= 3 && ordenados.length <= 4 && !accionandoGrupo?'pointer':'not-allowed', opacity:ordenados.length >= 3 && ordenados.length <= 4 && !accionandoGrupo?1:0.5 }}>
+                      }} style={{ border:'1px solid #86efac', background:'#f0fdf4', color:'#166534', borderRadius:6, padding:'4px 7px', fontSize:10, cursor:ordenados.length >= 2 && ordenados.length <= 4 && !accionandoGrupo?'pointer':'not-allowed', opacity:ordenados.length >= 2 && ordenados.length <= 4 && !accionandoGrupo?1:0.5 }}>
                         {accionGrupoManual?.grupoId === grupo.id && accionGrupoManual?.tipo === 'finalizar' ? 'Finalizando…' : `Finalizar (${ordenados.length} jugadores)`}
                       </button>
                       {ordenados.length === 0 && <button onClick={async () => {
