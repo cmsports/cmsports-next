@@ -64,9 +64,20 @@ export default function TorneoDetallePage() {
   const [pagosSeleccionados, setPagosSeleccionados] = useState<Set<string>>(new Set())
   const [subiendoPagos, setSubiendoPagos] = useState(false)
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
-  const [cabezasNumeradas, setCabezasNumeradas] = useState<CabezaSerieJugador[]>([])
+  const [cabezasNumeradas, setCabezasNumeradasState] = useState<CabezaSerieJugador[]>([])
   const [cabezasPersistidas, setCabezasPersistidas] = useState<CabezaSerieJugador[]>([])
-  const cabezasPersistidasRef = useRef<CabezaSerieJugador[]>([])
+  // Se marca en true solo cuando el propio usuario edita la lista (agregar,
+  // quitar, reordenar) para que cargarTorneo no la pise con datos del server
+  // mientras hay cambios sin guardar. Antes se comparaba contra un ref que
+  // se mutaba en la misma pasada, así que la comparación siempre veía el
+  // valor ya actualizado y terminaba "protegiendo" un estado vacío que se
+  // guardaba tal cual al tocar Guardar/Armar bracket, borrando las cabezas
+  // reales en la base de datos.
+  const cabezasDirtyRef = useRef(false)
+  const setCabezasNumeradas = useCallback((cabezas: CabezaSerieJugador[]) => {
+    cabezasDirtyRef.current = true
+    setCabezasNumeradasState(cabezas)
+  }, [])
   const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
@@ -130,14 +141,8 @@ export default function TorneoDetallePage() {
       id: c.jugador_id,
       nombre: Array.isArray(c.jugadores) ? c.jugadores[0]?.nombre || '—' : c.jugadores?.nombre || '—',
     }))
-    const cabezasSonIguales = (a: CabezaSerieJugador[], b: CabezaSerieJugador[]) =>
-      a.length === b.length && a.every((c, i) => c.id === b[i]?.id)
-
-    setCabezasNumeradas(prev =>
-      cabezasSonIguales(prev, cabezasPersistidasRef.current) ? cabezasCargadas : prev
-    )
+    if (!cabezasDirtyRef.current) setCabezasNumeradasState(cabezasCargadas)
     setCabezasPersistidas(cabezasCargadas)
-    cabezasPersistidasRef.current = cabezasCargadas
 
     const todos = [...(gj || [])].sort((a: any, b: any) =>
       String(a.grupo_id ?? '').localeCompare(String(b.grupo_id ?? '')) ||
@@ -269,6 +274,7 @@ export default function TorneoDetallePage() {
   async function guardarCabezasNumeradas(jugadorIds: string[]) {
     const res = await configurarCabezasSerie({ torneoId, jugadorIds })
     if (res.error) return { error: res.error }
+    cabezasDirtyRef.current = false
     await cargarTorneo()
     return {}
   }
@@ -353,6 +359,7 @@ export default function TorneoDetallePage() {
       if (cabezasConCambios) {
         const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: cabezasNumeradas.map(c => c.id) })
         if (guardado.error) { alert(guardado.error); return }
+        cabezasDirtyRef.current = false
       }
       const res = await cerrarInscripcionYGenerarGrupos({ torneoId })
       if (res.error) { alert(res.error); return }
@@ -428,6 +435,7 @@ export default function TorneoDetallePage() {
     if (cabezasConCambios) {
       const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: cabezasNumeradas.map(c => c.id) })
       if (guardado.error) { alert(guardado.error); return }
+      cabezasDirtyRef.current = false
     }
     const res = await sincronizarLlavesAction({ torneoId })
     if ('error' in res && res.error) { alert(`No se pudo armar el bracket: ${res.error}`); return }
@@ -1678,7 +1686,8 @@ export default function TorneoDetallePage() {
                         const nuevas = cabezasNumeradas.filter(c => c.id !== j.jugador_id)
                         const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: nuevas.map(c => c.id) })
                          if (guardado.error) { alert(guardado.error); return }
-                         setCabezasNumeradas(nuevas)
+                         cabezasDirtyRef.current = false
+                         setCabezasNumeradasState(nuevas)
                          setCabezasPersistidas(nuevas)
                        }
                       const res = await quitarJugadorDeMesa({ torneoId, jugadorId: j.jugador_id })
