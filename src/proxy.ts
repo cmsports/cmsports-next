@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 import { MODULOS_CLUB, puedeAccederModulo } from '@/lib/auth/modulos-rutas'
 import { esAdminDeClub } from '@/lib/auth/roles'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const publicRoutes = ['/login', '/registro']
 // Accesibles siempre, con o sin sesión — el link de invite/recovery crea sesión
@@ -15,7 +16,7 @@ const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/rep
 const staffRoutes = ['/redes-sociales', '/jugadores']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
-const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/tienda', '/configuracion']
+const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/tienda', '/configuracion', '/cuenta-bloqueada']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'
@@ -74,7 +75,7 @@ export async function proxy(request: NextRequest) {
   // Get user role for route protection
   const { data: perfil } = await supabase
     .from('perfiles')
-    .select('rol,club_id')
+    .select('rol,club_id,jugador_id')
     .eq('id', user.id)
     .single()
 
@@ -146,6 +147,26 @@ export async function proxy(request: NextRequest) {
     if (!puedeAccederModulo(pathname, modulosHabilitados)) {
       const url = request.nextUrl.clone()
       url.pathname = getRolRedirect(rol)
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Verificar si el jugador está bloqueado por morosidad
+  if (
+    rol === 'jugador' &&
+    perfil?.jugador_id &&
+    pathname !== '/cuenta-bloqueada' &&
+    !pathname.startsWith('/api/')
+  ) {
+    const admin = createAdminClient()
+    const { data: jug } = await admin
+      .from('jugadores')
+      .select('estado')
+      .eq('id', perfil.jugador_id)
+      .single()
+    if (jug?.estado === 'bloqueado') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/cuenta-bloqueada'
       return NextResponse.redirect(url)
     }
   }
