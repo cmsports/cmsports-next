@@ -1052,8 +1052,10 @@ export default function TorneoDetallePage() {
             }
 
             const N0 = byFase[fasesVis[0]].length
+            const expectedN: Record<string, number> = {}
+            fasesVis.forEach((f, i) => { expectedN[f] = Math.max(1, Math.round(N0 / (2 ** i))) })
             const totalH = N0 * SLOT_H
-            const cy = (j: number, N: number) => ((j + 0.5) / N) * totalH
+            const cy = (orden: number, N: number) => ((orden + 0.5) / N) * totalH
 
             return (
               <div style={{ overflowX: 'auto', paddingBottom: 16, paddingTop: 44 }}>
@@ -1069,7 +1071,8 @@ export default function TorneoDetallePage() {
                           {faseLabel[fase]}
                         </div>
                         {ps.map((p, i) => {
-                          const top = cy(i, N) - CARD_H / 2
+                          const eN = expectedN[fase] ?? N
+                          const top = cy(p.orden ?? i, eN) - CARD_H / 2
                           const isBye = esByeMatch(p)
                           const editandoEste = partidoPlayoffEditando === p.id
                           const showEdit = !!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado'
@@ -1148,21 +1151,18 @@ export default function TorneoDetallePage() {
                     if (isLast) return [col]
 
                     const nextFase = fasesVis[pi + 1]
-                    const nextPs = byFase[nextFase]
-                    const N2 = nextPs.length
+                    const eN = expectedN[fase] ?? N
+                    const eN2 = expectedN[nextFase] ?? (eN / 2)
                     const connector = (
                       <svg key={`conn-${pi}`} width={CONN_W} height={totalH} style={{ flexShrink: 0, display: 'block' }}>
-                        {nextPs.map((np, j) => {
-                          const ordenNext = np.orden ?? j
-                          const idxA = ps.findIndex(p => (p.orden ?? 0) === ordenNext * 2)
-                          const idxB = ps.findIndex(p => (p.orden ?? 0) === ordenNext * 2 + 1)
-                          const a = idxA >= 0 ? idxA : Math.round(j * N / N2)
-                          const b = idxB >= 0 ? idxB : Math.round((j + 1) * N / N2) - 1
-                          const y1 = cy(a, N)
-                          const y2 = cy(b, N)
-                          const ym = cy(j, N2)
+                        {Array.from({ length: eN2 }, (_, j) => {
+                          const ordA = j * 2
+                          const ordB = j * 2 + 1
+                          const y1 = cy(ordA, eN)
+                          const y2 = cy(ordB, eN)
+                          const ym = cy(j, eN2)
                           const mx = CONN_W / 2
-                          return a === b
+                          return ordA === ordB
                             ? <path key={j} d={`M 0,${y1} H ${CONN_W}`} stroke="#c4b5fd" strokeWidth={1.5} fill="none" />
                             : <path key={j} d={`M 0,${y1} H ${mx} V ${y2} M 0,${y2} H ${mx} M ${mx},${ym} H ${CONN_W}`} stroke="#c4b5fd" strokeWidth={1.5} fill="none" />
                         })}
