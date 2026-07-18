@@ -511,7 +511,7 @@ export async function finalizarGrupoManual(params: { torneoId: string; grupoId: 
   const { data: miembros } = await supabase.from('grupo_jugadores')
     .select('jugador_id,orden').eq('grupo_id', params.grupoId)
   const ids = ordenarMiembros(miembros || []).map(m => m.jugador_id).filter((id): id is string => !!id)
-  if (ids.length < 3 || ids.length > 4) return { error: 'El grupo manual debe tener 3 o 4 jugadores antes de finalizarlo' }
+  if (ids.length < 2 || ids.length > 4) return { error: 'El grupo manual debe tener entre 2 y 4 jugadores antes de finalizarlo' }
   const { error: limpiarError } = await supabase.from('torneo_partidos')
     .delete().eq('torneo_id', params.torneoId).eq('grupo_id', params.grupoId)
   if (limpiarError) return { error: 'No se pudieron preparar los partidos del grupo manual' }
