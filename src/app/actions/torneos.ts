@@ -107,20 +107,39 @@ async function calcularClasificadosDesdeBD(
       .filter((j): j is JugadorTorneo => !!j)
 
     const partidosGrupo = (partidos || []).filter(p => p.grupo_id === grupo.id)
-    if (
-      jugadoresGrupo.length < 2 ||
-      partidosGrupo.length === 0 ||
-      partidosGrupo.some(p => !p.jugador_a || !p.ganador)
-    ) continue
+    if (jugadoresGrupo.length < 2 || partidosGrupo.length === 0) continue
+
+    // Calcular stats solo con partidos ya jugados (ganador != null y jugador_a != null)
+    const partidosJugados = partidosGrupo.filter(p => p.jugador_a && p.ganador)
 
     const { stats, hayTripleEmpate } = calcularStatsGrupo(
       jugadoresGrupo,
-      partidosGrupo.map(p => ({
+      partidosJugados.map(p => ({
         jugadorA: p.jugador_a!,
         jugadorB: p.jugador_b!,
         ganador: p.ganador,
       })),
     )
+
+    // Si no se jugaron todos los partidos, verificar cierre matemático:
+    // el 3° lugar no puede alcanzar los puntos del 2°, aunque gane todo lo que falta.
+    const todosJugados = partidosJugados.length === partidosGrupo.length
+    if (!todosJugados) {
+      if (stats.length < 2) continue
+      const pts2 = stats[1].pts
+      const restantes = new Map<string, number>()
+      for (const j of jugadoresGrupo) restantes.set(j.id, 0)
+      for (const p of partidosGrupo) {
+        if (!p.ganador) {
+          if (p.jugador_a) restantes.set(p.jugador_a, (restantes.get(p.jugador_a) ?? 0) + 1)
+          if (p.jugador_b) restantes.set(p.jugador_b, (restantes.get(p.jugador_b) ?? 0) + 1)
+        }
+      }
+      const alguienPuedeLlegarA2 = stats.slice(2).some(s =>
+        s.pts + 2 * (restantes.get(s.jugadorId) ?? 0) >= pts2
+      )
+      if (alguienPuedeLlegarA2) continue
+    }
     if (hayTripleEmpate) {
       const idsGrupo = new Set(jugadoresGrupo.map(j => j.id))
       const puntosCorte = stats[1]?.pts

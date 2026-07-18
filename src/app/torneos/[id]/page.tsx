@@ -397,16 +397,29 @@ export default function TorneoDetallePage() {
     return { stats, ordenados, hayTripleEmpate, empatados, primeroFijo }
   }
 
-  // Grupos ya cerrados (todos sus partidos jugados y sin triple empate pendiente)
-  // con su 1° y 2° resueltos. Son los que ya pueden entrar al cuadro.
+  // Grupos clasificados: todos jugados O el 3° no puede alcanzar al 2° matemáticamente
   function calcularClasificados(): { grupoId: string; primeroId: string; segundoId: string }[] {
     const out: { grupoId: string; primeroId: string; segundoId: string }[] = []
     for (const grupo of gruposReales) {
       const partidosGrupo = partidosPorGrupo.get(grupo.id) || []
-      const cerrado = partidosGrupo.length > 0 && partidosGrupo.every(p => !!p.ganador)
-      if (!cerrado) continue
+      if (partidosGrupo.length === 0) continue
 
       const { ordenados, hayTripleEmpate } = calcularStats(grupo.id)
+
+      const todosJugados = partidosGrupo.every(p => !!p.ganador)
+      if (!todosJugados) {
+        // Cierre matemático: verificar que ningún jugador desde la 3ª posición
+        // pueda alcanzar los puntos del 2°, contando los partidos que le faltan.
+        if (ordenados.length < 2) continue
+        const pts2 = ordenados[1].pts
+        const alguienPuedeLlegarA2 = ordenados.slice(2).some((j: any) => {
+          const restantes = partidosGrupo.filter((p: any) =>
+            !p.ganador && (p.jugador_a === j.jugador?.id || p.jugador_b === j.jugador?.id)
+          ).length
+          return j.pts + 2 * restantes >= pts2
+        })
+        if (alguienPuedeLlegarA2) continue
+      }
       let primeroId: string | undefined
       let segundoId: string | undefined
       if (hayTripleEmpate) {
