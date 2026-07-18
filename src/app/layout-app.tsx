@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
+import { verificarBloqueoPerfil } from '@/app/actions/jugadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
@@ -81,6 +82,7 @@ type NavItem = { section: string } | NavLink
 
 const clubNombreCache: Record<string, string> = {}
 const clubLogoCache: Record<string, string | null> = {}
+const clubTelefonoCache: Record<string, string> = {}
 
 export default function AppLayout({ children, perfil }: { children: React.ReactNode; perfil: Perfil | null }) {
   const router = useRouter()
@@ -89,28 +91,38 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const [masOpen, setMasOpen] = useState(false)
   const [clubCargado, setClubCargado] = useState<{ id: string; nombre: string } | null>(null)
   const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(() => clubLogoCache[clubId] ?? null)
+  const [jugadorBloqueado, setJugadorBloqueado] = useState(false)
+  const [clubTelefono, setClubTelefono] = useState('')
   const { tiene } = useModulos()
 
   useEffect(() => {
     if (!clubId) return
     if (clubNombreCache[clubId]) {
       setClubLogoUrl(clubLogoCache[clubId] ?? null)
+      setClubTelefono(clubTelefonoCache[clubId] ?? '')
       return
     }
     let activo = true
     const supabase = createClient()
-    supabase.from('clubes').select('nombre,logo_url').eq('id', clubId).single()
+    supabase.from('clubes').select('nombre,logo_url,telefono').eq('id', clubId).single()
       .then(({ data }) => {
         if (!activo) return
         const nombre = data?.nombre || ''
         const logo = data?.logo_url ?? null
         clubNombreCache[clubId] = nombre
         clubLogoCache[clubId] = logo
+        clubTelefonoCache[clubId] = data?.telefono || ''
         setClubCargado({ id: clubId, nombre })
         setClubLogoUrl(logo)
+        setClubTelefono(data?.telefono || '')
       })
     return () => { activo = false }
   }, [clubId])
+
+  useEffect(() => {
+    if (perfil?.rol !== 'jugador') return
+    verificarBloqueoPerfil().then(bloqueado => { if (bloqueado) setJugadorBloqueado(true) })
+  }, [perfil?.rol])
 
   const clubNombre = clubNombreCache[clubId]
     ?? (clubCargado?.id === clubId ? clubCargado.nombre : '')
@@ -148,6 +160,43 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
 
   function isActive(href: string) {
     return pathname.startsWith(href) && href !== '/' && href !== '#mas'
+  }
+
+  if (jugadorBloqueado && perfil?.rol === 'jugador') {
+    const mensajeWA = encodeURIComponent(
+      `Hola! Soy ${perfil?.nombre || 'un jugador'} 👋. Mi cuenta en ${clubNombre || 'el club'} aparece bloqueada y no puedo acceder a la plataforma. ¿Me pueden ayudar a regularizar mi situación? Gracias.`
+    )
+    const linkWA = clubTelefono
+      ? `https://wa.me/${clubTelefono.replace(/[^0-9]/g, '')}?text=${mensajeWA}`
+      : null
+    return (
+      <div style={{ minHeight: '100vh', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ background: '#ffffff', border: '2px solid #fecaca', borderRadius: 20, padding: 40, maxWidth: 420, width: '100%', textAlign: 'center', boxShadow: '0 8px 32px rgba(220,38,38,0.12)' }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>🔒</div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#dc2626', marginBottom: 10, margin: '0 0 10px' }}>Cuenta bloqueada</h1>
+          <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.6, marginBottom: 28, margin: '0 0 28px' }}>
+            Tu acceso fue suspendido por falta de pago. Para reactivar tu cuenta, comunícate con tu club.
+          </p>
+          {linkWA && (
+            <a href={linkWA} target="_blank" rel="noopener noreferrer" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              background: '#16a34a', color: '#ffffff', textDecoration: 'none',
+              padding: '13px 20px', borderRadius: 10, fontSize: 15, fontWeight: 600,
+              marginBottom: 12,
+            }}>
+              💬 Hablar con el club por WhatsApp
+            </a>
+          )}
+          <button onClick={cerrarSesion} style={{
+            width: '100%', padding: '11px 20px',
+            background: 'transparent', border: '1px solid #e2e8f0',
+            borderRadius: 10, color: '#64748b', fontSize: 14, cursor: 'pointer',
+          }}>
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

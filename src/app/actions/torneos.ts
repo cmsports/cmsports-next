@@ -328,11 +328,15 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
   if (ganadorId !== partido.jugador_a && ganadorId !== partido.jugador_b) return { error: 'El ganador debe ser uno de los jugadores del partido' }
 
   if (partido.fase !== 'grupos') {
-    const { error } = await supabase.rpc('marcar_ganador_playoff_seguro', {
-      p_partido_id: partidoId,
-      p_ganador_id: ganadorId,
-    })
-    if (error) return { error: error.message }
+    const { data: actualizado } = await supabase
+      .from('torneo_partidos')
+      .update({ ganador: ganadorId })
+      .eq('id', partidoId)
+      .is('ganador', null)
+      .select('id')
+    if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
+    await propagarGanadorPlayoff(supabase, partido, ganadorId)
+    await avanzarFaseSiEstaCompleta(supabase, partido)
     return { success: true }
   }
 
@@ -757,20 +761,16 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
   // Limpiar partidos viejos del torneo (evita FK orphans y duplicación de grupos)
   await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
-  for (const gid of grupoIds) {
-    await supabase.from('grupo_jugadores').delete().eq('grupo_id', gid)
-    await supabase.from('torneo_grupos').delete().eq('id', gid)
+  if (grupoIds.length) {
+    await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+    await supabase.from('torneo_grupos').delete().in('id', grupoIds)
   }
 
-  const nuevosGrupos: { id: string; nombre: string }[] = []
-  for (let i = 0; i < numGrupos; i++) {
-    const { data: g } = await supabase
-      .from('torneo_grupos')
-      .insert({ torneo_id: torneoId, nombre: nombreGrupo(i), orden: i })
-      .select('id, nombre')
-      .single()
-    if (g) nuevosGrupos.push({ id: g.id, nombre: g.nombre ?? '' })
-  }
+  const { data: nuevosGrupos } = await supabase
+    .from('torneo_grupos')
+    .insert(Array.from({ length: numGrupos }, (_, i) => ({ torneo_id: torneoId, nombre: nombreGrupo(i), orden: i })))
+    .select('id, nombre')
+  if (!nuevosGrupos?.length) return { error: 'No se pudieron crear los grupos' }
 
   const asignaciones = seedingSerpenteo(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
   const ordenPorGrupo = new Map<number, number>()
@@ -965,6 +965,7 @@ export async function sincronizarLlaves(params: {
   } else {
     // Rellenar solo cupos vacíos de partidos aún no jugados (no pisa arrastres).
     const byOrden = new Map(existentes.map(r => [r.orden, r]))
+    const pendientes: PromiseLike<{ error: unknown }>[] = []
     for (const m of layout.matches) {
       const row = byOrden.get(m.orden)
       if (!row || llaveFueJugada(row)) continue
@@ -984,9 +985,12 @@ export async function sincronizarLlaves(params: {
       const ganadorEsperado = esBye && a ? a : null
       if (row.ganador !== ganadorEsperado) upd.ganador = ganadorEsperado
       if (Object.keys(upd).length) {
-        const { error } = await supabase.from('torneo_partidos').update(upd).eq('id', row.id)
-        if (error) return { error: 'No se pudo completar un cupo del bracket' }
+        pendientes.push(supabase.from('torneo_partidos').update(upd).eq('id', row.id))
       }
+    }
+    if (pendientes.length) {
+      const resultados = await Promise.all(pendientes)
+      if (resultados.some(r => r.error)) return { error: 'No se pudo completar un cupo del bracket' }
     }
   }
 
@@ -1010,11 +1014,11 @@ export async function sincronizarLlaves(params: {
     .eq('torneo_id', torneoId)
     .eq('fase', layout.faseInicial)
     .order('orden')
-  for (const partido of rondaInicial || []) {
-    if (partido.ganador && !partido.jugador_b) {
-      const propagacionError = await propagarGanadorPlayoff(supabase, partido, partido.ganador)
-      if (propagacionError) return { error: propagacionError }
-    }
+  const byesConGanador = (rondaInicial || []).filter(p => p.ganador && !p.jugador_b)
+  if (byesConGanador.length) {
+    const erroresBye = await Promise.all(byesConGanador.map(p => propagarGanadorPlayoff(supabase, p, p.ganador!)))
+    const primerError = erroresBye.find(e => e != null)
+    if (primerError) return { error: primerError }
   }
 
   if (todosCompletos && torneo.fase === 'grupos') {
@@ -1125,20 +1129,22 @@ export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
 
   if (!grupos?.length) return { success: true, eliminados: 0 }
 
-  let eliminados = 0
-  for (const g of grupos) {
-    const { count } = await supabase
-      .from('grupo_jugadores')
-      .select('jugador_id', { count: 'exact', head: true })
-      .eq('grupo_id', g.id)
-    if ((count ?? 0) === 0) {
-      await supabase.from('torneo_partidos').delete().eq('grupo_id', g.id)
-      await supabase.from('torneo_grupos').delete().eq('id', g.id)
-      eliminados++
-    }
+  const grupoIdsAll = grupos.map(g => g.id)
+  const { data: miembros } = await supabase
+    .from('grupo_jugadores')
+    .select('grupo_id')
+    .in('grupo_id', grupoIdsAll)
+
+  const conMiembros = new Set((miembros || []).map(m => m.grupo_id))
+  const vacios = grupoIdsAll.filter(id => !conMiembros.has(id))
+  if (vacios.length) {
+    await Promise.all([
+      supabase.from('torneo_partidos').delete().in('grupo_id', vacios),
+      supabase.from('torneo_grupos').delete().in('id', vacios),
+    ])
   }
 
-  return { success: true, eliminados }
+  return { success: true, eliminados: vacios.length }
 }
 
 export async function generarGruposTardios(params: {
@@ -1269,19 +1275,23 @@ export async function generarGruposTardios(params: {
     return { error: 'Ya existe un grupo en preparación. Complétalo antes de crear otro grupo incompleto.' }
   }
 
-  const nuevosGrupos: { id: string; nombre: string; enPreparacion: boolean }[] = []
-  for (let i = 0; i < numGrupos; i++) {
-    const { data: g, error: grupoError } = await supabase
-      .from('torneo_grupos')
-      .insert({ torneo_id: torneoId, nombre: nombreGrupo(siguienteOrden + i), orden: siguienteOrden + i, en_preparacion: i === grupoIncompletoIdx })
-      .select('id, nombre')
-      .single()
-    if (grupoError || !g) {
-      if (nuevosGrupos.length) await supabase.from('torneo_grupos').delete().in('id', nuevosGrupos.map(x => x.id))
-      return { error: 'No se pudieron crear todos los grupos tardíos' }
-    }
-    nuevosGrupos.push({ id: g.id, nombre: g.nombre ?? '', enPreparacion: i === grupoIncompletoIdx })
+  const { data: nuevosGruposData, error: grupoError } = await supabase
+    .from('torneo_grupos')
+    .insert(Array.from({ length: numGrupos }, (_, i) => ({
+      torneo_id: torneoId,
+      nombre: nombreGrupo(siguienteOrden + i),
+      orden: siguienteOrden + i,
+      en_preparacion: i === grupoIncompletoIdx,
+    })))
+    .select('id, nombre')
+  if (grupoError || !nuevosGruposData?.length) {
+    return { error: 'No se pudieron crear todos los grupos tardíos' }
   }
+  const nuevosGrupos = nuevosGruposData.map((g, i) => ({
+    id: g.id,
+    nombre: g.nombre ?? '',
+    enPreparacion: i === grupoIncompletoIdx,
+  }))
 
   const ordenPorGrupo = new Map<number, number>()
   const inserts = asignaciones.map(a => {

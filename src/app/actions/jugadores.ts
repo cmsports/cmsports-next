@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import { requireAdminClub } from '@/lib/auth/require'
 import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
 
@@ -143,6 +144,42 @@ export async function eliminarJugador(params: { jugadorId: string }) {
   }
 
   return { success: true }
+}
+
+export async function verificarBloqueoPerfil(): Promise<boolean> {
+  try {
+    const supabase = await createServerClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return false
+
+    const { data: perfil } = await supabase
+      .from('perfiles')
+      .select('jugador_id,rol,club_id')
+      .eq('id', session.user.id)
+      .single()
+
+    if (perfil?.rol !== 'jugador') return false
+
+    const admin = createAdminClient()
+
+    if (perfil?.jugador_id) {
+      const { data: jug } = await admin
+        .from('jugadores').select('estado').eq('id', perfil.jugador_id).single()
+      return jug?.estado === 'bloqueado'
+    }
+
+    // jugador_id no vinculado: buscar por email del usuario autenticado
+    if (session.user.email && perfil?.club_id) {
+      const { data: jug } = await admin
+        .from('jugadores').select('estado')
+        .eq('club_id', perfil.club_id).ilike('email', session.user.email).maybeSingle()
+      return jug?.estado === 'bloqueado'
+    }
+
+    return false
+  } catch {
+    return false
+  }
 }
 
 export async function resetearPasswordJugador(params: { jugadorId: string; nuevaPassword: string }) {
