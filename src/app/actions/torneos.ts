@@ -1713,3 +1713,37 @@ export async function guardarPremios(params: {
 
   return { success: true }
 }
+
+export async function guardarGastosGestion(params: {
+  torneoId: string
+  torneoNombre: string
+  gastos: { tipo: string; monto: number }[]
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const validos = params.gastos.filter(g => g.tipo.trim() && g.monto > 0)
+  if (!validos.length) return { error: 'No hay gastos válidos' }
+
+  const { data: torneo } = await supabase.from('torneos').select('club_id').eq('id', params.torneoId).single()
+  if (!torneo) return { error: 'Torneo no encontrado' }
+
+  const { data: perfil } = await supabase.from('perfiles').select('nombre').single()
+  const admin = perfil?.nombre ?? 'Admin'
+
+  const inserts = validos.map(g => ({
+    club_id: torneo.club_id,
+    torneo_id: params.torneoId,
+    tipo: 'gasto' as const,
+    categoria: 'otro_gasto',
+    descripcion: `${g.tipo.trim()} — ${params.torneoNombre}`,
+    monto: g.monto,
+    fecha: new Date().toISOString().slice(0, 10),
+    registrado_por_nombre: admin,
+  }))
+
+  const { error } = await supabase.from('movimientos').insert(inserts)
+  if (error) return { error: error.message }
+
+  return { success: true, cantidad: validos.length }
+}

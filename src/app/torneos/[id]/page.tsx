@@ -28,6 +28,7 @@ import {
   quitarJugadorDeMesa,
   guardarDesempateGrupo,
   intercambiarJugadores,
+  guardarGastosGestion,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayoutNumerado } from '@/lib/domain/torneos'
@@ -1527,6 +1528,10 @@ export default function TorneoDetallePage() {
                   const gastos = gastosGestion
                     .filter(g => g.tipo.trim() && g.monto)
                     .map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 }))
+                  if (gastos.length) {
+                    const res = await guardarGastosGestion({ torneoId, torneoNombre: torneo?.nombre || '', gastos })
+                    if (res.error) { alert('Error al guardar gastos: ' + res.error); return }
+                  }
                   const premiosYaGuardados = torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null
                   const { descargarInformeFinancieroPdf } = await import('@/lib/torneo-informe-pdf')
                   descargarInformeFinancieroPdf({
