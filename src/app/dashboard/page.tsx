@@ -272,34 +272,6 @@ export default function DashboardPage() {
   return (
     <AppLayout perfil={perfil}>
 
-      {/* ── Auspiciadores ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
-        <span style={{ fontSize: 10, color: C.hint, whiteSpace: 'nowrap', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          Auspiciadores
-        </span>
-        <div style={{ flex: 1, height: 1, background: C.border }} />
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {[
-            { id: 1, label: 'Auspiciador 1' },
-            { id: 2, label: 'Auspiciador 2' },
-            { id: 3, label: 'Auspiciador 3' },
-            { id: 4, label: 'Auspiciador 4' },
-          ].map(s => (
-            <div key={s.id} style={{
-              width: 90, height: 40,
-              background: C.card,
-              border: `1px solid ${C.border}`,
-              borderRadius: 8,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 1px 4px rgba(15,23,42,0.06)',
-              overflow: 'hidden',
-            }}>
-              <span style={{ fontSize: 10, color: C.hint }}>{s.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* ── Cabecera ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <div>
@@ -318,6 +290,33 @@ export default function DashboardPage() {
             </a>
           </div>
         </div>
+        {/* Logos auspiciadores — centro del header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, justifyContent: 'center' }}>
+          {[
+            { src: '/sponsors/foxhara.png',  alt: 'Foxhara Sport',       bg: '#ffffff' },
+            { src: '/sponsors/aurora.png',   alt: 'Aurora',              bg: '#111111' },
+            { src: '/sponsors/hidrata.png',  alt: 'Hidrata',             bg: '#111111' },
+          ].map(s => (
+            <div key={s.alt} style={{
+              width: 110, height: 44,
+              background: s.bg,
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              overflow: 'hidden',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 1px 6px rgba(15,23,42,0.08)',
+              flexShrink: 0,
+            }}>
+              <img
+                src={s.src}
+                alt={s.alt}
+                style={{ maxWidth: '90%', maxHeight: '80%', objectFit: 'contain' }}
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            </div>
+          ))}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {tiene('asistencia') && jugadoresInactivos.length > 0 && (
             <button onClick={() => setRetencionOpen(true)} style={{
