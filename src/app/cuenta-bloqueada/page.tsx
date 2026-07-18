@@ -22,12 +22,14 @@ export default function CuentaBloqueadaPage() {
       })
   }, [perfil?.club_id])
 
-  // Chequeo automático cada 8 segundos — si el club desbloquea, el jugador entra al instante
+  // Chequeo inmediato al cargar + cada 8 segundos
   useEffect(() => {
-    const intervalo = setInterval(async () => {
+    const verificar = async () => {
       const bloqueado = await verificarBloqueoPerfil()
       if (!bloqueado) window.location.replace('/perfil')
-    }, 8000)
+    }
+    verificar()
+    const intervalo = setInterval(verificar, 8000)
     return () => clearInterval(intervalo)
   }, [])
 
