@@ -1625,6 +1625,27 @@ export interface Database {
         Args: { p_mensualidad_id: string }
         Returns: undefined
       }
+      subir_pagos_torneo_a_finanzas_atomico: {
+        Args: {
+          p_torneo_id: string
+          p_jugador_ids: string[] | null
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      guardar_premios_torneo_atomico: {
+        Args: {
+          p_torneo_id: string
+          p_torneo_nombre: string
+          p_primero: number | null
+          p_segundo: number | null
+          p_tercero: number | null
+          p_metodo: string | null
+          p_gastos: Json
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
     }
     Enums: {}
     CompositeTypes: {}

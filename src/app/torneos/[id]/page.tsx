@@ -1542,12 +1542,13 @@ export default function TorneoDetallePage() {
                   const gastos = gastosGestion
                     .filter(g => g.tipo.trim() && g.monto)
                     .map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 }))
+                  const premiosYaGuardados = torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null
                   const { descargarInformeFinancieroPdf } = await import('@/lib/torneo-informe-pdf')
                   descargarInformeFinancieroPdf({
                     torneoNombre: torneo?.nombre || 'Torneo',
                     cuota, totalInscritos, pagados, recaudado, proyectado,
-                    recaudadoEfectivo, recaudadoTransferencia,
-                    jugadores: listaJug, premios, gastos, metodoPremio: premioMetodo,
+                    recaudadoEfectivo, recaudadoTransferencia, recaudadoPendienteSubir: recaudadoPendiente,
+                    jugadores: listaJug, premios, gastos, gastosRegistradosEnFinanzas: premiosYaGuardados, metodoPremio: premioMetodo,
                   })
                   setInformeOpen(false)
                 }}

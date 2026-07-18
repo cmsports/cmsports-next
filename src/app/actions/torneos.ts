@@ -1403,60 +1403,26 @@ export async function actualizarEstadoPago(params: {
 export async function subirPagosPendientesAFinanzas(params: {
   torneoId: string
   jugadorIds?: string[]
+  idempotencyKey?: string
 }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
-  if (!perfil.club_id) return { error: 'Perfil sin club asignado.' }
 
-  const { data: torneo } = await supabase
-    .from('torneos')
-    .select('id,nombre,cuota_inscripcion,club_id')
-    .eq('id', params.torneoId)
-    .eq('club_id', perfil.club_id)
-    .single()
-  if (!torneo) return { error: 'Torneo no encontrado.' }
-  const cuotaInscripcion = torneo.cuota_inscripcion || 0
-  if (cuotaInscripcion <= 0) return { error: 'El torneo no tiene cuota de inscripción.' }
-
-  let query = supabase
-    .from('torneo_pagos')
-    .select('id,jugador_id,metodo_pago')
-    .eq('torneo_id', params.torneoId)
-    .eq('estado', 'pagado')
-    .eq('subido_a_finanzas', false)
+  let jugadorIds: string[] | null = null
   if (params.jugadorIds) {
-    const jugadorIds = Array.from(new Set(params.jugadorIds)).filter(Boolean)
+    jugadorIds = Array.from(new Set(params.jugadorIds)).filter(Boolean)
     if (!jugadorIds.length) return { error: 'Selecciona al menos un pago.' }
-    query = query.in('jugador_id', jugadorIds)
   }
-  const { data: elegibles } = await query
-  if (!elegibles || !elegibles.length) return { error: 'No hay pagos pendientes de subir a Finanzas.' }
 
-  const fecha = new Date().toISOString().slice(0, 10)
-  const cantTransferencia = elegibles.filter(p => p.metodo_pago === 'transferencia').length
-  const cantEfectivo = elegibles.length - cantTransferencia
+  const { data, error } = await supabase.rpc('subir_pagos_torneo_a_finanzas_atomico', {
+    p_torneo_id: params.torneoId,
+    p_jugador_ids: jugadorIds,
+    p_idempotency_key: params.idempotencyKey ?? crypto.randomUUID(),
+  })
+  if (error || !data) return { error: error?.message ?? 'No se pudo subir a Finanzas' }
 
-  const movs: any[] = []
-  if (cantEfectivo > 0) {
-    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (efectivo) — ${torneo.nombre} (${cantEfectivo})`, monto: cantEfectivo * cuotaInscripcion, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  }
-  if (cantTransferencia > 0) {
-    movs.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'ingreso', categoria: 'inscripcion_torneo', descripcion: `Inscripción Torneo (transferencia) — ${torneo.nombre} (${cantTransferencia})`, monto: cantTransferencia * cuotaInscripcion, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  }
-  const { error: movimientoError } = await supabase.from('movimientos').insert(movs)
-  if (movimientoError) return { error: 'Error al registrar en Finanzas: ' + movimientoError.message }
-
-  const { error: updateError } = await supabase
-    .from('torneo_pagos')
-    .update({ subido_a_finanzas: true })
-    .in('id', elegibles.map(p => p.id))
-  if (updateError) return { error: 'Se registró en Finanzas, pero no se pudo marcar como subido. Revisa manualmente.' }
-
-  await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
-
-  const cantidad = elegibles.length
-  const monto = cantidad * cuotaInscripcion
-  return { success: true, cantidad, monto }
+  const resultado = data as unknown as { cantidad: number; monto: number }
+  return { success: true, cantidad: resultado.cantidad, monto: resultado.monto }
 }
 
 export async function intercambiarJugadores(params: {
@@ -1725,30 +1691,22 @@ export async function guardarPremios(params: {
   tercero: number | null
   metodo?: 'efectivo' | 'transferencia'
   gastosGestion?: { tipo: string; monto: number }[]
+  idempotencyKey?: string
 }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const via = params.metodo === 'transferencia' ? ' (transferencia)' : ' (efectivo)'
-
-  await supabase.from('torneos').update({ premio_primero: params.primero, premio_segundo: params.segundo, premio_tercero: params.tercero }).eq('id', params.torneoId)
-
-  const fecha = new Date().toISOString().slice(0, 10)
-  type Mov = { club_id: string | null; torneo_id: string; tipo: string; categoria: string; descripcion: string; monto: number; fecha: string; registrado_por_nombre: string }
-  const movimientos: Mov[] = []
-
-  if (params.primero) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 1°${via} — ${params.torneoNombre}`, monto: params.primero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  if (params.segundo) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 2°${via} — ${params.torneoNombre}`, monto: params.segundo, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  if (params.tercero) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'premio_torneo', descripcion: `Premio 3°${via} — ${params.torneoNombre}`, monto: params.tercero, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-
-  for (const g of (params.gastosGestion || [])) {
-    if (g.monto > 0) movimientos.push({ club_id: perfil.club_id, torneo_id: params.torneoId, tipo: 'gasto', categoria: 'otro_gasto', descripcion: `${g.tipo} — ${params.torneoNombre}`, monto: g.monto, fecha, registrado_por_nombre: perfil.nombre || 'Admin' })
-  }
-
-  if (movimientos.length) {
-    await supabase.from('movimientos').insert(movimientos)
-    await supabase.from('torneos').update({ contabilidad_enviada: true }).eq('id', params.torneoId)
-  }
+  const { data, error } = await supabase.rpc('guardar_premios_torneo_atomico', {
+    p_torneo_id: params.torneoId,
+    p_torneo_nombre: params.torneoNombre,
+    p_primero: params.primero,
+    p_segundo: params.segundo,
+    p_tercero: params.tercero,
+    p_metodo: params.metodo ?? 'efectivo',
+    p_gastos: params.gastosGestion ?? [],
+    p_idempotency_key: params.idempotencyKey ?? crypto.randomUUID(),
+  })
+  if (error || !data) return { error: error?.message ?? 'No se pudieron guardar los premios' }
 
   return { success: true }
 }

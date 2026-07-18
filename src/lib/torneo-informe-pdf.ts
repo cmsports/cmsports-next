@@ -13,10 +13,12 @@ export type InformeFinanciero = {
   recaudado: number
   recaudadoEfectivo: number
   recaudadoTransferencia: number
+  recaudadoPendienteSubir: number
   proyectado: number
   jugadores: Jugador[]
   premios: Premio[]
   gastos: Gasto[]
+  gastosRegistradosEnFinanzas: boolean
   metodoPremio?: 'efectivo' | 'transferencia'
 }
 
@@ -58,6 +60,7 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
       ['Recaudado en efectivo', fmt(d.recaudadoEfectivo)],
       ['Recaudado por transferencia', fmt(d.recaudadoTransferencia)],
       ['Pendiente por cobrar', fmt(pendienteCobro)],
+      ...(d.recaudadoPendienteSubir > 0 ? [['⚠ Recaudado aún sin subir a Finanzas', fmt(d.recaudadoPendienteSubir)]] : []),
     ],
     theme: 'striped',
     headStyles: { fillColor: MORADO },
@@ -118,7 +121,14 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
       margin: { left: 14, right: 14 },
       columnStyles: { 1: { halign: 'right' } },
     })
-    y = (doc as any).lastAutoTable.finalY + 8
+    y = (doc as any).lastAutoTable.finalY + 6
+    if (!d.gastosRegistradosEnFinanzas) {
+      doc.setFontSize(8); doc.setTextColor(...ROJO)
+      doc.text('⚠ Estos gastos aún no se han registrado en Finanzas — usa "Guardar premios" para subirlos.', 14, y)
+      y += 8
+    } else {
+      y += 2
+    }
   }
 
   // — Balance final —
