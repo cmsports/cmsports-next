@@ -11,6 +11,7 @@ export default function BibliografiaTdmPage() {
   const [archivos, setArchivos] = useState<Archivo[]>([])
   const [cargando, setCargando] = useState(true)
   const [subiendo, setSubiendo] = useState(false)
+  const [errorUpload, setErrorUpload] = useState<string | null>(null)
   const [visor, setVisor] = useState<Archivo | null>(null)
   const [eliminando, setEliminando] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -34,9 +35,20 @@ export default function BibliografiaTdmPage() {
   async function subir(files: FileList | null) {
     if (!files || files.length === 0) return
     setSubiendo(true)
-    const formData = new FormData()
-    for (const file of Array.from(files)) formData.append('files', file)
-    await fetch('/api/bibliografia/upload', { method: 'POST', body: formData })
+    setErrorUpload(null)
+    try {
+      const formData = new FormData()
+      for (const file of Array.from(files)) formData.append('files', file)
+      const res = await fetch('/api/bibliografia/upload', { method: 'POST', body: formData })
+      const json = await res.json() as { subidos?: number; errores?: string[]; error?: string }
+      if (!res.ok || json.error) {
+        setErrorUpload(json.error ?? 'Error al subir')
+      } else if ((json.subidos ?? 0) === 0) {
+        setErrorUpload(`No se subió ningún archivo. Errores: ${(json.errores ?? []).join(', ') || 'desconocido'}`)
+      }
+    } catch (e) {
+      setErrorUpload('Error de red al subir')
+    }
     await cargar()
     setSubiendo(false)
     if (inputRef.current) inputRef.current.value = ''
@@ -91,6 +103,16 @@ export default function BibliografiaTdmPage() {
             </>
           )}
         </div>
+
+        {/* Error upload */}
+        {errorUpload && (
+          <div style={{
+            background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8,
+            padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#dc2626',
+          }}>
+            {errorUpload}
+          </div>
+        )}
 
         {/* Estado */}
         {cargando && (
