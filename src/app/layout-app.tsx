@@ -81,6 +81,7 @@ type NavItem = { section: string } | NavLink
 
 const clubNombreCache: Record<string, string> = {}
 const clubLogoCache: Record<string, string | null> = {}
+const clubTelefonoCache: Record<string, string> = {}
 
 export default function AppLayout({ children, perfil }: { children: React.ReactNode; perfil: Perfil | null }) {
   const router = useRouter()
@@ -97,6 +98,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
     if (!clubId) return
     if (clubNombreCache[clubId]) {
       setClubLogoUrl(clubLogoCache[clubId] ?? null)
+      setClubTelefono(clubTelefonoCache[clubId] ?? '')
       return
     }
     let activo = true
@@ -108,6 +110,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         const logo = data?.logo_url ?? null
         clubNombreCache[clubId] = nombre
         clubLogoCache[clubId] = logo
+        clubTelefonoCache[clubId] = data?.telefono || ''
         setClubCargado({ id: clubId, nombre })
         setClubLogoUrl(logo)
         setClubTelefono(data?.telefono || '')
