@@ -47,7 +47,7 @@ export function calcularNumGrupos(
   numJugadores: number,
   jugadoresPorGrupo: number = CONFIG.TORNEO_JUGADORES_POR_GRUPO,
 ): number {
-  return Math.max(2, Math.round(numJugadores / jugadoresPorGrupo))
+  return Math.max(2, Math.ceil(numJugadores / jugadoresPorGrupo))
 }
 
 // Los tardíos forman grupos independientes de hasta cuatro jugadores.
