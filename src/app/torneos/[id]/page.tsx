@@ -1148,12 +1148,16 @@ export default function TorneoDetallePage() {
                     if (isLast) return [col]
 
                     const nextFase = fasesVis[pi + 1]
-                    const N2 = byFase[nextFase].length
+                    const nextPs = byFase[nextFase]
+                    const N2 = nextPs.length
                     const connector = (
                       <svg key={`conn-${pi}`} width={CONN_W} height={totalH} style={{ flexShrink: 0, display: 'block' }}>
-                        {Array.from({ length: N2 }, (_, j) => {
-                          const a = Math.round(j * N / N2)
-                          const b = Math.round((j + 1) * N / N2) - 1
+                        {nextPs.map((np, j) => {
+                          const ordenNext = np.orden ?? j
+                          const idxA = ps.findIndex(p => (p.orden ?? 0) === ordenNext * 2)
+                          const idxB = ps.findIndex(p => (p.orden ?? 0) === ordenNext * 2 + 1)
+                          const a = idxA >= 0 ? idxA : Math.round(j * N / N2)
+                          const b = idxB >= 0 ? idxB : Math.round((j + 1) * N / N2) - 1
                           const y1 = cy(a, N)
                           const y2 = cy(b, N)
                           const ym = cy(j, N2)
