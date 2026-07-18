@@ -181,8 +181,9 @@ export default function TorneoDetallePage() {
     return () => mq.removeEventListener('change', on)
   }, [])
 
-  // Crea el esqueleto al cerrar al menos la mitad de los grupos y luego va
-  // completando los cupos restantes sin regenerar el árbol.
+  // Crea el esqueleto apenas hay grupos (con cupos pendientes para lo que no
+  // ha cerrado) y luego va completando los cupos restantes sin regenerar el
+  // árbol, salvo que una cabeza de serie provisoria cambie de mitad.
   useEffect(() => {
     if (loading || authLoading) return
     if (perfil?.rol !== 'admin') return
@@ -192,7 +193,7 @@ export default function TorneoDetallePage() {
     const clasificados = calcularClasificados()
     const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
     if (gruposReales.some((g: any) => g.en_preparacion)) return
-    if (!gruposReales.length || clasificados.length < Math.ceil(gruposReales.length / 2)) return
+    if (!gruposReales.length) return
     const firmaLayout = [
       cabezasPersistidas.map(c => c.id).join(','),
       gruposReales.map((g: any) => g.id).sort().join(','),
@@ -421,17 +422,15 @@ export default function TorneoDetallePage() {
   }
 
   async function armarBracketAhora() {
-    const clasificados = calcularClasificados()
     const totalGrupos = gruposReales.length
-    const minimo = Math.ceil(totalGrupos / 2)
-    if (!totalGrupos || clasificados.length < minimo) { alert(`Debes cerrar al menos ${minimo} grupos antes de armar el bracket.`); return }
+    if (!totalGrupos) { alert('Debes crear los grupos antes de armar el bracket.'); return }
     if (cabezasConCambios) {
       const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: cabezasNumeradas.map(c => c.id) })
       if (guardado.error) { alert(guardado.error); return }
     }
     const res = await sincronizarLlavesAction({ torneoId })
     if ('error' in res && res.error) { alert(`No se pudo armar el bracket: ${res.error}`); return }
-    if ('esperandoCabezas' in res && res.esperandoCabezas) { alert('Primero deben terminar los grupos de los cabezas de serie.'); return }
+    if ('esperandoCabezas' in res && res.esperandoCabezas) { alert('Un cabeza de serie no está asignado a ningún grupo. Revisa la configuración de cabezas.'); return }
     ultimaSyncRef.current = ''
     await cargarTorneo()
     setTabActiva('bracket')
@@ -492,6 +491,13 @@ export default function TorneoDetallePage() {
   // "grupos": mostramos las pestañas y el bracket también en ese caso.
   const hayBracket = Array.from(fasesConPartidos).some(fase => fase !== 'grupos')
   const mostrarLlaves = !!esPlayoffs || hayBracket
+  // A diferencia de hayBracket (el esqueleto puede existir con cupos vacíos
+  // apenas hay grupos), esto es si YA se jugó un partido real de bracket
+  // (mismo criterio que llaveFueJugada en el backend). Mientras no haya
+  // ninguno, todavía se puede editar grupos / meter jugadores tardíos sin
+  // riesgo — el esqueleto se recalcula solo.
+  const hayBracketJugado = Array.from(partidosPorFase.entries())
+    .some(([fase, ps]) => fase !== 'grupos' && (ps as any[]).some(p => p.ganador && p.jugador_b))
 
   // Layout determinista del cuadro (mismo sembrado que el servidor), para poder
   // etiquetar los cupos vacíos con su grupo/posición y distinguir BYE reales de
@@ -578,7 +584,7 @@ export default function TorneoDetallePage() {
             📺 En vivo: <span style={{ fontFamily:'monospace', letterSpacing:1 }}>{torneo.codigo}</span> QR
           </button>
         )}
-        {esAdmin && torneo?.inscripcion_abierta && !hayBracket && (
+        {esAdmin && torneo?.inscripcion_abierta && !hayBracketJugado && (
           <button onClick={() => setMesaOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
         )}
         {esAdmin && faseActual !== 'inscripcion' && (
@@ -675,12 +681,12 @@ export default function TorneoDetallePage() {
       )}
 
       {/* BOTÓN INSCRIPCIÓN TARDÍA */}
-      {esAdmin && faseActual === 'grupos' && !hayBracket && (
+      {esAdmin && faseActual === 'grupos' && !hayBracketJugado && (
         <div style={{ marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           <button onClick={() => setMesaOpen(true)} style={{ background:'#ffffff', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
             + Inscribir jugador adicional
           </button>
-          {faseActual === 'grupos' && !hayBracket && !gruposReales.some((g: any) => g.en_preparacion) && (
+          {faseActual === 'grupos' && !hayBracketJugado && !gruposReales.some((g: any) => g.en_preparacion) && (
             <button disabled={creandoGrupoManual} onClick={async () => {
               if (creandoGrupoManual) return
               setCreandoGrupoManual(true)
@@ -720,7 +726,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* FASE GRUPOS */}
-      {faseActual === 'grupos' && !hayBracket && esAdmin && (
+      {faseActual === 'grupos' && !hayBracketJugado && esAdmin && (
         <div style={{ marginBottom:16 }}>
           <CabezasSerieEditor
             cabezas={cabezasNumeradas}
@@ -753,8 +759,8 @@ export default function TorneoDetallePage() {
 
             return (
               <div key={grupo.id} style={{ ...card, overflow:'hidden' }}
-                onDragOver={esAdmin && !hayBracket ? (e) => e.preventDefault() : undefined}
-                onDrop={esAdmin && !hayBracket ? (e) => {
+                onDragOver={esAdmin && !hayBracketJugado ? (e) => e.preventDefault() : undefined}
+                onDrop={esAdmin && !hayBracketJugado ? (e) => {
                   e.preventDefault()
                   if (dragJugadorGrupo) moverAGrupo(dragJugadorGrupo.jugadorId, dragJugadorGrupo.grupoId, grupo.id)
                   setDragJugadorGrupo(null)
@@ -803,9 +809,9 @@ export default function TorneoDetallePage() {
                 )}
                 {ordenados.map((j: any, i: number) => (
                   <div key={`${grupo.id}-${j.jugador?.id ?? i}`}
-                    draggable={esAdmin && !hayBracket && !!j.jugador?.id}
-                    onDragStart={esAdmin && !hayBracket && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
-                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: esAdmin && !hayBracket ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
+                    draggable={esAdmin && !hayBracketJugado && !!j.jugador?.id}
+                    onDragStart={esAdmin && !hayBracketJugado && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
+                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: esAdmin && !hayBracketJugado ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
                     <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text }}>{j.jugador?.nombre||'—'}</div>
@@ -819,7 +825,7 @@ export default function TorneoDetallePage() {
                           </span>
                         : <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10 }}>Pend.</span>
                     })()}
-                    {esAdmin && !hayBracket && !grupoConResultados && (
+                    {esAdmin && !hayBracketJugado && !grupoConResultados && (
                       <div style={{ display:'flex', gap:4 }}>
                         {isMobile && grupoEnPreparacion && grupo.id !== grupoEnPreparacion.id && (
                           <button
@@ -908,7 +914,7 @@ export default function TorneoDetallePage() {
                 {hayTripleEmpate && desempateResuelto && esAdmin && (
                   <div style={{ background:'#f0fdf4', borderTop:'1px solid #bbf7d0', padding:'10px 16px', display:'flex', alignItems:'center', gap:10 }}>
                     <span style={{ flex:1, fontSize:11, color:'#166534' }}>1° {nombreDesempate(grupo.desempate_primero_id)} · 2° {nombreDesempate(grupo.desempate_segundo_id)}</span>
-                    {!hayBracket && <button onClick={async () => {
+                    {!hayBracketJugado && <button onClick={async () => {
                       const res = await guardarDesempateGrupo({ torneoId, grupoId: grupo.id, primeroId: null, segundoId: null })
                       if (res.error) { alert(res.error); return }
                       ultimaSyncRef.current = ''
@@ -1003,20 +1009,9 @@ export default function TorneoDetallePage() {
             const COL_W = 190
             const CONN_W = 22
 
-            // Fase tope a mostrar: durante el armado la fase del torneo aún es
-            // "grupos" (no está en fasesOrden), así que caemos a la fase inicial
-            // del cuadro para poder dibujar la primera ronda que se va llenando.
-            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => fasesConPartidos.has(f))
-            const faseTope = faseActual === 'finalizado'
-              ? fasesOrden[fasesOrden.length - 1]
-              : faseActual === 'grupos' && ultimaFaseConPartidos
-                ? ultimaFaseConPartidos
-              : (fasesOrden as readonly string[]).includes(faseActual)
-                ? faseActual
-                : (llavesLayout?.faseInicial ?? faseActual)
-            const fasesVis = fasesOrden
-              .slice(0, fasesOrden.indexOf(faseTope as FaseOrden) + 1)
-              .filter(f => fasesConPartidos.has(f))
+            // Cada fase se muestra en cuanto tiene partidos en BD (propagarGanadorPlayoff
+            // los va creando llave por llave), sin esperar a que torneo.fase avance.
+            const fasesVis = fasesOrden.filter(f => fasesConPartidos.has(f))
 
             if (!fasesVis.length) return null
 
@@ -1142,17 +1137,7 @@ export default function TorneoDetallePage() {
           {/* Bracket móvil: lista por fase (liviana). Mismo dato que el SVG, sin
               divs absolutos ni SVG → no hay OOM. Tocas el nombre para marcar. */}
           {isMobile && (() => {
-            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => fasesConPartidos.has(f))
-            const faseTope = faseActual === 'finalizado'
-              ? fasesOrden[fasesOrden.length - 1]
-              : faseActual === 'grupos' && ultimaFaseConPartidos
-                ? ultimaFaseConPartidos
-              : (fasesOrden as readonly string[]).includes(faseActual)
-                ? faseActual
-                : (llavesLayout?.faseInicial ?? faseActual)
-            const fasesVis = fasesOrden
-              .slice(0, fasesOrden.indexOf(faseTope as FaseOrden) + 1)
-              .filter(f => fasesConPartidos.has(f))
+            const fasesVis = fasesOrden.filter(f => fasesConPartidos.has(f))
             if (!fasesVis.length) return null
 
             const nombre = (p: any, pos: 'a' | 'b') =>
@@ -1561,7 +1546,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* MESA DE INSCRIPCIÓN */}
-      {mesaOpen && !hayBracket && (
+      {mesaOpen && !hayBracketJugado && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:24, width:'100%', maxWidth:560, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
@@ -1700,7 +1685,7 @@ export default function TorneoDetallePage() {
               </div>
             )}
 
-            {!hayBracket && candidatosCabezas.length > 0 && (
+            {!hayBracketJugado && candidatosCabezas.length > 0 && (
               <div style={{ marginBottom:16 }}>
                 <CabezasSerieEditor
                   cabezas={cabezasNumeradas}

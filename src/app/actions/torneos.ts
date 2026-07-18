@@ -415,9 +415,11 @@ export async function guardarDesempateGrupo(params: {
     .select('id').eq('id', grupoId).eq('torneo_id', torneoId).single()
   if (!grupo) return { error: 'Grupo no encontrado' }
 
-  const { count: llavesCreadas } = await supabase.from('torneo_partidos')
-    .select('id', { count: 'exact', head: true }).eq('torneo_id', torneoId).neq('fase', 'grupos')
-  if ((llavesCreadas ?? 0) > 0) return { error: 'Vuelve a grupos antes de cambiar un desempate' }
+  const { data: llavesGrupo } = await supabase.from('torneo_partidos')
+    .select('ganador, jugador_b')
+    .eq('torneo_id', torneoId).neq('fase', 'grupos')
+    .or(`slot_a_grupo_id.eq.${grupoId},slot_b_grupo_id.eq.${grupoId}`)
+  if ((llavesGrupo || []).some(llaveFueJugada)) return { error: 'No se puede cambiar el desempate: la llave de este grupo ya se jugó' }
 
   if (primeroId && segundoId) {
     const [{ data: miembros }, { data: partidosGrupo }] = await Promise.all([
@@ -461,9 +463,9 @@ export async function crearGrupoManual(params: { torneoId: string }) {
   if (!torneo || torneo.club_id !== perfil.club_id) return { error: 'Torneo no encontrado' }
   if (torneo.fase !== 'grupos') return { error: 'Solo puedes crear grupos manuales durante la fase de grupos' }
 
-  const { count: bracket } = await supabase.from('torneo_partidos')
-    .select('id', { count: 'exact', head: true }).eq('torneo_id', params.torneoId).neq('fase', 'grupos')
-  if ((bracket ?? 0) > 0) return { error: 'No se pueden crear grupos después de generar el bracket' }
+  const { data: bracket } = await supabase.from('torneo_partidos')
+    .select('ganador, jugador_b').eq('torneo_id', params.torneoId).neq('fase', 'grupos')
+  if ((bracket || []).some(llaveFueJugada)) return { error: 'No se pueden crear grupos después de jugar partidos del bracket' }
 
   const { data: grupos } = await supabase.from('torneo_grupos')
     .select('id,nombre,orden,en_preparacion').eq('torneo_id', params.torneoId).neq('nombre', 'MESA')
@@ -549,10 +551,6 @@ export async function moverJugadorEntreGrupos(params: {
   const { data: miembroOrigen } = await supabase.from('grupo_jugadores')
     .select('id').eq('grupo_id', grupoOrigenId).eq('jugador_id', jugadorId).maybeSingle()
   if (!miembroOrigen) return { error: 'El jugador no pertenece al grupo de origen' }
-
-  const { data: bracket } = await supabase.from('torneo_partidos')
-    .select('id').eq('torneo_id', torneoId).neq('fase', 'grupos').limit(1)
-  if (bracket?.length) return { error: 'No se pueden cambiar grupos después de crear el bracket' }
 
   const { data: partidosAfectados } = await supabase
     .from('torneo_partidos')
@@ -668,10 +666,6 @@ export async function reordenarJugadorEnGrupo(params: {
   if (authErr) return { error: authErr }
 
   const { torneoId, grupoId, jugadorId, direccion } = params
-
-  const { data: bracket } = await supabase.from('torneo_partidos')
-    .select('id').eq('torneo_id', torneoId).neq('fase', 'grupos').limit(1)
-  if (bracket?.length) return { error: 'No se puede reordenar grupos después de crear el bracket' }
 
   const { data: partidosGrupo } = await supabase
     .from('torneo_partidos')
@@ -864,14 +858,23 @@ export async function sincronizarLlaves(params: {
   if (new Set(gruposDeCabezas).size !== gruposDeCabezas.length) {
     return { error: 'No pueden quedar dos cabezas de serie en el mismo grupo' }
   }
-  const gruposCerrados = new Set(clasificados.map(c => c.grupoId))
+  const grupoIdDeCabeza = new Map(cabezas.map(c => [c.jugadorId, (miembros || []).find(m => m.jugador_id === c.jugadorId)?.grupo_id]))
 
   const slotDe = (jid?: string | null): { grupoIdx: number; pos: 1 | 2 } | null => {
     if (!jid) return null
     const clasificado = clasificados.find(c => c.primeroId === jid || c.segundoId === jid)
-    const grupoIdx = clasificado ? idxByGrupoId.get(clasificado.grupoId) : null
-    if (grupoIdx == null || !clasificado) return null
-    return { grupoIdx, pos: clasificado.primeroId === jid ? 1 : 2 }
+    if (clasificado) {
+      const grupoIdx = idxByGrupoId.get(clasificado.grupoId)
+      return grupoIdx == null ? null : { grupoIdx, pos: clasificado.primeroId === jid ? 1 : 2 }
+    }
+    // El grupo de esta cabeza todavía no cierra: se asume 1° provisoriamente
+    // (la premisa de ser cabeza de serie) para poder congelar mitades desde
+    // ya. Mientras no se juegue ningún partido de bracket esto se recalcula
+    // solo con cada llamada, así que si el resultado real difiere (queda 2°)
+    // se corrige antes de que importe.
+    const grupoId = grupoIdDeCabeza.get(jid)
+    const grupoIdx = grupoId ? idxByGrupoId.get(grupoId) : null
+    return grupoIdx == null ? null : { grupoIdx, pos: 1 }
   }
   const cabezasSlots = cabezas.map(c => {
     const slot = slotDe(c.jugadorId)
@@ -883,22 +886,6 @@ export async function sincronizarLlaves(params: {
     .select('id, fase, orden, ganador, jugador_a, jugador_b, slot_a_grupo_id, slot_a_posicion, slot_b_grupo_id, slot_b_posicion')
     .eq('torneo_id', torneoId)
     .neq('fase', 'grupos')
-
-  if (!bracketExistente?.length) {
-    const minimoCerrados = Math.ceil(numGrupos / 2)
-    if (clasificados.length < minimoCerrados) {
-      return { success: true, todosCompletos: false, bracketCreado: false, minimoCerrados }
-    }
-
-    // Antes de congelar el árbol deben conocerse las posiciones reales de los
-    // cabezas. Si no clasificaron, basta con que su grupo ya esté cerrado.
-    for (const cabeza of cabezas) {
-      const grupoCabeza = (miembros || []).find(m => m.jugador_id === cabeza.jugadorId)?.grupo_id
-      if (grupoCabeza && !gruposCerrados.has(grupoCabeza)) {
-        return { success: true, todosCompletos: false, bracketCreado: false, esperandoCabezas: true }
-      }
-    }
-  }
 
   const gruposListosIdx = clasificados
     .map(c => idxByGrupoId.get(c.grupoId))
@@ -913,13 +900,29 @@ export async function sincronizarLlaves(params: {
     ((!p.slot_b_grupo_id && p.slot_b_posicion == null) ||
       (!!p.slot_b_grupo_id && (p.slot_b_posicion === 1 || p.slot_b_posicion === 2))),
   )
+  // Compara contra el layout recién calculado, no solo si los campos existen:
+  // una cabeza provisoria (asumida 1°) puede resultar 2° al cerrar su grupo,
+  // lo que cambia qué mitad le toca. Mientras no se haya jugado ningún
+  // partido de bracket, eso debe poder recalcular el esqueleto.
+  const porOrdenInicial = new Map(inicialesExistentes.map(p => [p.orden, p]))
+  const coincideConLayout = metadataCompleta && layout.matches.every(m => {
+    const row = porOrdenInicial.get(m.orden)
+    if (!row) return false
+    const grupoA = m.a ? grupos[m.a.grupoIdx]?.id ?? null : null
+    const grupoB = m.b ? grupos[m.b.grupoIdx]?.id ?? null : null
+    return row.slot_a_grupo_id === grupoA && row.slot_a_posicion === (m.a?.pos ?? null) &&
+      row.slot_b_grupo_id === grupoB && row.slot_b_posicion === (m.b?.pos ?? null)
+  })
   const algunaMetadata = inicialesExistentes.some(p =>
     !!p.slot_a_grupo_id || p.slot_a_posicion != null || !!p.slot_b_grupo_id || p.slot_b_posicion != null,
   )
   if (bracketExistente?.length && !metadataCompleta && (hayLlavesJugadas || algunaMetadata)) {
     return { error: 'El bracket anterior tiene información incompleta y no puede reconstruirse sin riesgo' }
   }
-  const debeReconstruirEsqueleto = !!bracketExistente?.length && !metadataCompleta && !hayLlavesJugadas
+  // Si ya se jugó una llave, el esqueleto queda congelado tal cual esté
+  // (aunque una cabeza provisoria haya resultado distinta) para no arriesgar
+  // resultados ya jugados. Si nadie ha jugado aún, se recalcula libremente.
+  const debeReconstruirEsqueleto = !!bracketExistente?.length && !hayLlavesJugadas && (!metadataCompleta || !coincideConLayout)
 
   if (debeReconstruirEsqueleto) {
     const { error } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
@@ -1174,8 +1177,8 @@ export async function generarGruposTardios(params: {
     .select('ganador,jugador_b')
     .eq('torneo_id', torneoId)
     .neq('fase', 'grupos')
-  if (llavesJugadas?.length) {
-    return { error: 'No se pueden agregar tardíos después de crear el bracket' }
+  if (llavesJugadas?.some(llaveFueJugada)) {
+    return { error: 'No se pueden agregar tardíos después de jugar partidos del bracket' }
   }
 
   const lecturaCabezas = await leerCabezasSerie(supabase, torneoId)
@@ -1546,9 +1549,9 @@ export async function inscribirEnMesa(params: {
 
   const { data: torneo } = await supabase.from('torneos').select('cuota_inscripcion,club_id').eq('id', torneoId).single()
   if (!torneo || torneo.club_id !== perfil.club_id) return { error: 'Torneo no encontrado' }
-  const { count: bracket } = await supabase.from('torneo_partidos')
-    .select('id', { count: 'exact', head: true }).eq('torneo_id', torneoId).neq('fase', 'grupos')
-  if ((bracket ?? 0) > 0) return { error: 'No se pueden inscribir jugadores después de crear el bracket' }
+  const { data: bracket } = await supabase.from('torneo_partidos')
+    .select('ganador, jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')
+  if ((bracket || []).some(llaveFueJugada)) return { error: 'No se pueden inscribir jugadores después de jugar partidos del bracket' }
 
   const { data: jugsExistentes } = await supabase
     .from('jugadores').select('id,nombre')
