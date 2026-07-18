@@ -328,11 +328,15 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
   if (ganadorId !== partido.jugador_a && ganadorId !== partido.jugador_b) return { error: 'El ganador debe ser uno de los jugadores del partido' }
 
   if (partido.fase !== 'grupos') {
-    const { error } = await supabase.rpc('marcar_ganador_playoff_seguro', {
-      p_partido_id: partidoId,
-      p_ganador_id: ganadorId,
-    })
-    if (error) return { error: error.message }
+    const { data: actualizado } = await supabase
+      .from('torneo_partidos')
+      .update({ ganador: ganadorId })
+      .eq('id', partidoId)
+      .is('ganador', null)
+      .select('id')
+    if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
+    await propagarGanadorPlayoff(supabase, partido, ganadorId)
+    await avanzarFaseSiEstaCompleta(supabase, partido)
     return { success: true }
   }
 
