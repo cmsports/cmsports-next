@@ -154,20 +154,29 @@ export async function verificarBloqueoPerfil(): Promise<boolean> {
 
     const { data: perfil } = await supabase
       .from('perfiles')
-      .select('jugador_id,rol')
+      .select('jugador_id,rol,club_id')
       .eq('id', session.user.id)
       .single()
 
-    if (perfil?.rol !== 'jugador' || !perfil?.jugador_id) return false
+    if (perfil?.rol !== 'jugador') return false
 
     const admin = createAdminClient()
-    const { data: jug } = await admin
-      .from('jugadores')
-      .select('estado')
-      .eq('id', perfil.jugador_id)
-      .single()
 
-    return jug?.estado === 'bloqueado'
+    if (perfil?.jugador_id) {
+      const { data: jug } = await admin
+        .from('jugadores').select('estado').eq('id', perfil.jugador_id).single()
+      return jug?.estado === 'bloqueado'
+    }
+
+    // jugador_id no vinculado: buscar por email del usuario autenticado
+    if (session.user.email && perfil?.club_id) {
+      const { data: jug } = await admin
+        .from('jugadores').select('estado')
+        .eq('club_id', perfil.club_id).ilike('email', session.user.email).maybeSingle()
+      return jug?.estado === 'bloqueado'
+    }
+
+    return false
   } catch {
     return false
   }

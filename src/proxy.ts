@@ -153,23 +153,29 @@ export async function proxy(request: NextRequest) {
   }
 
   // Verificar si el jugador está bloqueado por morosidad (service role → ignora RLS)
-  if (
-    rol === 'jugador' &&
-    perfil?.jugador_id &&
-    pathname !== '/cuenta-bloqueada' &&
-    !pathname.startsWith('/api/')
-  ) {
+  if (rol === 'jugador' && pathname !== '/cuenta-bloqueada' && !pathname.startsWith('/api/')) {
     const adminSsr = createServerClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { cookies: { getAll: () => [], setAll: () => {} } },
     )
-    const { data: jug } = await adminSsr
-      .from('jugadores')
-      .select('estado')
-      .eq('id', perfil.jugador_id)
-      .single()
-    if (jug?.estado === 'bloqueado') {
+    let esBloqueado = false
+    if (perfil?.jugador_id) {
+      const { data: jug } = await adminSsr
+        .from('jugadores').select('estado').eq('id', perfil.jugador_id).single()
+      esBloqueado = jug?.estado === 'bloqueado'
+    } else {
+      // jugador_id no vinculado en perfiles: buscar por email del JWT
+      const { data: claimsData } = await supabase.auth.getClaims()
+      const email = (claimsData?.claims?.email ?? '') as string
+      if (email && perfil?.club_id) {
+        const { data: jug } = await adminSsr
+          .from('jugadores').select('estado')
+          .eq('club_id', perfil.club_id).ilike('email', email).maybeSingle()
+        esBloqueado = jug?.estado === 'bloqueado'
+      }
+    }
+    if (esBloqueado) {
       const url = request.nextUrl.clone()
       url.pathname = '/cuenta-bloqueada'
       return NextResponse.redirect(url)
