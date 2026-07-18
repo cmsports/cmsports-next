@@ -211,6 +211,22 @@ begin
 end;
 $$;
 
+-- Relaja el constraint que impedía slot_a_posicion = slot_b_posicion
+-- (ej. 2° vs 2°). Se mantiene la regla de que un grupo no se enfrente
+-- a sí mismo.
+alter table public.torneo_partidos
+  drop constraint if exists torneo_partidos_slots_coherentes_check;
+alter table public.torneo_partidos
+  add constraint torneo_partidos_slots_coherentes_check
+  check (
+    (slot_a_grupo_id is null) = (slot_a_posicion is null)
+    and (slot_b_grupo_id is null) = (slot_b_posicion is null)
+    and (
+      slot_a_grupo_id is null or slot_b_grupo_id is null
+      or slot_a_grupo_id <> slot_b_grupo_id
+    )
+  );
+
 revoke all on function public.intercambiar_cupos_bracket_seguro(
   uuid, uuid, text, uuid, text
 ) from public, anon, authenticated;
