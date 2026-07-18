@@ -589,8 +589,8 @@ export async function moverJugadorEntreGrupos(params: {
   const destinoActual = (miembrosAntes || []).filter(m => m.grupo_id === grupoDestinoId)
   if ((destinoActual?.length ?? 0) >= 4) return { error: 'El grupo destino ya tiene 4 jugadores' }
   const origenCantidad = (miembrosAntes || []).filter(m => m.grupo_id === grupoOrigenId).length
-  if (!origenGrupo?.en_preparacion && origenCantidad <= 3) {
-    return { error: 'El grupo de origen debe conservar al menos 3 jugadores' }
+  if (origenCantidad <= 1) {
+    return { error: 'El grupo de origen debe conservar al menos 1 jugador' }
   }
   const lecturaCabezas = await leerCabezasSerie(supabase, torneoId)
   if (lecturaCabezas.error) return { error: lecturaCabezas.error }
