@@ -10,9 +10,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // sw.js: nunca cachear para que el SW nuevo active de inmediato
         source: '/sw.js',
         headers: [
           { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+        ],
+      },
+      {
+        // Páginas de la app: no guardar en CDN de Vercel ni en browser.
+        // Evita que un deploy nuevo quede opacado por el HTML del anterior.
+        source: '/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
         ],
       },
     ];

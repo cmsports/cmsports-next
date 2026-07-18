@@ -17,5 +17,7 @@ export async function GET() {
       url: supabase.storage.from(BUCKET).getPublicUrl(f.name).data.publicUrl,
     }))
 
-  return Response.json(archivos)
+  return Response.json(archivos, {
+    headers: { 'Cache-Control': 'no-store, max-age=0' },
+  })
 }
