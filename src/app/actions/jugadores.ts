@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import { requireAdminClub } from '@/lib/auth/require'
 import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
 
@@ -143,6 +144,33 @@ export async function eliminarJugador(params: { jugadorId: string }) {
   }
 
   return { success: true }
+}
+
+export async function verificarBloqueoPerfil(): Promise<boolean> {
+  try {
+    const supabase = await createServerClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return false
+
+    const { data: perfil } = await supabase
+      .from('perfiles')
+      .select('jugador_id,rol')
+      .eq('id', session.user.id)
+      .single()
+
+    if (perfil?.rol !== 'jugador' || !perfil?.jugador_id) return false
+
+    const admin = createAdminClient()
+    const { data: jug } = await admin
+      .from('jugadores')
+      .select('estado')
+      .eq('id', perfil.jugador_id)
+      .single()
+
+    return jug?.estado === 'bloqueado'
+  } catch {
+    return false
+  }
 }
 
 export async function resetearPasswordJugador(params: { jugadorId: string; nuevaPassword: string }) {

@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
+import { verificarBloqueoPerfil } from '@/app/actions/jugadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
@@ -119,11 +120,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   }, [clubId])
 
   useEffect(() => {
-    if (perfil?.rol !== 'jugador' || !perfil?.jugador_id) return
-    const supabase = createClient()
-    supabase.from('jugadores').select('estado').eq('id', perfil.jugador_id).single()
-      .then(({ data }) => { if (data?.estado === 'bloqueado') setJugadorBloqueado(true) })
-  }, [perfil?.jugador_id, perfil?.rol])
+    if (perfil?.rol !== 'jugador') return
+    verificarBloqueoPerfil().then(bloqueado => { if (bloqueado) setJugadorBloqueado(true) })
+  }, [perfil?.rol])
 
   const clubNombre = clubNombreCache[clubId]
     ?? (clubCargado?.id === clubId ? clubCargado.nombre : '')
