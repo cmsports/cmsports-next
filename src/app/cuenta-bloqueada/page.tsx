@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { verificarBloqueoPerfil } from '@/app/actions/jugadores'
 
 const supabase = createClient()
 
@@ -10,6 +11,7 @@ export default function CuentaBloqueadaPage() {
   const { perfil } = usePerfil()
   const [clubNombre, setClubNombre] = useState('')
   const [clubTelefono, setClubTelefono] = useState('')
+  const [verificando, setVerificando] = useState(false)
 
   useEffect(() => {
     if (!perfil?.club_id) return
@@ -19,6 +21,25 @@ export default function CuentaBloqueadaPage() {
         if (data?.telefono) setClubTelefono(data.telefono)
       })
   }, [perfil?.club_id])
+
+  // Chequeo automático cada 8 segundos — si el club desbloquea, el jugador entra al instante
+  useEffect(() => {
+    const intervalo = setInterval(async () => {
+      const bloqueado = await verificarBloqueoPerfil()
+      if (!bloqueado) window.location.replace('/perfil')
+    }, 8000)
+    return () => clearInterval(intervalo)
+  }, [])
+
+  async function verificarAhora() {
+    setVerificando(true)
+    const bloqueado = await verificarBloqueoPerfil()
+    if (!bloqueado) {
+      window.location.replace('/perfil')
+    } else {
+      setVerificando(false)
+    }
+  }
 
   async function cerrarSesion() {
     await supabase.auth.signOut({ scope: 'local' })
@@ -72,6 +93,20 @@ export default function CuentaBloqueadaPage() {
             Contacta a {clubNombre} para regularizar tu situación.
           </div>
         )}
+        <button
+          onClick={verificarAhora}
+          disabled={verificando}
+          style={{
+            width: '100%', padding: '11px 20px', marginBottom: 8,
+            background: verificando ? '#f1f5f9' : '#1e40af', color: verificando ? '#94a3b8' : '#ffffff',
+            border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: verificando ? 'default' : 'pointer',
+          }}
+        >
+          {verificando ? '⏳ Verificando...' : '🔄 Ya pagué, verificar acceso'}
+        </button>
+        <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 12px' }}>
+          Se verifica automáticamente cada 8 segundos
+        </p>
         <button
           onClick={cerrarSesion}
           style={{
