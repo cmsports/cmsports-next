@@ -110,7 +110,7 @@ async function calcularClasificadosDesdeBD(
     if (
       jugadoresGrupo.length < 2 ||
       partidosGrupo.length === 0 ||
-      partidosGrupo.some(p => !p.jugador_a || !p.jugador_b || !p.ganador)
+      partidosGrupo.some(p => !p.jugador_a || !p.ganador)
     ) continue
 
     const { stats, hayTripleEmpate } = calcularStatsGrupo(
