@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   const { data: perfil } = await supabase
     .from('perfiles')
     .select('rol')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .single()
 
   if (!perfil || (perfil.rol !== 'admin' && perfil.rol !== 'superadmin')) {
