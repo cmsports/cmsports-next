@@ -753,7 +753,8 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
-      {/* FASE GRUPOS */}
+      {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && (
+        <>
       {faseActual === 'grupos' && !hayBracketJugado && esAdmin && (
         <div style={{ marginBottom:16 }}>
           <CabezasSerieEditor
@@ -771,6 +772,8 @@ export default function TorneoDetallePage() {
             </div>
           )}
         </div>
+      )}
+      </>
       )}
 
       {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && (
