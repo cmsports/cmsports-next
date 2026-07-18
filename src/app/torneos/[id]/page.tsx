@@ -561,6 +561,7 @@ export default function TorneoDetallePage() {
     ? construirLlavesLayoutNumerado(gruposReales.length, slotsCabezas)
     : null
   const byeOrdenesInicial = new Set((llavesLayout?.matches || []).filter(m => m.b === null).map(m => m.orden))
+  const cabezaNumero = new Map(cabezasNumeradas.map((c, i) => [c.id, i + 1]))
   const etiquetaCupo = (partido: any, pos: 'a' | 'b'): string => {
     const grupoId = pos === 'a' ? partido.slot_a_grupo_id : partido.slot_b_grupo_id
     const posicion = pos === 'a' ? partido.slot_a_posicion : partido.slot_b_posicion
@@ -1100,6 +1101,7 @@ export default function TorneoDetallePage() {
                                     <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                       <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
                                       {(p as any).ja?.nombre || etiquetaCupo(p, 'a')}
+                                      {p.jugador_a && cabezaNumero.has(p.jugador_a) && <span style={{ fontSize: 8, color: '#d97706', marginLeft: 3 }}>CS{cabezaNumero.get(p.jugador_a)}</span>}
                                     </span>
                                     {!!p.ganador && p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                   </div>
@@ -1122,6 +1124,7 @@ export default function TorneoDetallePage() {
                                       <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                         <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
                                         {(p as any).jb?.nombre || etiquetaCupo(p, 'b')}
+                                        {p.jugador_b && cabezaNumero.has(p.jugador_b) && <span style={{ fontSize: 8, color: '#d97706', marginLeft: 3 }}>CS{cabezaNumero.get(p.jugador_b)}</span>}
                                       </span>
                                       {!!p.ganador && p.ganador === p.jugador_b && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
                                     </div>
@@ -1209,7 +1212,10 @@ export default function TorneoDetallePage() {
                               cursor: clickable ? 'pointer' : 'default',
                             }}
                           >
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre(p, pos)}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {nombre(p, pos)}
+                              {jid && cabezaNumero.has(jid) && <span style={{ fontSize: 9, color: '#d97706', marginLeft: 3 }}>CS{cabezaNumero.get(jid)}</span>}
+                            </span>
                             {gano && <span style={{ color: '#16a34a', fontSize: 15, flexShrink: 0 }}>✓</span>}
                           </button>
                         )
