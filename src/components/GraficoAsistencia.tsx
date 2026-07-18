@@ -231,7 +231,7 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
   }
 
   const data = {
-    labels: puntos.map(p => String(p.offset)),
+    labels: puntos.map(p => formatFechaCorta(p.fecha)),
     datasets: [
       {
         data: puntos.map(p => p.valor),

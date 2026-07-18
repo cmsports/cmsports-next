@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
@@ -223,6 +223,42 @@ export default function TorneoDetallePage() {
     }
   }, [torneo?.id])
 
+  const gruposReales = useMemo(() => grupos.filter((g: any) => g.nombre !== 'MESA'), [grupos])
+  const partidosPorGrupo = useMemo(() => {
+    const map = new Map<string, any[]>()
+    for (const partido of partidos) {
+      if (!partido.grupo_id) continue
+      const lista = map.get(partido.grupo_id) || []
+      lista.push(partido)
+      map.set(partido.grupo_id, lista)
+    }
+    return map
+  }, [partidos])
+  const jugadoresPorGrupo = useMemo(() => {
+    const map = new Map<string, any[]>()
+    for (const jugador of jugadores) {
+      if (!jugador.grupo_id) continue
+      const lista = map.get(jugador.grupo_id) || []
+      lista.push(jugador)
+      map.set(jugador.grupo_id, lista)
+    }
+    return map
+  }, [jugadores])
+  const partidosPorFase = useMemo(() => {
+    const map = new Map<string, any[]>()
+    for (const partido of partidos) {
+      if (!partido.fase) continue
+      const lista = map.get(partido.fase) || []
+      lista.push(partido)
+      map.set(partido.fase, lista)
+    }
+    for (const lista of map.values()) {
+      lista.sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+    }
+    return map
+  }, [partidos])
+  const fasesConPartidos = useMemo(() => new Set(partidosPorFase.keys()), [partidosPorFase])
+
   async function guardarCabezasNumeradas(jugadorIds: string[]) {
     const res = await configurarCabezasSerie({ torneoId, jugadorIds })
     if (res.error) return { error: res.error }
@@ -318,8 +354,8 @@ export default function TorneoDetallePage() {
   }
 
   function calcularStats(grupoId: string) {
-    const jugsGrupo = jugadores.filter((j: any) => j.grupo_id === grupoId)
-    const partidosGrupo = partidos.filter(p => p.grupo_id === grupoId)
+    const jugsGrupo = jugadoresPorGrupo.get(grupoId) || []
+    const partidosGrupo = partidosPorGrupo.get(grupoId) || []
 
     const stats: Record<string, { jugador: any, pts: number, pg: number, pp: number, orden: number }> = {}
     jugsGrupo.forEach((j: any) => {
@@ -355,8 +391,8 @@ export default function TorneoDetallePage() {
   // con su 1° y 2° resueltos. Son los que ya pueden entrar al cuadro.
   function calcularClasificados(): { grupoId: string; primeroId: string; segundoId: string }[] {
     const out: { grupoId: string; primeroId: string; segundoId: string }[] = []
-    for (const grupo of grupos.filter((g: any) => g.nombre !== 'MESA')) {
-      const partidosGrupo = partidos.filter(p => p.grupo_id === grupo.id)
+    for (const grupo of gruposReales) {
+      const partidosGrupo = partidosPorGrupo.get(grupo.id) || []
       const cerrado = partidosGrupo.length > 0 && partidosGrupo.every(p => !!p.ganador)
       if (!cerrado) continue
 
@@ -378,7 +414,7 @@ export default function TorneoDetallePage() {
 
   async function armarBracketAhora() {
     const clasificados = calcularClasificados()
-    const totalGrupos = grupos.filter((g: any) => g.nombre !== 'MESA').length
+    const totalGrupos = gruposReales.length
     const minimo = Math.ceil(totalGrupos / 2)
     if (!totalGrupos || clasificados.length < minimo) { alert(`Debes cerrar al menos ${minimo} grupos antes de armar el bracket.`); return }
     if (cabezasConCambios) {
@@ -423,7 +459,6 @@ export default function TorneoDetallePage() {
   ).values()) as CabezaSerieJugador[]
   const cuota = torneo?.cuota_inscripcion || 0
   const jugadoresUnicos: any[] = Array.from(new Map(jugadores.map((j: any) => [j.jugador_id, j])).values())
-  const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
   const grupoEnPreparacion = gruposReales.find((g: any) => g.en_preparacion)
   const cabezasConCambios = cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')
   const inscritosReales = jugadores.filter((j: any) => gruposReales.some((g: any) => g.id === j.grupo_id))
@@ -438,14 +473,14 @@ export default function TorneoDetallePage() {
   const faseActual = torneo?.fase
   const esPlayoffs = faseActual && (fasesOrden.includes(faseActual) || faseActual === 'finalizado')
 
-  const partidosFaseActual = partidos.filter(p => p.fase === faseActual)
+  const partidosFaseActual = faseActual ? (partidosPorFase.get(faseActual) || []) : []
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
 
   const numGruposEstimados = calcularNumGrupos(jugadoresInscritos.length)
 
   // El cuadro puede existir (parcialmente lleno) mientras la fase sigue siendo
   // "grupos": mostramos las pestañas y el bracket también en ese caso.
-  const hayBracket = partidos.some(p => p.fase !== 'grupos')
+  const hayBracket = Array.from(fasesConPartidos).some(fase => fase !== 'grupos')
   const mostrarLlaves = !!esPlayoffs || hayBracket
 
   // Layout determinista del cuadro (mismo sembrado que el servidor), para poder
@@ -961,7 +996,7 @@ export default function TorneoDetallePage() {
             // Fase tope a mostrar: durante el armado la fase del torneo aún es
             // "grupos" (no está en fasesOrden), así que caemos a la fase inicial
             // del cuadro para poder dibujar la primera ronda que se va llenando.
-            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => partidos.some(p => p.fase === f))
+            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => fasesConPartidos.has(f))
             const faseTope = faseActual === 'finalizado'
               ? fasesOrden[fasesOrden.length - 1]
               : faseActual === 'grupos' && ultimaFaseConPartidos
@@ -971,13 +1006,13 @@ export default function TorneoDetallePage() {
                 : (llavesLayout?.faseInicial ?? faseActual)
             const fasesVis = fasesOrden
               .slice(0, fasesOrden.indexOf(faseTope as FaseOrden) + 1)
-              .filter(f => partidos.some(p => p.fase === f))
+              .filter(f => fasesConPartidos.has(f))
 
             if (!fasesVis.length) return null
 
             const byFase: Record<string, any[]> = {}
             for (const f of fasesVis) {
-              byFase[f] = partidos.filter(p => p.fase === f).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+              byFase[f] = partidosPorFase.get(f) || []
             }
 
             const N0 = byFase[fasesVis[0]].length
@@ -1097,7 +1132,7 @@ export default function TorneoDetallePage() {
           {/* Bracket móvil: lista por fase (liviana). Mismo dato que el SVG, sin
               divs absolutos ni SVG → no hay OOM. Tocas el nombre para marcar. */}
           {isMobile && (() => {
-            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => partidos.some(p => p.fase === f))
+            const ultimaFaseConPartidos = [...fasesOrden].reverse().find(f => fasesConPartidos.has(f))
             const faseTope = faseActual === 'finalizado'
               ? fasesOrden[fasesOrden.length - 1]
               : faseActual === 'grupos' && ultimaFaseConPartidos
@@ -1107,14 +1142,14 @@ export default function TorneoDetallePage() {
                 : (llavesLayout?.faseInicial ?? faseActual)
             const fasesVis = fasesOrden
               .slice(0, fasesOrden.indexOf(faseTope as FaseOrden) + 1)
-              .filter(f => partidos.some(p => p.fase === f))
+              .filter(f => fasesConPartidos.has(f))
             if (!fasesVis.length) return null
 
             const nombre = (p: any, pos: 'a' | 'b') =>
               (pos === 'a' ? p.ja?.nombre : p.jb?.nombre) || etiquetaCupo(p, pos)
 
             return fasesVis.map(fase => {
-              const ps = partidos.filter(p => p.fase === fase).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+              const ps = partidosPorFase.get(fase) || []
               return (
                 <div key={fase} style={{ marginBottom: 18 }}>
                   <div style={{ fontSize: 11, color: muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>{faseLabel[fase]}</div>
