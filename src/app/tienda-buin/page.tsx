@@ -8,15 +8,12 @@ export default function TiendaBuinPage() {
 
   return (
     <AppLayout perfil={perfil ?? null}>
-      <div style={{ maxWidth: 600, margin: '60px auto', textAlign: 'center', padding: 24 }}>
-        <div style={{ fontSize: 64, marginBottom: 20 }}>🛒</div>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: '#0f172a', marginBottom: 10 }}>
+      <div style={{ maxWidth: 500, margin: '80px auto', textAlign: 'center', padding: 24 }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>🛒</div>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
           Tienda Buin
         </h1>
-        <p style={{ fontSize: 15, color: '#64748b', lineHeight: 1.7 }}>
-          Este módulo está en construcción.<br />
-          Pronto podrás ver los productos disponibles del club.
-        </p>
+        <p style={{ fontSize: 14, color: '#94a3b8' }}>Módulo vacío</p>
       </div>
     </AppLayout>
   )
