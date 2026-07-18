@@ -468,10 +468,14 @@ export default function TorneoDetallePage() {
 
   async function volverAGrupos() {
     if (!confirm('⚠️ ¿Volver a la fase de grupos?\n\nSe borrarán todos los partidos de playoffs. Los resultados de grupos se conservan.')) return
-    const res = await volverAGruposAction({ torneoId })
-    if (res.error) { alert(res.error); return }
-    setTabActiva('grupos')
-    await cargarTorneo()
+    try {
+      const res = await volverAGruposAction({ torneoId })
+      if (res.error) { alert(res.error); return }
+      setTabActiva('grupos')
+      await cargarTorneo()
+    } catch (cause) {
+      alert(cause instanceof Error ? cause.message : 'No se pudo reiniciar el bracket.')
+    }
   }
 
   async function finalizarTorneo() {

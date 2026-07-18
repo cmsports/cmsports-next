@@ -1098,15 +1098,27 @@ export async function volverAGrupos(params: { torneoId: string }) {
     .from('torneo_partidos').select('id').eq('torneo_id', torneoId).neq('fase', 'grupos').limit(1)
   if (!bracketRows?.length) return { error: 'No hay llaves generadas' }
 
-  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
+  // Un delete/update filtrado por RLS no da error: simplemente afecta 0 filas.
+  // Sin verificar que de verdad haya pasado, "reiniciar bracket" podía devolver
+  // éxito sin borrar ni actualizar nada, dejando el bracket viejo intacto.
+  const { error: delError } = await supabase.from('torneo_partidos')
+    .delete().eq('torneo_id', torneoId).neq('fase', 'grupos')
+  if (delError) return { error: `No se pudieron borrar los partidos de playoff: ${delError.message}` }
+  const { data: quedan } = await supabase.from('torneo_partidos')
+    .select('id').eq('torneo_id', torneoId).neq('fase', 'grupos').limit(1)
+  if (quedan?.length) return { error: 'No se pudieron borrar los partidos de playoff (revisa permisos)' }
 
   const { data: grupos } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
   if (grupos?.length) {
     const grupoIds = grupos.map(g => g.id)
-    await supabase.from('grupo_jugadores').update({ clasificado: false }).in('grupo_id', grupoIds)
+    const { error: clasifError } = await supabase.from('grupo_jugadores')
+      .update({ clasificado: false }).in('grupo_id', grupoIds)
+    if (clasifError) return { error: `No se pudo limpiar la clasificación: ${clasifError.message}` }
   }
 
-  await supabase.from('torneos').update({ fase: 'grupos' }).eq('id', torneoId)
+  const { error: faseError } = await supabase.from('torneos')
+    .update({ fase: 'grupos' }).eq('id', torneoId).select('id').single()
+  if (faseError) return { error: `No se pudo volver a la fase de grupos: ${faseError.message}` }
 
   return { success: true }
 }
