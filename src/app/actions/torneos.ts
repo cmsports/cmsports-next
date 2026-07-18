@@ -1551,6 +1551,25 @@ export async function intercambiarJugadores(params: {
     p_posicion_b: slotB.posicion,
   })
   if (error) return { error: error.message }
+
+  // Propagar BYEs: re-leer las dos llaves y actualizar la siguiente ronda
+  const { data: post } = await supabase.from('torneo_partidos')
+    .select('id,torneo_id,fase,orden,jugador_a,jugador_b,ganador')
+    .in('id', ids).eq('torneo_id', torneoId)
+  for (const p of post ?? []) {
+    if (!p.fase || p.orden == null) continue
+    const faseSig = siguienteFase(p.fase as FaseOrden)
+    if (!faseSig) continue
+    const ordenSig = Math.floor(p.orden / 2)
+    const jugador = p.ganador ?? null
+    const updateData = p.orden % 2 === 0
+      ? { jugador_a: jugador }
+      : { jugador_b: jugador }
+    await supabase.from('torneo_partidos')
+      .update(updateData)
+      .eq('torneo_id', torneoId).eq('fase', faseSig).eq('orden', ordenSig)
+  }
+
   return { success: true }
 }
 
