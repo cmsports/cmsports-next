@@ -65,6 +65,7 @@ export default function TorneoDetallePage() {
   const [jugadoresInscritos, setJugadoresInscritos] = useState<any[]>([])
   const [cabezasNumeradas, setCabezasNumeradas] = useState<CabezaSerieJugador[]>([])
   const [cabezasPersistidas, setCabezasPersistidas] = useState<CabezaSerieJugador[]>([])
+  const cabezasPersistidasRef = useRef<CabezaSerieJugador[]>([])
   const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
@@ -128,8 +129,14 @@ export default function TorneoDetallePage() {
       id: c.jugador_id,
       nombre: Array.isArray(c.jugadores) ? c.jugadores[0]?.nombre || '—' : c.jugadores?.nombre || '—',
     }))
-    setCabezasNumeradas(cabezasCargadas)
+    const cabezasSonIguales = (a: CabezaSerieJugador[], b: CabezaSerieJugador[]) =>
+      a.length === b.length && a.every((c, i) => c.id === b[i]?.id)
+
+    setCabezasNumeradas(prev =>
+      cabezasSonIguales(prev, cabezasPersistidasRef.current) ? cabezasCargadas : prev
+    )
     setCabezasPersistidas(cabezasCargadas)
+    cabezasPersistidasRef.current = cabezasCargadas
 
     const todos = [...(gj || [])].sort((a: any, b: any) =>
       String(a.grupo_id ?? '').localeCompare(String(b.grupo_id ?? '')) ||
