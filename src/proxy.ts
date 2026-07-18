@@ -165,9 +165,8 @@ export async function proxy(request: NextRequest) {
         .from('jugadores').select('estado').eq('id', perfil.jugador_id).single()
       esBloqueado = jug?.estado === 'bloqueado'
     } else {
-      // jugador_id no vinculado en perfiles: buscar por email del JWT
-      const { data: claimsData } = await supabase.auth.getClaims()
-      const email = (claimsData?.claims?.email ?? '') as string
+      // jugador_id no vinculado en perfiles: buscar por email del usuario autenticado
+      const email = user.email ?? ''
       if (email && perfil?.club_id) {
         const { data: jug } = await adminSsr
           .from('jugadores').select('estado')
