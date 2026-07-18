@@ -464,7 +464,7 @@ export default function TorneoDetallePage() {
   const jugadoresUnicos: any[] = Array.from(new Map(jugadores.map((j: any) => [j.jugador_id, j])).values())
   const grupoEnPreparacion = gruposReales.find((g: any) => g.en_preparacion)
   const cabezasConCambios = cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')
-  const inscritosReales = jugadores.filter((j: any) => gruposReales.some((g: any) => g.id === j.grupo_id))
+  const inscritosReales = gruposReales.flatMap((g: any) => jugadoresPorGrupo.get(g.id) || [])
   const totalInscritos = inscritosReales.length || jugadoresInscritos.length
   const pagados = pagos.filter(p => p.estado === 'pagado').length
   const recaudado = pagados * cuota
@@ -689,7 +689,7 @@ export default function TorneoDetallePage() {
               {creandoGrupoManual ? 'Creando grupo…' : '+ Crear grupo vacío'}
             </button>
           )}
-          {gruposReales.some((g: any) => !jugadores.some((j: any) => j.grupo_id === g.id)) && (
+          {gruposReales.some((g: any) => !(jugadoresPorGrupo.get(g.id)?.length)) && (
             <button onClick={async () => {
               if (!confirm('¿Eliminar grupos vacíos y sus partidos sin jugar?')) return
               const res = await limpiarGruposHuerfanos({ torneoId })
@@ -736,7 +736,7 @@ export default function TorneoDetallePage() {
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16, marginBottom:16 }}>
           {grupos.filter((g: any) => g.nombre !== 'MESA').map(grupo => {
             const { ordenados, hayTripleEmpate, empatados, primeroFijo } = calcularStats(grupo.id)
-            const partidosGrupo = partidos.filter(p => p.grupo_id === grupo.id)
+            const partidosGrupo = partidosPorGrupo.get(grupo.id) || []
             const grupoConResultados = partidosGrupo.some((p: any) => !!p.ganador)
             const desempateResuelto = !!grupo.desempate_primero_id && !!grupo.desempate_segundo_id && grupo.desempate_primero_id !== grupo.desempate_segundo_id
             const nombreDesempate = (id: string | null | undefined) => ordenados.find((j: any) => j.jugador?.id === id)?.jugador?.nombre || '—'
@@ -1229,7 +1229,7 @@ export default function TorneoDetallePage() {
 
           {/* Campeón */}
           {faseActual === 'finalizado' && (() => {
-            const pFinal = partidos.find(p => p.fase === 'final' && p.ganador)
+            const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
             const campeon = pFinal ? ((pFinal as any).jg) : null
             return campeon ? (
               <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:16, padding:24, textAlign:'center', marginBottom:16 }}>
@@ -1244,7 +1244,7 @@ export default function TorneoDetallePage() {
 
       {/* PANEL PREMIOS */}
       {esAdmin && faseActual === 'finalizado' && (() => {
-        const pFinal = partidos.find(p => p.fase === 'final' && p.ganador)
+        const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
         const campeon1 = pFinal ? (pFinal as any).jg : null
         const subcampeon = pFinal
           ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja)
@@ -1530,7 +1530,7 @@ export default function TorneoDetallePage() {
               <button onClick={() => setInformeOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer' }}>Cancelar</button>
               <button
                 onClick={async () => {
-                  const pFinal = partidos.find(p => p.fase === 'final' && p.ganador)
+                  const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
                   const campeon1 = pFinal ? (pFinal as any).jg : null
                   const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : null
                   const listaJug = jugadoresUnicos.map((j: any) => ({
