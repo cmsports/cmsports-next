@@ -181,11 +181,13 @@ begin
         into v_total_siguiente, v_completos_siguiente
       from public.torneo_partidos
       where torneo_id = v_partido.torneo_id and fase = v_fase_siguiente;
-      if v_total_siguiente <> v_total_actual / 2 or v_completos_siguiente <> v_total_siguiente then
-        raise exception 'El árbol siguiente está incompleto';
+      -- Solo avanzar fase si el árbol siguiente está íntegro; si aún hay grupos
+      -- abiertos o cupos pendientes, los siguientes partidos se completarán más
+      -- tarde y la fase avanzará cuando sincronizarLlaves detecte el estado final.
+      if v_total_siguiente = v_total_actual / 2 and v_completos_siguiente = v_total_siguiente then
+        update public.torneos set fase = v_fase_siguiente
+        where id = v_partido.torneo_id and fase = v_partido.fase;
       end if;
-      update public.torneos set fase = v_fase_siguiente
-      where id = v_partido.torneo_id and fase = v_partido.fase;
     end if;
   end if;
 

@@ -271,11 +271,14 @@ export default function TorneoDetallePage() {
         body: JSON.stringify({ partidoId, ganadorId }),
       }).then(r => r.json())
       if (res.error) { setPartidos(previo); alert(res.error); return }
-      // No llamamos cargarTorneo() aquí: el update optimista ya actualiza
-      // partidos state y calcularStats() re-deriva el ranking instantáneamente.
-      // Llamar cargarTorneo() sobrescribía el estado optimista con data del
-      // servidor antes de que el lag de Supabase propagara el write → ranking
-      // volvía a 0 pts por un momento y luego requería otro reload.
+      // Para grupos: el update optimista es suficiente; calcularStats() re-deriva
+      // el ranking instantáneamente. Recargar pisaría el estado antes de que
+      // Supabase propague el write → ranking a 0 pts momentáneo.
+      // Para playoffs: el RPC crea filas nuevas en la siguiente fase (semis/final).
+      // Sin reload esas filas nunca aparecen en pantalla.
+      if (partido?.fase && partido.fase !== 'grupos') {
+        await cargarTorneo()
+      }
     } catch {
       setPartidos(previo)
     } finally {
