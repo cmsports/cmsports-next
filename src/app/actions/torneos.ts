@@ -961,7 +961,7 @@ export async function sincronizarLlaves(params: {
   } else {
     // Rellenar solo cupos vacíos de partidos aún no jugados (no pisa arrastres).
     const byOrden = new Map(existentes.map(r => [r.orden, r]))
-    const pendientes: Promise<{ error: unknown }>[] = []
+    const pendientes: PromiseLike<{ error: unknown }>[] = []
     for (const m of layout.matches) {
       const row = byOrden.get(m.orden)
       if (!row || llaveFueJugada(row)) continue
