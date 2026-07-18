@@ -79,6 +79,7 @@ export default function TorneoDetallePage() {
     setCabezasNumeradasState(cabezas)
   }, [])
   const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
+  const [jugadorIdSeleccionado, setJugadorIdSeleccionado] = useState<string | null>(null)
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
@@ -339,7 +340,7 @@ export default function TorneoDetallePage() {
     if (inscribiendo || !busquedaMesa.trim()) return
     setInscribiendo(true)
     try {
-      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, rut: rutMesa, metodoPago })
+      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, jugadorId: jugadorIdSeleccionado ?? undefined, rut: rutMesa, metodoPago })
       if (res.error) { alert(res.error); return }
 
       setBusquedaMesa('')
@@ -404,16 +405,29 @@ export default function TorneoDetallePage() {
     return { stats, ordenados, hayTripleEmpate, empatados, primeroFijo }
   }
 
-  // Grupos ya cerrados (todos sus partidos jugados y sin triple empate pendiente)
-  // con su 1° y 2° resueltos. Son los que ya pueden entrar al cuadro.
+  // Grupos clasificados: todos jugados O el 3° no puede alcanzar al 2° matemáticamente
   function calcularClasificados(): { grupoId: string; primeroId: string; segundoId: string }[] {
     const out: { grupoId: string; primeroId: string; segundoId: string }[] = []
     for (const grupo of gruposReales) {
       const partidosGrupo = partidosPorGrupo.get(grupo.id) || []
-      const cerrado = partidosGrupo.length > 0 && partidosGrupo.every(p => !!p.ganador)
-      if (!cerrado) continue
+      if (partidosGrupo.length === 0) continue
 
       const { ordenados, hayTripleEmpate } = calcularStats(grupo.id)
+
+      const todosJugados = partidosGrupo.every(p => !!p.ganador)
+      if (!todosJugados) {
+        // Cierre matemático: verificar que ningún jugador desde la 3ª posición
+        // pueda alcanzar los puntos del 2°, contando los partidos que le faltan.
+        if (ordenados.length < 2) continue
+        const pts2 = ordenados[1].pts
+        const alguienPuedeLlegarA2 = ordenados.slice(2).some((j: any) => {
+          const restantes = partidosGrupo.filter((p: any) =>
+            !p.ganador && (p.jugador_a === j.jugador?.id || p.jugador_b === j.jugador?.id)
+          ).length
+          return j.pts + 2 * restantes >= pts2
+        })
+        if (alguienPuedeLlegarA2) continue
+      }
       let primeroId: string | undefined
       let segundoId: string | undefined
       if (hayTripleEmpate) {
@@ -1593,6 +1607,7 @@ export default function TorneoDetallePage() {
                 onChange={async e => {
                   setBusquedaMesa(e.target.value)
                   setRutMesa('')
+                  setJugadorIdSeleccionado(null)
                   if (e.target.value.length > 1 && perfil?.club_id) {
                     const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
                     setJugSuggestions(data || [])
@@ -1608,6 +1623,7 @@ export default function TorneoDetallePage() {
                     <div key={j.id} onClick={() => {
                       setBusquedaMesa(j.nombre)
                       setRutMesa(j.rut || '')
+                      setJugadorIdSeleccionado(j.id)
                       setJugSuggestions([])
                     }} style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:13 }}>
                       <span style={{ color: text }}>{j.nombre}</span>
