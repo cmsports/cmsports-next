@@ -37,7 +37,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
 
   useEffect(() => {
     if (!clubId) return
-    const tasks: Promise<any>[] = [cargarMensualidades(clubId)]
+    const tasks: PromiseLike<any>[] = [cargarMensualidades(clubId)]
     if (!clubInfoCargada.current) {
       clubInfoCargada.current = true
       tasks.push(
