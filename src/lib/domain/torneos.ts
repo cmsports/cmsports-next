@@ -522,8 +522,8 @@ function construirBracketPorGruposNumerado(
           return sa - sb || Number(!gruposListos.has(a.grupoIdx)) - Number(!gruposListos.has(b.grupoIdx))
             || a.grupoIdx - b.grupoIdx
         }
-        primerosMitad.sort(prioridad).slice(0, byePrimeros).forEach(c => byes.add(claveCupo(c)))
-        segundosMitad.sort(prioridad).slice(0, byeSegundos).forEach(c => byes.add(claveCupo(c)))
+        primerosMitad.slice().sort(prioridad).slice(0, byePrimeros).forEach(c => byes.add(claveCupo(c)))
+        segundosMitad.slice().sort(prioridad).slice(0, byeSegundos).forEach(c => byes.add(claveCupo(c)))
       }
       const mirror = semillas.map(s => {
         const cupo = cupos.find(c => c.jugador.id === s.jugadorId)!
