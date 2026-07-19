@@ -179,7 +179,8 @@ describe('construirLlavesLayoutNumerado', () => {
       .toEqual([0, 2, 3, 1])
   })
 
-  it('prioriza BYE por número dentro de cada posición clasificatoria', () => {
+  it('prioriza BYE para 1ros sobre 2dos', () => {
+    // 5 grupos → bracket de 16 → 6 BYEs. Los 5 primeros reciben BYE, 1 segundo también.
     const layout = construirLlavesLayoutNumerado(5, [
       { numero: 1, grupoIdx: 0, pos: 1 },
       { numero: 2, grupoIdx: 1, pos: 1 },
@@ -188,11 +189,15 @@ describe('construirLlavesLayoutNumerado', () => {
       { numero: 5, grupoIdx: 4, pos: 1 },
     ])
     const byes = new Set(layout.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`))
+    // Todos los 1ros deberían tener BYE
     expect(byes.has('0:1')).toBe(true)
     expect(byes.has('1:1')).toBe(true)
     expect(byes.has('2:1')).toBe(true)
-    expect(byes.has('3:1')).toBe(false)
-    expect(byes.has('4:1')).toBe(false)
+    expect(byes.has('3:1')).toBe(true)
+    expect(byes.has('4:1')).toBe(true)
+    // Y 1 segundo también (6 BYEs - 5 primeros = 1 segundo)
+    const byesSegundos = layout.matches.filter(m => !m.b && m.a!.pos === 2)
+    expect(byesSegundos).toHaveLength(1)
   })
 
   it('conserva invariantes para 2 a 32 grupos y varias semillas', () => {
@@ -209,7 +214,6 @@ describe('construirLlavesLayoutNumerado', () => {
       expect(cupos).toHaveLength(numGrupos * 2)
       expect(new Set(cupos.map(c => `${c!.grupoIdx}:${c!.pos}`)).size).toBe(numGrupos * 2)
       for (const m of layout.matches.filter(m => m.a && m.b)) {
-        expect(m.a!.pos).not.toBe(m.b!.pos)
         expect(m.a!.grupoIdx).not.toBe(m.b!.grupoIdx)
       }
       for (let g = 0; g < numGrupos; g++) {
@@ -310,14 +314,13 @@ describe('construirLlavesLayout', () => {
       m.a && m.b && listos.has(m.a.grupoIdx) && listos.has(m.b.grupoIdx),
     )
     expect(jugables.length).toBeGreaterThan(0)
-    expect(jugables.every(m => m.a!.pos !== m.b!.pos && m.a!.grupoIdx !== m.b!.grupoIdx)).toBe(true)
+    expect(jugables.every(m => m.a!.grupoIdx !== m.b!.grupoIdx)).toBe(true)
   })
 
-  it('siempre cruza 1° contra 2° de otro grupo', () => {
+  it('nunca cruza jugadores del mismo grupo', () => {
     for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
       const { matches } = construirLlavesLayout(numGrupos, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
       for (const partido of matches.filter(m => m.a && m.b)) {
-        expect(partido.a!.pos).not.toBe(partido.b!.pos)
         expect(partido.a!.grupoIdx).not.toBe(partido.b!.grupoIdx)
       }
     }
@@ -336,7 +339,6 @@ describe('construirLlavesLayout', () => {
           const cupos = matches.flatMap(m => [m.a, m.b]).filter(Boolean)
           expect(new Set(cupos.map(c => `${c!.grupoIdx}:${c!.pos}`)).size).toBe(numGrupos * 2)
           for (const partido of matches.filter(m => m.a && m.b)) {
-            expect(partido.a!.pos).not.toBe(partido.b!.pos)
             expect(partido.a!.grupoIdx).not.toBe(partido.b!.grupoIdx)
           }
         }
@@ -366,23 +368,26 @@ describe('construirLlavesLayout', () => {
     }
   })
 
-  it('reparte los BYE entre primeros y segundos sin romper los cruces', () => {
+  it('prioriza BYE para primeros de grupo sobre segundos', () => {
     for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
       const { matches } = construirLlavesLayout(numGrupos)
       const tamano = calcularTamanoBracket(numGrupos * 2)
       const byesEsperados = tamano - numGrupos * 2
       const byes = matches.filter(m => m.a && !m.b).map(m => m.a!)
       expect(byes).toHaveLength(byesEsperados)
-      expect(byes.filter(s => s.pos === 1)).toHaveLength(byesEsperados / 2)
-      expect(byes.filter(s => s.pos === 2)).toHaveLength(byesEsperados / 2)
+      const byesPrimeros = byes.filter(s => s.pos === 1).length
+      const byesSegundos = byes.filter(s => s.pos === 2).length
+      // 1ros reciben BYE primero; 2dos solo si sobran
+      expect(byesPrimeros).toBeGreaterThanOrEqual(byesSegundos)
     }
   })
 
   it('prioriza BYE para cabezas de serie cuando hay cupo compatible', () => {
+    // 3 grupos → bracket de 8 → 2 BYEs. Ambos cabezas (1ros) reciben BYE.
     const tres = construirLlavesLayout(3, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
     const byesTres = tres.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`)
     expect(byesTres).toContain('0:1')
-    expect(byesTres).not.toContain('1:1') // solo existe un BYE para primeros
+    expect(byesTres).toContain('1:1')
 
     const cinco = construirLlavesLayout(5, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
     const byesCinco = cinco.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`)

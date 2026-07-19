@@ -513,7 +513,8 @@ function construirBracketPorGruposNumerado(
       for (const mitad of [0, 1] as const) {
         const primerosMitad = cupos.filter(c => c.pos === 1 && (orientacion.has(c.grupoIdx) ? 0 : 1) === mitad)
         const segundosMitad = cupos.filter(c => c.pos === 2 && (orientacion.has(c.grupoIdx) ? 1 : 0) === mitad)
-        const byePrimeros = (vaciosMitad + primerosMitad.length - segundosMitad.length) / 2
+        // ponytail: 1ros tienen prioridad de BYE sobre 2dos
+        const byePrimeros = Math.min(vaciosMitad, primerosMitad.length)
         const byeSegundos = vaciosMitad - byePrimeros
         const prioridad = (a: CupoBracket, b: CupoBracket) => {
           const sa = semillaDe(a) ?? Number.MAX_SAFE_INTEGER
@@ -595,21 +596,24 @@ function construirBracketPorGruposNumerado(
     const primerosMitad = cupos.filter(c => c.pos === 1 && (grupoEnMitad0.has(c.grupoIdx) ? 0 : 1) === mitad)
     const segundosMitad = cupos.filter(c => c.pos === 2 && (grupoEnMitad0.has(c.grupoIdx) ? 1 : 0) === mitad)
     const vaciosMitad = totalPartidos - numGrupos
-    const byePrimeros = (vaciosMitad + primerosMitad.length - segundosMitad.length) / 2
+    // ponytail: 1ros tienen prioridad de BYE; 2dos solo si sobran
+    const byePrimeros = Math.min(vaciosMitad, primerosMitad.length)
     const byeSegundos = vaciosMitad - byePrimeros
-    if (!Number.isInteger(byePrimeros) || byePrimeros < 0 || byeSegundos < 0) return []
+    if (byePrimeros < 0 || byeSegundos < 0) return []
 
     const primerosOrdenados = ordenarPrioridad(primerosMitad)
     const segundosOrdenados = ordenarPrioridad(segundosMitad)
     const primerosBye = primerosOrdenados.slice(0, byePrimeros)
     const segundosBye = segundosOrdenados.slice(0, byeSegundos)
     const primerosJuegan = primerosOrdenados.slice(byePrimeros)
-    const segundosDisponibles = segundosOrdenados.slice(byeSegundos)
-    if (primerosJuegan.length !== segundosDisponibles.length) return []
+    const segundosPool = [...segundosOrdenados.slice(byeSegundos)]
+    if ((primerosJuegan.length + segundosPool.length) % 2 !== 0) return []
 
-    const parejas = primerosJuegan.map(a => {
-      const seedA = semillaDe(a)
-      segundosDisponibles.sort((x, y) => {
+    // 1ros vs 2dos primero, luego 2dos vs 2dos con los restantes
+    const parejas: { a: CupoBracket; b: CupoBracket }[] = []
+    for (const p of primerosJuegan) {
+      const seedA = semillaDe(p)
+      segundosPool.sort((x, y) => {
         const seedX = semillaDe(x)
         const seedY = semillaDe(y)
         const preferX = seedA ? Number(seedX != null) : Number(seedX == null)
@@ -618,8 +622,11 @@ function construirBracketPorGruposNumerado(
           || (seedX ?? Number.MAX_SAFE_INTEGER) - (seedY ?? Number.MAX_SAFE_INTEGER)
           || x.grupoIdx - y.grupoIdx
       })
-      return { a, b: segundosDisponibles.shift()! }
-    })
+      parejas.push({ a: p, b: segundosPool.shift()! })
+    }
+    while (segundosPool.length >= 2) {
+      parejas.push({ a: segundosPool.shift()!, b: segundosPool.shift()! })
+    }
     const unidades: UnidadBracket[] = [
       ...primerosBye.map(a => ({ a, b: null })),
       ...segundosBye.map(a => ({ a, b: null })),
