@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
 
@@ -155,11 +156,12 @@ export default function BibliografiaTdmPage() {
                 }}
                 onClick={() => setVisor(a)}
               >
-                <img
+                <Image
                   src={a.url}
                   alt={a.name}
-                  loading="lazy"
-                  decoding="async"
+                  width={440}
+                  height={587}
+                  sizes="(max-width: 640px) 100vw, 220px"
                   style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }}
                 />
                 {esAdmin && (
