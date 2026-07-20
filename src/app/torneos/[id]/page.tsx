@@ -110,7 +110,8 @@ export default function TorneoDetallePage() {
   const [torneosActivos, setTorneosActivos] = useState<{ id: string; nombre: string; fase: string }[]>([])
   const sincronizandoRef = useRef(false)
   const ultimaSyncRef = useRef('')
-  const marcandoRef = useRef(false)
+  // ponytail: Set de partido IDs en vuelo, no booleano global (bloqueaba partidos distintos entre sí)
+  const marcandoRef = useRef(new Set<string>())
   const router = useRouter()
   const params = useParams()
   const torneoId = params.id as string
@@ -299,8 +300,8 @@ export default function TorneoDetallePage() {
 
   async function marcarGanador(partidoId: string, ganadorId: string) {
     // ponytail: semáforo anti-doble-tap (iPhone registra dos touches a veces)
-    if (marcandoRef.current) return
-    marcandoRef.current = true
+    if (marcandoRef.current.has(partidoId)) return
+    marcandoRef.current.add(partidoId)
 
     const previo = partidos
     const partido = partidos.find(p => p.id === partidoId)
@@ -332,7 +333,7 @@ export default function TorneoDetallePage() {
     } catch {
       setPartidos(previo)
     } finally {
-      marcandoRef.current = false
+      marcandoRef.current.delete(partidoId)
     }
   }
 
