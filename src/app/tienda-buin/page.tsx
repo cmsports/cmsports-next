@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Image from 'next/image'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
@@ -68,7 +67,6 @@ function formatPrecio(n: number) {
 export default function TiendaBuinPage() {
   const { perfil } = usePerfil()
   const [filtro, setFiltro] = useState<string>('Todos')
-  const [imgError, setImgError] = useState<Set<number>>(new Set())
 
   const filtrados = filtro === 'Todos' ? productos : productos.filter(p => p.cat === filtro)
 
@@ -161,25 +159,12 @@ export default function TiendaBuinPage() {
                 overflow: 'hidden',
                 padding: 10,
               }}>
-                {imgError.has(p.id) ? (
-                  <div style={{
-                    width: '100%', height: '100%',
-                    background: '#e8ecf0',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#94a3b8', fontSize: 11,
-                  }}>
-                    Sin imagen
-                  </div>
-                ) : (
-                  <Image
-                    src={p.img}
-                    alt={p.nombre.replace('\n', ' ')}
-                    width={200}
-                    height={200}
-                    style={{ objectFit: 'contain', width: '100%', height: '100%' }}
-                    onError={() => setImgError(prev => new Set(prev).add(p.id))}
-                  />
-                )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.img}
+                  alt={p.nombre.replace('\n', ' ')}
+                  style={{ objectFit: 'contain', width: '100%', height: '100%' }}
+                />
               </div>
 
               {/* Info */}
@@ -198,18 +183,24 @@ export default function TiendaBuinPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
-                    display: 'block',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 2,
                     textAlign: 'center',
                     background: '#2563eb',
                     color: '#fff',
-                    fontWeight: 700,
-                    fontSize: 14,
-                    padding: '7px 10px',
                     borderRadius: 6,
                     textDecoration: 'none',
+                    padding: '8px 10px',
                   }}
                 >
-                  {formatPrecio(p.precio)}{p.precioSufijo ? ` ${p.precioSufijo}` : ''}
+                  <span style={{ fontWeight: 800, fontSize: 16 }}>
+                    {formatPrecio(p.precio)}{p.precioSufijo ? ` ${p.precioSufijo}` : ''}
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.9 }}>
+                    Consultar al profe por WhatsApp
+                  </span>
                 </a>
               </div>
             </div>
