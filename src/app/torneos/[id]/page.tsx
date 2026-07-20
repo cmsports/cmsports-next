@@ -1631,7 +1631,7 @@ export default function TorneoDetallePage() {
                   setRutMesa('')
                   setJugadorIdSeleccionado(null)
                   if (e.target.value.length > 1 && perfil?.club_id) {
-                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).neq('es_externo', true).ilike('nombre', `%${e.target.value}%`).limit(5)
+                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(5)
                     setJugSuggestions(data || [])
                   } else {
                     setJugSuggestions([])

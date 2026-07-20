@@ -54,7 +54,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   async function cargarMensualidades(cid?: string) {
     const id = cid || clubId
     const [{ data: j }, { data: m }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite').eq('club_id', id).eq('estado', 'activo').neq('es_externo', true).order('nombre'),
+      supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite').eq('club_id', id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').order('nombre'),
       supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
     ])
     setJugadores(j || [])

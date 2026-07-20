@@ -133,7 +133,7 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
       ] = await Promise.all([
         supabase.from('clases')
           .select('id,hora_inicio,contenido').eq('club_id', perfil.club_id).eq('publicada', true).eq('fecha', hoy).order('hora_inicio'),
-        supabase.from('jugadores').select('id').eq('club_id', perfil.club_id).eq('estado', 'activo').neq('es_externo', true),
+        supabase.from('jugadores').select('id').eq('club_id', perfil.club_id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
         supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo),
         supabase.from('evaluaciones_trimestrales')
           .select('id,firmado_alumno,jugadores(nombre)').eq('club_id', perfil.club_id).eq('periodo_trimestre', periodo).not('feedback_profesor', 'is', null),

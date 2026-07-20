@@ -47,7 +47,7 @@ export default function DashboardProfesorPage() {
       if (perfil.club_id) {
         const trimestre = trimestreActual(hoy)
         const [{ data: jugadores }, { data: clasesHoy }, { data: evals }, { data: asist5 }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', perfil.club_id).eq('estado', 'activo').neq('es_externo', true),
+          supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', perfil.club_id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
           supabase.from('clases').select('*').eq('club_id', perfil.club_id).gte('fecha', hoyISO).lte('fecha', domingoISO).order('fecha').order('hora_inicio'),
           supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', perfil.club_id).eq('periodo_trimestre', trimestre),
           supabase.from('asistencia').select('jugador_id').eq('club_id', perfil.club_id).gte('fecha', cincoDiasAtrasISO),

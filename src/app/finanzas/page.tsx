@@ -99,7 +99,7 @@ function FinanzasContent() {
 
   async function cargarJugadores(cid?: string) {
     const id = cid || clubId
-    const { data: jugs } = await supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', id).neq('es_externo', true).order('nombre')
+    const { data: jugs } = await supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', id).or('es_externo.is.null,es_externo.eq.false').order('nombre')
     setJugadoresFinanzas(jugs || [])
   }
 

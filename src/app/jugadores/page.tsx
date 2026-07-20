@@ -67,7 +67,7 @@ export default function JugadoresPage() {
         .from('jugadores')
         .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado')
         .eq('club_id', id)
-        .neq('es_externo', true)
+        .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
       if (!activo) return
       if (error) {
@@ -91,7 +91,7 @@ export default function JugadoresPage() {
       .from('jugadores')
       .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado')
       .eq('club_id', id)
-      .neq('es_externo', true)
+      .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
     if (error) { mostrarToast('Error al cargar jugadores'); return }
     if (id) jugadoresCache[id] = data || []
