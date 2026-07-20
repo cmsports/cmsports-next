@@ -140,7 +140,7 @@ export default function DashboardPage() {
       { data: solicitudesData },
       { data: movimientosPrev },
     ] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,telefono,estado').eq('club_id', cid).neq('es_externo', true),
+      supabase.from('jugadores').select('id,nombre,telefono,estado').eq('club_id', cid).or('es_externo.is.null,es_externo.eq.false'),
       supabase.from('mensualidades').select('id,jugador_id,estado').eq('club_id', cid).eq('mes', mesActual).eq('anio', anioActual),
       supabase.from('movimientos').select('tipo,monto').eq('club_id', cid).gte('fecha', mesInicio),
       supabase.from('solicitudes_jugador').select('id,nombre,creado_en').eq('club_id', cid).eq('estado', 'pendiente'),
@@ -183,7 +183,7 @@ export default function DashboardPage() {
     const desde30 = hace30.toISOString().split('T')[0]
 
     const [{ data: jugsActivos }, { data: asistencias }] = await Promise.all([
-      supabase.from('jugadores').select('id, nombre, telefono').eq('club_id', cid).eq('estado', 'activo').neq('es_externo', true),
+      supabase.from('jugadores').select('id, nombre, telefono').eq('club_id', cid).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
       supabase.from('asistencia').select('jugador_id, fecha').eq('club_id', cid).gte('fecha', desde30).order('fecha', { ascending: false }),
     ])
 
@@ -290,7 +290,8 @@ export default function DashboardPage() {
             </a>
           </div>
         </div>
-        {/* Logos auspiciadores — centro del header */}
+        {/* Logos auspiciadores — solo club Buin */}
+        {tiene('tienda_buin') && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, justifyContent: 'center' }}>
           {[
             { src: '/sponsors/foxhara.png',  alt: 'Foxhara Sport',       bg: '#ffffff' },
@@ -316,6 +317,7 @@ export default function DashboardPage() {
             </div>
           ))}
         </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {tiene('asistencia') && jugadoresInactivos.length > 0 && (
