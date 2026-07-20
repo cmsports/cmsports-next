@@ -173,7 +173,8 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   }
 
   function isActive(href: string) {
-    return pathname.startsWith(href) && href !== '/' && href !== '#mas'
+    if (href === '/' || href === '#mas') return false
+    return pathname === href || pathname.startsWith(`${href}/`)
   }
 
   if (jugadorBloqueado && perfil?.rol === 'jugador') {
