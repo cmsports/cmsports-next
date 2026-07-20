@@ -158,6 +158,8 @@ export default function BibliografiaTdmPage() {
                 <img
                   src={a.url}
                   alt={a.name}
+                  loading="lazy"
+                  decoding="async"
                   style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', display: 'block' }}
                 />
                 {esAdmin && (

@@ -4,16 +4,7 @@ import { cookies } from 'next/headers'
 
 const BUCKET = 'bibliografia-buin'
 
-async function ensureBucket(supabase: ReturnType<typeof createAdminClient>) {
-  const { data: buckets } = await supabase.storage.listBuckets()
-  if (!buckets?.some(b => b.name === BUCKET)) {
-    await supabase.storage.createBucket(BUCKET, {
-      public: true,
-      fileSizeLimit: 20971520,
-      allowedMimeTypes: ['image/*'],
-    })
-  }
-}
+// ponytail: bucket ya existe en producción, no verificar en cada upload
 
 export async function POST(req: Request) {
   const cookieStore = await cookies()
@@ -35,8 +26,6 @@ export async function POST(req: Request) {
   if (!perfil || (perfil.rol !== 'admin' && perfil.rol !== 'superadmin')) {
     return Response.json({ error: 'Sin permiso' }, { status: 403 })
   }
-
-  await ensureBucket(supabase)
 
   const formData = await req.formData()
   const files = formData.getAll('files') as File[]

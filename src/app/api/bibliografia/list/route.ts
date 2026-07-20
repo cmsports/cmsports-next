@@ -18,6 +18,6 @@ export async function GET() {
     }))
 
   return Response.json(archivos, {
-    headers: { 'Cache-Control': 'no-store, max-age=0' },
+    headers: { 'Cache-Control': 'public, max-age=30' },
   })
 }
