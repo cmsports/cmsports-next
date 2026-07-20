@@ -12,7 +12,7 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, ShoppingBag, Settings,
+  Receipt, LogOut, Menu, X, ShoppingBag, Settings, Sun, Moon,
   Store, Library, BookLock, Eye,
 } from 'lucide-react'
 import type { Perfil } from '@/types'
@@ -100,11 +100,16 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const pathname = usePathname()
   const clubId = perfil?.club_id ?? ''
   const [masOpen, setMasOpen] = useState(false)
+  const [dark, setDark] = useState(false)
   const [clubCargado, setClubCargado] = useState<{ id: string; nombre: string } | null>(null)
   const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(() => clubLogoCache[clubId] ?? null)
   const [jugadorBloqueado, setJugadorBloqueado] = useState(false)
   const [clubTelefono, setClubTelefono] = useState('')
   const { tiene } = useModulos()
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+  }, [dark])
 
   useEffect(() => {
     if (!clubId) return
@@ -307,6 +312,10 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
                   <Settings size={16} strokeWidth={1.8} />
               </Link>
             )}
+            <button onClick={() => setDark(d => !d)} title={dark ? 'Modo claro' : 'Modo oscuro'}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 7, color: '#64748b', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              {dark ? <Sun size={16} strokeWidth={1.8} /> : <Moon size={16} strokeWidth={1.8} />}
+            </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
             <div style={{
