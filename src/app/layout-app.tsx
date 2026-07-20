@@ -12,7 +12,7 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, ShoppingBag, Settings, Sun, Moon,
+  Receipt, LogOut, Menu, X, ShoppingBag, Settings,
   Store, Library, BookLock, Eye,
 } from 'lucide-react'
 import type { Perfil } from '@/types'
@@ -100,16 +100,11 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const pathname = usePathname()
   const clubId = perfil?.club_id ?? ''
   const [masOpen, setMasOpen] = useState(false)
-  const [dark, setDark] = useState(false)
   const [clubCargado, setClubCargado] = useState<{ id: string; nombre: string } | null>(null)
   const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(() => clubLogoCache[clubId] ?? null)
   const [jugadorBloqueado, setJugadorBloqueado] = useState(false)
   const [clubTelefono, setClubTelefono] = useState('')
   const { tiene } = useModulos()
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
-  }, [dark])
 
   useEffect(() => {
     if (!clubId) return
@@ -218,27 +213,14 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
     )
   }
 
-  const dk = {
-    bg: dark ? '#0f172a' : 'linear-gradient(160deg,#f0f4ff 0%,#f8fafc 40%,#f0fdf4 100%)',
-    sidebar: dark ? '#1e293b' : '#ffffff',
-    border: dark ? '#334155' : '#e2e8f0',
-    text: dark ? '#f1f5f9' : '#0f172a',
-    muted: dark ? '#94a3b8' : '#64748b',
-    hint: dark ? '#64748b' : '#94a3b8',
-    navText: dark ? '#cbd5e1' : '#1e293b',
-    cardBg: dark ? '#1e293b' : '#f8fafc',
-    avatarBg: dark ? '#312e81' : '#ede9fe',
-    mobileNav: dark ? '#1e293b' : '#ffffff',
-  }
-
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: dk.bg }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'linear-gradient(160deg,#f0f4ff 0%,#f8fafc 40%,#f0fdf4 100%)' }}>
 
       {/* ── SIDEBAR DESKTOP ── */}
       <aside className="sidebar" style={{
         width: 220,
-        background: dk.sidebar,
-        borderRight: `1px solid ${dk.border}`,
+        background: '#ffffff',
+        borderRight: '1px solid #e2e8f0',
         display: 'flex',
         flexDirection: 'column',
         position: 'fixed',
@@ -246,12 +228,12 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         zIndex: 10,
       }}>
         {/* Logo */}
-        <div style={{ padding: '16px', borderBottom: `1px solid ${dk.border}` }}>
+        <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 36, height: 36, borderRadius: 8,
-              background: clubLogoUrl ? dk.cardBg : '#4f46e5',
-              border: clubLogoUrl ? `1px solid ${dk.border}` : 'none',
+              background: clubLogoUrl ? '#f8fafc' : '#4f46e5',
+              border: clubLogoUrl ? '1px solid #e2e8f0' : 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               overflow: 'hidden',
             }}>
@@ -261,8 +243,8 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               }
             </div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: dk.text, lineHeight: 1.2 }}>CmSports</div>
-              <div style={{ fontSize: 10, color: dk.hint }}>{clubNombre || 'CmSports'}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', lineHeight: 1.2 }}>CmSports</div>
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>{clubNombre || 'CmSports'}</div>
             </div>
           </div>
         </div>
@@ -275,7 +257,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
                 <div key={`s-${i}`} style={{
                   fontSize: 10,
                   fontWeight: 600,
-                  color: dk.muted,
+                  color: '#64748b',
                   letterSpacing: '0.07em',
                   textTransform: 'uppercase',
                   padding: '10px 10px 4px',
@@ -298,7 +280,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
                 cursor: 'pointer',
                 marginBottom: 1,
                 background: active ? '#4f46e5' : 'transparent',
-                color: active ? '#ffffff' : dk.navText,
+                color: active ? '#ffffff' : '#1e293b',
                 fontSize: 13,
                 fontWeight: active ? 600 : 400,
                 borderLeft: active ? '3px solid #3730a3' : '3px solid transparent',
@@ -313,37 +295,33 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         </nav>
 
         {/* Footer */}
-        <div style={{ padding: '12px 14px', borderTop: `1px solid ${dk.border}` }}>
+        <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <CampanaNotificaciones perfil={perfil} placement="top" />
             {!esDemo && (
               <Link href="/configuracion" style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: 32, height: 32, borderRadius: 7, color: dk.muted,
+                  width: 32, height: 32, borderRadius: 7, color: '#64748b',
                   background: 'transparent', textDecoration: 'none',
                 }} title="Configuración">
                   <Settings size={16} strokeWidth={1.8} />
               </Link>
             )}
-            <button onClick={() => setDark(d => !d)} title={dark ? 'Modo claro' : 'Modo oscuro'}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 7, color: dk.muted, background: 'transparent', border: 'none', cursor: 'pointer' }}>
-              {dark ? <Sun size={16} strokeWidth={1.8} /> : <Moon size={16} strokeWidth={1.8} />}
-            </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
             <div style={{
               width: 30, height: 30, borderRadius: '50%',
-              background: dk.avatarBg,
+              background: '#ede9fe',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 11, fontWeight: 600, color: dark ? '#a5b4fc' : '#3730a3', flexShrink: 0,
+              fontSize: 11, fontWeight: 600, color: '#3730a3', flexShrink: 0,
             }}>
               {initials}
             </div>
             <div style={{ overflow: 'hidden', flex: 1 }}>
-              <div style={{ fontSize: 11, color: dk.text, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 11, color: '#0f172a', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {perfil?.email}
               </div>
-              <div style={{ fontSize: 10, color: dk.hint }}>{rolLabel}</div>
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>{rolLabel}</div>
             </div>
           </div>
           {perfil?.rol === 'superadmin' && (
@@ -352,7 +330,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               padding: '6px 10px',
               marginBottom: 6,
               background: 'transparent',
-              border: `1px solid ${dk.border}`,
+              border: '1px solid #e2e8f0',
               borderRadius: 7,
               color: '#4f46e5',
               fontSize: 12,
@@ -369,9 +347,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             width: '100%',
             padding: '6px 10px',
             background: 'transparent',
-            border: `1px solid ${dk.border}`,
+            border: '1px solid #e2e8f0',
             borderRadius: 7,
-            color: dk.muted,
+            color: '#64748b',
             fontSize: 12,
             cursor: 'pointer',
             display: 'flex',
@@ -403,8 +381,8 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
       <div style={{
         display: 'none',
         position: 'fixed', bottom: 0, left: 0, right: 0,
-        background: dk.mobileNav,
-        borderTop: `1px solid ${dk.border}`,
+        background: '#ffffff',
+        borderTop: '1px solid #e2e8f0',
         zIndex: 20,
         padding: '6px 4px 8px',
       }} className="mobile-nav">
