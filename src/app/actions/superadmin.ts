@@ -6,7 +6,7 @@ import { requireSuperadmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyISO, sumarMesesISO } from '@/lib/domain/suscripciones'
 
-const MODULOS_VALIDOS = ['torneos', 'liga', 'clases', 'calendario', 'asistencia', 'mensualidades', 'finanzas', 'redes', 'tienda'] as const
+const MODULOS_VALIDOS = ['torneos', 'liga', 'clases', 'calendario', 'asistencia', 'mensualidades', 'finanzas', 'tienda'] as const
 
 const crearClubSchema = z.object({
   nombre: z.string().trim().min(2, 'Ingresa el nombre del club'),

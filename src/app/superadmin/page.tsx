@@ -22,7 +22,6 @@ const MODULOS_OPCIONALES = [
   { key: 'asistencia', label: 'Asistencia' },
   { key: 'mensualidades', label: 'Mensualidades' },
   { key: 'finanzas', label: 'Finanzas' },
-  { key: 'redes', label: 'Redes Sociales' },
   { key: 'tienda', label: 'Tienda' },
 ] as const
 

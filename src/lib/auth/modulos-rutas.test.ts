@@ -11,7 +11,6 @@ describe('protección de rutas por módulos del club', () => {
     ['/asistencia/club-id', 'asistencia'],
     ['/estado-cuenta', 'mensualidades'],
     ['/reportes', 'finanzas'],
-    ['/redes-sociales', 'redes'],
     ['/tienda', 'tienda'],
   ])('asigna %s al módulo %s', (ruta, modulo) => {
     expect(moduloRequeridoPorRuta(ruta)).toBe(modulo)

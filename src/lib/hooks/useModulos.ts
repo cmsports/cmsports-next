@@ -7,11 +7,11 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 export type Modulo =
   | 'torneos' | 'liga' | 'clases' | 'calendario'
   | 'asistencia' | 'mensualidades' | 'finanzas'
-  | 'redes' | 'tienda'
+  | 'tienda'
   | 'tienda_buin' | 'bibliografia' | 'libro_profe'
 
 const CORE: readonly string[] = ['dashboard', 'jugadores']
-const ALL_MODULOS: Modulo[] = ['torneos','liga','clases','calendario','asistencia','mensualidades','finanzas','redes','tienda','tienda_buin','bibliografia','libro_profe']
+const ALL_MODULOS: Modulo[] = ['torneos','liga','clases','calendario','asistencia','mensualidades','finanzas','tienda','tienda_buin','bibliografia','libro_profe']
 
 type ModulosContextValue = {
   modulos: string[]

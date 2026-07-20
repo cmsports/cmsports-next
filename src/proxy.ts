@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { updateSession } from '@/lib/supabase/proxy'
 import { MODULOS_CLUB, puedeAccederModulo } from '@/lib/auth/modulos-rutas'
 import { esAdminDeClub } from '@/lib/auth/roles'
+import { esCuentaDemo } from '@/lib/auth/demo'
 import type { Database } from '@/types/database'
 
 const publicRoutes = ['/login', '/registro']
@@ -14,7 +15,7 @@ const superadminRoutes = ['/superadmin']
 const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes']
 // El profesor necesita abrir el listado y la ficha para evaluar. Las acciones
 // administrativas dentro de esas pantallas siguen reservadas al admin.
-const staffRoutes = ['/redes-sociales', '/jugadores']
+const staffRoutes = ['/jugadores']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
 const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/tienda', '/configuracion', '/cuenta-bloqueada']
@@ -128,6 +129,15 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone()
     url.pathname = getRolRedirect(rol)
     return NextResponse.redirect(url)
+  }
+
+  // Cuenta demo: bloquear configuracion y redes-sociales
+  if (esCuentaDemo(user.email)) {
+    if (pathname.startsWith('/configuracion') || pathname.startsWith('/redes-sociales') || pathname.startsWith('/recuperar-contrasena') || pathname.startsWith('/crear-contrasena')) {
+      const url = request.nextUrl.clone()
+      url.pathname = getRolRedirect(rol)
+      return NextResponse.redirect(url)
+    }
   }
 
   // Un módulo deshabilitado tampoco puede abrirse escribiendo su URL directa.

@@ -1,6 +1,6 @@
 export const MODULOS_CLUB = [
   'torneos', 'liga', 'clases', 'calendario', 'asistencia',
-  'mensualidades', 'finanzas', 'redes', 'tienda',
+  'mensualidades', 'finanzas', 'tienda',
 ] as const
 
 export type ModuloClub = typeof MODULOS_CLUB[number]
@@ -13,7 +13,6 @@ const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly stri
   { modulo: 'asistencia', rutas: ['/asistencia'] },
   { modulo: 'mensualidades', rutas: ['/mensualidades', '/estado-cuenta'] },
   { modulo: 'finanzas', rutas: ['/finanzas', '/reportes'] },
-  { modulo: 'redes', rutas: ['/redes-sociales'] },
   { modulo: 'tienda', rutas: ['/tienda'] },
 ]
 

@@ -12,10 +12,11 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
-  Receipt, LogOut, Menu, X, Camera, ShoppingBag, Settings,
-  Store, Library, BookLock,
+  Receipt, LogOut, Menu, X, ShoppingBag, Settings,
+  Store, Library, BookLock, Eye,
 } from 'lucide-react'
 import type { Perfil } from '@/types'
+import { esCuentaDemo } from '@/lib/auth/demo'
 
 const navAdmin = [
   { section: 'Principal' },
@@ -27,8 +28,6 @@ const navAdmin = [
   { label: 'Clases',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
   { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
   { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas',   modulo: 'finanzas' },
-  { section: 'Marketing' },
-  { label: 'Redes Sociales', icon: Camera,          href: '/redes-sociales', modulo: 'redes' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',     modulo: 'tienda' },
   { section: 'Recursos' },
   { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_buin' },
@@ -139,6 +138,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const clubNombre = clubNombreCache[clubId]
     ?? (clubCargado?.id === clubId ? clubCargado.nombre : '')
 
+  const esDemo = esCuentaDemo(perfil?.email)
   const esAdminOSuperadmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
   const navRaw: NavItem[] = esAdminOSuperadmin ? navAdmin : perfil?.rol === 'profesor' ? navProfesor : navJugador
   const mobileNavRaw = esAdminOSuperadmin ? mobileNavAdmin : perfil?.rol === 'profesor' ? mobileNavProfesor : mobileNavJugador
@@ -156,7 +156,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const masItemsBase = nav.filter(
     (item): item is NavLink => !('section' in item) && !mobileNavHrefs.has(item.href),
   )
-  const masItems = [...masItemsBase, { label: 'Configuración', icon: Settings, href: '/configuracion' }]
+  const masItems = esDemo
+    ? masItemsBase
+    : [...masItemsBase, { label: 'Configuración', icon: Settings, href: '/configuracion' }]
 
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
   const rolLabel = perfil?.rol === 'superadmin' ? 'Superadmin' : perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
@@ -296,13 +298,15 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <CampanaNotificaciones perfil={perfil} placement="top" />
-            <Link href="/configuracion" style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 32, height: 32, borderRadius: 7, color: '#64748b',
-                background: 'transparent', textDecoration: 'none',
-              }} title="Configuración">
-                <Settings size={16} strokeWidth={1.8} />
-            </Link>
+            {!esDemo && (
+              <Link href="/configuracion" style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 32, height: 32, borderRadius: 7, color: '#64748b',
+                  background: 'transparent', textDecoration: 'none',
+                }} title="Configuración">
+                  <Settings size={16} strokeWidth={1.8} />
+              </Link>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
             <div style={{
@@ -360,6 +364,16 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
 
       {/* ── CONTENIDO PRINCIPAL ── */}
       <main style={{ marginLeft: 220, flex: 1, padding: 24, paddingBottom: 80 }} className="main-content">
+        {esDemo && (
+          <div style={{
+            background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 10,
+            padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8,
+            fontSize: 13, color: '#92400e',
+          }}>
+            <Eye size={15} />
+            <span><strong>Cuenta de demostración</strong> — Puedes explorar la plataforma libremente. Algunas funciones de configuración están deshabilitadas.</span>
+          </div>
+        )}
         {children}
       </main>
 
