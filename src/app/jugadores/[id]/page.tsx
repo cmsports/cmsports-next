@@ -562,6 +562,37 @@ export default function JugadorDetallePage() {
         </div>
       </div>
 
+      {/* Ficha extendida */}
+      {puedeVerTodo && (jugador.apellido_paterno || jugador.apellido_materno || jugador.fecha_nacimiento || jugador.federado != null || jugador.direccion || jugador.nombre_apoderado || jugador.telefono_emergencia || jugador.indicaciones_medicas || jugador.lugar_entrenamiento || jugador.grupo || jugador.horario || jugador.comuna) && (
+        <div style={{ ...card, padding:20, marginBottom:16 }}>
+          <div style={{ fontSize:12, fontWeight:700, color: muted, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:14 }}>Información del plantel</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))', gap:'10px 20px' }}>
+            {jugador.apellido_paterno && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Apellido paterno</div><div style={{ fontSize:13, color: text }}>{jugador.apellido_paterno}</div></div>}
+            {jugador.apellido_materno && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Apellido materno</div><div style={{ fontSize:13, color: text }}>{jugador.apellido_materno}</div></div>}
+            {jugador.fecha_nacimiento && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Fecha de nacimiento</div><div style={{ fontSize:13, color: text }}>{new Date(jugador.fecha_nacimiento).toLocaleDateString('es-CL')}</div></div>}
+            {jugador.comuna && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Comuna</div><div style={{ fontSize:13, color: text }}>{jugador.comuna}</div></div>}
+            {jugador.grupo && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Grupo</div><div style={{ fontSize:13, color: text }}>{jugador.grupo}</div></div>}
+            {jugador.horario && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Horario</div><div style={{ fontSize:13, color: text }}>{jugador.horario}</div></div>}
+            {jugador.lugar_entrenamiento && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Lugar de entrenamiento</div><div style={{ fontSize:13, color: text }}>{jugador.lugar_entrenamiento}</div></div>}
+            {jugador.federado != null && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Federado</div><div style={{ fontSize:13, color: jugador.federado ? '#16a34a' : muted }}>{jugador.federado ? '✅ Sí' : 'No'}</div></div>}
+            {jugador.direccion && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Dirección</div><div style={{ fontSize:13, color: text }}>{jugador.direccion}</div></div>}
+            {jugador.nombre_apoderado && <div><div style={{ fontSize:10, color: hint, marginBottom:2 }}>Apoderado</div><div style={{ fontSize:13, color: text }}>{jugador.nombre_apoderado}</div></div>}
+            {jugador.telefono_emergencia && (
+              <div>
+                <div style={{ fontSize:10, color: hint, marginBottom:2 }}>Teléfono emergencia</div>
+                <a href={`https://wa.me/${jugador.telefono_emergencia.replace(/[^0-9]/g,'')}`} target="_blank" style={{ fontSize:13, color: text, textDecoration:'none' }}>💬 {jugador.telefono_emergencia}</a>
+              </div>
+            )}
+            {jugador.indicaciones_medicas && (
+              <div style={{ gridColumn:'1/-1' }}>
+                <div style={{ fontSize:10, color: hint, marginBottom:2 }}>Indicaciones médicas</div>
+                <div style={{ fontSize:13, color:'#dc2626', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'8px 12px', lineHeight:1.5 }}>⚕️ {jugador.indicaciones_medicas}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:16 }}>
         {['📊 Competencia', ...(puedeVerTodo ? ['📝 Feedback'] : [])].map((t, i) => (

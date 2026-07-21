@@ -39,6 +39,7 @@ export async function crearTorneo(params: {
   nombre: string
   fecha: string
   cuota: number
+  tipo?: 'interno' | 'externo'
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -63,6 +64,7 @@ export async function crearTorneo(params: {
     cuota_inscripcion: cuota,
     precio_entrada: cuota,
     inscripcion_abierta: true,
+    tipo: params.tipo ?? 'externo',
   }).select('id').single()
 
   if (error || !data) return { error: error?.message || 'No se pudo crear el torneo' }

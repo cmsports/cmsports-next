@@ -52,6 +52,7 @@ export default function TorneosPage() {
       .from('torneos')
       .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,campeon:campeon_id(nombre)')
       .eq('club_id', id)
+      .eq('tipo', 'externo')
       .order('creado_en', { ascending: false })
     query = mostrarArchivados ? query.eq('estado', 'archivado') : query.neq('estado', 'archivado')
     const { data: torneosData } = await query
@@ -122,7 +123,7 @@ export default function TorneosPage() {
   return (
     <AppLayout perfil={perfil}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Torneos</h1>
+        <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Torneos Externos</h1>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           {esAdmin && (
             <button

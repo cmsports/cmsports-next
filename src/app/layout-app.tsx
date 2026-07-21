@@ -13,7 +13,7 @@ import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
-  Store, Library, BookLock, Eye,
+  Store, Library, BookLock, Eye, Award, Home,
 } from 'lucide-react'
 import type { Perfil } from '@/types'
 import { esCuentaDemo } from '@/lib/auth/demo'
@@ -22,8 +22,10 @@ const navAdmin = [
   { section: 'Principal' },
   { label: 'Dashboard',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores',     icon: Users,            href: '/jugadores' },
-  { label: 'Torneos',       icon: Trophy,           href: '/torneos',    modulo: 'torneos' },
-  { label: 'Liga',          icon: BarChart2,        href: '/liga',       modulo: 'liga' },
+  { label: 'Torneos Ext.',   icon: Globe,            href: '/torneos',          modulo: 'torneos' },
+  { label: 'Torneos Int.',   icon: Home,             href: '/torneos-internos', modulo: 'torneos' },
+  { label: 'Ranking',        icon: Award,            href: '/ranking',          modulo: 'torneos' },
+  { label: 'Liga',           icon: BarChart2,        href: '/liga',             modulo: 'liga' },
   { section: 'Gestión' },
   { label: 'Clases',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
   { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
@@ -42,7 +44,9 @@ const navProfesor = [
   { section: 'Gestión' },
   { label: 'Mis clases', icon: BookOpen,        href: '/clases',     modulo: 'clases' },
   { label: 'Calendario', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
-  { label: 'Torneos',    icon: Trophy,          href: '/torneos',    modulo: 'torneos' },
+  { label: 'Torneos Ext.',  icon: Globe,           href: '/torneos',          modulo: 'torneos' },
+  { label: 'Torneos Int.',  icon: Home,            href: '/torneos-internos', modulo: 'torneos' },
+  { label: 'Ranking',       icon: Award,           href: '/ranking',          modulo: 'torneos' },
   { section: 'Tienda' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
   { section: 'Recursos' },
@@ -70,7 +74,7 @@ const navJugador = [
 const mobileNavAdmin = [
   { label: 'Inicio',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores',  icon: Users,            href: '/jugadores' },
-  { label: 'Torneos',    icon: Trophy,           href: '/torneos',  modulo: 'torneos' },
+  { label: 'Torneos',    icon: Trophy,           href: '/torneos-internos',  modulo: 'torneos' },
   { label: 'Finanzas',   icon: DollarSign,       href: '/finanzas', modulo: 'finanzas' },
 ]
 
