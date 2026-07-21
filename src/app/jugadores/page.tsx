@@ -71,7 +71,8 @@ export default function JugadoresPage() {
       }
       supabase.from('clubes').select('nombre').eq('id', id).single()
         .then(({ data }) => { if (activo && data) setClubNombre(data.nombre) })
-      const { data, error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
         .from('jugadores')
         .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url')
         .eq('club_id', id)
@@ -95,7 +96,8 @@ export default function JugadoresPage() {
   const cargarJugadores = useCallback(async (cid?: string) => {
     const id = cid || clubId
     if (!id) return
-    const { data, error } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any)
       .from('jugadores')
       .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url')
       .eq('club_id', id)
