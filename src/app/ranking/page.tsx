@@ -61,7 +61,16 @@ export default function RankingPage() {
     const reinicioTs = club?.ranking_reiniciado_en ?? null
     setReiniciadoEn(reinicioTs)
 
-    // 2. Torneos internos finalizados del club
+    // 2. Categorías disponibles del club (desde jugadores)
+    const { data: jugCats } = await supabase
+      .from('jugadores')
+      .select('categoria')
+      .eq('club_id', perfil.club_id)
+      .or('es_externo.is.null,es_externo.eq.false')
+      .not('categoria', 'is', null)
+    const todasCats = [...new Set((jugCats || []).map((j: any) => j.categoria).filter(Boolean))].sort() as string[]
+
+    // 3. Torneos internos finalizados del club
     let queryT = sb
       .from('torneos')
       .select('id,categoria')
@@ -71,7 +80,14 @@ export default function RankingPage() {
     if (reinicioTs) queryT = queryT.gt('fecha_fin', reinicioTs)
 
     const { data: torneos } = await queryT
-    if (!torneos?.length) { setRankingPorCategoria([]); setLoading(false); return }
+    if (!torneos?.length) {
+      // Sin torneos: mostrar todas las categorias vacías
+      const vacias = todasCats.map(c => ({ categoria: c, filas: [] }))
+      setRankingPorCategoria(vacias)
+      if (vacias.length > 0 && !categoriaActiva) setCategoriaActiva(vacias[0].categoria)
+      setLoading(false)
+      return
+    }
 
     // 3. Mapear torneoId → categoria
     const torneoCat: Record<string, string> = {}
@@ -119,26 +135,31 @@ export default function RankingPage() {
     const nombreMap: Record<string, string> = {}
     for (const j of (jugadores || [])) nombreMap[j.id] = j.nombre
 
-    // 7. Construir ranking por categoría, ordenado
-    const resultado: CategoriaRanking[] = Object.entries(statsPorCat)
-      .map(([categoria, stats]) => {
-        const filas: FilaRanking[] = Object.entries(stats).map(([id, s]) => ({
-          jugadorId: id,
-          nombre: nombreMap[id] || 'Desconocido',
-          victorias: s.victorias,
-          derrotas: s.derrotas,
-          jugados: s.victorias + s.derrotas,
-          pts: s.victorias * 3,
-        }))
-        filas.sort((a, b) => b.pts - a.pts || b.victorias - a.victorias || a.derrotas - b.derrotas)
-        return { categoria, filas }
-      })
-      .sort((a, b) => a.categoria.localeCompare(b.categoria, 'es'))
+    // 7. Construir ranking por categoría con datos
+    const conDatos: Record<string, CategoriaRanking> = {}
+    for (const [categoria, stats] of Object.entries(statsPorCat)) {
+      const filas: FilaRanking[] = Object.entries(stats).map(([id, s]) => ({
+        jugadorId: id,
+        nombre: nombreMap[id] || 'Desconocido',
+        victorias: s.victorias,
+        derrotas: s.derrotas,
+        jugados: s.victorias + s.derrotas,
+        pts: s.victorias * 3,
+      }))
+      filas.sort((a, b) => b.pts - a.pts || b.victorias - a.victorias || a.derrotas - b.derrotas)
+      conDatos[categoria] = { categoria, filas }
+    }
+
+    // Incluir TODAS las categorías del club (con y sin torneos)
+    const resultado: CategoriaRanking[] = todasCats.map(c => conDatos[c] ?? { categoria: c, filas: [] })
+    // Agregar categorías con torneos que no estén en la lista del club
+    for (const cat of Object.keys(conDatos)) {
+      if (!todasCats.includes(cat)) resultado.push(conDatos[cat])
+    }
+    resultado.sort((a, b) => a.categoria.localeCompare(b.categoria, 'es'))
 
     setRankingPorCategoria(resultado)
-    if (resultado.length > 0 && !categoriaActiva) {
-      setCategoriaActiva(resultado[0].categoria)
-    }
+    if (resultado.length > 0 && !categoriaActiva) setCategoriaActiva(resultado[0].categoria)
     setLoading(false)
   }
 
@@ -236,7 +257,12 @@ export default function RankingPage() {
             </div>
 
             {/* Tabla del ranking activo */}
-            {rankingActivo && (
+            {rankingActivo && rankingActivo.filas.length === 0 && (
+              <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
+                Sin torneos internos finalizados en categoría <strong style={{ color: muted }}>{rankingActivo.categoria}</strong>
+              </div>
+            )}
+            {rankingActivo && rankingActivo.filas.length > 0 && (
               <div style={{ ...card, overflow: 'hidden' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 60px 60px 60px 60px', gap: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px' }}>
                   {['#', 'Jugador', 'PTS', 'V', 'D', 'PJ'].map(h => (
