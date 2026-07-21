@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { crearAccesoJugador, resetearPasswordJugador } from '@/app/actions/jugadores'
+import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
 import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
@@ -428,17 +428,17 @@ export default function JugadorDetallePage() {
     setSubiendoFoto(true)
     canvas.toBlob(async blob => {
       if (!blob) { setSubiendoFoto(false); return }
-      const path = `avatares/${jugadorId}.jpg`
-      const { error: upErr } = await supabase.storage.from('galeria-fotos').upload(path, blob, { contentType: 'image/jpeg', upsert: true })
-      if (upErr) { alert('Error subiendo foto: ' + upErr.message); setSubiendoFoto(false); return }
-      const { data: { publicUrl } } = supabase.storage.from('galeria-fotos').getPublicUrl(path)
-      const url = `${publicUrl}?t=${Date.now()}`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('jugadores').update({ foto_url: url }).eq('id', jugadorId)
-      setJugador((prev: any) => ({ ...prev, foto_url: url }))
-      setModalFoto(false)
-      setFotoSrc(null)
-      setSubiendoFoto(false)
+      const reader = new FileReader()
+      reader.onload = async e => {
+        const base64 = e.target?.result as string
+        const res = await subirFotoJugador({ jugadorId, base64 })
+        if (res.error) { alert('Error subiendo foto: ' + res.error); setSubiendoFoto(false); return }
+        setJugador((prev: any) => ({ ...prev, foto_url: res.url }))
+        setModalFoto(false)
+        setFotoSrc(null)
+        setSubiendoFoto(false)
+      }
+      reader.readAsDataURL(blob)
     }, 'image/jpeg', 0.92)
   }
   const edad = jugador.fecha_nacimiento ? new Date().getFullYear() - parseInt(jugador.fecha_nacimiento.slice(0, 4)) : null

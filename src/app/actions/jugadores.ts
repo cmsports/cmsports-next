@@ -192,6 +192,28 @@ export async function verificarBloqueoPerfil(): Promise<boolean> {
   }
 }
 
+export async function subirFotoJugador(params: { jugadorId: string; base64: string }) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { data: jug } = await supabase.from('jugadores').select('id').eq('id', params.jugadorId).eq('club_id', clubId).single()
+  if (!jug) return { error: 'Jugador no encontrado' }
+
+  const buffer = Buffer.from(params.base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+  const path = `avatares/${params.jugadorId}.jpg`
+  const admin = createAdminClient()
+
+  const { error: upErr } = await admin.storage.from('galeria-fotos').upload(path, buffer, { contentType: 'image/jpeg', upsert: true })
+  if (upErr) return { error: 'Error al subir imagen: ' + upErr.message }
+
+  const { data: { publicUrl } } = admin.storage.from('galeria-fotos').getPublicUrl(path)
+  const url = `${publicUrl}?t=${Date.now()}`
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase as any).from('jugadores').update({ foto_url: url }).eq('id', params.jugadorId)
+  return { success: true, url }
+}
+
 export async function resetearPasswordJugador(params: { jugadorId: string; nuevaPassword: string }) {
   const { error: authErr, clubId } = await requireAdminClub()
   if (authErr || !clubId) return { error: authErr || 'No autorizado' }
