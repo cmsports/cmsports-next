@@ -67,7 +67,7 @@ export default function RankingPage() {
     const { data: torneos } = await queryT
     if (!torneos?.length) { setRanking([]); setLoading(false); return }
 
-    const torneoIds = torneos.map(t => t.id)
+    const torneoIds = (torneos as { id: string }[]).map(t => t.id)
 
     // 3. Partidos de esos torneos (reales, no byes)
     const { data: partidos } = await supabase
