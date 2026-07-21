@@ -480,7 +480,8 @@ export default function DashboardPage() {
         )}
 
         {/* Link de inscripción */}
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
+          <PingPongMini />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <Link2 size={15} color={C.sky} />
             <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔗 Link de inscripción</span>
@@ -675,6 +676,52 @@ function TooltipBtn({ id, texto, tooltip, setTooltip }: {
         </div>
       )}
     </div>
+  )
+}
+
+/* ── PingPongMini ── */
+function PingPongMini() {
+  return (
+    <svg viewBox="0 0 120 60" width={100} height={50} style={{ position: 'absolute', top: 8, right: 8, opacity: 0.55, pointerEvents: 'none' }}>
+      <style>{`
+        @keyframes pp-ball { 0%,100%{cx:35;cy:18} 50%{cx:85;cy:18} }
+        @keyframes pp-arm1 { 0%,100%{transform:rotate(-15deg)} 45%,55%{transform:rotate(25deg)} }
+        @keyframes pp-arm2 { 0%,100%{transform:rotate(15deg)} 45%,55%{transform:rotate(-25deg)} }
+        @keyframes pp-bounce { 0%,100%{cy:18} 25%{cy:12} 75%{cy:12} }
+      `}</style>
+      {/* mesa */}
+      <rect x="25" y="28" width="70" height="4" rx="1" fill="#4f46e5" opacity="0.3" />
+      <line x1="60" y1="28" x2="60" y2="22" stroke="#4f46e5" opacity="0.3" strokeWidth="1" />
+      <rect x="57" y="20" width="6" height="2" rx="0.5" fill="#4f46e5" opacity="0.25" />
+      {/* patas */}
+      <line x1="30" y1="32" x2="30" y2="42" stroke="#94a3b8" strokeWidth="1.5" />
+      <line x1="90" y1="32" x2="90" y2="42" stroke="#94a3b8" strokeWidth="1.5" />
+      {/* monito izquierdo */}
+      <circle cx="18" cy="16" r="4" fill="#f43f5e" />
+      <line x1="18" y1="20" x2="18" y2="32" stroke="#f43f5e" strokeWidth="1.5" />
+      <line x1="18" y1="32" x2="14" y2="40" stroke="#f43f5e" strokeWidth="1.2" />
+      <line x1="18" y1="32" x2="22" y2="40" stroke="#f43f5e" strokeWidth="1.2" />
+      <g style={{ transformOrigin: '18px 24px', animation: 'pp-arm1 1.2s ease-in-out infinite' }}>
+        <line x1="18" y1="24" x2="28" y2="20" stroke="#f43f5e" strokeWidth="1.2" />
+        <ellipse cx="29" cy="18" rx="3" ry="4" fill="#f43f5e" opacity="0.5" />
+      </g>
+      {/* monito derecho */}
+      <circle cx="102" cy="16" r="4" fill="#4f46e5" />
+      <line x1="102" y1="20" x2="102" y2="32" stroke="#4f46e5" strokeWidth="1.5" />
+      <line x1="102" y1="32" x2="98" y2="40" stroke="#4f46e5" strokeWidth="1.2" />
+      <line x1="102" y1="32" x2="106" y2="40" stroke="#4f46e5" strokeWidth="1.2" />
+      <g style={{ transformOrigin: '102px 24px', animation: 'pp-arm2 1.2s ease-in-out infinite' }}>
+        <line x1="102" y1="24" x2="92" y2="20" stroke="#4f46e5" strokeWidth="1.2" />
+        <ellipse cx="91" cy="18" rx="3" ry="4" fill="#4f46e5" opacity="0.5" />
+      </g>
+      {/* pelota */}
+      <circle r="2.5" fill="#f59e0b" style={{ animation: 'pp-ball 1.2s ease-in-out infinite, pp-bounce 1.2s ease-in-out infinite' }} />
+      {/* ojitos */}
+      <circle cx="17" cy="15" r="0.7" fill="white" />
+      <circle cx="19" cy="15" r="0.7" fill="white" />
+      <circle cx="101" cy="15" r="0.7" fill="white" />
+      <circle cx="103" cy="15" r="0.7" fill="white" />
+    </svg>
   )
 }
 
