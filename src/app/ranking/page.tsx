@@ -162,6 +162,24 @@ export default function RankingPage() {
           )}
         </div>
 
+        {/* Cuadrito informativo del sistema de puntaje */}
+        <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            ℹ️ ¿Cómo se calculan los puntos?
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+            <div style={{ background: '#ede9fe', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#3730a3', fontWeight: 600 }}>
+              🏆 Victoria en partido = <strong>3 pts</strong>
+            </div>
+            <div style={{ background: '#ede9fe', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#3730a3', fontWeight: 600 }}>
+              ❌ Derrota = <strong>0 pts</strong>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
+            Los puntos se acumulan de <strong>todos los torneos internos finalizados</strong>. En torneos largos (128, 64, 32 jugadores…) quien avanza más rondas acumula más puntos, por lo que el ranking refleja el rendimiento real a lo largo del tiempo.
+          </div>
+        </div>
+
         {/* Tabla */}
         {ranking.length === 0 ? (
           <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
