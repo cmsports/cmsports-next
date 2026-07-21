@@ -2,21 +2,31 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react'
+import { Mail, Lock, ArrowRight, Loader2, Phone, IdCard } from 'lucide-react'
 import Image from 'next/image'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [credential, setCredential] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
 
+  const trimmed = credential.trim()
+  const isPhone = /^\d{9}$/.test(trimmed)
+  const isRut = /^\d{7,8}-[\dkK]$/i.test(trimmed)
+
   async function handleLogin() {
     try {
       setLoading(true)
       setError('')
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const email = isPhone
+        ? `${trimmed}@cel.cmsports.cl`
+        : isRut
+        ? `${trimmed.replace('-', '')}@rut.cmsports.cl`
+        : trimmed
+      const authPayload = { email, password }
+      const { data, error } = await supabase.auth.signInWithPassword(authPayload)
       if (error) { setError(error.message); return }
       const { data: perfil } = await supabase
         .from('perfiles')
@@ -116,10 +126,15 @@ export default function LoginPage() {
 
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 12, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 6 }}>
-              Email
+              Email o celular
             </label>
             <div style={{ position: 'relative' }}>
-              <Mail size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              {isPhone
+                ? <Phone size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                : isRut
+                ? <IdCard size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                : <Mail size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              }
               <input
                 style={{
                   width: '100%', background: '#f8fafc',
@@ -128,10 +143,10 @@ export default function LoginPage() {
                   color: '#0f172a', fontSize: 14, outline: 'none',
                   transition: 'border-color 0.15s',
                 }}
-                type="email"
-                placeholder="tu@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
+                type="text"
+                placeholder="celular, RUT o email"
+                value={credential}
+                onChange={e => setCredential(e.target.value)}
                 onFocus={e => (e.target.style.borderColor = '#4f46e5')}
                 onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
               />

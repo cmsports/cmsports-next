@@ -13,9 +13,19 @@ type PlanFields = {
   sesiones_limite: number
 }
 
+type DatosExtendidos = {
+  fecha_nacimiento?: string | null
+  comuna?: string | null
+  direccion?: string | null
+  contacto_emergencia_nombre?: string | null
+  contacto_emergencia_telefono?: string | null
+  indicaciones_medicas?: string | null
+  federado?: boolean | null
+}
+
 export async function crearJugador(params: {
   nombre: string; rut: string; email: string; telefono: string
-} & PlanFields) {
+} & PlanFields & DatosExtendidos) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
@@ -101,7 +111,7 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
 
 export async function editarJugador(params: {
   jugadorId: string; nombre: string; rut: string; email: string; telefono: string
-} & PlanFields) {
+} & PlanFields & DatosExtendidos) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 

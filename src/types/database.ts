@@ -181,6 +181,15 @@ export interface Database {
           mensualidad: number | null
           tipo_plan: string | null
           entrenamientos_por_semana: number | null
+          fecha_nacimiento: string | null
+          comuna: string | null
+          grupo: string | null
+          horario: string | null
+          direccion: string | null
+          contacto_emergencia_nombre: string | null
+          contacto_emergencia_telefono: string | null
+          indicaciones_medicas: string | null
+          federado: boolean | null
         }
         Insert: {
           id?: string
@@ -199,6 +208,15 @@ export interface Database {
           mensualidad?: number | null
           tipo_plan?: string | null
           entrenamientos_por_semana?: number | null
+          fecha_nacimiento?: string | null
+          comuna?: string | null
+          grupo?: string | null
+          horario?: string | null
+          direccion?: string | null
+          contacto_emergencia_nombre?: string | null
+          contacto_emergencia_telefono?: string | null
+          indicaciones_medicas?: string | null
+          federado?: boolean | null
         }
         Update: {
           id?: string
@@ -217,6 +235,15 @@ export interface Database {
           mensualidad?: number | null
           tipo_plan?: string | null
           entrenamientos_por_semana?: number | null
+          fecha_nacimiento?: string | null
+          comuna?: string | null
+          grupo?: string | null
+          horario?: string | null
+          direccion?: string | null
+          contacto_emergencia_nombre?: string | null
+          contacto_emergencia_telefono?: string | null
+          indicaciones_medicas?: string | null
+          federado?: boolean | null
         }
         Relationships: [
           { foreignKeyName: 'jugadores_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },

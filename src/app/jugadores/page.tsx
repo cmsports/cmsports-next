@@ -8,6 +8,7 @@ import AppLayout from '@/app/layout-app'
 import AsistenciaPanel from '@/components/AsistenciaPanel'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador } from '@/app/actions/jugadores'
+import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 
 const supabase = createClient()
 
@@ -32,13 +33,18 @@ export default function JugadoresPage() {
   const [busqueda, setBusqueda] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<any>(null)
-  const [form, setForm] = useState({
+  const formVacio = {
     nombre:'', rut:'', email:'', telefono:'',
     categoria:'principiante',
     tipo_plan:'mensual',
     entrenamientos_por_semana:'3',
-    mensualidad:'30000'
-  })
+    mensualidad:'30000',
+    fecha_nacimiento:'', direccion:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'',
+    indicaciones_medicas:'', federado:false, comuna:'',
+  }
+  const [form, setForm] = useState(formVacio)
+  const [clubNombre, setClubNombre] = useState('')
+  const esClubBuin = /bu[ií]n/i.test(clubNombre)
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
   const searchParams = useSearchParams()
@@ -63,9 +69,11 @@ export default function JugadoresPage() {
         setJugadores(cached)
         setLoading(false)
       }
+      supabase.from('clubes').select('nombre').eq('id', id).single()
+        .then(({ data }) => { if (activo && data) setClubNombre(data.nombre) })
       const { data, error } = await supabase
         .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna')
         .eq('club_id', id)
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
@@ -89,7 +97,7 @@ export default function JugadoresPage() {
     if (!id) return
     const { data, error } = await supabase
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna')
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
@@ -120,7 +128,7 @@ export default function JugadoresPage() {
 
   function abrirNuevo() {
     setEditando(null)
-    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+    setForm({ ...formVacio, categoria: esClubBuin ? '' : 'principiante' })
     setModalOpen(true)
   }
 
@@ -128,9 +136,12 @@ export default function JugadoresPage() {
     setEditando(j)
     setForm({
       nombre:j.nombre||'', rut:j.rut||'', email:j.email||'', telefono:j.telefono||'',
-      categoria:j.categoria||'principiante', tipo_plan:j.tipo_plan||'mensual',
+      categoria:j.categoria||(esClubBuin ? '' : 'principiante'), tipo_plan:j.tipo_plan||'mensual',
       entrenamientos_por_semana:String(j.entrenamientos_por_semana||3),
-      mensualidad:String(j.mensualidad||30000)
+      mensualidad:String(j.mensualidad||30000),
+      fecha_nacimiento:j.fecha_nacimiento||'', direccion:j.direccion||'',
+      contacto_emergencia_nombre:j.contacto_emergencia_nombre||'', contacto_emergencia_telefono:j.contacto_emergencia_telefono||'',
+      indicaciones_medicas:j.indicaciones_medicas||'', federado:!!j.federado, comuna:j.comuna||'',
     })
     setModalOpen(true)
   }
@@ -140,6 +151,10 @@ export default function JugadoresPage() {
     if (!clubId) { mostrarToast('Error: no hay club activo'); return }
     if (!editando) {
       if (!form.email.trim()) { mostrarToast('El email es obligatorio'); return }
+    }
+    if (esClubBuin) {
+      if (!form.fecha_nacimiento) { mostrarToast('La fecha de nacimiento es obligatoria en este club'); return }
+      if (!form.direccion.trim()) { mostrarToast('La dirección es obligatoria en este club'); return }
     }
     setGuardando(true)
 
@@ -151,7 +166,14 @@ export default function JugadoresPage() {
     const planFields = {
       categoria: form.categoria, tipo_plan: form.tipo_plan,
       entrenamientos_por_semana: entSemana, mensualidad,
-      sesiones_limite: sesionesLimite
+      sesiones_limite: sesionesLimite,
+      fecha_nacimiento: form.fecha_nacimiento || null,
+      direccion: form.direccion.trim() || null,
+      contacto_emergencia_nombre: form.contacto_emergencia_nombre.trim() || null,
+      contacto_emergencia_telefono: form.contacto_emergencia_telefono.trim() || null,
+      indicaciones_medicas: form.indicaciones_medicas.trim() || null,
+      federado: form.federado,
+      comuna: form.comuna.trim() || null,
     }
 
     if (editando) {
@@ -166,7 +188,7 @@ export default function JugadoresPage() {
 
     setGuardando(false)
     setModalOpen(false)
-    setForm({ nombre:'', rut:'', email:'', telefono:'', categoria:'principiante', tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+    setForm(formVacio)
     await cargarJugadores()
   }
 
@@ -333,12 +355,73 @@ export default function JugadoresPage() {
 
             {!editando && <div style={{ fontSize:11, color: hint, marginBottom:14 }}>El jugador recibirá un correo para crear su contraseña.</div>}
 
+            {esClubBuin && <>
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha de nacimiento *</label>
+                <input
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  type="date" value={form.fecha_nacimiento}
+                  onChange={e => setForm(prev => ({ ...prev, fecha_nacimiento: e.target.value, categoria: categoriaBuinPorFechaNacimiento(e.target.value) || prev.categoria }))}
+                />
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Dirección *</label>
+                <input
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  type="text" placeholder="Calle, número, comuna"
+                  value={form.direccion} onChange={e => setForm(prev => ({ ...prev, direccion: e.target.value }))}
+                />
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Comuna / sede de entrenamiento</label>
+                <input
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  type="text" placeholder="Ej: Buin (Aníbal Pinto 158)"
+                  value={form.comuna} onChange={e => setForm(prev => ({ ...prev, comuna: e.target.value }))}
+                />
+              </div>
+              <div style={{ display:'flex', gap:10, marginBottom:14 }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Apoderado / contacto emergencia</label>
+                  <input
+                    style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                    type="text" value={form.contacto_emergencia_nombre}
+                    onChange={e => setForm(prev => ({ ...prev, contacto_emergencia_nombre: e.target.value }))}
+                  />
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Teléfono emergencia</label>
+                  <input
+                    style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                    type="tel" value={form.contacto_emergencia_telefono}
+                    onChange={e => setForm(prev => ({ ...prev, contacto_emergencia_telefono: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Indicaciones médicas</label>
+                <input
+                  style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                  type="text" placeholder="Alergias, lesiones, tratamientos..."
+                  value={form.indicaciones_medicas} onChange={e => setForm(prev => ({ ...prev, indicaciones_medicas: e.target.value }))}
+                />
+              </div>
+              <label style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14, fontSize:13, color: text, cursor:'pointer' }}>
+                <input type="checkbox" checked={form.federado} onChange={e => setForm(prev => ({ ...prev, federado: e.target.checked }))} />
+                Federado
+              </label>
+            </>}
+
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Categoría</label>
               <select
                 style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 value={form.categoria} onChange={e => setForm(prev => ({ ...prev, categoria: e.target.value }))}>
-                {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+                {!esClubBuin && categorias.map(c => <option key={c} value={c}>{c}</option>)}
+                {esClubBuin && <>
+                  <option value="">Selecciona...</option>
+                  {CATEGORIAS_BUIN.map(c => <option key={c} value={c}>{c}</option>)}
+                </>}
               </select>
             </div>
 
