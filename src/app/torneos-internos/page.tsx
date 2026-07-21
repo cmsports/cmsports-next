@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { archivarTorneo, crearTorneo as crearTorneoAction, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 
 const supabase = createClient()
 
@@ -164,7 +165,7 @@ export default function TorneosInternosPage() {
                   {t.categoria && (
                     <div style={{ marginTop: 4 }}>
                       <span style={{ background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, letterSpacing: 0.3 }}>
-                        {t.categoria}
+                        {categoriaLabel(t.categoria)}
                       </span>
                     </div>
                   )}
@@ -261,7 +262,7 @@ export default function TorneosInternosPage() {
                 style={{ width: '100%', background: '#f4f7fa', border: `1px solid ${categoriaSeleccionada ? '#c4b5fd' : '#e2e8f0'}`, borderRadius: 8, padding: '10px 12px', color: categoriaSeleccionada ? text : hint, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
               >
                 <option value="">Seleccionar categoría...</option>
-                {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+                {categorias.map(c => <option key={c} value={c}>{categoriaLabel(c)}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 14 }}>

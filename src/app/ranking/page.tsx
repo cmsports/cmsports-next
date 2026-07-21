@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { reiniciarRanking } from '@/app/actions/ranking'
+import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 
 const supabase = createClient()
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
@@ -250,7 +251,7 @@ export default function RankingPage() {
                     transition: 'all 0.15s',
                   }}
                 >
-                  {r.categoria}
+                  {categoriaLabel(r.categoria)}
                   <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.8 }}>({r.filas.length})</span>
                 </button>
               ))}
@@ -259,7 +260,7 @@ export default function RankingPage() {
             {/* Tabla del ranking activo */}
             {rankingActivo && rankingActivo.filas.length === 0 && (
               <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
-                Sin torneos internos finalizados en categoría <strong style={{ color: muted }}>{rankingActivo.categoria}</strong>
+                Sin torneos internos finalizados en categoría <strong style={{ color: muted }}>{categoriaLabel(rankingActivo.categoria)}</strong>
               </div>
             )}
             {rankingActivo && rankingActivo.filas.length > 0 && (

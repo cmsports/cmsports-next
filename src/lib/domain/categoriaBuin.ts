@@ -20,6 +20,13 @@ const RANGOS_EDAD: { desde: number; hasta: number; categoria: string }[] = [
 export const CATEGORIAS_BUIN = ['PENECA', 'PREINFANTIL', 'INFANTIL', 'JUVENIL', 'TC',
   'MASTER A', 'MASTER B', 'MASTER C', 'MASTER D', 'MASTER E', 'MASTER F', 'MASTER G', 'MASTER H', 'MASTER I', 'MASTER J'] as const
 
+export function categoriaLabel(categoria: string): string {
+  const rango = RANGOS_EDAD.find(r => r.categoria === categoria)
+  if (!rango) return categoria
+  if (rango.hasta === Infinity) return `${categoria} (${rango.desde}+)`
+  return `${categoria} (${rango.desde}–${rango.hasta})`
+}
+
 export function categoriaBuinPorFechaNacimiento(fechaNacimiento: string | null | undefined): string | null {
   if (!fechaNacimiento) return null
   const anio = new Date(fechaNacimiento).getUTCFullYear()
