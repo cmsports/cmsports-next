@@ -9,6 +9,7 @@ import { crearAccesoJugador, resetearPasswordJugador } from '@/app/actions/jugad
 import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
+import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 
 const supabase = createClient()
 
@@ -44,7 +45,7 @@ export default function JugadorDetallePage() {
   const [feedbackForm, setFeedbackForm] = useState({ feedback:'', meta:'' })
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
-  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'' })
+  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [guardandoDatos, setGuardandoDatos] = useState(false)
   const [datosError, setDatosError] = useState('')
@@ -60,6 +61,7 @@ export default function JugadorDetallePage() {
   const [cambiandoPassword, setCambiandoPassword] = useState(false)
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
   const [recargaVersion, setRecargaVersion] = useState(0)
+  const [clubNombre, setClubNombre] = useState('')
 
   const PRESETS = [
     { label:'$15.000', valor:15000, ent:1 },
@@ -103,6 +105,11 @@ export default function JugadorDetallePage() {
 
         if (!j) { setErrorCarga('No se encontró el jugador o no tenés acceso.'); setLoading(false); return }
 
+        if (j.club_id) {
+          const { data: club } = await supabase.from('clubes').select('nombre').eq('id', j.club_id).single()
+          if (club?.nombre) setClubNombre(club.nombre)
+        }
+
         setJugador(j)
         setPartidos(e || [])
         setExternos(ext || [])
@@ -133,6 +140,7 @@ export default function JugadorDetallePage() {
     return () => { void supabase.removeChannel(canal) }
   }, [jugadorId, perfil?.club_id, perfil?.id, perfil?.rol])
 
+  const esClubBuin = /bu[ií]n/i.test(clubNombre)
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'
   const puedeVerTodo = esAdmin || esProfesor
@@ -179,7 +187,14 @@ export default function JugadorDetallePage() {
       rut: jugador?.rut || '',
       email: jugador?.email || '',
       telefono: jugador?.telefono || '',
-      categoria: jugador?.categoria || 'principiante',
+      categoria: jugador?.categoria || (esClubBuin ? '' : 'principiante'),
+      fecha_nacimiento: jugador?.fecha_nacimiento || '',
+      direccion: jugador?.direccion || '',
+      comuna: jugador?.comuna || '',
+      contacto_emergencia_nombre: jugador?.contacto_emergencia_nombre || '',
+      contacto_emergencia_telefono: jugador?.contacto_emergencia_telefono || '',
+      indicaciones_medicas: jugador?.indicaciones_medicas || '',
+      federado: jugador?.federado ?? null,
     })
     setDatosError('')
     setEditContacto(true)
@@ -192,11 +207,18 @@ export default function JugadorDetallePage() {
     }
     setGuardandoDatos(true)
     setDatosError('')
-    const datos = {
+    const datos: Record<string, any> = {
       ...(puedeEditar ? { nombre: contactoForm.nombre.trim(), rut: contactoForm.rut || null } : {}),
       email: contactoForm.email || null,
       telefono: contactoForm.telefono || null,
       categoria: contactoForm.categoria,
+      fecha_nacimiento: contactoForm.fecha_nacimiento || null,
+      direccion: contactoForm.direccion?.trim() || null,
+      comuna: contactoForm.comuna?.trim() || null,
+      contacto_emergencia_nombre: contactoForm.contacto_emergencia_nombre?.trim() || null,
+      contacto_emergencia_telefono: contactoForm.contacto_emergencia_telefono?.trim() || null,
+      indicaciones_medicas: contactoForm.indicaciones_medicas?.trim() || null,
+      federado: contactoForm.federado,
     }
     const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
     if (error) {
@@ -442,11 +464,57 @@ export default function JugadorDetallePage() {
                       <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Categoría</label>
                       <select style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
                         value={contactoForm.categoria} onChange={e => setContactoForm(f => ({ ...f, categoria: e.target.value }))}>
-                        <option value="principiante">Principiante</option>
-                        <option value="intermedio">Intermedio</option>
-                        <option value="avanzado">Avanzado</option>
+                        {esClubBuin
+                          ? CATEGORIAS_BUIN.map(c => <option key={c} value={c}>{c}</option>)
+                          : <>
+                              <option value="principiante">Principiante</option>
+                              <option value="intermedio">Intermedio</option>
+                              <option value="avanzado">Avanzado</option>
+                            </>
+                        }
                       </select>
                     </div>
+                    {esClubBuin && (
+                      <>
+                        <div style={{ marginBottom:8 }}>
+                          <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Fecha de nacimiento</label>
+                          <input type="date" style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none', colorScheme:'dark' }}
+                            value={contactoForm.fecha_nacimiento} onChange={e => {
+                              const fecha = e.target.value
+                              const catAuto = categoriaBuinPorFechaNacimiento(fecha)
+                              setContactoForm(f => ({ ...f, fecha_nacimiento: fecha, ...(catAuto ? { categoria: catAuto } : {}) }))
+                            }} />
+                        </div>
+                        <div style={{ marginBottom:8 }}>
+                          <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Dirección</label>
+                          <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                            value={contactoForm.direccion} onChange={e => setContactoForm(f => ({ ...f, direccion: e.target.value }))} />
+                        </div>
+                        <div style={{ marginBottom:8 }}>
+                          <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Comuna</label>
+                          <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                            value={contactoForm.comuna} onChange={e => setContactoForm(f => ({ ...f, comuna: e.target.value }))} />
+                        </div>
+                        <div style={{ marginBottom:8 }}>
+                          <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Contacto de emergencia</label>
+                          <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none', marginBottom:4 }}
+                            placeholder="Nombre" value={contactoForm.contacto_emergencia_nombre} onChange={e => setContactoForm(f => ({ ...f, contacto_emergencia_nombre: e.target.value }))} />
+                          <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                            placeholder="Teléfono emergencia" value={contactoForm.contacto_emergencia_telefono} onChange={e => setContactoForm(f => ({ ...f, contacto_emergencia_telefono: e.target.value }))} />
+                        </div>
+                        <div style={{ marginBottom:8 }}>
+                          <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)', display:'block', marginBottom:3 }}>Indicaciones médicas</label>
+                          <input style={{ width:'100%', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:6, padding:'6px 8px', color:'#fff', fontSize:12, outline:'none' }}
+                            value={contactoForm.indicaciones_medicas} onChange={e => setContactoForm(f => ({ ...f, indicaciones_medicas: e.target.value }))} />
+                        </div>
+                        <div style={{ marginBottom:8, display:'flex', alignItems:'center', gap:8 }}>
+                          <input type="checkbox" checked={contactoForm.federado === true}
+                            onChange={e => setContactoForm(f => ({ ...f, federado: e.target.checked }))}
+                            style={{ accentColor:'#f43f5e' }} />
+                          <label style={{ fontSize:11, color:'rgba(255,255,255,0.7)' }}>Federado</label>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
                 <div style={{ marginBottom:8 }}>
@@ -478,6 +546,13 @@ export default function JugadorDetallePage() {
                     </a>
                   : <div style={{ fontSize:12, color:'rgba(255,255,255,0.5)' }}>Sin teléfono</div>
                 }
+                {jugador.fecha_nacimiento && <div style={{ fontSize:12, color:'#fff', marginTop:6 }}>🎂 {jugador.fecha_nacimiento}</div>}
+                {jugador.direccion && <div style={{ fontSize:12, color:'#fff', marginTop:4 }}>📍 {jugador.direccion}{jugador.comuna ? `, ${jugador.comuna}` : ''}</div>}
+                {jugador.contacto_emergencia_nombre && (
+                  <div style={{ fontSize:12, color:'#fff', marginTop:4 }}>🆘 {jugador.contacto_emergencia_nombre}{jugador.contacto_emergencia_telefono ? ` — ${jugador.contacto_emergencia_telefono}` : ''}</div>
+                )}
+                {jugador.indicaciones_medicas && <div style={{ fontSize:12, color:'#fde68a', marginTop:4 }}>⚕️ {jugador.indicaciones_medicas}</div>}
+                {jugador.federado != null && <div style={{ fontSize:12, color:'#fff', marginTop:4 }}>{jugador.federado ? '✅ Federado' : '❌ No federado'}</div>}
               </>
             )}
           </div>
