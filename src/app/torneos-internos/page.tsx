@@ -52,7 +52,7 @@ export default function TorneosInternosPage() {
     const { data: torneosData } = await query
     if (!torneosData?.length) { setTorneos([]); return }
 
-    const ids = torneosData.map(t => t.id)
+    const ids = (torneosData as { id: string }[]).map(t => t.id)
     const { data: todosGrupos } = await supabase.from('torneo_grupos').select('id, torneo_id').in('torneo_id', ids)
     const grupoIds = (todosGrupos || []).map(g => g.id)
     const { data: inscripciones } = grupoIds.length > 0
@@ -67,7 +67,7 @@ export default function TorneosInternosPage() {
       if (tid) inscritosPorTorneo[tid] = (inscritosPorTorneo[tid] || 0) + 1
     }
 
-    const lista = torneosData.map(t => ({
+    const lista = (torneosData as any[]).map(t => ({
       ...t,
       inscritos: inscritosPorTorneo[t.id] || 0,
       campeon: Array.isArray(t.campeon)
