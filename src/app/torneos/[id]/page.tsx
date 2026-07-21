@@ -1623,16 +1623,22 @@ export default function TorneoDetallePage() {
             </div>
 
             {/* Input inscripción */}
+            {torneo?.tipo === 'interno' && (
+              <div style={{ background:'#ede9fe', borderRadius:8, padding:'6px 10px', marginBottom:8, fontSize:11, color:'#5b21b6', fontWeight:600 }}>
+                🏠 Torneo interno — solo jugadores del club
+              </div>
+            )}
             <div style={{ position:'relative', marginBottom:10 }}>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                placeholder="Buscar jugador del club o escribir nombre nuevo..."
+                placeholder={torneo?.tipo === 'interno' ? 'Buscar jugador del club...' : 'Buscar jugador del club o escribir nombre nuevo...'}
                 value={busquedaMesa}
                 onChange={async e => {
                   setBusquedaMesa(e.target.value)
                   setRutMesa('')
                   setJugadorIdSeleccionado(null)
-                  if (e.target.value.length > 1 && perfil?.club_id) {
-                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(5)
+                  const minLen = torneo?.tipo === 'interno' ? 1 : 2
+                  if (e.target.value.length >= minLen && perfil?.club_id) {
+                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(8)
                     setJugSuggestions(data || [])
                   } else {
                     setJugSuggestions([])
@@ -1640,7 +1646,7 @@ export default function TorneoDetallePage() {
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleInscribirEnMesa()}
               />
-              {busquedaMesa.length > 1 && jugSuggestions.length > 0 && (
+              {busquedaMesa.length >= 1 && jugSuggestions.length > 0 && (
                 <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden', boxShadow:'0 4px 12px rgba(15,23,42,0.1)' }}>
                   {jugSuggestions.map((j: any) => (
                     <div key={j.id} onClick={() => {
@@ -1654,9 +1660,16 @@ export default function TorneoDetallePage() {
                       <span style={{ background:'#f0fdf4', color:'#16a34a', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
                     </div>
                   ))}
-                  <div style={{ padding:'8px 12px', fontSize:11, color: hint, borderTop:'1px solid #f1f5f9' }}>
-                    O presiona Enter para inscribir como participante externo
-                  </div>
+                  {torneo?.tipo !== 'interno' && (
+                    <div style={{ padding:'8px 12px', fontSize:11, color: hint, borderTop:'1px solid #f1f5f9' }}>
+                      O presiona Enter para inscribir como participante externo
+                    </div>
+                  )}
+                </div>
+              )}
+              {torneo?.tipo === 'interno' && busquedaMesa.length >= 1 && !jugadorIdSeleccionado && jugSuggestions.length === 0 && (
+                <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>
+                  No se encontró ningún jugador con ese nombre en el club
                 </div>
               )}
             </div>
@@ -1671,7 +1684,11 @@ export default function TorneoDetallePage() {
                 <option value="efectivo">💵 Efectivo</option>
                 <option value="transferencia">💳 Transferencia</option>
               </select>
-              <button onClick={handleInscribirEnMesa} disabled={inscribiendo} style={{ flex:1, background: inscribiendo ? '#94a3b8' : '#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor: inscribiendo ? 'not-allowed' : 'pointer' }}>
+              <button
+                onClick={handleInscribirEnMesa}
+                disabled={inscribiendo || (torneo?.tipo === 'interno' && !jugadorIdSeleccionado)}
+                style={{ flex:1, background: (inscribiendo || (torneo?.tipo === 'interno' && !jugadorIdSeleccionado)) ? '#94a3b8' : '#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor: (inscribiendo || (torneo?.tipo === 'interno' && !jugadorIdSeleccionado)) ? 'not-allowed' : 'pointer' }}
+              >
                 {inscribiendo ? 'Inscribiendo...' : '+ Inscribir'}
               </button>
             </div>

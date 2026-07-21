@@ -1591,11 +1591,15 @@ export async function inscribirEnMesa(params: {
   if (!nombreBuscado) return { error: 'Nombre vacío' }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
-  const { data: torneo } = await supabase.from('torneos').select('cuota_inscripcion,club_id').eq('id', torneoId).single()
+  const { data: torneo } = await supabase.from('torneos').select('cuota_inscripcion,club_id,tipo').eq('id', torneoId).single()
   if (!torneo || torneo.club_id !== perfil.club_id) return { error: 'Torneo no encontrado' }
   const { data: bracket } = await supabase.from('torneo_partidos')
     .select('ganador, jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')
   if ((bracket || []).some(llaveFueJugada)) return { error: 'No se pueden inscribir jugadores después de jugar partidos del bracket' }
+
+  if (torneo.tipo === 'interno' && !jugadorIdParam) {
+    return { error: 'En torneos internos solo se pueden inscribir jugadores del club. Selecciona un jugador de la lista.' }
+  }
 
   let jugadorId: string
   let jugadorNombre = nombreBuscado
