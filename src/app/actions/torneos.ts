@@ -54,7 +54,8 @@ export async function crearTorneo(params: {
   if (!fechaValida) return { error: 'Ingresa una fecha válida' }
   if (!Number.isSafeInteger(cuota) || cuota < 0) return { error: 'La cuota debe ser un monto igual o mayor a $0' }
 
-  const { data, error } = await supabase.from('torneos').insert({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).from('torneos').insert({
     club_id: perfil.club_id,
     nombre,
     formato: 'grupos',

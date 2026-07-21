@@ -7,7 +7,8 @@ export async function reiniciarRanking() {
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Sin club' }
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('clubes')
     .update({ ranking_reiniciado_en: new Date().toISOString() })
     .eq('id', perfil.club_id)

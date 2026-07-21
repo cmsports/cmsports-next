@@ -44,7 +44,9 @@ export default function RankingPage() {
     setLoading(true)
 
     // 1. Leer timestamp de reinicio del club
-    const { data: club } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any
+    const { data: club } = await sb
       .from('clubes')
       .select('ranking_reiniciado_en')
       .eq('id', perfil.club_id)
@@ -54,7 +56,7 @@ export default function RankingPage() {
     setReiniciadoEn(reinicioTs)
 
     // 2. Torneos internos finalizados del club
-    let queryT = supabase
+    let queryT = sb
       .from('torneos')
       .select('id,fecha_fin')
       .eq('club_id', perfil.club_id)

@@ -41,7 +41,8 @@ export default function TorneosInternosPage() {
 
   async function cargarTorneos(cid?: string) {
     const id = cid || clubId
-    let query = supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (supabase as any)
       .from('torneos')
       .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,campeon:campeon_id(nombre)')
       .eq('club_id', id)
