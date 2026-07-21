@@ -61,7 +61,7 @@ export default function TorneosInternosPage() {
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .not('categoria', 'is', null)
-    const cats = [...new Set((jugCats || []).map((j: any) => j.categoria).filter(Boolean))].sort() as string[]
+    const cats = [...new Set((jugCats || []).map(j => j.categoria).filter((c): c is string => !!c))].sort()
     setCategorias(cats)
 
     if (!torneosData?.length) return

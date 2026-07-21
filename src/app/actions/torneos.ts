@@ -1594,7 +1594,8 @@ export async function inscribirEnMesa(params: {
   if (!nombreBuscado) return { error: 'Nombre vacío' }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
-  const { data: torneo } = await supabase.from('torneos').select('cuota_inscripcion,club_id,tipo').eq('id', torneoId).single()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: torneo } = await (supabase as any).from('torneos').select('cuota_inscripcion,club_id,tipo').eq('id', torneoId).single()
   if (!torneo || torneo.club_id !== perfil.club_id) return { error: 'Torneo no encontrado' }
   const { data: bracket } = await supabase.from('torneo_partidos')
     .select('ganador, jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')

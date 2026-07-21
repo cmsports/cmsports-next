@@ -68,7 +68,7 @@ export default function RankingPage() {
       .eq('club_id', perfil.club_id)
       .or('es_externo.is.null,es_externo.eq.false')
       .not('categoria', 'is', null)
-    const todasCats = [...new Set((jugCats || []).map((j: any) => j.categoria).filter(Boolean))].sort() as string[]
+    const todasCats = [...new Set((jugCats || []).map(j => j.categoria).filter((c): c is string => !!c))].sort()
 
     // 3. Torneos internos finalizados del club
     let queryT = sb
