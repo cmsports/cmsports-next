@@ -73,7 +73,7 @@ export default function JugadoresPage() {
         .then(({ data }) => { if (activo && data) setClubNombre(data.nombre) })
       const { data, error } = await supabase
         .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url')
         .eq('club_id', id)
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
@@ -97,7 +97,7 @@ export default function JugadoresPage() {
     if (!id) return
     const { data, error } = await supabase
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url')
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
@@ -288,7 +288,16 @@ export default function JugadoresPage() {
                 const cat = badgeCategoria[j.categoria] || { bg: '#f4f7fa', color: muted }
                 return (
                   <tr key={j.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
-                    <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{String(i+1).padStart(3,'0')}</td>
+                    <td style={{ padding:'8px 16px' }}>
+                      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                        <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg,#3730a3,#4f46e5)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'white', overflow:'hidden', flexShrink:0 }}>
+                          {j.foto_url
+                            ? <img src={j.foto_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                            : j.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()}
+                        </div>
+                        <span style={{ fontSize:10, color: hint }}>{String(i+1).padStart(3,'0')}</span>
+                      </div>
+                    </td>
                     <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>{j.nombre}</td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{j.rut || '—'}</td>
                     <td style={{ padding:'12px 16px' }}>
