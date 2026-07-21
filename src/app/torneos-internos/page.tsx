@@ -18,11 +18,13 @@ const cache: Record<string, any[]> = {}
 export default function TorneosInternosPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [torneos, setTorneos] = useState<any[]>([])
+  const [categorias, setCategorias] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
   const [cuota, setCuota] = useState('0')
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('')
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -44,13 +46,25 @@ export default function TorneosInternosPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase as any)
       .from('torneos')
-      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,campeon:campeon_id(nombre)')
+      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,categoria,campeon:campeon_id(nombre)')
       .eq('club_id', id)
       .eq('tipo', 'interno')
       .order('creado_en', { ascending: false })
     query = mostrarArchivados ? query.eq('estado', 'archivado') : query.neq('estado', 'archivado')
     const { data: torneosData } = await query
-    if (!torneosData?.length) { setTorneos([]); return }
+    if (!torneosData?.length) { setTorneos([]); }
+
+    // Cargar categorías del club
+    const { data: jugCats } = await supabase
+      .from('jugadores')
+      .select('categoria')
+      .eq('club_id', id)
+      .or('es_externo.is.null,es_externo.eq.false')
+      .not('categoria', 'is', null)
+    const cats = [...new Set((jugCats || []).map((j: any) => j.categoria).filter(Boolean))].sort() as string[]
+    setCategorias(cats)
+
+    if (!torneosData?.length) return
 
     const ids = (torneosData as { id: string }[]).map(t => t.id)
     const { data: todosGrupos } = await supabase.from('torneo_grupos').select('id, torneo_id').in('torneo_id', ids)
@@ -80,12 +94,13 @@ export default function TorneosInternosPage() {
 
   async function crearTorneo() {
     if (!nombre || !fecha) return
+    if (!categoriaSeleccionada) { alert('Selecciona la categoría del torneo'); return }
     const monto = Number(cuota)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
-    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, tipo: 'interno' })
+    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, tipo: 'interno', categoria: categoriaSeleccionada })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
-    setNombre(''); setFecha(''); setCuota('0')
+    setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada('')
     router.push(`/torneos/${res.torneoId}`)
   }
 
@@ -144,14 +159,23 @@ export default function TorneosInternosPage() {
               style={{ ...card, padding: 20, cursor: 'pointer' }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: text }}>{t.nombre}</div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: text }}>{t.nombre}</div>
+                  {t.categoria && (
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, letterSpacing: 0.3 }}>
+                        {t.categoria}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <div style={{ fontSize: 11, color: muted }}>Ver detalle →</div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
                 <span style={{ background: est.bg, color: est.color, padding: '3px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
                   {est.emoji} {t.estado === 'en_curso' ? 'En curso' : t.estado === 'finalizado' ? 'Finalizado' : 'Cancelado'}
                 </span>
-                <span style={{ background: '#ede9fe', color: '#3730a3', padding: '3px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
+                <span style={{ background: '#f1f5f9', color: muted, padding: '3px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
                   {faseLabel[t.fase] || t.fase}
                 </span>
                 {t.fecha_inicio && <span style={{ fontSize: 12, color: muted }}>{t.fecha_inicio}</span>}
@@ -228,7 +252,18 @@ export default function TorneosInternosPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize: 17, fontWeight: 600, color: text, marginBottom: 6 }}>Nuevo torneo interno</div>
-            <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Los resultados se acumularán en el Ranking del club</div>
+            <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Los resultados se acumularán en el Ranking del club por categoría</div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Categoría <span style={{ color: '#dc2626' }}>*</span></label>
+              <select
+                value={categoriaSeleccionada}
+                onChange={e => setCategoriaSeleccionada(e.target.value)}
+                style={{ width: '100%', background: '#f4f7fa', border: `1px solid ${categoriaSeleccionada ? '#c4b5fd' : '#e2e8f0'}`, borderRadius: 8, padding: '10px 12px', color: categoriaSeleccionada ? text : hint, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+              >
+                <option value="">Seleccionar categoría...</option>
+                {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Nombre del torneo</label>
               <input
@@ -252,12 +287,12 @@ export default function TorneosInternosPage() {
               />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setModalOpen(false)}
+              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada('') }}
                 style={{ flex: 1, background: '#f4f7fa', color: muted, border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, cursor: 'pointer' }}>
                 Cancelar
               </button>
-              <button onClick={crearTorneo} disabled={!nombre || !fecha}
-                style={{ flex: 2, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (!nombre || !fecha) ? 0.5 : 1 }}>
+              <button onClick={crearTorneo} disabled={!nombre || !fecha || !categoriaSeleccionada}
+                style={{ flex: 2, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (!nombre || !fecha || !categoriaSeleccionada) ? 0.5 : 1 }}>
                 Crear torneo
               </button>
             </div>
