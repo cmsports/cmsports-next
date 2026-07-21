@@ -24,7 +24,7 @@ export async function aprobarSolicitud(params: {
 
   const { data: sol } = await supabase
     .from('solicitudes_jugador')
-    .select('id,estado')
+    .select('id,estado,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas')
     .eq('id', solicitudId)
     .eq('club_id', clubId)
     .single()
@@ -38,8 +38,21 @@ export async function aprobarSolicitud(params: {
   }
 
   const { data: nuevoJugador, error: insertErr } = await supabase.from('jugadores').insert({
-    club_id: clubId, nombre, rut: rut || null, email: emailNormalizado, telefono: telefono || null,
-    ...planFields, sesiones_usadas: 0, estado: 'activo', es_externo: false,
+    club_id: clubId,
+    nombre,
+    rut: rut || null,
+    email: emailNormalizado,
+    telefono: telefono || null,
+    fecha_nacimiento: (sol as any).fecha_nacimiento || null,
+    direccion: (sol as any).direccion || null,
+    comuna: (sol as any).comuna || null,
+    contacto_emergencia_nombre: (sol as any).contacto_emergencia_nombre || null,
+    contacto_emergencia_telefono: (sol as any).contacto_emergencia_telefono || null,
+    indicaciones_medicas: (sol as any).indicaciones_medicas || null,
+    ...planFields,
+    sesiones_usadas: 0,
+    estado: 'activo',
+    es_externo: false,
   }).select('id').single()
   if (insertErr || !nuevoJugador) return { error: 'Error al crear jugador: ' + (insertErr?.message ?? '') }
 

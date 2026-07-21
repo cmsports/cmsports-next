@@ -8,6 +8,9 @@ import { Link2, Copy, Check, UserCheck, XCircle } from 'lucide-react'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
 import { copiarTexto } from '@/lib/clipboard'
+import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
+
+const CLUB_BUIN_ID = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
 
 const supabase = createClient()
 
@@ -202,7 +205,14 @@ export default function SolicitudesPage() {
                     <td style={{ padding: '12px 16px' }}>
                       {s.estado === 'pendiente' && (
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => { setModalAprobar(s); setPlanForm({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' }); setErrorAprobar('') }}
+                          <button onClick={() => {
+                            const catAuto = s.fecha_nacimiento && clubId === CLUB_BUIN_ID
+                              ? (categoriaBuinPorFechaNacimiento(s.fecha_nacimiento) ?? 'TC')
+                              : 'principiante'
+                            setModalAprobar(s)
+                            setPlanForm({ categoria: catAuto, tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
+                            setErrorAprobar('')
+                          }}
                             style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
                             <UserCheck size={12} /> Aprobar
                           </button>
@@ -231,13 +241,30 @@ export default function SolicitudesPage() {
             <h2 style={{ fontSize: 16, fontWeight: 600, color: text, marginBottom: 4 }}>Aprobar solicitud</h2>
             <p style={{ fontSize: 13, color: muted, marginBottom: 20 }}>{modalAprobar.nombre} — {modalAprobar.rut || 'Sin RUT'}</p>
 
+            {/* Info extra de la solicitud */}
+            {(modalAprobar.fecha_nacimiento || modalAprobar.direccion || modalAprobar.contacto_emergencia_nombre) && (
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 12, color: muted, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {modalAprobar.fecha_nacimiento && <div><strong>Nacimiento:</strong> {new Date(modalAprobar.fecha_nacimiento + 'T12:00:00').toLocaleDateString('es-CL')}</div>}
+                {modalAprobar.direccion && <div><strong>Dirección:</strong> {modalAprobar.direccion}{modalAprobar.comuna ? `, ${modalAprobar.comuna}` : ''}</div>}
+                {modalAprobar.contacto_emergencia_nombre && <div><strong>Emergencia:</strong> {modalAprobar.contacto_emergencia_nombre}{modalAprobar.contacto_emergencia_telefono ? ` · ${modalAprobar.contacto_emergencia_telefono}` : ''}</div>}
+                {modalAprobar.indicaciones_medicas && <div><strong>Médico:</strong> {modalAprobar.indicaciones_medicas}</div>}
+              </div>
+            )}
+
             <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 500 }}>Categoría</label>
+              <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 500 }}>
+                Categoría {modalAprobar.fecha_nacimiento && clubId === CLUB_BUIN_ID && <span style={{ color: '#7c3aed', fontSize: 11 }}>(sugerida por fecha de nacimiento)</span>}
+              </label>
               <select style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none' }}
                 value={planForm.categoria} onChange={e => setPlanForm(f => ({ ...f, categoria: e.target.value }))}>
-                <option value="principiante">Principiante</option>
-                <option value="intermedio">Intermedio</option>
-                <option value="avanzado">Avanzado</option>
+                {clubId === CLUB_BUIN_ID
+                  ? CATEGORIAS_BUIN.map(c => <option key={c} value={c}>{c}</option>)
+                  : <>
+                      <option value="principiante">Principiante</option>
+                      <option value="intermedio">Intermedio</option>
+                      <option value="avanzado">Avanzado</option>
+                    </>
+                }
               </select>
             </div>
 

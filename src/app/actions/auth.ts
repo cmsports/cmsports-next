@@ -10,6 +10,12 @@ export async function registrarSolicitud(input: {
   telefono: string
   club_id: string
   codigo: string
+  fecha_nacimiento?: string
+  direccion?: string
+  comuna?: string
+  contacto_emergencia_nombre?: string
+  contacto_emergencia_telefono?: string
+  indicaciones_medicas?: string
 }) {
   const parsed = solicitudSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
@@ -22,6 +28,12 @@ export async function registrarSolicitud(input: {
     p_rut: parsed.data.rut,
     p_email: parsed.data.email,
     p_telefono: parsed.data.telefono || null,
+    p_fecha_nacimiento: input.fecha_nacimiento || null,
+    p_direccion: input.direccion || null,
+    p_comuna: input.comuna || null,
+    p_contacto_emergencia_nombre: input.contacto_emergencia_nombre || null,
+    p_contacto_emergencia_telefono: input.contacto_emergencia_telefono || null,
+    p_indicaciones_medicas: input.indicaciones_medicas || null,
   })
 
   if (error) return { error: 'Error al enviar solicitud. Intenta de nuevo.' }
