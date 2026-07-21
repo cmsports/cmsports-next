@@ -681,7 +681,7 @@ function TooltipBtn({ id, texto, tooltip, setTooltip }: {
 /* ── PingPongMini ── */
 function PingPongMini() {
   return (
-    <svg viewBox="0 0 120 60" width={100} height={50} style={{ position: 'absolute', top: 8, right: 8, opacity: 0.55, pointerEvents: 'none' }}>
+    <svg viewBox="0 0 120 60" width={180} height={90} style={{ position: 'absolute', top: 4, right: 4, opacity: 0.75, pointerEvents: 'none' }}>
       <style>{`
         @keyframes pp-ball { 0%,100%{cx:35;cy:18} 50%{cx:85;cy:18} }
         @keyframes pp-arm1 { 0%,100%{transform:rotate(-15deg)} 45%,55%{transform:rotate(25deg)} }
