@@ -22,7 +22,8 @@ export async function aprobarSolicitud(params: {
   const { solicitudId, nombre, rut, email, telefono, ...planFields } = params
   const emailNormalizado = email.trim().toLowerCase()
 
-  const { data: sol } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sol } = await (supabase as any)
     .from('solicitudes_jugador')
     .select('id,estado,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas')
     .eq('id', solicitudId)
