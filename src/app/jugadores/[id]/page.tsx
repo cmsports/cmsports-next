@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -98,6 +98,15 @@ export default function JugadorDetallePage() {
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
   const [recargaVersion, setRecargaVersion] = useState(0)
   const [clubNombre, setClubNombre] = useState('')
+  // Foto
+  const [modalFoto, setModalFoto] = useState(false)
+  const [fotoSrc, setFotoSrc] = useState<string | null>(null)
+  const [fotoOffset, setFotoOffset] = useState({ x: 0, y: 0 })
+  const [fotoScale, setFotoScale] = useState(1)
+  const [subiendoFoto, setSubiendoFoto] = useState(false)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  const dragRef = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
 
   const PRESETS = [
     { label:'$15.000', valor:15000, ent:1 },
@@ -356,6 +365,81 @@ export default function JugadorDetallePage() {
   )
 
   const iniciales = jugador.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()
+
+  // ── Foto helpers ──
+  function onFotoFile(file: File) {
+    if (!file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = e => {
+      const src = e.target?.result as string
+      setFotoSrc(src)
+      setFotoOffset({ x: 0, y: 0 })
+      setFotoScale(1)
+      const img = new Image()
+      img.onload = () => { imgRef.current = img; dibujarCanvas(img, { x: 0, y: 0 }, 1) }
+      img.src = src
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function dibujarCanvas(img: HTMLImageElement, offset: { x: number; y: number }, scale: number) {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const SIZE = 300
+    canvas.width = SIZE; canvas.height = SIZE
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.clearRect(0, 0, SIZE, SIZE)
+    // clip circular
+    ctx.beginPath(); ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2); ctx.clip()
+    // fit image
+    const ratio = Math.max(SIZE / img.naturalWidth, SIZE / img.naturalHeight) * scale
+    const w = img.naturalWidth * ratio
+    const h = img.naturalHeight * ratio
+    const x = (SIZE - w) / 2 + offset.x
+    const y = (SIZE - h) / 2 + offset.y
+    ctx.drawImage(img, x, y, w, h)
+  }
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, ox: fotoOffset.x, oy: fotoOffset.y }
+  }, [fotoOffset])
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragRef.current || !imgRef.current) return
+    const dx = e.clientX - dragRef.current.startX
+    const dy = e.clientY - dragRef.current.startY
+    const newOffset = { x: dragRef.current.ox + dx, y: dragRef.current.oy + dy }
+    setFotoOffset(newOffset)
+    dibujarCanvas(imgRef.current, newOffset, fotoScale)
+  }, [fotoScale])
+
+  const onMouseUp = useCallback(() => { dragRef.current = null }, [])
+
+  function onScaleChange(v: number) {
+    setFotoScale(v)
+    if (imgRef.current) dibujarCanvas(imgRef.current, fotoOffset, v)
+  }
+
+  async function guardarFoto() {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    setSubiendoFoto(true)
+    canvas.toBlob(async blob => {
+      if (!blob) { setSubiendoFoto(false); return }
+      const path = `avatares/${jugadorId}.jpg`
+      const { error: upErr } = await supabase.storage.from('galeria-fotos').upload(path, blob, { contentType: 'image/jpeg', upsert: true })
+      if (upErr) { alert('Error subiendo foto: ' + upErr.message); setSubiendoFoto(false); return }
+      const { data: { publicUrl } } = supabase.storage.from('galeria-fotos').getPublicUrl(path)
+      const url = `${publicUrl}?t=${Date.now()}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('jugadores').update({ foto_url: url }).eq('id', jugadorId)
+      setJugador((prev: any) => ({ ...prev, foto_url: url }))
+      setModalFoto(false)
+      setFotoSrc(null)
+      setSubiendoFoto(false)
+    }, 'image/jpeg', 0.92)
+  }
   const edad = jugador.fecha_nacimiento ? new Date().getFullYear() - parseInt(jugador.fecha_nacimiento.slice(0, 4)) : null
   const tieneEmergencia = jugador.contacto_emergencia_nombre || jugador.indicaciones_medicas
 
@@ -368,8 +452,25 @@ export default function JugadorDetallePage() {
       {/* ── Header compacto ── */}
       <div style={{ background:'linear-gradient(135deg,#3730a3,#4f46e5)', borderRadius:16, padding:'20px 24px', marginBottom:20 }}>
         <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-          <div style={{ width:60, height:60, borderRadius:'50%', background:'rgba(255,255,255,0.2)', border:'2px solid rgba(255,255,255,0.3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800, color:'white', flexShrink:0 }}>
-            {iniciales}
+          <div
+            onClick={() => esAdmin && setModalFoto(true)}
+            title={esAdmin ? 'Cambiar foto' : undefined}
+            style={{ width:60, height:60, borderRadius:'50%', background:'rgba(255,255,255,0.2)', border:'2px solid rgba(255,255,255,0.3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800, color:'white', flexShrink:0, overflow:'hidden', cursor: esAdmin ? 'pointer' : 'default', position:'relative' }}
+          >
+            {jugador.foto_url
+              ? <img src={jugador.foto_url} alt="foto" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} />
+              : iniciales}
+            {esAdmin && (
+              <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0)', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', transition:'background 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.35)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0)')}
+              >
+                <span style={{ fontSize:10, color:'white', fontWeight:700, opacity:0, transition:'opacity 0.15s' }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = '0')}
+                >📷</span>
+              </div>
+            )}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:22, fontWeight:700, color:'#fff' }}>{jugador.nombre}</div>
@@ -898,6 +999,70 @@ export default function JugadorDetallePage() {
               <button onClick={() => setModalExternoOpen(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
               <button onClick={guardarExterno} disabled={guardandoExterno} style={{ flex:1, padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 {guardandoExterno ? 'Guardando...' : 'Registrar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal foto ── */}
+      {modalFoto && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+          <div style={{ background:'#fff', borderRadius:20, padding:28, width:'100%', maxWidth:400, boxShadow:'0 24px 64px rgba(15,23,42,0.25)' }}>
+            <div style={{ fontSize:16, fontWeight:700, color:text, marginBottom:4 }}>Foto del jugador</div>
+            <div style={{ fontSize:12, color:muted, marginBottom:20 }}>La foto quedará centrada en un círculo. Arrastrá para reposicionar.</div>
+
+            {!fotoSrc ? (
+              <label style={{ display:'block', border:'2px dashed #c4b5fd', borderRadius:12, padding:'32px 20px', textAlign:'center', cursor:'pointer', background:'#f5f3ff' }}>
+                <div style={{ fontSize:32, marginBottom:8 }}>📷</div>
+                <div style={{ fontSize:13, color:'#5b21b6', fontWeight:600 }}>Subir foto</div>
+                <div style={{ fontSize:11, color:muted, marginTop:4 }}>JPG, PNG, WEBP — cualquier tamaño</div>
+                <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => e.target.files?.[0] && onFotoFile(e.target.files[0])} />
+              </label>
+            ) : (
+              <>
+                {/* Canvas preview */}
+                <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}>
+                  <div style={{ position:'relative', width:300, height:300, borderRadius:'50%', overflow:'hidden', border:'3px solid #7c3aed', cursor:'grab', userSelect:'none' }}>
+                    <canvas
+                      ref={canvasRef}
+                      width={300} height={300}
+                      style={{ display:'block' }}
+                      onMouseDown={onMouseDown}
+                      onMouseMove={onMouseMove}
+                      onMouseUp={onMouseUp}
+                      onMouseLeave={onMouseUp}
+                    />
+                  </div>
+                </div>
+
+                {/* Zoom */}
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:11, color:muted, marginBottom:6 }}>Zoom</div>
+                  <input
+                    type="range" min={0.5} max={3} step={0.05}
+                    value={fotoScale}
+                    onChange={e => onScaleChange(Number(e.target.value))}
+                    style={{ width:'100%' }}
+                  />
+                </div>
+
+                {/* Cambiar foto */}
+                <label style={{ display:'block', fontSize:12, color:'#5b21b6', fontWeight:600, cursor:'pointer', marginBottom:16, textAlign:'center', textDecoration:'underline' }}>
+                  Cambiar imagen
+                  <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => e.target.files?.[0] && onFotoFile(e.target.files[0])} />
+                </label>
+              </>
+            )}
+
+            <div style={{ display:'flex', gap:10, marginTop:8 }}>
+              <button onClick={() => { setModalFoto(false); setFotoSrc(null) }}
+                style={{ flex:1, padding:11, background:'#f4f7fa', color:muted, border:'none', borderRadius:8, fontSize:13, cursor:'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={guardarFoto} disabled={!fotoSrc || subiendoFoto}
+                style={{ flex:2, padding:11, background:'#7c3aed', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', opacity:(!fotoSrc || subiendoFoto) ? 0.5 : 1 }}>
+                {subiendoFoto ? 'Subiendo...' : 'Guardar foto'}
               </button>
             </div>
           </div>
