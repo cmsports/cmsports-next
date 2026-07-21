@@ -343,6 +343,22 @@ export default function JugadorDetallePage() {
     setTieneCuenta(true)
   }
 
+  // ── Foto callbacks (hooks deben ir antes de cualquier early return) ──
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    dragRef.current = { startX: e.clientX, startY: e.clientY, ox: fotoOffset.x, oy: fotoOffset.y }
+  }, [fotoOffset])
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragRef.current || !imgRef.current) return
+    const dx = e.clientX - dragRef.current.startX
+    const dy = e.clientY - dragRef.current.startY
+    const newOffset = { x: dragRef.current.ox + dx, y: dragRef.current.oy + dy }
+    setFotoOffset(newOffset)
+    dibujarCanvas(imgRef.current, newOffset, fotoScale)
+  }, [fotoScale])
+
+  const onMouseUp = useCallback(() => { dragRef.current = null }, [])
+
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
@@ -400,21 +416,6 @@ export default function JugadorDetallePage() {
     const y = (SIZE - h) / 2 + offset.y
     ctx.drawImage(img, x, y, w, h)
   }
-
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, ox: fotoOffset.x, oy: fotoOffset.y }
-  }, [fotoOffset])
-
-  const onMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragRef.current || !imgRef.current) return
-    const dx = e.clientX - dragRef.current.startX
-    const dy = e.clientY - dragRef.current.startY
-    const newOffset = { x: dragRef.current.ox + dx, y: dragRef.current.oy + dy }
-    setFotoOffset(newOffset)
-    dibujarCanvas(imgRef.current, newOffset, fotoScale)
-  }, [fotoScale])
-
-  const onMouseUp = useCallback(() => { dragRef.current = null }, [])
 
   function onScaleChange(v: number) {
     setFotoScale(v)
