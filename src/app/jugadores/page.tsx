@@ -31,6 +31,9 @@ export default function JugadoresPage() {
   const [jugadores, setJugadores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
+  const [filtroCat, setFiltroCat] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState('')
+  const [orden, setOrden] = useState<'az'|'za'>('az')
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<any>(null)
   const formVacio = {
@@ -223,7 +226,15 @@ export default function JugadoresPage() {
     writeFile(wb, 'jugadores.xlsx')
   }
 
-  const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
+  const filtrados = jugadores
+    .filter(j => !busqueda || j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) || j.rut?.includes(busqueda))
+    .filter(j => !filtroCat || j.categoria === filtroCat)
+    .filter(j => !filtroEstado || j.estado === filtroEstado)
+    .sort((a, b) => orden === 'az'
+      ? (a.nombre || '').localeCompare(b.nombre || '', 'es')
+      : (b.nombre || '').localeCompare(a.nombre || '', 'es'))
+
+  const categorias = [...new Set(jugadores.map(j => j.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   const esAdmin = perfil?.rol === 'admin'
 
   if (loading) return (
@@ -266,12 +277,54 @@ export default function JugadoresPage() {
       {/* TAB JUGADORES */}
       {tabJug === 'jugadores' && <>
       <div style={{ ...card, padding:12, marginBottom:16 }}>
+        {/* Búsqueda */}
         <input
-          style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-          placeholder="Buscar jugador..."
+          style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none', boxSizing:'border-box', marginBottom:10 }}
+          placeholder="Buscar por nombre o RUT..."
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
         />
+        {/* Filtros */}
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+          <select
+            value={filtroCat}
+            onChange={e => setFiltroCat(e.target.value)}
+            style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroCat ? text : hint, outline:'none', cursor:'pointer' }}
+          >
+            <option value="">Todas las categorías</option>
+            {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          <select
+            value={filtroEstado}
+            onChange={e => setFiltroEstado(e.target.value)}
+            style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroEstado ? text : hint, outline:'none', cursor:'pointer' }}
+          >
+            <option value="">Todos los estados</option>
+            <option value="activo">Activo</option>
+            <option value="bloqueado">Bloqueado</option>
+          </select>
+
+          <button
+            onClick={() => setOrden(o => o === 'az' ? 'za' : 'az')}
+            style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 12px', fontSize:13, color: muted, cursor:'pointer', whiteSpace:'nowrap' }}
+          >
+            {orden === 'az' ? 'A → Z' : 'Z → A'}
+          </button>
+
+          {(busqueda || filtroCat || filtroEstado) && (
+            <button
+              onClick={() => { setBusqueda(''); setFiltroCat(''); setFiltroEstado('') }}
+              style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:13, color:'#dc2626', cursor:'pointer', whiteSpace:'nowrap' }}
+            >
+              Limpiar filtros
+            </button>
+          )}
+
+          <span style={{ marginLeft:'auto', fontSize:12, color: hint }}>
+            {filtrados.length} de {jugadores.length} jugadores
+          </span>
+        </div>
       </div>
 
       {/* Vista tabla — pantallas medianas y grandes */}
