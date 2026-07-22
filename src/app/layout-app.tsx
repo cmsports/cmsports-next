@@ -13,7 +13,7 @@ import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
-  Store, Library, BookLock, Eye, Award, Home, Landmark,
+  Store, Library, BookLock, Eye, Award, Home, Landmark, Tag,
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import type { Perfil } from '@/types'
@@ -32,6 +32,7 @@ const navAdmin = [
   { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
   { label: 'Finanzas',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
   { label: 'Central de Pago', icon: Landmark,        href: '/central-de-pago' },
+  { label: 'Vouchers',         icon: Tag,            href: '/vouchers' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',            modulo: 'tienda' },
   { section: 'Recursos' },
   { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_buin' },
@@ -50,6 +51,7 @@ const navProfesor = [
   { label: 'Torneos Int.',  icon: Home,            href: '/torneos-internos', modulo: 'torneos' },
   { label: 'Ranking',       icon: Award,           href: '/ranking',          modulo: 'torneos' },
   { label: 'Central de Pago', icon: Landmark,      href: '/central-de-pago' },
+  { label: 'Vouchers',         icon: Tag,          href: '/vouchers' },
   { section: 'Tienda' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
   { section: 'Recursos' },
@@ -63,6 +65,7 @@ const navJugador = [
   { label: 'Mi perfil',           icon: User,          href: '/perfil' },
   { label: 'Mi Estado de Cuenta', icon: Receipt,       href: '/estado-cuenta', modulo: 'mensualidades' },
   { label: 'Central de Pago',     icon: Landmark,      href: '/central-de-pago' },
+  { label: 'Vouchers',             icon: Tag,           href: '/vouchers' },
   { label: 'Asistencia',          icon: ClipboardCheck,href: '/asistencia',    modulo: 'asistencia' },
   { section: 'Club' },
   { label: 'Mis clases',          icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
