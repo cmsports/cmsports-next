@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
 import AsistenciaPanel from '@/components/AsistenciaPanel'
+import InasistenciasPanel from '@/components/InasistenciasPanel'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador } from '@/app/actions/jugadores'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
@@ -51,8 +52,8 @@ export default function JugadoresPage() {
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
   const searchParams = useSearchParams()
-  const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia' : 'jugadores'
-  const [tabJug, setTabJug] = useState<'jugadores'|'asistencia'>(tabInicial)
+  const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia' : searchParams.get('tab') === 'inasistencias' ? 'inasistencias' : 'jugadores'
+  const [tabJug, setTabJug] = useState<'jugadores'|'asistencia'|'inasistencias'>(tabInicial)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -263,7 +264,7 @@ export default function JugadoresPage() {
 
       {/* Tabs */}
       <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:16 }}>
-        {[{key:'jugadores',label:'Jugadores'},{key:'asistencia',label:'📋 Asistencia'}].map(t => (
+        {[{key:'jugadores',label:'Jugadores'},{key:'asistencia',label:'📋 Asistencia'},{key:'inasistencias',label:'📊 Inasistencias'}].map(t => (
           <div key={t.key} onClick={() => setTabJug(t.key as any)}
             style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#ffffff':'transparent', color:tabJug===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabJug===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {t.label}
@@ -273,6 +274,9 @@ export default function JugadoresPage() {
 
       {/* TAB ASISTENCIA */}
       {tabJug === 'asistencia' && <AsistenciaPanel perfil={perfil} />}
+
+      {/* TAB INASISTENCIAS */}
+      {tabJug === 'inasistencias' && clubId && <InasistenciasPanel clubId={clubId} />}
 
       {/* TAB JUGADORES */}
       {tabJug === 'jugadores' && <>
