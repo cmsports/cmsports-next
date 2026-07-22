@@ -453,21 +453,65 @@ export default function JugadorDetallePage() {
       hace3meses.setMonth(hace3meses.getMonth() - 3)
       const desde = hace3meses.toISOString().split('T')[0]
 
-      const [{ data: asist }, { data: mens3 }] = await Promise.all([
+      // Asistencia, mensualidades y ranking en paralelo
+      const [{ data: asist }, { data: mens3 }, { data: torneosClub }] = await Promise.all([
         supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).gte('fecha', desde).order('fecha'),
         supabase.from('mensualidades').select('mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(3),
+        supabase.from('torneos').select('id,categoria').eq('club_id', jugador.club_id).eq('tipo', 'interno').eq('estado', 'finalizado'),
       ])
+
+      // Calcular ranking del jugador en su categoría
+      let rankingPos: number | null = null
+      let rankingVictorias = 0
+      let rankingDerrotas = 0
+      let rankingJugados = 0
+      let rankingTotal = 0
+
+      const torneoIds = (torneosClub || []).map((t: any) => t.id)
+      if (torneoIds.length > 0 && jugador.categoria) {
+        const torneosDeCat = (torneosClub || []).filter((t: any) => t.categoria === jugador.categoria).map((t: any) => t.id)
+        if (torneosDeCat.length > 0) {
+          const { data: todosPartidos } = await supabase
+            .from('torneo_partidos')
+            .select('jugador_a,jugador_b,ganador')
+            .in('torneo_id', torneosDeCat)
+            .not('ganador', 'is', null)
+
+          // Acumular stats por jugador
+          const stats: Record<string, { v: number; d: number }> = {}
+          for (const p of (todosPartidos || [])) {
+            const a = p.jugador_a as string, b = p.jugador_b as string, g = p.ganador as string
+            if (!stats[a]) stats[a] = { v: 0, d: 0 }
+            if (!stats[b]) stats[b] = { v: 0, d: 0 }
+            if (g === a) { stats[a].v++; stats[b].d++ }
+            else if (g === b) { stats[b].v++; stats[a].d++ }
+          }
+
+          // Ordenar por (3*v - d) desc para obtener posición
+          const ranking = Object.entries(stats)
+            .map(([id, s]) => ({ id, pts: 3 * s.v - s.d, v: s.v, d: s.d }))
+            .sort((a, b) => b.pts - a.pts || b.v - a.v)
+
+          const posIdx = ranking.findIndex(r => r.id === jugadorId)
+          if (posIdx >= 0) {
+            rankingPos = posIdx + 1
+            rankingVictorias = ranking[posIdx].v
+            rankingDerrotas = ranking[posIdx].d
+            rankingJugados = ranking[posIdx].v + ranking[posIdx].d
+            rankingTotal = ranking.length
+          }
+        }
+      }
 
       const fechasAsistencia = new Set((asist || []).map((a: any) => a.fecha))
 
-      // Generar calendario de asistencias (últimos 90 días)
+      // Calendario de asistencias (últimos 90 días)
       const dias: { fecha: string; asistio: boolean }[] = []
       for (let i = 89; i >= 0; i--) {
         const d = new Date(); d.setDate(d.getDate() - i)
         const iso = d.toISOString().split('T')[0]
         dias.push({ fecha: iso, asistio: fechasAsistencia.has(iso) })
       }
-
       const totalAsist = fechasAsistencia.size
       const semanas: typeof dias[] = []
       for (let i = 0; i < dias.length; i += 7) semanas.push(dias.slice(i, i + 7))
@@ -478,6 +522,7 @@ export default function JugadorDetallePage() {
       const colorMens = (e: string) => e === 'pagado' ? '#16a34a' : e === 'atrasado' ? '#dc2626' : '#d97706'
 
       const fotoBase64 = jugador.foto_url || ''
+      const posLabel = rankingPos ? (rankingPos === 1 ? '🥇' : rankingPos === 2 ? '🥈' : rankingPos === 3 ? '🥉' : `#${rankingPos}`) : '—'
 
       const html = `<!DOCTYPE html>
 <html lang="es">
@@ -489,8 +534,6 @@ export default function JugadorDetallePage() {
   body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #0f172a; background: #fff; font-size: 13px; line-height: 1.5; }
   @page { size: A4; margin: 12mm 14mm; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-
-  /* ── Header ── */
   .header { background: linear-gradient(135deg, #3730a3 0%, #4f46e5 100%); border-radius: 12px; padding: 20px 24px; display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
   .foto { width: 80px; height: 80px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.4); overflow: hidden; flex-shrink: 0; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; }
   .foto img { width: 100%; height: 100%; object-fit: cover; }
@@ -504,62 +547,37 @@ export default function JugadorDetallePage() {
   .badge-ko  { background: rgba(239,68,68,0.25); color: #fca5a5; }
   .header-right { text-align: right; color: rgba(255,255,255,0.8); font-size: 11px; }
   .header-right strong { display: block; font-size: 13px; color: #fff; }
-  .club-logo { font-size: 28px; }
-
-  /* ── Grid ── */
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
-
-  /* ── Cards ── */
   .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
   .card-header { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 9px 14px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.6px; }
   .card-body { padding: 12px 14px; }
-
-  /* ── Info rows ── */
   .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
   .row:last-child { border-bottom: none; }
   .row-label { color: #64748b; }
   .row-value { font-weight: 600; color: #0f172a; text-align: right; }
-
-  /* ── KPIs ── */
   .kpi { text-align: center; padding: 14px 10px; }
   .kpi-num { font-size: 28px; font-weight: 800; color: #4f46e5; font-variant-numeric: tabular-nums; line-height: 1; }
   .kpi-label { font-size: 10px; color: #64748b; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
-
-  /* ── Attendance grid ── */
   .cal-row { display: flex; gap: 3px; margin-bottom: 3px; }
   .dot { width: 10px; height: 10px; border-radius: 2px; }
   .dot-ok { background: #16a34a; }
   .dot-no { background: #e2e8f0; }
-
-  /* ── Mensualidad pills ── */
   .mens-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
   .mens-row:last-child { border-bottom: none; }
   .mens-pill { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-
-  /* ── Torneos ── */
-  .torneo-row { padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
-  .torneo-row:last-child { border-bottom: none; }
-
-  /* ── Feedback ── */
-  .feedback-box { background: #f8fafc; border-left: 3px solid #4f46e5; border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 12px; line-height: 1.6; color: #1e293b; }
-  .meta-box { background: #ede9fe; border-radius: 8px; padding: 10px 12px; margin-top: 10px; font-size: 12px; color: #1e293b; }
-  .meta-label { font-size: 10px; font-weight: 700; color: #3730a3; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
-
-  /* ── Footer ── */
+  .rank-stat { text-align: center; flex: 1; }
+  .rank-stat-num { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .rank-stat-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
   .footer { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
-  .page-break { page-break-before: always; }
   .no-break { page-break-inside: avoid; }
 </style>
 </head>
 <body>
 
-<!-- ── HEADER ── -->
 <div class="header">
   <div class="foto">
-    ${fotoBase64
-      ? `<img src="${fotoBase64}" alt="${jugador.nombre}" />`
-      : `<span class="foto-inicial">${jugador.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()}</span>`}
+    ${fotoBase64 ? `<img src="${fotoBase64}" alt="${jugador.nombre}" />` : `<span class="foto-inicial">${jugador.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()}</span>`}
   </div>
   <div class="header-info">
     <h1>${jugador.nombre}</h1>
@@ -571,14 +589,14 @@ export default function JugadorDetallePage() {
     </div>
   </div>
   <div class="header-right">
-    <span class="club-logo">🏓</span>
+    <span style="font-size:28px">🏓</span>
     <strong>${clubNombre || 'Club'}</strong>
     Reporte generado<br>${new Date().toLocaleDateString('es-CL', { day:'2-digit', month:'long', year:'numeric' })}<br>
     Período: últimos 3 meses
   </div>
 </div>
 
-<!-- ── FILA KPIs ── -->
+<!-- KPIs: asistencia + ranking + mensualidad -->
 <div class="grid3">
   <div class="card no-break">
     <div class="kpi">
@@ -588,8 +606,9 @@ export default function JugadorDetallePage() {
   </div>
   <div class="card no-break">
     <div class="kpi">
-      <div class="kpi-num">${partidos.length}</div>
-      <div class="kpi-label">Partidos totales</div>
+      <div class="kpi-num" style="font-size:${rankingPos ? (posLabel.length > 3 ? '22px' : '28px') : '28px'}">${posLabel}</div>
+      <div class="kpi-label">Ranking ${jugador.categoria ? '— ' + jugador.categoria : ''}</div>
+      ${rankingPos ? `<div style="font-size:10px;color:#64748b;margin-top:4px">${rankingJugados} partidos jugados</div>` : ''}
     </div>
   </div>
   <div class="card no-break">
@@ -600,13 +619,13 @@ export default function JugadorDetallePage() {
   </div>
 </div>
 
-<!-- ── DATOS PERSONALES + PLAN ── -->
+<!-- Datos personales + Plan -->
 <div class="grid2">
   <div class="card no-break">
     <div class="card-header">Información personal</div>
     <div class="card-body">
       ${jugador.rut ? `<div class="row"><span class="row-label">RUT</span><span class="row-value">${jugador.rut}</span></div>` : ''}
-      ${jugador.fecha_nacimiento ? `<div class="row"><span class="row-label">Nacimiento</span><span class="row-value">${fmtFecha(jugador.fecha_nacimiento)} ${edad ? `(${edad} años)` : ''}</span></div>` : ''}
+      ${jugador.fecha_nacimiento ? `<div class="row"><span class="row-label">Nacimiento</span><span class="row-value">${fmtFecha(jugador.fecha_nacimiento)}${edad ? ` (${edad} años)` : ''}</span></div>` : ''}
       ${jugador.email ? `<div class="row"><span class="row-label">Email</span><span class="row-value">${jugador.email}</span></div>` : ''}
       ${jugador.telefono ? `<div class="row"><span class="row-label">Teléfono</span><span class="row-value">${jugador.telefono}</span></div>` : ''}
       ${jugador.direccion ? `<div class="row"><span class="row-label">Dirección</span><span class="row-value">${jugador.direccion}${jugador.comuna ? ', ' + jugador.comuna : ''}</span></div>` : ''}
@@ -637,80 +656,62 @@ export default function JugadorDetallePage() {
   </div>
 </div>
 
-<!-- ── ASISTENCIA CALENDARIO ── -->
-<div class="card no-break" style="margin-bottom:14px">
-  <div class="card-header">Asistencia — últimos 90 días (${totalAsist} sesiones)</div>
-  <div class="card-body">
-    <div style="margin-bottom:6px">
-      ${semanas.map(semana => `
-        <div class="cal-row">
-          ${semana.map(d => `<div class="dot ${d.asistio ? 'dot-ok' : 'dot-no'}" title="${d.fecha}"></div>`).join('')}
-        </div>`).join('')}
+<!-- Ranking detalle + Asistencia calendario -->
+<div class="grid2">
+  ${rankingPos ? `
+  <div class="card no-break">
+    <div class="card-header">Ranking interno — ${jugador.categoria || ''}</div>
+    <div class="card-body">
+      <div style="display:flex;gap:0;text-align:center;padding:10px 0 14px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">
+        <div class="rank-stat">
+          <div class="rank-stat-num" style="color:#4f46e5">${posLabel}</div>
+          <div class="rank-stat-label">Posición</div>
+        </div>
+        <div class="rank-stat">
+          <div class="rank-stat-num" style="color:#16a34a">${rankingVictorias}</div>
+          <div class="rank-stat-label">Victorias</div>
+        </div>
+        <div class="rank-stat">
+          <div class="rank-stat-num" style="color:#dc2626">${rankingDerrotas}</div>
+          <div class="rank-stat-label">Derrotas</div>
+        </div>
+        <div class="rank-stat">
+          <div class="rank-stat-num" style="color:#0f172a">${rankingJugados}</div>
+          <div class="rank-stat-label">Jugados</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#64748b">
+        Pts: <strong style="color:#4f46e5">${3*rankingVictorias - rankingDerrotas}</strong> ·
+        ${rankingTotal} jugadores en la categoría
+      </div>
+      <div style="margin-top:10px">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-bottom:4px">
+          <span>% victorias</span>
+          <span>${rankingJugados > 0 ? Math.round(rankingVictorias/rankingJugados*100) : 0}%</span>
+        </div>
+        <div style="background:#e2e8f0;border-radius:4px;height:6px">
+          <div style="background:#4f46e5;border-radius:4px;height:6px;width:${rankingJugados > 0 ? Math.round(rankingVictorias/rankingJugados*100) : 0}%"></div>
+        </div>
+      </div>
     </div>
-    <div style="display:flex;gap:14px;margin-top:8px;font-size:10px;color:#64748b">
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#16a34a;margin-right:4px;vertical-align:middle"></span>Asistió</span>
-      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e2e8f0;margin-right:4px;vertical-align:middle"></span>No asistió</span>
+  </div>` : `
+  <div class="card no-break">
+    <div class="card-header">Ranking interno</div>
+    <div class="card-body" style="color:#94a3b8;font-size:12px;padding:20px 14px">Sin partidos registrados en torneos internos</div>
+  </div>`}
+
+  <div class="card no-break">
+    <div class="card-header">Asistencia — últimos 90 días (${totalAsist} sesiones)</div>
+    <div class="card-body">
+      ${semanas.map(semana => `<div class="cal-row">${semana.map(d => `<div class="dot ${d.asistio ? 'dot-ok' : 'dot-no'}"></div>`).join('')}</div>`).join('')}
+      <div style="display:flex;gap:14px;margin-top:8px;font-size:10px;color:#64748b">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#16a34a;margin-right:4px;vertical-align:middle"></span>Asistió</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e2e8f0;margin-right:4px;vertical-align:middle"></span>No asistió</span>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- ── COMPETENCIA ── -->
-${partidos.length > 0 || externos.length > 0 ? `
-<div class="grid2">
-  ${partidos.length > 0 ? `
-  <div class="card no-break">
-    <div class="card-header">Partidos internos (${partidos.length})</div>
-    <div class="card-body">
-      ${partidos.slice(0, 8).map(p => {
-        const gane = p.ganador === jugadorId
-        return `<div class="torneo-row">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div>
-              <div style="font-size:12px;font-weight:500">${(p as any).torneos?.nombre || '—'}</div>
-              <div style="font-size:10px;color:#64748b">${p.fase || ''}</div>
-            </div>
-            <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:${gane?'#f0fdf4':'#fef2f2'};color:${gane?'#16a34a':'#dc2626'}">${gane?'Victoria':'Derrota'}</span>
-          </div>
-        </div>`
-      }).join('')}
-    </div>
-  </div>` : ''}
-
-  ${externos.length > 0 ? `
-  <div class="card no-break">
-    <div class="card-header">Torneos externos (${externos.length})</div>
-    <div class="card-body">
-      ${externos.slice(0, 8).map(t => `
-        <div class="torneo-row">
-          <div style="font-size:12px;font-weight:500">${t.nombre_club}</div>
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-top:2px">
-            <span>${t.fecha ? fmtFecha(t.fecha) : ''} · ${CAT_LABEL[t.categoria]||t.categoria}</span>
-            <span>${POSICION_LABEL[t.posicion]||t.posicion}</span>
-          </div>
-        </div>`).join('')}
-    </div>
-  </div>` : ''}
-</div>` : ''}
-
-<!-- ── EVALUACIONES ── -->
-${evaluaciones.length > 0 ? `
-<div class="card no-break" style="margin-bottom:14px">
-  <div class="card-header">Evaluación del entrenador — ${evaluaciones[0]?.periodo_trimestre || trimestre}</div>
-  <div class="card-body">
-    ${evaluaciones[0]?.feedback_profesor ? `<div class="feedback-box">${evaluaciones[0].feedback_profesor}</div>` : '<p style="color:#94a3b8;font-size:12px">Sin evaluación registrada</p>'}
-    ${evaluaciones[0]?.meta_proximo_periodo ? `
-      <div class="meta-box">
-        <div class="meta-label">Meta próximo período</div>
-        ${evaluaciones[0].meta_proximo_periodo}
-      </div>` : ''}
-    ${evaluaciones[0]?.firmado_alumno !== undefined ? `
-      <div style="margin-top:10px;font-size:11px;color:${evaluaciones[0].firmado_alumno ? '#16a34a' : '#d97706'}">
-        ${evaluaciones[0].firmado_alumno ? '✓ Compromiso aceptado por el alumno' : '⏳ Pendiente de aceptación del alumno'}
-      </div>` : ''}
-  </div>
-</div>` : ''}
-
-<!-- ── FOOTER ── -->
 <div class="footer">
   <span>${clubNombre || 'Club'} — Sistema de gestión CmSports</span>
   <span>Generado el ${new Date().toLocaleString('es-CL', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
