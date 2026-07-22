@@ -129,6 +129,21 @@ export function TableroFecha({
     return () => window.clearTimeout(timer)
   }, [cargar])
 
+  useEffect(() => {
+    const canal = supabase
+      .channel(`tablero-${fechaId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'liga_partidos',
+        filter: `fecha_id=eq.${fechaId}`,
+      }, () => { void cargar() })
+      .on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'liga_fechas',
+        filter: `id=eq.${fechaId}`,
+      }, () => { void cargar() })
+      .subscribe()
+    return () => { void supabase.removeChannel(canal) }
+  }, [fechaId, cargar])
+
   const partidosVisibles = divisionId ? partidos.filter(p => p.divisionId === divisionId) : partidos
   const mesasVisibles = divisionId
     ? mesas.filter(m => partidosVisibles.some(p => p.mesaId === m.id))
