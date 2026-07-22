@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
-import { MessageCircle, Upload, ImageIcon } from 'lucide-react'
+import { Upload, ImageIcon } from 'lucide-react'
 import { subirImagenCentralPago } from '../actions/central-pago'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 export default function CentralDePagoPage() {
   const { perfil, loading } = usePerfil()
@@ -125,21 +126,9 @@ export default function CentralDePagoPage() {
 
         {/* Botón WhatsApp */}
         {linkWA && imagenExiste !== false && (
-          <a
-            href={linkWA}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              background: '#16a34a', color: '#ffffff', textDecoration: 'none',
-              padding: '15px 20px', borderRadius: 12,
-              fontSize: 15, fontWeight: 600,
-              boxShadow: '0 4px 12px rgba(22,163,74,0.3)',
-            }}
-          >
-            <MessageCircle size={18} />
+          <WhatsAppBtn href={linkWA} style={{ padding: '15px 20px', fontSize: 15 }}>
             Enviar comprobante por WhatsApp
-          </a>
+          </WhatsAppBtn>
         )}
       </div>
 

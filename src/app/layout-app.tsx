@@ -15,6 +15,7 @@ import {
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
   Store, Library, BookLock, Eye, Award, Home, Landmark,
 } from 'lucide-react'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 import type { Perfil } from '@/types'
 import { esCuentaDemo } from '@/lib/auth/demo'
 
@@ -200,14 +201,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             Tu acceso fue suspendido por falta de pago. Para reactivar tu cuenta, comunícate con tu club.
           </p>
           {linkWA && (
-            <a href={linkWA} target="_blank" rel="noopener noreferrer" style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              background: '#16a34a', color: '#ffffff', textDecoration: 'none',
-              padding: '13px 20px', borderRadius: 10, fontSize: 15, fontWeight: 600,
-              marginBottom: 12,
-            }}>
-              💬 Hablar con el club por WhatsApp
-            </a>
+            <WhatsAppBtn href={linkWA} style={{ marginBottom: 12 }}>
+              Hablar con el club por WhatsApp
+            </WhatsAppBtn>
           )}
           <button onClick={cerrarSesion} style={{
             width: '100%', padding: '11px 20px',

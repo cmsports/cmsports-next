@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 /*
   Imágenes → poner en /public/tienda-buin/ con estos nombres:
@@ -178,30 +179,17 @@ export default function TiendaBuinPage() {
                   {p.nombre}
                 </div>
 
-                <a
+                <WhatsAppBtn
                   href={`https://wa.me/${WA}?text=${encodeURIComponent(mensajeWA(p))}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 2,
-                    textAlign: 'center',
-                    background: '#2563eb',
-                    color: '#fff',
-                    borderRadius: 6,
-                    textDecoration: 'none',
-                    padding: '8px 10px',
-                  }}
+                  style={{ flexDirection: 'column', gap: 2, borderRadius: 6, padding: '8px 10px' }}
                 >
                   <span style={{ fontWeight: 800, fontSize: 16 }}>
                     {formatPrecio(p.precio)}{p.precioSufijo ? ` ${p.precioSufijo}` : ''}
                   </span>
                   <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.9 }}>
-                    Consultar al profe por WhatsApp
+                    Consultar al profe
                   </span>
-                </a>
+                </WhatsAppBtn>
               </div>
             </div>
           ))}
@@ -218,19 +206,15 @@ export default function TiendaBuinPage() {
           <div style={{ fontSize: 10, color: '#94b8d8', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
             Coordinar compra con profesor
           </div>
-          <a
-            href={`https://wa.me/${WA}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ textDecoration: 'none' }}
-          >
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: 0.5 }}>
-              RODRIGO SALAZAR
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#5ba3d9', marginTop: 2 }}>
-              +56 9 6834 2721
-            </div>
-          </a>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: 0.5, marginBottom: 2 }}>
+            RODRIGO SALAZAR
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#5ba3d9', marginBottom: 10 }}>
+            +56 9 6834 2721
+          </div>
+          <WhatsAppBtn href={`https://wa.me/${WA}`} style={{ borderRadius: 8, fontSize: 13, padding: '10px 20px' }}>
+            Coordinar por WhatsApp
+          </WhatsAppBtn>
           <div style={{ fontSize: 10, color: '#94b8d8', marginTop: 8, letterSpacing: 0.5 }}>
             STOCK LIMITADO — CONSULTAR DISPONIBILIDAD
           </div>

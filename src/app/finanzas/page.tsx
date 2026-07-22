@@ -7,6 +7,7 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarMovimiento } from '@/app/actions/finanzas'
 import { MensualidadesPanel } from '@/components/MensualidadesPanel'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
 
@@ -365,10 +366,9 @@ function FinanzasContent() {
             </div>
             {jugadorSeleccionado.telefono && (
               <div style={{ marginTop:12 }}>
-                <a href={`https://wa.me/${jugadorSeleccionado.telefono.replace(/[^0-9]/g,'')}`} target="_blank"
-                  style={{ display:'inline-flex', alignItems:'center', gap:6, background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, textDecoration:'none' }}>
+                <WhatsAppBtn href={`https://wa.me/${jugadorSeleccionado.telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ padding:'7px 14px', fontSize:12 }}>
                   Contactar por WhatsApp
-                </a>
+                </WhatsAppBtn>
               </div>
             )}
           </div>

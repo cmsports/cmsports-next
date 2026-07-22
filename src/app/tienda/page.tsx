@@ -5,7 +5,8 @@ import Image from 'next/image'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
-import { ExternalLink, ShoppingBag } from 'lucide-react'
+import { ShoppingBag } from 'lucide-react'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const WA = '56922515010'
 const AUMENTO_PRECIO = 2000
@@ -121,18 +122,12 @@ export default function TiendaPage() {
                     Descuento club: -{formatPrecio(DESCUENTO_CLUB)}
                   </div>
                 </div>
-                <a
+                <WhatsAppBtn
                   href={`https://wa.me/${WA}?text=${encodeURIComponent(mensajeWhatsApp)}`}
-                  target="_blank" rel="noopener noreferrer"
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    marginTop: 10, padding: '9px 14px', borderRadius: 10,
-                    background: '#25d366', color: '#fff', fontWeight: 700, fontSize: 13,
-                    textDecoration: 'none',
-                  }}
+                  style={{ marginTop: 10, padding: '9px 14px', borderRadius: 10, fontSize: 13 }}
                 >
-                  <ExternalLink size={14} /> Cotizar por WhatsApp
-                </a>
+                  Cotizar por WhatsApp
+                </WhatsAppBtn>
               </div>
             </div>
             )
@@ -150,18 +145,12 @@ export default function TiendaPage() {
           <p style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
             Si buscas algo que no está acá, pregunta directamente por WhatsApp.
           </p>
-          <a
+          <WhatsAppBtn
             href={`https://wa.me/${WA}?text=${encodeURIComponent(`Hola DoubleTT! Vengo de parte del club ${clubNombre}. Quiero consultar por un producto que no está en la tienda. Tengo el descuento de $1.000 asociado a los jugadores del club.`)}`}
-            target="_blank" rel="noopener noreferrer"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '9px 20px', borderRadius: 10,
-              background: '#25d366', color: '#fff', fontWeight: 700, fontSize: 13,
-              textDecoration: 'none',
-            }}
+            style={{ padding: '9px 20px', borderRadius: 10, fontSize: 13, display: 'inline-flex' }}
           >
-            <ExternalLink size={14} /> Consultar por más productos
-          </a>
+            Consultar por más productos
+          </WhatsAppBtn>
         </div>
       </div>
     </AppLayout>

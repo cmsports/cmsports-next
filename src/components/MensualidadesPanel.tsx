@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago } from '@/app/actions/mensualidades'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
 
@@ -249,11 +250,11 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                     <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>
                       {j.nombre}
                       {j.telefono && estado !== 'pagado' && (
-                        <a
+                        <WhatsAppBtn
                           href={`https://wa.me/${j.telefono.replace(/[^0-9]/g,'')}?text=${encodeURIComponent(`Hola ${j.nombre.split(' ')[0]}! 👋 Te contactamos desde ${clubNombre || 'el club'}. Tu mensualidad de ${mesesN[mes-1]} ${anio}${mens?.monto ? ` ($${Number(mens.monto).toLocaleString('es-CL')})` : ''} figura como *${estado === 'atrasado' ? 'atrasada ⚠️' : 'pendiente ⏳'}*. Por favor regularizá tu pago cuando puedas. ¡Gracias! 🏓`)}`}
-                          target="_blank"
-                          style={{ marginLeft:8, fontSize:11, color:'#16a34a', textDecoration:'none' }}
-                          title="Enviar recordatorio por WhatsApp">💬</a>
+                          variant="compact"
+                          style={{ marginLeft:8 }}
+                        />
                       )}
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{j.sesiones_limite} ses.</td>

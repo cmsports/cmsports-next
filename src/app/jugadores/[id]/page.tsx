@@ -10,6 +10,7 @@ import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
 
@@ -598,10 +599,9 @@ export default function JugadorDetallePage() {
             {esClubBuin && <InfoRow label="Federado" value={jugador.federado ? 'Sí' : jugador.federado === false ? 'No' : '—'} />}
             {jugador.telefono && (
               <div style={{ paddingTop:12 }}>
-                <a href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} target="_blank" rel="noopener noreferrer"
-                  style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, color:'#16a34a', textDecoration:'none', background:'#f0fdf4', padding:'6px 12px', borderRadius:8, border:'1px solid #bbf7d0', fontWeight:600 }}>
+                <WhatsAppBtn href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
                   WhatsApp
-                </a>
+                </WhatsAppBtn>
               </div>
             )}
           </div>

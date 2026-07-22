@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { verificarBloqueoPerfil } from '@/app/actions/jugadores'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
 
@@ -73,19 +74,9 @@ export default function CuentaBloqueadaPage() {
           Para reactivar tu cuenta, comunícate con{clubNombre ? ` ${clubNombre}` : ' tu club'}.
         </p>
         {linkWA && (
-          <a
-            href={linkWA}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              background: '#16a34a', color: '#ffffff', textDecoration: 'none',
-              padding: '13px 20px', borderRadius: 10, fontSize: 15, fontWeight: 600,
-              marginBottom: 12,
-            }}
-          >
-            💬 Hablar con el club por WhatsApp
-          </a>
+          <WhatsAppBtn href={linkWA} style={{ marginBottom: 12 }}>
+            Hablar con el club por WhatsApp
+          </WhatsAppBtn>
         )}
         {!linkWA && clubNombre && (
           <div style={{

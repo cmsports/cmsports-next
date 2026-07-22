@@ -9,6 +9,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
 import { copiarTexto } from '@/lib/clipboard'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const CLUB_BUIN_ID = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
 
@@ -339,10 +340,9 @@ export default function SolicitudesPage() {
 
             <div style={{ display: 'flex', gap: 10 }}>
               {aprobadoInfo.telefono && (
-                <a href={linkWhatsApp(aprobadoInfo)} target="_blank" rel="noopener noreferrer"
-                  style={{ flex: 1, padding: 11, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, color: '#16a34a', fontSize: 13, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center' }}>
-                  Enviar WhatsApp
-                </a>
+                <WhatsAppBtn href={linkWhatsApp(aprobadoInfo)} style={{ flex: 1, padding: 11, borderRadius: 8, fontSize: 13 }}>
+                  Enviar por WhatsApp
+                </WhatsAppBtn>
               )}
               <button onClick={() => setAprobadoInfo(null)}
                 style={{ flex: 1, padding: 11, background: aprobadoInfo.telefono ? 'transparent' : '#4f46e5', border: aprobadoInfo.telefono ? '1px solid #e2e8f0' : 'none', borderRadius: 8, color: aprobadoInfo.telefono ? muted : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>

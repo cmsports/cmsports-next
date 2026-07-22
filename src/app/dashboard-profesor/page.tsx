@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { trimestreActual } from '@/lib/domain/trimestre'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
 
@@ -174,7 +175,7 @@ export default function DashboardProfesorPage() {
                   <div style={{ fontSize:11, color: muted }}>{j.categoria}</div>
                 </div>
                 <div style={{ display:'flex', gap:6 }}>
-                  {j.telefono && <a href={`https://wa.me/${j.telefono.replace(/[^0-9]/g,'')}`} target="_blank" style={{ background:'#f0fdf4', color:'#16a34a', padding:'5px 10px', borderRadius:8, fontSize:11, textDecoration:'none', border:'1px solid #bbf7d0' }}>💬 WA</a>}
+                  {j.telefono && <WhatsAppBtn href={`https://wa.me/${j.telefono.replace(/[^0-9]/g,'')}`} variant="compact" />}
                   {ddOpen === 'eval' && <button onClick={() => { setDdOpen(null); router.push(`/jugadores/${j.id}`) }} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Evaluar</button>}
                 </div>
               </div>

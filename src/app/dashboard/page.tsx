@@ -13,6 +13,7 @@ import {
   Users, TrendingUp, AlertTriangle, DollarSign,
   Link2, Mail, X, HelpCircle, Copy, Check, UserX,
 } from 'lucide-react'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
 
@@ -567,10 +568,7 @@ export default function DashboardPage() {
                     {j.diasSinVenir !== null ? `${j.diasSinVenir}d` : 'nunca'}
                   </span>
                   {j.telefono && (
-                    <a href={`https://wa.me/${j.telefono.replace(/[^0-9]/g, '')}`} target="_blank"
-                      style={{ background: C.greenL, color: C.green, padding: '5px 10px', borderRadius: 8, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
-                      WA →
-                    </a>
+                    <WhatsAppBtn href={`https://wa.me/${j.telefono.replace(/[^0-9]/g, '')}`} variant="compact" />
                   )}
                 </div>
               </div>
@@ -606,10 +604,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     {item.telefono && (
-                      <a href={`https://wa.me/${item.telefono.replace(/[^0-9]/g, '')}`} target="_blank"
-                        style={{ background: C.greenL, color: C.green, padding: '5px 10px', borderRadius: 8, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
-                        WA →
-                      </a>
+                      <WhatsAppBtn href={`https://wa.me/${item.telefono.replace(/[^0-9]/g, '')}`} variant="compact" />
                     )}
                   </div>
                 ))
