@@ -99,6 +99,7 @@ export default function JugadorDetallePage() {
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
   const [recargaVersion, setRecargaVersion] = useState(0)
   const [clubNombre, setClubNombre] = useState('')
+  const [generandoReporte, setGenerandoReporte] = useState(false)
   // Foto
   const [modalFoto, setModalFoto] = useState(false)
   const [fotoSrc, setFotoSrc] = useState<string | null>(null)
@@ -445,6 +446,288 @@ export default function JugadorDetallePage() {
   const edad = jugador.fecha_nacimiento ? new Date().getFullYear() - parseInt(jugador.fecha_nacimiento.slice(0, 4)) : null
   const tieneEmergencia = jugador.contacto_emergencia_nombre || jugador.indicaciones_medicas
 
+  async function generarReportePDF() {
+    setGenerandoReporte(true)
+    try {
+      const hace3meses = new Date()
+      hace3meses.setMonth(hace3meses.getMonth() - 3)
+      const desde = hace3meses.toISOString().split('T')[0]
+
+      const [{ data: asist }, { data: mens3 }] = await Promise.all([
+        supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).gte('fecha', desde).order('fecha'),
+        supabase.from('mensualidades').select('mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(3),
+      ])
+
+      const fechasAsistencia = new Set((asist || []).map((a: any) => a.fecha))
+
+      // Generar calendario de asistencias (últimos 90 días)
+      const dias: { fecha: string; asistio: boolean }[] = []
+      for (let i = 89; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i)
+        const iso = d.toISOString().split('T')[0]
+        dias.push({ fecha: iso, asistio: fechasAsistencia.has(iso) })
+      }
+
+      const totalAsist = fechasAsistencia.size
+      const semanas: typeof dias[] = []
+      for (let i = 0; i < dias.length; i += 7) semanas.push(dias.slice(i, i + 7))
+
+      const fmtFecha = (f: string) => new Date(f + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })
+      const mesLabel = (m: number) => ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m - 1]
+      const estadoMens = (e: string) => e === 'pagado' ? '✓ Pagado' : e === 'atrasado' ? '✗ Atrasado' : '⏳ Pendiente'
+      const colorMens = (e: string) => e === 'pagado' ? '#16a34a' : e === 'atrasado' ? '#dc2626' : '#d97706'
+
+      const fotoBase64 = jugador.foto_url || ''
+
+      const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Reporte — ${jugador.nombre}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #0f172a; background: #fff; font-size: 13px; line-height: 1.5; }
+  @page { size: A4; margin: 12mm 14mm; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+
+  /* ── Header ── */
+  .header { background: linear-gradient(135deg, #3730a3 0%, #4f46e5 100%); border-radius: 12px; padding: 20px 24px; display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
+  .foto { width: 80px; height: 80px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.4); overflow: hidden; flex-shrink: 0; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; }
+  .foto img { width: 100%; height: 100%; object-fit: cover; }
+  .foto-inicial { font-size: 28px; font-weight: 800; color: #fff; }
+  .header-info { flex: 1; }
+  .header-info h1 { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-cat { background: rgba(255,255,255,0.2); color: #fff; }
+  .badge-ok  { background: rgba(34,197,94,0.25); color: #86efac; }
+  .badge-ko  { background: rgba(239,68,68,0.25); color: #fca5a5; }
+  .header-right { text-align: right; color: rgba(255,255,255,0.8); font-size: 11px; }
+  .header-right strong { display: block; font-size: 13px; color: #fff; }
+  .club-logo { font-size: 28px; }
+
+  /* ── Grid ── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+
+  /* ── Cards ── */
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+  .card-header { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 9px 14px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.6px; }
+  .card-body { padding: 12px 14px; }
+
+  /* ── Info rows ── */
+  .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+  .row:last-child { border-bottom: none; }
+  .row-label { color: #64748b; }
+  .row-value { font-weight: 600; color: #0f172a; text-align: right; }
+
+  /* ── KPIs ── */
+  .kpi { text-align: center; padding: 14px 10px; }
+  .kpi-num { font-size: 28px; font-weight: 800; color: #4f46e5; font-variant-numeric: tabular-nums; line-height: 1; }
+  .kpi-label { font-size: 10px; color: #64748b; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ── Attendance grid ── */
+  .cal-row { display: flex; gap: 3px; margin-bottom: 3px; }
+  .dot { width: 10px; height: 10px; border-radius: 2px; }
+  .dot-ok { background: #16a34a; }
+  .dot-no { background: #e2e8f0; }
+
+  /* ── Mensualidad pills ── */
+  .mens-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
+  .mens-row:last-child { border-bottom: none; }
+  .mens-pill { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+
+  /* ── Torneos ── */
+  .torneo-row { padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
+  .torneo-row:last-child { border-bottom: none; }
+
+  /* ── Feedback ── */
+  .feedback-box { background: #f8fafc; border-left: 3px solid #4f46e5; border-radius: 0 8px 8px 0; padding: 12px 14px; font-size: 12px; line-height: 1.6; color: #1e293b; }
+  .meta-box { background: #ede9fe; border-radius: 8px; padding: 10px 12px; margin-top: 10px; font-size: 12px; color: #1e293b; }
+  .meta-label { font-size: 10px; font-weight: 700; color: #3730a3; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+
+  /* ── Footer ── */
+  .footer { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
+  .page-break { page-break-before: always; }
+  .no-break { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<div class="header">
+  <div class="foto">
+    ${fotoBase64
+      ? `<img src="${fotoBase64}" alt="${jugador.nombre}" />`
+      : `<span class="foto-inicial">${jugador.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()}</span>`}
+  </div>
+  <div class="header-info">
+    <h1>${jugador.nombre}</h1>
+    <div class="badges">
+      ${jugador.categoria ? `<span class="badge badge-cat">${jugador.categoria}</span>` : ''}
+      <span class="badge ${jugador.estado === 'activo' ? 'badge-ok' : 'badge-ko'}">${jugador.estado === 'activo' ? 'Activo' : 'Bloqueado'}</span>
+      ${jugador.federado ? '<span class="badge badge-cat">Federado</span>' : ''}
+      ${jugador.es_externo ? '<span class="badge badge-cat">Externo</span>' : ''}
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="club-logo">🏓</span>
+    <strong>${clubNombre || 'Club'}</strong>
+    Reporte generado<br>${new Date().toLocaleDateString('es-CL', { day:'2-digit', month:'long', year:'numeric' })}<br>
+    Período: últimos 3 meses
+  </div>
+</div>
+
+<!-- ── FILA KPIs ── -->
+<div class="grid3">
+  <div class="card no-break">
+    <div class="kpi">
+      <div class="kpi-num">${totalAsist}</div>
+      <div class="kpi-label">Asistencias (90 días)</div>
+    </div>
+  </div>
+  <div class="card no-break">
+    <div class="kpi">
+      <div class="kpi-num">${partidos.length}</div>
+      <div class="kpi-label">Partidos totales</div>
+    </div>
+  </div>
+  <div class="card no-break">
+    <div class="kpi">
+      <div class="kpi-num" style="font-size:20px">$${(jugador.mensualidad||0).toLocaleString('es-CL')}</div>
+      <div class="kpi-label">Mensualidad</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DATOS PERSONALES + PLAN ── -->
+<div class="grid2">
+  <div class="card no-break">
+    <div class="card-header">Información personal</div>
+    <div class="card-body">
+      ${jugador.rut ? `<div class="row"><span class="row-label">RUT</span><span class="row-value">${jugador.rut}</span></div>` : ''}
+      ${jugador.fecha_nacimiento ? `<div class="row"><span class="row-label">Nacimiento</span><span class="row-value">${fmtFecha(jugador.fecha_nacimiento)} ${edad ? `(${edad} años)` : ''}</span></div>` : ''}
+      ${jugador.email ? `<div class="row"><span class="row-label">Email</span><span class="row-value">${jugador.email}</span></div>` : ''}
+      ${jugador.telefono ? `<div class="row"><span class="row-label">Teléfono</span><span class="row-value">${jugador.telefono}</span></div>` : ''}
+      ${jugador.direccion ? `<div class="row"><span class="row-label">Dirección</span><span class="row-value">${jugador.direccion}${jugador.comuna ? ', ' + jugador.comuna : ''}</span></div>` : ''}
+      ${jugador.contacto_emergencia_nombre ? `<div class="row"><span class="row-label">Emergencia</span><span class="row-value">${jugador.contacto_emergencia_nombre}</span></div>` : ''}
+      ${jugador.contacto_emergencia_telefono ? `<div class="row"><span class="row-label">Tel. emergencia</span><span class="row-value">${jugador.contacto_emergencia_telefono}</span></div>` : ''}
+      ${jugador.indicaciones_medicas ? `<div class="row" style="flex-direction:column;gap:4px"><span class="row-label">Indicaciones médicas</span><span style="color:#dc2626;font-weight:600;font-size:12px">${jugador.indicaciones_medicas}</span></div>` : ''}
+    </div>
+  </div>
+
+  <div class="card no-break">
+    <div class="card-header">Plan & Membresía</div>
+    <div class="card-body">
+      <div class="row"><span class="row-label">Plan</span><span class="row-value">${jugador.tipo_plan ? jugador.tipo_plan.charAt(0).toUpperCase() + jugador.tipo_plan.slice(1) : 'Mensual'}</span></div>
+      ${jugador.entrenamientos_por_semana ? `<div class="row"><span class="row-label">Entrenamientos/sem</span><span class="row-value">${jugador.entrenamientos_por_semana}</span></div>` : ''}
+      ${jugador.tipo_plan !== 'libre' ? `<div class="row"><span class="row-label">Sesiones usadas</span><span class="row-value">${jugador.sesiones_usadas||0} / ${jugador.sesiones_limite||0}</span></div>` : ''}
+      ${jugador.horario ? `<div class="row"><span class="row-label">Horario</span><span class="row-value">${jugador.horario}</span></div>` : ''}
+      ${jugador.grupo ? `<div class="row"><span class="row-label">Grupo</span><span class="row-value">${jugador.grupo}</span></div>` : ''}
+    </div>
+    ${(mens3 || []).length > 0 ? `
+    <div class="card-header" style="border-top:1px solid #e2e8f0">Mensualidades recientes</div>
+    <div class="card-body">
+      ${(mens3 || []).map((m: any) => `
+        <div class="mens-row">
+          <span style="font-size:12px;color:#0f172a;font-weight:500">${mesLabel(m.mes)} ${m.anio}</span>
+          <span class="mens-pill" style="background:${colorMens(m.estado)}20;color:${colorMens(m.estado)}">${estadoMens(m.estado)}</span>
+        </div>`).join('')}
+    </div>` : ''}
+  </div>
+</div>
+
+<!-- ── ASISTENCIA CALENDARIO ── -->
+<div class="card no-break" style="margin-bottom:14px">
+  <div class="card-header">Asistencia — últimos 90 días (${totalAsist} sesiones)</div>
+  <div class="card-body">
+    <div style="margin-bottom:6px">
+      ${semanas.map(semana => `
+        <div class="cal-row">
+          ${semana.map(d => `<div class="dot ${d.asistio ? 'dot-ok' : 'dot-no'}" title="${d.fecha}"></div>`).join('')}
+        </div>`).join('')}
+    </div>
+    <div style="display:flex;gap:14px;margin-top:8px;font-size:10px;color:#64748b">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#16a34a;margin-right:4px;vertical-align:middle"></span>Asistió</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e2e8f0;margin-right:4px;vertical-align:middle"></span>No asistió</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── COMPETENCIA ── -->
+${partidos.length > 0 || externos.length > 0 ? `
+<div class="grid2">
+  ${partidos.length > 0 ? `
+  <div class="card no-break">
+    <div class="card-header">Partidos internos (${partidos.length})</div>
+    <div class="card-body">
+      ${partidos.slice(0, 8).map(p => {
+        const gane = p.ganador === jugadorId
+        return `<div class="torneo-row">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:12px;font-weight:500">${(p as any).torneos?.nombre || '—'}</div>
+              <div style="font-size:10px;color:#64748b">${p.fase || ''}</div>
+            </div>
+            <span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:${gane?'#f0fdf4':'#fef2f2'};color:${gane?'#16a34a':'#dc2626'}">${gane?'Victoria':'Derrota'}</span>
+          </div>
+        </div>`
+      }).join('')}
+    </div>
+  </div>` : ''}
+
+  ${externos.length > 0 ? `
+  <div class="card no-break">
+    <div class="card-header">Torneos externos (${externos.length})</div>
+    <div class="card-body">
+      ${externos.slice(0, 8).map(t => `
+        <div class="torneo-row">
+          <div style="font-size:12px;font-weight:500">${t.nombre_club}</div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-top:2px">
+            <span>${t.fecha ? fmtFecha(t.fecha) : ''} · ${CAT_LABEL[t.categoria]||t.categoria}</span>
+            <span>${POSICION_LABEL[t.posicion]||t.posicion}</span>
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>` : ''}
+</div>` : ''}
+
+<!-- ── EVALUACIONES ── -->
+${evaluaciones.length > 0 ? `
+<div class="card no-break" style="margin-bottom:14px">
+  <div class="card-header">Evaluación del entrenador — ${evaluaciones[0]?.periodo_trimestre || trimestre}</div>
+  <div class="card-body">
+    ${evaluaciones[0]?.feedback_profesor ? `<div class="feedback-box">${evaluaciones[0].feedback_profesor}</div>` : '<p style="color:#94a3b8;font-size:12px">Sin evaluación registrada</p>'}
+    ${evaluaciones[0]?.meta_proximo_periodo ? `
+      <div class="meta-box">
+        <div class="meta-label">Meta próximo período</div>
+        ${evaluaciones[0].meta_proximo_periodo}
+      </div>` : ''}
+    ${evaluaciones[0]?.firmado_alumno !== undefined ? `
+      <div style="margin-top:10px;font-size:11px;color:${evaluaciones[0].firmado_alumno ? '#16a34a' : '#d97706'}">
+        ${evaluaciones[0].firmado_alumno ? '✓ Compromiso aceptado por el alumno' : '⏳ Pendiente de aceptación del alumno'}
+      </div>` : ''}
+  </div>
+</div>` : ''}
+
+<!-- ── FOOTER ── -->
+<div class="footer">
+  <span>${clubNombre || 'Club'} — Sistema de gestión CmSports</span>
+  <span>Generado el ${new Date().toLocaleString('es-CL', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
+</div>
+
+<script>window.onload = () => { window.print(); }<\/script>
+</body></html>`
+
+      const win = window.open('', '_blank', 'width=900,height=700')
+      if (!win) { alert('Permite las ventanas emergentes para generar el PDF'); return }
+      win.document.write(html)
+      win.document.close()
+    } finally {
+      setGenerandoReporte(false)
+    }
+  }
+
   return (
     <AppLayout perfil={perfil}>
       <button onClick={() => router.back()} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer', marginBottom:16 }}>
@@ -484,9 +767,16 @@ export default function JugadorDetallePage() {
               </span>
             </div>
           </div>
-          {esAdmin && (
+          {(esAdmin || esProfesor) && (
             <div style={{ display:'flex', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
-              {jugador.es_externo && (
+              <button
+                onClick={generarReportePDF}
+                disabled={generandoReporte}
+                style={{ background:'rgba(255,255,255,0.95)', color:'#4f46e5', border:'1px solid rgba(255,255,255,0.5)', borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:700 }}
+              >
+                {generandoReporte ? 'Generando…' : '📄 Reporte PDF'}
+              </button>
+              {esAdmin && jugador.es_externo && (
                 <button onClick={async () => {
                   if (!confirm('¿Agregar este jugador al club?')) return
                   const { error } = await supabase.from('jugadores').update({ es_externo: false, sesiones_limite: 12, estado: 'activo' }).eq('id', jugadorId)
@@ -496,14 +786,16 @@ export default function JugadorDetallePage() {
                   Agregar al club
                 </button>
               )}
-              <button onClick={async () => {
-                const nuevoEstado = jugador.estado === 'activo' ? 'bloqueado' : 'activo'
-                const { error } = await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', jugadorId)
-                if (error) { setDatosError(`No se pudo cambiar el estado: ${error.message}`); return }
-                setJugador({ ...jugador, estado: nuevoEstado })
-              }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>
-                {jugador.estado==='activo' ? 'Bloquear' : 'Activar'}
-              </button>
+              {esAdmin && (
+                <button onClick={async () => {
+                  const nuevoEstado = jugador.estado === 'activo' ? 'bloqueado' : 'activo'
+                  const { error } = await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', jugadorId)
+                  if (error) { setDatosError(`No se pudo cambiar el estado: ${error.message}`); return }
+                  setJugador({ ...jugador, estado: nuevoEstado })
+                }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>
+                  {jugador.estado==='activo' ? 'Bloquear' : 'Activar'}
+                </button>
+              )}
               {puedeEditar && !tieneCuenta && (
                 <button onClick={crearAcceso} disabled={creandoAcceso} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
                   {creandoAcceso ? 'Creando...' : 'Crear acceso'}
