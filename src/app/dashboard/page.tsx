@@ -11,7 +11,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useModulos } from '@/lib/hooks/useModulos'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
-  Link2, Mail, X, HelpCircle, Copy, Check, UserX,
+  Link2, Mail, X, HelpCircle, Copy, Check, UserX, ClipboardCheck,
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 
@@ -51,6 +51,7 @@ const dashboardCache: Record<string, {
   solicitudes?: any[]
   desgloseGastos?: { categoria: string; monto: number }[]
   jugadoresInactivos?: any[]
+  asistenciaHoy?: { total: number; nombres: string[] }
 }> = {}
 
 const linkCache: Record<string, string> = {}
@@ -73,6 +74,7 @@ export default function DashboardPage() {
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
   const [desgloseGastos, setDesgloseGastos]       = useState<{ categoria: string; monto: number }[]>([])
+  const [asistenciaHoy, setAsistenciaHoy]         = useState<{ total: number; nombres: string[] } | null>(null)
   const [loading, setLoading]       = useState(true)
   const [errorDatos, setErrorDatos] = useState(false)
   const [ddOpen, setDdOpen]         = useState(false)
@@ -217,6 +219,19 @@ export default function DashboardPage() {
     setJugadoresInactivos(inactivos)
   }
 
+  async function cargarAsistenciaHoy(cid: string) {
+    const hoy = new Date().toISOString().split('T')[0]
+    const { data } = await supabase
+      .from('asistencia')
+      .select('jugador_id, jugadores(nombre)')
+      .eq('club_id', cid)
+      .eq('fecha', hoy)
+    const nombres = (data || []).map((r: any) => r.jugadores?.nombre || '').filter(Boolean)
+    const resultado = { total: nombres.length, nombres }
+    dashboardCache[cid] = { ...dashboardCache[cid], asistenciaHoy: resultado }
+    setAsistenciaHoy(resultado)
+  }
+
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
@@ -232,6 +247,7 @@ export default function DashboardPage() {
         if (cached.solicitudes) setSolicitudes(cached.solicitudes)
         if (cached.desgloseGastos) setDesgloseGastos(cached.desgloseGastos)
         if (cached.jugadoresInactivos) setJugadoresInactivos(cached.jugadoresInactivos)
+        if (cached.asistenciaHoy) setAsistenciaHoy(cached.asistenciaHoy)
         setLoading(false)
       })
     }
@@ -244,6 +260,7 @@ export default function DashboardPage() {
           if (!cancelado) {
             void cargarDesgloseGastos(clubId)
             void cargarInactivos(clubId)
+            void cargarAsistenciaHoy(clubId)
           }
         })
       }).catch(() => {
@@ -446,8 +463,8 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── Fila inferior: Gastos + Link + Solicitudes ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
+      {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
 
         {/* Gastos este mes */}
         {tiene('finanzas') && (
@@ -492,6 +509,11 @@ export default function DashboardPage() {
           </p>
           <LinkInvitacion clubId={perfil?.club_id || ''} />
         </div>
+
+        {/* Asistencia hoy */}
+        <Link href="/asistencia" style={{ textDecoration: 'none' }}>
+          <AsistenciaHoyCard data={asistenciaHoy} totalActivos={kpis.activos || 0} />
+        </Link>
 
         {/* Solicitudes pendientes */}
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
@@ -717,6 +739,92 @@ function PingPongMini() {
       <circle cx="101" cy="15" r="0.7" fill="white" />
       <circle cx="103" cy="15" r="0.7" fill="white" />
     </svg>
+  )
+}
+
+/* ── AsistenciaHoyCard ── */
+function AsistenciaHoyCard({ data, totalActivos }: { data: { total: number; nombres: string[] } | null; totalActivos: number }) {
+  const total = data?.total ?? 0
+  const pct   = totalActivos > 0 ? Math.min(total / totalActivos, 1) : 0
+
+  // Mini donut SVG
+  const r = 28, cx = 36, cy = 36
+  const circunferencia = 2 * Math.PI * r
+  const dashOffset = circunferencia * (1 - pct)
+  const color = pct >= 0.6 ? '#16a34a' : pct >= 0.3 ? '#d97706' : '#4f46e5'
+
+  return (
+    <div style={{
+      background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12,
+      padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)',
+      display: 'flex', flexDirection: 'column', height: '100%', cursor: 'pointer',
+      transition: 'box-shadow .15s',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f0f9ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ClipboardCheck size={16} color="#4f46e5" />
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>📋 Asistencia hoy</span>
+      </div>
+
+      {/* Donut + número */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+        <svg width={72} height={72} viewBox="0 0 72 72">
+          {/* Track */}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f1f5f9" strokeWidth={8} />
+          {/* Arc */}
+          <circle
+            cx={cx} cy={cy} r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={8}
+            strokeDasharray={circunferencia}
+            strokeDashoffset={data === null ? circunferencia * 0.75 : dashOffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${cx} ${cy})`}
+            style={{ transition: 'stroke-dashoffset .5s ease' }}
+          />
+          <text x={cx} y={cy + 5} textAnchor="middle" fontSize={16} fontWeight={700} fill={color}>
+            {data === null ? '…' : total}
+          </text>
+        </svg>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>
+            {data === null ? '—' : total}
+          </div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
+            {data === null ? 'Cargando…' : `de ${totalActivos} activos`}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color, marginTop: 4 }}>
+            {data === null ? '' : `${Math.round(pct * 100)}% del plantel`}
+          </div>
+        </div>
+      </div>
+
+      {/* Últimas asistencias */}
+      {data && data.nombres.length > 0 && (
+        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 10 }}>
+          <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>Últimos registros</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {data.nombres.slice(0, 3).map((n, i) => (
+              <div key={i} style={{ fontSize: 11, color: '#475569', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ width: 5, height: 5, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                {n}
+              </div>
+            ))}
+            {data.nombres.length > 3 && (
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>+{data.nombres.length - 3} más</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {data && data.nombres.length === 0 && (
+        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 10, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+          Sin asistencias registradas hoy
+        </div>
+      )}
+    </div>
   )
 }
 
