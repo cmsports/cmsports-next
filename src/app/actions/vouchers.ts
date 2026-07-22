@@ -8,10 +8,10 @@ async function requireStaff() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null }
   const { data: perfil } = await supabase.from('perfiles').select('club_id,rol').eq('id', user.id).single()
-  if (!perfil?.club_id || !['admin', 'superadmin', 'profesor'].includes(perfil.rol)) {
+  if (!perfil?.club_id || !['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
     return { error: 'Acceso denegado' as const, supabase: null, clubId: null }
   }
-  return { error: null, supabase, clubId: perfil.club_id }
+  return { error: null, supabase, clubId: perfil.club_id! }
 }
 
 export async function subirVoucher(params: { nombre: string; base64: string }) {

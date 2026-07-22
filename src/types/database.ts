@@ -1498,6 +1498,35 @@ export interface Database {
           { foreignKeyName: 'liga_partidos_ganador_id_fkey'; columns: ['ganador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
+      vouchers: {
+        Row: {
+          id: string
+          club_id: string
+          nombre: string
+          imagen_url: string
+          activo: boolean
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          nombre?: string
+          imagen_url: string
+          activo?: boolean
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          nombre?: string
+          imagen_url?: string
+          activo?: boolean
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'vouchers_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
+        ]
+      }
     }
     Views: {}
     Functions: {
