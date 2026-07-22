@@ -77,7 +77,7 @@ export default function JugadoresPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario')
         .eq('club_id', id)
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
@@ -102,7 +102,7 @@ export default function JugadoresPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario')
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
@@ -333,7 +333,7 @@ export default function JugadoresPage() {
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
               <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-                {['#','Nombre','RUT','Categoría','Sesiones','Estado',''].map(h => (
+                {['#','Nombre','RUT','Categoría','Sesiones','Horario',''].map(h => (
                   <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -361,10 +361,8 @@ export default function JugadoresPage() {
                       </span>
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite}</td>
-                    <td style={{ padding:'12px 16px' }}>
-                      <span style={{ background: j.estado === 'activo' ? '#f0fdf4' : '#fef2f2', color: j.estado === 'activo' ? '#16a34a' : '#dc2626', padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                        {j.estado === 'activo' ? '✅ Activo' : '🚫 Bloqueado'}
-                      </span>
+                    <td style={{ padding:'12px 16px', fontSize:12, color: j.horario ? text : hint }}>
+                      {j.horario || '—'}
                     </td>
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, whiteSpace:'nowrap' }}>
