@@ -94,7 +94,7 @@ function FinanzasContent() {
     const inicio = `${anio}-${mesStr}-01`
     const fin = `${anio}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`
     // Solo movimientos: la lista de jugadores no cambia por mes, se carga aparte una sola vez
-    const { data } = await supabase.from('movimientos').select('*').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
+    const { data } = await supabase.from('movimientos').select('id,tipo,categoria,descripcion,monto,fecha,registrado_por_nombre,creado_en').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
     setMovimientos(data || [])
   }
 

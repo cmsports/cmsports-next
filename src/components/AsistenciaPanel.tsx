@@ -50,11 +50,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const [pendientesCount, setPendientesCount] = useState(0)
 
-  const [bloquesFecha,      setBloquesFecha]      = useState(() => fechaChile())
-  const [bloqueHorario,     setBloqueHorario]     = useState('')
-  const [presenciaMap,      setPresenciaMap]      = useState<Record<string, boolean>>({})
-  const [registrandoBloque, setRegistrandoBloque] = useState(false)
-  const [mensajeBloque,     setMensajeBloque]     = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  const [bloquesFecha,        setBloquesFecha]        = useState(() => fechaChile())
+  const [bloqueHorario,       setBloqueHorario]       = useState('')
+  const [presenciaMap,        setPresenciaMap]        = useState<Record<string, boolean>>({})
+  const [registrandoBloque,   setRegistrandoBloque]   = useState(false)
+  const [mensajeBloque,       setMensajeBloque]       = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  const [bloquesYaCerrados,   setBloquesYaCerrados]   = useState<Set<string>>(new Set())
+  const [asistsBloqueCache,   setAsistsBloqueCache]   = useState<Record<string, Set<string>>>({}) // fecha → Set<jugador_id>
 
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
@@ -280,6 +282,14 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (result.error) {
       setMensajeBloque({ tipo: 'error', texto: result.error })
     } else {
+      const bloqueKey = `${bloquesFecha}|${bloqueHorario}`
+      setBloquesYaCerrados(prev => new Set([...prev, bloqueKey]))
+      // Actualizar cache de asistencias para esa fecha
+      const idsPresentes = new Set(presentes)
+      setAsistsBloqueCache(prev => ({
+        ...prev,
+        [bloquesFecha]: new Set([...(prev[bloquesFecha] ?? []), ...idsPresentes]),
+      }))
       setMensajeBloque({ tipo: 'ok', texto: `Bloque cerrado: ${presentes.length} presentes, ${ausentes.length} inasistentes` })
       await cargarDatos()
       setBloqueHorario('')
@@ -288,6 +298,24 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     setRegistrandoBloque(false)
     setTimeout(() => setMensajeBloque(null), 6000)
   }
+
+  // Cargar asistencias de la fecha del bloque si no es hoy (para saber si el bloque ya fue cerrado)
+  useEffect(() => {
+    if (!clubId || !bloquesFecha || !bloqueHorario) return
+    if (bloquesFecha === hoy) return // ya tenemos asistencias en `asistencias`
+    setAsistsBloqueCache(prev => {
+      if (prev[bloquesFecha]) return prev // ya lo tenemos, no recargar
+      // Disparar fetch fuera del setState
+      supabase.from('asistencia').select('jugador_id').eq('club_id', clubId).eq('fecha', bloquesFecha)
+        .then(({ data }) => {
+          setAsistsBloqueCache(p => ({
+            ...p,
+            [bloquesFecha]: new Set((data || []).map((a: any) => a.jugador_id)),
+          }))
+        })
+      return prev
+    })
+  }, [bloquesFecha, bloqueHorario, clubId, hoy])
 
   const dowBloque = new Date(bloquesFecha + 'T12:00:00').getDay()
   const jugadoresBloque = jugadores.filter(j =>
@@ -302,6 +330,19 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   )
   const horariosDisponibles = [...new Set(jugadores.map(j => j.horario).filter(Boolean))].sort() as string[]
 
+  const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
+
+  // Detectar si el bloque ya fue cerrado: sesión actual o asistencias cargadas
+  const bloqueKey = `${bloquesFecha}|${bloqueHorario}`
+  const asistsFecha: Set<string> = bloquesFecha === hoy
+    ? registradosHoy
+    : (asistsBloqueCache[bloquesFecha] ?? new Set())
+  const jugadoresBloqueConAsist = jugadoresBloque.filter(j => asistsFecha.has(j.id))
+  const bloqueYaCerrado = bloquesYaCerrados.has(bloqueKey) ||
+    (jugadoresBloque.length > 0 && jugadoresBloqueConAsist.length === jugadoresBloque.length)
+  const bloqueParcialmenteCerrado = !bloqueYaCerrado &&
+    jugadoresBloque.length > 0 && jugadoresBloqueConAsist.length > 0
+
   function togglePresencia(id: string) {
     setPresenciaMap(prev => ({ ...prev, [id]: prev[id] === false ? true : false }))
   }
@@ -309,7 +350,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const esJugador = perfil?.rol === 'jugador'
   const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor'
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
-  const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
 
   const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
 
@@ -507,6 +547,18 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           {bloqueHorario && jugadoresBloque.length === 0 && (
             <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'20px', textAlign:'center', color:hint, fontSize:13 }}>
               No hay jugadores con horario {bloqueHorario} para el día seleccionado
+            </div>
+          )}
+
+          {bloqueYaCerrado && bloqueHorario && jugadoresBloque.length > 0 && (
+            <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', marginBottom:12, fontSize:13, fontWeight:600, color:'#92400e' }}>
+              ⚠️ Este bloque ya fue cerrado para el {bloquesFecha}. Podés volver a cerrarlo pero los jugadores que ya tienen asistencia no se duplicarán.
+            </div>
+          )}
+
+          {bloqueParcialmenteCerrado && bloqueHorario && jugadoresBloque.length > 0 && (
+            <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'10px 14px', marginBottom:12, fontSize:13, color:'#1e40af' }}>
+              ℹ️ {jugadoresBloqueConAsist.length} de {jugadoresBloque.length} jugadores ya tienen asistencia registrada para este bloque.
             </div>
           )}
 
