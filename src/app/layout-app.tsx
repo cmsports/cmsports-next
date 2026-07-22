@@ -111,6 +111,18 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const pathname = usePathname()
   const clubId = perfil?.club_id ?? ''
   const [masOpen, setMasOpen] = useState(false)
+
+  useEffect(() => {
+    const BUILD = process.env.NEXT_PUBLIC_BUILD_TIME ?? ''
+    if (!BUILD) return
+    const stored = localStorage.getItem('_build')
+    if (stored && stored !== BUILD) {
+      localStorage.setItem('_build', BUILD)
+      window.location.reload()
+    } else {
+      localStorage.setItem('_build', BUILD)
+    }
+  }, [])
   const [clubCargado, setClubCargado] = useState<{ id: string; nombre: string } | null>(null)
   const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(() => clubLogoCache[clubId] ?? null)
   const [jugadorBloqueado, setJugadorBloqueado] = useState(false)

@@ -7,9 +7,16 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'datjbrohbkqduhzjtmwy.supabase.co', pathname: '/storage/v1/object/public/**' },
     ],
   },
+  env: {
+    NEXT_PUBLIC_BUILD_TIME: Date.now().toString(),
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',
+    },
+    staleTimes: {
+      dynamic: 0,
+      static: 0,
     },
   },
   async headers() {
