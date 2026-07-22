@@ -84,6 +84,8 @@ export default function JugadorDetallePage() {
   const [editPlan, setEditPlan] = useState(false)
   const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+  const [editDias, setEditDias] = useState(false)
+  const [diasForm, setDiasForm] = useState({ entrena_lun:false, entrena_mar:false, entrena_mie:false, entrena_jue:false, entrena_vie:false })
   const [guardandoDatos, setGuardandoDatos] = useState(false)
   const [datosError, setDatosError] = useState('')
   const [modalExternoOpen, setModalExternoOpen] = useState(false)
@@ -308,6 +310,20 @@ export default function JugadorDetallePage() {
     }
     setJugador({ ...jugador, ...datos })
     setEditPlan(false)
+    setGuardandoDatos(false)
+  }
+
+  async function guardarDias() {
+    setGuardandoDatos(true)
+    setDatosError('')
+    const { error } = await supabase.from('jugadores').update(diasForm).eq('id', jugadorId)
+    if (error) {
+      setDatosError(`No se pudieron guardar los días: ${error.message}`)
+      setGuardandoDatos(false)
+      return
+    }
+    setJugador({ ...jugador, ...diasForm })
+    setEditDias(false)
     setGuardandoDatos(false)
   }
 
@@ -642,6 +658,7 @@ export default function JugadorDetallePage() {
       ${jugador.entrenamientos_por_semana ? `<div class="row"><span class="row-label">Entrenamientos/sem</span><span class="row-value">${jugador.entrenamientos_por_semana}</span></div>` : ''}
       ${jugador.tipo_plan !== 'libre' ? `<div class="row"><span class="row-label">Sesiones usadas</span><span class="row-value">${jugador.sesiones_usadas||0} / ${jugador.sesiones_limite||0}</span></div>` : ''}
       ${jugador.horario ? `<div class="row"><span class="row-label">Horario</span><span class="row-value">${jugador.horario}</span></div>` : ''}
+      ${(jugador.entrena_lun !== null && jugador.entrena_lun !== undefined) || (jugador.entrena_mar !== null && jugador.entrena_mar !== undefined) ? `<div class="row"><span class="row-label">Días</span><span class="row-value">${[jugador.entrena_lun?'Lu':'',jugador.entrena_mar?'Ma':'',jugador.entrena_mie?'Mi':'',jugador.entrena_jue?'Ju':'',jugador.entrena_vie?'Vi':''].filter(Boolean).join(' · ')||'—'}</span></div>` : ''}
       ${jugador.grupo ? `<div class="row"><span class="row-label">Grupo</span><span class="row-value">${jugador.grupo}</span></div>` : ''}
     </div>
     ${(mens3 || []).length > 0 ? `
@@ -963,6 +980,49 @@ export default function JugadorDetallePage() {
             </div>
           </div>
         )}
+        {/* Días de entrenamiento */}
+        {(() => {
+          const DIAS = [
+            { key:'entrena_lun', label:'Lunes' },
+            { key:'entrena_mar', label:'Martes' },
+            { key:'entrena_mie', label:'Miércoles' },
+            { key:'entrena_jue', label:'Jueves' },
+            { key:'entrena_vie', label:'Viernes' },
+          ] as const
+          const tieneDatos = DIAS.some(d => jugador[d.key] !== null && jugador[d.key] !== undefined)
+          if (!tieneDatos && !puedeEvaluar) return null
+          return (
+            <div style={cardStyle}>
+              <CardHeader title="Días de entrenamiento" onEdit={puedeEvaluar ? () => {
+                setDiasForm({
+                  entrena_lun: jugador.entrena_lun ?? false,
+                  entrena_mar: jugador.entrena_mar ?? false,
+                  entrena_mie: jugador.entrena_mie ?? false,
+                  entrena_jue: jugador.entrena_jue ?? false,
+                  entrena_vie: jugador.entrena_vie ?? false,
+                })
+                setDatosError('')
+                setEditDias(true)
+              } : undefined} />
+              <div style={{ padding:'4px 20px 16px' }}>
+                {tieneDatos ? DIAS.map(({ key, label }) => {
+                  const val = jugador[key]
+                  return (
+                    <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #f1f5f9' }}>
+                      <span style={{ fontSize:13, color: text }}>{label}</span>
+                      <span style={{ fontSize:12, fontWeight:600, color: val === true ? '#16a34a' : val === false ? '#94a3b8' : hint }}>
+                        {val === true ? 'Entrena' : val === false ? 'No entrena' : '—'}
+                      </span>
+                    </div>
+                  )
+                }) : (
+                  <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin días de entrenamiento registrados</div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
       </div>
 
       {/* ── Tabs ── */}
@@ -1243,6 +1303,42 @@ export default function JugadorDetallePage() {
               <button onClick={() => setEditPlan(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
               <button onClick={guardarPlan} disabled={guardandoDatos} style={{ flex:1, padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 {guardandoDatos ? 'Guardando...' : 'Guardar plan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════ Modal: Días de entrenamiento ══════ */}
+      {editDias && (
+        <div style={modalOverlay}>
+          <div style={{ ...modalCard, maxWidth:380 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
+              <div style={{ fontSize:18, fontWeight:700, color: text }}>Días de entrenamiento</div>
+              <button onClick={() => setEditDias(false)} style={{ background:'#f1f5f9', border:'none', borderRadius:8, width:32, height:32, fontSize:16, cursor:'pointer', color: muted }}>✕</button>
+            </div>
+            {([
+              { key:'entrena_lun', label:'Lunes' },
+              { key:'entrena_mar', label:'Martes' },
+              { key:'entrena_mie', label:'Miércoles' },
+              { key:'entrena_jue', label:'Jueves' },
+              { key:'entrena_vie', label:'Viernes' },
+            ] as const).map(({ key, label }) => (
+              <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 0', borderBottom:'1px solid #f1f5f9' }}>
+                <span style={{ fontSize:13, color: text, fontWeight:500 }}>{label}</span>
+                <div
+                  onClick={() => setDiasForm(f => ({ ...f, [key]: !f[key] }))}
+                  style={{ width:44, height:24, borderRadius:12, background: diasForm[key] ? '#4f46e5' : '#e2e8f0', transition:'background 0.2s', position:'relative', cursor:'pointer', flexShrink:0 }}
+                >
+                  <div style={{ position:'absolute', top:2, left: diasForm[key] ? 22 : 2, width:20, height:20, borderRadius:'50%', background:'white', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.2)' }} />
+                </div>
+              </div>
+            ))}
+            {datosError && <div style={{ margin:'12px 0', color:'#dc2626', fontSize:12, background:'#fef2f2', padding:'8px 12px', borderRadius:8 }}>{datosError}</div>}
+            <div style={{ display:'flex', gap:10, marginTop:20 }}>
+              <button onClick={() => setEditDias(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
+              <button onClick={guardarDias} disabled={guardandoDatos} style={{ flex:1, padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                {guardandoDatos ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>

@@ -554,6 +554,7 @@ export default function ReportesPage() {
                 ['Mensualidad', preview.jugador.mensualidad ? fmt(preview.jugador.mensualidad) : '—'],
                 ['RUT', preview.jugador.rut || '—'],
                 ['Email', preview.jugador.email || '—'],
+                ...((() => { const d = [preview.jugador.entrena_lun?'Lu':'',preview.jugador.entrena_mar?'Ma':'',preview.jugador.entrena_mie?'Mi':'',preview.jugador.entrena_jue?'Ju':'',preview.jugador.entrena_vie?'Vi':''].filter(Boolean).join(' · '); return d ? [['Días', d] as [string,string]] : [] })()),
               ].map(([l, v]) => (
                 <div key={l as string} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
                   <span style={{ color: muted }}>{l}</span>

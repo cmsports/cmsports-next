@@ -77,7 +77,7 @@ export default function JugadoresPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
         .eq('club_id', id)
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
@@ -102,7 +102,7 @@ export default function JugadoresPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
@@ -361,8 +361,19 @@ export default function JugadoresPage() {
                       </span>
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite}</td>
-                    <td style={{ padding:'12px 16px', fontSize:12, color: j.horario ? text : hint }}>
-                      {j.horario || '—'}
+                    <td style={{ padding:'12px 16px', fontSize:12 }}>
+                      {j.horario && <div style={{ color: text, marginBottom:2 }}>{j.horario}</div>}
+                      {(() => {
+                        const dias = [
+                          { k:'entrena_lun', l:'Lu' }, { k:'entrena_mar', l:'Ma' },
+                          { k:'entrena_mie', l:'Mi' }, { k:'entrena_jue', l:'Ju' },
+                          { k:'entrena_vie', l:'Vi' },
+                        ]
+                        const activos = dias.filter(d => j[d.k] === true).map(d => d.l)
+                        if (activos.length === 0 && !j.horario) return <span style={{ color: hint }}>—</span>
+                        if (activos.length === 0) return null
+                        return <div style={{ color: muted, fontSize:11 }}>{activos.join(' · ')}</div>
+                      })()}
                     </td>
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, whiteSpace:'nowrap' }}>
