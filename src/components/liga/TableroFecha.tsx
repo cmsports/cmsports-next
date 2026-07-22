@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { generarBloquesHorario, normalizarBloque, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
@@ -61,6 +61,13 @@ export function TableroFecha({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const touchRef = useRef<{
+    partidoId: string
+    ghost: HTMLDivElement
+    offsetX: number
+    offsetY: number
+    overTd: HTMLElement | null
+  } | null>(null)
   const [partidoResultado, setPartidoResultado] = useState<PartidoBoard | null>(null)
   const [setsA, setSetsA] = useState('3')
   const [setsB, setSetsB] = useState('0')
@@ -141,6 +148,62 @@ export function TableroFecha({
     setPartidos(prev => prev.map(p => (p.id === partidoId ? { ...p, mesaId, bloqueHorario: bloque } : p)))
     const res = await moverPartidoLiga({ partidoId, fechaId, mesaId, bloqueHorario: bloque })
     if (res.error) { setError(res.error); setPartidos(prev => prev.map(p => (p.id === partidoId ? anterior : p))) }
+  }
+
+  function handleTouchStart(e: React.TouchEvent<HTMLDivElement>, partidoId: string) {
+    if (fecha?.estado !== 'programada') return
+    const touch = e.touches[0]
+    const card = e.currentTarget
+    const rect = card.getBoundingClientRect()
+    const ghost = card.cloneNode(true) as HTMLDivElement
+    Object.assign(ghost.style, {
+      position: 'fixed', top: rect.top + 'px', left: rect.left + 'px',
+      width: rect.width + 'px', margin: '0', opacity: '0.88',
+      pointerEvents: 'none', zIndex: '8000',
+      transform: 'scale(1.06) rotate(1.5deg)',
+      boxShadow: '0 14px 36px rgba(15,23,42,0.28)', transition: 'none',
+      borderRadius: '12px',
+    })
+    document.body.appendChild(ghost)
+    setDraggingId(partidoId)
+    touchRef.current = { partidoId, ghost, offsetX: touch.clientX - rect.left, offsetY: touch.clientY - rect.top, overTd: null }
+  }
+
+  function handleTouchMove(e: React.TouchEvent<HTMLDivElement>) {
+    const t = touchRef.current
+    if (!t) return
+    const touch = e.touches[0]
+    t.ghost.style.top = (touch.clientY - t.offsetY) + 'px'
+    t.ghost.style.left = (touch.clientX - t.offsetX) + 'px'
+    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+    const td = el?.closest('[data-drop-mesa]') as HTMLElement | null
+    if (t.overTd && t.overTd !== td) {
+      t.overTd.style.background = ''
+      t.overTd.style.outline = ''
+    }
+    if (td && td !== t.overTd) {
+      td.style.background = 'rgba(99,102,241,0.1)'
+      td.style.outline = '2px solid #6366f1'
+      td.style.outlineOffset = '-2px'
+    }
+    t.overTd = td
+  }
+
+  function handleTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
+    const t = touchRef.current
+    if (!t) return
+    const touch = e.changedTouches[0]
+    t.ghost.remove()
+    if (t.overTd) { t.overTd.style.background = ''; t.overTd.style.outline = '' }
+    setDraggingId(null)
+    touchRef.current = null
+    const el = document.elementFromPoint(touch.clientX, touch.clientY)
+    const td = el?.closest('[data-drop-mesa]') as HTMLElement | null
+    if (td) {
+      const mesaId = td.dataset.dropMesa
+      const bloque = td.dataset.dropBloque
+      if (mesaId && bloque) void soltarEn(mesaId, bloque)
+    }
   }
 
   async function handleIniciarFecha() {
@@ -835,6 +898,8 @@ export function TableroFecha({
                       return (
                         <td
                           key={mesa.id}
+                          data-drop-mesa={mesa.id}
+                          data-drop-bloque={bloque}
                           style={{ padding: 8, borderRight: '1px solid #f1f5f9', verticalAlign: 'top', minWidth: 180 }}
                           onDragOver={e => e.preventDefault()}
                           onDrop={() => soltarEn(mesa.id, bloque)}
@@ -844,6 +909,10 @@ export function TableroFecha({
                               draggable={fecha.estado === 'programada'}
                               onDragStart={() => setDraggingId(partido.id)}
                               onDragEnd={() => setDraggingId(null)}
+                              onTouchStart={fecha.estado === 'programada' ? e => handleTouchStart(e, partido.id) : undefined}
+                              onTouchMove={fecha.estado === 'programada' ? handleTouchMove : undefined}
+                              onTouchEnd={fecha.estado === 'programada' ? handleTouchEnd : undefined}
+                              onTouchCancel={fecha.estado === 'programada' ? handleTouchEnd : undefined}
                               onClick={fecha.estado !== 'programada' ? () => abrirResultado(partido) : undefined}
                               style={{
                                 borderRadius: 12,
@@ -856,6 +925,7 @@ export function TableroFecha({
                                   : partido.estado === 'walkover' ? '#fcd34d' : '#e8edf5'}`,
                                 padding: '10px 12px',
                                 cursor: fecha.estado === 'programada' ? 'grab' : clickeable ? 'pointer' : 'default',
+                                touchAction: fecha.estado === 'programada' ? 'none' : 'auto',
                                 opacity: draggingId === partido.id ? 0.45 : 1,
                                 borderLeft: `4px solid ${dc}`,
                                 boxShadow: partido.estado === 'finalizado' ? '0 2px 8px rgba(16,185,129,0.12)' : draggingId === partido.id ? 'none' : '0 2px 8px rgba(15,23,42,0.06)',
