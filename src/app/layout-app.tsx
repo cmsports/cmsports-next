@@ -13,7 +13,7 @@ import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
-  Store, Library, BookLock, Eye, Award, Home,
+  Store, Library, BookLock, Eye, Award, Home, Landmark,
 } from 'lucide-react'
 import type { Perfil } from '@/types'
 import { esCuentaDemo } from '@/lib/auth/demo'
@@ -29,8 +29,9 @@ const navAdmin = [
   { section: 'Gestión' },
   { label: 'Clases',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
   { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
-  { label: 'Finanzas',      icon: DollarSign,       href: '/finanzas',   modulo: 'finanzas' },
-  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',     modulo: 'tienda' },
+  { label: 'Finanzas',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
+  { label: 'Central de Pago', icon: Landmark,        href: '/central-de-pago' },
+  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',            modulo: 'tienda' },
   { section: 'Recursos' },
   { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_buin' },
   { label: 'Bibliografía TDM', icon: Library,       href: '/bibliografia-tdm', modulo: 'bibliografia' },
