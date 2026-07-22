@@ -580,17 +580,19 @@ export default function ReportesPage() {
               <div style={{ overflowX:'auto' }}>
                 <table style={{ width:'100%', fontSize:12, borderCollapse:'collapse' }}>
                   <thead><tr style={{ borderBottom:'2px solid #e2e8f0' }}>
-                    <th style={{ textAlign:'left', padding:'8px 6px', color: muted }}>Fecha</th>
+                    <th style={{ textAlign:'left', padding:'8px 6px', color: muted }}>Período</th>
                     <th style={{ textAlign:'right', padding:'8px 6px', color: muted }}>Monto</th>
                     <th style={{ textAlign:'center', padding:'8px 6px', color: muted }}>Estado</th>
+                    <th style={{ textAlign:'center', padding:'8px 6px', color: muted }}>Fecha pago</th>
                   </tr></thead>
                   <tbody>{preview.mensualidades.map((m: any, i: number) => (
                     <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
-                      <td style={{ padding:'8px 6px', color: text }}>{m.fecha}</td>
+                      <td style={{ padding:'8px 6px', color: text }}>{mesesN[m.mes - 1]} {m.anio}</td>
                       <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color: text }}>{m.monto ? fmt(m.monto) : '—'}</td>
                       <td style={{ padding:'8px 6px', textAlign:'center' }}>
                         <span style={{ padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:600, background: m.estado === 'pagado' ? '#dcfce7' : m.estado === 'atrasado' ? '#fef2f2' : '#fef9c3', color: m.estado === 'pagado' ? '#16a34a' : m.estado === 'atrasado' ? '#dc2626' : '#d97706' }}>{m.estado}</span>
                       </td>
+                      <td style={{ padding:'8px 6px', textAlign:'center', color: m.fecha_pago ? text : hint }}>{m.fecha_pago || '—'}</td>
                     </tr>
                   ))}</tbody>
                 </table>

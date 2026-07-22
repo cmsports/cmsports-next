@@ -649,7 +649,10 @@ export default function JugadorDetallePage() {
     <div class="card-body">
       ${(mens3 || []).map((m: any) => `
         <div class="mens-row">
-          <span style="font-size:12px;color:#0f172a;font-weight:500">${mesLabel(m.mes)} ${m.anio}</span>
+          <div>
+            <span style="font-size:12px;color:#0f172a;font-weight:500">${mesLabel(m.mes)} ${m.anio}</span>
+            ${m.fecha_pago ? `<div style="font-size:10px;color:#64748b;margin-top:1px">Ingresado: ${fmtFecha(m.fecha_pago)}</div>` : ''}
+          </div>
           <span class="mens-pill" style="background:${colorMens(m.estado)}20;color:${colorMens(m.estado)}">${estadoMens(m.estado)}</span>
         </div>`).join('')}
     </div>` : ''}
