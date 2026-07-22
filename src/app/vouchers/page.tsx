@@ -89,7 +89,7 @@ export default function VouchersPage() {
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Vouchers de descuento</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Descuentos exclusivos socios</h1>
             <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>Beneficios exclusivos para socios del club</p>
           </div>
           {esStaff && (

@@ -32,7 +32,7 @@ const navAdmin = [
   { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
   { label: 'Finanzas',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
   { label: 'Central de Pago', icon: Landmark,        href: '/central-de-pago' },
-  { label: 'Vouchers',         icon: Tag,            href: '/vouchers' },
+  { label: 'Descuentos socios', icon: Tag,            href: '/vouchers' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',            modulo: 'tienda' },
   { section: 'Recursos' },
   { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_buin' },
