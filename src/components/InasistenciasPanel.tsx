@@ -11,22 +11,34 @@ const card  = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
-function sesionesEnRango(j: any, desde: Date, hasta: Date): number {
-  let count = 0
-  const d = new Date(desde); d.setHours(0,0,0,0)
-  const fin = new Date(hasta); fin.setHours(0,0,0,0)
-  while (d <= fin) {
-    const dow = d.getDay()
-    if (
-      (dow === 1 && j.entrena_lun) ||
-      (dow === 2 && j.entrena_mar) ||
-      (dow === 3 && j.entrena_mie) ||
-      (dow === 4 && j.entrena_jue) ||
-      (dow === 5 && j.entrena_vie)
-    ) count++
-    d.setDate(d.getDate() + 1)
+// Usa historial para determinar el horario activo en una fecha dada.
+// Si no hay historial para ese jugador, usa los campos actuales del jugador (fallback).
+function getScheduleForDate(
+  jugadorId: string,
+  iso: string,
+  historial: any[],
+  jugadorActual: any
+): any {
+  const registros = historial.filter(h =>
+    h.jugador_id === jugadorId &&
+    h.vigente_desde <= iso &&
+    (h.vigente_hasta === null || h.vigente_hasta >= iso)
+  )
+  if (registros.length > 0) {
+    return registros.sort((a, b) => b.vigente_desde.localeCompare(a.vigente_desde))[0]
   }
-  return count
+  return jugadorActual // fallback al estado actual si no hay historial
+}
+
+function entrenaTenEseDia(schedule: any, dow: number): boolean {
+  if (!schedule) return false
+  return (
+    (dow === 1 && schedule.entrena_lun) ||
+    (dow === 2 && schedule.entrena_mar) ||
+    (dow === 3 && schedule.entrena_mie) ||
+    (dow === 4 && schedule.entrena_jue) ||
+    (dow === 5 && schedule.entrena_vie)
+  )
 }
 
 export default function InasistenciasPanel({ clubId }: { clubId: string }) {
@@ -34,6 +46,7 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
   const [mes,  setMes]  = useState(hoy.getMonth() + 1)
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [jugadores,   setJugadores]   = useState<any[]>([])
+  const [historial,   setHistorial]   = useState<any[]>([])
   const [asistencias, setAsistencias] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [orden,   setOrden]   = useState<'inasistencias'|'nombre'|'pct'>('inasistencias')
@@ -45,13 +58,18 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
     const lastDay = new Date(anio, mes, 0).getDate()
     const hasta   = `${anio}-${String(mes).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
 
-    const [{ data: jugs }, { data: asist }] = await Promise.all([
+    const [{ data: jugs }, { data: hist }, { data: asist }] = await Promise.all([
       supabase.from('jugadores')
         .select('id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
         .eq('club_id', clubId)
         .eq('estado', 'activo')
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre'),
+      supabase.from('jugador_horario_historial')
+        .select('jugador_id,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,vigente_desde,vigente_hasta')
+        .eq('club_id', clubId)
+        .lte('vigente_desde', hasta)
+        .or(`vigente_hasta.is.null,vigente_hasta.gte.${desde}`),
       supabase.from('asistencia')
         .select('jugador_id,fecha')
         .eq('club_id', clubId)
@@ -59,6 +77,7 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
         .lte('fecha', hasta),
     ])
     setJugadores(jugs || [])
+    setHistorial(hist || [])
     setAsistencias(asist || [])
     setLoading(false)
   }, [clubId, mes, anio])
@@ -70,24 +89,28 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
   const hastaDate = new Date(Math.min(new Date(anio, mes, 0).getTime(), hoyDate.getTime()))
   const periodoFuturo = desdeDate > hoyDate
 
-  // Set rápido de asistencias para lookup O(1)
   const asistSet = new Set(asistencias.map(a => `${a.jugador_id}|${a.fecha}`))
 
   const filas = jugadores
     .map(j => {
       const tieneDias = j.entrena_lun || j.entrena_mar || j.entrena_mie || j.entrena_jue || j.entrena_vie
-      if (!tieneDias) return null
+      const tieneHistorial = historial.some(h => h.jugador_id === j.id)
+      if (!tieneDias && !tieneHistorial) return null
 
-      const programadas = periodoFuturo ? 0 : sesionesEnRango(j, desdeDate, hastaDate)
+      let programadas = 0
+      let asistidas   = 0
 
-      let asistidas = 0
-      if (programadas > 0) {
-        const d = new Date(desdeDate)
-        while (d <= hastaDate) {
+      if (!periodoFuturo) {
+        const d = new Date(desdeDate); d.setHours(0,0,0,0)
+        const fin = new Date(hastaDate); fin.setHours(0,0,0,0)
+
+        while (d <= fin) {
+          const iso = d.toISOString().split('T')[0]
           const dow = d.getDay()
-          const esdia = (dow===1&&j.entrena_lun)||(dow===2&&j.entrena_mar)||(dow===3&&j.entrena_mie)||(dow===4&&j.entrena_jue)||(dow===5&&j.entrena_vie)
-          if (esdia) {
-            const iso = d.toISOString().split('T')[0]
+          const sched = getScheduleForDate(j.id, iso, historial, j)
+
+          if (entrenaTenEseDia(sched, dow)) {
+            programadas++
             if (asistSet.has(`${j.id}|${iso}`)) asistidas++
           }
           d.setDate(d.getDate() + 1)
@@ -95,15 +118,14 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
       }
 
       const inasistencias = Math.max(0, programadas - asistidas)
-      const pct = programadas > 0 ? Math.round((asistidas / programadas) * 100) : 100
+      const pct  = programadas > 0 ? Math.round((asistidas / programadas) * 100) : 100
       const dias = [j.entrena_lun?'Lu':'',j.entrena_mar?'Ma':'',j.entrena_mie?'Mi':'',j.entrena_jue?'Ju':'',j.entrena_vie?'Vi':''].filter(Boolean)
 
       return { ...j, programadas, asistidas, inasistencias, pct, dias }
     })
     .filter(Boolean) as any[]
 
-  const visibles = soloCon ? filas.filter(j => j.inasistencias > 0) : filas
-
+  const visibles  = soloCon ? filas.filter(j => j.inasistencias > 0) : filas
   const ordenadas = [...visibles].sort((a, b) => {
     if (orden === 'nombre') return (a.nombre||'').localeCompare(b.nombre||'', 'es')
     if (orden === 'pct')    return (a.pct ?? 100) - (b.pct ?? 100)
@@ -146,9 +168,9 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
         {[
           { label:'Con horario',         value: String(total),      color:'#4f46e5', bg:'#ede9fe', border:'#c4b5fd' },
-          { label:'Con inasistencias',   value: String(conInas),    color: conInas>0 ? '#dc2626':'#16a34a', bg: conInas>0 ? '#fef2f2':'#f0fdf4', border: conInas>0 ? '#fecaca':'#bbf7d0' },
-          { label:'Total inasistencias', value: String(totalInas),  color: totalInas>0 ? '#dc2626':'#16a34a', bg: totalInas>0 ? '#fef2f2':'#f0fdf4', border: totalInas>0 ? '#fecaca':'#bbf7d0' },
-          { label:'Asistencia promedio', value: periodoFuturo ? '—' : `${promPct}%`, color: promPct>=80?'#16a34a':promPct>=60?'#d97706':'#dc2626', bg:'#f8fafc', border:'#e2e8f0' },
+          { label:'Con inasistencias',   value: String(conInas),    color: conInas>0?'#dc2626':'#16a34a', bg: conInas>0?'#fef2f2':'#f0fdf4', border: conInas>0?'#fecaca':'#bbf7d0' },
+          { label:'Total inasistencias', value: String(totalInas),  color: totalInas>0?'#dc2626':'#16a34a', bg: totalInas>0?'#fef2f2':'#f0fdf4', border: totalInas>0?'#fecaca':'#bbf7d0' },
+          { label:'% asistencia prom.',  value: periodoFuturo?'—':`${promPct}%`, color: promPct>=80?'#16a34a':promPct>=60?'#d97706':'#dc2626', bg:'#f8fafc', border:'#e2e8f0' },
         ].map(k => (
           <div key={k.label} style={{ background:k.bg, border:`1px solid ${k.border}`, borderRadius:12, padding:'12px 14px', textAlign:'center' }}>
             <div style={{ fontSize:22, fontWeight:800, color:k.color, fontFamily:'monospace' }}>{k.value}</div>
@@ -165,10 +187,10 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
             {([
               { key:'inasistencias', label:'Inasistencias' },
               { key:'pct',           label:'% Asistencia'  },
-              { key:'nombre',        label:'Nombre'         },
+              { key:'nombre',        label:'Nombre'        },
             ] as const).map(o => (
               <button key={o.key} onClick={() => setOrden(o.key)}
-                style={{ padding:'4px 10px', borderRadius:6, border:'1px solid #e2e8f0', fontSize:11, cursor:'pointer', fontWeight: orden===o.key ? 700:400, background: orden===o.key ? '#ede9fe':'#f8fafc', color: orden===o.key ? '#3730a3': muted }}>
+                style={{ padding:'4px 10px', borderRadius:6, border:'1px solid #e2e8f0', fontSize:11, cursor:'pointer', fontWeight:orden===o.key?700:400, background:orden===o.key?'#ede9fe':'#f8fafc', color:orden===o.key?'#3730a3':muted }}>
                 {o.label}
               </button>
             ))}
@@ -179,40 +201,36 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
             <thead>
               <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
                 {['Jugador','Horario','Program.','Asistidas','Inasistencias','% Asistencia'].map(h => (
-                  <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px', whiteSpace:'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:11, color:muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {periodoFuturo ? (
-                <tr><td colSpan={6} style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>El período seleccionado aún no ha comenzado</td></tr>
+                <tr><td colSpan={6} style={{ padding:40, textAlign:'center', color:hint, fontSize:13 }}>El período seleccionado aún no ha comenzado</td></tr>
               ) : ordenadas.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>Sin datos para este período</td></tr>
+                <tr><td colSpan={6} style={{ padding:40, textAlign:'center', color:hint, fontSize:13 }}>Sin datos para este período</td></tr>
               ) : ordenadas.map(j => {
-                const inas   = j.inasistencias ?? 0
-                const pct    = j.pct ?? 100
-                const cInas  = inas === 0 ? '#16a34a' : inas <= 2 ? '#d97706' : '#dc2626'
-                const bgInas = inas === 0 ? '#f0fdf4'  : inas <= 2 ? '#fffbeb'  : '#fef2f2'
-                const cPct   = pct  >= 80 ? '#16a34a' : pct  >= 60 ? '#d97706' : '#dc2626'
+                const inas  = j.inasistencias ?? 0
+                const pct   = j.pct ?? 100
+                const cInas = inas===0?'#16a34a':inas<=2?'#d97706':'#dc2626'
+                const bgInas= inas===0?'#f0fdf4':inas<=2?'#fffbeb':'#fef2f2'
+                const cPct  = pct>=80?'#16a34a':pct>=60?'#d97706':'#dc2626'
                 return (
                   <tr key={j.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
                     <td style={{ padding:'10px 14px' }}>
-                      <div style={{ fontWeight:600, color: text, fontSize:13 }}>{j.nombre}</div>
-                      {j.categoria && <div style={{ fontSize:11, color: muted, marginTop:2 }}>{j.categoria}</div>}
+                      <div style={{ fontWeight:600, color:text, fontSize:13 }}>{j.nombre}</div>
+                      {j.categoria && <div style={{ fontSize:11, color:muted, marginTop:2 }}>{j.categoria}</div>}
                     </td>
                     <td style={{ padding:'10px 14px', fontSize:12 }}>
-                      {j.horario && <div style={{ color: text }}>{j.horario}</div>}
-                      <div style={{ color: muted, fontSize:11 }}>{j.dias.join(' · ')}</div>
+                      {j.horario && <div style={{ color:text }}>{j.horario}</div>}
+                      <div style={{ color:muted, fontSize:11 }}>{j.dias.join(' · ')}</div>
                     </td>
-                    <td style={{ padding:'10px 14px', textAlign:'center', fontSize:13, fontWeight:600, color: text, fontFamily:'monospace' }}>
-                      {j.programadas}
-                    </td>
-                    <td style={{ padding:'10px 14px', textAlign:'center', fontSize:13, fontWeight:600, color:'#16a34a', fontFamily:'monospace' }}>
-                      {j.asistidas}
-                    </td>
+                    <td style={{ padding:'10px 14px', textAlign:'center', fontSize:13, fontWeight:600, color:text, fontFamily:'monospace' }}>{j.programadas}</td>
+                    <td style={{ padding:'10px 14px', textAlign:'center', fontSize:13, fontWeight:600, color:'#16a34a', fontFamily:'monospace' }}>{j.asistidas}</td>
                     <td style={{ padding:'10px 14px', textAlign:'center' }}>
                       <span style={{ background:bgInas, color:cInas, padding:'4px 12px', borderRadius:20, fontSize:13, fontWeight:700, fontFamily:'monospace' }}>
-                        {inas === 0 ? '✓' : inas}
+                        {inas===0 ? '✓' : inas}
                       </span>
                     </td>
                     <td style={{ padding:'10px 14px' }}>
@@ -231,8 +249,8 @@ export default function InasistenciasPanel({ clubId }: { clubId: string }) {
         </div>
       </div>
 
-      <div style={{ marginTop:12, fontSize:11, color: hint, textAlign:'center' }}>
-        Basado en el horario actual de cada jugador. Los cambios de horario aplicarán desde el mes siguiente.
+      <div style={{ marginTop:10, fontSize:11, color:hint, textAlign:'center' }}>
+        Calcula sesiones según el historial de horarios de cada jugador. Un cambio de horario aplica desde la fecha en que se realizó.
       </div>
     </div>
   )

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
-import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
+import { eliminarAsistencia, registrarAsistenciaAction, registrarBloqueAction } from '@/app/actions/asistencia'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import {
@@ -50,6 +50,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const [pendientesCount, setPendientesCount] = useState(0)
 
+  const [bloquesFecha,      setBloquesFecha]      = useState(() => fechaChile())
+  const [bloqueHorario,     setBloqueHorario]     = useState('')
+  const [presenciaMap,      setPresenciaMap]      = useState<Record<string, boolean>>({})
+  const [registrandoBloque, setRegistrandoBloque] = useState(false)
+  const [mensajeBloque,     setMensajeBloque]     = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
   const [cargandoDia, setCargandoDia] = useState(false)
@@ -89,7 +95,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
 
     let consultaJugadores = supabase.from('jugadores')
-      .select('id,nombre,categoria,sesiones_usadas,sesiones_limite')
+      .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
       .eq('club_id', id).eq('estado', 'activo').order('nombre')
     if (perfil?.rol === 'jugador' && perfil.jugador_id) {
       consultaJugadores = consultaJugadores.eq('id', perfil.jugador_id)
@@ -264,6 +270,42 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     setEliminando(null)
   }
 
+  async function handleCerrarBloque() {
+    if (!clubId || !bloqueHorario || jugadoresBloque.length === 0) return
+    setRegistrandoBloque(true)
+    setMensajeBloque(null)
+    const presentes = jugadoresBloque.filter(j => presenciaMap[j.id] !== false).map(j => j.id)
+    const ausentes  = jugadoresBloque.filter(j => presenciaMap[j.id] === false).map(j => j.id)
+    const result = await registrarBloqueAction({ clubId, fecha: bloquesFecha, hora: bloqueHorario.split('-')[0] + ':00', presentes, ausentes })
+    if (result.error) {
+      setMensajeBloque({ tipo: 'error', texto: result.error })
+    } else {
+      setMensajeBloque({ tipo: 'ok', texto: `Bloque cerrado: ${presentes.length} presentes, ${ausentes.length} inasistentes` })
+      await cargarDatos()
+      setBloqueHorario('')
+      setPresenciaMap({})
+    }
+    setRegistrandoBloque(false)
+    setTimeout(() => setMensajeBloque(null), 6000)
+  }
+
+  const dowBloque = new Date(bloquesFecha + 'T12:00:00').getDay()
+  const jugadoresBloque = jugadores.filter(j =>
+    j.horario === bloqueHorario &&
+    (
+      (dowBloque === 1 && j.entrena_lun) ||
+      (dowBloque === 2 && j.entrena_mar) ||
+      (dowBloque === 3 && j.entrena_mie) ||
+      (dowBloque === 4 && j.entrena_jue) ||
+      (dowBloque === 5 && j.entrena_vie)
+    )
+  )
+  const horariosDisponibles = [...new Set(jugadores.map(j => j.horario).filter(Boolean))].sort() as string[]
+
+  function togglePresencia(id: string) {
+    setPresenciaMap(prev => ({ ...prev, [id]: prev[id] === false ? true : false }))
+  }
+
   const esJugador = perfil?.rol === 'jugador'
   const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor'
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
@@ -399,7 +441,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
       {/* REGISTRO MANUAL (Admin/Profesor) */}
       {esAdminOProfesor && (
-        <div style={{ ...card, padding: 16 }}>
+        <div style={{ ...card, padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 12 }}>✏️ Registro manual</div>
           <input
             style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 10 }}
@@ -427,6 +469,88 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               })}
               {filtrados.length === 0 && <div style={{ padding: 16, color: muted, fontSize: 13, textAlign: 'center' }}>Sin resultados</div>}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* REGISTRO POR BLOQUE (Admin/Profesor) */}
+      {esAdminOProfesor && (
+        <div style={{ ...card, padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>🗂️ Cerrar bloque</div>
+          <div style={{ fontSize: 12, color: muted, marginBottom: 14 }}>Registra asistencia e inasistencias para todos los jugadores de un bloque de una vez.</div>
+
+          {mensajeBloque && (
+            <div style={{ background: mensajeBloque.tipo==='ok'?'#f0fdf4':'#fef2f2', border:`1px solid ${mensajeBloque.tipo==='ok'?'#bbf7d0':'#fecaca'}`, borderRadius:8, padding:'10px 14px', marginBottom:12, fontSize:13, fontWeight:600, color:mensajeBloque.tipo==='ok'?'#16a34a':'#dc2626' }}>
+              {mensajeBloque.texto}
+            </div>
+          )}
+
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:14 }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:4, flex:'1 1 140px' }}>
+              <label style={{ fontSize:11, color:muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px' }}>Fecha</label>
+              <input type="date" value={bloquesFecha} max={hoy}
+                onChange={e => { setBloquesFecha(e.target.value); setBloqueHorario(''); setPresenciaMap({}) }}
+                style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, color:text, outline:'none' }}
+              />
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:4, flex:'1 1 160px' }}>
+              <label style={{ fontSize:11, color:muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px' }}>Bloque horario</label>
+              <select value={bloqueHorario}
+                onChange={e => { setBloqueHorario(e.target.value); setPresenciaMap({}) }}
+                style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, color:text, outline:'none', cursor:'pointer' }}>
+                <option value="">— Seleccionar —</option>
+                {horariosDisponibles.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {bloqueHorario && jugadoresBloque.length === 0 && (
+            <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'20px', textAlign:'center', color:hint, fontSize:13 }}>
+              No hay jugadores con horario {bloqueHorario} para el día seleccionado
+            </div>
+          )}
+
+          {bloqueHorario && jugadoresBloque.length > 0 && (
+            <>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                <span style={{ fontSize:12, color:muted }}>{jugadoresBloque.length} jugadores en este bloque · {jugadoresBloque.filter(j => presenciaMap[j.id] !== false).length} presentes</span>
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={() => { const m: Record<string,boolean>={}; jugadoresBloque.forEach(j => m[j.id]=true); setPresenciaMap(m) }}
+                    style={{ padding:'4px 10px', fontSize:11, fontWeight:600, border:'1px solid #e2e8f0', borderRadius:6, background:'#f0fdf4', color:'#16a34a', cursor:'pointer' }}>
+                    Todos presentes
+                  </button>
+                  <button onClick={() => { const m: Record<string,boolean>={}; jugadoresBloque.forEach(j => m[j.id]=false); setPresenciaMap(m) }}
+                    style={{ padding:'4px 10px', fontSize:11, fontWeight:600, border:'1px solid #e2e8f0', borderRadius:6, background:'#fef2f2', color:'#dc2626', cursor:'pointer' }}>
+                    Todos ausentes
+                  </button>
+                </div>
+              </div>
+              <div style={{ border:'1px solid #e2e8f0', borderRadius:8, overflow:'hidden', marginBottom:14 }}>
+                {jugadoresBloque.map((j, i) => {
+                  const presente = presenciaMap[j.id] !== false
+                  const ya = registradosHoy.has(j.id) && bloquesFecha === hoy
+                  return (
+                    <div key={j.id} onClick={() => togglePresencia(j.id)} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderBottom: i < jugadoresBloque.length-1 ? '1px solid #f1f5f9' : 'none', cursor:'pointer', background: presente ? '#ffffff' : '#fef2f2' }}>
+                      <div style={{ width:20, height:20, borderRadius:4, border:`2px solid ${presente?'#16a34a':'#dc2626'}`, background:presente?'#16a34a':'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                        {presente && <span style={{ color:'white', fontSize:12, fontWeight:800 }}>✓</span>}
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:text }}>{j.nombre}</div>
+                        <div style={{ fontSize:11, color:muted }}>{j.categoria}</div>
+                      </div>
+                      <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:12, background:presente?'#f0fdf4':'#fef2f2', color:presente?'#16a34a':'#dc2626' }}>
+                        {presente ? 'Presente' : 'Ausente'}
+                      </span>
+                      {ya && <span style={{ fontSize:10, color:'#3730a3', background:'#ede9fe', padding:'2px 6px', borderRadius:8, fontWeight:600 }}>ya reg.</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              <button onClick={handleCerrarBloque} disabled={registrandoBloque}
+                style={{ width:'100%', padding:'12px 16px', background:registrandoBloque?'#94a3b8':'#0f172a', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:700, cursor:registrandoBloque?'not-allowed':'pointer' }}>
+                {registrandoBloque ? 'Cerrando bloque...' : `Cerrar bloque ${bloqueHorario} (${bloquesFecha})`}
+              </button>
+            </>
           )}
         </div>
       )}
