@@ -14,6 +14,7 @@ import {
 } from '@/lib/domain/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { requireAdmin } from '@/lib/auth/require'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 type AdminSupabase = NonNullable<Awaited<ReturnType<typeof requireAdmin>>['supabase']>
 
@@ -1152,7 +1153,48 @@ export async function finalizarTorneo(params: { torneoId: string }) {
     subcampeon_id: podio.subcampeonId,
   }).eq('id', params.torneoId)
   if (error) return { error: `No se pudo finalizar el torneo: ${error.message}` }
+
+  // Limpiar externos del torneo (best-effort, no falla la finalización)
+  void limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId).catch(() => {})
+
   return { success: true }
+}
+
+async function limpiarExternosDeTorneo(torneoId: string, campeonId: string | null, subcampeonId: string | null) {
+  const admin = createAdminClient()
+
+  // IDs de grupos de este torneo
+  const { data: grupos } = await admin.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  if (!grupos?.length) return
+
+  const grupoIds = grupos.map(g => g.id)
+
+  // Externos que participaron en este torneo
+  const { data: rows } = await (admin as any)
+    .from('grupo_jugadores')
+    .select('jugador_id, jugadores!inner(id)')
+    .in('grupo_id', grupoIds)
+    .eq('jugadores.es_externo', true)
+  if (!rows?.length) return
+
+  // Excluir campeón y subcampeón
+  const keep = new Set([campeonId, subcampeonId].filter(Boolean))
+  const candidatos = [...new Set((rows as { jugador_id: string }[]).map(r => r.jugador_id).filter(id => !keep.has(id)))]
+  if (!candidatos.length) return
+
+  // Excluir los que también están en otros torneos
+  const { data: enOtros } = await (admin as any)
+    .from('grupo_jugadores')
+    .select('jugador_id, torneo_grupos!inner(torneo_id)')
+    .in('jugador_id', candidatos)
+    .neq('torneo_grupos.torneo_id', torneoId)
+  const enOtrosIds = new Set((enOtros ?? []).map((r: { jugador_id: string }) => r.jugador_id))
+  const aEliminar = candidatos.filter(id => !enOtrosIds.has(id))
+  if (!aEliminar.length) return
+
+  await admin.from('grupo_jugadores').delete().in('jugador_id', aEliminar)
+  // torneo_partidos tiene ON DELETE SET NULL → se actualiza automáticamente al borrar jugadores
+  await admin.from('jugadores').delete().in('id', aEliminar)
 }
 
 export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
