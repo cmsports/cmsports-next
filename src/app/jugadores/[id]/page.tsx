@@ -850,16 +850,6 @@ export default function JugadorDetallePage() {
                   Agregar al club
                 </button>
               )}
-              {esAdmin && (
-                <button onClick={async () => {
-                  const nuevoEstado = jugador.estado === 'activo' ? 'bloqueado' : 'activo'
-                  const { error } = await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', jugadorId)
-                  if (error) { setDatosError(`No se pudo cambiar el estado: ${error.message}`); return }
-                  setJugador({ ...jugador, estado: nuevoEstado })
-                }} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>
-                  {jugador.estado==='activo' ? 'Bloquear' : 'Activar'}
-                </button>
-              )}
               {puedeEditar && !tieneCuenta && (
                 <button onClick={crearAcceso} disabled={creandoAcceso} style={{ background:'rgba(255,255,255,0.2)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
                   {creandoAcceso ? 'Creando...' : 'Crear acceso'}
@@ -921,14 +911,22 @@ export default function JugadorDetallePage() {
             <div style={{ fontSize:11, color: muted, marginTop:2 }}>Mensualidad</div>
           </div>
         )}
-        {jugador.tipo_plan !== 'libre' && (
-          <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
-            <div style={{ fontSize:28, fontWeight:800, color: (jugador.sesiones_usadas||0) >= (jugador.sesiones_limite||1) ? '#dc2626' : '#4f46e5', fontFamily:'monospace' }}>
-              {jugador.sesiones_usadas || 0}<span style={{ fontSize:14, color: muted }}>/{jugador.sesiones_limite || 0}</span>
+        {(() => {
+          const diasCortos = [
+            jugador.entrena_lun && 'Lu',
+            jugador.entrena_mar && 'Ma',
+            jugador.entrena_mie && 'Mi',
+            jugador.entrena_jue && 'Ju',
+            jugador.entrena_vie && 'Vi',
+          ].filter(Boolean)
+          const diasLabel = diasCortos.length > 0 ? diasCortos.join(' · ') : '—'
+          return (
+            <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
+              <div style={{ fontSize: diasCortos.length > 0 ? 15 : 28, fontWeight:800, color:'#4f46e5', lineHeight:1.4 }}>{diasLabel}</div>
+              <div style={{ fontSize:11, color: muted, marginTop:4 }}>Días entrena</div>
             </div>
-            <div style={{ fontSize:11, color: muted, marginTop:2 }}>Sesiones</div>
-          </div>
-        )}
+          )
+        })()}
         {edad && (
           <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
             <div style={{ fontSize:28, fontWeight:800, color:'#4f46e5', fontFamily:'monospace' }}>{edad}</div>
