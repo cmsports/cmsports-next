@@ -1764,9 +1764,6 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
     .eq('id', torneoId)
     .single()
   if (!torneo) return { error: 'Torneo no encontrado' }
-  if (torneo.estado !== 'archivado') {
-    return { error: 'Solo se puede borrar definitivamente un torneo archivado.' }
-  }
 
   const { data: grupos } = await supabase
     .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
