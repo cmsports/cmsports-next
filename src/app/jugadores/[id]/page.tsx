@@ -860,6 +860,16 @@ export default function JugadorDetallePage() {
                   Contraseña
                 </button>
               )}
+              {esAdmin && (
+                <button onClick={async () => {
+                  const nuevoEstado = jugador.estado === 'activo' ? 'bloqueado' : 'activo'
+                  const { error } = await supabase.from('jugadores').update({ estado: nuevoEstado }).eq('id', jugadorId)
+                  if (error) { setDatosError(`No se pudo cambiar el estado: ${error.message}`); return }
+                  setJugador({ ...jugador, estado: nuevoEstado })
+                }} style={{ background: jugador.estado === 'activo' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)', color:'#fff', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>
+                  {jugador.estado === 'activo' ? 'Bloquear' : 'Activar'}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -959,54 +969,46 @@ export default function JugadorDetallePage() {
           </div>
         </div>
 
-        {/* Días de entrenamiento — va arriba para que sea fácil de editar */}
-        {(() => {
-          const DIAS = [
-            { key:'entrena_lun', label:'Lunes' },
-            { key:'entrena_mar', label:'Martes' },
-            { key:'entrena_mie', label:'Miércoles' },
-            { key:'entrena_jue', label:'Jueves' },
-            { key:'entrena_vie', label:'Viernes' },
-          ] as const
-          return (
-            <div style={cardStyle}>
-              <CardHeader title="Días de entrenamiento" onEdit={puedeEvaluar ? () => {
-                setDiasForm({
-                  horario:     jugador.horario    || '',
-                  entrena_lun: jugador.entrena_lun ?? false,
-                  entrena_mar: jugador.entrena_mar ?? false,
-                  entrena_mie: jugador.entrena_mie ?? false,
-                  entrena_jue: jugador.entrena_jue ?? false,
-                  entrena_vie: jugador.entrena_vie ?? false,
-                })
-                setDatosError('')
-                setEditDias(true)
-              } : undefined} />
-              <div style={{ padding:'4px 20px 16px' }}>
-                {jugador.horario && (
-                  <div style={{ padding:'10px 0', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between' }}>
-                    <span style={{ fontSize:12, color: muted }}>Bloque</span>
-                    <span style={{ fontSize:13, fontWeight:600, color: text }}>{jugador.horario}</span>
-                  </div>
-                )}
-                {DIAS.map(({ key, label }) => {
-                  const val = jugador[key]
-                  return (
-                    <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #f1f5f9' }}>
-                      <span style={{ fontSize:13, color: text }}>{label}</span>
-                      <span style={{ fontSize:12, fontWeight:600, color: val === true ? '#16a34a' : '#94a3b8' }}>
-                        {val === true ? 'Entrena' : 'No entrena'}
-                      </span>
-                    </div>
-                  )
-                })}
-                {!jugador.horario && !DIAS.some(d => jugador[d.key]) && (
-                  <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin horario asignado — hacé clic en Editar</div>
-                )}
+        {/* Días de entrenamiento */}
+        <div style={cardStyle}>
+          <CardHeader title="Días de entrenamiento" onEdit={(esAdmin || esProfesor) ? () => {
+            setDiasForm({
+              horario:     jugador.horario    || '',
+              entrena_lun: jugador.entrena_lun ?? false,
+              entrena_mar: jugador.entrena_mar ?? false,
+              entrena_mie: jugador.entrena_mie ?? false,
+              entrena_jue: jugador.entrena_jue ?? false,
+              entrena_vie: jugador.entrena_vie ?? false,
+            })
+            setDatosError('')
+            setEditDias(true)
+          } : undefined} />
+          <div style={{ padding:'4px 20px 16px' }}>
+            {jugador.horario && (
+              <div style={{ padding:'10px 0', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between' }}>
+                <span style={{ fontSize:12, color: muted }}>Bloque</span>
+                <span style={{ fontSize:13, fontWeight:600, color: text }}>{jugador.horario}</span>
               </div>
-            </div>
-          )
-        })()}
+            )}
+            {([
+              { key:'entrena_lun', label:'Lunes' },
+              { key:'entrena_mar', label:'Martes' },
+              { key:'entrena_mie', label:'Miércoles' },
+              { key:'entrena_jue', label:'Jueves' },
+              { key:'entrena_vie', label:'Viernes' },
+            ] as const).map(({ key, label }) => (
+              <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #f1f5f9' }}>
+                <span style={{ fontSize:13, color: text }}>{label}</span>
+                <span style={{ fontSize:12, fontWeight:600, color: jugador[key] === true ? '#16a34a' : '#94a3b8' }}>
+                  {jugador[key] === true ? 'Entrena' : 'No entrena'}
+                </span>
+              </div>
+            ))}
+            {!jugador.horario && ![jugador.entrena_lun, jugador.entrena_mar, jugador.entrena_mie, jugador.entrena_jue, jugador.entrena_vie].some(Boolean) && (
+              <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin horario asignado — hacé clic en Editar</div>
+            )}
+          </div>
+        </div>
 
         {/* Plan */}
         <div style={cardStyle}>
@@ -1060,67 +1062,8 @@ export default function JugadorDetallePage() {
 
       </div>
 
-      {/* ── Tabs ── */}
-      <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, marginBottom:16, gap:4 }}>
-        {['Competencia', ...(puedeVerTodo ? ['Feedback'] : [])].map((t, i) => (
-          <div key={i} onClick={() => setTab(i)} style={{ flex:1, padding:'10px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600, background: tab===i ? '#fff' : 'transparent', color: tab===i ? '#4f46e5' : muted, transition:'all 0.15s', boxShadow: tab===i ? '0 1px 3px rgba(15,23,42,0.1)' : 'none' }}>
-            {t}
-          </div>
-        ))}
-      </div>
-
-      {/* ── Tab: Competencia ── */}
-      {tab === 0 && (
-        <div style={{ display:'grid', gap:16 }}>
-          <div style={cardStyle}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #e2e8f0', fontSize:13, fontWeight:600, color: text }}>Historial de partidos</div>
-            {partidos.length === 0
-              ? <div style={{ padding:30, textAlign:'center', color: hint, fontSize:13 }}>Sin partidos registrados</div>
-              : partidos.slice(0,10).map(p => {
-                const gane = p.ganador === jugadorId
-                return (
-                  <div key={p.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 20px', borderBottom:'1px solid #f1f5f9' }}>
-                    <div>
-                      <div style={{ fontSize:13, color: text }}>{(p as any).torneos?.nombre || '—'}</div>
-                      <div style={{ fontSize:11, color: muted }}>{p.fase}</div>
-                    </div>
-                    <span style={{ background: gane ? '#f0fdf4' : '#fef2f2', color: gane ? '#16a34a' : '#dc2626', padding:'4px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                      {gane ? 'Victoria' : 'Derrota'}
-                    </span>
-                  </div>
-                )
-              })
-            }
-          </div>
-
-          <div style={cardStyle}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <div style={{ fontSize:13, fontWeight:600, color: text }}>Torneos externos</div>
-              {puedeEditar && (
-                <button onClick={() => { setModalExternoOpen(true); setExternoForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
-                  style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:6, padding:'5px 12px', fontSize:11, cursor:'pointer', fontWeight:600 }}>
-                  + Agregar
-                </button>
-              )}
-            </div>
-            {externos.length === 0
-              ? <div style={{ padding:30, textAlign:'center', color: hint, fontSize:13 }}>Sin torneos externos</div>
-              : externos.map(t => (
-                <div key={t.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 20px', borderBottom:'1px solid #f1f5f9' }}>
-                  <div>
-                    <div style={{ fontSize:13, color: text }}>{t.nombre_club}</div>
-                    <div style={{ fontSize:11, color: muted }}>{t.fecha} · {CAT_LABEL[t.categoria] || t.categoria}</div>
-                  </div>
-                  <div style={{ fontSize:12, color: muted }}>{POSICION_LABEL[t.posicion] || t.posicion}</div>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-      )}
-
-      {/* ── Tab: Feedback ── */}
-      {tab === 1 && puedeVerTodo && (
+      {/* ── Feedback ── */}
+      {puedeVerTodo && (
         <div style={{ display:'grid', gap:16 }}>
           {evalActual?.feedback_profesor ? (
             <>
