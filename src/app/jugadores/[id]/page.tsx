@@ -580,213 +580,143 @@ export default function JugadorDetallePage() {
       const estadoMens = (e: string) => e === 'pagado' ? '✓ Pagado' : e === 'atrasado' ? '✗ Atrasado' : '⏳ Pendiente'
       const colorMens = (e: string) => e === 'pagado' ? '#16a34a' : e === 'atrasado' ? '#dc2626' : '#d97706'
 
-      const fotoBase64 = jugador.foto_url || ''
-      const posLabel = rankingPos ? (rankingPos === 1 ? '🥇' : rankingPos === 2 ? '🥈' : rankingPos === 3 ? '🥉' : `#${rankingPos}`) : '—'
+      const { default: jsPDF } = await import('jspdf')
+      const { default: autoTable } = await import('jspdf-autotable')
 
-      const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<title>Reporte — ${jugador.nombre}</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #0f172a; background: #fff; font-size: 13px; line-height: 1.5; }
-  @page { size: A4; margin: 12mm 14mm; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-  .header { background: linear-gradient(135deg, #3730a3 0%, #4f46e5 100%); border-radius: 12px; padding: 20px 24px; display: flex; gap: 20px; align-items: center; margin-bottom: 20px; }
-  .foto { width: 80px; height: 80px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.4); overflow: hidden; flex-shrink: 0; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; }
-  .foto img { width: 100%; height: 100%; object-fit: cover; }
-  .foto-inicial { font-size: 28px; font-weight: 800; color: #fff; }
-  .header-info { flex: 1; }
-  .header-info h1 { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 6px; }
-  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
-  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-  .badge-cat { background: rgba(255,255,255,0.2); color: #fff; }
-  .badge-ok  { background: rgba(34,197,94,0.25); color: #86efac; }
-  .badge-ko  { background: rgba(239,68,68,0.25); color: #fca5a5; }
-  .header-right { text-align: right; color: rgba(255,255,255,0.8); font-size: 11px; }
-  .header-right strong { display: block; font-size: 13px; color: #fff; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
-  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
-  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
-  .card-header { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 9px 14px; font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.6px; }
-  .card-body { padding: 12px 14px; }
-  .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
-  .row:last-child { border-bottom: none; }
-  .row-label { color: #64748b; }
-  .row-value { font-weight: 600; color: #0f172a; text-align: right; }
-  .kpi { text-align: center; padding: 14px 10px; }
-  .kpi-num { font-size: 28px; font-weight: 800; color: #4f46e5; font-variant-numeric: tabular-nums; line-height: 1; }
-  .kpi-label { font-size: 10px; color: #64748b; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .cal-row { display: flex; gap: 3px; margin-bottom: 3px; }
-  .dot { width: 10px; height: 10px; border-radius: 2px; }
-  .dot-ok { background: #16a34a; }
-  .dot-no { background: #e2e8f0; }
-  .mens-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
-  .mens-row:last-child { border-bottom: none; }
-  .mens-pill { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-  .rank-stat { text-align: center; flex: 1; }
-  .rank-stat-num { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .rank-stat-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-  .footer { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
-  .no-break { page-break-inside: avoid; }
-</style>
-</head>
-<body>
+      const doc = new jsPDF()
+      const W = doc.internal.pageSize.getWidth()
+      const halfW = (W - 32) / 2
 
-<div class="header">
-  <div class="foto">
-    ${fotoBase64 ? `<img src="${fotoBase64}" alt="${jugador.nombre}" />` : `<span class="foto-inicial">${jugador.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()}</span>`}
-  </div>
-  <div class="header-info">
-    <h1>${jugador.nombre}</h1>
-    <div class="badges">
-      ${jugador.categoria ? `<span class="badge badge-cat">${jugador.categoria}</span>` : ''}
-      <span class="badge ${jugador.estado === 'activo' ? 'badge-ok' : 'badge-ko'}">${jugador.estado === 'activo' ? 'Activo' : 'Bloqueado'}</span>
-      ${jugador.federado ? '<span class="badge badge-cat">Federado</span>' : ''}
-      ${jugador.es_externo ? '<span class="badge badge-cat">Externo</span>' : ''}
-    </div>
-  </div>
-  <div class="header-right">
-    <span style="font-size:28px">🏓</span>
-    <strong>${clubNombre || 'Club'}</strong>
-    Reporte generado<br>${new Date().toLocaleDateString('es-CL', { day:'2-digit', month:'long', year:'numeric' })}<br>
-    Período: últimos 3 meses
-  </div>
-</div>
+      // Header
+      doc.setFillColor(55, 48, 163)
+      doc.rect(0, 0, W, 40, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(18); doc.setFont('helvetica', 'bold')
+      doc.text(jugador.nombre, 14, 16)
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal')
+      const badges = [jugador.categoria, jugador.estado === 'activo' ? 'Activo' : 'Inactivo', jugador.es_externo ? 'Externo' : ''].filter(Boolean).join(' · ')
+      doc.text(badges, 14, 26)
+      doc.text('Período: últimos 3 meses', 14, 33)
+      doc.text(clubNombre || 'Club', W - 14, 16, { align: 'right' })
+      doc.text(`Generado: ${new Date().toLocaleDateString('es-CL')}`, W - 14, 26, { align: 'right' })
 
-<!-- KPIs: asistencia + ranking + mensualidad -->
-<div class="grid3">
-  <div class="card no-break">
-    <div class="kpi">
-      <div class="kpi-num">${totalAsist}</div>
-      <div class="kpi-label">Asistencias (90 días)</div>
-    </div>
-  </div>
-  <div class="card no-break">
-    <div class="kpi">
-      <div class="kpi-num" style="font-size:${rankingPos ? (posLabel.length > 3 ? '22px' : '28px') : '28px'}">${posLabel}</div>
-      <div class="kpi-label">Ranking ${jugador.categoria ? '— ' + jugador.categoria : ''}</div>
-      ${rankingPos ? `<div style="font-size:10px;color:#64748b;margin-top:4px">${rankingJugados} partidos jugados</div>` : ''}
-    </div>
-  </div>
-  <div class="card no-break">
-    <div class="kpi">
-      <div class="kpi-num" style="font-size:20px">$${(jugador.mensualidad||0).toLocaleString('es-CL')}</div>
-      <div class="kpi-label">Mensualidad</div>
-    </div>
-  </div>
-</div>
+      let y = 50
 
-<!-- Datos personales + Plan -->
-<div class="grid2">
-  <div class="card no-break">
-    <div class="card-header">Información personal</div>
-    <div class="card-body">
-      ${jugador.rut ? `<div class="row"><span class="row-label">RUT</span><span class="row-value">${jugador.rut}</span></div>` : ''}
-      ${jugador.fecha_nacimiento ? `<div class="row"><span class="row-label">Nacimiento</span><span class="row-value">${fmtFecha(jugador.fecha_nacimiento)}${edad ? ` (${edad} años)` : ''}</span></div>` : ''}
-      ${jugador.email ? `<div class="row"><span class="row-label">Email</span><span class="row-value">${jugador.email}</span></div>` : ''}
-      ${jugador.telefono ? `<div class="row"><span class="row-label">Teléfono</span><span class="row-value">${jugador.telefono}</span></div>` : ''}
-      ${jugador.direccion ? `<div class="row"><span class="row-label">Dirección</span><span class="row-value">${jugador.direccion}${jugador.comuna ? ', ' + jugador.comuna : ''}</span></div>` : ''}
-      ${jugador.contacto_emergencia_nombre ? `<div class="row"><span class="row-label">Emergencia</span><span class="row-value">${jugador.contacto_emergencia_nombre}</span></div>` : ''}
-      ${jugador.contacto_emergencia_telefono ? `<div class="row"><span class="row-label">Tel. emergencia</span><span class="row-value">${jugador.contacto_emergencia_telefono}</span></div>` : ''}
-      ${jugador.indicaciones_medicas ? `<div class="row" style="flex-direction:column;gap:4px"><span class="row-label">Indicaciones médicas</span><span style="color:#dc2626;font-weight:600;font-size:12px">${jugador.indicaciones_medicas}</span></div>` : ''}
-    </div>
-  </div>
+      // KPIs (3 bloques)
+      const kpiW = (W - 34) / 3
+      const kpis = [
+        { label: 'Asistencias (90 días)', value: String(totalAsist), r: 79, g: 70, b: 229 },
+        { label: `Ranking ${jugador.categoria || ''}`, value: rankingPos ? `#${rankingPos} / ${rankingTotal}` : '—', r: 22, g: 163, b: 74 },
+        { label: 'Mensualidad', value: `$${(jugador.mensualidad || 0).toLocaleString('es-CL')}`, r: 14, g: 165, b: 233 },
+      ]
+      kpis.forEach((k, i) => {
+        const x = 14 + i * (kpiW + 3)
+        doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240)
+        doc.roundedRect(x, y, kpiW, 20, 3, 3, 'FD')
+        doc.setFontSize(15); doc.setFont('helvetica', 'bold')
+        doc.setTextColor(k.r, k.g, k.b)
+        doc.text(k.value, x + kpiW / 2, y + 10, { align: 'center' })
+        doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+        doc.setTextColor(100, 116, 139)
+        doc.text(k.label, x + kpiW / 2, y + 16, { align: 'center' })
+      })
+      y += 28
 
-  <div class="card no-break">
-    <div class="card-header">Plan & Membresía</div>
-    <div class="card-body">
-      <div class="row"><span class="row-label">Plan</span><span class="row-value">${jugador.tipo_plan ? jugador.tipo_plan.charAt(0).toUpperCase() + jugador.tipo_plan.slice(1) : 'Mensual'}</span></div>
-      ${jugador.entrenamientos_por_semana ? `<div class="row"><span class="row-label">Entrenamientos/sem</span><span class="row-value">${jugador.entrenamientos_por_semana}</span></div>` : ''}
-      ${jugador.tipo_plan !== 'libre' ? `<div class="row"><span class="row-label">Sesiones usadas</span><span class="row-value">${jugador.sesiones_usadas||0} / ${jugador.sesiones_limite||0}</span></div>` : ''}
-      ${jugador.horario ? `<div class="row"><span class="row-label">Horario</span><span class="row-value">${jugador.horario}</span></div>` : ''}
-      ${(jugador.entrena_lun !== null && jugador.entrena_lun !== undefined) || (jugador.entrena_mar !== null && jugador.entrena_mar !== undefined) ? `<div class="row"><span class="row-label">Días</span><span class="row-value">${[jugador.entrena_lun?'Lu':'',jugador.entrena_mar?'Ma':'',jugador.entrena_mie?'Mi':'',jugador.entrena_jue?'Ju':'',jugador.entrena_vie?'Vi':''].filter(Boolean).join(' · ')||'—'}</span></div>` : ''}
-      ${jugador.grupo ? `<div class="row"><span class="row-label">Grupo</span><span class="row-value">${jugador.grupo}</span></div>` : ''}
-    </div>
-    ${(mens3 || []).length > 0 ? `
-    <div class="card-header" style="border-top:1px solid #e2e8f0">Mensualidades recientes</div>
-    <div class="card-body">
-      ${(mens3 || []).map((m: any) => `
-        <div class="mens-row">
-          <div>
-            <span style="font-size:12px;color:#0f172a;font-weight:500">${mesLabel(m.mes)} ${m.anio}</span>
-            ${m.fecha_pago ? `<div style="font-size:10px;color:#64748b;margin-top:1px">Ingresado: ${fmtFecha(m.fecha_pago)}</div>` : ''}
-          </div>
-          <span class="mens-pill" style="background:${colorMens(m.estado)}20;color:${colorMens(m.estado)}">${estadoMens(m.estado)}</span>
-        </div>`).join('')}
-    </div>` : ''}
-  </div>
-</div>
+      // Info personal
+      const infoRows: [string, string][] = []
+      if (jugador.rut) infoRows.push(['RUT', jugador.rut])
+      if (jugador.fecha_nacimiento) infoRows.push(['Nacimiento', fmtFecha(jugador.fecha_nacimiento) + (edad ? ` (${edad} años)` : '')])
+      if (jugador.email) infoRows.push(['Email', jugador.email])
+      if (jugador.telefono) infoRows.push(['Telefono', jugador.telefono])
+      if (jugador.contacto_emergencia_nombre) infoRows.push(['Emergencia', jugador.contacto_emergencia_nombre])
+      if (jugador.indicaciones_medicas) infoRows.push(['Ind. medicas', jugador.indicaciones_medicas])
+      if (!infoRows.length) infoRows.push(['—', '—'])
 
-<!-- Ranking detalle + Asistencia calendario -->
-<div class="grid2">
-  ${rankingPos ? `
-  <div class="card no-break">
-    <div class="card-header">Ranking interno — ${jugador.categoria || ''}</div>
-    <div class="card-body">
-      <div style="display:flex;gap:0;text-align:center;padding:10px 0 14px;border-bottom:1px solid #f1f5f9;margin-bottom:12px">
-        <div class="rank-stat">
-          <div class="rank-stat-num" style="color:#4f46e5">${posLabel}</div>
-          <div class="rank-stat-label">Posición</div>
-        </div>
-        <div class="rank-stat">
-          <div class="rank-stat-num" style="color:#16a34a">${rankingVictorias}</div>
-          <div class="rank-stat-label">Victorias</div>
-        </div>
-        <div class="rank-stat">
-          <div class="rank-stat-num" style="color:#dc2626">${rankingDerrotas}</div>
-          <div class="rank-stat-label">Derrotas</div>
-        </div>
-        <div class="rank-stat">
-          <div class="rank-stat-num" style="color:#0f172a">${rankingJugados}</div>
-          <div class="rank-stat-label">Jugados</div>
-        </div>
-      </div>
-      <div style="font-size:11px;color:#64748b">
-        Pts: <strong style="color:#4f46e5">${3*rankingVictorias - rankingDerrotas}</strong> ·
-        ${rankingTotal} jugadores en la categoría
-      </div>
-      <div style="margin-top:10px">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;margin-bottom:4px">
-          <span>% victorias</span>
-          <span>${rankingJugados > 0 ? Math.round(rankingVictorias/rankingJugados*100) : 0}%</span>
-        </div>
-        <div style="background:#e2e8f0;border-radius:4px;height:6px">
-          <div style="background:#4f46e5;border-radius:4px;height:6px;width:${rankingJugados > 0 ? Math.round(rankingVictorias/rankingJugados*100) : 0}%"></div>
-        </div>
-      </div>
-    </div>
-  </div>` : `
-  <div class="card no-break">
-    <div class="card-header">Ranking interno</div>
-    <div class="card-body" style="color:#94a3b8;font-size:12px;padding:20px 14px">Sin partidos registrados en torneos internos</div>
-  </div>`}
+      // Plan
+      const planRows: [string, string][] = []
+      planRows.push(['Plan', jugador.tipo_plan || 'Mensual'])
+      if (jugador.entrenamientos_por_semana) planRows.push(['Ent./semana', String(jugador.entrenamientos_por_semana)])
+      if (jugador.tipo_plan !== 'libre') planRows.push(['Sesiones', `${jugador.sesiones_usadas || 0} / ${jugador.sesiones_limite || 0}`])
+      if (jugador.horario) planRows.push(['Horario', jugador.horario])
+      const diasEntrena = [jugador.entrena_lun ? 'Lu' : '', jugador.entrena_mar ? 'Ma' : '', jugador.entrena_mie ? 'Mi' : '', jugador.entrena_jue ? 'Ju' : '', jugador.entrena_vie ? 'Vi' : ''].filter(Boolean).join(' · ')
+      if (diasEntrena) planRows.push(['Dias', diasEntrena])
 
-  <div class="card no-break">
-    <div class="card-header">Asistencia — últimos 90 días (${totalAsist} sesiones)</div>
-    <div class="card-body">
-      ${semanas.map(semana => `<div class="cal-row">${semana.map(d => `<div class="dot ${d.asistio ? 'dot-ok' : 'dot-no'}"></div>`).join('')}</div>`).join('')}
-      <div style="display:flex;gap:14px;margin-top:8px;font-size:10px;color:#64748b">
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#16a34a;margin-right:4px;vertical-align:middle"></span>Asistió</span>
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e2e8f0;margin-right:4px;vertical-align:middle"></span>No asistió</span>
-      </div>
-    </div>
-  </div>
-</div>
+      const startY2cols = y
+      autoTable(doc, {
+        startY: startY2cols, head: [['Informacion personal', '']], body: infoRows,
+        theme: 'striped', headStyles: { fillColor: [79, 70, 229] },
+        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: [100, 116, 139] as any } },
+        styles: { fontSize: 9 }, tableWidth: halfW, margin: { left: 14 },
+      })
+      const yAfterInfo = (doc as any).lastAutoTable.finalY
 
-<div class="footer">
-  <span>${clubNombre || 'Club'} — Sistema de gestión CmSports</span>
-  <span>Generado el ${new Date().toLocaleString('es-CL', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' })}</span>
-</div>
+      autoTable(doc, {
+        startY: startY2cols, head: [['Plan & Membresia', '']], body: planRows,
+        theme: 'striped', headStyles: { fillColor: [14, 165, 233] },
+        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: [100, 116, 139] as any } },
+        styles: { fontSize: 9 }, tableWidth: halfW, margin: { left: 14 + halfW + 4 },
+      })
+      const yAfterPlan = (doc as any).lastAutoTable.finalY
 
-<script>window.onload = () => { window.print(); }<\/script>
-</body></html>`
+      y = Math.max(yAfterInfo, yAfterPlan) + 8
 
-      const win = window.open('', '_blank', 'width=900,height=700')
-      if (!win) { alert('Permite las ventanas emergentes para generar el PDF'); return }
-      win.document.write(html)
-      win.document.close()
+      // Mensualidades
+      if ((mens3 || []).length > 0) {
+        autoTable(doc, {
+          startY: y, head: [['Periodo', 'Monto', 'Estado', 'Fecha pago']],
+          body: (mens3 || []).map((m: any) => [`${mesLabel(m.mes)} ${m.anio}`, m.monto ? `$${m.monto.toLocaleString('es-CL')}` : '—', estadoMens(m.estado), m.fecha_pago ? fmtFecha(m.fecha_pago) : '—']),
+          theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, styles: { fontSize: 9 }, margin: { left: 14, right: 14 },
+          didParseCell: (data: any) => {
+            if (data.section === 'body' && data.column.index === 2) {
+              const e = (mens3 || [])[data.row.index]?.estado
+              data.cell.styles.textColor = e === 'pagado' ? [22, 163, 74] : e === 'atrasado' ? [220, 38, 38] : [217, 119, 6]
+              data.cell.styles.fontStyle = 'bold'
+            }
+          },
+        })
+        y = (doc as any).lastAutoTable.finalY + 8
+      }
+
+      // Ranking
+      if (rankingPos) {
+        autoTable(doc, {
+          startY: y, head: [[`Ranking interno — ${jugador.categoria || ''}`, '', '', '', '']],
+          body: [[`#${rankingPos} de ${rankingTotal}`, `${rankingVictorias} victorias`, `${rankingDerrotas} derrotas`, `${rankingJugados} jugados`, `${3 * rankingVictorias - rankingDerrotas} pts`]],
+          theme: 'striped', headStyles: { fillColor: [124, 58, 237] }, styles: { fontSize: 9, halign: 'center' }, margin: { left: 14, right: 14 },
+        })
+        y = (doc as any).lastAutoTable.finalY + 8
+      }
+
+      // Asistencia: cuadrícula de puntos (13 semanas × 7 días)
+      const dotSize = 3.2, dotGap = 1.2, calX = 14
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42)
+      doc.text(`Asistencia — ultimos 90 dias (${totalAsist} sesiones)`, calX, y)
+      y += 3
+      semanas.forEach((semana, si) => {
+        semana.forEach((d, di) => {
+          const px = calX + si * (dotSize + dotGap)
+          const py = y + di * (dotSize + dotGap)
+          if (d.asistio) doc.setFillColor(22, 163, 74)
+          else doc.setFillColor(226, 232, 240)
+          doc.rect(px, py, dotSize, dotSize, 'F')
+        })
+      })
+      y += 7 * (dotSize + dotGap) + 4
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139)
+      doc.setFillColor(22, 163, 74); doc.rect(calX, y, 3, 3, 'F')
+      doc.text('Asistio', calX + 5, y + 2.5)
+      doc.setFillColor(226, 232, 240); doc.rect(calX + 24, y, 3, 3, 'F')
+      doc.text('No asistio', calX + 29, y + 2.5)
+      y += 10
+
+      // Footer
+      doc.setDrawColor(226, 232, 240)
+      doc.line(14, y, W - 14, y)
+      doc.setFontSize(8); doc.setTextColor(148, 163, 184)
+      doc.text(`${clubNombre || 'Club'} — CmSports`, 14, y + 5)
+      doc.text(new Date().toLocaleString('es-CL', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }), W - 14, y + 5, { align: 'right' })
+
+      doc.save(`reporte_${jugador.nombre.replace(/ /g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`)
     } finally {
       setGenerandoReporte(false)
     }
