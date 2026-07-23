@@ -26,6 +26,7 @@ export default function TorneosInternosPage() {
   const [fecha, setFecha] = useState('')
   const [cuota, setCuota] = useState('0')
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('')
+  const [generoSeleccionado, setGeneroSeleccionado] = useState<'varones' | 'damas' | ''>('')
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -47,7 +48,7 @@ export default function TorneosInternosPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase as any)
       .from('torneos')
-      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,categoria,campeon:campeon_id(nombre)')
+      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,categoria,genero,campeon:campeon_id(nombre)')
       .eq('club_id', id)
       .eq('tipo', 'interno')
       .order('creado_en', { ascending: false })
@@ -96,12 +97,13 @@ export default function TorneosInternosPage() {
   async function crearTorneo() {
     if (!nombre || !fecha) return
     if (!categoriaSeleccionada) { alert('Selecciona la categoría del torneo'); return }
+    if (!generoSeleccionado) { alert('Selecciona Varones o Damas'); return }
     const monto = Number(cuota)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
-    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, tipo: 'interno', categoria: categoriaSeleccionada })
+    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, tipo: 'interno', categoria: categoriaSeleccionada, genero: generoSeleccionado })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
-    setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada('')
+    setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado('')
     router.push(`/torneos/${res.torneoId}`)
   }
 
@@ -162,11 +164,23 @@ export default function TorneosInternosPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 600, color: text }}>{t.nombre}</div>
-                  {t.categoria && (
-                    <div style={{ marginTop: 4 }}>
-                      <span style={{ background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, letterSpacing: 0.3 }}>
-                        {categoriaLabel(t.categoria)}
-                      </span>
+                  {(t.categoria || t.genero) && (
+                    <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {t.categoria && (
+                        <span style={{ background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, letterSpacing: 0.3 }}>
+                          {categoriaLabel(t.categoria)}
+                        </span>
+                      )}
+                      {t.genero === 'varones' && (
+                        <span style={{ background: '#eff6ff', color: '#1e40af', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
+                          ♂ Varones
+                        </span>
+                      )}
+                      {t.genero === 'damas' && (
+                        <span style={{ background: '#fdf2f8', color: '#9d174d', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
+                          ♀ Damas
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -266,6 +280,25 @@ export default function TorneosInternosPage() {
               </select>
             </div>
             <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 8 }}>Género <span style={{ color: '#dc2626' }}>*</span></label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setGeneroSeleccionado('varones')}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${generoSeleccionado === 'varones' ? '#1e40af' : '#e2e8f0'}`, background: generoSeleccionado === 'varones' ? '#eff6ff' : '#f4f7fa', color: generoSeleccionado === 'varones' ? '#1e40af' : muted, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  ♂ Varones
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGeneroSeleccionado('damas')}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${generoSeleccionado === 'damas' ? '#9d174d' : '#e2e8f0'}`, background: generoSeleccionado === 'damas' ? '#fdf2f8' : '#f4f7fa', color: generoSeleccionado === 'damas' ? '#9d174d' : muted, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  ♀ Damas
+                </button>
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Nombre del torneo</label>
               <input
                 value={nombre} onChange={e => setNombre(e.target.value)}
@@ -288,12 +321,12 @@ export default function TorneosInternosPage() {
               />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada('') }}
+              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado('') }}
                 style={{ flex: 1, background: '#f4f7fa', color: muted, border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, cursor: 'pointer' }}>
                 Cancelar
               </button>
-              <button onClick={crearTorneo} disabled={!nombre || !fecha || !categoriaSeleccionada}
-                style={{ flex: 2, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (!nombre || !fecha || !categoriaSeleccionada) ? 0.5 : 1 }}>
+              <button onClick={crearTorneo} disabled={!nombre || !fecha || !categoriaSeleccionada || !generoSeleccionado}
+                style={{ flex: 2, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: (!nombre || !fecha || !categoriaSeleccionada || !generoSeleccionado) ? 0.5 : 1 }}>
                 Crear torneo
               </button>
             </div>

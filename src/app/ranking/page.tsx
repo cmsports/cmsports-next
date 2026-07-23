@@ -25,6 +25,7 @@ type FilaRanking = {
 
 type CategoriaRanking = {
   categoria: string
+  genero: string | null
   filas: FilaRanking[]
 }
 
@@ -62,19 +63,10 @@ export default function RankingPage() {
     const reinicioTs = club?.ranking_reiniciado_en ?? null
     setReiniciadoEn(reinicioTs)
 
-    // 2. Categorías disponibles del club (desde jugadores)
-    const { data: jugCats } = await supabase
-      .from('jugadores')
-      .select('categoria')
-      .eq('club_id', perfil.club_id)
-      .or('es_externo.is.null,es_externo.eq.false')
-      .not('categoria', 'is', null)
-    const todasCats = [...new Set((jugCats || []).map(j => j.categoria).filter((c): c is string => !!c))].sort()
-
-    // 3. Torneos internos finalizados del club
+    // 2. Torneos internos del club
     let queryT = sb
       .from('torneos')
-      .select('id,categoria,fecha_fin,creado_en')
+      .select('id,categoria,genero,fecha_fin,creado_en')
       .eq('club_id', perfil.club_id)
       .eq('tipo', 'interno')
       .neq('estado', 'cancelado')
@@ -82,20 +74,17 @@ export default function RankingPage() {
 
     const { data: torneos } = await queryT
     if (!torneos?.length) {
-      // Sin torneos: mostrar todas las categorias vacías
-      const vacias = todasCats.map(c => ({ categoria: c, filas: [] }))
-      setRankingPorCategoria(vacias)
-      if (vacias.length > 0 && !categoriaActiva) setCategoriaActiva(vacias[0].categoria)
+      setRankingPorCategoria([])
       setLoading(false)
       return
     }
 
-    // 3. Mapear torneoId → categoria
-    const torneoCat: Record<string, string> = {}
-    for (const t of (torneos as { id: string; categoria: string | null }[])) {
-      torneoCat[t.id] = t.categoria ?? 'Sin categoría'
+    // 3. Mapear torneoId → { categoria, genero }
+    const torneoMeta: Record<string, { categoria: string; genero: string | null }> = {}
+    for (const t of (torneos as { id: string; categoria: string | null; genero: string | null }[])) {
+      torneoMeta[t.id] = { categoria: t.categoria ?? 'Sin categoría', genero: t.genero ?? null }
     }
-    const torneoIds = Object.keys(torneoCat)
+    const torneoIds = Object.keys(torneoMeta)
 
     // 4. Todos los partidos de esos torneos (1 sola query)
     const { data: partidos } = await supabase
@@ -107,14 +96,15 @@ export default function RankingPage() {
 
     if (!partidos?.length) { setRankingPorCategoria([]); setLoading(false); return }
 
-    // 5. Acumular estadísticas por categoria
-    const statsPorCat: Record<string, Record<string, { victorias: number; derrotas: number }>> = {}
+    // 5. Acumular estadísticas por categoria + genero
+    const statsPorClave: Record<string, Record<string, { victorias: number; derrotas: number }>> = {}
     const jugadoresIds = new Set<string>()
 
     for (const p of partidos) {
-      const cat = torneoCat[p.torneo_id as string] ?? 'Sin categoría'
-      if (!statsPorCat[cat]) statsPorCat[cat] = {}
-      const stats = statsPorCat[cat]
+      const meta = torneoMeta[p.torneo_id as string]
+      const clave = `${meta?.categoria ?? 'Sin categoría'}||${meta?.genero ?? ''}`
+      if (!statsPorClave[clave]) statsPorClave[clave] = {}
+      const stats = statsPorClave[clave]
 
       const a = p.jugador_a as string
       const b = p.jugador_b as string
@@ -136,9 +126,10 @@ export default function RankingPage() {
     const nombreMap: Record<string, string> = {}
     for (const j of (jugadores || [])) nombreMap[j.id] = j.nombre
 
-    // 7. Construir ranking por categoría con datos
+    // 7. Construir ranking por categoria + genero
     const conDatos: Record<string, CategoriaRanking> = {}
-    for (const [categoria, stats] of Object.entries(statsPorCat)) {
+    for (const [clave, stats] of Object.entries(statsPorClave)) {
+      const [categoria, genero] = clave.split('||')
       const filas: FilaRanking[] = Object.entries(stats).map(([id, s]) => ({
         jugadorId: id,
         nombre: nombreMap[id] || 'Desconocido',
@@ -148,19 +139,20 @@ export default function RankingPage() {
         pts: s.victorias * 3,
       }))
       filas.sort((a, b) => b.pts - a.pts || b.victorias - a.victorias || a.derrotas - b.derrotas)
-      conDatos[categoria] = { categoria, filas }
+      conDatos[clave] = { categoria, genero: genero || null, filas }
     }
 
-    // Incluir TODAS las categorías del club (con y sin torneos)
-    const resultado: CategoriaRanking[] = todasCats.map(c => conDatos[c] ?? { categoria: c, filas: [] })
-    // Agregar categorías con torneos que no estén en la lista del club
-    for (const cat of Object.keys(conDatos)) {
-      if (!todasCats.includes(cat)) resultado.push(conDatos[cat])
-    }
-    resultado.sort((a, b) => a.categoria.localeCompare(b.categoria, 'es'))
+    const resultado: CategoriaRanking[] = Object.values(conDatos)
+    resultado.sort((a, b) => {
+      const catCmp = a.categoria.localeCompare(b.categoria, 'es')
+      if (catCmp !== 0) return catCmp
+      // varones primero, damas después, sin género al final
+      const gOrder = (g: string | null) => g === 'varones' ? 0 : g === 'damas' ? 1 : 2
+      return gOrder(a.genero) - gOrder(b.genero)
+    })
 
     setRankingPorCategoria(resultado)
-    if (resultado.length > 0 && !categoriaActiva) setCategoriaActiva(resultado[0].categoria)
+    if (resultado.length > 0 && !categoriaActiva) setCategoriaActiva(`${resultado[0].categoria}||${resultado[0].genero ?? ''}`)
     setLoading(false)
   }
 
@@ -175,7 +167,7 @@ export default function RankingPage() {
   }
 
   const esAdmin = perfil?.rol === 'admin'
-  const rankingActivo = rankingPorCategoria.find(r => r.categoria === categoriaActiva)
+  const rankingActivo = rankingPorCategoria.find(r => `${r.categoria}||${r.genero ?? ''}` === categoriaActiva)
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
@@ -191,7 +183,7 @@ export default function RankingPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: text }}>Ranking</h1>
-            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Por categoría · torneos internos finalizados · Victoria = 3 pts</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Por categoría y género · torneos internos · Victoria = 3 pts</div>
             {reiniciadoEn && (
               <div style={{ fontSize: 11, color: hint, marginTop: 3 }}>
                 Desde: {new Date(reiniciadoEn).toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -223,13 +215,13 @@ export default function RankingPage() {
             </div>
           </div>
           <div style={{ fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
-            Los puntos se acumulan de <strong>todos los torneos internos finalizados</strong>. En torneos largos (128, 64, 32 jugadores…) quien avanza más rondas acumula más puntos. Cada categoría tiene su propio ranking independiente.
+            Los puntos se acumulan de <strong>todos los torneos internos</strong>. En torneos largos (128, 64, 32 jugadores…) quien avanza más rondas acumula más puntos. Cada categoría tiene su propio ranking independiente, separado por Varones y Damas.
           </div>
         </div>
 
         {rankingPorCategoria.length === 0 ? (
           <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
-            No hay partidos registrados en torneos internos finalizados
+            No hay partidos registrados en torneos internos
           </div>
         ) : (
           <>
@@ -237,12 +229,12 @@ export default function RankingPage() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               {rankingPorCategoria.map(r => (
                 <button
-                  key={r.categoria}
-                  onClick={() => setCategoriaActiva(r.categoria)}
+                  key={`${r.categoria}||${r.genero ?? ''}`}
+                  onClick={() => setCategoriaActiva(`${r.categoria}||${r.genero ?? ''}`)}
                   style={{
-                    background: categoriaActiva === r.categoria ? '#7c3aed' : '#ffffff',
-                    color: categoriaActiva === r.categoria ? '#ffffff' : muted,
-                    border: `1px solid ${categoriaActiva === r.categoria ? '#7c3aed' : '#e2e8f0'}`,
+                    background: categoriaActiva === `${r.categoria}||${r.genero ?? ''}` ? '#7c3aed' : '#ffffff',
+                    color: categoriaActiva === `${r.categoria}||${r.genero ?? ''}` ? '#ffffff' : muted,
+                    border: `1px solid ${categoriaActiva === `${r.categoria}||${r.genero ?? ''}` ? '#7c3aed' : '#e2e8f0'}`,
                     borderRadius: 20,
                     padding: '6px 16px',
                     fontSize: 13,
@@ -252,6 +244,11 @@ export default function RankingPage() {
                   }}
                 >
                   {categoriaLabel(r.categoria)}
+                  {r.genero && (
+                    <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.85 }}>
+                      {r.genero === 'varones' ? '♂' : '♀'}
+                    </span>
+                  )}
                   <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.8 }}>({r.filas.length})</span>
                 </button>
               ))}
@@ -260,7 +257,7 @@ export default function RankingPage() {
             {/* Tabla del ranking activo */}
             {rankingActivo && rankingActivo.filas.length === 0 && (
               <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
-                Sin torneos internos finalizados en categoría <strong style={{ color: muted }}>{categoriaLabel(rankingActivo.categoria)}</strong>
+                Sin partidos registrados en <strong style={{ color: muted }}>{categoriaLabel(rankingActivo.categoria)}{rankingActivo.genero ? ` · ${rankingActivo.genero === 'varones' ? 'Varones' : 'Damas'}` : ''}</strong>
               </div>
             )}
             {rankingActivo && rankingActivo.filas.length > 0 && (

@@ -42,6 +42,7 @@ export async function crearTorneo(params: {
   cuota: number
   tipo?: 'interno' | 'externo'
   categoria?: string
+  genero?: 'varones' | 'damas'
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -56,6 +57,7 @@ export async function crearTorneo(params: {
   if (!fechaValida) return { error: 'Ingresa una fecha válida' }
   if (!Number.isSafeInteger(cuota) || cuota < 0) return { error: 'La cuota debe ser un monto igual o mayor a $0' }
   if (params.tipo === 'interno' && !params.categoria) return { error: 'Selecciona la categoría del torneo interno' }
+  if (params.tipo === 'interno' && !params.genero) return { error: 'Selecciona si es Varones o Damas' }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('torneos').insert({
@@ -70,6 +72,7 @@ export async function crearTorneo(params: {
     inscripcion_abierta: true,
     tipo: params.tipo ?? 'externo',
     categoria: params.categoria ?? null,
+    genero: params.genero ?? null,
   }).select('id').single()
 
   if (error || !data) return { error: error?.message || 'No se pudo crear el torneo' }

@@ -128,7 +128,7 @@ export default function TorneoDetallePage() {
       { data: gj },
       { data: cabezasData },
     ] = await Promise.all([
-      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
+      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,monto,creado_en').eq('torneo_id', torneoId),
@@ -185,18 +185,8 @@ export default function TorneoDetallePage() {
       .or('es_externo.is.null,es_externo.eq.false')
       .eq('estado', 'activo')
       .order('nombre')
-      .then(({ data }) => {
-        // Jugadores de la categoría del torneo van primero, el resto después
-        const cat = torneo?.categoria
-        if (cat) {
-          const primeros = (data || []).filter((j: any) => j.categoria === cat)
-          const resto = (data || []).filter((j: any) => j.categoria !== cat)
-          setJugadoresPorCategoria([...primeros, ...resto])
-        } else {
-          setJugadoresPorCategoria(data || [])
-        }
-      })
-  }, [mesaOpen, torneo?.tipo, torneo?.categoria, perfil?.club_id])
+      .then(({ data }) => setJugadoresPorCategoria(data || []))
+  }, [mesaOpen, torneo?.tipo, perfil?.club_id])
 
   useEffect(() => {
     if (torneo?.fase && (fasesOrden as readonly string[]).includes(torneo.fase)) {
@@ -1653,7 +1643,7 @@ export default function TorneoDetallePage() {
             )}
             <div style={{ position:'relative', marginBottom:10 }}>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                placeholder={torneo?.tipo === 'interno' ? (torneo?.categoria ? `Buscar jugador — ${torneo.categoria} primero...` : 'Buscar jugador del club...') : 'Buscar jugador del club o escribir nombre nuevo...'}
+                placeholder={torneo?.tipo === 'interno' ? 'Buscar jugador del club...' : 'Buscar jugador del club o escribir nombre nuevo...'}
                 value={busquedaMesa}
                 onFocus={() => {
                   if (torneo?.tipo === 'interno' && jugadoresPorCategoria.length > 0) setJugSuggestions(jugadoresPorCategoria)
