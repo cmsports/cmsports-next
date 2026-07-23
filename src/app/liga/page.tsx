@@ -68,6 +68,10 @@ export default function LigaPage() {
 
   async function handleCrear() {
     if (!nombre.trim()) return
+    const nd = numDivisiones ? parseInt(numDivisiones) : 0
+    const jpd = jugadoresPorDivision ? parseInt(jugadoresPorDivision) : 0
+    if (nd < 1) { setError('Debe haber al menos 1 división'); return }
+    if (jpd < 2) { setError('Debe haber al menos 2 jugadores por división'); return }
     setCreando(true); setError('')
     const res = await crearLiga({
       nombre,

@@ -8,6 +8,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarMovimiento } from '@/app/actions/finanzas'
 import { MensualidadesPanel } from '@/components/MensualidadesPanel'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import { cachedFetch, invalidate } from '@/lib/query-cache'
 
 const supabase = createClient()
 
@@ -25,7 +26,7 @@ const catLabel: Record<string, string> = {
   mantenimiento:'Mantenimiento', otro_gasto:'Otro gasto'
 }
 
-const categoriasIngreso = ['mensualidad','inscripcion_torneo','arriendo_cancha','donacion','otro_ingreso']
+const categoriasIngreso = ['mensualidad','inscripcion_torneo','inscripcion_liga','arriendo_cancha','donacion','otro_ingreso']
 const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','material_deportivo','servicios_basicos','mantenimiento','otro_gasto']
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -100,14 +101,28 @@ function FinanzasContent() {
 
   async function cargarJugadores(cid?: string) {
     const id = cid || clubId
-    const { data: jugs } = await supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', id).or('es_externo.is.null,es_externo.eq.false').order('nombre')
-    setJugadoresFinanzas(jugs || [])
+    const jugs = await cachedFetch(
+      `fin:jugadores:${id}`,
+      async () => {
+        const { data } = await supabase.from('jugadores').select('id,nombre,telefono').eq('club_id', id).or('es_externo.is.null,es_externo.eq.false').order('nombre')
+        return data || []
+      },
+      120_000,
+    )
+    setJugadoresFinanzas(jugs)
   }
 
   async function cargarProfesores(cid?: string) {
     const id = cid || clubId
-    const { data } = await supabase.from('profesores').select('*').eq('club_id', id)
-    setProfesores(data || [])
+    const data = await cachedFetch(
+      `fin:profesores:${id}`,
+      async () => {
+        const { data } = await supabase.from('profesores').select('id,nombre').eq('club_id', id)
+        return data || []
+      },
+      120_000,
+    )
+    setProfesores(data)
   }
 
   function cambiarMes(dir: number) {
@@ -568,15 +583,19 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     if (categoriaRep === 'jugador' && !jugadorId) return
     setGenerando(true)
     const { inicio, fin } = getRango()
+    const iniAnio = parseInt(inicio.slice(0, 4))
+    const iniMes  = parseInt(inicio.slice(5, 7))
+    const finAnio = parseInt(fin.slice(0, 4))
+    const finMes  = parseInt(fin.slice(5, 7))
     let datos: any = null
 
     if (categoriaRep === 'general') {
       const [{ data: jug }, { data: mov }, { data: asist }, { data: torn }, { data: mens }] = await Promise.all([
-        supabase.from('jugadores').select('*').eq('club_id', clubId),
-        supabase.from('movimientos').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-        supabase.from('asistencia').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
-        supabase.from('torneos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-        supabase.from('mensualidades').select('*').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin)
+        supabase.from('jugadores').select('id,nombre,estado,categoria').eq('club_id', clubId),
+        supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
+        supabase.from('asistencia').select('jugador_id,fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+        supabase.from('torneos').select('id,nombre,estado,fecha_inicio').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+        supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes)
       ])
       const activos = (jug || []).filter(j => j.estado === 'activo')
       const ingresos = (mov || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
@@ -597,13 +616,13 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
 
     if (categoriaRep === 'jugador') {
       const [{ data: jugador }, { data: mens }, { data: asist }, { data: torneoJug }, { data: ligaJug }] = await Promise.all([
-        supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
-        supabase.from('mensualidades').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
+        supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('id', jugadorId).single(),
+        supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }),
         supabase.from('asistencia').select('id,jugador_id,fecha').eq('jugador_id', jugadorId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-        supabase.from('torneo_jugadores').select('*, torneos(*)').eq('jugador_id', jugadorId),
-        supabase.from('liga_division_jugadores').select('*, liga_divisiones(*, ligas(*))').eq('jugador_id', jugadorId),
+        supabase.from('torneo_jugadores').select('id,torneo_id,torneos(id,nombre,fecha_inicio,estado)').eq('jugador_id', jugadorId),
+        supabase.from('liga_division_jugadores').select('id,jugador_id,liga_divisiones(id,nombre,ligas(id,nombre))').eq('jugador_id', jugadorId),
       ])
-      const mensPeriodo = (mens || []).filter(m => m.fecha >= inicio && m.fecha <= fin)
+      const mensPeriodo = (mens || []).filter(m => (m.anio * 100 + m.mes) >= (iniAnio * 100 + iniMes) && (m.anio * 100 + m.mes) <= (finAnio * 100 + finMes))
       const pagadas = mensPeriodo.filter(m => m.estado === 'pagado')
       const pendientes = mensPeriodo.filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
       datos = { jugador, mensualidades: mens || [], mensPeriodo, pagadas, pendientes, totalPagado: pagadas.reduce((s, m) => s + (m.monto || 0), 0), totalPendiente: pendientes.reduce((s, m) => s + (m.monto || 0), 0), asistencias: asist || [], torneos: torneoJug || [], ligas: ligaJug || [] }
@@ -612,7 +631,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     if (categoriaRep === 'finanzas') {
       const [{ data: mov }, { data: mens }, { data: jug }] = await Promise.all([
         supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-        supabase.from('mensualidades').select('id,mes,anio,monto,estado,jugadores(nombre,categoria)').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+        supabase.from('mensualidades').select('id,mes,anio,monto,estado,jugadores(nombre,categoria)').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes),
         supabase.from('jugadores').select('id,nombre,estado').eq('club_id', clubId).eq('estado', 'activo')
       ])
       const ingresos = (mov || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
@@ -636,7 +655,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
 
     if (categoriaRep === 'asistencia') {
       const [{ data: asist }, { data: jug }] = await Promise.all([
-        supabase.from('asistencia').select('*, jugadores(nombre,categoria)').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
+        supabase.from('asistencia').select('jugador_id,fecha,jugadores(nombre,categoria)').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo')
       ])
       const porDia: Record<string, number> = {}, porJugador: Record<string, { nombre: string; count: number }> = {}, porDiaSemana: Record<number, number> = { 0:0,1:0,2:0,3:0,4:0,5:0,6:0 }
@@ -655,9 +674,9 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
 
     if (categoriaRep === 'torneos') {
       const [{ data: torn }, { data: ligas }, { data: mov }] = await Promise.all([
-        supabase.from('torneos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin).order('fecha_inicio'),
-        supabase.from('ligas').select('*, liga_divisiones(*, liga_division_jugadores(jugador_id)), liga_partidos(count), liga_fechas(count)').eq('club_id', clubId),
-        supabase.from('movimientos').select('*').eq('club_id', clubId).eq('categoria', 'inscripcion_torneo').gte('fecha', inicio).lte('fecha', fin),
+        supabase.from('torneos').select('id,nombre,estado,fecha_inicio,tipo').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin).order('fecha_inicio'),
+        supabase.from('ligas').select('id,nombre,estado,liga_divisiones(id,nombre,liga_division_jugadores(jugador_id)),liga_partidos(count),liga_fechas(count)').eq('club_id', clubId),
+        supabase.from('movimientos').select('id,tipo,monto,categoria,fecha').eq('club_id', clubId).eq('categoria', 'inscripcion_torneo').gte('fecha', inicio).lte('fecha', fin),
       ])
       const torneosPorEstado: Record<string, number> = {}
       ;(torn || []).forEach(t => { torneosPorEstado[t.estado] = (torneosPorEstado[t.estado] || 0) + 1 })

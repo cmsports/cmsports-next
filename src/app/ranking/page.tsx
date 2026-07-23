@@ -42,7 +42,7 @@ export default function RankingPage() {
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (!['admin', 'profesor'].includes(perfil.rol || '')) { router.replace('/dashboard'); return }
+    if (!perfil.club_id) { router.replace('/dashboard'); return }
     cargar()
   }, [authLoading, perfil])
 

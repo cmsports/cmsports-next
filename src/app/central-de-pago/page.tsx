@@ -102,7 +102,9 @@ export default function CentralDePagoPage() {
           }}>
             <ImageIcon size={36} style={{ marginBottom: 10, opacity: 0.3 }} />
             <p style={{ margin: 0, fontSize: 14 }}>
-              {esAdmin ? 'Sube la imagen con los datos de transferencia' : 'Próximamente'}
+              {esAdmin
+                ? 'Sube la imagen con los datos de transferencia'
+                : 'El club aún no ha configurado sus datos de pago. Escríbeles por WhatsApp para coordinar.'}
             </p>
           </div>
         )}
@@ -112,12 +114,12 @@ export default function CentralDePagoPage() {
           <div style={{ background: '#f1f5f9', borderRadius: 16, height: 480, marginBottom: 20, animation: 'pulse 1.5s ease-in-out infinite' }} />
         )}
 
-        {/* Botón WhatsApp — siempre visible si hay imagen */}
-        {imagenExiste !== false && (
+        {/* Botón WhatsApp — visible siempre (imagen o no) */}
+        {imagenExiste !== false || !esAdmin ? (
           <WhatsAppBtn href={linkWA} style={{ padding: '15px 20px', fontSize: 15 }}>
             Enviar comprobante por WhatsApp
           </WhatsAppBtn>
-        )}
+        ) : null}
       </div>
 
       <style>{`

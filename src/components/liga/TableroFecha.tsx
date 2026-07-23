@@ -928,7 +928,7 @@ export function TableroFecha({
                               onTouchMove={fecha.estado === 'programada' ? handleTouchMove : undefined}
                               onTouchEnd={fecha.estado === 'programada' ? handleTouchEnd : undefined}
                               onTouchCancel={fecha.estado === 'programada' ? handleTouchEnd : undefined}
-                              onClick={fecha.estado !== 'programada' ? () => abrirResultado(partido) : undefined}
+                              onClick={fecha.estado !== 'programada' ? (e) => { e.stopPropagation(); abrirResultado(partido) } : undefined}
                               style={{
                                 borderRadius: 12,
                                 background: partido.estado === 'finalizado'
