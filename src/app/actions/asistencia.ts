@@ -40,7 +40,8 @@ export async function registrarBloqueAction(params: {
   if (!esStaff) return { error: 'Solo admin o profesor pueden cerrar bloques' }
   if (params.clubId !== perfil.club_id) return { error: 'Acceso denegado' }
 
-  const { error } = await supabase.rpc('registrar_bloque_asistencia', {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('registrar_bloque_asistencia', {
     p_club_id:   params.clubId,
     p_fecha:     params.fecha,
     p_hora:      params.hora,
