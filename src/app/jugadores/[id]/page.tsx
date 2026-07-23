@@ -901,14 +901,12 @@ export default function JugadorDetallePage() {
 
       {/* ── Stats ── */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, marginBottom:20 }}>
-        <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
-          <div style={{ fontSize:28, fontWeight:800, color:'#4f46e5', fontFamily:'monospace' }}>{torneosTotal}</div>
-          <div style={{ fontSize:11, color: muted, marginTop:2 }}>Torneos</div>
-        </div>
         {esAdmin && (
-          <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center', background: mensBg }}>
-            <div style={{ fontSize:14, fontWeight:700, color: mensColor }}>{mensLabel}</div>
-            <div style={{ fontSize:11, color: muted, marginTop:2 }}>Mensualidad</div>
+          <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
+            <div style={{ fontSize: jugador.mensualidad ? 20 : 28, fontWeight:800, color: jugador.mensualidad ? '#4f46e5' : hint, fontVariantNumeric:'tabular-nums' }}>
+              {jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : '—'}
+            </div>
+            <div style={{ fontSize:11, color: muted, marginTop:4 }}>Mensualidad</div>
           </div>
         )}
         {(() => {
@@ -922,7 +920,7 @@ export default function JugadorDetallePage() {
           const diasLabel = diasCortos.length > 0 ? diasCortos.join(' · ') : '—'
           return (
             <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
-              <div style={{ fontSize: diasCortos.length > 0 ? 15 : 28, fontWeight:800, color:'#4f46e5', lineHeight:1.4 }}>{diasLabel}</div>
+              <div style={{ fontSize: diasCortos.length > 0 ? 15 : 28, fontWeight:800, color: diasCortos.length > 0 ? '#4f46e5' : hint, lineHeight:1.6 }}>{diasLabel}</div>
               <div style={{ fontSize:11, color: muted, marginTop:4 }}>Días entrena</div>
             </div>
           )
@@ -961,28 +959,66 @@ export default function JugadorDetallePage() {
           </div>
         </div>
 
+        {/* Días de entrenamiento — va arriba para que sea fácil de editar */}
+        {(() => {
+          const DIAS = [
+            { key:'entrena_lun', label:'Lunes' },
+            { key:'entrena_mar', label:'Martes' },
+            { key:'entrena_mie', label:'Miércoles' },
+            { key:'entrena_jue', label:'Jueves' },
+            { key:'entrena_vie', label:'Viernes' },
+          ] as const
+          return (
+            <div style={cardStyle}>
+              <CardHeader title="Días de entrenamiento" onEdit={puedeEvaluar ? () => {
+                setDiasForm({
+                  horario:     jugador.horario    || '',
+                  entrena_lun: jugador.entrena_lun ?? false,
+                  entrena_mar: jugador.entrena_mar ?? false,
+                  entrena_mie: jugador.entrena_mie ?? false,
+                  entrena_jue: jugador.entrena_jue ?? false,
+                  entrena_vie: jugador.entrena_vie ?? false,
+                })
+                setDatosError('')
+                setEditDias(true)
+              } : undefined} />
+              <div style={{ padding:'4px 20px 16px' }}>
+                {jugador.horario && (
+                  <div style={{ padding:'10px 0', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between' }}>
+                    <span style={{ fontSize:12, color: muted }}>Bloque</span>
+                    <span style={{ fontSize:13, fontWeight:600, color: text }}>{jugador.horario}</span>
+                  </div>
+                )}
+                {DIAS.map(({ key, label }) => {
+                  const val = jugador[key]
+                  return (
+                    <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #f1f5f9' }}>
+                      <span style={{ fontSize:13, color: text }}>{label}</span>
+                      <span style={{ fontSize:12, fontWeight:600, color: val === true ? '#16a34a' : '#94a3b8' }}>
+                        {val === true ? 'Entrena' : 'No entrena'}
+                      </span>
+                    </div>
+                  )
+                })}
+                {!jugador.horario && !DIAS.some(d => jugador[d.key]) && (
+                  <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin horario asignado — hacé clic en Editar</div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Plan */}
         <div style={cardStyle}>
           <CardHeader title="Plan & Membresía" onEdit={puedeEditar ? abrirEditPlan : undefined} />
           <div style={{ padding:'16px 20px' }}>
-            <div style={{ fontSize:24, fontWeight:800, color: text, marginBottom:4 }}>
-              ${(jugador.mensualidad || 0).toLocaleString('es-CL')}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span>
+            <div style={{ fontSize:24, fontWeight:800, color: jugador.mensualidad ? text : hint, marginBottom:4 }}>
+              {jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : '—'}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span>
             </div>
-            <div style={{ fontSize:13, color: muted, marginBottom:16 }}>
+            <div style={{ fontSize:13, color: muted }}>
               {jugador.tipo_plan ? jugador.tipo_plan.charAt(0).toUpperCase() + jugador.tipo_plan.slice(1) : 'Mensual'}
               {jugador.tipo_plan === 'libre' ? ' — Libre acceso' : jugador.entrenamientos_por_semana ? ` — ${jugador.entrenamientos_por_semana} entrenamientos/semana` : ''}
             </div>
-            {jugador.tipo_plan !== 'libre' && (
-              <div>
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color: muted, marginBottom:6 }}>
-                  <span>Sesiones usadas</span>
-                  <span style={{ fontWeight:600, color: text }}>{jugador.sesiones_usadas || 0} / {jugador.sesiones_limite || 0}</span>
-                </div>
-                <div style={{ background:'#e2e8f0', borderRadius:6, height:8 }}>
-                  <div style={{ width:`${Math.min(((jugador.sesiones_usadas||0)/(jugador.sesiones_limite||1))*100,100)}%`, background: (jugador.sesiones_usadas||0) >= (jugador.sesiones_limite||1) ? '#dc2626' : '#4f46e5', borderRadius:6, height:'100%', transition:'width 0.3s' }} />
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1021,49 +1057,6 @@ export default function JugadorDetallePage() {
             </div>
           </div>
         )}
-        {/* Días de entrenamiento */}
-        {(() => {
-          const DIAS = [
-            { key:'entrena_lun', label:'Lunes' },
-            { key:'entrena_mar', label:'Martes' },
-            { key:'entrena_mie', label:'Miércoles' },
-            { key:'entrena_jue', label:'Jueves' },
-            { key:'entrena_vie', label:'Viernes' },
-          ] as const
-          const tieneDatos = DIAS.some(d => jugador[d.key] !== null && jugador[d.key] !== undefined)
-          if (!tieneDatos && !puedeEvaluar) return null
-          return (
-            <div style={cardStyle}>
-              <CardHeader title="Días de entrenamiento" onEdit={puedeEvaluar ? () => {
-                setDiasForm({
-                  horario:     jugador.horario    || '',
-                  entrena_lun: jugador.entrena_lun ?? false,
-                  entrena_mar: jugador.entrena_mar ?? false,
-                  entrena_mie: jugador.entrena_mie ?? false,
-                  entrena_jue: jugador.entrena_jue ?? false,
-                  entrena_vie: jugador.entrena_vie ?? false,
-                })
-                setDatosError('')
-                setEditDias(true)
-              } : undefined} />
-              <div style={{ padding:'4px 20px 16px' }}>
-                {tieneDatos ? DIAS.map(({ key, label }) => {
-                  const val = jugador[key]
-                  return (
-                    <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #f1f5f9' }}>
-                      <span style={{ fontSize:13, color: text }}>{label}</span>
-                      <span style={{ fontSize:12, fontWeight:600, color: val === true ? '#16a34a' : val === false ? '#94a3b8' : hint }}>
-                        {val === true ? 'Entrena' : val === false ? 'No entrena' : '—'}
-                      </span>
-                    </div>
-                  )
-                }) : (
-                  <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin días de entrenamiento registrados</div>
-                )}
-              </div>
-            </div>
-          )
-        })()}
 
       </div>
 
