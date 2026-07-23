@@ -430,9 +430,6 @@ export default function JugadoresPage() {
                         <button onClick={() => router.push(`/jugadores/${j.id}`)} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Ver perfil</button>
                         {esAdmin && <>
                           <button onClick={() => abrirEditar(j)} style={{ background:'#f4f7fa', color: muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Editar</button>
-                          <button onClick={() => toggleEstado(j)} style={{ background: j.estado==='activo'?'#fef2f2':'#f0fdf4', color: j.estado==='activo'?'#dc2626':'#16a34a', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>
-                            {j.estado==='activo'?'🚫 Bloquear':'✅ Activar'}
-                          </button>
                           <button onClick={() => eliminar(j.id)} style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>✕</button>
                         </>}
                       </div>
