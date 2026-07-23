@@ -72,7 +72,7 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { data: jugador } = await supabase.from('jugadores').select('*').eq('id', params.jugadorId).eq('club_id', clubId).single()
+  const { data: jugador } = await supabase.from('jugadores').select('id,email,nombre').eq('id', params.jugadorId).eq('club_id', clubId).single()
   if (!jugador) return { error: 'Jugador no encontrado' }
   if (!jugador.email) return { error: 'El jugador no tiene email registrado' }
 
@@ -120,6 +120,14 @@ export async function editarJugador(params: {
     nombre: nombre.trim(), rut: rut || null, email: email || null, telefono: telefono || null, ...planFields,
   }).eq('id', jugadorId)
   if (error) return { error: 'Error al editar: ' + error.message }
+  return { success: true }
+}
+
+export async function actualizarMensualidad(params: { jugadorId: string; mensualidad: number }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+  const { error } = await supabase.from('jugadores').update({ mensualidad: params.mensualidad }).eq('id', params.jugadorId)
+  if (error) return { error: error.message }
   return { success: true }
 }
 

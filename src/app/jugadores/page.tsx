@@ -8,7 +8,7 @@ import AppLayout from '@/app/layout-app'
 import AsistenciaPanel from '@/components/AsistenciaPanel'
 import InasistenciasPanel from '@/components/InasistenciasPanel'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador } from '@/app/actions/jugadores'
+import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actualizarMensualidad } from '@/app/actions/jugadores'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 
 const supabase = createClient()
@@ -54,6 +54,9 @@ export default function JugadoresPage() {
   const searchParams = useSearchParams()
   const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia' : searchParams.get('tab') === 'inasistencias' ? 'inasistencias' : 'jugadores'
   const [tabJug, setTabJug] = useState<'jugadores'|'asistencia'|'inasistencias'>(tabInicial)
+  const [filtroSinHorario, setFiltroSinHorario] = useState(false)
+  const [editandoMensualidadId, setEditandoMensualidadId] = useState<string | null>(null)
+  const [mensualidadTemp, setMensualidadTemp] = useState('')
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -214,12 +217,24 @@ export default function JugadoresPage() {
     void cargarJugadores()
   }
 
+  async function guardarMensualidad(j: any) {
+    const nuevo = parseInt(mensualidadTemp)
+    setEditandoMensualidadId(null)
+    if (isNaN(nuevo) || nuevo < 0 || nuevo === j.mensualidad) return
+    const res = await actualizarMensualidad({ jugadorId: j.id, mensualidad: nuevo })
+    if (res.error) { mostrarToast(res.error); return }
+    setJugadores(prev => prev.map(p => p.id === j.id ? { ...p, mensualidad: nuevo } : p))
+    if (clubId) jugadoresCache[clubId] = (jugadoresCache[clubId] || []).map((p: any) => p.id === j.id ? { ...p, mensualidad: nuevo } : p)
+    mostrarToast('Mensualidad actualizada')
+  }
+
   async function exportarExcel() {
     const { utils, writeFile } = await import('xlsx')
+    const dias = (j: any) => ['lun','mar','mie','jue','vie'].filter(d => j[`entrena_${d}`]).join('-') || 'sin horario'
     const datos = filtrados.map(j => ({
       'Nombre': j.nombre, 'RUT': j.rut || '', 'Email': j.email || '', 'Teléfono': j.telefono || '',
-      'Categoría': j.categoria, 'Sesiones usadas': j.sesiones_usadas,
-      'Sesiones límite': j.sesiones_limite, 'Estado': j.estado
+      'Categoría': j.categoria, 'Mensualidad': j.mensualidad || 0,
+      'Horario': j.horario || '', 'Días': dias(j), 'Estado': j.estado
     }))
     const ws = utils.json_to_sheet(datos)
     const wb = utils.book_new()
@@ -227,10 +242,14 @@ export default function JugadoresPage() {
     writeFile(wb, 'jugadores.xlsx')
   }
 
+  const sinHorario = (j: any) => !j.entrena_lun && !j.entrena_mar && !j.entrena_mie && !j.entrena_jue && !j.entrena_vie
+  const sinHorarioCount = jugadores.filter(sinHorario).length
+
   const filtrados = jugadores
     .filter(j => !busqueda || j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) || j.rut?.includes(busqueda))
     .filter(j => !filtroCat || j.categoria === filtroCat)
     .filter(j => !filtroEstado || j.estado === filtroEstado)
+    .filter(j => !filtroSinHorario || sinHorario(j))
     .sort((a, b) => orden === 'az'
       ? (a.nombre || '').localeCompare(b.nombre || '', 'es')
       : (b.nombre || '').localeCompare(a.nombre || '', 'es'))
@@ -316,9 +335,16 @@ export default function JugadoresPage() {
             {orden === 'az' ? 'A → Z' : 'Z → A'}
           </button>
 
-          {(busqueda || filtroCat || filtroEstado) && (
+          <button
+            onClick={() => setFiltroSinHorario(v => !v)}
+            style={{ background: filtroSinHorario ? '#fff7ed' : '#f4f7fa', border: `1px solid ${filtroSinHorario ? '#fed7aa' : '#e2e8f0'}`, borderRadius:8, padding:'7px 12px', fontSize:13, color: filtroSinHorario ? '#c2410c' : muted, cursor:'pointer', whiteSpace:'nowrap', fontWeight: filtroSinHorario ? 600 : 400 }}
+          >
+            Sin horario {sinHorarioCount > 0 && `(${sinHorarioCount})`}
+          </button>
+
+          {(busqueda || filtroCat || filtroEstado || filtroSinHorario) && (
             <button
-              onClick={() => { setBusqueda(''); setFiltroCat(''); setFiltroEstado('') }}
+              onClick={() => { setBusqueda(''); setFiltroCat(''); setFiltroEstado(''); setFiltroSinHorario(false) }}
               style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:13, color:'#dc2626', cursor:'pointer', whiteSpace:'nowrap' }}
             >
               Limpiar filtros
@@ -337,7 +363,7 @@ export default function JugadoresPage() {
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
               <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-                {['#','Nombre','RUT','Categoría','Sesiones','Horario',''].map(h => (
+                {['#','Nombre','RUT','Categoría','Mensualidad','Horario',''].map(h => (
                   <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -364,7 +390,27 @@ export default function JugadoresPage() {
                         {j.categoria}
                       </span>
                     </td>
-                    <td style={{ padding:'12px 16px', fontSize:13, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite}</td>
+                    <td style={{ padding:'12px 16px' }}>
+                      {esAdmin && editandoMensualidadId === j.id ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          value={mensualidadTemp}
+                          onChange={e => setMensualidadTemp(e.target.value)}
+                          onBlur={() => guardarMensualidad(j)}
+                          onKeyDown={e => { if (e.key === 'Enter') guardarMensualidad(j); if (e.key === 'Escape') setEditandoMensualidadId(null) }}
+                          style={{ width:90, background:'#f8fafc', border:'1px solid #6366f1', borderRadius:6, padding:'4px 8px', fontSize:13, outline:'none' }}
+                        />
+                      ) : (
+                        <span
+                          onClick={esAdmin ? () => { setEditandoMensualidadId(j.id); setMensualidadTemp(String(j.mensualidad || 0)) } : undefined}
+                          title={esAdmin ? 'Clic para editar' : undefined}
+                          style={{ fontSize:13, color: j.mensualidad ? text : hint, fontWeight: j.mensualidad ? 600 : 400, cursor: esAdmin ? 'pointer' : 'default' }}
+                        >
+                          {j.mensualidad ? `$${j.mensualidad.toLocaleString('es-CL')}` : '—'}
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding:'12px 16px', fontSize:12 }}>
                       {j.horario && <div style={{ color: text, marginBottom:2 }}>{j.horario}</div>}
                       {(() => {
