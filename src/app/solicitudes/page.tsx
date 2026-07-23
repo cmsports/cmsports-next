@@ -21,15 +21,15 @@ const text  = '#0f172a'
 const hint  = '#94a3b8'
 
 async function obtenerSolicitudes(clubId: string) {
-  let { data: invitaciones } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
+  let { data: invitaciones } = await supabase.from('invitaciones').select('codigo').eq('club_id', clubId).eq('activa', true).limit(1)
   if (!invitaciones?.length) {
     await supabase.from('invitaciones').insert({ club_id: clubId })
-    const { data } = await supabase.from('invitaciones').select('*').eq('club_id', clubId).eq('activa', true).limit(1)
+    const { data } = await supabase.from('invitaciones').select('codigo').eq('club_id', clubId).eq('activa', true).limit(1)
     invitaciones = data
   }
   const codigo = invitaciones?.[0]?.codigo || ''
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('*').eq('club_id', clubId).order('creado_en', { ascending: false })
+  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento').eq('club_id', clubId).order('creado_en', { ascending: false })
   return { link: `${origin}/registro?club=${clubId}&code=${codigo}`, solicitudes: solicitudes || [] }
 }
 

@@ -51,9 +51,9 @@ export default function MisClasesPage() {
     const finCarga = new Date(inicioCarga)
     finCarga.setDate(inicioCarga.getDate() + 6)
     const [{ data: cl, error: clasesError }, { data: pr, error: profesoresError }] = await Promise.all([
-      supabase.from('clases').select('*').eq('club_id', perfil?.club_id).eq('publicada', true)
+      supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,grupo,publicada,profesor_id').eq('club_id', perfil?.club_id).eq('publicada', true)
         .gte('fecha', formatFecha(inicioCarga)).lte('fecha', formatFecha(finCarga)).order('fecha').order('hora_inicio'),
-      supabase.from('profesores').select('*').eq('club_id', perfil?.club_id)
+      supabase.from('profesores').select('id,nombre,especialidad').eq('club_id', perfil?.club_id)
     ])
     if (clasesError || profesoresError) {
       setMensaje({ tipo: 'error', texto: clasesError?.message || profesoresError?.message || 'No fue posible cargar las clases' })

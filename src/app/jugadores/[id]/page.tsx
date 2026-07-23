@@ -85,7 +85,7 @@ export default function JugadorDetallePage() {
   const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [editDias, setEditDias] = useState(false)
-  const [diasForm, setDiasForm] = useState({ entrena_lun:false, entrena_mar:false, entrena_mie:false, entrena_jue:false, entrena_vie:false })
+  const [diasForm, setDiasForm] = useState({ horario:'', entrena_lun:false, entrena_mar:false, entrena_mie:false, entrena_jue:false, entrena_vie:false })
   const [guardandoDatos, setGuardandoDatos] = useState(false)
   const [datosError, setDatosError] = useState('')
   const [modalExternoOpen, setModalExternoOpen] = useState(false)
@@ -138,8 +138,8 @@ export default function JugadorDetallePage() {
 
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('*').eq('id', jugadorId).single(),
-          supabase.from('torneo_partidos').select('*,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
+          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id').eq('id', jugadorId).single(),
+          supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
           perfil.rol === 'admin'
@@ -316,13 +316,56 @@ export default function JugadorDetallePage() {
   async function guardarDias() {
     setGuardandoDatos(true)
     setDatosError('')
-    const { error } = await supabase.from('jugadores').update(diasForm).eq('id', jugadorId)
+
+    const datos = {
+      horario:     diasForm.horario || null,
+      entrena_lun: diasForm.entrena_lun,
+      entrena_mar: diasForm.entrena_mar,
+      entrena_mie: diasForm.entrena_mie,
+      entrena_jue: diasForm.entrena_jue,
+      entrena_vie: diasForm.entrena_vie,
+    }
+
+    const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
     if (error) {
       setDatosError(`No se pudieron guardar los días: ${error.message}`)
       setGuardandoDatos(false)
       return
     }
-    setJugador({ ...jugador, ...diasForm })
+
+    // Registrar cambio en historial si algo cambió
+    const cambio =
+      datos.horario      !== (jugador.horario || null) ||
+      datos.entrena_lun  !== (jugador.entrena_lun  ?? false) ||
+      datos.entrena_mar  !== (jugador.entrena_mar  ?? false) ||
+      datos.entrena_mie  !== (jugador.entrena_mie  ?? false) ||
+      datos.entrena_jue  !== (jugador.entrena_jue  ?? false) ||
+      datos.entrena_vie  !== (jugador.entrena_vie  ?? false)
+
+    if (cambio) {
+      const hoy = new Date().toISOString().split('T')[0]
+      // Cerrar registro activo anterior (vigente_hasta = ayer)
+      const ayer = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+      await supabase.from('jugador_horario_historial')
+        .update({ vigente_hasta: ayer })
+        .eq('jugador_id', jugadorId)
+        .is('vigente_hasta', null)
+        .lt('vigente_desde', hoy)
+      // Abrir nuevo registro
+      await supabase.from('jugador_horario_historial').insert({
+        jugador_id:    jugadorId,
+        club_id:       jugador.club_id,
+        horario:       datos.horario,
+        entrena_lun:   datos.entrena_lun,
+        entrena_mar:   datos.entrena_mar,
+        entrena_mie:   datos.entrena_mie,
+        entrena_jue:   datos.entrena_jue,
+        entrena_vie:   datos.entrena_vie,
+        vigente_desde: hoy,
+      })
+    }
+
+    setJugador({ ...jugador, ...datos })
     setEditDias(false)
     setGuardandoDatos(false)
   }
@@ -344,7 +387,7 @@ export default function JugadorDetallePage() {
       return
     }
 
-    const { data: ext } = await supabase.from('torneos_externos').select('*').eq('jugador_id', jugadorId).order('fecha', { ascending: false })
+    const { data: ext } = await supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false })
     setExternos(ext || [])
     setModalExternoOpen(false)
     setExternoForm({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
@@ -995,6 +1038,7 @@ export default function JugadorDetallePage() {
             <div style={cardStyle}>
               <CardHeader title="Días de entrenamiento" onEdit={puedeEvaluar ? () => {
                 setDiasForm({
+                  horario:     jugador.horario    || '',
                   entrena_lun: jugador.entrena_lun ?? false,
                   entrena_mar: jugador.entrena_mar ?? false,
                   entrena_mie: jugador.entrena_mie ?? false,
@@ -1317,6 +1361,20 @@ export default function JugadorDetallePage() {
               <div style={{ fontSize:18, fontWeight:700, color: text }}>Días de entrenamiento</div>
               <button onClick={() => setEditDias(false)} style={{ background:'#f1f5f9', border:'none', borderRadius:8, width:32, height:32, fontSize:16, cursor:'pointer', color: muted }}>✕</button>
             </div>
+            <div style={{ marginBottom:16 }}>
+              <label style={{ ...labelStyle, marginBottom:6 }}>Bloque horario</label>
+              <select
+                value={diasForm.horario}
+                onChange={e => setDiasForm(f => ({ ...f, horario: e.target.value }))}
+                style={{ ...inputStyle, cursor:'pointer' }}
+              >
+                <option value="">— Sin asignar —</option>
+                {['09:00-11:00','17:00-18:30','18:30-20:30','20:30-22:30'].map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:8 }}>Días de entrenamiento</div>
             {([
               { key:'entrena_lun', label:'Lunes' },
               { key:'entrena_mar', label:'Martes' },

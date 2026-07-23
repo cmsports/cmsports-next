@@ -32,10 +32,10 @@ async function obtenerProgramacion(offset: number, clubId: string) {
   const domingo = new Date(lunes)
   domingo.setDate(lunes.getDate() + 6)
   const [{ data: clases }, { data: profesores }] = await Promise.all([
-    supabase.from('clases').select('*').eq('club_id', clubId)
+    supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,grupo,publicada,profesor_id').eq('club_id', clubId)
       .gte('fecha', fmtISO(lunes)).lte('fecha', fmtISO(domingo))
       .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
-    supabase.from('profesores').select('*').eq('club_id', clubId).eq('activo', true),
+    supabase.from('profesores').select('id,nombre,especialidad').eq('club_id', clubId).eq('activo', true),
   ])
   const claseIds = (clases || []).map(clase => clase.id)
   const { data: reservas } = claseIds.length > 0

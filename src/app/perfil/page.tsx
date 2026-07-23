@@ -60,12 +60,12 @@ export default function PerfilPage() {
 
         // Ronda 1 — todo en paralelo, incluyendo el check de torneo activo
         const resultados = await Promise.all([
-          supabase.from('jugadores').select('*').eq('id', perfil.jugador_id).single(),
-          supabase.from('asistencia').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
+          supabase.from('jugadores').select('id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single(),
+          supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
           supabase.from('grupo_jugadores').select('torneo_grupos!inner(torneo_id)').eq('jugador_id', perfil.jugador_id),
-          supabase.from('torneos_externos').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }),
-          supabase.from('mensualidades').select('*').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
-          supabase.from('evaluaciones_trimestrales').select('*').eq('jugador_id', perfil.jugador_id).order('creado_en', { ascending: false }).limit(2),
+          supabase.from('torneos_externos').select('id').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }),
+          supabase.from('mensualidades').select('id,mes,anio,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
+          supabase.from('evaluaciones_trimestrales').select('id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', perfil.jugador_id).order('creado_en', { ascending: false }).limit(2),
           supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
           perfil.club_id
             ? supabase.from('torneos').select('id, nombre, fase, estado, campeon_id').eq('club_id', perfil.club_id).neq('fase', 'inscripcion').neq('estado', 'archivado')
@@ -174,7 +174,7 @@ export default function PerfilPage() {
     async function recargarEvaluaciones() {
       const { data: evs } = await supabase
         .from('evaluaciones_trimestrales')
-        .select('*')
+        .select('id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en')
         .eq('jugador_id', jugadorId)
         .order('creado_en', { ascending: false })
         .limit(2)

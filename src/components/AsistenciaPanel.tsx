@@ -19,6 +19,7 @@ import {
   quitarDeCola,
   type AsistenciaPendiente,
 } from '@/lib/offline/db'
+import { cachedFetch } from '@/lib/query-cache'
 
 const supabase = createClient()
 
@@ -96,22 +97,34 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       return
     }
 
-    let consultaJugadores = supabase.from('jugadores')
-      .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
-      .eq('club_id', id).eq('estado', 'activo').order('nombre')
-    if (perfil?.rol === 'jugador' && perfil.jugador_id) {
-      consultaJugadores = consultaJugadores.eq('id', perfil.jugador_id)
-    }
+    const jugKey = perfil?.rol === 'jugador' && perfil.jugador_id
+      ? `asist:jug:${perfil.jugador_id}`
+      : `asist:jugs:${id}`
 
-    const [{ data: j, error: jugadoresError }, { data: a, error: asistenciasError }] = await Promise.all([
-      consultaJugadores,
-      supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
-    ])
-    if (jugadoresError || asistenciasError) {
-      setMensaje({ tipo: 'error', texto: jugadoresError?.message || asistenciasError?.message || 'No fue posible cargar la asistencia' })
+    let j: any[]
+    try {
+      j = await cachedFetch(jugKey, async () => {
+        let q = supabase.from('jugadores')
+          .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+          .eq('club_id', id).eq('estado', 'activo').order('nombre')
+        if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
+        const { data, error } = await q
+        if (error) throw error
+        return data || []
+      }, 60_000)
+    } catch (e: any) {
+      setMensaje({ tipo: 'error', texto: e?.message || 'No fue posible cargar los jugadores' })
       return
     }
-    setJugadores(j || [])
+
+    const { data: a, error: asistenciasError } = await supabase
+      .from('asistencia').select('id,jugador_id,hora,fecha')
+      .eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
+    if (asistenciasError) {
+      setMensaje({ tipo: 'error', texto: asistenciasError.message })
+      return
+    }
+    setJugadores(j)
     await guardarJugadoresCache(id, j || [])
 
     const yaSincronizadas = new Set((a || []).map((x: any) => x.jugador_id))
@@ -140,7 +153,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       if (!perfil) { router.push('/login'); return }
       if (perfil.rol === 'jugador' && perfil.jugador_id) {
         const cliente = createClient()
-        const { data: j } = await cliente.from('jugadores').select('*').eq('id', perfil.jugador_id).single()
+        const { data: j } = await cliente.from('jugadores').select('id,nombre,sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single()
         setJugadorPropio(j)
       }
       if (perfil.club_id) {

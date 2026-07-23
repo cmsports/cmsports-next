@@ -40,7 +40,7 @@ export default function TorneosExternosPage() {
       if (authLoading) return
       if (!perfil) { router.push('/login'); return }
       if (perfil.jugador_id) {
-        const { data: e } = await supabase.from('torneos_externos').select('*').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false })
+        const { data: e } = await supabase.from('torneos_externos').select('id,nombre_club,fecha,categoria,posicion').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false })
         setExternos(e || [])
       }
       setLoading(false)
@@ -66,7 +66,7 @@ export default function TorneosExternosPage() {
       return
     }
 
-    const { data: e } = await supabase.from('torneos_externos').select('*').eq('jugador_id', perfil?.jugador_id).order('fecha', { ascending: false })
+    const { data: e } = await supabase.from('torneos_externos').select('id,nombre_club,fecha,categoria,posicion').eq('jugador_id', perfil?.jugador_id).order('fecha', { ascending: false })
     setExternos(e || [])
     setModalOpen(false)
     setForm({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })

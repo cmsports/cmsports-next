@@ -69,8 +69,8 @@ function CalendarioContent() {
     const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
     const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
     const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
-      supabase.from('eventos').select('*').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-      supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
+      supabase.from('eventos').select('id,titulo,descripcion,tipo,fecha_inicio,hora_inicio,hora_fin').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+      supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
       supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
     ])
     if (evError || clError || trError) {
@@ -103,8 +103,8 @@ function CalendarioContent() {
 
     async function cargar() {
       const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
-        supabase.from('eventos').select('*').eq('club_id', clubId!).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-        supabase.from('clases').select('*,profesores(nombre,especialidad)').eq('club_id', clubId!).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
+        supabase.from('eventos').select('id,titulo,descripcion,tipo,fecha_inicio,hora_inicio,hora_fin').eq('club_id', clubId!).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+        supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,profesores(nombre,especialidad)').eq('club_id', clubId!).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
         supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId!).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
       ])
       if (!activo) return

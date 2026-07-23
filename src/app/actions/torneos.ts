@@ -275,7 +275,7 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
 
   const { partidoId, nuevoGanadorId } = params
 
-  const { data: partido } = await supabase.from('torneo_partidos').select('*').eq('id', partidoId).single()
+  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden').eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
   if (partido.fase !== 'grupos') return { error: 'Solo se pueden corregir partidos de grupos' }
@@ -312,10 +312,10 @@ export async function corregirResultadoGrupos(params: { partidoId: string; nuevo
 
   // Revertir stats en grupo_jugadores
   if (partido.grupo_id) {
-    const { data: gjG } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', anteriorGanadorId).maybeSingle()
+    const { data: gjG } = await supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', anteriorGanadorId).maybeSingle()
     if (gjG) await supabase.from('grupo_jugadores').update({ partidos_ganados: Math.max(0, (gjG.partidos_ganados || 0) - 1), partidos_jugados: Math.max(0, (gjG.partidos_jugados || 0) - 1) }).eq('id', gjG.id)
     if (anteriorPerdedorId) {
-      const { data: gjP } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', anteriorPerdedorId).maybeSingle()
+      const { data: gjP } = await supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', anteriorPerdedorId).maybeSingle()
       if (gjP) await supabase.from('grupo_jugadores').update({ partidos_jugados: Math.max(0, (gjP.partidos_jugados || 0) - 1) }).eq('id', gjP.id)
     }
   }
@@ -347,7 +347,7 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
 
   const { partidoId, ganadorId } = params
 
-  const { data: partido } = await supabase.from('torneo_partidos').select('*').eq('id', partidoId).single()
+  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden').eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (partido.ganador) return { error: 'El partido ya tiene ganador' }
   if (!partido.jugador_a || !partido.jugador_b) return { error: 'Los BYE avanzan automáticamente y no se marcan manualmente' }
@@ -384,7 +384,7 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
   if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
 
   if (partido.grupo_id) {
-    const { data: gjG } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', ganadorId).maybeSingle()
+    const { data: gjG } = await supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', ganadorId).maybeSingle()
     if (gjG) {
       await supabase.from('grupo_jugadores').update({
         partidos_ganados: (gjG.partidos_ganados || 0) + 1,
@@ -392,7 +392,7 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
       }).eq('id', gjG.id)
     }
     if (perdedorId) {
-      const { data: gjP } = await supabase.from('grupo_jugadores').select('*').eq('grupo_id', partido.grupo_id).eq('jugador_id', perdedorId).maybeSingle()
+      const { data: gjP } = await supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', perdedorId).maybeSingle()
       if (gjP) {
         await supabase.from('grupo_jugadores').update({
           partidos_jugados: (gjP.partidos_jugados || 0) + 1,
@@ -1075,7 +1075,7 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
 
   const { partidoId, nuevoGanadorId } = params
 
-  const { data: partido } = await supabase.from('torneo_partidos').select('*').eq('id', partidoId).single()
+  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase').eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
   if (partido.fase === 'grupos') return { error: 'Usa corregirResultadoGrupos para partidos de grupos' }
@@ -1684,7 +1684,7 @@ export async function inscribirEnMesa(params: {
     .eq('jugador_id', jugadorId).eq('torneo_grupos.torneo_id', torneoId).maybeSingle()
   if (yaInscrito) return { error: 'Este jugador ya está inscrito en este torneo' }
 
-  let { data: grupoMesa } = await supabase.from('torneo_grupos').select('*').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
+  let { data: grupoMesa } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
   if (!grupoMesa) {
     const { data: ng } = await supabase.from('torneo_grupos').insert({ torneo_id: torneoId, nombre: 'MESA' }).select().single()
     grupoMesa = ng
