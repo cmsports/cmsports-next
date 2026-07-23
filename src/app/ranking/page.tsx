@@ -74,10 +74,10 @@ export default function RankingPage() {
     // 3. Torneos internos finalizados del club
     let queryT = sb
       .from('torneos')
-      .select('id,categoria')
+      .select('id,categoria,fecha_fin')
       .eq('club_id', perfil.club_id)
       .eq('tipo', 'interno')
-      .eq('estado', 'finalizado')
+      .in('estado', ['finalizado', 'archivado'])
     if (reinicioTs) queryT = queryT.gt('fecha_fin', reinicioTs)
 
     const { data: torneos } = await queryT

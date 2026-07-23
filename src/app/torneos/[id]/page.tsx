@@ -108,6 +108,7 @@ export default function TorneoDetallePage() {
   // pestaña por memoria al marcar. Con este flag el SVG ni entra al árbol.
   const [isMobile, setIsMobile] = useState(false)
   const [torneosActivos, setTorneosActivos] = useState<{ id: string; nombre: string; fase: string }[]>([])
+  const [jugadoresPorCategoria, setJugadoresPorCategoria] = useState<any[]>([])
   const sincronizandoRef = useRef(false)
   const ultimaSyncRef = useRef('')
   // ponytail: Set de partido IDs en vuelo, no booleano global (bloqueaba partidos distintos entre sí)
@@ -174,6 +175,28 @@ export default function TorneoDetallePage() {
     supabase.from('torneos').select('id,nombre,fase').eq('club_id', perfil.club_id).eq('estado', 'en_curso').order('fecha_inicio', { ascending: false })
       .then(({ data }) => setTorneosActivos(data || []))
   }, [perfil?.club_id, torneoId])
+
+  // Precarga todos los jugadores del club al abrir la mesa en torneos internos
+  useEffect(() => {
+    if (!mesaOpen || torneo?.tipo !== 'interno' || !perfil?.club_id) { setJugadoresPorCategoria([]); return }
+    supabase.from('jugadores')
+      .select('id,nombre,rut,categoria')
+      .eq('club_id', perfil.club_id)
+      .or('es_externo.is.null,es_externo.eq.false')
+      .eq('estado', 'activo')
+      .order('nombre')
+      .then(({ data }) => {
+        // Jugadores de la categoría del torneo van primero, el resto después
+        const cat = torneo?.categoria
+        if (cat) {
+          const primeros = (data || []).filter((j: any) => j.categoria === cat)
+          const resto = (data || []).filter((j: any) => j.categoria !== cat)
+          setJugadoresPorCategoria([...primeros, ...resto])
+        } else {
+          setJugadoresPorCategoria(data || [])
+        }
+      })
+  }, [mesaOpen, torneo?.tipo, torneo?.categoria, perfil?.club_id])
 
   useEffect(() => {
     if (torneo?.fase && (fasesOrden as readonly string[]).includes(torneo.fase)) {
@@ -592,13 +615,13 @@ export default function TorneoDetallePage() {
     <AppLayout perfil={perfil}>
       {/* Header */}
       <div style={{ display:'flex', gap:10, marginBottom:20, alignItems:'center', flexWrap:'wrap' }}>
-        <button onClick={() => router.push('/torneos')} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer' }}>← Volver</button>
+        <button onClick={() => router.push(torneo?.tipo === 'interno' ? '/torneos-internos' : '/torneos')} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer' }}>← Volver</button>
         {esAdmin && (
           <button onClick={async () => {
             if (!confirm(`¿Archivar "${torneo?.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
             const res = await archivarTorneo({ torneoId })
             if (res.error) { alert(res.error); return }
-            router.push('/torneos')
+            router.push(torneo?.tipo === 'interno' ? '/torneos-internos' : '/torneos')
           }} style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'6px 14px', color:'#dc2626', fontSize:13, cursor:'pointer' }}>
             Archivar
           </button>
@@ -1630,37 +1653,54 @@ export default function TorneoDetallePage() {
             )}
             <div style={{ position:'relative', marginBottom:10 }}>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                placeholder={torneo?.tipo === 'interno' ? 'Buscar jugador del club...' : 'Buscar jugador del club o escribir nombre nuevo...'}
+                placeholder={torneo?.tipo === 'interno' ? (torneo?.categoria ? `Buscar jugador — ${torneo.categoria} primero...` : 'Buscar jugador del club...') : 'Buscar jugador del club o escribir nombre nuevo...'}
                 value={busquedaMesa}
+                onFocus={() => {
+                  if (torneo?.tipo === 'interno' && jugadoresPorCategoria.length > 0) setJugSuggestions(jugadoresPorCategoria)
+                }}
                 onChange={async e => {
                   setBusquedaMesa(e.target.value)
                   setRutMesa('')
                   setJugadorIdSeleccionado(null)
-                  const minLen = torneo?.tipo === 'interno' ? 1 : 2
-                  if (e.target.value.length >= minLen && perfil?.club_id) {
-                    const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(8)
-                    setJugSuggestions(data || [])
+                  if (torneo?.tipo === 'interno') {
+                    const q = e.target.value.toLowerCase()
+                    setJugSuggestions(q ? jugadoresPorCategoria.filter((j: any) => j.nombre.toLowerCase().includes(q)) : jugadoresPorCategoria)
                   } else {
-                    setJugSuggestions([])
+                    if (e.target.value.length >= 2 && perfil?.club_id) {
+                      const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(8)
+                      setJugSuggestions(data || [])
+                    } else {
+                      setJugSuggestions([])
+                    }
                   }
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleInscribirEnMesa()}
               />
-              {busquedaMesa.length >= 1 && jugSuggestions.length > 0 && (
-                <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden', boxShadow:'0 4px 12px rgba(15,23,42,0.1)' }}>
-                  {jugSuggestions.map((j: any) => (
-                    <div key={j.id} onClick={() => {
-                      setBusquedaMesa(j.nombre)
-                      setRutMesa(j.rut || '')
-                      setJugadorIdSeleccionado(j.id)
-                      setJugSuggestions([])
-                    }} style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:13 }}>
-                      <span style={{ color: text }}>{j.nombre}</span>
-                      <span style={{ color: muted, fontSize:11, marginLeft:8 }}>{j.categoria}</span>
-                      <span style={{ background:'#f0fdf4', color:'#16a34a', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
-                    </div>
-                  ))}
-                  {torneo?.tipo !== 'interno' && (
+              {jugSuggestions.length > 0 && (
+                <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:8, zIndex:10, marginTop:4, overflow:'hidden', boxShadow:'0 4px 12px rgba(15,23,42,0.1)', maxHeight:280, overflowY:'auto' }}>
+                  {(() => {
+                    const inscritosYa = new Set([...jugadoresInscritos, ...jugadores].map((j: any) => j.jugador_id))
+                    return jugSuggestions.map((j: any) => {
+                      const yaInscrito = inscritosYa.has(j.id)
+                      return (
+                        <div key={j.id} onClick={() => {
+                          if (yaInscrito) return
+                          setBusquedaMesa(j.nombre)
+                          setRutMesa(j.rut || '')
+                          setJugadorIdSeleccionado(j.id)
+                          setJugSuggestions([])
+                        }} style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', cursor: yaInscrito ? 'default' : 'pointer', fontSize:13, opacity: yaInscrito ? 0.5 : 1, background: yaInscrito ? '#f8fafc' : '#ffffff' }}>
+                          <span style={{ color: text }}>{j.nombre}</span>
+                          {!torneo?.categoria && <span style={{ color: muted, fontSize:11, marginLeft:8 }}>{j.categoria}</span>}
+                          {yaInscrito
+                            ? <span style={{ background:'#ede9fe', color:'#5b21b6', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Ya inscrito</span>
+                            : <span style={{ background:'#f0fdf4', color:'#16a34a', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
+                          }
+                        </div>
+                      )
+                    })
+                  })()}
+                  {torneo?.tipo !== 'interno' && !torneo?.categoria && (
                     <div style={{ padding:'8px 12px', fontSize:11, color: hint, borderTop:'1px solid #f1f5f9' }}>
                       O presiona Enter para inscribir como participante externo
                     </div>
