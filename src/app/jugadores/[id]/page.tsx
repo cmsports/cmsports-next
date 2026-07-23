@@ -1062,59 +1062,6 @@ export default function JugadorDetallePage() {
 
       </div>
 
-      {/* ── Feedback ── */}
-      {puedeVerTodo && (
-        <div style={{ display:'grid', gap:16 }}>
-          {evalActual?.feedback_profesor ? (
-            <>
-              <div style={{ ...cardStyle, padding:20 }}>
-                <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:8 }}>Informe del entrenador</div>
-                <div style={{ fontSize:13, color: text, lineHeight:1.6, marginBottom:16 }}>{evalActual.feedback_profesor}</div>
-                {evalActual.meta_proximo_periodo && (
-                  <div style={{ background:'#ede9fe', borderRadius:10, padding:14 }}>
-                    <div style={{ fontSize:11, color:'#3730a3', textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:6 }}>Meta del próximo período</div>
-                    <div style={{ fontSize:13, color: text, lineHeight:1.6 }}>{evalActual.meta_proximo_periodo}</div>
-                  </div>
-                )}
-              </div>
-              <div style={{ ...cardStyle, padding:16 }}>
-                <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:8 }}>Estado del compromiso</div>
-                {evalActual.firmado_alumno
-                  ? <div style={{ background:'#f0fdf4', color:'#16a34a', padding:'10px 16px', borderRadius:10, fontSize:13, border:'1px solid #bbf7d0' }}>Compromiso aceptado por el alumno</div>
-                  : <div style={{ background:'#fffbeb', color:'#d97706', padding:'10px 16px', borderRadius:10, fontSize:13, border:'1px solid #fde68a' }}>Pendiente de aceptación</div>
-                }
-              </div>
-            </>
-          ) : (
-            <div style={{ ...cardStyle, padding:30, textAlign:'center' }}>
-              <div style={{ fontSize:13, color: muted }}>Sin feedback registrado aún</div>
-            </div>
-          )}
-
-          {puedeEvaluar && (
-            <div style={{ ...cardStyle, padding:20 }}>
-              <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>
-                {evalActual?.feedback_profesor ? 'Editar feedback' : 'Agregar feedback'} — {trimestre}
-              </div>
-              <FormField label="Diagnóstico técnico y desarrollo">
-                <textarea style={{ ...inputStyle, resize:'vertical', minHeight:80 }}
-                  placeholder="Diagnóstico del alumno este trimestre..."
-                  value={feedbackForm.feedback} onChange={e => setFeedbackForm(f => ({ ...f, feedback: e.target.value }))} />
-              </FormField>
-              <FormField label="Metas para el próximo período">
-                <textarea style={{ ...inputStyle, resize:'vertical', minHeight:60 }}
-                  placeholder="Objetivos para el siguiente trimestre..."
-                  value={feedbackForm.meta} onChange={e => setFeedbackForm(f => ({ ...f, meta: e.target.value }))} />
-              </FormField>
-              {feedbackError && <div style={{ marginBottom:10, color:'#dc2626', fontSize:12 }}>{feedbackError}</div>}
-              {feedbackExito && <div style={{ marginBottom:10, color:'#16a34a', fontSize:12 }}>{feedbackExito}</div>}
-              <button onClick={guardarFeedback} disabled={guardandoFeedback} style={{ width:'100%', padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-                {guardandoFeedback ? 'Guardando...' : 'Guardar feedback'}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ══════ Modal: Editar datos ══════ */}
       {editContacto && (
