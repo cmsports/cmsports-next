@@ -1713,17 +1713,13 @@ export default function TorneoDetallePage() {
                       return (
                         <button disabled={pagoLoading === j.jugador_id} onClick={async () => {
                           if (pagoLoading) return
-                          if (!esPagado && metodoPago === 'pendiente') {
-                            alert('Selecciona Efectivo o Transferencia para registrar el pago')
-                            return
-                          }
                           setPagoLoading(j.jugador_id)
                           try {
                             const res = await actualizarEstadoPago({
                               torneoId,
                               jugadorId: j.jugador_id,
                               estado: esPagado ? 'pendiente' : 'pagado',
-                              metodoPago: metodoPago === 'pendiente' ? undefined : metodoPago,
+                              metodoPago: (metodoPago === 'pendiente' || esPagado) ? undefined : metodoPago,
                             })
                             if (res.error) { alert(res.error); return }
                             await cargarTorneo()
