@@ -199,14 +199,14 @@ export default function TorneosInternosPage() {
                     <button
                       onClick={async e => {
                         e.stopPropagation()
-                        if (!confirm(`¿Archivar "${t.nombre}"?`)) return
-                        const res = await archivarTorneo({ torneoId: t.id })
+                        if (!confirm(`¿Eliminar "${t.nombre}" definitivamente? Esta acción no se puede deshacer.`)) return
+                        const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
                         if (res.error) { alert(res.error); return }
                         await cargarTorneos()
                       }}
                       style={{ background: 'transparent', border: '1px solid #fecaca', borderRadius: 8, padding: '5px 10px', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}
                     >
-                      Archivar
+                      Eliminar
                     </button>
                   )}
                   {esAdmin && mostrarArchivados && (
