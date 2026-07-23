@@ -127,7 +127,7 @@ export default function TorneoDetallePage() {
       { data: gj },
       { data: cabezasData },
     ] = await Promise.all([
-      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
+      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,monto,creado_en').eq('torneo_id', torneoId),
