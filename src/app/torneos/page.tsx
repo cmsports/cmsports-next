@@ -189,15 +189,15 @@ export default function TorneosPage() {
                     <button
                       onClick={async e => {
                         e.stopPropagation()
-                        if (!confirm(`¿Archivar "${t.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
-                        const res = await archivarTorneo({ torneoId: t.id })
+                        if (!confirm(`¿Eliminar "${t.nombre}" definitivamente? Esta acción no se puede deshacer.`)) return
+                        const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
                         if (res.error) { alert(res.error); return }
                         await cargarTorneos()
                       }}
                       style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer' }}
-                      title="Archivar torneo"
+                      title="Eliminar torneo"
                     >
-                      Archivar
+                      Eliminar
                     </button>
                   )}
                   {esAdmin && mostrarArchivados && (
