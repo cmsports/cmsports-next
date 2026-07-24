@@ -40,12 +40,18 @@ export default function SolicitudesPage() {
   const [loading, setLoading]         = useState(true)
   const [copiado, setCopiado]         = useState(false)
   const [modalAprobar, setModalAprobar] = useState<any>(null)
+  const [infoForm, setInfoForm] = useState({
+    nombre: '', rut: '', email: '', telefono: '',
+    fecha_nacimiento: '', direccion: '', comuna: '',
+    contacto_emergencia_nombre: '', contacto_emergencia_telefono: '',
+    indicaciones_medicas: '', password: '', passwordConfirm: '',
+  })
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
   const [aprobando, setAprobando]     = useState(false)
   const [errorAprobar, setErrorAprobar] = useState('')
   const [rechazandoId, setRechazandoId] = useState<string|null>(null)
   const [errorRechazar, setErrorRechazar] = useState('')
-  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; cuentaCreada?: boolean }>(null)
+  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; cuentaCreada?: boolean; password?: string }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -85,14 +91,28 @@ export default function SolicitudesPage() {
 
   async function confirmarAprobar() {
     if (!modalAprobar) return
+    if (infoForm.password !== infoForm.passwordConfirm) { setErrorAprobar('Las contraseñas no coinciden'); return }
     setAprobando(true)
-    const s   = modalAprobar
     const ent = planForm.tipo_plan === 'libre' ? null : parseInt(planForm.entrenamientos_por_semana) || 3
     const ses = planForm.tipo_plan === 'libre' ? 99 : (ent || 3) * 4
     const res = await aprobarSolicitud({
-      solicitudId: s.id, nombre: s.nombre, rut: s.rut || '', email: s.email || '', telefono: s.telefono || '',
-      categoria: planForm.categoria, tipo_plan: planForm.tipo_plan, entrenamientos_por_semana: ent,
-      mensualidad: parseInt(planForm.mensualidad) || 0, sesiones_limite: ses,
+      solicitudId: modalAprobar.id,
+      nombre: infoForm.nombre,
+      rut: infoForm.rut,
+      email: infoForm.email,
+      telefono: infoForm.telefono,
+      fecha_nacimiento: infoForm.fecha_nacimiento,
+      direccion: infoForm.direccion,
+      comuna: infoForm.comuna,
+      contacto_emergencia_nombre: infoForm.contacto_emergencia_nombre,
+      contacto_emergencia_telefono: infoForm.contacto_emergencia_telefono,
+      indicaciones_medicas: infoForm.indicaciones_medicas,
+      password: infoForm.password,
+      categoria: planForm.categoria,
+      tipo_plan: planForm.tipo_plan,
+      entrenamientos_por_semana: ent,
+      mensualidad: parseInt(planForm.mensualidad) || 0,
+      sesiones_limite: ses,
     })
     setAprobando(false)
     if (res.error) { setErrorAprobar(res.error); return }
@@ -100,17 +120,18 @@ export default function SolicitudesPage() {
     setModalAprobar(null)
     void cargarSolicitudes()
     setAprobadoInfo({
-      nombre: res.jugador?.nombre ?? s.nombre,
-      email: res.jugador?.email ?? (s.email || null),
-      telefono: res.jugador?.telefono ?? (s.telefono || null),
+      nombre: res.jugador?.nombre ?? infoForm.nombre,
+      email: res.jugador?.email ?? infoForm.email,
+      telefono: res.jugador?.telefono ?? infoForm.telefono,
       cuentaCreada: res.cuentaCreada,
+      password: infoForm.password,
     })
   }
 
   function linkWhatsApp(info: NonNullable<typeof aprobadoInfo>) {
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
     const tel = (info.telefono || '').replace(/[^0-9]/g, '')
-    const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud en CmSports fue aprobada. Revisa el correo enviado a ${info.email ?? ''} y usa el enlace para crear tu contraseña. Luego podrás entrar en ${origin}/login. ¡Nos vemos en el club!`
+    const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud fue aprobada. Ya podés entrar en ${origin}/login con:\n📧 Email: ${info.email ?? ''}\n🔑 Contraseña: ${info.password ?? ''}\n¡Nos vemos en el club!`
     return `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`
   }
 
@@ -211,6 +232,20 @@ export default function SolicitudesPage() {
                               ? (categoriaBuinPorFechaNacimiento(s.fecha_nacimiento) ?? 'TC')
                               : 'principiante'
                             setModalAprobar(s)
+                            setInfoForm({
+                              nombre: s.nombre || '',
+                              rut: s.rut || '',
+                              email: s.email || '',
+                              telefono: s.telefono || '',
+                              fecha_nacimiento: s.fecha_nacimiento || '',
+                              direccion: s.direccion || '',
+                              comuna: s.comuna || '',
+                              contacto_emergencia_nombre: s.contacto_emergencia_nombre || '',
+                              contacto_emergencia_telefono: s.contacto_emergencia_telefono || '',
+                              indicaciones_medicas: s.indicaciones_medicas || '',
+                              password: '',
+                              passwordConfirm: '',
+                            })
                             setPlanForm({ categoria: catAuto, tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
                             setErrorAprobar('')
                           }}
@@ -237,106 +272,173 @@ export default function SolicitudesPage() {
 
       {/* Modal aprobar */}
       {modalAprobar && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 28, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: text, marginBottom: 4 }}>Aprobar solicitud</h2>
-            <p style={{ fontSize: 13, color: muted, marginBottom: 20 }}>{modalAprobar.nombre} — {modalAprobar.rut || 'Sin RUT'}</p>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 24, width: '100%', maxWidth: 480, maxHeight: '94vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 18 }}>Revisar y aprobar solicitud</h2>
 
-            {/* Info extra de la solicitud */}
-            {(modalAprobar.fecha_nacimiento || modalAprobar.direccion || modalAprobar.contacto_emergencia_nombre) && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 12, color: muted, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {modalAprobar.fecha_nacimiento && <div><strong>Nacimiento:</strong> {new Date(modalAprobar.fecha_nacimiento + 'T12:00:00').toLocaleDateString('es-CL')}</div>}
-                {modalAprobar.direccion && <div><strong>Dirección:</strong> {modalAprobar.direccion}{modalAprobar.comuna ? `, ${modalAprobar.comuna}` : ''}</div>}
-                {modalAprobar.contacto_emergencia_nombre && <div><strong>Emergencia:</strong> {modalAprobar.contacto_emergencia_nombre}{modalAprobar.contacto_emergencia_telefono ? ` · ${modalAprobar.contacto_emergencia_telefono}` : ''}</div>}
-                {modalAprobar.indicaciones_medicas && <div><strong>Médico:</strong> {modalAprobar.indicaciones_medicas}</div>}
+            {/* SECCIÓN: Datos personales */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Datos personales</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Nombre *</label>
+                <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.nombre} onChange={e => setInfoForm(f => ({ ...f, nombre: e.target.value }))} />
               </div>
-            )}
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>RUT</label>
+                <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.rut} onChange={e => setInfoForm(f => ({ ...f, rut: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Email *</label>
+                <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.email} onChange={e => setInfoForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Teléfono</label>
+                <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.telefono} onChange={e => setInfoForm(f => ({ ...f, telefono: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Fecha de nacimiento</label>
+                <input type="date" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.fecha_nacimiento} onChange={e => {
+                    const fn = e.target.value
+                    setInfoForm(f => ({ ...f, fecha_nacimiento: fn }))
+                    if (fn && clubId === CLUB_BUIN_ID) {
+                      const cat = categoriaBuinPorFechaNacimiento(fn) ?? 'TC'
+                      setPlanForm(p => ({ ...p, categoria: cat }))
+                    }
+                  }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Comuna</label>
+                <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.comuna} onChange={e => setInfoForm(f => ({ ...f, comuna: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Dirección</label>
+              <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                value={infoForm.direccion} onChange={e => setInfoForm(f => ({ ...f, direccion: e.target.value }))} />
+            </div>
 
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 500 }}>
-                Categoría {modalAprobar.fecha_nacimiento && clubId === CLUB_BUIN_ID && <span style={{ color: '#7c3aed', fontSize: 11 }}>(sugerida por fecha de nacimiento)</span>}
+            {/* SECCIÓN: Emergencia */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 16 }}>Contacto de emergencia</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Nombre</label>
+                <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.contacto_emergencia_nombre} onChange={e => setInfoForm(f => ({ ...f, contacto_emergencia_nombre: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Teléfono</label>
+                <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.contacto_emergencia_telefono} onChange={e => setInfoForm(f => ({ ...f, contacto_emergencia_telefono: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Indicaciones médicas</label>
+              <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                value={infoForm.indicaciones_medicas} onChange={e => setInfoForm(f => ({ ...f, indicaciones_medicas: e.target.value }))} />
+            </div>
+
+            {/* SECCIÓN: Plan */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 16 }}>Plan de entrenamiento</div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                Categoría {infoForm.fecha_nacimiento && clubId === CLUB_BUIN_ID && <span style={{ color: '#7c3aed' }}>(sugerida por edad)</span>}
               </label>
-              <select style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none' }}
+              <select style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', color: text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
                 value={planForm.categoria} onChange={e => setPlanForm(f => ({ ...f, categoria: e.target.value }))}>
                 {clubId === CLUB_BUIN_ID
                   ? CATEGORIAS_BUIN.map(c => <option key={c} value={c}>{c}</option>)
-                  : <>
-                      <option value="principiante">Principiante</option>
-                      <option value="intermedio">Intermedio</option>
-                      <option value="avanzado">Avanzado</option>
-                    </>
+                  : <><option value="principiante">Principiante</option><option value="intermedio">Intermedio</option><option value="avanzado">Avanzado</option></>
                 }
               </select>
             </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 500 }}>Tipo de plan</label>
-              <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4, fontWeight: 600 }}>Tipo de plan</label>
+              <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
                 {(['mensual', 'semanal', 'libre'] as const).map(t => (
                   <button key={t} onClick={() => setPlanForm(f => ({ ...f, tipo_plan: t }))}
-                    style={{ flex: 1, padding: '9px 0', background: planForm.tipo_plan === t ? '#4f46e5' : '#f4f7fa', color: planForm.tipo_plan === t ? '#fff' : muted, border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                    style={{ flex: 1, padding: '8px 0', background: planForm.tipo_plan === t ? '#4f46e5' : '#f4f7fa', color: planForm.tipo_plan === t ? '#fff' : muted, border: 'none', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
                     {t === 'libre' ? 'Libre acceso' : t.charAt(0).toUpperCase() + t.slice(1)}
                   </button>
                 ))}
               </div>
             </div>
-
             {planForm.tipo_plan !== 'libre' && (
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 500 }}>Entrenamientos por semana</label>
-                <input type="number" min={1} max={7}
-                  style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none' }}
-                  value={planForm.entrenamientos_por_semana}
-                  onChange={e => setPlanForm(f => ({ ...f, entrenamientos_por_semana: e.target.value }))} />
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4, fontWeight: 600 }}>Entrenamientos por semana</label>
+                <input type="number" min={1} max={7} style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={planForm.entrenamientos_por_semana} onChange={e => setPlanForm(f => ({ ...f, entrenamientos_por_semana: e.target.value }))} />
               </div>
             )}
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 500 }}>Mensualidad</label>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 6, fontWeight: 600 }}>Mensualidad</label>
               <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
                 {PRESETS.map(p => (
                   <button key={p.valor} onClick={() => setPlanForm(f => ({ ...f, mensualidad: String(p.valor), entrenamientos_por_semana: String(p.ent) }))}
-                    style={{ padding: '6px 12px', borderRadius: 20, border: parseInt(planForm.mensualidad) === p.valor ? '1px solid #4f46e5' : '1px solid #e2e8f0', background: parseInt(planForm.mensualidad) === p.valor ? '#ede9fe' : '#f4f7fa', color: parseInt(planForm.mensualidad) === p.valor ? '#3730a3' : muted, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+                    style={{ padding: '5px 12px', borderRadius: 20, border: parseInt(planForm.mensualidad) === p.valor ? '1px solid #4f46e5' : '1px solid #e2e8f0', background: parseInt(planForm.mensualidad) === p.valor ? '#ede9fe' : '#f4f7fa', color: parseInt(planForm.mensualidad) === p.valor ? '#3730a3' : muted, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
                     {p.label} ({p.ent} ent/sem)
                   </button>
                 ))}
               </div>
-              <input type="number" placeholder="Monto personalizado"
-                style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none' }}
-                value={planForm.mensualidad}
-                onChange={e => setPlanForm(f => ({ ...f, mensualidad: e.target.value }))} />
+              <input type="number" placeholder="Monto personalizado" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                value={planForm.mensualidad} onChange={e => setPlanForm(f => ({ ...f, mensualidad: e.target.value }))} />
+            </div>
+
+            {/* SECCIÓN: Credenciales */}
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 16 }}>Credenciales de acceso</div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', marginBottom: 10, fontSize: 12, color: muted }}>
+              Email de acceso: <strong>{infoForm.email || '—'}</strong>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Contraseña *</label>
+                <input type="password" placeholder="Mín. 6 caracteres" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.password} onChange={e => setInfoForm(f => ({ ...f, password: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Confirmar contraseña *</label>
+                <input type="password" placeholder="Repetir contraseña" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.passwordConfirm} onChange={e => setInfoForm(f => ({ ...f, passwordConfirm: e.target.value }))} />
+              </div>
             </div>
 
             {errorAprobar && (
-              <div style={{ marginBottom:12, padding:'10px 14px', borderRadius:8, fontSize:12, fontWeight:500, background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca' }}>
+              <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, fontSize: 12, fontWeight: 500, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
                 {errorAprobar}
               </div>
             )}
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => { setModalAprobar(null); setErrorAprobar('') }} style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={confirmarAprobar} disabled={aprobando} style={{ flex: 1, padding: 11, background: '#f43f5e', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                {aprobando ? 'Aprobando...' : 'Aprobar jugador'}
+                {aprobando ? 'Aprobando...' : 'Crear perfil jugador'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal éxito + aviso WhatsApp */}
+      {/* Modal éxito + credenciales */}
       {aprobadoInfo && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}>
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
-            <div style={{ fontSize: 40, textAlign: 'center', marginBottom: 8 }}>✅</div>
-            <h2 style={{ fontSize: 16, fontWeight: 600, color: text, textAlign: 'center', marginBottom: 6 }}>Jugador aprobado</h2>
-            {aprobadoInfo.cuentaCreada ? (
-              <p style={{ fontSize: 13, color: muted, textAlign: 'center', marginBottom: 18 }}>
-                Enviamos a <strong>{aprobadoInfo.email}</strong> un enlace para que {aprobadoInfo.nombre} cree su contraseña.
-              </p>
-            ) : (
-              <p style={{ fontSize: 13, color: '#d97706', textAlign: 'center', marginBottom: 18 }}>
-                No se pudo confirmar la cuenta de acceso.
-              </p>
-            )}
+            <div style={{ fontSize: 36, textAlign: 'center', marginBottom: 6 }}>✅</div>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: text, textAlign: 'center', marginBottom: 16 }}>
+              {aprobadoInfo.nombre} fue aprobado
+            </h2>
+
+            {/* Credenciales */}
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>Credenciales de acceso</div>
+              <div style={{ fontSize: 13, color: '#166534', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div>📧 <strong>Email:</strong> {aprobadoInfo.email}</div>
+                <div>🔑 <strong>Contraseña:</strong> {aprobadoInfo.password}</div>
+              </div>
+            </div>
 
             <div style={{ display: 'flex', gap: 10 }}>
               {aprobadoInfo.telefono && (
