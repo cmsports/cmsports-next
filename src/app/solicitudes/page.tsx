@@ -29,7 +29,7 @@ async function obtenerSolicitudes(clubId: string) {
   }
   const codigo = invitaciones?.[0]?.codigo || ''
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento').eq('club_id', clubId).order('creado_en', { ascending: false })
+  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas').eq('club_id', clubId).order('creado_en', { ascending: false })
   return { link: `${origin}/registro?club=${clubId}&code=${codigo}`, solicitudes: solicitudes || [] }
 }
 

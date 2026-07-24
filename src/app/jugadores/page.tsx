@@ -55,6 +55,10 @@ export default function JugadoresPage() {
   const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia' : searchParams.get('tab') === 'inasistencias' ? 'inasistencias' : 'jugadores'
   const [tabJug, setTabJug] = useState<'jugadores'|'asistencia'|'inasistencias'>(tabInicial)
   const [filtroSinHorario, setFiltroSinHorario] = useState(false)
+  const [filtroDia, setFiltroDia]               = useState('')
+  const [filtroFederado, setFiltroFederado]     = useState('')
+  const [filtroPago, setFiltroPago]             = useState('')
+  const [estadoPago, setEstadoPago]             = useState<Record<string, string>>({})
   const [editandoMensualidadId, setEditandoMensualidadId] = useState<string | null>(null)
   const [mensualidadTemp, setMensualidadTemp] = useState('')
   const router = useRouter()
@@ -92,6 +96,18 @@ export default function JugadoresPage() {
       } else {
         jugadoresCache[id] = data || []
         setJugadores(data || [])
+        const ids = (data || []).map((j: any) => j.id)
+        if (ids.length > 0) {
+          const mes = new Date().getMonth() + 1
+          const anio = new Date().getFullYear()
+          supabase.from('mensualidades').select('jugador_id,estado').in('jugador_id', ids).eq('mes', mes).eq('anio', anio)
+            .then(({ data: mens }) => {
+              if (!activo) return
+              const map: Record<string, string> = {}
+              for (const m of (mens || [])) map[m.jugador_id] = m.estado
+              setEstadoPago(map)
+            })
+        }
       }
       setLoading(false)
     }
@@ -113,6 +129,17 @@ export default function JugadoresPage() {
     if (error) { mostrarToast('Error al cargar jugadores'); return }
     if (id) jugadoresCache[id] = data || []
     setJugadores(data || [])
+    const ids = (data || []).map((j: any) => j.id)
+    if (ids.length > 0) {
+      const mes = new Date().getMonth() + 1
+      const anio = new Date().getFullYear()
+      supabase.from('mensualidades').select('jugador_id,estado').in('jugador_id', ids).eq('mes', mes).eq('anio', anio)
+        .then(({ data: mens }) => {
+          const map: Record<string, string> = {}
+          for (const m of (mens || [])) map[m.jugador_id] = m.estado
+          setEstadoPago(map)
+        })
+    }
   }, [clubId])
 
   useEffect(() => {
@@ -250,6 +277,9 @@ export default function JugadoresPage() {
     .filter(j => !filtroCat || j.categoria === filtroCat)
     .filter(j => !filtroEstado || j.estado === filtroEstado)
     .filter(j => !filtroSinHorario || sinHorario(j))
+    .filter(j => !filtroDia || j[`entrena_${filtroDia}`] === true)
+    .filter(j => filtroFederado === '' ? true : filtroFederado === 'si' ? j.federado === true : !j.federado)
+    .filter(j => !filtroPago || estadoPago[j.id] === filtroPago)
     .sort((a, b) => orden === 'az'
       ? (a.nombre || '').localeCompare(b.nombre || '', 'es')
       : (b.nombre || '').localeCompare(a.nombre || '', 'es'))
@@ -342,9 +372,9 @@ export default function JugadoresPage() {
             Sin horario {sinHorarioCount > 0 && `(${sinHorarioCount})`}
           </button>
 
-          {(busqueda || filtroCat || filtroEstado || filtroSinHorario) && (
+          {(busqueda || filtroCat || filtroEstado || filtroSinHorario || filtroDia || filtroFederado || filtroPago) && (
             <button
-              onClick={() => { setBusqueda(''); setFiltroCat(''); setFiltroEstado(''); setFiltroSinHorario(false) }}
+              onClick={() => { setBusqueda(''); setFiltroCat(''); setFiltroEstado(''); setFiltroSinHorario(false); setFiltroDia(''); setFiltroFederado(''); setFiltroPago('') }}
               style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:13, color:'#dc2626', cursor:'pointer', whiteSpace:'nowrap' }}
             >
               Limpiar filtros
@@ -354,6 +384,43 @@ export default function JugadoresPage() {
           <span style={{ marginLeft:'auto', fontSize:12, color: hint }}>
             {filtrados.length} de {jugadores.length} jugadores
           </span>
+        </div>
+
+        {/* Fila 2: filtros avanzados */}
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
+          <select
+            value={filtroDia}
+            onChange={e => setFiltroDia(e.target.value)}
+            style={{ background: filtroDia ? '#eff6ff' : '#f4f7fa', border: `1px solid ${filtroDia ? '#bfdbfe' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroDia ? '#1d4ed8' : hint, outline:'none', cursor:'pointer', fontWeight: filtroDia ? 600 : 400 }}
+          >
+            <option value="">Día de entrenamiento</option>
+            <option value="lun">Lunes</option>
+            <option value="mar">Martes</option>
+            <option value="mie">Miércoles</option>
+            <option value="jue">Jueves</option>
+            <option value="vie">Viernes</option>
+          </select>
+
+          <select
+            value={filtroFederado}
+            onChange={e => setFiltroFederado(e.target.value)}
+            style={{ background: filtroFederado ? '#eff6ff' : '#f4f7fa', border: `1px solid ${filtroFederado ? '#bfdbfe' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroFederado ? '#1d4ed8' : hint, outline:'none', cursor:'pointer', fontWeight: filtroFederado ? 600 : 400 }}
+          >
+            <option value="">Federado</option>
+            <option value="si">Federado ✓</option>
+            <option value="no">No federado</option>
+          </select>
+
+          <select
+            value={filtroPago}
+            onChange={e => setFiltroPago(e.target.value)}
+            style={{ background: filtroPago ? (filtroPago === 'pagado' ? '#f0fdf4' : '#fef2f2') : '#f4f7fa', border: `1px solid ${filtroPago ? (filtroPago === 'pagado' ? '#bbf7d0' : '#fecaca') : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroPago ? (filtroPago === 'pagado' ? '#16a34a' : '#dc2626') : hint, outline:'none', cursor:'pointer', fontWeight: filtroPago ? 600 : 400 }}
+          >
+            <option value="">Pago del mes</option>
+            <option value="pagado">Al día ✓</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="atrasado">Atrasado</option>
+          </select>
         </div>
       </div>
 

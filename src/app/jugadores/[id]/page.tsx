@@ -138,7 +138,7 @@ export default function JugadorDetallePage() {
 
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id').eq('id', jugadorId).single(),
+          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
@@ -889,11 +889,24 @@ export default function JugadorDetallePage() {
             {jugador.grupo && <InfoRow label="Grupo" value={jugador.grupo} />}
             {jugador.horario && <InfoRow label="Horario" value={jugador.horario} />}
             {esClubBuin && <InfoRow label="Federado" value={jugador.federado ? 'Sí' : jugador.federado === false ? 'No' : '—'} />}
-            {jugador.telefono && (
-              <div style={{ paddingTop:12 }}>
-                <WhatsAppBtn href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
-                  WhatsApp
-                </WhatsAppBtn>
+            {(jugador.telefono || jugador.contacto_emergencia_telefono) && (
+              <div style={{ paddingTop:12, display:'flex', flexDirection:'column', gap:6 }}>
+                {edad !== null && edad < 18 && jugador.contacto_emergencia_telefono ? (
+                  <>
+                    <WhatsAppBtn href={`https://wa.me/${jugador.contacto_emergencia_telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
+                      WhatsApp apoderado
+                    </WhatsAppBtn>
+                    {jugador.telefono && (
+                      <WhatsAppBtn href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
+                        WhatsApp jugador
+                      </WhatsAppBtn>
+                    )}
+                  </>
+                ) : jugador.telefono ? (
+                  <WhatsAppBtn href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
+                    WhatsApp
+                  </WhatsAppBtn>
+                ) : null}
               </div>
             )}
           </div>
