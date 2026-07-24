@@ -69,6 +69,7 @@ export function TableroFecha({
     overTd: HTMLElement | null
   } | null>(null)
   const [partidoResultado, setPartidoResultado] = useState<PartidoBoard | null>(null)
+  const modalAbiertoEn = useRef<number>(0)
   const [setsA, setSetsA] = useState('3')
   const [setsB, setSetsB] = useState('0')
   const [guardandoResultado, setGuardandoResultado] = useState(false)
@@ -229,6 +230,7 @@ export function TableroFecha({
 
   function abrirResultado(partido: PartidoBoard) {
     if (['finalizado', 'walkover'].includes(partido.estado)) return
+    modalAbiertoEn.current = Date.now()
     setPartidoResultado(partido); setSetsA('3'); setSetsB('0')
   }
 
@@ -1082,8 +1084,8 @@ export function TableroFecha({
       {/* ── Modal resultado ─────────────────────────────────────────────── */}
       {montado && createPortal(
         partidoResultado ? (
-        <div onClick={() => setPartidoResultado(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 440, margin: '0 16px', boxShadow: '0 24px 60px rgba(15,23,42,0.3)', overflow: 'hidden' }}>
+        <div onClick={() => { if (Date.now() - modalAbiertoEn.current > 200) setPartidoResultado(null) }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: 20, width: '100%', maxWidth: 440, margin: '0 16px', boxShadow: '0 24px 60px rgba(15,23,42,0.3)', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
             {/* Header del modal */}
             <div style={{ background: 'linear-gradient(135deg,#1e1b4b,#4f46e5)', padding: '20px 24px' }}>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
