@@ -16,6 +16,10 @@ describe('registrarSolicitud', () => {
       telefono: '+56911111111',
       club_id: '11111111-1111-4111-8111-111111111111',
       codigo: 'ABC123',
+      nombres: 'Jugador',
+      apellido1: 'Seguro',
+      apellido2: 'Test',
+      apellido3: 'no',
     })
 
     expect(resultado).toEqual({ success: true })
@@ -32,6 +36,10 @@ describe('registrarSolicitud', () => {
       p_contacto_emergencia_nombre: null,
       p_contacto_emergencia_telefono: null,
       p_indicaciones_medicas: null,
+      p_nombres: 'Jugador',
+      p_apellido1: 'Seguro',
+      p_apellido2: 'Test',
+      p_apellido3: 'no',
     })
   })
 })

@@ -8,6 +8,7 @@ import { registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { trimestreActual } from '@/lib/domain/trimestre'
+import DocumentosJugador from '@/components/DocumentosJugador'
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
 const text = '#0f172a'
@@ -487,6 +488,18 @@ export default function PerfilPage() {
         </div>
       )}
 
+
+      {/* Documentos firmados — el jugador puede subir los suyos */}
+      {perfil?.jugador_id && (
+        <div style={{ ...card, overflow: 'hidden', marginBottom: 16 }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text }}>
+            Mis documentos
+          </div>
+          <div style={{ paddingTop: 12 }}>
+            <DocumentosJugador jugadorId={perfil.jugador_id} puedeEditar />
+          </div>
+        </div>
+      )}
 
       {/* Últimas asistencias */}
       <div style={{ ...card, overflow: 'hidden' }}>

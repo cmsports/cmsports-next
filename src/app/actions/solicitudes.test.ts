@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ requireAdminClub: vi.fn(), createAdminClient: 
 vi.mock('@/lib/auth/require', () => ({ requireAdminClub: mocks.requireAdminClub }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.createAdminClient }))
 
-import { aprobarSolicitud } from './solicitudes'
+import { aprobarSolicitud, pedirCorreccionSolicitud } from './solicitudes'
 
 describe('aprobarSolicitud', () => {
   const createUser = vi.fn()
@@ -69,5 +69,45 @@ describe('aprobarSolicitud', () => {
     createUser.mockResolvedValue({ data: { user: null }, error: { message: 'Auth failed' } })
     await expect(aprobarSolicitud(input)).resolves.toEqual({ error: 'No se pudo crear la cuenta de acceso del jugador.' })
     expect(jugadorDeleteEq).toHaveBeenCalledWith('id', 'jugador-id')
+  })
+})
+
+describe('pedirCorreccionSolicitud', () => {
+  const updateClubEq = vi.fn().mockResolvedValue({ error: null })
+  const update = vi.fn()
+  let estadoSolicitud = 'pendiente'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    estadoSolicitud = 'pendiente'
+    update.mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: updateClubEq }) })
+    const supabase = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockImplementation(async () => ({ data: { id: 'solicitud-id', estado: estadoSolicitud }, error: null })),
+        }) }) }),
+        update,
+      })),
+    }
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase, clubId: 'club-id' })
+  })
+
+  it('deja la solicitud esperando corrección con la observación', async () => {
+    const resultado = await pedirCorreccionSolicitud({ solicitudId: 'solicitud-id', observaciones: '  Falta el RUT completo  ' })
+    expect(resultado).toEqual({ success: true })
+    expect(update).toHaveBeenCalledWith({ estado: 'correccion', observaciones: 'Falta el RUT completo' })
+  })
+
+  it('exige una observación con contenido', async () => {
+    await expect(pedirCorreccionSolicitud({ solicitudId: 'solicitud-id', observaciones: 'ok' }))
+      .resolves.toEqual({ error: 'Escribe qué debe corregir el postulante' })
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it('no toca solicitudes que ya no están pendientes', async () => {
+    estadoSolicitud = 'aprobado'
+    await expect(pedirCorreccionSolicitud({ solicitudId: 'solicitud-id', observaciones: 'Falta el RUT completo' }))
+      .resolves.toEqual({ error: 'Solo se puede pedir corrección de una solicitud pendiente' })
+    expect(update).not.toHaveBeenCalled()
   })
 })

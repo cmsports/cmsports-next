@@ -22,6 +22,24 @@ const hintStyle = { fontSize: 11, color: hint, marginTop: 4 }
 const hintErrStyle = { fontSize: 11, color: '#dc2626', marginTop: 4 }
 const section = { fontSize: 12, fontWeight: 700 as const, color: muted, textTransform: 'uppercase' as const, letterSpacing: '0.5px', margin: '20px 0 12px', paddingTop: 16, borderTop: '1px solid #f1f5f9' }
 
+// El club pidió que la solicitud llegue siempre completa: si el postulante no
+// tiene un dato escribe "no", así se distingue de un formulario a medio llenar.
+const CAMPOS_OBLIGATORIOS = [
+  { key: 'nombres',                      label: 'Nombres' },
+  { key: 'apellido1',                    label: 'Apellido paterno' },
+  { key: 'apellido2',                    label: 'Apellido materno' },
+  { key: 'apellido3',                    label: 'Tercer apellido' },
+  { key: 'rut',                          label: 'RUT' },
+  { key: 'email',                        label: 'Email' },
+  { key: 'telefono',                     label: 'Teléfono' },
+  { key: 'fecha_nacimiento',             label: 'Fecha de nacimiento' },
+  { key: 'direccion',                    label: 'Dirección' },
+  { key: 'comuna',                       label: 'Comuna' },
+  { key: 'contacto_emergencia_nombre',   label: 'Contacto de emergencia' },
+  { key: 'contacto_emergencia_telefono', label: 'Teléfono de emergencia' },
+  { key: 'indicaciones_medicas',         label: 'Indicaciones médicas' },
+] as const
+
 function RegistroForm() {
   const supabase = createClient()
   const searchParams = useSearchParams()
@@ -32,7 +50,8 @@ function RegistroForm() {
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null)
   const [valido, setValido] = useState<boolean | null>(null)
   const [form, setForm] = useState({
-    nombre: '', rut: '', email: '', telefono: '',
+    nombres: '', apellido1: '', apellido2: '', apellido3: '',
+    rut: '', email: '', telefono: '',
     fecha_nacimiento: '', direccion: '', comuna: '',
     contacto_emergencia_nombre: '', contacto_emergencia_telefono: '',
     indicaciones_medicas: '',
@@ -44,8 +63,14 @@ function RegistroForm() {
 
   const rutValido = /^\d{7,8}-[\dkK]$/.test(form.rut)
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)
-  const telValido = form.telefono === '' || /^\+56\d{9}$/.test(form.telefono)
-  const telEmergValido = form.contacto_emergencia_telefono === '' || /^\+56\d{9}$/.test(form.contacto_emergencia_telefono)
+  // Los teléfonos aceptan "no" porque el club exige llenar todos los campos.
+  const esNo = (v: string) => v.trim().toLowerCase() === 'no'
+  const telValido = esNo(form.telefono) || /^\+56\d{9}$/.test(form.telefono)
+  const telEmergValido = esNo(form.contacto_emergencia_telefono) || /^\+56\d{9}$/.test(form.contacto_emergencia_telefono)
+  const nombreCompleto = [form.nombres, form.apellido1, form.apellido2, form.apellido3]
+    .map(v => v.trim())
+    .filter(v => v && v.toLowerCase() !== 'no')
+    .join(' ')
 
   useEffect(() => {
     async function verificar() {
@@ -75,16 +100,26 @@ function RegistroForm() {
     const allTouched: Record<string, boolean> = {}
     Object.keys(form).forEach(k => { allTouched[k] = true })
     setTouched(allTouched)
-    if (!form.nombre || !form.rut || !form.email) { setError('Nombre, RUT y email son obligatorios'); return }
+
+    // Todos los campos son obligatorios: quien no tenga el dato escribe "no".
+    const faltantes = CAMPOS_OBLIGATORIOS.filter(c => !form[c.key].trim())
+    if (faltantes.length > 0) {
+      setError(`Falta completar: ${faltantes.map(c => c.label).join(', ')}. Si no tienes el dato, escribe "no".`)
+      return
+    }
     if (!rutValido) { setError('El RUT debe tener formato 12345678-9 (sin puntos, con guión)'); return }
     if (!emailValido) { setError('El email no es válido'); return }
-    if (form.telefono && !telValido) { setError('El teléfono debe tener formato +56912345678'); return }
-    if (form.contacto_emergencia_telefono && !telEmergValido) { setError('El teléfono de emergencia debe tener formato +56912345678'); return }
+    if (!telValido) { setError('El teléfono debe tener formato +56912345678'); return }
+    if (!telEmergValido) { setError('El teléfono de emergencia debe tener formato +56912345678'); return }
     setEnviando(true)
     setError('')
     const result = await registrarSolicitud({
-      club_id: resolvedClubId!, nombre: form.nombre, rut: form.rut,
+      club_id: resolvedClubId!, nombre: nombreCompleto, rut: form.rut,
       email: form.email, telefono: form.telefono, codigo: codigo!,
+      nombres: form.nombres.trim(),
+      apellido1: form.apellido1.trim(),
+      apellido2: form.apellido2.trim(),
+      apellido3: form.apellido3.trim(),
       fecha_nacimiento: form.fecha_nacimiento || undefined,
       direccion: form.direccion || undefined,
       comuna: form.comuna || undefined,
@@ -142,11 +177,34 @@ function RegistroForm() {
             </div>
           )}
 
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#1d4ed8', marginBottom: 16, lineHeight: 1.5 }}>
+            Todos los campos son obligatorios. Si no tienes alguno de los datos, escribe <strong>no</strong>.
+          </div>
+
           {/* ── Datos personales ── */}
           <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Nombre completo *</label>
-            <input style={inputStyle} type="text" placeholder="Ej: Carlos Muñoz"
-              value={form.nombre} onChange={e => set('nombre', e.target.value)} onBlur={() => blur('nombre')} />
+            <label style={labelStyle}>Nombres *</label>
+            <input style={inputStyle} type="text" placeholder="Ej: Carlos Andrés"
+              value={form.nombres} onChange={e => set('nombres', e.target.value)} onBlur={() => blur('nombres')} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+            <div>
+              <label style={labelStyle}>Apellido paterno *</label>
+              <input style={inputStyle} type="text" placeholder="Ej: Muñoz"
+                value={form.apellido1} onChange={e => set('apellido1', e.target.value)} onBlur={() => blur('apellido1')} />
+            </div>
+            <div>
+              <label style={labelStyle}>Apellido materno *</label>
+              <input style={inputStyle} type="text" placeholder="Ej: Rojas"
+                value={form.apellido2} onChange={e => set('apellido2', e.target.value)} onBlur={() => blur('apellido2')} />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Tercer apellido *</label>
+            <input style={inputStyle} type="text" placeholder='Si no tienes, escribe "no"'
+              value={form.apellido3} onChange={e => set('apellido3', e.target.value)} onBlur={() => blur('apellido3')} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
@@ -158,7 +216,7 @@ function RegistroForm() {
               <div style={touched.rut && !rutValido && form.rut ? hintErrStyle : hintStyle}>Sin puntos, con guión</div>
             </div>
             <div>
-              <label style={labelStyle}>Fecha de nacimiento</label>
+              <label style={labelStyle}>Fecha de nacimiento *</label>
               <input style={inputStyle} type="date"
                 value={form.fecha_nacimiento} onChange={e => set('fecha_nacimiento', e.target.value)} />
             </div>
@@ -173,21 +231,21 @@ function RegistroForm() {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Teléfono</label>
+            <label style={labelStyle}>Teléfono *</label>
             <input style={touched.telefono && !telValido ? inputErr : inputStyle}
-              type="tel" placeholder="+56912345678"
+              type="tel" placeholder='+56912345678 o "no"'
               value={form.telefono} onChange={e => set('telefono', e.target.value)} onBlur={() => blur('telefono')} />
-            <div style={touched.telefono && !telValido ? hintErrStyle : hintStyle}>Con código país. Ej: +56912345678</div>
+            <div style={touched.telefono && !telValido ? hintErrStyle : hintStyle}>Con código país. Ej: +56912345678. Si no tienes, escribe &quot;no&quot;</div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 14 }}>
             <div>
-              <label style={labelStyle}>Dirección</label>
+              <label style={labelStyle}>Dirección *</label>
               <input style={inputStyle} type="text" placeholder="Calle 123"
                 value={form.direccion} onChange={e => set('direccion', e.target.value)} />
             </div>
             <div>
-              <label style={labelStyle}>Comuna</label>
+              <label style={labelStyle}>Comuna *</label>
               <input style={inputStyle} type="text" placeholder="Buín"
                 value={form.comuna} onChange={e => set('comuna', e.target.value)} />
             </div>
@@ -198,14 +256,14 @@ function RegistroForm() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
             <div>
-              <label style={labelStyle}>Nombre</label>
+              <label style={labelStyle}>Nombre *</label>
               <input style={inputStyle} type="text" placeholder="Nombre del contacto"
                 value={form.contacto_emergencia_nombre} onChange={e => set('contacto_emergencia_nombre', e.target.value)} />
             </div>
             <div>
-              <label style={labelStyle}>Teléfono</label>
+              <label style={labelStyle}>Teléfono *</label>
               <input style={touched.contacto_emergencia_telefono && !telEmergValido ? inputErr : inputStyle}
-                type="tel" placeholder="+56912345678"
+                type="tel" placeholder='+56912345678 o "no"'
                 value={form.contacto_emergencia_telefono}
                 onChange={e => set('contacto_emergencia_telefono', e.target.value)}
                 onBlur={() => blur('contacto_emergencia_telefono')} />
@@ -213,9 +271,9 @@ function RegistroForm() {
           </div>
 
           <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>Indicaciones médicas</label>
+            <label style={labelStyle}>Indicaciones médicas *</label>
             <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
-              placeholder="Alergias, condiciones, medicamentos... (opcional)"
+              placeholder='Alergias, condiciones, medicamentos... Si no tienes, escribe "no"'
               value={form.indicaciones_medicas} onChange={e => set('indicaciones_medicas', e.target.value)} />
           </div>
 

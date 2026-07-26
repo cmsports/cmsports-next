@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
-import { Link2, Copy, Check, UserCheck, XCircle } from 'lucide-react'
+import { Link2, Copy, Check, UserCheck, XCircle, MessageSquareWarning } from 'lucide-react'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
+import { aprobarSolicitud, rechazarSolicitud, pedirCorreccionSolicitud } from '@/app/actions/solicitudes'
 import { copiarTexto } from '@/lib/clipboard'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
@@ -29,8 +29,28 @@ async function obtenerSolicitudes(clubId: string) {
   }
   const codigo = invitaciones?.[0]?.codigo || ''
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas').eq('club_id', clubId).order('creado_en', { ascending: false })
+  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,nombres,apellido1,apellido2,apellido3,observaciones,veces_corregida').eq('club_id', clubId).order('creado_en', { ascending: false })
   return { link: `${origin}/registro?club=${clubId}&code=${codigo}`, solicitudes: solicitudes || [] }
+}
+
+// El formulario obliga a escribir "no" cuando el postulante no tiene el dato,
+// así que un campo vacío es información que faltó, no un dato inexistente.
+const CAMPOS_REVISAR = [
+  { key: 'rut',                          label: 'RUT' },
+  { key: 'email',                        label: 'Email' },
+  { key: 'telefono',                     label: 'Teléfono' },
+  { key: 'fecha_nacimiento',             label: 'Fecha de nacimiento' },
+  { key: 'direccion',                    label: 'Dirección' },
+  { key: 'comuna',                       label: 'Comuna' },
+  { key: 'contacto_emergencia_nombre',   label: 'Contacto de emergencia' },
+  { key: 'contacto_emergencia_telefono', label: 'Teléfono de emergencia' },
+  { key: 'indicaciones_medicas',         label: 'Indicaciones médicas' },
+  { key: 'apellido1',                    label: 'Apellido paterno' },
+  { key: 'apellido2',                    label: 'Apellido materno' },
+] as const
+
+function camposIncompletos(s: Record<string, unknown>): string[] {
+  return CAMPOS_REVISAR.filter(c => !String(s[c.key] ?? '').trim()).map(c => c.label)
 }
 
 export default function SolicitudesPage() {
@@ -52,6 +72,11 @@ export default function SolicitudesPage() {
   const [rechazandoId, setRechazandoId] = useState<string|null>(null)
   const [errorRechazar, setErrorRechazar] = useState('')
   const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; cuentaCreada?: boolean; password?: string }>(null)
+  const [modalCorregir, setModalCorregir] = useState<any>(null)
+  const [observaciones, setObservaciones] = useState('')
+  const [pidiendoCorreccion, setPidiendoCorreccion] = useState(false)
+  const [errorCorregir, setErrorCorregir] = useState('')
+  const [corregidoInfo, setCorregidoInfo] = useState<null | { nombre: string; telefono: string | null; observaciones: string }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -135,6 +160,35 @@ export default function SolicitudesPage() {
     return `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`
   }
 
+  function abrirCorregir(s: any) {
+    const faltantes = camposIncompletos(s)
+    setModalCorregir(s)
+    setErrorCorregir('')
+    // Se precarga con lo que falta para que el admin no lo escriba a mano.
+    setObservaciones(faltantes.length > 0
+      ? `Falta completar: ${faltantes.join(', ')}.`
+      : '')
+  }
+
+  async function confirmarCorreccion() {
+    if (!modalCorregir) return
+    setPidiendoCorreccion(true)
+    const res = await pedirCorreccionSolicitud({ solicitudId: modalCorregir.id, observaciones })
+    setPidiendoCorreccion(false)
+    if (res.error) { setErrorCorregir(res.error); return }
+    const info = { nombre: modalCorregir.nombre, telefono: modalCorregir.telefono, observaciones }
+    setModalCorregir(null)
+    setObservaciones('')
+    void cargarSolicitudes()
+    setCorregidoInfo(info)
+  }
+
+  function linkWhatsAppCorreccion(info: NonNullable<typeof corregidoInfo>) {
+    const tel = (info.telefono || '').replace(/[^0-9]/g, '')
+    const msg = `¡Hola ${info.nombre}! 🏓 Revisamos tu solicitud de ingreso y necesitamos que corrijas lo siguiente:\n\n${info.observaciones}\n\nPor favor vuelve a completar el formulario en este link:\n${linkInvitacion}\n\n¡Gracias!`
+    return `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`
+  }
+
   async function rechazar(id: string) {
     if (!confirm('¿Rechazar esta solicitud?')) return
     setRechazandoId(id)
@@ -151,10 +205,11 @@ export default function SolicitudesPage() {
     setCopiado(true); setTimeout(() => setCopiado(false), 2000)
   }
 
-  const estadoBadge: Record<string, { bg: string; color: string }> = {
-    pendiente: { bg: '#fffbeb', color: '#d97706' },
-    aprobado:  { bg: '#f0fdf4', color: '#16a34a' },
-    rechazado: { bg: '#fef2f2', color: '#dc2626' },
+  const estadoBadge: Record<string, { bg: string; color: string; label?: string }> = {
+    pendiente:  { bg: '#fffbeb', color: '#d97706' },
+    aprobado:   { bg: '#f0fdf4', color: '#16a34a' },
+    rechazado:  { bg: '#fef2f2', color: '#dc2626' },
+    correccion: { bg: '#eff6ff', color: '#1d4ed8', label: 'esperando corrección' },
   }
 
   if (authLoading || (!!clubId && loading)) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e8edf4' }}><div style={{ color: hint }}>Cargando...</div></div>
@@ -214,15 +269,31 @@ export default function SolicitudesPage() {
             <tbody>
               {solicitudes.map(s => {
                 const badge = estadoBadge[s.estado] || estadoBadge.pendiente
+                const faltantes = camposIncompletos(s)
                 return (
                   <tr key={s.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px 16px', fontWeight: 500, color: text }}>{s.nombre}</td>
+                    <td style={{ padding: '12px 16px', fontWeight: 500, color: text }}>
+                      {s.nombre}
+                      {s.estado === 'pendiente' && faltantes.length > 0 && (
+                        <div title={`Falta: ${faltantes.join(', ')}`} style={{ fontSize: 11, color: '#c2410c', fontWeight: 500, marginTop: 2 }}>
+                          ⚠ {faltantes.length} campo{faltantes.length !== 1 ? 's' : ''} sin completar
+                        </div>
+                      )}
+                      {s.veces_corregida > 0 && (
+                        <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>Corregida {s.veces_corregida} vez{s.veces_corregida !== 1 ? 'ces' : ''}</div>
+                      )}
+                    </td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{s.rut || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{s.email || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{s.telefono || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: muted }}>{new Date(s.creado_en).toLocaleDateString('es-CL')}</td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ background: badge.bg, color: badge.color, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>{s.estado}</span>
+                      <span style={{ background: badge.bg, color: badge.color, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>{badge.label ?? s.estado}</span>
+                      {s.estado === 'correccion' && s.observaciones && (
+                        <div title={s.observaciones} style={{ fontSize: 11, color: hint, marginTop: 3, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {s.observaciones}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       {s.estado === 'pendiente' && (
@@ -252,11 +323,24 @@ export default function SolicitudesPage() {
                             style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
                             <UserCheck size={12} /> Aprobar
                           </button>
+                          <button onClick={() => abrirCorregir(s)} title="Pedir corrección al postulante"
+                            style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <MessageSquareWarning size={12} /> Corregir
+                          </button>
                           <button onClick={() => rechazar(s.id)} disabled={rechazandoId === s.id}
                             style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 6, padding: '5px 8px', fontSize: 11, cursor: rechazandoId === s.id ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', opacity: rechazandoId === s.id ? 0.6 : 1 }}>
                             <XCircle size={12} />
                           </button>
                         </div>
+                      )}
+                      {s.estado === 'correccion' && s.telefono && (
+                        <WhatsAppBtn
+                          href={linkWhatsAppCorreccion({ nombre: s.nombre, telefono: s.telefono, observaciones: s.observaciones || '' })}
+                          variant="compact"
+                          style={{ fontSize: 11 }}
+                        >
+                          Reenviar aviso
+                        </WhatsAppBtn>
                       )}
                     </td>
                   </tr>
@@ -275,6 +359,25 @@ export default function SolicitudesPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}>
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 24, width: '100%', maxWidth: 480, maxHeight: '94vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 18 }}>Revisar y aprobar solicitud</h2>
+
+            {(() => {
+              const faltantes = camposIncompletos(modalAprobar)
+              if (faltantes.length === 0) return null
+              return (
+                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#c2410c', lineHeight: 1.5 }}>
+                  <strong>⚠ Faltan {faltantes.length} campo{faltantes.length !== 1 ? 's' : ''}:</strong> {faltantes.join(', ')}.
+                  <div style={{ marginTop: 4, color: muted }}>
+                    Podés completarlos acá, o cerrar y usar <strong>Corregir</strong> para pedírselos al postulante.
+                  </div>
+                </div>
+              )
+            })()}
+
+            {modalAprobar.observaciones && (
+              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#1d4ed8', lineHeight: 1.5 }}>
+                <strong>Observación enviada anteriormente:</strong> {modalAprobar.observaciones}
+              </div>
+            )}
 
             {/* SECCIÓN: Datos personales */}
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>Datos personales</div>
@@ -416,6 +519,79 @@ export default function SolicitudesPage() {
               <button onClick={() => { setModalAprobar(null); setErrorAprobar('') }} style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>Cancelar</button>
               <button onClick={confirmarAprobar} disabled={aprobando} style={{ flex: 1, padding: 11, background: '#f43f5e', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 {aprobando ? 'Aprobando...' : 'Crear perfil jugador'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal pedir corrección */}
+      {modalCorregir && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 24, width: '100%', maxWidth: 440, boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 6 }}>Pedir corrección</h2>
+            <p style={{ fontSize: 12, color: muted, marginBottom: 16, lineHeight: 1.5 }}>
+              La solicitud de <strong>{modalCorregir.nombre}</strong> queda en espera. Cuando vuelva a completar el
+              formulario con el mismo link, sus datos se actualizan y regresa a pendientes.
+            </p>
+
+            <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4, fontWeight: 600 }}>
+              ¿Qué debe corregir?
+            </label>
+            <textarea
+              value={observaciones}
+              onChange={e => setObservaciones(e.target.value)}
+              rows={4}
+              autoFocus
+              placeholder="Ej: El RUT está incompleto y falta el teléfono de emergencia."
+              style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', fontSize: 13, outline: 'none', resize: 'vertical', marginBottom: 14 }}
+            />
+
+            {errorCorregir && (
+              <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, fontSize: 12, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                {errorCorregir}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => { setModalCorregir(null); setErrorCorregir('') }}
+                style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={confirmarCorreccion} disabled={pidiendoCorreccion}
+                style={{ flex: 1, padding: 11, background: pidiendoCorreccion ? '#94a3b8' : '#4f46e5', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: pidiendoCorreccion ? 'wait' : 'pointer' }}>
+                {pidiendoCorreccion ? 'Guardando...' : 'Pedir corrección'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal aviso al postulante */}
+      {corregidoInfo && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize: 34, textAlign: 'center', marginBottom: 6 }}>📝</div>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: text, textAlign: 'center', marginBottom: 8 }}>
+              Solicitud devuelta a {corregidoInfo.nombre}
+            </h2>
+            <p style={{ fontSize: 12, color: muted, textAlign: 'center', marginBottom: 16, lineHeight: 1.5 }}>
+              Avisale por WhatsApp para que corrija sus datos con el mismo link.
+            </p>
+
+            <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 12, color: '#1d4ed8', lineHeight: 1.5 }}>
+              {corregidoInfo.observaciones}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              {corregidoInfo.telefono && (
+                <WhatsAppBtn href={linkWhatsAppCorreccion(corregidoInfo)} style={{ flex: 1, padding: 11, borderRadius: 8, fontSize: 13 }}>
+                  Avisar por WhatsApp
+                </WhatsAppBtn>
+              )}
+              <button onClick={() => setCorregidoInfo(null)}
+                style={{ flex: 1, padding: 11, background: corregidoInfo.telefono ? 'transparent' : '#4f46e5', border: corregidoInfo.telefono ? '1px solid #e2e8f0' : 'none', borderRadius: 8, color: corregidoInfo.telefono ? muted : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Listo
               </button>
             </div>
           </div>

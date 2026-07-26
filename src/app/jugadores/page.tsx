@@ -11,6 +11,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actualizarMensualidad } from '@/app/actions/jugadores'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { SEDES, GRUPOS, sedeLabel, grupoLabel, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 
 const supabase = createClient()
 
@@ -132,6 +133,8 @@ export default function JugadoresPage() {
   const [filtroPago, setFiltroPago]             = useState<Set<string>>(() => setDesdeParam(searchParams, 'pago'))
   const [filtroHorario, setFiltroHorario]       = useState<Set<string>>(() => setDesdeParam(searchParams, 'horario'))
   const [filtroPresente, setFiltroPresente]     = useState<Set<string>>(() => setDesdeParam(searchParams, 'presente'))
+  const [filtroSede, setFiltroSede]             = useState<Set<string>>(() => setDesdeParam(searchParams, 'sede'))
+  const [filtroGrupo, setFiltroGrupo]           = useState<Set<string>>(() => setDesdeParam(searchParams, 'grupo'))
   const [edadMin, setEdadMin]                   = useState(() => searchParams.get('edadMin') || '')
   const [edadMax, setEdadMax]                   = useState(() => searchParams.get('edadMax') || '')
   const [asistenciaHoy, setAsistenciaHoy]       = useState<Set<string>>(new Set())
@@ -162,7 +165,7 @@ export default function JugadoresPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
         .eq('club_id', id)
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
@@ -199,7 +202,7 @@ export default function JugadoresPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
@@ -253,6 +256,8 @@ export default function JugadoresPage() {
     if (filtroPago.size) params.set('pago', [...filtroPago].join(','))
     if (filtroHorario.size) params.set('horario', [...filtroHorario].join(','))
     if (filtroPresente.size) params.set('presente', [...filtroPresente].join(','))
+    if (filtroSede.size) params.set('sede', [...filtroSede].join(','))
+    if (filtroGrupo.size) params.set('grupo', [...filtroGrupo].join(','))
     if (filtroSinHorario) params.set('sinhorario', '1')
     if (edadMin) params.set('edadMin', edadMin)
     if (edadMax) params.set('edadMax', edadMax)
@@ -260,7 +265,7 @@ export default function JugadoresPage() {
     const qs = params.toString()
     router.replace(qs ? `/jugadores?${qs}` : '/jugadores', { scroll: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabJug, busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroPago, filtroHorario, filtroPresente, filtroSinHorario, edadMin, edadMax, orden])
+  }, [tabJug, busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroPago, filtroHorario, filtroPresente, filtroSede, filtroGrupo, filtroSinHorario, edadMin, edadMax, orden])
 
   function mostrarToast(msg: string) {
     setToast(msg)
@@ -365,7 +370,9 @@ export default function JugadoresPage() {
     const dias = (j: any) => ['lun','mar','mie','jue','vie'].filter(d => j[`entrena_${d}`]).join('-') || 'sin horario'
     const datos = filtrados.map(j => ({
       'Nombre': j.nombre, 'RUT': j.rut || '', 'Email': j.email || '', 'Teléfono': j.telefono || '',
-      'Categoría': j.categoria, 'Mensualidad': j.mensualidad || 0,
+      'Categoría': j.categorias?.length ? j.categorias.join(' · ') : (j.categoria || ''),
+      'Grupo': grupoLabel(j.grupo), 'Sede': sedeLabel(j.sede),
+      'Mensualidad': j.mensualidad || 0,
       'Horario': j.horario || '', 'Días': dias(j), 'Estado': j.estado
     }))
     const ws = utils.json_to_sheet(datos)
@@ -379,7 +386,10 @@ export default function JugadoresPage() {
 
   const filtrados = jugadores
     .filter(j => !busqueda || j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) || j.rut?.includes(busqueda))
-    .filter(j => filtroCat.size === 0 || filtroCat.has(j.categoria))
+    // Un jugador puede competir en varias categorías (la suya por edad + TC).
+    .filter(j => filtroCat.size === 0 || [...filtroCat].some(c => (j.categorias?.length ? j.categorias.includes(c) : j.categoria === c)))
+    .filter(j => filtroSede.size === 0 || [...filtroSede].some(s => entrenaEnSede(j.sede, s)))
+    .filter(j => filtroGrupo.size === 0 || filtroGrupo.has(j.grupo))
     .filter(j => filtroEstado.size === 0 || filtroEstado.has(j.estado))
     .filter(j => !filtroSinHorario || sinHorario(j))
     .filter(j => filtroDia.size === 0 || [...filtroDia].some(d => j[`entrena_${d}`] === true))
@@ -414,6 +424,8 @@ export default function JugadoresPage() {
     ...[...filtroPago].map(v => ({ key:`pago-${v}`, label: v === 'pagado' ? 'Al día' : v === 'pendiente' ? 'Pendiente' : 'Atrasado', onRemove: () => setFiltroPago(prev => setToggle(prev, v)) })),
     ...[...filtroHorario].map(h => ({ key:`horario-${h}`, label:h, onRemove: () => setFiltroHorario(prev => setToggle(prev, h)) })),
     ...[...filtroPresente].map(v => ({ key:`presente-${v}`, label: v === 'presente' ? 'Presente hoy' : 'Ausente hoy', onRemove: () => setFiltroPresente(prev => setToggle(prev, v)) })),
+    ...[...filtroSede].map(s => ({ key:`sede-${s}`, label: sedeLabel(s), onRemove: () => setFiltroSede(prev => setToggle(prev, s)) })),
+    ...[...filtroGrupo].map(g => ({ key:`grupo-${g}`, label: grupoLabel(g), onRemove: () => setFiltroGrupo(prev => setToggle(prev, g)) })),
     ...((edadMin || edadMax) ? [{ key:'edad', label:`Edad ${edadMin || '0'}–${edadMax || '∞'}`, onRemove: () => { setEdadMin(''); setEdadMax('') } }] : []),
   ]
 
@@ -503,6 +515,7 @@ export default function JugadoresPage() {
                 setBusqueda(''); setFiltroCat(new Set()); setFiltroEstado(new Set()); setFiltroSinHorario(false)
                 setFiltroDia(new Set()); setFiltroFederado(new Set()); setFiltroPago(new Set())
                 setFiltroHorario(new Set()); setFiltroPresente(new Set()); setEdadMin(''); setEdadMax('')
+                setFiltroSede(new Set()); setFiltroGrupo(new Set())
               }}
               style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:13, color:'#dc2626', cursor:'pointer', whiteSpace:'nowrap' }}
             >
@@ -517,6 +530,20 @@ export default function JugadoresPage() {
 
         {/* Fila 2: filtros avanzados */}
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
+          <FiltroMultiSelect
+            label="Sede"
+            options={SEDES.map(s => ({ value: s.value, label: s.label }))}
+            selected={filtroSede}
+            onChange={setFiltroSede}
+          />
+
+          <FiltroMultiSelect
+            label="Grupo"
+            options={GRUPOS.map(g => ({ value: g.value, label: g.label }))}
+            selected={filtroGrupo}
+            onChange={setFiltroGrupo}
+          />
+
           <FiltroMultiSelect
             label="Día de entrenamiento"
             options={[{ value:'lun',label:'Lunes' },{ value:'mar',label:'Martes' },{ value:'mie',label:'Miércoles' },{ value:'jue',label:'Jueves' },{ value:'vie',label:'Viernes' }]}

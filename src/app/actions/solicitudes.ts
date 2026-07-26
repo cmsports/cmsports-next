@@ -107,6 +107,36 @@ export async function aprobarSolicitud(params: {
   }
 }
 
+// Devuelve la solicitud al postulante con observaciones para que corrija sus
+// datos. Al reenviar el formulario vuelve sola a 'pendiente' (migración 072).
+export async function pedirCorreccionSolicitud(params: { solicitudId: string; observaciones: string }) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const observaciones = params.observaciones.trim()
+  if (observaciones.length < 5) return { error: 'Escribe qué debe corregir el postulante' }
+  if (observaciones.length > 1000) return { error: 'La observación es demasiado larga' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sol } = await (supabase as any)
+    .from('solicitudes_jugador')
+    .select('id,estado')
+    .eq('id', params.solicitudId)
+    .eq('club_id', clubId)
+    .single()
+  if (!sol) return { error: 'Solicitud no encontrada' }
+  if (sol.estado !== 'pendiente') return { error: 'Solo se puede pedir corrección de una solicitud pendiente' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('solicitudes_jugador')
+    .update({ estado: 'correccion', observaciones })
+    .eq('id', params.solicitudId)
+    .eq('club_id', clubId)
+  if (error) return { error: 'No se pudo guardar la observación: ' + error.message }
+
+  return { success: true }
+}
+
 export async function rechazarSolicitud(params: { solicitudId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }

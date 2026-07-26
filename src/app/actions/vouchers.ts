@@ -14,7 +14,7 @@ async function requireStaff() {
   return { error: null, supabase, clubId: perfil.club_id! }
 }
 
-export async function subirVoucher(params: { nombre: string; base64: string }) {
+export async function subirVoucher(params: { nombre: string; base64: string; marca?: string | null }) {
   const { error: authErr, clubId } = await requireStaff()
   if (authErr) return { error: authErr }
 
@@ -23,11 +23,12 @@ export async function subirVoucher(params: { nombre: string; base64: string }) {
   const buffer = Buffer.from(params.base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
 
   const admin = createAdminClient()
+  const marca = params.marca?.trim() || null
 
   // Insertar primero para obtener el id
   const { data: voucher, error: insertErr } = await admin
     .from('vouchers')
-    .insert({ club_id: clubId!, nombre: params.nombre.trim(), imagen_url: '' })
+    .insert({ club_id: clubId!, nombre: params.nombre.trim(), imagen_url: '', marca })
     .select('id')
     .single()
   if (insertErr || !voucher) return { error: 'Error al crear voucher: ' + insertErr?.message }
@@ -43,7 +44,7 @@ export async function subirVoucher(params: { nombre: string; base64: string }) {
   const url = `${publicUrl}?t=${Date.now()}`
   await admin.from('vouchers').update({ imagen_url: url }).eq('id', voucher.id)
 
-  return { success: true, voucher: { id: voucher.id, nombre: params.nombre.trim(), imagen_url: url, activo: true } }
+  return { success: true, voucher: { id: voucher.id, nombre: params.nombre.trim(), imagen_url: url, activo: true, marca } }
 }
 
 export async function eliminarVoucher(params: { id: string }) {

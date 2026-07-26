@@ -10,6 +10,8 @@ import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
+import DocumentosJugador from '@/components/DocumentosJugador'
+import { SEDES, GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
@@ -82,7 +84,7 @@ export default function JugadorDetallePage() {
   const [feedbackForm, setFeedbackForm] = useState({ feedback:'', meta:'' })
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
-  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
+  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [editDias, setEditDias] = useState(false)
   const [diasForm, setDiasForm] = useState({ horario:'', entrena_lun:false, entrena_mar:false, entrena_mie:false, entrena_jue:false, entrena_vie:false })
@@ -138,7 +140,7 @@ export default function JugadorDetallePage() {
 
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado').eq('id', jugadorId).single(),
+          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
@@ -195,6 +197,8 @@ export default function JugadorDetallePage() {
   const puedeVerTodo = esAdmin || esProfesor
   const puedeEditar = esAdmin
   const puedeEvaluar = esAdmin || esProfesor
+  // Los documentos los puede subir el staff o el propio jugador desde su ficha.
+  const puedeSubirDocumentos = puedeVerTodo || perfil?.jugador_id === jugadorId
 
   const torneosInternos = new Set(partidos.map(p => p.torneo_id).filter(Boolean)).size
   const torneosTotal = torneosInternos + externos.length
@@ -238,6 +242,9 @@ export default function JugadorDetallePage() {
       email: jugador?.email || '',
       telefono: jugador?.telefono || '',
       categoria: jugador?.categoria || (esClubBuin ? '' : 'principiante'),
+      categorias: new Set<string>(jugador?.categorias ?? (jugador?.categoria ? [jugador.categoria] : [])),
+      sede: jugador?.sede || '',
+      grupo: jugador?.grupo || '',
       fecha_nacimiento: jugador?.fecha_nacimiento || '',
       direccion: jugador?.direccion || '',
       comuna: jugador?.comuna || '',
@@ -262,6 +269,14 @@ export default function JugadorDetallePage() {
       email: contactoForm.email || null,
       telefono: contactoForm.telefono || null,
       categoria: contactoForm.categoria,
+      // La categoría principal siempre forma parte de la lista, aunque el admin
+      // no la haya marcado: ranking y torneos siguen filtrando por ella.
+      categorias: [...new Set([
+        ...(contactoForm.categoria ? [contactoForm.categoria] : []),
+        ...contactoForm.categorias,
+      ])],
+      sede: contactoForm.sede || null,
+      grupo: contactoForm.grupo || null,
       fecha_nacimiento: contactoForm.fecha_nacimiento || null,
       direccion: contactoForm.direccion?.trim() || null,
       comuna: contactoForm.comuna?.trim() || null,
@@ -638,6 +653,8 @@ export default function JugadorDetallePage() {
       if (jugador.entrenamientos_por_semana) planRows.push(['Ent./semana', String(jugador.entrenamientos_por_semana)])
       if (jugador.tipo_plan !== 'libre') planRows.push(['Sesiones', `${jugador.sesiones_usadas || 0} / ${jugador.sesiones_limite || 0}`])
       if (jugador.horario) planRows.push(['Horario', jugador.horario])
+      if (jugador.grupo) planRows.push(['Grupo', grupoLabel(jugador.grupo)])
+      if (jugador.sede) planRows.push(['Sede', sedeLabel(jugador.sede)])
       const diasEntrena = [jugador.entrena_lun ? 'Lu' : '', jugador.entrena_mar ? 'Ma' : '', jugador.entrena_mie ? 'Mi' : '', jugador.entrena_jue ? 'Ju' : '', jugador.entrena_vie ? 'Vi' : ''].filter(Boolean).join(' · ')
       if (diasEntrena) planRows.push(['Dias', diasEntrena])
 
@@ -884,9 +901,13 @@ export default function JugadorDetallePage() {
             <InfoRow label="RUT" value={jugador.rut} />
             <InfoRow label="Email" value={jugador.email} />
             <InfoRow label="Teléfono" value={jugador.telefono} />
-            <InfoRow label="Categoría" value={jugador.categoria} />
+            <InfoRow
+              label={(jugador.categorias?.length ?? 0) > 1 ? 'Categorías' : 'Categoría'}
+              value={(jugador.categorias?.length ?? 0) > 0 ? jugador.categorias.join(' · ') : jugador.categoria}
+            />
             {jugador.fecha_nacimiento && <InfoRow label="Nacimiento" value={jugador.fecha_nacimiento} />}
-            {jugador.grupo && <InfoRow label="Grupo" value={jugador.grupo} />}
+            <InfoRow label="Grupo" value={grupoLabel(jugador.grupo)} />
+            <InfoRow label="Sede" value={sedeLabel(jugador.sede)} />
             {jugador.horario && <InfoRow label="Horario" value={jugador.horario} />}
             {esClubBuin && <InfoRow label="Federado" value={jugador.federado ? 'Sí' : jugador.federado === false ? 'No' : '—'} />}
             {(jugador.telefono || jugador.contacto_emergencia_telefono) && (
@@ -967,6 +988,12 @@ export default function JugadorDetallePage() {
           </div>
         </div>
 
+        {/* Documentos firmados — los sube el staff o el propio jugador */}
+        <div style={cardStyle}>
+          <CardHeader title="Documentos" />
+          <DocumentosJugador jugadorId={jugadorId} puedeEditar={puedeSubirDocumentos} />
+        </div>
+
         {/* Ubicación (si hay datos) */}
         {(jugador.direccion || jugador.comuna) && (
           <div style={cardStyle}>
@@ -1045,10 +1072,74 @@ export default function JugadorDetallePage() {
                       onChange={e => {
                         const fecha = e.target.value
                         const catAuto = esClubBuin ? categoriaBuinPorFechaNacimiento(fecha) : null
-                        setContactoForm(f => ({ ...f, fecha_nacimiento: fecha, ...(catAuto ? { categoria: catAuto } : {}) }))
+                        setContactoForm(f => ({
+                          ...f,
+                          fecha_nacimiento: fecha,
+                          ...(catAuto ? {
+                            categoria: catAuto,
+                            // Todo jugador compite además en TC (todo competidor).
+                            categorias: new Set([...f.categorias, catAuto, 'TC']),
+                          } : {}),
+                        }))
                       }} />
                   </FormField>
                 </div>
+
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:12 }}>
+                  <FormField label="Grupo de entrenamiento">
+                    <select style={inputStyle} value={contactoForm.grupo} onChange={e => setContactoForm(f => ({ ...f, grupo: e.target.value }))}>
+                      <option value="">— Sin grupo —</option>
+                      {GRUPOS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                    </select>
+                  </FormField>
+                  <FormField label="Sede habitual">
+                    <select style={inputStyle} value={contactoForm.sede} onChange={e => setContactoForm(f => ({ ...f, sede: e.target.value }))}>
+                      <option value="">— Sin sede —</option>
+                      {SEDES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </FormField>
+                </div>
+
+                {esClubBuin && (
+                  <div style={{ marginTop:12 }}>
+                    <div style={{ fontSize:12, color: muted, marginBottom:6 }}>
+                      Categorías en las que compite
+                      <span style={{ color: hint, fontWeight:400 }}> — la de su edad más TC (todo competidor)</span>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:6, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:10 }}>
+                      {CATEGORIAS_BUIN.map(c => {
+                        const activa = contactoForm.categorias.has(c) || contactoForm.categoria === c
+                        const esPrincipal = contactoForm.categoria === c
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            title={esPrincipal ? 'Categoría principal (por edad) — no se puede quitar' : undefined}
+                            onClick={() => {
+                              if (esPrincipal) return
+                              setContactoForm(f => {
+                                const next = new Set(f.categorias)
+                                if (next.has(c)) next.delete(c); else next.add(c)
+                                return { ...f, categorias: next }
+                              })
+                            }}
+                            style={{
+                              background: activa ? '#ede9fe' : '#fff',
+                              border: `1px solid ${activa ? '#c4b5fd' : '#e2e8f0'}`,
+                              color: activa ? '#3730a3' : muted,
+                              borderRadius: 20, padding: '4px 11px', fontSize: 11,
+                              fontWeight: activa ? 700 : 500,
+                              cursor: esPrincipal ? 'default' : 'pointer',
+                              opacity: esPrincipal ? 0.85 : 1,
+                            }}
+                          >
+                            {c}{esPrincipal ? ' ★' : ''}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ borderTop:'1px solid #e2e8f0', margin:'20px 0', paddingTop:20 }}>
                   <div style={{ fontSize:12, fontWeight:600, color: muted, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:12 }}>Contacto</div>

@@ -21,6 +21,12 @@ type DatosExtendidos = {
   contacto_emergencia_telefono?: string | null
   indicaciones_medicas?: string | null
   federado?: boolean | null
+  // Un jugador pertenece a su categoría por edad y además a TC (todo competidor).
+  categorias?: string[] | null
+  nombres?: string | null
+  apellido1?: string | null
+  apellido2?: string | null
+  apellido3?: string | null
 }
 
 export async function crearJugador(params: {
@@ -220,6 +226,102 @@ export async function subirFotoJugador(params: { jugadorId: string; base64: stri
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (supabase as any).from('jugadores').update({ foto_url: url }).eq('id', params.jugadorId)
   return { success: true, url }
+}
+
+const TIPOS_DOC = ['derecho_formacion', 'carta_compromiso'] as const
+export type TipoDocumento = typeof TIPOS_DOC[number]
+
+// Extensiones aceptadas para los contratos escaneados (PDF, Word o foto).
+const EXT_DOC: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+}
+
+// El jugador puede subir sus propios documentos; el staff, los de cualquiera.
+async function requireAccesoJugador(jugadorId: string) {
+  const supabase = await createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' as const, clubId: null, nombre: null }
+  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol,nombre,jugador_id').eq('id', user.id).single()
+  if (!perfil?.club_id) return { error: 'Acceso denegado' as const, clubId: null, nombre: null }
+
+  const esStaff = ['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')
+  if (!esStaff && perfil.jugador_id !== jugadorId) return { error: 'Acceso denegado' as const, clubId: null, nombre: null }
+
+  const admin = createAdminClient()
+  const { data: jug } = await admin.from('jugadores').select('id').eq('id', jugadorId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!jug) return { error: 'Jugador no encontrado' as const, clubId: null, nombre: null }
+
+  return { error: null, clubId: perfil.club_id, nombre: perfil.nombre ?? null }
+}
+
+export async function subirDocumentoJugador(params: {
+  jugadorId: string
+  tipo: TipoDocumento
+  base64: string
+  nombreArchivo: string
+}) {
+  if (!TIPOS_DOC.includes(params.tipo)) return { error: 'Tipo de documento inválido' }
+  const { error: authErr, clubId, nombre } = await requireAccesoJugador(params.jugadorId)
+  if (authErr || !clubId) return { error: authErr || 'Acceso denegado' }
+
+  const mime = params.base64.match(/^data:([^;]+);base64,/)?.[1] || ''
+  const ext = EXT_DOC[mime]
+  if (!ext) return { error: 'Formato no permitido. Sube un PDF, Word o una foto.' }
+
+  const buffer = Buffer.from(params.base64.replace(/^data:[^;]+;base64,/, ''), 'base64')
+  if (buffer.byteLength > 10 * 1024 * 1024) return { error: 'El archivo supera los 10 MB' }
+
+  const admin = createAdminClient()
+  const path = `documentos/${clubId}/${params.jugadorId}/${params.tipo}.${ext}`
+
+  // Se borra la versión anterior: puede tener otra extensión y quedaría huérfana.
+  const { data: previo } = await admin.from('jugador_documentos')
+    .select('archivo_url').eq('jugador_id', params.jugadorId).eq('tipo', params.tipo).maybeSingle()
+  if (previo?.archivo_url) {
+    const anterior = previo.archivo_url.split('/galeria-fotos/')[1]?.split('?')[0]
+    if (anterior && anterior !== path) await admin.storage.from('galeria-fotos').remove([anterior])
+  }
+
+  const { error: upErr } = await admin.storage.from('galeria-fotos')
+    .upload(path, buffer, { contentType: mime, upsert: true })
+  if (upErr) return { error: 'Error al subir el archivo: ' + upErr.message }
+
+  const { data: { publicUrl } } = admin.storage.from('galeria-fotos').getPublicUrl(path)
+  const url = `${publicUrl}?t=${Date.now()}`
+
+  const { error: dbErr } = await admin.from('jugador_documentos').upsert({
+    club_id: clubId,
+    jugador_id: params.jugadorId,
+    tipo: params.tipo,
+    archivo_url: url,
+    nombre_archivo: params.nombreArchivo.slice(0, 200),
+    subido_por: nombre,
+  }, { onConflict: 'jugador_id,tipo' })
+  if (dbErr) return { error: 'Error al registrar el documento: ' + dbErr.message }
+
+  return { success: true, url, nombreArchivo: params.nombreArchivo }
+}
+
+export async function eliminarDocumentoJugador(params: { jugadorId: string; tipo: TipoDocumento }) {
+  const { error: authErr, clubId } = await requireAccesoJugador(params.jugadorId)
+  if (authErr || !clubId) return { error: authErr || 'Acceso denegado' }
+
+  const admin = createAdminClient()
+  const { data: doc } = await admin.from('jugador_documentos')
+    .select('archivo_url').eq('jugador_id', params.jugadorId).eq('tipo', params.tipo).maybeSingle()
+
+  if (doc?.archivo_url) {
+    const path = doc.archivo_url.split('/galeria-fotos/')[1]?.split('?')[0]
+    if (path) await admin.storage.from('galeria-fotos').remove([path])
+  }
+  await admin.from('jugador_documentos').delete().eq('jugador_id', params.jugadorId).eq('tipo', params.tipo)
+  return { success: true }
 }
 
 export async function resetearPasswordJugador(params: { jugadorId: string; nuevaPassword: string }) {

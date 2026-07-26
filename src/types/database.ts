@@ -190,6 +190,12 @@ export interface Database {
           contacto_emergencia_telefono: string | null
           indicaciones_medicas: string | null
           federado: boolean | null
+          categorias: string[] | null
+          nombres: string | null
+          apellido1: string | null
+          apellido2: string | null
+          apellido3: string | null
+          sede: string | null
         }
         Insert: {
           id?: string
@@ -217,6 +223,12 @@ export interface Database {
           contacto_emergencia_telefono?: string | null
           indicaciones_medicas?: string | null
           federado?: boolean | null
+          categorias?: string[] | null
+          nombres?: string | null
+          apellido1?: string | null
+          apellido2?: string | null
+          apellido3?: string | null
+          sede?: string | null
         }
         Update: {
           id?: string
@@ -244,6 +256,12 @@ export interface Database {
           contacto_emergencia_telefono?: string | null
           indicaciones_medicas?: string | null
           federado?: boolean | null
+          categorias?: string[] | null
+          nombres?: string | null
+          apellido1?: string | null
+          apellido2?: string | null
+          apellido3?: string | null
+          sede?: string | null
         }
         Relationships: [
           { foreignKeyName: 'jugadores_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
@@ -1022,6 +1040,19 @@ export interface Database {
           torneo_id: string | null
           identidad_hash: string | null
           origen: string | null
+          fecha_nacimiento: string | null
+          direccion: string | null
+          comuna: string | null
+          contacto_emergencia_nombre: string | null
+          contacto_emergencia_telefono: string | null
+          indicaciones_medicas: string | null
+          nombres: string | null
+          apellido1: string | null
+          apellido2: string | null
+          apellido3: string | null
+          observaciones: string | null
+          corregida_en: string | null
+          veces_corregida: number
         }
         Insert: {
           id?: string
@@ -1037,6 +1068,19 @@ export interface Database {
           torneo_id?: string | null
           identidad_hash?: string | null
           origen?: string | null
+          observaciones?: string | null
+          corregida_en?: string | null
+          veces_corregida?: number
+          fecha_nacimiento?: string | null
+          direccion?: string | null
+          comuna?: string | null
+          contacto_emergencia_nombre?: string | null
+          contacto_emergencia_telefono?: string | null
+          indicaciones_medicas?: string | null
+          nombres?: string | null
+          apellido1?: string | null
+          apellido2?: string | null
+          apellido3?: string | null
         }
         Update: {
           id?: string
@@ -1052,6 +1096,19 @@ export interface Database {
           torneo_id?: string | null
           identidad_hash?: string | null
           origen?: string | null
+          fecha_nacimiento?: string | null
+          direccion?: string | null
+          comuna?: string | null
+          contacto_emergencia_nombre?: string | null
+          contacto_emergencia_telefono?: string | null
+          indicaciones_medicas?: string | null
+          nombres?: string | null
+          apellido1?: string | null
+          apellido2?: string | null
+          apellido3?: string | null
+          observaciones?: string | null
+          corregida_en?: string | null
+          veces_corregida?: number
         }
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
@@ -1506,6 +1563,7 @@ export interface Database {
           imagen_url: string
           activo: boolean
           creado_en: string
+          marca: string | null
         }
         Insert: {
           id?: string
@@ -1514,6 +1572,7 @@ export interface Database {
           imagen_url: string
           activo?: boolean
           creado_en?: string
+          marca?: string | null
         }
         Update: {
           id?: string
@@ -1522,6 +1581,7 @@ export interface Database {
           imagen_url?: string
           activo?: boolean
           creado_en?: string
+          marca?: string | null
         }
         Relationships: [
           { foreignKeyName: 'vouchers_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
@@ -1607,6 +1667,42 @@ export interface Database {
         }
         Relationships: [
           { foreignKeyName: 'tienda_asociacion_productos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
+        ]
+      }
+      jugador_documentos: {
+        Row: {
+          id: string
+          club_id: string
+          jugador_id: string
+          tipo: string
+          archivo_url: string
+          nombre_archivo: string | null
+          subido_por: string | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          jugador_id: string
+          tipo: string
+          archivo_url: string
+          nombre_archivo?: string | null
+          subido_por?: string | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          jugador_id?: string
+          tipo?: string
+          archivo_url?: string
+          nombre_archivo?: string | null
+          subido_por?: string | null
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'jugador_documentos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+          { foreignKeyName: 'jugador_documentos_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
     }

@@ -14,6 +14,7 @@ import {
   Link2, Mail, X, HelpCircle, Copy, Check, UserX, ClipboardCheck,
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 
 const supabase = createClient()
 
@@ -308,33 +309,13 @@ export default function DashboardPage() {
             </a>
           </div>
         </div>
-        {/* Logos auspiciadores — solo club Buin */}
+        {/* Auspiciadores — al tocar el logo se abren sus descuentos (solo club Buin) */}
         {tiene('tienda_buin') && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, justifyContent: 'center' }}>
-          {[
-            { src: '/sponsors/foxhara.png',  alt: 'Foxhara Sport',       bg: '#ffffff' },
-            { src: '/sponsors/aurora.png',   alt: 'Aurora',              bg: '#111111' },
-            { src: '/sponsors/hidrata.png',  alt: 'Hidrata',             bg: '#111111' },
-          ].map(s => (
-            <div key={s.alt} style={{
-              width: 110, height: 44,
-              background: s.bg,
-              border: `1px solid ${C.border}`,
-              borderRadius: 10,
-              overflow: 'hidden',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 1px 6px rgba(15,23,42,0.08)',
-              flexShrink: 0,
-            }}>
-              <img
-                src={s.src}
-                alt={s.alt}
-                style={{ maxWidth: '90%', maxHeight: '80%', objectFit: 'contain' }}
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
-            </div>
-          ))}
-        </div>
+          <MarcasAuspiciadores
+            clubId={perfil?.club_id ?? null}
+            esStaff={perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'}
+            borderColor={C.border}
+          />
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

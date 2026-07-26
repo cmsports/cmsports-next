@@ -10,6 +10,10 @@ export async function registrarSolicitud(input: {
   telefono: string
   club_id: string
   codigo: string
+  nombres: string
+  apellido1: string
+  apellido2: string
+  apellido3: string
   fecha_nacimiento?: string
   direccion?: string
   comuna?: string
@@ -34,6 +38,10 @@ export async function registrarSolicitud(input: {
     p_contacto_emergencia_nombre: input.contacto_emergencia_nombre || null,
     p_contacto_emergencia_telefono: input.contacto_emergencia_telefono || null,
     p_indicaciones_medicas: input.indicaciones_medicas || null,
+    p_nombres: parsed.data.nombres,
+    p_apellido1: parsed.data.apellido1,
+    p_apellido2: parsed.data.apellido2,
+    p_apellido3: parsed.data.apellido3,
   })
 
   if (error) return { error: 'Error al enviar solicitud. Intenta de nuevo.' }
