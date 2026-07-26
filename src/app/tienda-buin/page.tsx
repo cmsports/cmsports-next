@@ -73,7 +73,7 @@ export default function TiendaBuinPage() {
   async function cargar(clubId: string) {
     setCargando(true)
     try {
-      const { data } = await (createClient() as any)
+      const { data } = await createClient()
         .from('tienda_buin_productos')
         .select('id,nombre,descripcion,categoria,color,stock,precio,imagen_url')
         .eq('club_id', clubId)

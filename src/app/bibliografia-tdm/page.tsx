@@ -128,7 +128,7 @@ export default function BibliografiaTdmPage() {
             <p style={{ fontSize: 15, color: '#64748b' }}>Aún no hay materiales publicados.</p>
             {esAdmin && (
               <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 6 }}>
-                Usa el botón "Subir imágenes" para agregar el primer contenido.
+                Usa el botón &quot;Subir imágenes&quot; para agregar el primer contenido.
               </p>
             )}
           </div>

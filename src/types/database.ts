@@ -1527,6 +1527,47 @@ export interface Database {
           { foreignKeyName: 'vouchers_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
         ]
       }
+      tienda_buin_productos: {
+        Row: {
+          id: string
+          club_id: string
+          nombre: string
+          descripcion: string | null
+          categoria: string
+          color: string | null
+          stock: number
+          precio: number | null
+          imagen_url: string | null
+          creado_en: string | null
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          nombre: string
+          descripcion?: string | null
+          categoria: string
+          color?: string | null
+          stock?: number
+          precio?: number | null
+          imagen_url?: string | null
+          creado_en?: string | null
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          nombre?: string
+          descripcion?: string | null
+          categoria?: string
+          color?: string | null
+          stock?: number
+          precio?: number | null
+          imagen_url?: string | null
+          creado_en?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: 'tienda_buin_productos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
+        ]
+      }
     }
     Views: {}
     Functions: {

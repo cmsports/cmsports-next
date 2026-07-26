@@ -131,7 +131,7 @@ export default function TorneoDetallePage() {
       supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
-      supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,monto,creado_en').eq('torneo_id', torneoId),
+      supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
       supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,jugadores(id,nombre),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
@@ -1396,7 +1396,7 @@ export default function TorneoDetallePage() {
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
                   <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>
                     <div style={{ fontSize: 16, fontWeight: 700, color: text, marginBottom: 4 }}>Confirmar premios</div>
-                    <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Esto registrará los gastos de premios en Finanzas. Los ingresos por inscripción se suben aparte, desde "Control financiero" o el panel de pagos.</div>
+                    <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Esto registrará los gastos de premios en Finanzas. Los ingresos por inscripción se suben aparte, desde &quot;Control financiero&quot; o el panel de pagos.</div>
 
                     <div style={{ background: '#f4f7fa', borderRadius: 10, padding: '14px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 9 }}>
                       {(p1 !== null) && (
@@ -1520,6 +1520,8 @@ export default function TorneoDetallePage() {
                       const res = await actualizarEstadoPago({ torneoId, jugadorId: j.jugador_id, estado: 'pagado', metodoPago: metodo })
                       if (res.error) { alert(res.error); return }
                       await cargarTorneo()
+                    } catch (e) {
+                      alert('Error al registrar el pago: ' + (e instanceof Error ? e.message : String(e)))
                     } finally { setPagoLoading(null) }
                   }} style={{ background: metodo === 'efectivo' ? '#f0fdf4' : '#ede9fe', color: metodo === 'efectivo' ? '#16a34a' : '#4f46e5', border:`1px solid ${metodo === 'efectivo' ? '#bbf7d0' : '#c4b5fd'}`, borderRadius:6, padding:'5px 10px', fontSize:11, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>
                     {pagoLoading === j.jugador_id ? '...' : metodo === 'efectivo' ? '💵 Efectivo' : '💳 Transferencia'}
@@ -1753,6 +1755,8 @@ export default function TorneoDetallePage() {
                             })
                             if (res.error) { alert(res.error); return }
                             await cargarTorneo()
+                          } catch (e) {
+                            alert('Error al registrar el pago: ' + (e instanceof Error ? e.message : String(e)))
                           } finally { setPagoLoading(null) }
                         }}
                           style={{ background: esPagado ? '#f0fdf4' : '#fef2f2', color: esPagado ? '#16a34a' : '#dc2626', border:`1px solid ${esPagado ? '#bbf7d0' : '#fecaca'}`, borderRadius:6, padding:'4px 8px', fontSize:10, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', whiteSpace:'nowrap', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>

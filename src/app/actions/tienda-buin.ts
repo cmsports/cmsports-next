@@ -2,6 +2,9 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
+import type { Database } from '@/types/database'
+
+type TiendaBuinUpdate = Database['public']['Tables']['tienda_buin_productos']['Update']
 
 const BUCKET = 'galeria-fotos'
 
@@ -42,7 +45,7 @@ export async function crearProductoTienda(params: {
   const { error, admin, clubId } = await requireProfesor()
   if (error || !admin || !clubId) return { error }
 
-  const { data: prod, error: insertErr } = await (admin as any)
+  const { data: prod, error: insertErr } = await admin
     .from('tienda_buin_productos')
     .insert({
       club_id: clubId,
@@ -61,7 +64,7 @@ export async function crearProductoTienda(params: {
 
   if (params.base64) {
     const url = await subirImagen(admin, clubId, prod.id, params.base64)
-    if (url) await (admin as any).from('tienda_buin_productos').update({ imagen_url: url }).eq('id', prod.id)
+    if (url) await admin.from('tienda_buin_productos').update({ imagen_url: url }).eq('id', prod.id)
   }
 
   return { success: true }
@@ -80,7 +83,7 @@ export async function editarProductoTienda(params: {
   const { error, admin, clubId } = await requireProfesor()
   if (error || !admin || !clubId) return { error }
 
-  const updates: Record<string, unknown> = {
+  const updates: TiendaBuinUpdate = {
     nombre: params.nombre.trim(),
     descripcion: params.descripcion?.trim() || null,
     categoria: params.categoria,
@@ -94,7 +97,7 @@ export async function editarProductoTienda(params: {
     if (url) updates.imagen_url = url
   }
 
-  await (admin as any).from('tienda_buin_productos').update(updates).eq('id', params.id).eq('club_id', clubId)
+  await admin.from('tienda_buin_productos').update(updates).eq('id', params.id).eq('club_id', clubId)
   return { success: true }
 }
 
@@ -103,6 +106,6 @@ export async function eliminarProductoTienda(params: { id: string }) {
   if (error || !admin || !clubId) return { error }
 
   await admin.storage.from(BUCKET).remove([`tienda-buin/${clubId}/${params.id}`])
-  await (admin as any).from('tienda_buin_productos').delete().eq('id', params.id).eq('club_id', clubId)
+  await admin.from('tienda_buin_productos').delete().eq('id', params.id).eq('club_id', clubId)
   return { success: true }
 }

@@ -26,6 +26,12 @@ describe('registrarSolicitud', () => {
       p_rut: '12345678-9',
       p_email: 'jugador@example.com',
       p_telefono: '+56911111111',
+      p_fecha_nacimiento: null,
+      p_direccion: null,
+      p_comuna: null,
+      p_contacto_emergencia_nombre: null,
+      p_contacto_emergencia_telefono: null,
+      p_indicaciones_medicas: null,
     })
   })
 })

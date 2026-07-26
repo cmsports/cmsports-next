@@ -1463,7 +1463,7 @@ export async function actualizarEstadoPago(params: {
       fecha_pago: fechaPago,
       metodo_pago: metodoFinal,
     }).eq('id', existingRows[0].id)
-    if (error) return { error: 'No se pudo actualizar el pago' }
+    if (error) return { error: 'No se pudo actualizar el pago: ' + error.message }
   } else {
     const { error } = await supabase.from('torneo_pagos').insert({
       torneo_id: torneoId,
@@ -1472,7 +1472,7 @@ export async function actualizarEstadoPago(params: {
       metodo_pago: metodoFinal,
       fecha_pago: fechaPago,
     })
-    if (error) return { error: 'No se pudo registrar el pago' }
+    if (error) return { error: 'No se pudo registrar el pago: ' + error.message }
   }
 
   return { success: true }

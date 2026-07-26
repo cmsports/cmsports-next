@@ -143,7 +143,7 @@ export default function LibroProfePage() {
             <p style={{ fontSize: 15, color: '#64748b' }}>Aún no hay ningún libro subido.</p>
             {esAdmin && (
               <p style={{ fontSize: 13, color: '#94a3b8', marginTop: 6 }}>
-                Usa el botón "Subir PDF" para agregar el libro.
+                Usa el botón &quot;Subir PDF&quot; para agregar el libro.
               </p>
             )}
           </div>

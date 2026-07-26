@@ -230,6 +230,7 @@ export function TableroFecha({
 
   function abrirResultado(partido: PartidoBoard) {
     if (['finalizado', 'walkover'].includes(partido.estado)) return
+    // eslint-disable-next-line react-hooks/purity -- solo se invoca desde el onClick de la card (línea ~933), nunca durante el render
     modalAbiertoEn.current = Date.now()
     setPartidoResultado(partido); setSetsA('3'); setSetsB('0')
   }
