@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { requireAdminClub } from '@/lib/auth/require'
 import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
+import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
 
 type PlanFields = {
   categoria: string
@@ -214,18 +215,24 @@ export async function subirFotoJugador(params: { jugadorId: string; base64: stri
   if (!jug) return { error: 'Jugador no encontrado' }
 
   const buffer = Buffer.from(params.base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
-  const path = `avatares/${params.jugadorId}.jpg`
+  const path = rutaFotoJugador(clubId!, params.jugadorId)
   const admin = createAdminClient()
 
-  const { error: upErr } = await admin.storage.from('galeria-fotos').upload(path, buffer, { contentType: 'image/jpeg', upsert: true })
+  const { error: upErr } = await admin.storage.from(BUCKET_PRIVADO)
+    .upload(path, buffer, { contentType: 'image/jpeg', upsert: true })
   if (upErr) return { error: 'Error al subir imagen: ' + upErr.message }
 
-  const { data: { publicUrl } } = admin.storage.from('galeria-fotos').getPublicUrl(path)
-  const url = `${publicUrl}?t=${Date.now()}`
-
+  // Se limpia foto_url: la foto vieja vivía en el bucket público y su enlace
+  // seguiría funcionando para cualquiera que lo tuviera guardado.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('jugadores').update({ foto_url: url }).eq('id', params.jugadorId)
-  return { success: true, url }
+  await (supabase as any).from('jugadores')
+    .update({ foto_path: path, foto_url: null })
+    .eq('id', params.jugadorId)
+
+  await admin.storage.from('galeria-fotos').remove([`avatares/${params.jugadorId}.jpg`])
+
+  const { data: firmada } = await admin.storage.from(BUCKET_PRIVADO).createSignedUrl(path, 3600)
+  return { success: true, url: firmada?.signedUrl ?? null, path }
 }
 
 const TIPOS_DOC = ['derecho_formacion', 'carta_compromiso'] as const
@@ -278,34 +285,32 @@ export async function subirDocumentoJugador(params: {
   if (buffer.byteLength > 10 * 1024 * 1024) return { error: 'El archivo supera los 10 MB' }
 
   const admin = createAdminClient()
-  const path = `documentos/${clubId}/${params.jugadorId}/${params.tipo}.${ext}`
+  const path = rutaDocumentoJugador(clubId, params.jugadorId, params.tipo, ext)
 
   // Se borra la versión anterior: puede tener otra extensión y quedaría huérfana.
   const { data: previo } = await admin.from('jugador_documentos')
-    .select('archivo_url').eq('jugador_id', params.jugadorId).eq('tipo', params.tipo).maybeSingle()
-  if (previo?.archivo_url) {
-    const anterior = previo.archivo_url.split('/galeria-fotos/')[1]?.split('?')[0]
-    if (anterior && anterior !== path) await admin.storage.from('galeria-fotos').remove([anterior])
+    .select('archivo_path').eq('jugador_id', params.jugadorId).eq('tipo', params.tipo).maybeSingle()
+  if (previo?.archivo_path && previo.archivo_path !== path) {
+    await admin.storage.from(BUCKET_PRIVADO).remove([previo.archivo_path])
   }
 
-  const { error: upErr } = await admin.storage.from('galeria-fotos')
+  const { error: upErr } = await admin.storage.from(BUCKET_PRIVADO)
     .upload(path, buffer, { contentType: mime, upsert: true })
   if (upErr) return { error: 'Error al subir el archivo: ' + upErr.message }
-
-  const { data: { publicUrl } } = admin.storage.from('galeria-fotos').getPublicUrl(path)
-  const url = `${publicUrl}?t=${Date.now()}`
 
   const { error: dbErr } = await admin.from('jugador_documentos').upsert({
     club_id: clubId,
     jugador_id: params.jugadorId,
     tipo: params.tipo,
-    archivo_url: url,
+    archivo_path: path,
+    archivo_url: '',   // columna heredada del bucket público, ya no se usa
     nombre_archivo: params.nombreArchivo.slice(0, 200),
     subido_por: nombre,
   }, { onConflict: 'jugador_id,tipo' })
   if (dbErr) return { error: 'Error al registrar el documento: ' + dbErr.message }
 
-  return { success: true, url, nombreArchivo: params.nombreArchivo }
+  const { data: firmada } = await admin.storage.from(BUCKET_PRIVADO).createSignedUrl(path, 3600)
+  return { success: true, url: firmada?.signedUrl ?? null, path, nombreArchivo: params.nombreArchivo }
 }
 
 export async function eliminarDocumentoJugador(params: { jugadorId: string; tipo: TipoDocumento }) {
@@ -314,12 +319,9 @@ export async function eliminarDocumentoJugador(params: { jugadorId: string; tipo
 
   const admin = createAdminClient()
   const { data: doc } = await admin.from('jugador_documentos')
-    .select('archivo_url').eq('jugador_id', params.jugadorId).eq('tipo', params.tipo).maybeSingle()
+    .select('archivo_path').eq('jugador_id', params.jugadorId).eq('tipo', params.tipo).maybeSingle()
 
-  if (doc?.archivo_url) {
-    const path = doc.archivo_url.split('/galeria-fotos/')[1]?.split('?')[0]
-    if (path) await admin.storage.from('galeria-fotos').remove([path])
-  }
+  if (doc?.archivo_path) await admin.storage.from(BUCKET_PRIVADO).remove([doc.archivo_path])
   await admin.from('jugador_documentos').delete().eq('jugador_id', params.jugadorId).eq('tipo', params.tipo)
   return { success: true }
 }

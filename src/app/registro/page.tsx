@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useSearchParams } from 'next/navigation'
-import { formatRut } from '@/lib/rut'
+import { formatRut, rutValido } from '@/lib/rut'
 import { Suspense } from 'react'
 import { registrarSolicitud } from '@/app/actions/auth'
 
@@ -22,23 +22,46 @@ const hintStyle = { fontSize: 11, color: hint, marginTop: 4 }
 const hintErrStyle = { fontSize: 11, color: '#dc2626', marginTop: 4 }
 const section = { fontSize: 12, fontWeight: 700 as const, color: muted, textTransform: 'uppercase' as const, letterSpacing: '0.5px', margin: '20px 0 12px', paddingTop: 16, borderTop: '1px solid #f1f5f9' }
 
-// El club pidió que la solicitud llegue siempre completa: si el postulante no
-// tiene un dato escribe "no", así se distingue de un formulario a medio llenar.
+// La solicitud tiene que llegar completa y utilizable: el club no persigue
+// datos después. Estos campos exigen un valor real —no se acepta "no"—
+// porque sin ellos no se puede federar ni contactar a nadie en una urgencia.
 const CAMPOS_OBLIGATORIOS = [
   { key: 'nombres',                      label: 'Nombres' },
   { key: 'apellido1',                    label: 'Apellido paterno' },
-  { key: 'apellido2',                    label: 'Apellido materno' },
-  { key: 'apellido3',                    label: 'Tercer apellido' },
   { key: 'rut',                          label: 'RUT' },
   { key: 'email',                        label: 'Email' },
-  { key: 'telefono',                     label: 'Teléfono' },
   { key: 'fecha_nacimiento',             label: 'Fecha de nacimiento' },
   { key: 'direccion',                    label: 'Dirección' },
   { key: 'comuna',                       label: 'Comuna' },
   { key: 'contacto_emergencia_nombre',   label: 'Contacto de emergencia' },
   { key: 'contacto_emergencia_telefono', label: 'Teléfono de emergencia' },
-  { key: 'indicaciones_medicas',         label: 'Indicaciones médicas' },
 ] as const
+
+// Acá sí se acepta "no": hay gente con un solo apellido y niños sin celular.
+const CAMPOS_ACEPTAN_NO = [
+  { key: 'apellido2',            label: 'Apellido materno' },
+  { key: 'apellido3',            label: 'Tercer apellido' },
+  { key: 'telefono',             label: 'Teléfono' },
+  { key: 'indicaciones_medicas', label: 'Indicaciones médicas' },
+] as const
+
+const PALABRAS_VACIAS = ['no', 'n/a', 'na', 'ninguno', 'ninguna', 'sin', '-', '.', 'x']
+
+function pareceRelleno(valor: string): boolean {
+  return PALABRAS_VACIAS.includes(valor.trim().toLowerCase())
+}
+
+// Rango razonable: nadie se inscribe con 2 años ni con 105.
+function edadDesde(fecha: string): number | null {
+  if (!fecha) return null
+  const nac = new Date(fecha)
+  if (Number.isNaN(nac.getTime())) return null
+  const hoy = new Date()
+  let edad = hoy.getFullYear() - nac.getFullYear()
+  const m = hoy.getMonth() - nac.getMonth()
+  if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--
+  return edad
+}
 
 function RegistroForm() {
   const supabase = createClient()
@@ -61,12 +84,13 @@ function RegistroForm() {
   const [enviando, setEnviando] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
 
-  const rutValido = /^\d{7,8}-[\dkK]$/.test(form.rut)
+  const rutOk = rutValido(form.rut)
   const emailValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)
-  // Los teléfonos aceptan "no" porque el club exige llenar todos los campos.
-  const esNo = (v: string) => v.trim().toLowerCase() === 'no'
-  const telValido = esNo(form.telefono) || /^\+56\d{9}$/.test(form.telefono)
-  const telEmergValido = esNo(form.contacto_emergencia_telefono) || /^\+56\d{9}$/.test(form.contacto_emergencia_telefono)
+  // El teléfono propio puede no existir (niños); el de emergencia es obligatorio.
+  const telValido = pareceRelleno(form.telefono) || /^\+56\d{9}$/.test(form.telefono)
+  const telEmergValido = /^\+56\d{9}$/.test(form.contacto_emergencia_telefono)
+  const edad = edadDesde(form.fecha_nacimiento)
+  const edadValida = edad !== null && edad >= 3 && edad <= 100
   const nombreCompleto = [form.nombres, form.apellido1, form.apellido2, form.apellido3]
     .map(v => v.trim())
     .filter(v => v && v.toLowerCase() !== 'no')
@@ -101,16 +125,31 @@ function RegistroForm() {
     Object.keys(form).forEach(k => { allTouched[k] = true })
     setTouched(allTouched)
 
-    // Todos los campos son obligatorios: quien no tenga el dato escribe "no".
-    const faltantes = CAMPOS_OBLIGATORIOS.filter(c => !form[c.key].trim())
-    if (faltantes.length > 0) {
-      setError(`Falta completar: ${faltantes.map(c => c.label).join(', ')}. Si no tienes el dato, escribe "no".`)
+    const vacios = CAMPOS_OBLIGATORIOS.filter(c => !form[c.key].trim())
+    if (vacios.length > 0) {
+      setError(`Falta completar: ${vacios.map(c => c.label).join(', ')}.`)
       return
     }
-    if (!rutValido) { setError('El RUT debe tener formato 12345678-9 (sin puntos, con guión)'); return }
+    // Estos no admiten "no": sin ellos la inscripción no sirve.
+    const conRelleno = CAMPOS_OBLIGATORIOS.filter(c => pareceRelleno(form[c.key]))
+    if (conRelleno.length > 0) {
+      setError(`Estos datos son obligatorios y deben ser reales: ${conRelleno.map(c => c.label).join(', ')}.`)
+      return
+    }
+    const sinCompletar = CAMPOS_ACEPTAN_NO.filter(c => !form[c.key].trim())
+    if (sinCompletar.length > 0) {
+      setError(`Falta completar: ${sinCompletar.map(c => c.label).join(', ')}. Si no tienes el dato, escribe "no".`)
+      return
+    }
+    if (!rutOk) { setError('El RUT no es válido. Revisa el número y el dígito verificador.'); return }
     if (!emailValido) { setError('El email no es válido'); return }
-    if (!telValido) { setError('El teléfono debe tener formato +56912345678'); return }
-    if (!telEmergValido) { setError('El teléfono de emergencia debe tener formato +56912345678'); return }
+    if (!edadValida) { setError('Revisa la fecha de nacimiento: la edad debe estar entre 3 y 100 años'); return }
+    if (!telValido) { setError('El teléfono debe tener formato +56912345678, o escribe "no" si no tienes'); return }
+    if (!telEmergValido) { setError('El teléfono de emergencia es obligatorio y debe tener formato +56912345678'); return }
+    if (form.nombres.trim().length < 2 || form.apellido1.trim().length < 2) {
+      setError('Nombres y apellido paterno deben tener al menos 2 letras'); return
+    }
+    if (form.direccion.trim().length < 5) { setError('Escribe la dirección completa (calle y número)'); return }
     setEnviando(true)
     setError('')
     const result = await registrarSolicitud({
@@ -178,7 +217,8 @@ function RegistroForm() {
           )}
 
           <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#1d4ed8', marginBottom: 16, lineHeight: 1.5 }}>
-            Todos los campos son obligatorios. Si no tienes alguno de los datos, escribe <strong>no</strong>.
+            Todos los campos son obligatorios. Solo en <strong>apellido materno</strong>, <strong>tercer apellido</strong>,
+            <strong> teléfono</strong> e <strong>indicaciones médicas</strong> podés escribir <strong>no</strong> si no aplica.
           </div>
 
           {/* ── Datos personales ── */}
@@ -210,10 +250,12 @@ function RegistroForm() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
             <div>
               <label style={labelStyle}>RUT *</label>
-              <input style={touched.rut && !rutValido && form.rut ? inputErr : inputStyle}
+              <input style={touched.rut && !rutOk && form.rut ? inputErr : inputStyle}
                 type="text" placeholder="12345678-9"
                 value={form.rut} onChange={e => set('rut', formatRut(e.target.value))} onBlur={() => blur('rut')} />
-              <div style={touched.rut && !rutValido && form.rut ? hintErrStyle : hintStyle}>Sin puntos, con guión</div>
+              <div style={touched.rut && !rutOk && form.rut ? hintErrStyle : hintStyle}>
+                {touched.rut && !rutOk && form.rut ? 'RUT inválido — revisa el dígito verificador' : 'Sin puntos, con guión'}
+              </div>
             </div>
             <div>
               <label style={labelStyle}>Fecha de nacimiento *</label>
@@ -263,10 +305,13 @@ function RegistroForm() {
             <div>
               <label style={labelStyle}>Teléfono *</label>
               <input style={touched.contacto_emergencia_telefono && !telEmergValido ? inputErr : inputStyle}
-                type="tel" placeholder='+56912345678 o "no"'
+                type="tel" placeholder="+56912345678"
                 value={form.contacto_emergencia_telefono}
                 onChange={e => set('contacto_emergencia_telefono', e.target.value)}
                 onBlur={() => blur('contacto_emergencia_telefono')} />
+              <div style={touched.contacto_emergencia_telefono && !telEmergValido ? hintErrStyle : hintStyle}>
+                Obligatorio — es el contacto ante una urgencia
+              </div>
             </div>
           </div>
 

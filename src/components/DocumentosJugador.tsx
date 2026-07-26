@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { FileText, Upload, Download, Trash2 } from 'lucide-react'
 import { subirDocumentoJugador, eliminarDocumentoJugador, type TipoDocumento } from '@/app/actions/jugadores'
+import { firmarUrls } from '@/lib/supabase/privado'
 
 const DOCS: { tipo: TipoDocumento; label: string; icono: string }[] = [
   { tipo: 'derecho_formacion', label: 'Derecho de formación', icono: '📄' },
@@ -12,7 +13,7 @@ const DOCS: { tipo: TipoDocumento; label: string; icono: string }[] = [
 
 const ACEPTA = '.pdf,.doc,.docx,image/*'
 
-type Doc = { tipo: string; archivo_url: string; nombre_archivo: string | null; subido_por: string | null; creado_en: string }
+type Doc = { tipo: string; archivo_url: string | null; archivo_path: string | null; nombre_archivo: string | null; subido_por: string | null; creado_en: string }
 
 export default function DocumentosJugador({ jugadorId, puedeEditar }: {
   jugadorId: string
@@ -20,6 +21,7 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
   puedeEditar: boolean
 }) {
   const [docs, setDocs]         = useState<Record<string, Doc>>({})
+  const [urls, setUrls]         = useState<Record<string, string>>({})
   const [cargando, setCargando] = useState(true)
   const [subiendo, setSubiendo] = useState<string | null>(null)
   const [error, setError]       = useState('')
@@ -27,18 +29,29 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
 
   useEffect(() => {
     let activo = true
-    createClient().from('jugador_documentos')
-      .select('tipo,archivo_url,nombre_archivo,subido_por,creado_en')
-      .eq('jugador_id', jugadorId)
-      .then(({ data }) => {
-        if (!activo) return
-        const mapa: Record<string, Doc> = {}
-        for (const d of (data as Doc[]) || []) mapa[d.tipo] = d
-        setDocs(mapa)
-        setCargando(false)
-      })
+    async function cargar() {
+      const { data } = await createClient().from('jugador_documentos')
+        .select('tipo,archivo_url,archivo_path,nombre_archivo,subido_por,creado_en')
+        .eq('jugador_id', jugadorId)
+      if (!activo) return
+
+      const filas = (data as Doc[]) || []
+      // Los archivos viven en el bucket privado: el enlace se firma acá y vence.
+      const firmadas = await firmarUrls(filas.map(d => d.archivo_path))
+      if (!activo) return
+
+      const mapa: Record<string, Doc> = {}
+      for (const d of filas) mapa[d.tipo] = d
+      setDocs(mapa)
+      setUrls(firmadas)
+      setCargando(false)
+    }
+    void cargar()
     return () => { activo = false }
   }, [jugadorId])
+
+  // Enlace vigente del documento (firmado ahora, o el legado del bucket público).
+  const enlaceDe = (d: Doc) => (d.archivo_path ? urls[d.archivo_path] : d.archivo_url) || null
 
   async function onArchivo(tipo: TipoDocumento, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -59,8 +72,9 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
       if (res.error) { setError(String(res.error)); return }
       setDocs(prev => ({
         ...prev,
-        [tipo]: { tipo, archivo_url: res.url!, nombre_archivo: file.name, subido_por: null, creado_en: new Date().toISOString() },
+        [tipo]: { tipo, archivo_url: null, archivo_path: res.path ?? null, nombre_archivo: file.name, subido_por: null, creado_en: new Date().toISOString() },
       }))
+      if (res.path && res.url) setUrls(prev => ({ ...prev, [res.path!]: res.url! }))
     }
     reader.onerror = () => { setSubiendo(null); setError('No se pudo leer el archivo') }
     reader.readAsDataURL(file)
@@ -115,10 +129,10 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
                   )}
                   <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
                     <a
-                      href={doc.archivo_url}
+                      href={enlaceDe(doc) ?? undefined}
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: '#fff', border: '1px solid #bbf7d0', borderRadius: 7, padding: '6px 8px', fontSize: 11, fontWeight: 600, color: '#16a34a', textDecoration: 'none' }}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: '#fff', border: '1px solid #bbf7d0', borderRadius: 7, padding: '6px 8px', fontSize: 11, fontWeight: 600, color: '#16a34a', textDecoration: 'none', opacity: enlaceDe(doc) ? 1 : 0.5, pointerEvents: enlaceDe(doc) ? 'auto' : 'none' }}
                     >
                       <Download size={12} /> Ver / descargar
                     </a>

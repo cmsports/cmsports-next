@@ -11,6 +11,7 @@ import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import DocumentosJugador from '@/components/DocumentosJugador'
+import { firmarUrl } from '@/lib/supabase/privado'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 
@@ -140,7 +141,7 @@ export default function JugadorDetallePage() {
 
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado').eq('id', jugadorId).single(),
+          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
@@ -192,6 +193,18 @@ export default function JugadorDetallePage() {
   }, [jugadorId, perfil?.club_id, perfil?.id, perfil?.rol])
 
   const esClubBuin = /bu[ií]n/i.test(clubNombre)
+
+  // La foto está en el bucket privado: su enlace se firma y vence solo.
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let activo = true
+    if (jugador?.foto_path) {
+      void firmarUrl(jugador.foto_path).then(u => { if (activo) setFotoUrl(u) })
+    } else {
+      setFotoUrl(jugador?.foto_url ?? null)
+    }
+    return () => { activo = false }
+  }, [jugador?.foto_path, jugador?.foto_url])
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'
   const puedeVerTodo = esAdmin || esProfesor
@@ -509,7 +522,8 @@ export default function JugadorDetallePage() {
         const base64 = e.target?.result as string
         const res = await subirFotoJugador({ jugadorId, base64 })
         if (res.error) { alert('Error subiendo foto: ' + res.error); setSubiendoFoto(false); return }
-        setJugador((prev: any) => ({ ...prev, foto_url: res.url }))
+        setJugador((prev: any) => ({ ...prev, foto_path: res.path, foto_url: null }))
+        if (res.url) setFotoUrl(res.url)
         setModalFoto(false)
         setFotoSrc(null)
         setSubiendoFoto(false)
@@ -753,8 +767,8 @@ export default function JugadorDetallePage() {
             title={esAdmin ? 'Cambiar foto' : undefined}
             style={{ width:60, height:60, borderRadius:'50%', background:'rgba(255,255,255,0.2)', border:'2px solid rgba(255,255,255,0.3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800, color:'white', flexShrink:0, overflow:'hidden', cursor: esAdmin ? 'pointer' : 'default', position:'relative' }}
           >
-            {jugador.foto_url
-              ? <img src={jugador.foto_url} alt="foto" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} />
+            {fotoUrl
+              ? <img src={fotoUrl} alt="foto" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:'50%' }} />
               : iniciales}
             {esAdmin && (
               <div style={{ position:'absolute', inset:0, background:'rgba(0,0,0,0)', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%', transition:'background 0.15s' }}

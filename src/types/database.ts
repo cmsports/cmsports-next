@@ -176,6 +176,7 @@ export interface Database {
           sesiones_limite: number | null
           estado: string | null
           foto_url: string | null
+          foto_path: string | null
           creado_en: string | null
           es_externo: boolean | null
           mensualidad: number | null
@@ -209,6 +210,7 @@ export interface Database {
           sesiones_limite?: number | null
           estado?: string | null
           foto_url?: string | null
+          foto_path?: string | null
           creado_en?: string | null
           es_externo?: boolean | null
           mensualidad?: number | null
@@ -242,6 +244,7 @@ export interface Database {
           sesiones_limite?: number | null
           estado?: string | null
           foto_url?: string | null
+          foto_path?: string | null
           creado_en?: string | null
           es_externo?: boolean | null
           mensualidad?: number | null
@@ -1676,6 +1679,7 @@ export interface Database {
           jugador_id: string
           tipo: string
           archivo_url: string
+          archivo_path: string | null
           nombre_archivo: string | null
           subido_por: string | null
           creado_en: string
@@ -1685,7 +1689,8 @@ export interface Database {
           club_id: string
           jugador_id: string
           tipo: string
-          archivo_url: string
+          archivo_url?: string
+          archivo_path?: string | null
           nombre_archivo?: string | null
           subido_por?: string | null
           creado_en?: string
@@ -1696,6 +1701,7 @@ export interface Database {
           jugador_id?: string
           tipo?: string
           archivo_url?: string
+          archivo_path?: string | null
           nombre_archivo?: string | null
           subido_por?: string | null
           creado_en?: string

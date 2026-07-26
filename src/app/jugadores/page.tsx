@@ -12,6 +12,7 @@ import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actu
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel, entrenaEnSede } from '@/lib/domain/sedeGrupo'
+import { firmarUrls } from '@/lib/supabase/privado'
 
 const supabase = createClient()
 
@@ -138,6 +139,7 @@ export default function JugadoresPage() {
   const [edadMin, setEdadMin]                   = useState(() => searchParams.get('edadMin') || '')
   const [edadMax, setEdadMax]                   = useState(() => searchParams.get('edadMax') || '')
   const [asistenciaHoy, setAsistenciaHoy]       = useState<Set<string>>(new Set())
+  const [fotosFirmadas, setFotosFirmadas]       = useState<Record<string, string>>({})
   const [estadoPago, setEstadoPago]             = useState<Record<string, string>>({})
   const [editandoMensualidadId, setEditandoMensualidadId] = useState<string | null>(null)
   const [mensualidadTemp, setMensualidadTemp] = useState('')
@@ -165,7 +167,7 @@ export default function JugadoresPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
         .eq('club_id', id)
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
@@ -202,7 +204,7 @@ export default function JugadoresPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
@@ -236,6 +238,15 @@ export default function JugadoresPage() {
       .subscribe()
     return () => { void supabase.removeChannel(canal) }
   }, [cargarJugadores, clubId])
+
+  // Las fotos viven en el bucket privado: se firman todas juntas, no una por una.
+  useEffect(() => {
+    if (jugadores.length === 0) return
+    let activo = true
+    void firmarUrls(jugadores.map(j => j.foto_path))
+      .then(mapa => { if (activo) setFotosFirmadas(mapa) })
+    return () => { activo = false }
+  }, [jugadores])
 
   useEffect(() => {
     if (!clubId) return
@@ -635,9 +646,12 @@ export default function JugadoresPage() {
                     <td style={{ padding:'8px 16px' }}>
                       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
                         <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg,#3730a3,#4f46e5)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'white', overflow:'hidden', flexShrink:0 }}>
-                          {j.foto_url
-                            ? <img src={j.foto_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                            : j.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()}
+                          {(() => {
+                            const foto = (j.foto_path ? fotosFirmadas[j.foto_path] : j.foto_url) || null
+                            return foto
+                              ? <img src={foto} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                              : j.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()
+                          })()}
                         </div>
                         <span style={{ fontSize:10, color: hint }}>{String(i+1).padStart(3,'0')}</span>
                       </div>
