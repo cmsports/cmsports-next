@@ -8,10 +8,10 @@ export type Modulo =
   | 'torneos' | 'liga' | 'clases' | 'calendario'
   | 'asistencia' | 'mensualidades' | 'finanzas'
   | 'tienda'
-  | 'tienda_buin' | 'bibliografia' | 'libro_profe'
+  | 'tienda_buin' | 'tienda_asociacion' | 'bibliografia' | 'libro_profe'
 
 const CORE: readonly string[] = ['dashboard', 'jugadores']
-const ALL_MODULOS: Modulo[] = ['torneos','liga','clases','calendario','asistencia','mensualidades','finanzas','tienda','tienda_buin','bibliografia','libro_profe']
+const ALL_MODULOS: Modulo[] = ['torneos','liga','clases','calendario','asistencia','mensualidades','finanzas','tienda','tienda_buin','tienda_asociacion','bibliografia','libro_profe']
 
 type ModulosContextValue = {
   modulos: string[]

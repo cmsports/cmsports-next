@@ -6,7 +6,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { Pencil, Trash2, Plus, X } from 'lucide-react'
-import { crearProductoTiendaAsociacion, editarProductoTiendaAsociacion, eliminarProductoTiendaAsociacion } from '@/app/actions/tienda-asociacion'
+import { crearProductoTienda, editarProductoTienda, eliminarProductoTienda } from '@/app/actions/tienda-profe'
 
 const WA = '56968342721'
 
@@ -45,7 +45,7 @@ const FORM_VACIO = {
 const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
 const msgWA = (nombre: string, precio: number | null) =>
-  `Hola! Quiero consultar disponibilidad de: ${nombre}${precio ? ` — ${fmt(precio)}` : ''}`
+  `Hola Rodrigo! Quiero consultar disponibilidad de: ${nombre}${precio ? ` — ${fmt(precio)}` : ''}`
 
 const inputStyle: CSSProperties = {
   width: '100%', boxSizing: 'border-box',
@@ -56,7 +56,7 @@ const labelStyle: CSSProperties = {
   fontSize: 12, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4,
 }
 
-export default function TiendaBuinPage() {
+export default function TiendaProfePage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [productos, setProductos]       = useState<Producto[]>([])
   const [cargando, setCargando]         = useState(false)
@@ -74,7 +74,7 @@ export default function TiendaBuinPage() {
     setCargando(true)
     try {
       const { data } = await createClient()
-        .from('tienda_asociacion_productos')
+        .from('tienda_buin_productos')
         .select('id,nombre,descripcion,categoria,color,stock,precio,imagen_url')
         .eq('club_id', clubId)
         .order('categoria').order('nombre')
@@ -131,8 +131,8 @@ export default function TiendaBuinPage() {
 
     const precio = form.precio ? parseInt(form.precio) : null
     const res = modal === 'nuevo'
-      ? await crearProductoTiendaAsociacion({ nombre: form.nombre, descripcion: form.descripcion, categoria: form.categoria, color: form.color, stock: stockNum, precio, base64: form.base64 })
-      : await editarProductoTiendaAsociacion({ id: (modal as Producto).id, nombre: form.nombre, descripcion: form.descripcion, categoria: form.categoria, color: form.color, stock: stockNum, precio, base64: form.base64 })
+      ? await crearProductoTienda({ nombre: form.nombre, descripcion: form.descripcion, categoria: form.categoria, color: form.color, stock: stockNum, precio, base64: form.base64 })
+      : await editarProductoTienda({ id: (modal as Producto).id, nombre: form.nombre, descripcion: form.descripcion, categoria: form.categoria, color: form.color, stock: stockNum, precio, base64: form.base64 })
 
     setGuardando(false)
     if (res?.error) { setErrorForm(String(res.error)); return }
@@ -143,7 +143,7 @@ export default function TiendaBuinPage() {
   async function eliminar(id: string) {
     if (!confirm('¿Eliminar este producto?')) return
     setEliminandoId(id)
-    await eliminarProductoTiendaAsociacion({ id })
+    await eliminarProductoTienda({ id })
     setEliminandoId(null)
     if (perfil?.club_id) cargar(perfil.club_id)
   }
@@ -166,7 +166,7 @@ export default function TiendaBuinPage() {
         {/* Header */}
         <div style={{ background: '#152a4a', borderRadius: 12, padding: '18px 20px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ color: '#fff', fontSize: 20, fontWeight: 800, letterSpacing: 0.5 }}>TIENDA BUIN</div>
+            <div style={{ color: '#fff', fontSize: 20, fontWeight: 800, letterSpacing: 0.5 }}>CATÁLOGO TENIS DE MESA</div>
             <div style={{ color: '#94b8d8', fontSize: 11, fontWeight: 600, letterSpacing: 1, marginTop: 3, textTransform: 'uppercase' }}>
               {productos.length} producto{productos.length !== 1 ? 's' : ''} disponibles
             </div>
@@ -280,7 +280,7 @@ export default function TiendaBuinPage() {
                       style={{ flexDirection: 'column', gap: 2, borderRadius: 6, padding: '8px 10px' }}
                     >
                       {p.precio && <span style={{ fontWeight: 800, fontSize: 15 }}>{fmt(p.precio)}</span>}
-                      <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.9 }}>Consultar</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.9 }}>Consultar al profe</span>
                     </WhatsAppBtn>
                   ) : p.precio ? (
                     <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#94a3b8' }}>{fmt(p.precio)}</div>
@@ -293,7 +293,9 @@ export default function TiendaBuinPage() {
 
         {/* Footer */}
         <div style={{ background: '#152a4a', borderRadius: 12, padding: '16px 20px', textAlign: 'center', color: '#fff', marginBottom: 20 }}>
-          <div style={{ fontSize: 10, color: '#94b8d8', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Coordinar compra</div>
+          <div style={{ fontSize: 10, color: '#94b8d8', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Coordinar compra con profesor</div>
+          <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 0.5, marginBottom: 2 }}>RODRIGO SALAZAR</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#5ba3d9', marginBottom: 10 }}>+56 9 6834 2721</div>
           <WhatsAppBtn href={`https://wa.me/${WA}`} style={{ borderRadius: 8, fontSize: 13, padding: '10px 20px' }}>
             Coordinar por WhatsApp
           </WhatsAppBtn>

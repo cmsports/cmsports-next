@@ -35,7 +35,8 @@ const navAdmin = [
   { label: 'Vouchers',          icon: Tag,            href: '/vouchers' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',            modulo: 'tienda' },
   { section: 'Recursos' },
-  { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_buin' },
+  { label: 'Tienda del profe', icon: Store,        href: '/tienda-profe',   modulo: 'tienda_buin' },
+  { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_asociacion' },
   { label: 'Bibliografía TDM', icon: Library,       href: '/bibliografia-tdm', modulo: 'bibliografia' },
   { label: 'Libro del profe', icon: BookLock,       href: '/libro-profe',    modulo: 'libro_profe' },
 ]
@@ -55,7 +56,8 @@ const navProfesor = [
   { section: 'Tienda' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
   { section: 'Recursos' },
-  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',    modulo: 'tienda_buin' },
+  { label: 'Tienda del profe', icon: Store,    href: '/tienda-profe',   modulo: 'tienda_buin' },
+  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',    modulo: 'tienda_asociacion' },
   { label: 'Bibliografía TDM', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
   { label: 'Libro del profe', icon: BookLock,   href: '/libro-profe',    modulo: 'libro_profe' },
 ]
@@ -75,7 +77,8 @@ const navJugador = [
   { section: 'Tienda' },
   { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
   { section: 'Recursos' },
-  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',      modulo: 'tienda_buin' },
+  { label: 'Tienda del profe', icon: Store,    href: '/tienda-profe',     modulo: 'tienda_buin' },
+  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',      modulo: 'tienda_asociacion' },
   { label: 'Bibliografía TDM', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
 ]
 
