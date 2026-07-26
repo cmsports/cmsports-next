@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
@@ -10,6 +10,7 @@ import InasistenciasPanel from '@/components/InasistenciasPanel'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actualizarMensualidad } from '@/app/actions/jugadores'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -27,14 +28,86 @@ const badgeCategoria: Record<string, { bg: string; color: string }> = {
 const categorias = ['principiante', 'intermedio', 'avanzado']
 const jugadoresCache: Record<string, any[]> = {}
 
+function calcularEdad(fechaNacimiento: string | null | undefined): number | null {
+  if (!fechaNacimiento) return null
+  const anio = parseInt(fechaNacimiento.slice(0, 4))
+  if (Number.isNaN(anio)) return null
+  return new Date().getFullYear() - anio
+}
+
+function setToggle(set: Set<string>, valor: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(valor)) next.delete(valor)
+  else next.add(valor)
+  return next
+}
+
+function setDesdeParam(searchParams: URLSearchParams, key: string): Set<string> {
+  const raw = searchParams.get(key)
+  return raw ? new Set(raw.split(',').filter(Boolean)) : new Set()
+}
+
+function FiltroMultiSelect({ label, options, selected, onChange, colorActivo }: {
+  label: string
+  options: { value: string; label: string }[]
+  selected: Set<string>
+  onChange: (next: Set<string>) => void
+  colorActivo?: { bg: string; border: string; text: string }
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const activo = selected.size > 0
+  const c = colorActivo || { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' }
+
+  useEffect(() => {
+    if (!open) return
+    const onClickFuera = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClickFuera)
+    return () => document.removeEventListener('mousedown', onClickFuera)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position:'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        style={{ background: activo ? c.bg : '#f4f7fa', border: `1px solid ${activo ? c.border : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, color: activo ? c.text : hint, outline:'none', cursor:'pointer', fontWeight: activo ? 600 : 400, whiteSpace:'nowrap' }}
+      >
+        {activo ? `${label} (${selected.size})` : label} ⌄
+      </button>
+      {open && (
+        <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:20, background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, boxShadow:'0 8px 24px rgba(15,23,42,0.12)', padding:8, minWidth:180, maxHeight:280, overflowY:'auto' }}>
+          {activo && (
+            <div
+              onClick={() => onChange(new Set())}
+              style={{ padding:'6px 8px', fontSize:12, color:'#dc2626', cursor:'pointer', borderBottom:'1px solid #f1f5f9', marginBottom:4 }}
+            >
+              Limpiar
+            </div>
+          )}
+          {options.map(o => (
+            <label key={o.value} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 8px', fontSize:13, color: text, cursor:'pointer', borderRadius:6 }}>
+              <input type="checkbox" checked={selected.has(o.value)} onChange={() => onChange(setToggle(selected, o.value))} />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function JugadoresPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [busqueda, setBusqueda] = useState('')
-  const [filtroCat, setFiltroCat] = useState('')
-  const [filtroEstado, setFiltroEstado] = useState('')
-  const [orden, setOrden] = useState<'az'|'za'>('az')
+  const searchParams = useSearchParams()
+  const [busqueda, setBusqueda] = useState(() => searchParams.get('q') || '')
+  const [filtroCat, setFiltroCat] = useState<Set<string>>(() => setDesdeParam(searchParams, 'cat'))
+  const [filtroEstado, setFiltroEstado] = useState<Set<string>>(() => setDesdeParam(searchParams, 'estado'))
+  const [orden, setOrden] = useState<'az'|'za'>(() => (searchParams.get('orden') === 'za' ? 'za' : 'az'))
   const [modalOpen, setModalOpen] = useState(false)
   const [editando, setEditando] = useState<any>(null)
   const formVacio = {
@@ -51,13 +124,17 @@ export default function JugadoresPage() {
   const esClubBuin = /bu[ií]n/i.test(clubNombre)
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
-  const searchParams = useSearchParams()
   const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia' : searchParams.get('tab') === 'inasistencias' ? 'inasistencias' : 'jugadores'
   const [tabJug, setTabJug] = useState<'jugadores'|'asistencia'|'inasistencias'>(tabInicial)
-  const [filtroSinHorario, setFiltroSinHorario] = useState(false)
-  const [filtroDia, setFiltroDia]               = useState('')
-  const [filtroFederado, setFiltroFederado]     = useState('')
-  const [filtroPago, setFiltroPago]             = useState('')
+  const [filtroSinHorario, setFiltroSinHorario] = useState(() => searchParams.get('sinhorario') === '1')
+  const [filtroDia, setFiltroDia]               = useState<Set<string>>(() => setDesdeParam(searchParams, 'dia'))
+  const [filtroFederado, setFiltroFederado]     = useState<Set<string>>(() => setDesdeParam(searchParams, 'federado'))
+  const [filtroPago, setFiltroPago]             = useState<Set<string>>(() => setDesdeParam(searchParams, 'pago'))
+  const [filtroHorario, setFiltroHorario]       = useState<Set<string>>(() => setDesdeParam(searchParams, 'horario'))
+  const [filtroPresente, setFiltroPresente]     = useState<Set<string>>(() => setDesdeParam(searchParams, 'presente'))
+  const [edadMin, setEdadMin]                   = useState(() => searchParams.get('edadMin') || '')
+  const [edadMax, setEdadMax]                   = useState(() => searchParams.get('edadMax') || '')
+  const [asistenciaHoy, setAsistenciaHoy]       = useState<Set<string>>(new Set())
   const [estadoPago, setEstadoPago]             = useState<Record<string, string>>({})
   const [editandoMensualidadId, setEditandoMensualidadId] = useState<string | null>(null)
   const [mensualidadTemp, setMensualidadTemp] = useState('')
@@ -156,6 +233,34 @@ export default function JugadoresPage() {
       .subscribe()
     return () => { void supabase.removeChannel(canal) }
   }, [cargarJugadores, clubId])
+
+  useEffect(() => {
+    if (!clubId) return
+    let activo = true
+    supabase.from('asistencia').select('jugador_id').eq('club_id', clubId).eq('fecha', fechaChile())
+      .then(({ data }) => { if (activo) setAsistenciaHoy(new Set((data || []).map((a: any) => a.jugador_id))) })
+    return () => { activo = false }
+  }, [clubId])
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (tabJug !== 'jugadores') params.set('tab', tabJug)
+    if (busqueda) params.set('q', busqueda)
+    if (filtroCat.size) params.set('cat', [...filtroCat].join(','))
+    if (filtroEstado.size) params.set('estado', [...filtroEstado].join(','))
+    if (filtroDia.size) params.set('dia', [...filtroDia].join(','))
+    if (filtroFederado.size) params.set('federado', [...filtroFederado].join(','))
+    if (filtroPago.size) params.set('pago', [...filtroPago].join(','))
+    if (filtroHorario.size) params.set('horario', [...filtroHorario].join(','))
+    if (filtroPresente.size) params.set('presente', [...filtroPresente].join(','))
+    if (filtroSinHorario) params.set('sinhorario', '1')
+    if (edadMin) params.set('edadMin', edadMin)
+    if (edadMax) params.set('edadMax', edadMax)
+    if (orden !== 'az') params.set('orden', orden)
+    const qs = params.toString()
+    router.replace(qs ? `/jugadores?${qs}` : '/jugadores', { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabJug, busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroPago, filtroHorario, filtroPresente, filtroSinHorario, edadMin, edadMax, orden])
 
   function mostrarToast(msg: string) {
     setToast(msg)
@@ -274,18 +379,43 @@ export default function JugadoresPage() {
 
   const filtrados = jugadores
     .filter(j => !busqueda || j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) || j.rut?.includes(busqueda))
-    .filter(j => !filtroCat || j.categoria === filtroCat)
-    .filter(j => !filtroEstado || j.estado === filtroEstado)
+    .filter(j => filtroCat.size === 0 || filtroCat.has(j.categoria))
+    .filter(j => filtroEstado.size === 0 || filtroEstado.has(j.estado))
     .filter(j => !filtroSinHorario || sinHorario(j))
-    .filter(j => !filtroDia || j[`entrena_${filtroDia}`] === true)
-    .filter(j => filtroFederado === '' ? true : filtroFederado === 'si' ? j.federado === true : !j.federado)
-    .filter(j => !filtroPago || estadoPago[j.id] === filtroPago)
+    .filter(j => filtroDia.size === 0 || [...filtroDia].some(d => j[`entrena_${d}`] === true))
+    .filter(j => filtroFederado.size === 0 || (filtroFederado.has('si') && j.federado === true) || (filtroFederado.has('no') && !j.federado))
+    .filter(j => filtroPago.size === 0 || filtroPago.has(estadoPago[j.id] || ''))
+    .filter(j => filtroHorario.size === 0 || filtroHorario.has(j.horario || ''))
+    .filter(j => filtroPresente.size === 0 || (filtroPresente.has('presente') && asistenciaHoy.has(j.id)) || (filtroPresente.has('ausente') && !asistenciaHoy.has(j.id)))
+    .filter(j => {
+      if (!edadMin && !edadMax) return true
+      const edad = calcularEdad(j.fecha_nacimiento)
+      if (edad === null) return false
+      if (edadMin && edad < parseInt(edadMin)) return false
+      if (edadMax && edad > parseInt(edadMax)) return false
+      return true
+    })
     .sort((a, b) => orden === 'az'
       ? (a.nombre || '').localeCompare(b.nombre || '', 'es')
       : (b.nombre || '').localeCompare(a.nombre || '', 'es'))
 
   const categorias = [...new Set(jugadores.map(j => j.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+  const horarios = [...new Set(jugadores.map(j => j.horario).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   const esAdmin = perfil?.rol === 'admin'
+
+  const diaLabel: Record<string, string> = { lun:'Lunes', mar:'Martes', mie:'Miércoles', jue:'Jueves', vie:'Viernes' }
+  const chipsActivos: { key: string; label: string; onRemove: () => void }[] = [
+    ...(busqueda ? [{ key:'q', label:`"${busqueda}"`, onRemove: () => setBusqueda('') }] : []),
+    ...[...filtroCat].map(c => ({ key:`cat-${c}`, label:c, onRemove: () => setFiltroCat(prev => setToggle(prev, c)) })),
+    ...[...filtroEstado].map(v => ({ key:`estado-${v}`, label: v === 'activo' ? 'Activo' : 'Bloqueado', onRemove: () => setFiltroEstado(prev => setToggle(prev, v)) })),
+    ...(filtroSinHorario ? [{ key:'sinhorario', label:'Sin horario', onRemove: () => setFiltroSinHorario(false) }] : []),
+    ...[...filtroDia].map(d => ({ key:`dia-${d}`, label: diaLabel[d] || d, onRemove: () => setFiltroDia(prev => setToggle(prev, d)) })),
+    ...[...filtroFederado].map(v => ({ key:`fed-${v}`, label: v === 'si' ? 'Federado' : 'No federado', onRemove: () => setFiltroFederado(prev => setToggle(prev, v)) })),
+    ...[...filtroPago].map(v => ({ key:`pago-${v}`, label: v === 'pagado' ? 'Al día' : v === 'pendiente' ? 'Pendiente' : 'Atrasado', onRemove: () => setFiltroPago(prev => setToggle(prev, v)) })),
+    ...[...filtroHorario].map(h => ({ key:`horario-${h}`, label:h, onRemove: () => setFiltroHorario(prev => setToggle(prev, h)) })),
+    ...[...filtroPresente].map(v => ({ key:`presente-${v}`, label: v === 'presente' ? 'Presente hoy' : 'Ausente hoy', onRemove: () => setFiltroPresente(prev => setToggle(prev, v)) })),
+    ...((edadMin || edadMax) ? [{ key:'edad', label:`Edad ${edadMin || '0'}–${edadMax || '∞'}`, onRemove: () => { setEdadMin(''); setEdadMax('') } }] : []),
+  ]
 
   if (loading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
@@ -339,24 +469,19 @@ export default function JugadoresPage() {
         />
         {/* Filtros */}
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-          <select
-            value={filtroCat}
-            onChange={e => setFiltroCat(e.target.value)}
-            style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroCat ? text : hint, outline:'none', cursor:'pointer' }}
-          >
-            <option value="">Todas las categorías</option>
-            {categorias.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <FiltroMultiSelect
+            label="Todas las categorías"
+            options={categorias.map(c => ({ value:c, label:c }))}
+            selected={filtroCat}
+            onChange={setFiltroCat}
+          />
 
-          <select
-            value={filtroEstado}
-            onChange={e => setFiltroEstado(e.target.value)}
-            style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroEstado ? text : hint, outline:'none', cursor:'pointer' }}
-          >
-            <option value="">Todos los estados</option>
-            <option value="activo">Activo</option>
-            <option value="bloqueado">Bloqueado</option>
-          </select>
+          <FiltroMultiSelect
+            label="Todos los estados"
+            options={[{ value:'activo', label:'Activo' }, { value:'bloqueado', label:'Bloqueado' }]}
+            selected={filtroEstado}
+            onChange={setFiltroEstado}
+          />
 
           <button
             onClick={() => setOrden(o => o === 'az' ? 'za' : 'az')}
@@ -372,9 +497,13 @@ export default function JugadoresPage() {
             Sin horario {sinHorarioCount > 0 && `(${sinHorarioCount})`}
           </button>
 
-          {(busqueda || filtroCat || filtroEstado || filtroSinHorario || filtroDia || filtroFederado || filtroPago) && (
+          {chipsActivos.length > 0 && (
             <button
-              onClick={() => { setBusqueda(''); setFiltroCat(''); setFiltroEstado(''); setFiltroSinHorario(false); setFiltroDia(''); setFiltroFederado(''); setFiltroPago('') }}
+              onClick={() => {
+                setBusqueda(''); setFiltroCat(new Set()); setFiltroEstado(new Set()); setFiltroSinHorario(false)
+                setFiltroDia(new Set()); setFiltroFederado(new Set()); setFiltroPago(new Set())
+                setFiltroHorario(new Set()); setFiltroPresente(new Set()); setEdadMin(''); setEdadMax('')
+              }}
               style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'7px 12px', fontSize:13, color:'#dc2626', cursor:'pointer', whiteSpace:'nowrap' }}
             >
               Limpiar filtros
@@ -388,40 +517,76 @@ export default function JugadoresPage() {
 
         {/* Fila 2: filtros avanzados */}
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
-          <select
-            value={filtroDia}
-            onChange={e => setFiltroDia(e.target.value)}
-            style={{ background: filtroDia ? '#eff6ff' : '#f4f7fa', border: `1px solid ${filtroDia ? '#bfdbfe' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroDia ? '#1d4ed8' : hint, outline:'none', cursor:'pointer', fontWeight: filtroDia ? 600 : 400 }}
-          >
-            <option value="">Día de entrenamiento</option>
-            <option value="lun">Lunes</option>
-            <option value="mar">Martes</option>
-            <option value="mie">Miércoles</option>
-            <option value="jue">Jueves</option>
-            <option value="vie">Viernes</option>
-          </select>
+          <FiltroMultiSelect
+            label="Día de entrenamiento"
+            options={[{ value:'lun',label:'Lunes' },{ value:'mar',label:'Martes' },{ value:'mie',label:'Miércoles' },{ value:'jue',label:'Jueves' },{ value:'vie',label:'Viernes' }]}
+            selected={filtroDia}
+            onChange={setFiltroDia}
+          />
 
-          <select
-            value={filtroFederado}
-            onChange={e => setFiltroFederado(e.target.value)}
-            style={{ background: filtroFederado ? '#eff6ff' : '#f4f7fa', border: `1px solid ${filtroFederado ? '#bfdbfe' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroFederado ? '#1d4ed8' : hint, outline:'none', cursor:'pointer', fontWeight: filtroFederado ? 600 : 400 }}
-          >
-            <option value="">Federado</option>
-            <option value="si">Federado ✓</option>
-            <option value="no">No federado</option>
-          </select>
+          <FiltroMultiSelect
+            label="Federado"
+            options={[{ value:'si', label:'Federado ✓' }, { value:'no', label:'No federado' }]}
+            selected={filtroFederado}
+            onChange={setFiltroFederado}
+          />
 
-          <select
-            value={filtroPago}
-            onChange={e => setFiltroPago(e.target.value)}
-            style={{ background: filtroPago ? (filtroPago === 'pagado' ? '#f0fdf4' : '#fef2f2') : '#f4f7fa', border: `1px solid ${filtroPago ? (filtroPago === 'pagado' ? '#bbf7d0' : '#fecaca') : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, color: filtroPago ? (filtroPago === 'pagado' ? '#16a34a' : '#dc2626') : hint, outline:'none', cursor:'pointer', fontWeight: filtroPago ? 600 : 400 }}
-          >
-            <option value="">Pago del mes</option>
-            <option value="pagado">Al día ✓</option>
-            <option value="pendiente">Pendiente</option>
-            <option value="atrasado">Atrasado</option>
-          </select>
+          <FiltroMultiSelect
+            label="Pago del mes"
+            options={[{ value:'pagado', label:'Al día ✓' }, { value:'pendiente', label:'Pendiente' }, { value:'atrasado', label:'Atrasado' }]}
+            selected={filtroPago}
+            onChange={setFiltroPago}
+            colorActivo={{ bg:'#f0fdf4', border:'#bbf7d0', text:'#16a34a' }}
+          />
+
+          <FiltroMultiSelect
+            label="Presente hoy"
+            options={[{ value:'presente', label:'Presente hoy' }, { value:'ausente', label:'Ausente hoy' }]}
+            selected={filtroPresente}
+            onChange={setFiltroPresente}
+            colorActivo={{ bg:'#f0fdf4', border:'#bbf7d0', text:'#16a34a' }}
+          />
+
+          {horarios.length > 0 && (
+            <FiltroMultiSelect
+              label="Horario"
+              options={horarios.map(h => ({ value:h, label:h }))}
+              selected={filtroHorario}
+              onChange={setFiltroHorario}
+            />
+          )}
+
+          <div style={{ display:'flex', alignItems:'center', gap:6, background: (edadMin || edadMax) ? '#eff6ff' : '#f4f7fa', border: `1px solid ${(edadMin || edadMax) ? '#bfdbfe' : '#e2e8f0'}`, borderRadius:8, padding:'5px 10px' }}>
+            <span style={{ fontSize:13, color: (edadMin || edadMax) ? '#1d4ed8' : hint, fontWeight: (edadMin || edadMax) ? 600 : 400 }}>Edad</span>
+            <input
+              type="number" min={0} placeholder="min" value={edadMin} onChange={e => setEdadMin(e.target.value)}
+              style={{ width:44, border:'none', background:'transparent', outline:'none', fontSize:13, color: text }}
+            />
+            <span style={{ color: hint }}>–</span>
+            <input
+              type="number" min={0} placeholder="max" value={edadMax} onChange={e => setEdadMax(e.target.value)}
+              style={{ width:44, border:'none', background:'transparent', outline:'none', fontSize:13, color: text }}
+            />
+          </div>
         </div>
+
+        {/* Chips de filtros activos */}
+        {chipsActivos.length > 0 && (
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
+            {chipsActivos.map(chip => (
+              <span key={chip.key} style={{ display:'inline-flex', alignItems:'center', gap:5, background:'#eff6ff', border:'1px solid #bfdbfe', color:'#1d4ed8', borderRadius:999, padding:'3px 6px 3px 10px', fontSize:12 }}>
+                {chip.label}
+                <button
+                  onClick={chip.onRemove}
+                  title="Quitar filtro"
+                  style={{ background:'transparent', border:'none', color:'#1d4ed8', cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 4px', borderRadius:999 }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Vista tabla — pantallas medianas y grandes */}
