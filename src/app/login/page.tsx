@@ -54,7 +54,7 @@ export default function LoginPage() {
       {/* Panel izquierdo — decorativo */}
       <div style={{
         flex: 1,
-        background: '#4f46e5',
+        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

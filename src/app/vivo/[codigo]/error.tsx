@@ -21,7 +21,7 @@ export default function ErrorTorneoVivo({ error, reset }: { error: Error & { dig
         <div style={{ fontSize: 34, marginBottom: 8 }}>🏓</div>
         <h1 style={{ margin: 0, color: '#0f172a', fontSize: 19 }}>Actualizando el torneo…</h1>
         <p style={{ margin: '8px 0 18px', color: '#64748b', fontSize: 13 }}>La vista se recuperará sin perder tu jugador seleccionado.</p>
-        <button onClick={reset} style={{ width: '100%', padding: 12, border: 0, borderRadius: 10, background: '#4f46e5', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={reset} style={{ width: '100%', padding: 12, border: 0, borderRadius: 10, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           Reintentar ahora
         </button>
       </div>

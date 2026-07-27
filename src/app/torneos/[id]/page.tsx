@@ -644,12 +644,12 @@ export default function TorneoDetallePage() {
           <button
             onClick={() => setInformeOpen(true)}
             title="Descargar informe financiero del torneo (PDF)"
-            style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             📄 Informe financiero
           </button>
         )}
         {esAdmin && faseActual === 'grupos' && hayBracket && (
-          <button onClick={() => setTabActiva('bracket')} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Ver llaves →</button>
+          <button onClick={() => setTabActiva('bracket')} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Ver llaves →</button>
         )}
         {esAdmin && faseActual === 'grupos' && (
           <button
@@ -714,7 +714,7 @@ export default function TorneoDetallePage() {
                 if (res.error) { alert(res.error); return }
                 await cargarTorneo()
               }}
-              style={{ marginTop:10, width:'100%', padding:'10px', background:'#4f46e5', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: enviandoRecaudacion ? 'not-allowed' : 'pointer', opacity: enviandoRecaudacion ? 0.7 : 1 }}
+              style={{ marginTop:10, width:'100%', padding:'10px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor: enviandoRecaudacion ? 'not-allowed' : 'pointer', opacity: enviandoRecaudacion ? 0.7 : 1 }}
             >
               {enviandoRecaudacion ? 'Subiendo...' : `📤 Subir ${fmt(recaudadoPendiente)} a Finanzas`}
             </button>
@@ -1380,7 +1380,7 @@ export default function TorneoDetallePage() {
             ) : (
               <button
                 onClick={() => setModalPremios(true)}
-                style={{ width: '100%', padding: '10px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                style={{ width: '100%', padding: '10px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
               >
                 Guardar premios →
               </button>
@@ -1602,7 +1602,7 @@ export default function TorneoDetallePage() {
                   })
                   setInformeOpen(false)
                 }}
-                style={{ flex:1, padding:11, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                style={{ flex:1, padding:11, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 Descargar PDF
               </button>
             </div>
@@ -1874,7 +1874,7 @@ export default function TorneoDetallePage() {
               <div style={{ marginTop:14, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:11.5, color:'#3730a3', wordBreak:'break-all' }}>{vivoUrl}</div>
               <button
                 onClick={() => copiarTexto(vivoUrl)}
-                style={{ width:'100%', marginTop:12, background:'#4f46e5', color:'#fff', border:'none', borderRadius:10, padding:'11px', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                style={{ width:'100%', marginTop:12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'#fff', border:'none', borderRadius:10, padding:'11px', fontSize:13, fontWeight:700, cursor:'pointer' }}>
                 📋 Copiar link
               </button>
             </div>

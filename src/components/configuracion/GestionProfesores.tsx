@@ -60,7 +60,7 @@ export default function GestionProfesores({ clubId }: { clubId: string }) {
       </div>
       {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 10 }}>{error}</div>}
       {mensaje && <div style={{ color: '#16a34a', fontSize: 12, marginTop: 10 }}>{mensaje}</div>}
-      <button onClick={crear} disabled={guardando} style={{ marginTop: 12, background: '#4f46e5', color: '#fff', border: 0, borderRadius: 8, padding: '9px 15px', fontWeight: 600, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center' }}>
+      <button onClick={crear} disabled={guardando} style={{ marginTop: 12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', border: 0, borderRadius: 8, padding: '9px 15px', fontWeight: 600, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center' }}>
         {guardando && <Loader2 size={14} />} Crear profesor
       </button>
 

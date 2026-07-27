@@ -695,7 +695,7 @@ export default function LigaDetallePage() {
             <button
               onClick={handleCrearDivision}
               disabled={!nombreDivision.trim()}
-              style={{ padding:'7px 10px', borderRadius:8, border:'none', background:'#4f46e5', color:'white', fontSize:12, fontWeight:600, cursor: nombreDivision.trim() ? 'pointer' : 'not-allowed', opacity: nombreDivision.trim() ? 1 : 0.5 }}>
+              style={{ padding:'7px 10px', borderRadius:8, border:'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', fontSize:12, fontWeight:600, cursor: nombreDivision.trim() ? 'pointer' : 'not-allowed', opacity: nombreDivision.trim() ? 1 : 0.5 }}>
               ✓
             </button>
             <button
@@ -959,7 +959,7 @@ export default function LigaDetallePage() {
                   <input style={{ ...inputStyle, flex:1, minWidth:140 }} placeholder="Nombre" value={nombreExterno} onChange={e => setNombreExterno(e.target.value)} />
                   <input style={{ ...inputStyle, width:130 }} placeholder="RUT (opcional)" value={rutExterno} onChange={e => setRutExterno(e.target.value)} />
                   <input style={{ ...inputStyle, width:130 }} placeholder="Teléfono (opcional)" value={telefonoExterno} onChange={e => setTelefonoExterno(e.target.value)} />
-                  <button onClick={() => handleCrearExterno(division)} disabled={creandoExterno || !nombreExterno.trim()} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'10px 16px', fontSize:12, fontWeight:600, cursor: creandoExterno ? 'default' : 'pointer', opacity: creandoExterno ? 0.6 : 1 }}>
+                  <button onClick={() => handleCrearExterno(division)} disabled={creandoExterno || !nombreExterno.trim()} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:8, padding:'10px 16px', fontSize:12, fontWeight:600, cursor: creandoExterno ? 'default' : 'pointer', opacity: creandoExterno ? 0.6 : 1 }}>
                     Agregar
                   </button>
                 </div>
@@ -1203,7 +1203,7 @@ export default function LigaDetallePage() {
               <button
                 onClick={() => aplicarGuardado(pendingDivision)}
                 disabled={aplicandoDiff}
-                style={{ flex:1, padding:11, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor: aplicandoDiff ? 'default' : 'pointer', opacity: aplicandoDiff ? 0.6 : 1 }}>
+                style={{ flex:1, padding:11, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor: aplicandoDiff ? 'default' : 'pointer', opacity: aplicandoDiff ? 0.6 : 1 }}>
                 {aplicandoDiff ? 'Aplicando...' : 'Confirmar cambios'}
               </button>
             </div>

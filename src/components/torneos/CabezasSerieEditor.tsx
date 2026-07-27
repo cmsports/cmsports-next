@@ -182,7 +182,7 @@ export default function CabezasSerieEditor({
           type="button"
           onClick={guardar}
           disabled={bloqueado || idsDuplicados.size > 0}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', border: 0, borderRadius: 6, background: '#4f46e5', color: '#fff', fontSize: 12, fontWeight: 700, cursor: bloqueado || idsDuplicados.size > 0 ? 'not-allowed' : 'pointer', opacity: bloqueado || idsDuplicados.size > 0 ? 0.55 : 1, whiteSpace: 'nowrap' }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', border: 0, borderRadius: 6, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: bloqueado || idsDuplicados.size > 0 ? 'not-allowed' : 'pointer', opacity: bloqueado || idsDuplicados.size > 0 ? 0.55 : 1, whiteSpace: 'nowrap' }}
         >
           {guardando ? <Loader2 size={13} /> : <Save size={13} />}
           {guardando ? 'Guardando…' : 'Guardar'}

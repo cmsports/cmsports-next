@@ -753,7 +753,7 @@ export default function ReportesPage() {
                 <div key={i} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
                   <span style={{ width:80, fontSize:12, color: muted }}>{d}</span>
                   <div style={{ flex:1, background:'#f1f5f9', borderRadius:4, height:20, overflow:'hidden' }}>
-                    <div style={{ width:`${(preview.porDiaSemana[i] / max) * 100}%`, height:'100%', background:'#4f46e5', borderRadius:4, transition:'width .3s' }} />
+                    <div style={{ width:`${(preview.porDiaSemana[i] / max) * 100}%`, height:'100%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius:4, transition:'width .3s' }} />
                   </div>
                   <span style={{ fontSize:12, fontFamily:'monospace', color: text, width:30, textAlign:'right' }}>{preview.porDiaSemana[i]}</span>
                 </div>

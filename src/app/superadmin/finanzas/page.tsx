@@ -205,7 +205,7 @@ export default function FinanzasSuperadminPage() {
         </div>
         <button onClick={generarReportePDF} disabled={generandoPDF} style={{
           display: 'flex', alignItems: 'center', gap: 6,
-          padding: '8px 14px', background: '#4f46e5', color: '#fff',
+          padding: '8px 14px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
           border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
           opacity: generandoPDF ? 0.6 : 1,
         }}>
@@ -270,7 +270,7 @@ export default function FinanzasSuperadminPage() {
                 <td style={{ padding: '10px 18px' }}><span style={{ background: cobroStyle.bg, color: cobroStyle.fg, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>{vencido ? 'Pago pendiente' : estadoPlan === 'activo' ? 'Al día' : 'Sin cobro'}</span></td>
                 <td style={{ padding: '10px 18px', textAlign: 'right' }}>{editando ? <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
                   <button onClick={() => setEditandoPlan(null)} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>Cancelar</button>
-                  <button onClick={() => guardarPlan(c.id)} disabled={guardando} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, border: 0, background: '#4f46e5', color: '#fff', cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+                  <button onClick={() => guardarPlan(c.id)} disabled={guardando} style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, border: 0, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
                 </div> : <button onClick={() => abrirPago(c)} disabled={estadoPlan !== 'activo'} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#4f46e5', background: 'none', border: '1px solid #e2e8f0', borderRadius: 6, padding: '5px 10px', cursor: estadoPlan === 'activo' ? 'pointer' : 'not-allowed', opacity: estadoPlan === 'activo' ? 1 : 0.45 }}><Receipt size={12} /> Registrar pago</button>}</td>
               </tr>
             })}</tbody>
@@ -336,7 +336,7 @@ export default function FinanzasSuperadminPage() {
                 borderRadius: 7, fontSize: 12, color: '#64748b', cursor: 'pointer',
               }}>Cancelar</button>
               <button onClick={confirmarPago} disabled={guardando} style={{
-                flex: 1, padding: '8px', background: '#4f46e5', border: 'none',
+                flex: 1, padding: '8px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none',
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardando ? 0.6 : 1,
               }}>{guardando ? 'Guardando...' : 'Confirmar'}</button>
             </div>

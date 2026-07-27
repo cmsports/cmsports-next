@@ -59,7 +59,7 @@ export default function RecuperarContrasenaPage() {
               <button
                 onClick={enviar}
                 disabled={enviando}
-                style={{ width:'100%', padding:12, background:'#4f46e5', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer' }}
+                style={{ width:'100%', padding:12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:600, cursor:'pointer' }}
               >
                 {enviando ? 'Enviando...' : 'Enviar link de recuperación'}
               </button>

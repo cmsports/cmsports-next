@@ -137,7 +137,7 @@ export default function SuperadminPage() {
         </div>
         <button onClick={() => setModalOpen(true)} style={{
           display: 'flex', alignItems: 'center', gap: 6,
-          padding: '8px 14px', background: '#4f46e5', color: '#fff',
+          padding: '8px 14px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
           border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
         }}>
           <Plus size={15} /> Crear club nuevo
@@ -311,7 +311,7 @@ export default function SuperadminPage() {
                 borderRadius: 7, fontSize: 12, color: '#64748b', cursor: 'pointer',
               }}>Cancelar</button>
               <button onClick={handleCrearClub} disabled={guardando} style={{
-                flex: 1, padding: '8px', background: '#4f46e5', border: 'none',
+                flex: 1, padding: '8px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none',
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardando ? 0.6 : 1,
               }}>{guardando ? 'Creando...' : 'Crear'}</button>
             </div>
@@ -356,7 +356,7 @@ export default function SuperadminPage() {
                 borderRadius: 7, fontSize: 12, color: '#64748b', cursor: 'pointer',
               }}>Cancelar</button>
               <button onClick={handleGuardarModulos} disabled={guardandoModulos} style={{
-                flex: 1, padding: '8px', background: '#4f46e5', border: 'none',
+                flex: 1, padding: '8px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none',
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardandoModulos ? 0.6 : 1,
               }}>{guardandoModulos ? 'Guardando...' : 'Guardar'}</button>
             </div>

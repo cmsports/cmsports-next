@@ -277,6 +277,9 @@ button:disabled { opacity: 0.6; }
    pantallas compartan un detalle de color sin editarlas una por una. */
 .main-content h1 {
   animation: entra var(--normal) var(--curva) both;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
 }
 .main-content h1::after {
   content: '';
@@ -286,6 +289,13 @@ button:disabled { opacity: 0.6; }
   margin-top: 7px;
   border-radius: 3px;
   background: linear-gradient(90deg, var(--sky), #8b5cf6);
+}
+
+/* Los botones con degradado llevan sombra del mismo color. Es lo que los
+   despega del fondo y los hace ver apretables; se los reconoce por el
+   degradado que quedó en su estilo en línea. */
+[style*="linear-gradient(135deg"] {
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
 }
 
 /* Modales y avisos que se dibujan con position:fixed. Se los agarra por el

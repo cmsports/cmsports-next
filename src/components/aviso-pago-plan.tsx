@@ -41,7 +41,7 @@ export function AvisoPagoPlan({ perfil }: { perfil: { rol?: string | null; club_
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 14 }}><div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 5 }}>Monto mensual</div><strong style={{ color: '#0f172a', fontSize: 18 }}>{formatCLP(aviso.plan_mensual)}</strong></div>
         <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: 14 }}><div style={{ fontSize: 11, color: '#c2410c', marginBottom: 5, display: 'flex', justifyContent: 'center', gap: 5 }}><CalendarDays size={14} /> Vencimiento</div><strong style={{ color: '#9a3412', fontSize: 18 }}>{new Date(`${aviso.proximo_vencimiento}T12:00:00`).toLocaleDateString('es-CL')}</strong></div>
       </div>
-      <button onClick={() => setCerrado(true)} style={{ width: '100%', maxWidth: 470, padding: '13px 18px', background: '#4f46e5', color: '#fff', border: 0, borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Entendido, continuar a la aplicación</button>
+      <button onClick={() => setCerrado(true)} style={{ width: '100%', maxWidth: 470, padding: '13px 18px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Entendido, continuar a la aplicación</button>
       <p style={{ margin: '14px 0 0', color: '#94a3b8', fontSize: 12 }}>Este recordatorio volverá a aparecer la próxima vez que abras CmSports hasta que el pago sea confirmado.</p>
     </div>
   </div>

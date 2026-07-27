@@ -452,7 +452,7 @@ export default function JugadorDetallePage() {
     <AppLayout perfil={perfil}>
       <div style={{ padding:40, textAlign:'center' }}>
         <div style={{ fontSize:16, color:'#dc2626', marginBottom:12 }}>{errorCarga}</div>
-        <button onClick={() => { setErrorCarga(''); setLoading(true); }} style={{ background:'#4f46e5', color:'white', border:'none', borderRadius:8, padding:'10px 20px', fontSize:13, cursor:'pointer' }}>Reintentar</button>
+        <button onClick={() => { setErrorCarga(''); setLoading(true); }} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:8, padding:'10px 20px', fontSize:13, cursor:'pointer' }}>Reintentar</button>
       </div>
     </AppLayout>
   )
@@ -1225,7 +1225,7 @@ export default function JugadorDetallePage() {
 
             <div style={{ display:'flex', gap:10, marginTop:8 }}>
               <button onClick={() => setEditContacto(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
-              <button onClick={guardarContacto} disabled={guardandoDatos} style={{ flex:1, padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={guardarContacto} disabled={guardandoDatos} style={{ flex:1, padding:12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 {guardandoDatos ? 'Guardando...' : 'Guardar cambios'}
               </button>
             </div>
@@ -1279,7 +1279,7 @@ export default function JugadorDetallePage() {
 
             <div style={{ display:'flex', gap:10, marginTop:8 }}>
               <button onClick={() => setEditPlan(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
-              <button onClick={guardarPlan} disabled={guardandoDatos} style={{ flex:1, padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={guardarPlan} disabled={guardandoDatos} style={{ flex:1, padding:12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 {guardandoDatos ? 'Guardando...' : 'Guardar plan'}
               </button>
             </div>
@@ -1346,7 +1346,7 @@ export default function JugadorDetallePage() {
             {datosError && <div style={{ margin:'12px 0', color:'#dc2626', fontSize:12, background:'#fef2f2', padding:'8px 12px', borderRadius:8 }}>{datosError}</div>}
             <div style={{ display:'flex', gap:10, marginTop:20 }}>
               <button onClick={() => setEditDias(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
-              <button onClick={guardarDias} disabled={guardandoDatos} style={{ flex:1, padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={guardarDias} disabled={guardandoDatos} style={{ flex:1, padding:12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 {guardandoDatos ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
@@ -1399,7 +1399,7 @@ export default function JugadorDetallePage() {
 
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={() => setModalExternoOpen(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
-              <button onClick={guardarExterno} disabled={guardandoExterno} style={{ flex:1, padding:12, background:'#4f46e5', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={guardarExterno} disabled={guardandoExterno} style={{ flex:1, padding:12, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 {guardandoExterno ? 'Guardando...' : 'Registrar'}
               </button>
             </div>

@@ -83,7 +83,7 @@ export default function GestionKioscos() {
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <input value={nombre} onChange={e => setNombre(e.target.value)} maxLength={80} style={input} placeholder="Ej: Tablet recepción" />
-        <button onClick={() => generar(nombre)} disabled={procesando !== null} style={{ ...boton, background: '#4f46e5', color: '#fff', whiteSpace: 'nowrap' }}>
+        <button onClick={() => generar(nombre)} disabled={procesando !== null} style={{ ...boton, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', whiteSpace: 'nowrap' }}>
           {procesando === 'nuevo' ? <Loader2 size={14} /> : <Plus size={14} />} Autorizar
         </button>
       </div>
