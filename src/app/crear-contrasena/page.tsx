@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -77,21 +78,21 @@ export default function CrearContrasenaPage() {
 
           <div style={{ marginBottom:14 }}>
             <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nueva contraseña</label>
-            <input
-              style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-              type="password" placeholder="Mínimo 6 caracteres"
+            <CampoContrasena
+              style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+              placeholder="Mínimo 6 caracteres" autoComplete="new-password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={setPassword}
             />
           </div>
 
           <div style={{ marginBottom:18 }}>
             <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Confirmar contraseña</label>
-            <input
-              style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-              type="password" placeholder="Repite la contraseña"
+            <CampoContrasena
+              style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+              placeholder="Repite la contraseña" autoComplete="new-password"
               value={confirmar}
-              onChange={e => setConfirmar(e.target.value)}
+              onChange={setConfirmar}
             />
           </div>
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useEnVivo } from '@/lib/useEnVivo'
 import { DIAS, diaLabel, rangoHorario, minutosDelDia, type BloqueHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -102,6 +103,8 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   }, [clubId, desde, hoy])
 
   useEffect(() => { void cargar() }, [cargar])
+  // Si alguien mueve gente de grupo desde otra pantalla, esto se entera.
+  useEnVivo(['bloque_jugadores', 'bloques_horario', 'asistencia'], clubId, cargar, { conClub: ['asistencia', 'bloques_horario'] })
 
   if (cargando) return <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Calculando...</div>
 

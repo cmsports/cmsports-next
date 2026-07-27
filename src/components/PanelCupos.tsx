@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useEnVivo } from '@/lib/useEnVivo'
 import { Plus, X, Search, Users } from 'lucide-react'
 import { agregarJugadorABloque, quitarJugadorDeBloque } from '@/app/actions/horario'
 import { DIAS, hhmm, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
@@ -59,26 +60,37 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
   }, [clubId])
 
   useEffect(() => { void cargar() }, [cargar])
+  // Si alguien mueve gente desde otro dispositivo, esta pantalla se entera sola.
+  useEnVivo(['bloque_jugadores', 'bloques_horario'], clubId, cargar, { conClub: ['bloques_horario'] })
 
   const jugadorPorId = useMemo(() => new Map(jugadores.map(j => [j.id, j])), [jugadores])
 
+  // La lista se actualiza antes de que el servidor conteste y se deshace si
+  // falla. Esperar el viaje de ida y vuelta para mover un nombre se siente
+  // lento, y acá el profe mueve muchos seguidos.
   async function agregar(bloque: Bloque, jugadorId: string) {
-    setGuardando(jugadorId)
-    setError('')
-    const res = await agregarJugadorABloque({ bloqueId: bloque.id, jugadorId })
-    setGuardando(null)
-    if (res?.error) { setError(String(res.error)); return }
-    setInscritos(prev => ({ ...prev, [bloque.id]: [...(prev[bloque.id] ?? []), jugadorId] }))
+    const antes = inscritos[bloque.id] ?? []
+    setInscritos(prev => ({ ...prev, [bloque.id]: [...antes, jugadorId] }))
     setBusqueda('')
+    setError('')
+
+    const res = await agregarJugadorABloque({ bloqueId: bloque.id, jugadorId })
+    if (res?.error) {
+      setInscritos(prev => ({ ...prev, [bloque.id]: antes }))
+      setError(String(res.error))
+    }
   }
 
   async function quitar(bloque: Bloque, jugadorId: string) {
-    setGuardando(jugadorId)
+    const antes = inscritos[bloque.id] ?? []
+    setInscritos(prev => ({ ...prev, [bloque.id]: antes.filter(id => id !== jugadorId) }))
     setError('')
+
     const res = await quitarJugadorDeBloque({ bloqueId: bloque.id, jugadorId })
-    setGuardando(null)
-    if (res?.error) { setError(String(res.error)); return }
-    setInscritos(prev => ({ ...prev, [bloque.id]: (prev[bloque.id] ?? []).filter(id => id !== jugadorId) }))
+    if (res?.error) {
+      setInscritos(prev => ({ ...prev, [bloque.id]: antes }))
+      setError(String(res.error))
+    }
   }
 
   const bloquesSede = bloques.filter(b => b.sede === sedeActiva)

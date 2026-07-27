@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -830,9 +831,11 @@ export default function JugadorDetallePage() {
           <div style={{ marginTop:12, background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'14px 16px' }}>
             <div style={{ fontSize:11, color:'rgba(255,255,255,0.75)', marginBottom:8, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Cambiar contraseña</div>
             <div style={{ display:'flex', gap:8 }}>
-              <input type="password" placeholder="Nueva contraseña (mín. 6 caracteres)" value={passwordNueva}
-                onChange={e => setPasswordNueva(e.target.value)}
-                style={{ flex:1, background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'8px 12px', color:'#fff', fontSize:12, outline:'none' }} />
+              <div style={{ flex:1 }}>
+                <CampoContrasena placeholder="Nueva contraseña (mín. 6 caracteres)" value={passwordNueva}
+                  onChange={setPasswordNueva} autoComplete="new-password"
+                  style={{ width:'100%', boxSizing:'border-box', background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:8, padding:'8px 12px', color:'#fff', fontSize:12, outline:'none' }} />
+              </div>
               <button disabled={cambiandoPassword || passwordNueva.length < 6}
                 onClick={async () => {
                   setCambiandoPassword(true); setPasswordMsg(null)

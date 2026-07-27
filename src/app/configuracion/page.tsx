@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import CampoContrasena from '@/components/CampoContrasena'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import AppLayout from '../layout-app'
@@ -258,17 +259,17 @@ export default function ConfiguracionPage() {
 
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>Contraseña actual</label>
-            <input type="password" value={pwActual} onChange={e => setPwActual(e.target.value)} style={inputStyle} placeholder="Tu contraseña actual" />
+            <CampoContrasena value={pwActual} onChange={setPwActual} style={inputStyle} placeholder="Tu contraseña actual" autoComplete="current-password" />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
             <div>
               <label style={labelStyle}>Nueva contraseña</label>
-              <input type="password" value={pwNueva} onChange={e => setPwNueva(e.target.value)} style={inputStyle} placeholder="Mínimo 6 caracteres" />
+              <CampoContrasena value={pwNueva} onChange={setPwNueva} style={inputStyle} placeholder="Mínimo 6 caracteres" autoComplete="new-password" />
             </div>
             <div>
               <label style={labelStyle}>Confirmar nueva contraseña</label>
-              <input type="password" value={pwConfirmar} onChange={e => setPwConfirmar(e.target.value)} style={inputStyle} placeholder="Repetir nueva contraseña" />
+              <CampoContrasena value={pwConfirmar} onChange={setPwConfirmar} style={inputStyle} placeholder="Repetir nueva contraseña" autoComplete="new-password" />
             </div>
           </div>
 

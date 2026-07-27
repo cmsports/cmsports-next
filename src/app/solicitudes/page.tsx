@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
@@ -456,13 +457,15 @@ export default function SolicitudesPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
               <div>
                 <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Contraseña *</label>
-                <input type="password" placeholder="Mín. 6 caracteres" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
-                  value={infoForm.password} onChange={e => setInfoForm(f => ({ ...f, password: e.target.value }))} />
+                <CampoContrasena placeholder="Mín. 6 caracteres" autoComplete="new-password"
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.password} onChange={v => setInfoForm(f => ({ ...f, password: v }))} />
               </div>
               <div>
                 <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Confirmar contraseña *</label>
-                <input type="password" placeholder="Repetir contraseña" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
-                  value={infoForm.passwordConfirm} onChange={e => setInfoForm(f => ({ ...f, passwordConfirm: e.target.value }))} />
+                <CampoContrasena placeholder="Repetir contraseña" autoComplete="new-password"
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.passwordConfirm} onChange={v => setInfoForm(f => ({ ...f, passwordConfirm: v }))} />
               </div>
             </div>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck, Mail, Trash2 } from 'lucide-react'
@@ -281,9 +282,9 @@ export default function SuperadminPage() {
                   <input placeholder="Correo del administrador" type="email" value={form.adminEmail}
                     onChange={e => setForm({ ...form, adminEmail: e.target.value })}
                     style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
-                  <input placeholder="Contraseña provisoria (mínimo 8 caracteres)" type="password" value={form.passwordProvisoria}
-                    onChange={e => setForm({ ...form, passwordProvisoria: e.target.value })}
-                    style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+                  <CampoContrasena placeholder="Contraseña provisoria (mínimo 8 caracteres)" value={form.passwordProvisoria}
+                    onChange={v => setForm({ ...form, passwordProvisoria: v })} autoComplete="new-password"
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
                 </div>
               </div>
               <div>

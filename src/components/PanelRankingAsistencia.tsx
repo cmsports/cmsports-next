@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useEnVivo } from '@/lib/useEnVivo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { calendarioJugador, indexar, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
@@ -111,6 +112,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   }, [clubId, desde, hoy])
 
   useEffect(() => { void cargar() }, [cargar])
+  useEnVivo(['asistencia', 'bloque_jugadores'], clubId, cargar, { conClub: ['asistencia'] })
 
   if (cargando || !datos) {
     return <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Calculando...</div>

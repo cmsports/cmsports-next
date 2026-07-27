@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useState } from 'react'
+import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { Mail, Lock, ArrowRight, Loader2, Phone, IdCard } from 'lucide-react'
 import Image from 'next/image'
@@ -159,21 +160,19 @@ export default function LoginPage() {
             </label>
             <div style={{ position: 'relative' }}>
               <Lock size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-              <input
+              <CampoContrasena
                 style={{
                   width: '100%', background: '#f8fafc',
                   border: '1px solid #e2e8f0', borderRadius: 8,
                   padding: '10px 12px 10px 36px',
                   color: '#0f172a', fontSize: 14, outline: 'none',
-                  transition: 'border-color 0.15s',
+                  boxSizing: 'border-box',
                 }}
-                type="password"
                 placeholder="••••••••"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
+                onChange={setPassword}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                onFocus={e => (e.target.style.borderColor = '#4f46e5')}
-                onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
+                autoComplete="current-password"
               />
             </div>
           </div>
