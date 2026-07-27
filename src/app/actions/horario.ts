@@ -187,6 +187,50 @@ export async function generarSemana(params: {
   return { success: true, creadas: creadasN, omitidas: filas.length - creadasN }
 }
 
+export async function agregarJugadorABloque(params: { bloqueId: string; jugadorId: string }) {
+  const { error: authErr, supabase, clubId } = await requireStaff()
+  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
+
+  // El bloque y el jugador tienen que ser del club de quien lo hace.
+  const [{ data: bloque }, { data: jugador }] = await Promise.all([
+    supabase.from('bloques_horario').select('id,cupo_maximo').eq('id', params.bloqueId).eq('club_id', clubId).maybeSingle(),
+    supabase.from('jugadores').select('id').eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle(),
+  ])
+  if (!bloque) return { error: 'Bloque no encontrado' }
+  if (!jugador) return { error: 'Jugador no encontrado' }
+
+  const { error } = await supabase.from('bloque_jugadores')
+    .insert({ bloque_id: params.bloqueId, jugador_id: params.jugadorId })
+
+  // 23505 = ya estaba inscrito; no es un error para quien lo está usando.
+  if (error && error.code !== '23505') {
+    return { error: 'No se pudo agregar al bloque: ' + error.message }
+  }
+
+  // El cupo no bloquea: el club a veces pasa de doce y prefiere verlo avisado
+  // antes que no poder registrarlo.
+  const { count } = await supabase.from('bloque_jugadores')
+    .select('jugador_id', { count: 'exact', head: true })
+    .eq('bloque_id', params.bloqueId)
+
+  return { success: true, inscritos: count ?? 0, sobreCupo: (count ?? 0) > bloque.cupo_maximo }
+}
+
+export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorId: string }) {
+  const { error: authErr, supabase, clubId } = await requireStaff()
+  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
+
+  const { data: bloque } = await supabase.from('bloques_horario')
+    .select('id').eq('id', params.bloqueId).eq('club_id', clubId).maybeSingle()
+  if (!bloque) return { error: 'Bloque no encontrado' }
+
+  const { error } = await supabase.from('bloque_jugadores')
+    .delete().eq('bloque_id', params.bloqueId).eq('jugador_id', params.jugadorId)
+  if (error) return { error: 'No se pudo quitar del bloque: ' + error.message }
+
+  return { success: true }
+}
+
 export async function editarClase(params: {
   id: string
   contenido: string
