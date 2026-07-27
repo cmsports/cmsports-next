@@ -22,6 +22,9 @@ const COLOR: Record<EstadoDia, { bg: string; fg: string; label: string }> = {
   presente:  { bg: '#16a34a', fg: '#ffffff', label: 'Asistió' },
   ausente:   { bg: '#dc2626', fg: '#ffffff', label: 'Faltó' },
   pendiente: { bg: '#3b82f6', fg: '#ffffff', label: 'Sin registrar' },
+  // Vino a un grupo que no era el suyo. Ni verde ni rojo: no era su obligación,
+  // así que no cuenta como asistencia ni como falta. Se cobra aparte.
+  extraordinaria: { bg: '#eab308', fg: '#422006', label: 'Clase extra' },
 }
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -155,6 +158,7 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
           ['Asistió',     String(ind.presentes),  COLOR.presente.bg],
           ['Faltó',       String(ind.ausentes),   COLOR.ausente.bg],
           ['Sin registrar', String(ind.pendientes), COLOR.pendiente.bg],
+          ['Clases extra', String(ind.extraordinarias), ind.extraordinarias > 0 ? '#a16207' : muted],
         ] as const).map(([label, valor, color]) => (
           <div key={label} style={{ ...card, padding: 12 }}>
             <div style={{ fontSize: 10, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
@@ -175,7 +179,7 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
 
       {/* Leyenda */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, color: muted }}>
-        {(['presente', 'ausente', 'pendiente'] as const).map(e => (
+        {(['presente', 'ausente', 'pendiente', 'extraordinaria'] as const).map(e => (
           <span key={e} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 12, height: 12, borderRadius: 3, background: COLOR[e].bg, display: 'inline-block' }} />
             {COLOR[e].label}
@@ -216,7 +220,17 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
               </div>
             )}
 
-            {([
+            {/* Un día de clase extra no tiene "asistió" ni "faltó": no era su
+                grupo, así que no había obligación que cumplir. Ofrecer esos
+                botones escribiría una asistencia en un día no programado, que
+                es justo el error que la clase extra vino a arreglar. */}
+            {abierto.estado === 'extraordinaria' ? (
+              <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 8,
+                padding: '11px 13px', fontSize: 12, color: '#713f12', marginBottom: 12 }}>
+                Ese día vino a un grupo que no es el suyo. No le descuenta sesiones
+                y no entra en su porcentaje de asistencia; se cobra aparte.
+              </div>
+            ) : ([
               ['presente', 'Asistió'],
               ['ausente', 'Faltó'],
               ['sin_registro', 'Dejar sin registrar'],
@@ -285,12 +299,22 @@ function Mes({ anio, mes, nombre, porFecha, hoy, onDia }: {
           }
           const col = COLOR[c.estado]
           const esHoy = c.fecha === hoy
+          // El día que le tocaba entrenar Y además vino a una clase extra
+          // conserva su color: la extra se marca con un punto en la esquina.
+          const puntoExtra = c.extra && c.estado !== 'extraordinaria'
+          const detalle = c.bloques.length > 0 ? ` · ${c.bloques.join(', ')}` : ''
           return (
-            <div key={i} onClick={() => onDia(c)} title={`${c.fecha} · ${col.label} · ${c.bloques.join(', ')}`}
-              style={{ fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '4px 0', borderRadius: 4,
+            <div key={i} onClick={() => onDia(c)}
+              title={`${c.fecha} · ${col.label}${detalle}${puntoExtra ? ' · + clase extra' : ''}`}
+              style={{ position: 'relative', fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '4px 0', borderRadius: 4,
                 background: col.bg, color: col.fg, cursor: 'pointer',
                 outline: esHoy ? '2px solid #0f172a' : 'none', outlineOffset: 1 }}>
               {Number(c.fecha.slice(-2))}
+              {puntoExtra && (
+                <span style={{ position: 'absolute', top: 1, right: 1, width: 5, height: 5,
+                  borderRadius: '50%', background: COLOR.extraordinaria.bg,
+                  border: '1px solid #ffffff' }} />
+              )}
             </div>
           )
         })}

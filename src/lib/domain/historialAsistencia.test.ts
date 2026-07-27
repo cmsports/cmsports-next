@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calendarioJugador, diasHabiles, indexar, indicadores,
-  type DatosHistorial,
+  type DatosHistorial, type EstadoDia,
 } from './historialAsistencia'
 
 const JUG = 'jugador-1'
@@ -161,10 +161,10 @@ describe('indexar', () => {
 })
 
 describe('indicadores', () => {
-  const cal = (estados: ('presente' | 'ausente' | 'pendiente')[], dia = 'lun') =>
+  const cal = (estados: EstadoDia[], dia = 'lun') =>
     estados.map((estado, i) => ({
       fecha: `2026-08-${String(3 + i * 7).padStart(2, '0')}`,
-      dia, estado, bloques: ['Todo Público 1'],
+      dia, estado, bloques: ['Todo Público 1'], extra: false,
     }))
 
   it('el porcentaje ignora los pendientes', () => {
@@ -222,9 +222,9 @@ describe('indicadores', () => {
 
   it('agrupa por mes', () => {
     const i = indicadores([
-      { fecha: '2026-08-03', dia: 'lun', estado: 'presente', bloques: [] },
-      { fecha: '2026-08-10', dia: 'lun', estado: 'ausente',  bloques: [] },
-      { fecha: '2026-09-07', dia: 'lun', estado: 'presente', bloques: [] },
+      { fecha: '2026-08-03', dia: 'lun', estado: 'presente', bloques: [], extra: false },
+      { fecha: '2026-08-10', dia: 'lun', estado: 'ausente',  bloques: [], extra: false },
+      { fecha: '2026-09-07', dia: 'lun', estado: 'presente', bloques: [], extra: false },
     ])
     expect(i.porMes).toEqual([
       { mes: '2026-08', presentes: 1, ausentes: 1, pendientes: 0, porcentaje: 50 },
@@ -240,3 +240,91 @@ describe('indicadores', () => {
     expect(i.ultimaAsistencia).toBeNull()
   })
 })
+
+// Vino a un grupo que no es el suyo. Antes esto se guardaba como asistencia
+// normal: le descontaba una sesión del plan y encima el día no aparecía en su
+// calendario, porque no estaba programado. Ahora es un hecho aparte.
+describe('clases extraordinarias', () => {
+  const inscritoMarJue = [
+    { bloque_id: 'b-mar', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null },
+    { bloque_id: 'b-jue', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null },
+  ]
+
+  it('un día que no le tocaba aparece, si vino igual', () => {
+    // Entrena martes y jueves. El lunes 3 vino de más.
+    const cal = calendarioJugador(JUG, '2026-08-03', '2026-08-07', datos({
+      inscripciones: inscritoMarJue,
+      extraordinarias: [{ jugador_id: JUG, fecha: '2026-08-03' }],
+    }))
+
+    const lunes = cal.find(d => d.fecha === '2026-08-03')
+    expect(lunes).toMatchObject({ estado: 'extraordinaria', extra: true, bloques: [] })
+  })
+
+  it('sin la extra, ese día sigue sin aparecer', () => {
+    const cal = calendarioJugador(JUG, '2026-08-03', '2026-08-07', datos({
+      inscripciones: inscritoMarJue,
+    }))
+    expect(cal.map(d => d.fecha)).not.toContain('2026-08-03')
+  })
+
+  it('si además le tocaba entrenar, manda su estado normal', () => {
+    // El martes 4 le tocaba y asistió; encima vino a otro grupo ese mismo día.
+    const cal = calendarioJugador(JUG, '2026-08-04', '2026-08-04', datos({
+      inscripciones: inscritoMarJue,
+      asistencias: [{ jugador_id: JUG, fecha: '2026-08-04', estado: 'presente' }],
+      extraordinarias: [{ jugador_id: JUG, fecha: '2026-08-04' }],
+    }))
+
+    expect(cal[0]).toMatchObject({ estado: 'presente', extra: true })
+  })
+
+  it('no le suma asistencia ni le sube el porcentaje', () => {
+    const i = indicadores(indicadoresDe([
+      { fecha: '2026-08-04', estado: 'presente' },
+      { fecha: '2026-08-06', estado: 'ausente' },
+      { fecha: '2026-08-03', estado: 'extraordinaria' },
+    ]))
+
+    // Dos días programados, uno asistido: 50%. La extra no toca ese número.
+    expect(i.programados).toBe(2)
+    expect(i.porcentaje).toBe(50)
+    expect(i.extraordinarias).toBe(1)
+  })
+
+  it('tampoco se la resta', () => {
+    const soloExtras = indicadores(indicadoresDe([
+      { fecha: '2026-08-03', estado: 'extraordinaria' },
+      { fecha: '2026-08-05', estado: 'extraordinaria' },
+    ]))
+    // Nada programado: no hay porcentaje que calcular, y no es cero.
+    expect(soloExtras.programados).toBe(0)
+    expect(soloExtras.porcentaje).toBeNull()
+    expect(soloExtras.extraordinarias).toBe(2)
+  })
+
+  it('no corta una racha de asistencias', () => {
+    const i = indicadores(indicadoresDe([
+      { fecha: '2026-08-04', estado: 'presente' },
+      { fecha: '2026-08-05', estado: 'extraordinaria' },
+      { fecha: '2026-08-06', estado: 'presente' },
+    ]))
+    expect(i.rachaPresentes).toBe(2)
+  })
+
+  it('la extra de otro jugador no se le cuenta a este', () => {
+    const cal = calendarioJugador(JUG, '2026-08-03', '2026-08-03', datos({
+      inscripciones: inscritoMarJue,
+      extraordinarias: [{ jugador_id: 'otro', fecha: '2026-08-03' }],
+    }))
+    expect(cal).toEqual([])
+  })
+})
+
+/** Días sueltos para probar indicadores, sin armar un calendario completo. */
+function indicadoresDe(dias: { fecha: string; estado: EstadoDia }[]) {
+  return dias.map(d => ({
+    ...d, dia: 'lun', bloques: ['Todo Público 1'],
+    extra: d.estado === 'extraordinaria',
+  }))
+}

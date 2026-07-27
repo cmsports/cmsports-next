@@ -21,7 +21,7 @@ export async function cargarHistorialJugador(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
-  const [{ data: bloques }, { data: inscripciones }, { data: asistencias }, { data: excepciones }] =
+  const [{ data: bloques }, { data: inscripciones }, { data: asistencias }, { data: excepciones }, { data: extras }] =
     await Promise.all([
       db.from('bloques_horario')
         .select('id,nombre,sede,dia_semana,vigente_desde,vigente_hasta')
@@ -34,6 +34,11 @@ export async function cargarHistorialJugador(
         .eq('jugador_id', jugadorId).gte('fecha', desde).lte('fecha', hasta),
       db.from('bloque_excepciones')
         .select('bloque_id,fecha').gte('fecha', desde).lte('fecha', hasta),
+      // Si la migración 098 todavía no corrió, esto devuelve error y data null.
+      // El `?? []` lo absorbe: el calendario queda como antes en vez de romperse.
+      db.from('clases_extraordinarias')
+        .select('jugador_id,fecha')
+        .eq('jugador_id', jugadorId).gte('fecha', desde).lte('fecha', hasta),
     ])
 
   return {
@@ -41,6 +46,7 @@ export async function cargarHistorialJugador(
     inscripciones: inscripciones ?? [],
     asistencias: asistencias ?? [],
     excepciones: excepciones ?? [],
+    extraordinarias: extras ?? [],
   }
 }
 
@@ -53,7 +59,7 @@ export async function cargarHistorialClub(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any
 
-  const [{ data: bloques }, { data: inscripciones }, { data: asistencias }, { data: excepciones }] =
+  const [{ data: bloques }, { data: inscripciones }, { data: asistencias }, { data: excepciones }, { data: extras }] =
     await Promise.all([
       db.from('bloques_horario')
         .select('id,nombre,sede,dia_semana,vigente_desde,vigente_hasta')
@@ -65,6 +71,9 @@ export async function cargarHistorialClub(
         .eq('club_id', clubId).gte('fecha', desde).lte('fecha', hasta),
       db.from('bloque_excepciones')
         .select('bloque_id,fecha').gte('fecha', desde).lte('fecha', hasta),
+      db.from('clases_extraordinarias')
+        .select('jugador_id,fecha')
+        .eq('club_id', clubId).gte('fecha', desde).lte('fecha', hasta),
     ])
 
   return {
@@ -72,5 +81,6 @@ export async function cargarHistorialClub(
     inscripciones: inscripciones ?? [],
     asistencias: asistencias ?? [],
     excepciones: excepciones ?? [],
+    extraordinarias: extras ?? [],
   }
 }

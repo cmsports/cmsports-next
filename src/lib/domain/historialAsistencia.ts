@@ -12,7 +12,10 @@
 
 import { vigenteEn, type Vigencia } from './vigencia'
 
-export type EstadoDia = 'presente' | 'ausente' | 'pendiente'
+// 'extraordinaria' es un día en que vino a un grupo que no es el suyo. No es un
+// estado de asistencia: es un hecho aparte, que no descuenta sesión ni entra en
+// el porcentaje. Aparece acá solo para poder pintarlo en el calendario.
+export type EstadoDia = 'presente' | 'ausente' | 'pendiente' | 'extraordinaria'
 
 /** Un día del calendario del jugador: le tocaba entrenar y esto pasó. */
 export type DiaCalendario = {
@@ -20,6 +23,8 @@ export type DiaCalendario = {
   dia: string
   estado: EstadoDia
   bloques: string[]        // nombres de los grupos que le tocaban ese día
+  /** Además de lo anterior, ese día vino a una clase extra. */
+  extra: boolean
 }
 
 export type BloqueVigente = Vigencia & {
@@ -42,6 +47,9 @@ export type RegistroAsistencia = {
 
 /** Excepción: ese día ese bloque no se dictó. */
 export type Excepcion = { bloque_id: string; fecha: string }
+
+/** Vino a un grupo que no es el suyo. Se cobra aparte y no consume sesión. */
+export type ClaseExtra = { jugador_id: string; fecha: string }
 
 const DIA_POR_INDICE = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
 
@@ -68,6 +76,8 @@ export type DatosHistorial = {
   inscripciones: InscripcionVigente[]
   asistencias: RegistroAsistencia[]
   excepciones: Excepcion[]
+  /** Opcional: las pantallas viejas que no las cargan siguen funcionando. */
+  extraordinarias?: ClaseExtra[]
 }
 
 /**
@@ -89,6 +99,8 @@ export type IndiceHistorial = {
   inscripcionesDe: Map<string, InscripcionVigente[]>
   estadoDe: Map<string, Map<string, 'presente' | 'ausente'>>
   sinClase: Set<string>
+  /** Fechas en que cada jugador vino a un grupo que no era el suyo. */
+  extrasDe: Map<string, Set<string>>
 }
 
 export function indexar(datos: DatosHistorial): IndiceHistorial {
@@ -107,11 +119,19 @@ export function indexar(datos: DatosHistorial): IndiceHistorial {
     suyas.set(a.fecha, a.estado)
   }
 
+  const extrasDe = new Map<string, Set<string>>()
+  for (const e of datos.extraordinarias ?? []) {
+    let suyas = extrasDe.get(e.jugador_id)
+    if (!suyas) { suyas = new Set(); extrasDe.set(e.jugador_id, suyas) }
+    suyas.add(e.fecha)
+  }
+
   return {
     bloquePorId: new Map(datos.bloques.map(b => [b.id, b])),
     inscripcionesDe,
     estadoDe,
     sinClase: new Set(datos.excepciones.map(e => `${e.bloque_id}|${e.fecha}`)),
+    extrasDe,
   }
 }
 
@@ -122,9 +142,10 @@ export function calendarioJugador(
   datos: DatosHistorial,
   indice?: IndiceHistorial,
 ): DiaCalendario[] {
-  const { bloquePorId, inscripcionesDe, estadoDe: todos, sinClase } = indice ?? indexar(datos)
+  const { bloquePorId, inscripcionesDe, estadoDe: todos, sinClase, extrasDe } = indice ?? indexar(datos)
   const mias = inscripcionesDe.get(jugadorId) ?? []
   const estadoDe = todos.get(jugadorId) ?? new Map<string, 'presente' | 'ausente'>()
+  const misExtras = extrasDe.get(jugadorId) ?? new Set<string>()
 
   const out: DiaCalendario[] = []
   for (const { fecha, dia } of diasHabiles(desde, hasta)) {
@@ -137,8 +158,19 @@ export function calendarioJugador(
       if (sinClase.has(`${b.id}|${fecha}`)) continue
       if (!nombres.includes(b.nombre)) nombres.push(b.nombre)
     }
-    if (nombres.length === 0) continue
-    out.push({ fecha, dia, estado: estadoDe.get(fecha) ?? 'pendiente', bloques: nombres })
+    const extra = misExtras.has(fecha)
+
+    // Un día que no le tocaba entrenar solo aparece si vino igual, a una clase
+    // extra. Sin eso el día quedaba invisible: la clase existía, se cobraba, y
+    // en su calendario no había nada.
+    if (nombres.length === 0) {
+      if (extra) out.push({ fecha, dia, estado: 'extraordinaria', bloques: [], extra: true })
+      continue
+    }
+
+    // Si además le tocaba entrenar, manda su estado normal: la extra es algo
+    // que pasó ese día, no reemplaza si asistió o faltó a lo suyo.
+    out.push({ fecha, dia, estado: estadoDe.get(fecha) ?? 'pendiente', bloques: nombres, extra })
   }
   return out
 }
@@ -148,6 +180,8 @@ export type Indicadores = {
   presentes: number
   ausentes: number
   pendientes: number
+  /** Clases a las que vino de más. Se informan, no entran en el porcentaje. */
+  extraordinarias: number
   /** Sobre los días ya resueltos. null si todavía no hay ninguno. */
   porcentaje: number | null
   rachaPresentes: number
@@ -165,9 +199,16 @@ export type Indicadores = {
  *
  * Los pendientes quedan fuera del porcentaje a propósito: un entrenamiento que
  * el profe no alcanzó a registrar no es una falta del alumno.
+ *
+ * Las clases extraordinarias quedan fuera de todo el cálculo. Vino a un grupo
+ * que no era el suyo: eso no le suma asistencia —no era su obligación— y
+ * tampoco se la resta. Se cuentan aparte, para poder mostrarlas.
  */
 export function indicadores(dias: DiaCalendario[]): Indicadores {
-  const orden = [...dias].sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const extraordinarias = dias.filter(d => d.estado === 'extraordinaria').length
+  const orden = dias
+    .filter(d => d.estado !== 'extraordinaria')
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
 
   const presentes  = orden.filter(d => d.estado === 'presente')
   const ausentes   = orden.filter(d => d.estado === 'ausente')
@@ -224,6 +265,7 @@ export function indicadores(dias: DiaCalendario[]): Indicadores {
     presentes: presentes.length,
     ausentes: ausentes.length,
     pendientes: pendientes.length,
+    extraordinarias,
     porcentaje: resueltos > 0 ? Math.round((presentes.length / resueltos) * 100) : null,
     rachaPresentes,
     rachaAusentes,
