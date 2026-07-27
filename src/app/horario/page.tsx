@@ -382,9 +382,9 @@ export default function HorarioPage() {
 
       {/* Modal bloque */}
       {modal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
+        <div className="anim-fondo" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
           onClick={e => { if (e.target === e.currentTarget) setModal(null) }}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 440, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
+          <div className="anim-modal" style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 440, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>
                 {modal === 'nuevo' ? 'Nuevo grupo' : 'Editar grupo'}
@@ -490,9 +490,9 @@ export default function HorarioPage() {
       )}
       {/* Día sin clase: feriados y suspensiones */}
       {modalFeriado && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
+        <div className="anim-fondo" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
           onClick={e => { if (e.target === e.currentTarget) setModalFeriado(false) }}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 380, boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
+          <div className="anim-modal" style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 380, boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Día sin clase</h2>
               <button onClick={() => setModalFeriado(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted, display: 'flex' }}>

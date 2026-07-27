@@ -1,34 +1,27 @@
 // Cuánto se le debe cobrar a un jugador en el mes.
 //
-// Mismo criterio que la base de datos al emitir la cuota (migración 039):
-// manda el monto ya emitido para ese mes, después la mensualidad del jugador,
-// y solo si no hay ninguno se estima por el plan.
+// Manda el monto ya emitido para ese mes; si no hay, la cuota que el profe le
+// asignó. Y si tampoco tiene, no se inventa nada: devuelve null y la pantalla
+// muestra "Cuota por asignar".
 //
-// El modal de "Marcar pagado" estimaba siempre por el plan e ignoraba la
-// mensualidad real: un jugador de $25.000 con un plan fuera de 8/12/16
-// sesiones caía al último caso y se le registraban $15.000.
-
-const MONTO_POR_PLAN: Record<number, number> = {
-  4: 15000,
-  8: 25000,
-  12: 30000,
-  16: 40000,
-}
-
-const MONTO_POR_DEFECTO = 25000
+// Antes se estimaba por el plan de sesiones cuando faltaba la cuota. Era peor
+// que dejarlo vacío: un monto inventado se ve igual de real que uno correcto,
+// así que nadie lo revisa y termina cobrado. El profe define cada cuota a mano
+// —hay de $7.000, de $30.000, de $50.000— y ninguna tabla puede adivinarlas.
 
 type JugadorCuota = {
   mensualidad?: number | null
-  sesiones_limite?: number | null
 }
 
 type CuotaEmitida = {
   monto?: number | null
 } | null | undefined
 
-export function montoEsperado(jugador: JugadorCuota | null | undefined, cuota: CuotaEmitida): number {
+/** El monto a cobrar, o null si nadie se lo asignó todavía. */
+export function montoEsperado(jugador: JugadorCuota | null | undefined, cuota: CuotaEmitida): number | null {
   if (cuota?.monto) return Number(cuota.monto)
   if (jugador?.mensualidad) return Number(jugador.mensualidad)
-  const porPlan = jugador?.sesiones_limite != null ? MONTO_POR_PLAN[jugador.sesiones_limite] : undefined
-  return porPlan ?? MONTO_POR_DEFECTO
+  return null
 }
+
+export const SIN_CUOTA = 'Cuota por asignar'

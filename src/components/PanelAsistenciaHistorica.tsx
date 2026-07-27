@@ -187,7 +187,7 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
       {cargando ? (
         <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Cargando el año...</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>
+        <div className="anim-lista" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>
           {MESES.map((nombreMes, m) => (
             <Mes key={m} anio={anio} mes={m} nombre={nombreMes} porFecha={porFecha} hoy={hoy}
               onDia={d => setAbierto(d)} />
@@ -198,9 +198,10 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
       {/* Corregir un día */}
       {abierto && (
         <div onClick={e => { if (e.target === e.currentTarget) setAbierto(null) }}
+          className="anim-fondo"
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
             alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
-          <div style={{ ...card, padding: 20, width: '100%', maxWidth: 360 }}>
+          <div className="anim-modal" style={{ ...card, padding: 20, width: '100%', maxWidth: 360 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: text }}>{abierto.fecha}</div>
             <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 16 }}>
               {diaLabel(abierto.dia)} · {abierto.bloques.join(' · ')}

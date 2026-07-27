@@ -1,35 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { montoEsperado } from './mensualidades'
 
-// El modal de "Marcar pagado" estimaba el monto por el plan del jugador e
-// ignoraba su mensualidad real: alguien de $25.000 con un plan fuera de
-// 8/12/16 sesiones caía al último caso y se le registraban $15.000.
 describe('montoEsperado', () => {
-  it('usa la cuota ya emitida para ese mes por sobre todo', () => {
-    expect(montoEsperado({ mensualidad: 25000, sesiones_limite: 8 }, { monto: 30000 })).toBe(30000)
+  it('manda el monto ya emitido para ese mes', () => {
+    expect(montoEsperado({ mensualidad: 30000 }, { monto: 7500 })).toBe(7500)
   })
 
-  it('usa la mensualidad del jugador cuando la cuota aún no tiene monto', () => {
-    expect(montoEsperado({ mensualidad: 25000, sesiones_limite: 4 }, null)).toBe(25000)
-    expect(montoEsperado({ mensualidad: 25000, sesiones_limite: null }, { monto: null })).toBe(25000)
+  it('si la cuota no tiene monto, usa la del jugador', () => {
+    expect(montoEsperado({ mensualidad: 26250 }, { monto: null })).toBe(26250)
+    expect(montoEsperado({ mensualidad: 26250 }, null)).toBe(26250)
   })
 
-  it('respeta la mensualidad aunque el plan no sea 4, 8, 12 ni 16', () => {
-    // Este era el caso roto: un sesiones_limite fuera de la tabla devolvía 15000.
-    expect(montoEsperado({ mensualidad: 25000, sesiones_limite: 20 }, null)).toBe(25000)
-    expect(montoEsperado({ mensualidad: 25000, sesiones_limite: 99 }, null)).toBe(25000)
+  // Lo que motivó sacar la estimación por plan: el profe cobra montos que no
+  // salen de ninguna tabla —$7.000, $21.000, $50.000— y un valor inventado se
+  // ve igual de real que uno correcto, así que nadie lo revisa.
+  it('sin cuota asignada no inventa un monto', () => {
+    expect(montoEsperado({ mensualidad: null }, null)).toBeNull()
+    expect(montoEsperado(null, null)).toBeNull()
+    expect(montoEsperado(undefined, undefined)).toBeNull()
   })
 
-  it('recién estima por el plan si el jugador no tiene mensualidad cargada', () => {
-    expect(montoEsperado({ sesiones_limite: 4 }, null)).toBe(15000)
-    expect(montoEsperado({ sesiones_limite: 8 }, null)).toBe(25000)
-    expect(montoEsperado({ sesiones_limite: 12 }, null)).toBe(30000)
-    expect(montoEsperado({ sesiones_limite: 16 }, null)).toBe(40000)
-  })
-
-  it('cae al monto por defecto solo cuando no hay ningún dato', () => {
-    expect(montoEsperado({}, null)).toBe(25000)
-    expect(montoEsperado({ sesiones_limite: 7 }, null)).toBe(25000)
-    expect(montoEsperado(null, null)).toBe(25000)
+  it('un cero no cuenta como monto asignado', () => {
+    expect(montoEsperado({ mensualidad: 0 }, { monto: 0 })).toBeNull()
   })
 })

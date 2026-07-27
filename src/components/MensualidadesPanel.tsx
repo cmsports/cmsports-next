@@ -304,7 +304,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                         {estado !== 'pagado' && (
-                          <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado: montoEsperado(j, mens) }); setMontoPago(String(montoEsperado(j, mens))) }}
+                          <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); const esperado = montoEsperado(j, mens); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado }); setMontoPago(esperado == null ? '' : String(esperado)) }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
                             ✅ Marcar pagado
                           </button>

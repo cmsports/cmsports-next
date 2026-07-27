@@ -150,7 +150,7 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
                 const color = sobre ? '#dc2626' : lleno ? '#d97706' : '#16a34a'
                 return (
                   <button key={b.id} onClick={() => { setAbierto(b); setBusqueda(''); setError('') }}
-                    style={{ ...card, padding: 14, textAlign: 'left', cursor: 'pointer', border: `1px solid ${sobre ? '#fecaca' : '#e2e8f0'}` }}>
+                    className="tocable" style={{ ...card, padding: 14, textAlign: 'left', cursor: 'pointer', border: `1px solid ${sobre ? '#fecaca' : '#e2e8f0'}` }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: text, marginBottom: 2 }}>{b.nombre}</div>
                     <div style={{ fontSize: 11, color: muted }}>{rangoHorario(b.hora_inicio, b.hora_fin)}</div>
                     {b.profesores.length > 0 && (
@@ -183,9 +183,9 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
 
       {/* Detalle del bloque */}
       {abierto && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
+        <div className="anim-fondo" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
           onClick={e => { if (e.target === e.currentTarget) setAbierto(null) }}>
-          <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 480, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
+          <div className="anim-modal" style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 480, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
 
             <div style={{ padding: '18px 22px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
               <div>

@@ -198,7 +198,7 @@ export default function PanelMensualidadesHistoricas({ clubId }: { clubId: strin
       {cargando ? (
         <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Cargando el año...</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+        <div className="anim-lista" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
           {MESES.map((nombre, i) => {
             const mes = i + 1
             const c = cuotaDe(mes)
@@ -207,7 +207,7 @@ export default function PanelMensualidadesHistoricas({ clubId }: { clubId: strin
             const col = futuro ? { bg: '#f1f5f9', fg: muted } : COLOR[est]
             return (
               <div key={mes} onClick={() => abrirMes(mes)}
-                style={{ ...card, padding: 12, cursor: 'pointer', borderLeft: `4px solid ${col.bg}` }}>
+                className="tocable" style={{ ...card, padding: 12, cursor: 'pointer', borderLeft: `4px solid ${col.bg}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: text }}>{nombre}</span>
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: col.bg }} />
@@ -248,9 +248,10 @@ export default function PanelMensualidadesHistoricas({ clubId }: { clubId: strin
       {/* Corregir un mes */}
       {abierto !== null && (
         <div onClick={e => { if (e.target === e.currentTarget) setAbierto(null) }}
+          className="anim-fondo"
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
             alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
-          <div style={{ ...card, padding: 22, width: '100%', maxWidth: 380, maxHeight: '92vh', overflowY: 'auto' }}>
+          <div className="anim-modal" style={{ ...card, padding: 22, width: '100%', maxWidth: 380, maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: text }}>{MESES[abierto - 1]} {anio}</div>
             <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 16 }}>{elegido.nombre}</div>
 

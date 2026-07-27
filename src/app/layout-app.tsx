@@ -21,90 +21,90 @@ import { esCuentaDemo } from '@/lib/auth/demo'
 
 const navAdmin = [
   { section: 'Principal' },
-  { label: 'Dashboard',     icon: LayoutDashboard, href: '/dashboard' },
-  { label: 'Jugadores',     icon: Users,            href: '/jugadores' },
-  { label: 'Torneo Externo',  icon: Globe,            href: '/torneos',          modulo: 'torneos' },
-  { label: 'Torneo Interno',  icon: Home,             href: '/torneos-internos', modulo: 'torneos' },
-  { label: 'Ranking',         icon: Award,            href: '/ranking',          modulo: 'torneos' },
-  { label: 'Liga',           icon: BarChart2,        href: '/liga',             modulo: 'liga' },
+  { label: 'Dashboard', emoji: '📊',     icon: LayoutDashboard, href: '/dashboard' },
+  { label: 'Jugadores', emoji: '🏓',     icon: Users,            href: '/jugadores' },
+  { label: 'Torneo Externo', emoji: '🌎',  icon: Globe,            href: '/torneos',          modulo: 'torneos' },
+  { label: 'Torneo Interno', emoji: '🏆',  icon: Home,             href: '/torneos-internos', modulo: 'torneos' },
+  { label: 'Ranking', emoji: '🥇',         icon: Award,            href: '/ranking',          modulo: 'torneos' },
+  { label: 'Liga', emoji: '📈',           icon: BarChart2,        href: '/liga',             modulo: 'liga' },
   { section: 'Gestión' },
-  { label: 'Asistencia',      icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
-  { label: 'Clases',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
-  { label: 'Horario semanal', icon: CalendarClock,  href: '/horario',    modulo: 'clases' },
-  { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
-  { label: 'Finanzas',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
-  { label: 'Central de Pago', icon: Landmark,        href: '/central-de-pago' },
-  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda',            modulo: 'tienda' },
+  { label: 'Asistencia', emoji: '✅',      icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
+  { label: 'Clases', emoji: '📚',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
+  { label: 'Horario semanal', emoji: '🗓️', icon: CalendarClock,  href: '/horario',    modulo: 'clases' },
+  { label: 'Calendario', emoji: '📅',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
+  { label: 'Finanzas', emoji: '💰',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
+  { label: 'Central de Pago', emoji: '🏦', icon: Landmark,        href: '/central-de-pago' },
+  { label: 'Tienda DoubleTT', emoji: '🛒', icon: ShoppingBag,    href: '/tienda',            modulo: 'tienda' },
   { section: 'Recursos' },
-  { label: 'Tienda del profe', icon: Store,        href: '/tienda-profe',   modulo: 'tienda_buin' },
-  { label: 'Tienda Buin',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_asociacion' },
-  { label: 'Bibliografía TDM', icon: Library,       href: '/bibliografia-tdm', modulo: 'bibliografia' },
-  { label: 'Libro del profe', icon: BookLock,       href: '/libro-profe',    modulo: 'libro_profe' },
+  { label: 'Tienda del profe', emoji: '🎾', icon: Store,        href: '/tienda-profe',   modulo: 'tienda_buin' },
+  { label: 'Tienda Buin', emoji: '👕',     icon: Store,          href: '/tienda-buin',    modulo: 'tienda_asociacion' },
+  { label: 'Bibliografía TDM', emoji: '📖', icon: Library,       href: '/bibliografia-tdm', modulo: 'bibliografia' },
+  { label: 'Libro del profe', emoji: '📓', icon: BookLock,       href: '/libro-profe',    modulo: 'libro_profe' },
 ]
 
 const navProfesor = [
   { section: 'Principal' },
-  { label: 'Dashboard',  icon: LayoutDashboard, href: '/dashboard-profesor' },
-  { label: 'Jugadores',  icon: Users,           href: '/jugadores' },
+  { label: 'Dashboard', emoji: '📊',  icon: LayoutDashboard, href: '/dashboard-profesor' },
+  { label: 'Jugadores', emoji: '🏓',  icon: Users,           href: '/jugadores' },
   { section: 'Gestión' },
-  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
-  { label: 'Mis clases', icon: BookOpen,        href: '/clases',     modulo: 'clases' },
-  { label: 'Horario semanal', icon: CalendarClock, href: '/horario',   modulo: 'clases' },
-  { label: 'Calendario', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
-  { label: 'Torneo Externo', icon: Globe,           href: '/torneos',          modulo: 'torneos' },
-  { label: 'Torneo Interno', icon: Home,            href: '/torneos-internos', modulo: 'torneos' },
-  { label: 'Ranking',       icon: Award,           href: '/ranking',          modulo: 'torneos' },
-  { label: 'Central de Pago', icon: Landmark,      href: '/central-de-pago' },
+  { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
+  { label: 'Mis clases', emoji: '📚', icon: BookOpen,        href: '/clases',     modulo: 'clases' },
+  { label: 'Horario semanal', emoji: '🗓️', icon: CalendarClock, href: '/horario',   modulo: 'clases' },
+  { label: 'Calendario', emoji: '📅', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
+  { label: 'Torneo Externo', emoji: '🌎', icon: Globe,           href: '/torneos',          modulo: 'torneos' },
+  { label: 'Torneo Interno', emoji: '🏆', icon: Home,            href: '/torneos-internos', modulo: 'torneos' },
+  { label: 'Ranking', emoji: '🥇',       icon: Award,           href: '/ranking',          modulo: 'torneos' },
+  { label: 'Central de Pago', emoji: '🏦', icon: Landmark,      href: '/central-de-pago' },
   { section: 'Tienda' },
-  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
+  { label: 'Tienda DoubleTT', emoji: '🛒', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
   { section: 'Recursos' },
-  { label: 'Tienda del profe', icon: Store,    href: '/tienda-profe',   modulo: 'tienda_buin' },
-  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',    modulo: 'tienda_asociacion' },
-  { label: 'Bibliografía TDM', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
-  { label: 'Libro del profe', icon: BookLock,   href: '/libro-profe',    modulo: 'libro_profe' },
+  { label: 'Tienda del profe', emoji: '🎾', icon: Store,    href: '/tienda-profe',   modulo: 'tienda_buin' },
+  { label: 'Tienda Buin', emoji: '👕',     icon: Store,      href: '/tienda-buin',    modulo: 'tienda_asociacion' },
+  { label: 'Bibliografía TDM', emoji: '📖', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
+  { label: 'Libro del profe', emoji: '📓', icon: BookLock,   href: '/libro-profe',    modulo: 'libro_profe' },
 ]
 
 const navJugador = [
   { section: 'Mi cuenta' },
-  { label: 'Mi perfil',           icon: User,          href: '/perfil' },
-  { label: 'Mi Estado de Cuenta', icon: Receipt,       href: '/estado-cuenta', modulo: 'mensualidades' },
-  { label: 'Central de Pago',     icon: Landmark,      href: '/central-de-pago' },
-  { label: 'Asistencia',          icon: ClipboardCheck,href: '/asistencia',    modulo: 'asistencia' },
+  { label: 'Mi perfil', emoji: '👤',           icon: User,          href: '/perfil' },
+  { label: 'Mi Estado de Cuenta', emoji: '🧾', icon: Receipt,       href: '/estado-cuenta', modulo: 'mensualidades' },
+  { label: 'Central de Pago', emoji: '🏦',     icon: Landmark,      href: '/central-de-pago' },
+  { label: 'Asistencia', emoji: '✅',          icon: ClipboardCheck,href: '/asistencia',    modulo: 'asistencia' },
   { section: 'Club' },
-  { label: 'Mis clases',          icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
-  { label: 'Mis Torneos',         icon: Globe,         href: '/torneos-externos', modulo: 'torneos' },
-  { label: 'Ranking',             icon: Award,         href: '/ranking',          modulo: 'torneos' },
-  { label: 'Calendario',          icon: Calendar,      href: '/calendario',    modulo: 'calendario' },
+  { label: 'Mis clases', emoji: '📚',          icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
+  { label: 'Mis Torneos', emoji: '🌎',         icon: Globe,         href: '/torneos-externos', modulo: 'torneos' },
+  { label: 'Ranking', emoji: '🥇',             icon: Award,         href: '/ranking',          modulo: 'torneos' },
+  { label: 'Calendario', emoji: '📅',          icon: Calendar,      href: '/calendario',    modulo: 'calendario' },
   { section: 'Tienda' },
-  { label: 'Tienda DoubleTT', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
+  { label: 'Tienda DoubleTT', emoji: '🛒', icon: ShoppingBag,    href: '/tienda', modulo: 'tienda' },
   { section: 'Recursos' },
-  { label: 'Tienda del profe', icon: Store,    href: '/tienda-profe',     modulo: 'tienda_buin' },
-  { label: 'Tienda Buin',     icon: Store,      href: '/tienda-buin',      modulo: 'tienda_asociacion' },
-  { label: 'Bibliografía TDM', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
+  { label: 'Tienda del profe', emoji: '🎾', icon: Store,    href: '/tienda-profe',     modulo: 'tienda_buin' },
+  { label: 'Tienda Buin', emoji: '👕',     icon: Store,      href: '/tienda-buin',      modulo: 'tienda_asociacion' },
+  { label: 'Bibliografía TDM', emoji: '📖', icon: Library,   href: '/bibliografia-tdm', modulo: 'bibliografia' },
 ]
 
 const mobileNavAdmin = [
-  { label: 'Inicio',     icon: LayoutDashboard, href: '/dashboard' },
-  { label: 'Jugadores',  icon: Users,            href: '/jugadores' },
-  { label: 'Torneos',    icon: Trophy,           href: '/torneos-internos',  modulo: 'torneos' },
-  { label: 'Finanzas',   icon: DollarSign,       href: '/finanzas', modulo: 'finanzas' },
+  { label: 'Inicio', emoji: '🏠',     icon: LayoutDashboard, href: '/dashboard' },
+  { label: 'Jugadores', emoji: '🏓',  icon: Users,            href: '/jugadores' },
+  { label: 'Torneos', emoji: '🏆',    icon: Trophy,           href: '/torneos-internos',  modulo: 'torneos' },
+  { label: 'Finanzas', emoji: '💰',   icon: DollarSign,       href: '/finanzas', modulo: 'finanzas' },
 ]
 
 const mobileNavProfesor = [
-  { label: 'Inicio',     icon: LayoutDashboard, href: '/dashboard-profesor' },
-  { label: 'Clases',     icon: BookOpen,        href: '/clases',     modulo: 'clases' },
-  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
-  { label: 'Alumnos',    icon: Users,           href: '/jugadores' },
+  { label: 'Inicio', emoji: '🏠',     icon: LayoutDashboard, href: '/dashboard-profesor' },
+  { label: 'Clases', emoji: '📚',     icon: BookOpen,        href: '/clases',     modulo: 'clases' },
+  { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
+  { label: 'Alumnos', emoji: '🏓',    icon: Users,           href: '/jugadores' },
 ]
 
 const mobileNavJugador = [
-  { label: 'Perfil',     icon: User,           href: '/perfil' },
-  { label: 'Asistencia', icon: ClipboardCheck,  href: '/asistencia',    modulo: 'asistencia' },
-  { label: 'Mis clases', icon: BookOpen,        href: '/mis-clases',    modulo: 'clases' },
-  { label: 'Mis Torneos', icon: Trophy,          href: '/torneos-externos', modulo: 'torneos' },
+  { label: 'Perfil', emoji: '👤',     icon: User,           href: '/perfil' },
+  { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia',    modulo: 'asistencia' },
+  { label: 'Mis clases', emoji: '📚', icon: BookOpen,        href: '/mis-clases',    modulo: 'clases' },
+  { label: 'Mis Torneos', emoji: '🌎', icon: Trophy,          href: '/torneos-externos', modulo: 'torneos' },
 ]
 
-type NavLink = { label: string; icon: LucideIcon; href: string; modulo?: string }
+type NavLink = { label: string; icon: LucideIcon; emoji?: string; href: string; modulo?: string }
 type NavItem = { section: string } | NavLink
 
 const clubNombreCache: Record<string, string> = {}
@@ -186,7 +186,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   )
   const masItems = esDemo
     ? masItemsBase
-    : [...masItemsBase, { label: 'Configuración', icon: Settings, href: '/configuracion' }]
+    : [...masItemsBase, { label: 'Configuración', emoji: '⚙️', icon: Settings, href: '/configuracion' }]
 
   const initials = perfil?.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U'
   const rolLabel = perfil?.rol === 'superadmin' ? 'Superadmin' : perfil?.rol === 'admin' ? 'Administrador' : perfil?.rol === 'profesor' ? 'Profesor' : 'Jugador'
@@ -311,7 +311,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
                 transition: 'all 0.12s',
                 textDecoration: 'none',
               }}>
-                <Icon size={15} strokeWidth={active ? 2.2 : 1.8} />
+                <span style={{ fontSize: 15, lineHeight: 1, width: 18, textAlign: 'center' }}>{item.emoji ?? '•'}</span>
                 <span>{item.label}</span>
               </Link>
             )
@@ -424,7 +424,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
                   fontSize: 10, minWidth: 50, textAlign: 'center',
                   textDecoration: 'none',
                 }}>
-                <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+                <span style={{ fontSize: 19, lineHeight: 1 }}>{item.emoji ?? '•'}</span>
                 <span>{item.label}</span>
               </Link>
             )
