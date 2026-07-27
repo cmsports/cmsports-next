@@ -205,6 +205,16 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
             <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 16 }}>
               {diaLabel(abierto.dia)} · {abierto.bloques.join(' · ')}
             </div>
+            {/* El error va acá adentro y no arriba de la página: con el modal
+                abierto, un mensaje de fondo no se ve y parece que el botón no
+                hiciera nada. */}
+            {mensaje && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                padding: '10px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                {mensaje}
+              </div>
+            )}
+
             {([
               ['presente', 'Asistió'],
               ['ausente', 'Faltó'],
