@@ -18,7 +18,7 @@ const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/rep
 const staffRoutes = ['/jugadores']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/torneos-externos']
-const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/tienda', '/configuracion', '/cuenta-bloqueada']
+const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'

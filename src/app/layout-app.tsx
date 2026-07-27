@@ -13,7 +13,7 @@ import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
-  Store, Library, BookLock, Eye, Award, Home, Landmark,
+  Store, Library, BookLock, Eye, Award, Home, Landmark, CalendarClock,
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import type { Perfil } from '@/types'
@@ -29,6 +29,7 @@ const navAdmin = [
   { label: 'Liga',           icon: BarChart2,        href: '/liga',             modulo: 'liga' },
   { section: 'Gestión' },
   { label: 'Clases',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
+  { label: 'Horario semanal', icon: CalendarClock,  href: '/horario',    modulo: 'clases' },
   { label: 'Calendario',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
   { label: 'Finanzas',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
   { label: 'Central de Pago', icon: Landmark,        href: '/central-de-pago' },
@@ -46,6 +47,7 @@ const navProfesor = [
   { label: 'Jugadores',  icon: Users,           href: '/jugadores' },
   { section: 'Gestión' },
   { label: 'Mis clases', icon: BookOpen,        href: '/clases',     modulo: 'clases' },
+  { label: 'Horario semanal', icon: CalendarClock, href: '/horario',   modulo: 'clases' },
   { label: 'Calendario', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
   { label: 'Torneo Externo', icon: Globe,           href: '/torneos',          modulo: 'torneos' },
   { label: 'Torneo Interno', icon: Home,            href: '/torneos-internos', modulo: 'torneos' },

@@ -5,6 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { CalendarPlus, Pencil } from 'lucide-react'
+import { editarClase, generarSemana } from '@/app/actions/horario'
+import { DIAS, fechasDeSemana } from '@/lib/domain/horario'
+import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
 
 const supabase = createClient()
 
@@ -32,7 +36,7 @@ async function obtenerProgramacion(offset: number, clubId: string) {
   const domingo = new Date(lunes)
   domingo.setDate(lunes.getDate() + 6)
   const [{ data: clases }, { data: profesores }] = await Promise.all([
-    supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,grupo,publicada,profesor_id').eq('club_id', clubId)
+    supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,grupo,publicada,profesor_id,sede,bloque_id').eq('club_id', clubId)
       .gte('fecha', fmtISO(lunes)).lte('fecha', fmtISO(domingo))
       .order('fecha', { ascending: true }).order('hora_inicio', { ascending: true }),
     supabase.from('profesores').select('id,nombre,especialidad').eq('club_id', clubId).eq('activo', true),
@@ -49,6 +53,14 @@ export default function ClasesPage() {
   const [clases, setClases] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
   const [reservas, setReservas] = useState<any[]>([])
+  const [editando, setEditando] = useState<any>(null)
+  const [formEditar, setFormEditar] = useState({ contenido:'', inicio:'', fin:'', profesorId:'', sede:'', grupo:'', publicada:false })
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
+  const [generarOpen, setGenerarOpen] = useState(false)
+  const [diasGenerar, setDiasGenerar] = useState<Set<string>>(new Set(DIAS.map(d => d.value)))
+  const [publicarGenerado, setPublicarGenerado] = useState(true)
+  const [generando, setGenerando] = useState(false)
+  const [resultadoGenerar, setResultadoGenerar] = useState('')
   const [cargaInicialCompleta, setCargaInicialCompleta] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [guardandoClase, setGuardandoClase] = useState(false)
@@ -133,6 +145,55 @@ export default function ClasesPage() {
     cargarClases(semanaOffset)
   }
 
+  function abrirEditar(c: any) {
+    setEditando(c)
+    setFormEditar({
+      contenido: c.contenido || '',
+      inicio: (c.hora_inicio || '').slice(0, 5),
+      fin: (c.hora_fin || '').slice(0, 5),
+      profesorId: c.profesor_id || '',
+      sede: c.sede || '',
+      grupo: c.grupo || '',
+      publicada: !!c.publicada,
+    })
+    setErrorClase('')
+  }
+
+  async function guardarEdicion() {
+    if (!editando) return
+    setGuardandoEdicion(true)
+    const res = await editarClase({
+      id: editando.id,
+      contenido: formEditar.contenido,
+      hora_inicio: formEditar.inicio,
+      hora_fin: formEditar.fin,
+      profesorId: formEditar.profesorId || null,
+      sede: formEditar.sede || null,
+      grupo: formEditar.grupo || null,
+      publicada: formEditar.publicada,
+    })
+    setGuardandoEdicion(false)
+    if (res?.error) { setErrorClase(String(res.error)); return }
+    setEditando(null)
+    cargarClases(semanaOffset)
+  }
+
+  async function confirmarGenerar() {
+    setGenerando(true)
+    setResultadoGenerar('')
+    const fechasSemana = fechasDeSemana(semanaOffset)
+    const fechas = DIAS.filter(d => diasGenerar.has(d.value)).map(d => fechasSemana[d.value])
+    const res = await generarSemana({ fechas, publicar: publicarGenerado })
+    setGenerando(false)
+    if (res?.error) { setResultadoGenerar('⚠ ' + res.error); return }
+    setResultadoGenerar(
+      res.omitidas
+        ? `✓ ${res.creadas} clases generadas · ${res.omitidas} ya existían`
+        : `✓ ${res.creadas} clases generadas`
+    )
+    cargarClases(semanaOffset)
+  }
+
   async function publicarClase(id: string) {
     const { error } = await supabase.from('clases').update({ publicada: true }).eq('id', id)
     if (error) { setErrorClase('No se pudo publicar la clase: ' + error.message); return }
@@ -168,10 +229,16 @@ export default function ClasesPage() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
         <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Programación de clases</h1>
         {puedeCrear && (
-          <button onClick={() => { setModalOpen(true); setForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
-            style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-            + Nueva clase
-          </button>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            <button onClick={() => { setGenerarOpen(true); setResultadoGenerar('') }}
+              style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
+              <CalendarPlus size={15} /> Generar semana
+            </button>
+            <button onClick={() => { setModalOpen(true); setForm(f => ({ ...f, fecha: new Date().toISOString().slice(0,10) })) }}
+              style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              + Nueva clase
+            </button>
+          </div>
         )}
       </div>
 
@@ -231,12 +298,17 @@ export default function ClasesPage() {
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:600, color: text }}>{c.contenido}</div>
                     <div style={{ fontSize:11, color: muted, marginTop:3 }}>
+                      {c.sede ? `${sedeLabel(c.sede).split(' ')[0]} · ` : ''}
                       {prof ? `${prof.nombre}` : ''}{c.grupo ? ` · ${c.grupo}` : ''}
                       {' · '}<span style={{ color:'#16a34a' }}>✓ {confirmados} van</span>
                     </div>
                   </div>
                   {puedeCrear && (
                     <div style={{ display:'flex', gap:6 }}>
+                      <button onClick={() => abrirEditar(c)} title="Editar clase"
+                        style={{ background:'#f4f7fa', color: muted, border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+                        <Pencil size={11} /> Editar
+                      </button>
                       {!c.publicada && (
                         <button onClick={() => publicarClase(c.id)} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Publicar</button>
                       )}
@@ -257,6 +329,143 @@ export default function ClasesPage() {
           </div>
         )
       })}
+
+      {/* Modal generar semana desde el horario */}
+      {generarOpen && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}
+          onClick={e => { if (e.target === e.currentTarget) setGenerarOpen(false) }}>
+          <div style={{ background:'#fff', borderRadius:14, padding:24, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.2)' }}>
+            <div style={{ fontSize:16, fontWeight:700, color: text, marginBottom:4 }}>Generar semana</div>
+            <p style={{ fontSize:12, color: muted, marginBottom:16, lineHeight:1.5 }}>
+              Crea las clases de <strong>{labelSemana}</strong> desde el horario semanal.
+              Desmarcá los días feriados. Se puede repetir sin duplicar.
+            </p>
+
+            <div style={{ fontSize:11, color: muted, fontWeight:600, marginBottom:6 }}>Días a generar</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:16 }}>
+              {DIAS.map(d => {
+                const activo = diasGenerar.has(d.value)
+                return (
+                  <button key={d.value} onClick={() => setDiasGenerar(prev => {
+                    const next = new Set(prev)
+                    if (next.has(d.value)) next.delete(d.value); else next.add(d.value)
+                    return next
+                  })}
+                    style={{ background: activo ? '#ede9fe' : '#f8fafc', border:`1px solid ${activo ? '#c4b5fd' : '#e2e8f0'}`,
+                      color: activo ? '#3730a3' : hint, borderRadius:20, padding:'6px 14px', fontSize:12,
+                      fontWeight: activo ? 700 : 400, cursor:'pointer' }}>
+                    {d.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color: text, cursor:'pointer', marginBottom:16 }}>
+              <input type="checkbox" checked={publicarGenerado} onChange={e => setPublicarGenerado(e.target.checked)} />
+              Publicar de inmediato (visibles en el calendario)
+            </label>
+
+            {resultadoGenerar && (
+              <div style={{ background: resultadoGenerar.startsWith('⚠') ? '#fef2f2' : '#f0fdf4',
+                border:`1px solid ${resultadoGenerar.startsWith('⚠') ? '#fecaca' : '#bbf7d0'}`,
+                color: resultadoGenerar.startsWith('⚠') ? '#dc2626' : '#16a34a',
+                borderRadius:8, padding:'9px 12px', fontSize:12, marginBottom:14 }}>
+                {resultadoGenerar}
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => setGenerarOpen(false)}
+                style={{ flex:1, padding:10, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer' }}>
+                Cerrar
+              </button>
+              <button onClick={confirmarGenerar} disabled={generando || diasGenerar.size === 0}
+                style={{ flex:1, padding:10, background: generando || diasGenerar.size === 0 ? '#e2e8f0' : '#4f46e5', border:'none', borderRadius:8,
+                  color: generando || diasGenerar.size === 0 ? '#94a3b8' : '#fff', fontSize:13, fontWeight:700,
+                  cursor: generando || diasGenerar.size === 0 ? 'default' : 'pointer' }}>
+                {generando ? 'Generando...' : 'Generar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal editar clase */}
+      {editando && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}
+          onClick={e => { if (e.target === e.currentTarget) setEditando(null) }}>
+          <div style={{ background:'#fff', borderRadius:14, padding:24, width:'100%', maxWidth:420, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.2)' }}>
+            <div style={{ fontSize:16, fontWeight:700, color: text, marginBottom:16 }}>Editar clase</div>
+
+            <div style={{ marginBottom:12 }}>
+              <label style={{ fontSize:11, color: muted, display:'block', marginBottom:4, fontWeight:600 }}>Nombre de la clase *</label>
+              <input style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none' }}
+                value={formEditar.contenido} onChange={e => setFormEditar(f => ({ ...f, contenido: e.target.value }))} />
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+              <div>
+                <label style={{ fontSize:11, color: muted, display:'block', marginBottom:4, fontWeight:600 }}>Hora inicio *</label>
+                <input type="time" style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none' }}
+                  value={formEditar.inicio} onChange={e => setFormEditar(f => ({ ...f, inicio: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize:11, color: muted, display:'block', marginBottom:4, fontWeight:600 }}>Hora fin</label>
+                <input type="time" style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none' }}
+                  value={formEditar.fin} onChange={e => setFormEditar(f => ({ ...f, fin: e.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+              <div>
+                <label style={{ fontSize:11, color: muted, display:'block', marginBottom:4, fontWeight:600 }}>Profesor</label>
+                <select style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none' }}
+                  value={formEditar.profesorId} onChange={e => setFormEditar(f => ({ ...f, profesorId: e.target.value }))}>
+                  <option value="">— Sin asignar —</option>
+                  {profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize:11, color: muted, display:'block', marginBottom:4, fontWeight:600 }}>Sede</label>
+                <select style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none' }}
+                  value={formEditar.sede} onChange={e => setFormEditar(f => ({ ...f, sede: e.target.value }))}>
+                  <option value="">— Sin sede —</option>
+                  {SEDES.filter(s => s.value !== 'ambos').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom:12 }}>
+              <label style={{ fontSize:11, color: muted, display:'block', marginBottom:4, fontWeight:600 }}>Detalle (opcional)</label>
+              <input style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none' }}
+                value={formEditar.grupo} onChange={e => setFormEditar(f => ({ ...f, grupo: e.target.value }))} />
+            </div>
+
+            <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color: text, cursor:'pointer', marginBottom:18 }}>
+              <input type="checkbox" checked={formEditar.publicada} onChange={e => setFormEditar(f => ({ ...f, publicada: e.target.checked }))} />
+              Publicada (visible en el calendario)
+            </label>
+
+            {errorClase && (
+              <div style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'9px 12px', fontSize:12, marginBottom:14 }}>
+                {errorClase}
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => { setEditando(null); setErrorClase('') }}
+                style={{ flex:1, padding:10, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={guardarEdicion} disabled={guardandoEdicion}
+                style={{ flex:1, padding:10, background: guardandoEdicion ? '#e2e8f0' : '#4f46e5', border:'none', borderRadius:8,
+                  color: guardandoEdicion ? '#94a3b8' : '#fff', fontSize:13, fontWeight:700, cursor: guardandoEdicion ? 'default' : 'pointer' }}>
+                {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal nueva clase */}
       {modalOpen && (

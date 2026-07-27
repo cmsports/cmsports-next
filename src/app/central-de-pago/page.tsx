@@ -8,7 +8,7 @@ import { Upload, ImageIcon } from 'lucide-react'
 import { subirImagenCentralPago } from '../actions/central-pago'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 
-const WA = '56968342721'
+const WA = '56977437894'
 
 export default function CentralDePagoPage() {
   const { perfil, loading } = usePerfil()

@@ -8,7 +8,7 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { Pencil, Trash2, Plus, X } from 'lucide-react'
 import { crearProductoTiendaAsociacion, editarProductoTiendaAsociacion, eliminarProductoTiendaAsociacion } from '@/app/actions/tienda-asociacion'
 
-const WA = '56968342721'
+const WA = '56977437894'
 
 type Producto = {
   id: string

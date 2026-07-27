@@ -315,6 +315,8 @@ export interface Database {
           creado_en: string | null
           publicada: boolean | null
           fecha: string | null
+          bloque_id: string | null
+          sede: string | null
         }
         Insert: {
           id?: string
@@ -328,6 +330,8 @@ export interface Database {
           creado_en?: string | null
           publicada?: boolean | null
           fecha?: string | null
+          bloque_id?: string | null
+          sede?: string | null
         }
         Update: {
           id?: string
@@ -341,10 +345,13 @@ export interface Database {
           creado_en?: string | null
           publicada?: boolean | null
           fecha?: string | null
+          bloque_id?: string | null
+          sede?: string | null
         }
         Relationships: [
           { foreignKeyName: 'clases_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
           { foreignKeyName: 'clases_profesor_id_fkey'; columns: ['profesor_id']; referencedRelation: 'profesores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'clases_bloque_id_fkey'; columns: ['bloque_id']; referencedRelation: 'bloques_horario'; referencedColumns: ['id'] },
         ]
       }
       clase_jugadores: {
@@ -1709,6 +1716,68 @@ export interface Database {
         Relationships: [
           { foreignKeyName: 'jugador_documentos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
           { foreignKeyName: 'jugador_documentos_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
+      }
+      bloques_horario: {
+        Row: {
+          id: string
+          club_id: string
+          nombre: string
+          sede: string
+          dia_semana: string
+          hora_inicio: string
+          hora_fin: string
+          cupo_maximo: number
+          cupo_libres: number
+          activo: boolean
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          nombre: string
+          sede: string
+          dia_semana: string
+          hora_inicio: string
+          hora_fin: string
+          cupo_maximo?: number
+          cupo_libres?: number
+          activo?: boolean
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          nombre?: string
+          sede?: string
+          dia_semana?: string
+          hora_inicio?: string
+          hora_fin?: string
+          cupo_maximo?: number
+          cupo_libres?: number
+          activo?: boolean
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'bloques_horario_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+        ]
+      }
+      bloque_profesores: {
+        Row: {
+          bloque_id: string
+          profesor_id: string
+        }
+        Insert: {
+          bloque_id: string
+          profesor_id: string
+        }
+        Update: {
+          bloque_id?: string
+          profesor_id?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'bloque_profesores_bloque_id_fkey'; columns: ['bloque_id']; referencedRelation: 'bloques_horario'; referencedColumns: ['id'] },
+          { foreignKeyName: 'bloque_profesores_profesor_id_fkey'; columns: ['profesor_id']; referencedRelation: 'profesores'; referencedColumns: ['id'] },
         ]
       }
     }
