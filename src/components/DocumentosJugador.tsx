@@ -6,8 +6,14 @@ import { FileText, Upload, Download, Trash2 } from 'lucide-react'
 import { subirDocumentoJugador, eliminarDocumentoJugador, type TipoDocumento } from '@/app/actions/jugadores'
 import { firmarUrls } from '@/lib/supabase/privado'
 
-const DOCS: { tipo: TipoDocumento; label: string; icono: string }[] = [
-  { tipo: 'derecho_formacion', label: 'Derecho de formación', icono: '📄' },
+const DOCS: { tipo: TipoDocumento; label: string; icono: string; plantilla?: string; comoSeHace?: string }[] = [
+  {
+    tipo: 'derecho_formacion', label: 'Derecho de formación', icono: '📄',
+    // El formulario en blanco vive en /public: es el mismo para todos y no
+    // tiene datos de nadie, así que no hace falta pasarlo por la base.
+    plantilla: '/documentos/formulario-ingreso-federado.docx',
+    comoSeHace: 'Descargá el formulario, imprimilo, llenalo a mano y firmalo. Después sacale una foto o escanealo y subilo acá.',
+  },
   { tipo: 'carta_compromiso',  label: 'Carta de compromiso',  icono: '✍️' },
 ]
 
@@ -95,7 +101,7 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, padding: '4px 20px 16px' }}>
-        {DOCS.map(({ tipo, label, icono }) => {
+        {DOCS.map(({ tipo, label, icono, plantilla, comoSeHace }) => {
           const doc = docs[tipo]
           const estaSubiendo = subiendo === tipo
 
@@ -114,6 +120,19 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
                 <span style={{ fontSize: 17 }}>{icono}</span>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>{label}</span>
               </div>
+
+              {!doc && comoSeHace && !cargando && (
+                <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.45 }}>{comoSeHace}</div>
+              )}
+
+              {!doc && plantilla && !cargando && (
+                <a href={plantilla} download
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                    background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 7,
+                    padding: '7px 8px', fontSize: 11, fontWeight: 700, color: '#3730a3', textDecoration: 'none' }}>
+                  <Download size={12} /> Descargar el formulario
+                </a>
+              )}
 
               {cargando ? (
                 <div style={{ fontSize: 11, color: '#94a3b8' }}>Cargando…</div>

@@ -81,6 +81,10 @@ export default function JugadoresPage() {
   // Grupos al crear: si entra sin bloque queda invisible para la asistencia.
   const [bloquesClub, setBloquesClub] = useState<BloqueHorario[]>([])
   const [bloquesSel, setBloquesSel]   = useState<Set<string>>(new Set())
+  // Quiénes entregaron el formulario firmado. Sin esto habría que abrir las
+  // 102 fichas de a una para saber a quién apurar.
+  const [conDocumento, setConDocumento] = useState<Set<string>>(new Set())
+  const [filtroDoc, setFiltroDoc]       = useState<Set<string>>(() => setDesdeParam(searchParams, 'doc'))
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -135,6 +139,19 @@ export default function JugadoresPage() {
     void cargarInicial()
     return () => { activo = false }
   }, [authLoading, perfil, router])
+
+  // Quiénes ya entregaron el formulario firmado. Es una consulta sola para
+  // todo el club, no una por jugador.
+  useEffect(() => {
+    if (!clubId) return
+    let activo = true
+    void (async () => {
+      const { data } = await supabase.from('jugador_documentos')
+        .select('jugador_id').eq('tipo', 'derecho_formacion')
+      if (activo) setConDocumento(new Set((data ?? []).map(d => d.jugador_id)))
+    })()
+    return () => { activo = false }
+  }, [clubId])
 
   const cargarJugadores = useCallback(async (cid?: string) => {
     const id = cid || clubId
@@ -201,6 +218,7 @@ export default function JugadoresPage() {
     if (filtroEstado.size) params.set('estado', [...filtroEstado].join(','))
     if (filtroDia.size) params.set('dia', [...filtroDia].join(','))
     if (filtroFederado.size) params.set('federado', [...filtroFederado].join(','))
+    if (filtroDoc.size) params.set('doc', [...filtroDoc].join(','))
     if (filtroPago.size) params.set('pago', [...filtroPago].join(','))
     if (filtroHorario.size) params.set('horario', [...filtroHorario].join(','))
     if (filtroPresente.size) params.set('presente', [...filtroPresente].join(','))
@@ -213,7 +231,7 @@ export default function JugadoresPage() {
     const qs = params.toString()
     router.replace(qs ? `/jugadores?${qs}` : '/jugadores', { scroll: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroPago, filtroHorario, filtroPresente, filtroSede, filtroGrupo, filtroSinHorario, edadMin, edadMax, orden])
+  }, [busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroDoc, filtroPago, filtroHorario, filtroPresente, filtroSede, filtroGrupo, filtroSinHorario, edadMin, edadMax, orden])
 
   function mostrarToast(msg: string) {
     setToast(msg)
@@ -352,6 +370,7 @@ export default function JugadoresPage() {
     .filter(j => !filtroSinHorario || sinHorario(j))
     .filter(j => filtroDia.size === 0 || [...filtroDia].some(d => j[`entrena_${d}`] === true))
     .filter(j => filtroFederado.size === 0 || (filtroFederado.has('si') && j.federado === true) || (filtroFederado.has('no') && !j.federado))
+    .filter(j => filtroDoc.size === 0 || (filtroDoc.has('si') && conDocumento.has(j.id)) || (filtroDoc.has('no') && !conDocumento.has(j.id)))
     .filter(j => filtroPago.size === 0 || filtroPago.has(estadoPago[j.id] || ''))
     .filter(j => filtroHorario.size === 0 || filtroHorario.has(j.horario || ''))
     .filter(j => filtroPresente.size === 0 || (filtroPresente.has('presente') && asistenciaHoy.has(j.id)) || (filtroPresente.has('ausente') && !asistenciaHoy.has(j.id)))
@@ -378,6 +397,7 @@ export default function JugadoresPage() {
     ...(filtroSinHorario ? [{ key:'sinhorario', label:'Sin horario', onRemove: () => setFiltroSinHorario(false) }] : []),
     ...[...filtroDia].map(d => ({ key:`dia-${d}`, label: diaLabel(d), onRemove: () => setFiltroDia(prev => setToggle(prev, d)) })),
     ...[...filtroFederado].map(v => ({ key:`fed-${v}`, label: v === 'si' ? 'Federado' : 'No federado', onRemove: () => setFiltroFederado(prev => setToggle(prev, v)) })),
+    ...[...filtroDoc].map(v => ({ key:`doc-${v}`, label: v === 'si' ? 'Con formulario' : 'Sin formulario', onRemove: () => setFiltroDoc(prev => setToggle(prev, v)) })),
     ...[...filtroPago].map(v => ({ key:`pago-${v}`, label: v === 'pagado' ? 'Al día' : v === 'pendiente' ? 'Pendiente' : 'Atrasado', onRemove: () => setFiltroPago(prev => setToggle(prev, v)) })),
     ...[...filtroHorario].map(h => ({ key:`horario-${h}`, label:h, onRemove: () => setFiltroHorario(prev => setToggle(prev, h)) })),
     ...[...filtroPresente].map(v => ({ key:`presente-${v}`, label: v === 'presente' ? 'Presente hoy' : 'Ausente hoy', onRemove: () => setFiltroPresente(prev => setToggle(prev, v)) })),
@@ -436,6 +456,13 @@ export default function JugadoresPage() {
             onChange={setFiltroEstado}
           />
 
+          <FiltroMultiSelect
+            label="Formulario federado"
+            options={[{ value:'si', label:'Entregado' }, { value:'no', label:'Pendiente' }]}
+            selected={filtroDoc}
+            onChange={setFiltroDoc}
+          />
+
           <button
             onClick={() => setOrden(o => o === 'az' ? 'za' : 'az')}
             style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 12px', fontSize:13, color: muted, cursor:'pointer', whiteSpace:'nowrap' }}
@@ -454,7 +481,7 @@ export default function JugadoresPage() {
             <button
               onClick={() => {
                 setBusqueda(''); setFiltroCat(new Set()); setFiltroEstado(new Set()); setFiltroSinHorario(false)
-                setFiltroDia(new Set()); setFiltroFederado(new Set()); setFiltroPago(new Set())
+                setFiltroDia(new Set()); setFiltroFederado(new Set()); setFiltroDoc(new Set()); setFiltroPago(new Set())
                 setFiltroHorario(new Set()); setFiltroPresente(new Set()); setEdadMin(''); setEdadMax('')
                 setFiltroSede(new Set()); setFiltroGrupo(new Set())
               }}
