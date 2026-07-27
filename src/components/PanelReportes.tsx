@@ -193,9 +193,10 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
       {/* Ocupación y asistencia por grupo */}
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text }}>Ocupación y asistencia por grupo</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text }}>Ocupación por grupo</div>
           <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>
-            Asistencia = de todas las veces que cada inscrito pudo venir en el período, cuántas vino.
+            Cuánta gente tiene cada grupo sobre su cupo. La asistencia vive en Asistencia → Panorama,
+            que sale del historial: acá se duplicaría el cálculo.
           </div>
         </div>
         <div style={{ overflowX: 'auto' }}>
@@ -208,7 +209,6 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
                 <th style={{ ...th, textAlign: 'right' }}>Inscritos</th>
                 <th style={th}>Ocupación</th>
                 <th style={{ ...th, textAlign: 'right' }}>Clases</th>
-                <th style={th}>Asistencia</th>
               </tr>
             </thead>
             <tbody>
@@ -228,14 +228,6 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
                     </div>
                   </td>
                   <td style={num}>{f.sesiones}</td>
-                  <td style={td}>
-                    {f.asistencia === null ? <span style={{ color: hint, fontSize: 12 }}>—</span> : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Barra pct={f.asistencia} color={colorAsis(f.asistencia)} />
-                        <span style={{ fontSize: 12, color: colorAsis(f.asistencia), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{f.asistencia}%</span>
-                      </div>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>

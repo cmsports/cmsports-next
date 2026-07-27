@@ -1,6 +1,7 @@
 ﻿'use client'
 
 import { useEffect, useRef, useState, Suspense } from 'react'
+import PanelMensualidadesHistoricas from '@/components/PanelMensualidadesHistoricas'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -53,7 +54,7 @@ function FinanzasContent() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const searchParams = useSearchParams()
-  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'reportes'>(
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'historicas'|'reportes'>(
     searchParams.get('tab') === 'mensualidades' ? 'mensualidades' : 'movimientos',
   )
   // Monta Mensualidades solo cuando se abre por primera vez (evita sus consultas al entrar en "Movimientos"); una vez montado queda vivo
@@ -253,6 +254,7 @@ function FinanzasContent() {
         {[
           { key:'movimientos', label:'📋 Movimientos' },
           { key:'mensualidades', label:'💳 Mensualidades' },
+          { key:'historicas', label:'🗓️ Históricas' },
           { key:'reportes', label:'📈 Reportes' },
         ].map(t => (
           <div key={t.key} onClick={() => { setTabActivo(t.key as any); if (t.key === 'mensualidades') setMensualidadesVista(true) }}
@@ -443,6 +445,12 @@ function FinanzasContent() {
       </div>
 
       {/* TAB REPORTES */}
+      {/* Meses pasados: se corrigen acá, con ajuste y auditoría. Se monta solo
+          al abrir la pestaña porque carga el año completo de cada jugador. */}
+      {tabActivo === 'historicas' && clubId && (
+        <PanelMensualidadesHistoricas clubId={clubId} />
+      )}
+
       <div style={{ display: tabActivo === 'reportes' ? 'block' : 'none' }}>
         <ReportesTab clubId={clubId} />
       </div>

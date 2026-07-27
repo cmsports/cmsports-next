@@ -1,6 +1,6 @@
 'use server'
 
-import { requireAdminClub } from '@/lib/auth/require'
+import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
 import {
   generarMensualidadesSchema,
   mensualidadIdSchema,
@@ -95,4 +95,47 @@ export async function revertirPago(params: {
   })
   if (error || !data) return { error: error?.message ?? 'No se pudo revertir el pago' }
   return { success: true }
+}
+
+/**
+ * Corrige la mensualidad de un mes cualquiera, incluso uno ya cerrado.
+ *
+ * Todo el trabajo lo hace `corregir_mensualidad` en la base, que además de
+ * guardar el cambio deja la auditoría y genera el movimiento de ajuste. Que
+ * viva allá y no acá importa: si alguien corrigiera una cuota por otra vía, el
+ * ajuste y el rastro se generarían igual.
+ *
+ * El ajuste es la diferencia, no el monto completo: corregir un pago de $25.000
+ * a $30.000 mete $5.000 al libro, no un segundo ingreso de $30.000.
+ */
+export async function corregirMensualidad(params: {
+  jugadorId: string
+  mes: number
+  anio: number
+  estado: 'pagado' | 'pendiente' | 'sin_registro'
+  monto?: number | null
+  fechaPago?: string | null
+  metodo?: string | null
+  motivo?: string
+}) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!['admin', 'superadmin'].includes(perfil.rol ?? '')) {
+    return { error: 'Solo el administrador puede corregir mensualidades' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('corregir_mensualidad', {
+    p_jugador_id: params.jugadorId,
+    p_mes:        params.mes,
+    p_anio:       params.anio,
+    p_estado:     params.estado,
+    p_monto:      params.monto ?? null,
+    p_fecha_pago: params.fechaPago || null,
+    p_metodo:     params.metodo || null,
+    p_motivo:     params.motivo?.trim() || null,
+  })
+  if (error) return { error: error.message }
+
+  return { ok: true }
 }

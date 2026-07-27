@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { calendarioJugador, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
+import { vigenteEn } from '@/lib/domain/vigencia'
 
 const supabase = createClient()
 
@@ -159,6 +160,29 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const porCategoria = agrupar(f => f.jugador.categoria)
   const porSede      = agrupar(f => f.jugador.sede)
 
+  // Promedio por grupo de entrenamiento. Un jugador que va a dos grupos suma
+  // en los dos: la pregunta es cómo anda cada grupo, no repartir culpas.
+  const nombreBloque = new Map(datos.bloques.map(b => [b.id, b.nombre]))
+  const porGrupo = (() => {
+    const m = new Map<string, { si: number; no: number; jugadores: Set<string> }>()
+    const deJugador = new Map<string, Fila>(filas.map(f => [f.jugador.id, f]))
+    for (const i of datos.inscripciones) {
+      if (!vigenteEn(i, hoy)) continue
+      const f = deJugador.get(i.jugador_id)
+      const nombre = nombreBloque.get(i.bloque_id)
+      if (!f || !nombre) continue
+      const acc = m.get(nombre) ?? { si: 0, no: 0, jugadores: new Set<string>() }
+      if (!acc.jugadores.has(f.jugador.id)) {
+        acc.si += f.presentes; acc.no += f.ausentes
+        acc.jugadores.add(f.jugador.id)
+      }
+      m.set(nombre, acc)
+    }
+    return [...m.entries()]
+      .map(([k, v]) => ({ k, jugadores: v.jugadores.size, pct: v.si + v.no > 0 ? Math.round((v.si / (v.si + v.no)) * 100) : null }))
+      .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))
+  })()
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -216,7 +240,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
 
       {/* Promedios por corte */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-        {([['Por categoría', porCategoria], ['Por sede', porSede]] as const).map(([titulo, filas]) => (
+        {([['Por grupo', porGrupo], ['Por categoría', porCategoria], ['Por sede', porSede]] as const).map(([titulo, filas]) => (
           <div key={titulo} style={{ ...card, overflow: 'hidden' }}>
             <div style={{ padding: '13px 16px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text }}>{titulo}</div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
