@@ -32,6 +32,9 @@ export async function registrarBloqueAction(params: {
   hora: string
   presentes: string[]
   ausentes: string[]
+  /** Bloque del horario en el que se tomó la lista. Deja rastro de a qué
+   *  grupo pertenece cada asistencia, que es lo que distingue Buin de Fátima. */
+  bloqueId?: string | null
 }) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
@@ -47,6 +50,7 @@ export async function registrarBloqueAction(params: {
     p_hora:      params.hora,
     p_presentes: params.presentes,
     p_ausentes:  params.ausentes,
+    p_bloque_id: params.bloqueId ?? null,
   })
   if (error) return { error: error.message }
 
