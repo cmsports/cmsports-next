@@ -8,7 +8,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
-import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
+import {
+  asignarMontoClaseExtraordinaria, eliminarAsistencia, eliminarClaseExtraordinaria,
+  registrarAsistenciaAction, registrarClaseExtraordinaria,
+} from '@/app/actions/asistencia'
+import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { hhmm, inicioVentana, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
@@ -48,6 +52,15 @@ type BloqueDelDia = {
   hora_fin: string
 }
 
+/** Una clase extra ya registrada hoy. */
+type ClaseExtraHoy = {
+  id: string
+  jugador_id: string
+  bloque_id: string | null
+  hora: string | null
+  monto: number | null
+}
+
 // Día de la semana de hoy en el formato del horario ('lun'..'vie').
 function diaDeHoy(): string {
   return ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][
@@ -76,6 +89,16 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [inscritosDe,  setInscritosDe]  = useState<Record<string, string[]>>({})
   const [sedeSel,      setSedeSel]      = useState('')
   const [bloqueSel,    setBloqueSel]    = useState('')
+
+  // Los que vinieron a un grupo que no es el suyo. Van aparte de `asistencias`
+  // porque no descuentan sesión ni cuentan en el porcentaje: se cobran aparte.
+  const [extrasHoy,    setExtrasHoy]    = useState<ClaseExtraHoy[]>([])
+  const [mostrarOtros, setMostrarOtros] = useState(false)
+  const [buscaOtro,    setBuscaOtro]    = useState('')
+  const [modalMonto,   setModalMonto]   = useState<ClaseExtraHoy | null>(null)
+  const [montoTexto,   setMontoTexto]   = useState('')
+  const [errorMonto,   setErrorMonto]   = useState('')
+  const [guardandoMonto, setGuardandoMonto] = useState(false)
 
   // Los bloques de hoy del propio jugador, para saber si puede marcarse.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,6 +186,19 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
   }, [clubId, hoy, perfil])
 
+  // Las clases extra del día que se está mirando. Si la migración 098 todavía
+  // no corrió, esto devuelve error y data null: el `?? []` lo absorbe y la
+  // pantalla queda como antes.
+  const cargarExtras = useCallback(async (fecha: string, cid?: string) => {
+    const id = cid || clubId
+    if (!id) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any).from('clases_extraordinarias')
+      .select('id,jugador_id,bloque_id,hora,monto')
+      .eq('club_id', id).eq('fecha', fecha)
+    setExtrasHoy((data ?? []) as ClaseExtraHoy[])
+  }, [clubId])
+
   const cargarAsistenciasDia = useCallback(async (fecha: string) => {
     if (!clubId) return
     setCargandoDia(true)
@@ -183,11 +219,17 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       if (perfil.club_id) {
         if (navigator.onLine) await sincronizarCola(perfil.club_id)
         await cargarDatos(perfil.club_id)
+        await cargarExtras(fechaChile(), perfil.club_id)
       }
       setLoading(false)
     }
     void cargar()
-  }, [cargarDatos, perfil, router, sincronizarCola])
+  }, [cargarDatos, cargarExtras, perfil, router, sincronizarCola])
+
+  // Las extras se recargan al cambiar el día que se está mirando.
+  useEffect(() => {
+    if (clubId && fechaVista) void cargarExtras(fechaVista)
+  }, [cargarExtras, clubId, fechaVista])
 
   useEffect(() => {
     if (online && clubId) {
@@ -282,8 +324,63 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
   }, [cargarAsistenciasDia, cargarDatos, clubId, fechaVista, hoy])
 
+  /** El jugador vino a un grupo que no es el suyo. Se cobra aparte. */
+  async function registrarExtra(jugadorId: string) {
+    if (!bloqueSel) return
+    setRegistrando(jugadorId)
+    const res = await registrarClaseExtraordinaria({
+      jugadorId, fecha: hoy, bloqueId: bloqueSel, hora,
+    })
+    setRegistrando(null)
+    if (res.error) {
+      setMensaje({ tipo: 'error', texto: res.error })
+      setTimeout(() => setMensaje(null), 6000)
+      return
+    }
+    setBuscaOtro('')
+    await cargarExtras(hoy)
+  }
+
+  async function guardarMonto() {
+    if (!modalMonto) return
+    const monto = montoIngresado(montoTexto)
+    if (monto != null && monto <= 0) { setErrorMonto('El monto tiene que ser mayor a cero.'); return }
+    setGuardandoMonto(true)
+    setErrorMonto('')
+    const res = await asignarMontoClaseExtraordinaria({ id: modalMonto.id, monto })
+    setGuardandoMonto(false)
+    if (res.error) { setErrorMonto(res.error); return }
+    setModalMonto(null)
+    await cargarExtras(fechaVista)
+  }
+
+  async function borrarExtra(id: string) {
+    if (!confirm('¿Borrar esta clase extra?')) return
+    setEliminando(id)
+    const res = await eliminarClaseExtraordinaria({ id })
+    setEliminando(null)
+    if (res.error) { setMensaje({ tipo: 'error', texto: res.error }); setTimeout(() => setMensaje(null), 6000); return }
+    setModalMonto(null)
+    await cargarExtras(fechaVista)
+  }
+
   async function registrarAsistencia(jugadorId: string) {
     if (asistencias.find(a => a.jugador_id === jugadorId)) return
+
+    // El error que se arrastraba: marcar presente a alguien un día que no
+    // entrena le descontaba una sesión del plan y el día no aparecía en su
+    // calendario, porque no estaba programado. Si no tiene ningún bloque hoy,
+    // lo que vino a hacer es una clase extra y hay que elegirle el horario.
+    if (esAdminOProfesor && bloquesHoy.length > 0 && !tieneBloqueHoy(jugadorId)) {
+      const jug = jugadores.find(j => j.id === jugadorId)
+      setMensaje({
+        tipo: 'error',
+        texto: `${jug?.nombre ?? 'Ese jugador'} no entrena hoy. Elegí el horario al que vino y agregalo desde "Vino alguien de otro grupo": queda como clase extra y no le descuenta sesiones.`,
+      })
+      setTimeout(() => setMensaje(null), 9000)
+      return
+    }
+
     setRegistrando(jugadorId)
 
     if (!navigator.onLine) {
@@ -412,6 +509,26 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const bloqueElegido = bloquesHoy.find(b => b.id === bloqueSel) ?? null
 
+  // Los que hoy no están en ningún bloque: para ellos, venir es una clase extra.
+  const conBloqueHoy = new Set(Object.values(inscritosDe).flat())
+  function tieneBloqueHoy(jugadorId: string) {
+    return conBloqueHoy.has(jugadorId)
+  }
+
+  // Candidatos a clase extra: cualquiera que no esté inscrito en el bloque
+  // elegido. La base vuelve a comprobarlo antes de escribir.
+  const yaTieneExtra = new Set(extrasHoy.map(e => e.jugador_id))
+  const otrosJugadores = bloqueSel
+    ? jugadores.filter(j =>
+        !inscritosDelBloque?.has(j.id) &&
+        !yaTieneExtra.has(j.id) &&
+        j.nombre?.toLowerCase().includes(buscaOtro.toLowerCase()))
+    : []
+
+  const extrasMostradas = extrasHoy
+  const nombreDe = (id: string) => jugadores.find(j => j.id === id)?.nombre ?? '—'
+  const fmtMonto = (n: number | null) => n == null ? null : '$' + Number(n).toLocaleString('es-CL')
+
   const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
 
   if (loading) return (
@@ -495,12 +612,17 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       <div style={{ ...card, overflow: 'hidden', marginBottom: 24 }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text, textTransform: 'capitalize' }}>
           Asistencias {fechaVista === hoy ? 'de hoy' : `del ${formatFechaLarga(fechaVista)}`} ({asistenciasMostradas.length})
+          {extrasMostradas.length > 0 && (
+            <span style={{ marginLeft: 8, fontWeight: 600, color: '#a16207' }}>
+              · {extrasMostradas.length} clase{extrasMostradas.length === 1 ? '' : 's'} extra
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
             {cargandoDia ? (
               <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Cargando...</div>
-            ) : asistenciasMostradas.length === 0 ? (
+            ) : asistenciasMostradas.length === 0 && extrasMostradas.length === 0 ? (
               <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Sin asistencias registradas este día</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -530,6 +652,35 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                       </tr>
                     )
                   })}
+
+                  {/* Las clases extra, en amarillo. Tocar el nombre abre el
+                      monto: es donde el profe se acuerda de cobrarla. */}
+                  {extrasMostradas.map(e => (
+                    <tr key={e.id} style={{ borderBottom: '1px solid #f1f5f9', background: '#fefce8' }}>
+                      <td style={{ padding: '12px 16px', fontWeight: 600, color: text }}>
+                        {nombreDe(e.jugador_id)}
+                        <span style={{ marginLeft: 8, background: '#eab308', color: '#422006',
+                          padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>
+                          CLASE EXTRA
+                        </span>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 13, color: muted, fontVariantNumeric: 'tabular-nums' }}>
+                        {e.hora?.slice(0, 5)}
+                      </td>
+                      {esAdminOProfesor && (
+                        <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button
+                            onClick={() => { setModalMonto(e); setMontoTexto(e.monto != null ? String(e.monto) : ''); setErrorMonto('') }}
+                            style={{ background: e.monto != null ? '#fff' : '#fff7ed',
+                              border: `1px solid ${e.monto != null ? '#e2e8f0' : '#fed7aa'}`,
+                              borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                              color: e.monto != null ? text : '#c2410c', cursor: 'pointer' }}>
+                            {fmtMonto(e.monto) ?? SIN_CUOTA}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}
@@ -641,6 +792,109 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 )
               })}
               {filtrados.length === 0 && <div style={{ padding: 16, color: muted, fontSize: 13, textAlign: 'center' }}>Sin resultados</div>}
+          </div>
+
+          {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:
+              sin saber a qué horario vino no se puede cobrar la clase. */}
+          {bloqueElegido && (
+            <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
+              {!mostrarOtros ? (
+                <button onClick={() => setMostrarOtros(true)}
+                  style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 8,
+                    padding: '8px 13px', fontSize: 12, fontWeight: 600, color: '#713f12', cursor: 'pointer' }}>
+                  ＋ Vino alguien de otro grupo
+                </button>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#713f12' }}>Clase extra</div>
+                    <button onClick={() => { setMostrarOtros(false); setBuscaOtro('') }}
+                      style={{ background: 'none', border: 'none', color: muted, fontSize: 12, cursor: 'pointer' }}>
+                      Cerrar
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
+                    Queda registrada en {rangoHorario(bloqueElegido.hora_inicio, bloqueElegido.hora_fin)}.
+                    No le descuenta sesiones y se cobra aparte.
+                  </div>
+                  <input
+                    style={{ width: '100%', boxSizing: 'border-box', background: '#fffbeb', border: '1px solid #fde047',
+                      borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none', marginBottom: 8 }}
+                    placeholder="Buscar al jugador que vino..."
+                    value={buscaOtro} onChange={e => setBuscaOtro(e.target.value)}
+                  />
+                  {buscaOtro.trim().length > 0 && (
+                    <div style={{ border: '1px solid #fde047', borderRadius: 8, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
+                      {otrosJugadores.slice(0, 25).map(j => (
+                        <div key={j.id} onClick={() => registrarExtra(j.id)}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '10px 14px', borderBottom: '1px solid #fef9c3', cursor: 'pointer', background: '#fffbeb' }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: text }}>{j.nombre}</span>
+                          {registrando === j.id
+                            ? <span style={{ color: muted, fontSize: 12 }}>Registrando...</span>
+                            : <span style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6,
+                                padding: '5px 11px', fontSize: 11, fontWeight: 700 }}>Clase extra</span>}
+                        </div>
+                      ))}
+                      {otrosJugadores.length === 0 && (
+                        <div style={{ padding: 14, color: muted, fontSize: 12, textAlign: 'center', background: '#fffbeb' }}>
+                          Sin resultados
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cuánto se le cobra por la clase extra */}
+      {modalMonto && (
+        <div className="anim-fondo" onClick={e => { if (e.target === e.currentTarget) setModalMonto(null) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
+          <div className="anim-modal" style={{ ...card, padding: 22, width: '100%', maxWidth: 340 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: text }}>Clase extra</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 16 }}>
+              {nombreDe(modalMonto.jugador_id)}
+            </div>
+
+            <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Monto a cobrar (CLP)</label>
+            <input type="number" autoFocus
+              style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
+                borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none' }}
+              value={montoTexto} onChange={e => setMontoTexto(e.target.value)} />
+            <div style={{ fontSize: 11, color: hint, marginTop: 6, marginBottom: 16 }}>
+              Si todavía no sabés cuánto, dejalo vacío: queda como &ldquo;{SIN_CUOTA}&rdquo;.
+            </div>
+
+            {errorMonto && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                padding: '9px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                {errorMonto}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModalMonto(null)}
+                style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0',
+                  borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={guardarMonto} disabled={guardandoMonto}
+                style={{ flex: 1, padding: 11, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {guardandoMonto ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+
+            <button onClick={() => borrarExtra(modalMonto.id)} disabled={eliminando === modalMonto.id}
+              style={{ width: '100%', padding: '9px 14px', marginTop: 10, borderRadius: 8, fontSize: 12,
+                border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>
+              {eliminando === modalMonto.id ? 'Borrando...' : 'Borrar esta clase extra'}
+            </button>
           </div>
         </div>
       )}

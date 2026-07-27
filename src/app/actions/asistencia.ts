@@ -116,6 +116,75 @@ export async function corregirAsistencia(params: {
   return { ok: true }
 }
 
+const STAFF = ['admin', 'superadmin', 'profesor']
+
+/**
+ * El jugador vino a un grupo que no es el suyo.
+ *
+ * No entra en `asistencia`: no descuenta sesión ni cuenta en su porcentaje. Es
+ * un hecho aparte, que se cobra aparte. Quién puede y qué es "un grupo que no
+ * es el suyo" lo decide la función de la base, no esta capa.
+ */
+export async function registrarClaseExtraordinaria(params: {
+  jugadorId: string
+  fecha: string
+  bloqueId: string
+  hora?: string | null
+  monto?: number | null
+  motivo?: string | null
+}) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!STAFF.includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden registrar una clase extraordinaria' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('registrar_clase_extraordinaria', {
+    p_jugador_id: params.jugadorId,
+    p_fecha:      params.fecha,
+    p_bloque_id:  params.bloqueId,
+    p_hora:       params.hora ?? null,
+    p_monto:      params.monto ?? null,
+    p_motivo:     params.motivo?.trim() || null,
+  })
+  if (error) return { error: error.message }
+
+  return { ok: true, id: data as string }
+}
+
+/** Cuánto se le cobra por esa clase. null la deja otra vez por asignar. */
+export async function asignarMontoClaseExtraordinaria(params: { id: string; monto: number | null }) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!STAFF.includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden cambiar el monto' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('asignar_monto_clase_extraordinaria', {
+    p_id: params.id, p_monto: params.monto,
+  })
+  if (error) return { error: error.message }
+
+  return { ok: true }
+}
+
+/** La borra. La base la rechaza si ya se cobró. */
+export async function eliminarClaseExtraordinaria(params: { id: string }) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!STAFF.includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden borrar una clase extraordinaria' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('eliminar_clase_extraordinaria', { p_id: params.id })
+  if (error) return { error: error.message }
+
+  return { ok: true }
+}
+
 /** Marca que un bloque no se dictó ese día: feriado, suspensión, lo que sea. */
 export async function marcarSinClase(params: { bloqueId: string; fecha: string; motivo?: string }) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
