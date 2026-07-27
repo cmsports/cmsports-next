@@ -12,6 +12,7 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 import { firmarUrls } from '@/lib/supabase/privado'
 import FiltroMultiSelect, { setToggle, setDesdeParam } from '@/components/FiltroMultiSelect'
+import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 
 const supabase = createClient()
 
@@ -77,6 +78,9 @@ export default function JugadoresPage() {
   const [estadoPago, setEstadoPago]             = useState<Record<string, string>>({})
   const [editandoMensualidadId, setEditandoMensualidadId] = useState<string | null>(null)
   const [mensualidadTemp, setMensualidadTemp] = useState('')
+  // Grupos al crear: si entra sin bloque queda invisible para la asistencia.
+  const [bloquesClub, setBloquesClub] = useState<BloqueHorario[]>([])
+  const [bloquesSel, setBloquesSel]   = useState<Set<string>>(new Set())
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -216,9 +220,19 @@ export default function JugadoresPage() {
     setTimeout(() => setToast(''), 3000)
   }
 
+  const cargarBloques = useCallback(async () => {
+    if (!clubId) return
+    const { data } = await supabase.from('bloques_horario')
+      .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
+      .eq('club_id', clubId).eq('activo', true).order('hora_inicio')
+    setBloquesClub((data ?? []) as BloqueHorario[])
+  }, [clubId])
+
   function abrirNuevo() {
     setEditando(null)
     setForm({ ...formVacio, categoria: esClubBuin ? '' : 'principiante' })
+    setBloquesSel(new Set())
+    void cargarBloques()
     setModalOpen(true)
   }
 
@@ -271,7 +285,7 @@ export default function JugadoresPage() {
       if (res.error) { mostrarToast(res.error); setGuardando(false); return }
       mostrarToast('Jugador actualizado')
     } else {
-      const res = await crearJugador({ nombre: form.nombre, rut: form.rut, email: form.email, telefono: form.telefono, ...planFields })
+      const res = await crearJugador({ nombre: form.nombre, rut: form.rut, email: form.email, telefono: form.telefono, ...planFields, bloqueIds: [...bloquesSel] })
       if (res.error) { mostrarToast(res.error); setGuardando(false); return }
       mostrarToast('Jugador creado. Le enviamos un correo para crear su contraseña')
     }
@@ -357,13 +371,12 @@ export default function JugadoresPage() {
   const horarios = [...new Set(jugadores.map(j => j.horario).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   const esAdmin = perfil?.rol === 'admin'
 
-  const diaLabel: Record<string, string> = { lun:'Lunes', mar:'Martes', mie:'Miércoles', jue:'Jueves', vie:'Viernes' }
   const chipsActivos: { key: string; label: string; onRemove: () => void }[] = [
     ...(busqueda ? [{ key:'q', label:`"${busqueda}"`, onRemove: () => setBusqueda('') }] : []),
     ...[...filtroCat].map(c => ({ key:`cat-${c}`, label:c, onRemove: () => setFiltroCat(prev => setToggle(prev, c)) })),
     ...[...filtroEstado].map(v => ({ key:`estado-${v}`, label: v === 'activo' ? 'Activo' : 'Bloqueado', onRemove: () => setFiltroEstado(prev => setToggle(prev, v)) })),
     ...(filtroSinHorario ? [{ key:'sinhorario', label:'Sin horario', onRemove: () => setFiltroSinHorario(false) }] : []),
-    ...[...filtroDia].map(d => ({ key:`dia-${d}`, label: diaLabel[d] || d, onRemove: () => setFiltroDia(prev => setToggle(prev, d)) })),
+    ...[...filtroDia].map(d => ({ key:`dia-${d}`, label: diaLabel(d), onRemove: () => setFiltroDia(prev => setToggle(prev, d)) })),
     ...[...filtroFederado].map(v => ({ key:`fed-${v}`, label: v === 'si' ? 'Federado' : 'No federado', onRemove: () => setFiltroFederado(prev => setToggle(prev, v)) })),
     ...[...filtroPago].map(v => ({ key:`pago-${v}`, label: v === 'pagado' ? 'Al día' : v === 'pendiente' ? 'Pendiente' : 'Atrasado', onRemove: () => setFiltroPago(prev => setToggle(prev, v)) })),
     ...[...filtroHorario].map(h => ({ key:`horario-${h}`, label:h, onRemove: () => setFiltroHorario(prev => setToggle(prev, h)) })),
@@ -732,6 +745,55 @@ export default function JugadoresPage() {
                 </>}
               </select>
             </div>
+
+            {/* Grupos: solo al crear. Al editar se manejan desde la ficha, que
+                es donde se ven junto al resto de su horario. */}
+            {!editando && (
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, color: muted, display:'block', marginBottom:2 }}>Grupos de entrenamiento</label>
+                <div style={{ fontSize:11, color: hint, marginBottom:6 }}>
+                  Sin grupo no aparece en la lista de asistencia ni puede marcar su llegada desde la app.
+                </div>
+                <div style={{ border:'1px solid #e2e8f0', borderRadius:8, padding:10, maxHeight:200, overflowY:'auto' }}>
+                  {DIAS.map(d => {
+                    const delDia = bloquesClub.filter(b => b.dia_semana === d.value)
+                    if (delDia.length === 0) return null
+                    return (
+                      <div key={d.value} style={{ marginBottom:10 }}>
+                        <div style={{ fontSize:10, color: muted, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>{diaLabel(d.value)}</div>
+                        {delDia.map(b => {
+                          const marcado = bloquesSel.has(b.id)
+                          return (
+                            <div key={b.id}
+                              onClick={() => setBloquesSel(prev => {
+                                const s = new Set(prev)
+                                if (s.has(b.id)) s.delete(b.id); else s.add(b.id)
+                                return s
+                              })}
+                              style={{ display:'flex', alignItems:'center', gap:9, padding:'7px 8px', borderRadius:6, cursor:'pointer', marginBottom:3,
+                                background: marcado ? '#eef2ff' : 'transparent', border:`1px solid ${marcado ? '#c7d2fe' : 'transparent'}` }}>
+                              <div style={{ width:16, height:16, borderRadius:4, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
+                                border:`2px solid ${marcado ? '#4f46e5' : '#cbd5e1'}`, background: marcado ? '#4f46e5' : 'transparent' }}>
+                                {marcado && <span style={{ color:'white', fontSize:10, fontWeight:800 }}>✓</span>}
+                              </div>
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ fontSize:12, fontWeight:600, color: text }}>{b.nombre}</div>
+                                <div style={{ fontSize:10, color: muted }}>{sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)}</div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
+                  {bloquesClub.length === 0 && (
+                    <div style={{ padding:'14px 0', textAlign:'center', fontSize:12, color: muted }}>
+                      Todavía no hay grupos en el horario semanal.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Plan */}
             <div style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:10, padding:14, marginBottom:20 }}>

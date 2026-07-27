@@ -1,6 +1,7 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { asignarBloquesJugador } from '@/app/actions/horario'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { requireAdminClub } from '@/lib/auth/require'
 import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
@@ -32,11 +33,14 @@ type DatosExtendidos = {
 
 export async function crearJugador(params: {
   nombre: string; rut: string; email: string; telefono: string
+  /** Grupos del horario a los que entra. Sin esto queda sin días ni sede, no
+   *  aparece en la lista de asistencia y no puede marcarse solo desde la app. */
+  bloqueIds?: string[]
 } & PlanFields & DatosExtendidos) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { nombre, rut, email, telefono, ...planFields } = params
+  const { nombre, rut, email, telefono, bloqueIds, ...planFields } = params
   const emailNormalizado = email.trim().toLowerCase()
   if (!emailNormalizado) return { error: 'El email es obligatorio' }
   let redirectTo: string
@@ -70,6 +74,12 @@ export async function crearJugador(params: {
     await admin.auth.admin.deleteUser(creado.user.id)
     await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
     return { error: 'No se pudo vincular la cuenta del jugador' }
+  }
+
+  // Al final: si esto falla el jugador ya existe y se arregla desde su ficha,
+  // mientras que deshacer la cuenta recién creada no.
+  if (bloqueIds?.length) {
+    await asignarBloquesJugador({ jugadorId: nuevoJugador.id, bloqueIds })
   }
 
   return { success: true, invitacionEnviada: true }
