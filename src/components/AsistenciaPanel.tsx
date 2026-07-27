@@ -37,6 +37,13 @@ function marcaTiempoActual() {
   return Date.now()
 }
 
+// Día de la semana de hoy en el formato del horario ('lun'..'vie').
+function diaDeHoy(): string {
+  return ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][
+    new Date(fechaChile() + 'T12:00:00').getDay()
+  ]
+}
+
 export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [jugadores, setJugadores] = useState<any[]>([])
   const [asistencias, setAsistencias] = useState<any[]>([])
@@ -51,6 +58,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const [pendientesCount, setPendientesCount] = useState(0)
 
+  // Los grupos del horario, usados solo para achicar la lista al pasar lista.
+  // No mandan sobre la asistencia: registrar sigue siendo tocar un nombre.
+  const [gruposDeJugador, setGruposDeJugador] = useState<Record<string, string[]>>({})
+  const [gruposHoy,       setGruposHoy]       = useState<Set<string>>(new Set())
+  const [grupoFiltro,     setGrupoFiltro]     = useState('')
 
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
@@ -165,6 +177,38 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
   }, [cargarDatos, clubId, online, sincronizarCola])
 
+
+  // A qué grupos pertenece cada jugador, para poder filtrar la lista por grupo.
+  useEffect(() => {
+    if (!clubId || !esAdminOProfesor) return
+    let vigente = true
+    void (async () => {
+      const [{ data: bloques }, { data: rel }] = await Promise.all([
+        supabase.from('bloques_horario').select('id,nombre,dia_semana')
+          .eq('club_id', clubId).eq('activo', true),
+        supabase.from('bloque_jugadores').select('bloque_id,jugador_id'),
+      ])
+      if (!vigente) return
+
+      const nombreDe = new Map<string, string>()
+      const diaDe    = new Map<string, string>()
+      for (const b of bloques ?? []) { nombreDe.set(b.id, b.nombre); diaDe.set(b.id, b.dia_semana) }
+
+      const dia = diaDeHoy()
+      const porJugador: Record<string, string[]> = {}
+      const hoyGrupos = new Set<string>()
+      for (const r of rel ?? []) {
+        const nombre = nombreDe.get(r.bloque_id)
+        if (!nombre) continue
+        const previos = porJugador[r.jugador_id] ?? []
+        if (!previos.includes(nombre)) porJugador[r.jugador_id] = [...previos, nombre]
+        if (diaDe.get(r.bloque_id) === dia) hoyGrupos.add(nombre)
+      }
+      setGruposDeJugador(porJugador)
+      setGruposHoy(hoyGrupos)
+    })()
+    return () => { vigente = false }
+  }, [clubId, esAdminOProfesor])
 
   useEffect(() => {
     if (!clubId || !fechaVista || fechaVista === hoy) return
@@ -282,7 +326,18 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
   const esJugador = perfil?.rol === 'jugador'
-  const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
+  // Los grupos que entrenan hoy van primero: es lo que el profe busca al llegar.
+  const gruposOrdenados = [...new Set(Object.values(gruposDeJugador).flat())]
+    .sort((a, b) => {
+      const ha = gruposHoy.has(a) ? 0 : 1
+      const hb = gruposHoy.has(b) ? 0 : 1
+      return ha !== hb ? ha - hb : a.localeCompare(b)
+    })
+
+  const filtrados = jugadores.filter(j =>
+    j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) &&
+    (!grupoFiltro || (gruposDeJugador[j.id] ?? []).includes(grupoFiltro))
+  )
 
   const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
 
@@ -418,7 +473,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:10, marginBottom: 12, flexWrap:'wrap' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: text }}>✏️ Registro manual</div>
             <div style={{ fontSize: 12, color: muted }}>
-              {registradosHoy.size} de {jugadores.length} registrados hoy
+              {grupoFiltro
+                ? `${filtrados.filter(j => registradosHoy.has(j.id)).length} de ${filtrados.length} en ${grupoFiltro}`
+                : `${registradosHoy.size} de ${jugadores.length} registrados hoy`}
             </div>
           </div>
           <input
@@ -426,6 +483,33 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
             placeholder="Buscar por nombre para achicar la lista..."
             value={busqueda} onChange={e => setBusqueda(e.target.value)}
           />
+
+          {/* Los grupos del horario, solo para achicar la lista. Los que
+              entrenan hoy van primero y quedan marcados. */}
+          {gruposOrdenados.length > 0 && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:10 }}>
+              <button onClick={() => setGrupoFiltro('')}
+                style={{ padding:'5px 11px', fontSize:12, fontWeight:600, borderRadius:20, cursor:'pointer',
+                  border:`1px solid ${grupoFiltro === '' ? '#4f46e5' : '#e2e8f0'}`,
+                  background: grupoFiltro === '' ? '#4f46e5' : '#ffffff',
+                  color: grupoFiltro === '' ? '#ffffff' : muted }}>
+                Todos ({jugadores.length})
+              </button>
+              {gruposOrdenados.map(g => {
+                const activo = grupoFiltro === g
+                const esHoy  = gruposHoy.has(g)
+                return (
+                  <button key={g} onClick={() => setGrupoFiltro(activo ? '' : g)}
+                    style={{ padding:'5px 11px', fontSize:12, fontWeight:600, borderRadius:20, cursor:'pointer',
+                      border:`1px solid ${activo ? '#4f46e5' : esHoy ? '#c7d2fe' : '#e2e8f0'}`,
+                      background: activo ? '#4f46e5' : esHoy ? '#eef2ff' : '#ffffff',
+                      color: activo ? '#ffffff' : esHoy ? '#3730a3' : muted }}>
+                    {esHoy && '• '}{g}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {/* La lista completa se ve sin buscar: es la única forma de pasar
               lista, así que tiene que estar toda a mano. */}
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
