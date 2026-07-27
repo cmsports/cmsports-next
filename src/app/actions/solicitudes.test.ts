@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ requireAdminClub: vi.fn(), createAdminClient: vi.fn() }))
+const mocks = vi.hoisted(() => ({ requireAdminClub: vi.fn(), createAdminClient: vi.fn(), asignarBloques: vi.fn() }))
 vi.mock('@/lib/auth/require', () => ({ requireAdminClub: mocks.requireAdminClub }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.createAdminClient }))
+vi.mock('@/app/actions/horario', () => ({ asignarBloquesJugador: mocks.asignarBloques }))
 
 import { aprobarSolicitud } from './solicitudes'
 
@@ -32,6 +33,7 @@ describe('aprobarSolicitud', () => {
     createUser.mockResolvedValue({ data: { user: { id: 'usuario-id' } }, error: null })
     perfilUpsert.mockResolvedValue({ error: null })
     mocks.createAdminClient.mockReturnValue({ auth: { admin: { createUser, deleteUser } }, from: vi.fn(() => ({ upsert: perfilUpsert })) })
+    mocks.asignarBloques.mockResolvedValue({ success: true })
   })
 
   const input = {
@@ -40,6 +42,7 @@ describe('aprobarSolicitud', () => {
     contacto_emergencia_nombre: 'Mamá Pedrito', contacto_emergencia_telefono: '+56922222222', indicaciones_medicas: '',
     password: 'clave123',
     categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: 2, mensualidad: 25000, sesiones_limite: 8,
+    bloqueIds: [],
   }
 
   it('crea la cuenta con la contraseña indicada por el admin', async () => {
@@ -69,6 +72,23 @@ describe('aprobarSolicitud', () => {
     createUser.mockResolvedValue({ data: { user: null }, error: { message: 'Auth failed' } })
     await expect(aprobarSolicitud(input)).resolves.toEqual({ error: 'No se pudo crear la cuenta de acceso del jugador.' })
     expect(jugadorDeleteEq).toHaveBeenCalledWith('id', 'jugador-id')
+  })
+
+  // Sin grupo, el jugador nuevo no aparece en la lista de asistencia ni puede
+  // marcar su llegada desde la app: queda entrando por la puerta de atrás.
+  it('inscribe al jugador nuevo en los grupos elegidos', async () => {
+    await aprobarSolicitud({ ...input, bloqueIds: ['bloque-lun', 'bloque-vie'] })
+
+    expect(mocks.asignarBloques).toHaveBeenCalledWith({
+      jugadorId: 'jugador-id',
+      bloqueIds: ['bloque-lun', 'bloque-vie'],
+    })
+  })
+
+  it('no toca los grupos si el admin no eligió ninguno', async () => {
+    await aprobarSolicitud({ ...input, bloqueIds: [] })
+
+    expect(mocks.asignarBloques).not.toHaveBeenCalled()
   })
 })
 

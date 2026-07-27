@@ -2,6 +2,7 @@
 
 import { requireAdminClub } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { asignarBloquesJugador } from '@/app/actions/horario'
 
 export async function aprobarSolicitud(params: {
   solicitudId: string
@@ -21,6 +22,9 @@ export async function aprobarSolicitud(params: {
   entrenamientos_por_semana: number | null
   mensualidad: number
   sesiones_limite: number
+  /** Grupos del horario a los que entra. Sin esto queda sin días ni sede, no
+   *  aparece en ninguna lista y no se puede marcar la asistencia solo. */
+  bloqueIds: string[]
 }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
@@ -29,7 +33,7 @@ export async function aprobarSolicitud(params: {
     solicitudId, nombre, rut, email, telefono,
     fecha_nacimiento, direccion, comuna,
     contacto_emergencia_nombre, contacto_emergencia_telefono, indicaciones_medicas,
-    password,
+    password, bloqueIds,
     ...planFields
   } = params
   const emailNormalizado = email.trim().toLowerCase()
@@ -90,6 +94,12 @@ export async function aprobarSolicitud(params: {
     await admin.auth.admin.deleteUser(userId)
     await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
     return { error: 'No se pudo vincular el perfil de acceso del jugador.' }
+  }
+
+  // Los grupos van al final: si algo falla acá el jugador ya existe y se puede
+  // arreglar desde su ficha, mientras que deshacer la cuenta creada no.
+  if (bloqueIds?.length) {
+    await asignarBloquesJugador({ jugadorId: nuevoJugador.id, bloqueIds })
   }
 
   const { error: aprobarError } = await supabase.from('solicitudes_jugador')

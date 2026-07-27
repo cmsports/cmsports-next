@@ -7,6 +7,8 @@ import AppLayout from '../layout-app'
 import { Link2, Copy, Check, UserCheck, XCircle } from 'lucide-react'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
+import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
+import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { copiarTexto } from '@/lib/clipboard'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
@@ -68,6 +70,10 @@ export default function SolicitudesPage() {
     indicaciones_medicas: '', password: '', passwordConfirm: '',
   })
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
+  // Los grupos se eligen al aprobar: si entra sin bloque queda invisible para
+  // la asistencia y no puede marcarse solo desde la app.
+  const [bloquesClub, setBloquesClub] = useState<BloqueHorario[]>([])
+  const [bloquesSel, setBloquesSel]   = useState<Set<string>>(new Set())
   const [aprobando, setAprobando]     = useState(false)
   const [errorAprobar, setErrorAprobar] = useState('')
   const [rechazandoId, setRechazandoId] = useState<string|null>(null)
@@ -110,6 +116,14 @@ export default function SolicitudesPage() {
     return () => { activo = false }
   }, [authLoading, perfil, router])
 
+  const cargarBloques = useCallback(async () => {
+    if (!clubId) return
+    const { data } = await supabase.from('bloques_horario')
+      .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
+      .eq('club_id', clubId).eq('activo', true).order('hora_inicio')
+    setBloquesClub((data ?? []) as BloqueHorario[])
+  }, [clubId])
+
   async function confirmarAprobar() {
     if (!modalAprobar) return
     if (infoForm.password !== infoForm.passwordConfirm) { setErrorAprobar('Las contraseñas no coinciden'); return }
@@ -134,6 +148,7 @@ export default function SolicitudesPage() {
       entrenamientos_por_semana: ent,
       mensualidad: parseInt(planForm.mensualidad) || 0,
       sesiones_limite: ses,
+      bloqueIds: [...bloquesSel],
     })
     setAprobando(false)
     if (res.error) { setErrorAprobar(res.error); return }
@@ -260,6 +275,8 @@ export default function SolicitudesPage() {
                               ? (categoriaBuinPorFechaNacimiento(s.fecha_nacimiento) ?? 'TC')
                               : 'principiante'
                             setModalAprobar(s)
+                            setBloquesSel(new Set())
+                            void cargarBloques()
                             setInfoForm({
                               nombre: s.nombre || '',
                               rut: s.rut || '',
@@ -447,6 +464,49 @@ export default function SolicitudesPage() {
                 <input type="password" placeholder="Repetir contraseña" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
                   value={infoForm.passwordConfirm} onChange={e => setInfoForm(f => ({ ...f, passwordConfirm: e.target.value }))} />
               </div>
+            </div>
+
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>Grupos de entrenamiento</div>
+            <div style={{ fontSize: 12, color: muted, marginBottom: 10 }}>
+              Sin un grupo no aparece en la lista de asistencia ni puede marcar su llegada desde la app.
+            </div>
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 18, maxHeight: 220, overflowY: 'auto' }}>
+              {DIAS.map(d => {
+                const delDia = bloquesClub.filter(b => b.dia_semana === d.value)
+                if (delDia.length === 0) return null
+                return (
+                  <div key={d.value} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{diaLabel(d.value)}</div>
+                    {delDia.map(b => {
+                      const marcado = bloquesSel.has(b.id)
+                      return (
+                        <div key={b.id}
+                          onClick={() => setBloquesSel(prev => {
+                            const s = new Set(prev)
+                            if (s.has(b.id)) s.delete(b.id); else s.add(b.id)
+                            return s
+                          })}
+                          style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 6, cursor: 'pointer', marginBottom: 3,
+                            background: marcado ? '#eef2ff' : 'transparent', border: `1px solid ${marcado ? '#c7d2fe' : 'transparent'}` }}>
+                          <div style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: `2px solid ${marcado ? '#4f46e5' : '#cbd5e1'}`, background: marcado ? '#4f46e5' : 'transparent' }}>
+                            {marcado && <span style={{ color: 'white', fontSize: 10, fontWeight: 800 }}>✓</span>}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: text }}>{b.nombre}</div>
+                            <div style={{ fontSize: 10, color: muted }}>{sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)}</div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              {bloquesClub.length === 0 && (
+                <div style={{ padding: '14px 0', textAlign: 'center', fontSize: 12, color: muted }}>
+                  Todavía no hay grupos en el horario semanal.
+                </div>
+              )}
             </div>
 
             {errorAprobar && (
