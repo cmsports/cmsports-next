@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  calendarioJugador, diasHabiles, indicadores,
+  calendarioJugador, diasHabiles, indexar, indicadores,
   type DatosHistorial,
 } from './historialAsistencia'
 
@@ -121,6 +121,42 @@ describe('calendarioJugador', () => {
     }))
     expect(cal).toHaveLength(1)
     expect(cal[0].bloques).toEqual(['Menores Avanzado', 'Formativo Intermedio'])
+  })
+})
+
+describe('indexar', () => {
+  // El panorama del club llama al calendario una vez por jugador sobre los
+  // mismos datos. El índice compartido tiene que dar exactamente lo mismo.
+  it('el índice compartido no cambia el resultado', () => {
+    const d = datos({
+      inscripciones: [
+        { bloque_id: 'b-mar', jugador_id: 'ana',  vigente_desde: '2026-08-01', vigente_hasta: null },
+        { bloque_id: 'b-jue', jugador_id: 'ana',  vigente_desde: '2026-08-01', vigente_hasta: null },
+        { bloque_id: 'b-lun', jugador_id: 'luis', vigente_desde: '2026-08-01', vigente_hasta: null },
+      ],
+      asistencias: [
+        { jugador_id: 'ana',  fecha: '2026-08-04', estado: 'presente' },
+        { jugador_id: 'luis', fecha: '2026-08-03', estado: 'ausente' },
+      ],
+    })
+    const i = indexar(d)
+    for (const quien of ['ana', 'luis', 'nadie']) {
+      expect(calendarioJugador(quien, '2026-08-01', '2026-08-31', d, i))
+        .toEqual(calendarioJugador(quien, '2026-08-01', '2026-08-31', d))
+    }
+  })
+
+  it('no le pasa a un jugador la asistencia de otro', () => {
+    const d = datos({
+      inscripciones: [
+        { bloque_id: 'b-mar', jugador_id: 'ana',  vigente_desde: '2026-08-01', vigente_hasta: null },
+        { bloque_id: 'b-mar', jugador_id: 'luis', vigente_desde: '2026-08-01', vigente_hasta: null },
+      ],
+      asistencias: [{ jugador_id: 'ana', fecha: '2026-08-04', estado: 'presente' }],
+    })
+    const i = indexar(d)
+    expect(calendarioJugador('ana',  '2026-08-04', '2026-08-04', d, i)[0].estado).toBe('presente')
+    expect(calendarioJugador('luis', '2026-08-04', '2026-08-04', d, i)[0].estado).toBe('pendiente')
   })
 })
 

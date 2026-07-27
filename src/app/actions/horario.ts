@@ -1,6 +1,5 @@
 'use server'
 
-import { requireAdminClub } from '@/lib/auth/require'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { diaDesdeFecha, hhmm } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -24,27 +23,6 @@ async function requireStaff() {
 /** Hoy en Chile. Las vigencias son fechas, no instantes. */
 function hoyISO(): string {
   return fechaChile()
-}
-
-type DatosBloque = {
-  nombre: string
-  sede: string
-  dia_semana: string
-  hora_inicio: string
-  hora_fin: string
-  cupo_maximo: number
-  cupo_libres: number
-  profesorIds: string[]
-}
-
-function validar(datos: DatosBloque): string | null {
-  if (!datos.nombre.trim()) return 'El nombre del bloque es obligatorio'
-  if (!['buin', 'paine'].includes(datos.sede)) return 'Sede inválida'
-  if (!['lun', 'mar', 'mie', 'jue', 'vie'].includes(datos.dia_semana)) return 'Día inválido'
-  if (!datos.hora_inicio || !datos.hora_fin) return 'Falta la hora de inicio o de fin'
-  if (hhmm(datos.hora_fin) <= hhmm(datos.hora_inicio)) return 'La hora de fin debe ser posterior a la de inicio'
-  if (datos.cupo_maximo < 0 || datos.cupo_libres < 0) return 'Los cupos no pueden ser negativos'
-  return null
 }
 
 async function guardarProfesores(
@@ -73,6 +51,49 @@ async function guardarProfesores(
     await supabase.from('bloque_profesores')
       .insert(entran.map(profesor_id => ({ bloque_id: bloqueId, profesor_id })))
   }
+}
+
+/**
+ * Marca —o desmarca— que en una fecha no hubo clases.
+ *
+ * Feriados, suspensiones, el día que no se abrió. Afecta a todos los grupos que
+ * funcionaban ese día de la semana, que es como lo piensa el profe: no dice
+ * "el martes 17:00 no hay", dice "el 18 de septiembre no hay".
+ *
+ * Sin esto, un feriado aparece como entrenamiento pendiente de registrar para
+ * todos los inscritos y ensucia los porcentajes de ese mes.
+ */
+export async function marcarDiaSinClase(params: { fecha: string; motivo?: string; deshacer?: boolean }) {
+  const { error: authErr, supabase, clubId } = await requireStaff()
+  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
+
+  const dia = diaDesdeFecha(params.fecha)
+  if (!dia) return { error: 'El club no abre los fines de semana' }
+
+  const { data: bloques, error: errBloques } = await supabase.from('bloques_horario')
+    .select('id').eq('club_id', clubId).eq('dia_semana', dia)
+    .lte('vigente_desde', params.fecha)
+    .or(`vigente_hasta.is.null,vigente_hasta.gte.${params.fecha}`)
+  if (errBloques) return { error: 'No se pudo leer el horario: ' + errBloques.message }
+  if (!bloques?.length) return { error: `No hay grupos que funcionen los ${dia}` }
+
+  const ids = bloques.map((b: { id: string }) => b.id)
+
+  if (params.deshacer) {
+    const { error } = await supabase.from('bloque_excepciones')
+      .delete().in('bloque_id', ids).eq('fecha', params.fecha)
+    if (error) return { error: 'No se pudo deshacer: ' + error.message }
+    return { success: true, grupos: ids.length, deshecho: true }
+  }
+
+  const { error } = await supabase.from('bloque_excepciones')
+    .upsert(
+      ids.map((bloque_id: string) => ({ bloque_id, fecha: params.fecha, motivo: params.motivo?.trim() || null })),
+      { onConflict: 'bloque_id,fecha' },
+    )
+  if (error) return { error: 'No se pudo marcar el día: ' + error.message }
+
+  return { success: true, grupos: ids.length }
 }
 
 export type DiaDeGrupo = { dia_semana: string; hora_inicio: string; hora_fin: string }
@@ -147,20 +168,31 @@ export async function guardarGrupo(params: {
     const pedido = quiero.get(b.dia_semana)
     if (pedido) {
       // Sigue estando: se actualiza el horario y se reabre si estaba cerrado.
-      await supabase.from('bloques_horario').update({
+      const { error } = await supabase.from('bloques_horario').update({
         hora_inicio: pedido.hora_inicio,
         hora_fin: pedido.hora_fin,
         cupo_maximo: params.cupoMaximo,
         cupo_libres: params.cupoLibres,
         vigente_hasta: null,
       }).eq('id', b.id)
+      // Si esto falla en silencio, la pantalla dice "guardado" y el horario
+      // quedó como estaba. Es preferible el error a la mentira.
+      if (error) {
+        return { error: error.code === '23505'
+          ? `Ya hay otro grupo en ${params.sede} el ${b.dia_semana} a las ${hhmm(pedido.hora_inicio)}`
+          : `No se pudo guardar el ${b.dia_semana}: ${error.message}` }
+      }
       await guardarProfesores(supabase, b.id, params.profesorIds)
       quiero.delete(b.dia_semana)
     } else if (b.vigente_hasta === null) {
       // Se destildó: se cierra, junto con sus inscripciones.
-      await supabase.from('bloques_horario').update({ vigente_hasta: hoyISO() }).eq('id', b.id)
-      await supabase.from('bloque_jugadores')
+      const { error } = await supabase.from('bloques_horario')
+        .update({ vigente_hasta: hoyISO() }).eq('id', b.id)
+      if (error) return { error: `No se pudo dar de baja el ${b.dia_semana}: ${error.message}` }
+
+      const { error: errIns } = await supabase.from('bloque_jugadores')
         .update({ vigente_hasta: hoyISO() }).eq('bloque_id', b.id).is('vigente_hasta', null)
+      if (errIns) return { error: `El día se cerró pero las inscripciones no: ${errIns.message}` }
     }
   }
 
@@ -188,61 +220,8 @@ export async function guardarGrupo(params: {
   return { success: true, grupoId }
 }
 
-export async function crearBloque(datos: DatosBloque) {
-  const { error: authErr, supabase, clubId } = await requireStaff()
-  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
-
-  const invalido = validar(datos)
-  if (invalido) return { error: invalido }
-
-  const { data, error } = await supabase.from('bloques_horario').insert({
-    club_id: clubId,
-    nombre: datos.nombre.trim(),
-    sede: datos.sede,
-    dia_semana: datos.dia_semana,
-    hora_inicio: datos.hora_inicio,
-    hora_fin: datos.hora_fin,
-    cupo_maximo: datos.cupo_maximo,
-    cupo_libres: datos.cupo_libres,
-  }).select('id').single()
-
-  if (error) {
-    return { error: error.code === '23505'
-      ? 'Ya existe un bloque en esa sede, ese día y a esa hora'
-      : 'No se pudo crear el bloque: ' + error.message }
-  }
-
-  await guardarProfesores(supabase, data.id, datos.profesorIds)
-  return { success: true, id: data.id }
-}
-
-export async function editarBloque(params: { id: string } & DatosBloque) {
-  const { error: authErr, supabase, clubId } = await requireStaff()
-  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
-
-  const { id, profesorIds, ...datos } = params
-  const invalido = validar(params)
-  if (invalido) return { error: invalido }
-
-  const { error } = await supabase.from('bloques_horario').update({
-    nombre: datos.nombre.trim(),
-    sede: datos.sede,
-    dia_semana: datos.dia_semana,
-    hora_inicio: datos.hora_inicio,
-    hora_fin: datos.hora_fin,
-    cupo_maximo: datos.cupo_maximo,
-    cupo_libres: datos.cupo_libres,
-  }).eq('id', id).eq('club_id', clubId)
-
-  if (error) {
-    return { error: error.code === '23505'
-      ? 'Ya existe un bloque en esa sede, ese día y a esa hora'
-      : 'No se pudo guardar el bloque: ' + error.message }
-  }
-
-  await guardarProfesores(supabase, id, profesorIds)
-  return { success: true }
-}
+// crearBloque y editarBloque se fueron: el formulario ahora guarda el grupo
+// entero con sus días de una vez, y eso lo hace guardarGrupo.
 
 export async function eliminarBloque(params: { id: string }) {
   const { error: authErr, supabase, clubId } = await requireStaff()

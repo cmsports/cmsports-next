@@ -102,7 +102,7 @@ export default function MisClasesPage() {
         event: '*', schema: 'public', table: 'reservas',
       }, () => { void cargarClases() })
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'clases',
+        event: '*', schema: 'public', table: 'clases', filter: `club_id=eq.${perfil.club_id}`,
       }, () => { void cargarClases() })
       .subscribe()
     return () => { void supabase.removeChannel(canal) }

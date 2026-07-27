@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
-import { calendarioJugador, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
+import { calendarioJugador, indexar, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
 import { vigenteEn } from '@/lib/domain/vigencia'
 
 const supabase = createClient()
@@ -117,8 +117,11 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   }
 
   // El mismo motor que usa el calendario individual, jugador por jugador.
+  // Los índices se arman una vez y se comparten: son ciento tres llamadas
+  // sobre exactamente los mismos datos.
+  const indice = indexar(datos)
   const filas: Fila[] = jugadores.map(j => {
-    const ind = indicadores(calendarioJugador(j.id, desde, hoy, datos))
+    const ind = indicadores(calendarioJugador(j.id, desde, hoy, datos, indice))
     return {
       jugador: j,
       programados: ind.programados,

@@ -76,23 +76,55 @@ export type DatosHistorial = {
  * Solo devuelve los días en que le tocaba entrenar. Un día sin programación no
  * aparece: no es una falta, simplemente no había clase para él.
  */
+/**
+ * Los índices que el cálculo necesita, armados una sola vez.
+ *
+ * Existe porque el panorama del club llama al calendario ciento tres veces
+ * sobre los mismos datos. Sin esto, cada llamada recorría todas las
+ * inscripciones y todas las asistencias del club para quedarse con las de una
+ * sola persona: cien veces el mismo trabajo para tirarlo noventa y nueve.
+ */
+export type IndiceHistorial = {
+  bloquePorId: Map<string, BloqueVigente>
+  inscripcionesDe: Map<string, InscripcionVigente[]>
+  estadoDe: Map<string, Map<string, 'presente' | 'ausente'>>
+  sinClase: Set<string>
+}
+
+export function indexar(datos: DatosHistorial): IndiceHistorial {
+  const inscripcionesDe = new Map<string, InscripcionVigente[]>()
+  for (const i of datos.inscripciones) {
+    const previas = inscripcionesDe.get(i.jugador_id)
+    if (previas) previas.push(i); else inscripcionesDe.set(i.jugador_id, [i])
+  }
+
+  // Un jugador tiene un estado por día, no por grupo: si entrena dos veces el
+  // mismo día es una sola jornada.
+  const estadoDe = new Map<string, Map<string, 'presente' | 'ausente'>>()
+  for (const a of datos.asistencias) {
+    let suyas = estadoDe.get(a.jugador_id)
+    if (!suyas) { suyas = new Map(); estadoDe.set(a.jugador_id, suyas) }
+    suyas.set(a.fecha, a.estado)
+  }
+
+  return {
+    bloquePorId: new Map(datos.bloques.map(b => [b.id, b])),
+    inscripcionesDe,
+    estadoDe,
+    sinClase: new Set(datos.excepciones.map(e => `${e.bloque_id}|${e.fecha}`)),
+  }
+}
+
 export function calendarioJugador(
   jugadorId: string,
   desde: string,
   hasta: string,
   datos: DatosHistorial,
+  indice?: IndiceHistorial,
 ): DiaCalendario[] {
-  const bloquePorId = new Map(datos.bloques.map(b => [b.id, b]))
-  const mias = datos.inscripciones.filter(i => i.jugador_id === jugadorId)
-
-  // Un jugador tiene un estado por día, no por grupo: si entrena dos veces el
-  // mismo día es una sola jornada.
-  const estadoDe = new Map<string, 'presente' | 'ausente'>()
-  for (const a of datos.asistencias) {
-    if (a.jugador_id === jugadorId) estadoDe.set(a.fecha, a.estado)
-  }
-
-  const sinClase = new Set(datos.excepciones.map(e => `${e.bloque_id}|${e.fecha}`))
+  const { bloquePorId, inscripcionesDe, estadoDe: todos, sinClase } = indice ?? indexar(datos)
+  const mias = inscripcionesDe.get(jugadorId) ?? []
+  const estadoDe = todos.get(jugadorId) ?? new Map<string, 'presente' | 'ausente'>()
 
   const out: DiaCalendario[] = []
   for (const { fecha, dia } of diasHabiles(desde, hasta)) {

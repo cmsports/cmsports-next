@@ -6,7 +6,7 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import { Pencil, Plus, Trash2, X, Clock, MapPin } from 'lucide-react'
-import { eliminarBloque, guardarGrupo } from '@/app/actions/horario'
+import { eliminarBloque, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
 import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
 import PanelCupos from '@/components/PanelCupos'
@@ -63,6 +63,9 @@ export default function HorarioPage() {
   const [guardando, setGuardando]   = useState(false)
   const [errorForm, setErrorForm]   = useState('')
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
+  const [modalFeriado, setModalFeriado] = useState(false)
+  const [feriado, setFeriado] = useState({ fecha: '', motivo: '' })
+  const [feriadoMsg, setFeriadoMsg] = useState('')
 
   const clubId = perfil?.club_id ?? null
   const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'
@@ -155,6 +158,17 @@ export default function HorarioPage() {
     if (clubId) void cargar(clubId)
   }
 
+  async function guardarFeriado(deshacer: boolean) {
+    setGuardando(true)
+    setFeriadoMsg('')
+    const res = await marcarDiaSinClase({ fecha: feriado.fecha, motivo: feriado.motivo, deshacer })
+    setGuardando(false)
+    if (res?.error) { setFeriadoMsg(res.error); return }
+    setFeriadoMsg(deshacer
+      ? `Listo: el ${feriado.fecha} vuelve a contar como día de entrenamiento.`
+      : `Listo: el ${feriado.fecha} no cuenta para ${res.grupos} grupo${res.grupos === 1 ? '' : 's'}.`)
+  }
+
   async function eliminar(b: Bloque) {
     if (!confirm(`¿Eliminar el bloque "${b.nombre}" del ${b.dia_semana}?\n\nLas clases ya generadas se conservan.`)) return
     setEliminandoId(b.id)
@@ -186,6 +200,12 @@ export default function HorarioPage() {
           </p>
         </div>
         {esStaff && tab === 'grilla' && (
+          <button onClick={() => { setFeriado({ fecha: '', motivo: '' }); setFeriadoMsg(''); setModalFeriado(true) }}
+            style={{ background: '#fff', color: muted, border: '1px solid #e2e8f0', borderRadius: 8, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginRight: 8 }}>
+            Día sin clase
+          </button>
+        )}
+        {esStaff && tab === 'grilla' && (
           <button onClick={() => abrirNuevo(sedeActiva)}
             style={{ background: '#f43f5e', color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Plus size={15} /> Nuevo bloque
@@ -193,9 +213,13 @@ export default function HorarioPage() {
         )}
       </div>
 
-      {/* Tabs */}
+      {/* Tabs. El jugador solo ve la grilla: cupos, profesores y reportes son
+          datos de gestión del club, no suyos. */}
       <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 4, margin: '16px 0' }}>
-        {([['grilla', 'Grilla semanal'], ['cupos', 'Cupos'], ['profesores', 'Profesores'], ['reportes', 'Reportes']] as const).map(([key, label]) => (
+        {(esStaff
+          ? [['grilla', 'Grilla semanal'], ['cupos', 'Cupos'], ['profesores', 'Profesores'], ['reportes', 'Reportes']] as const
+          : [['grilla', 'Grilla semanal']] as const
+        ).map(([key, label]) => (
           <div key={key} onClick={() => setTab(key)}
             style={{ flex: 1, padding: 9, textAlign: 'center', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500,
               background: tab === key ? '#fff' : 'transparent', color: tab === key ? '#3730a3' : muted,
@@ -303,12 +327,12 @@ export default function HorarioPage() {
       )}
 
       {/* Cupos */}
-      {tab === 'cupos' && clubId && <PanelCupos clubId={clubId} esStaff={esStaff} />}
+      {tab === 'cupos' && clubId && esStaff && <PanelCupos clubId={clubId} esStaff={esStaff} />}
 
-      {tab === 'reportes' && clubId && <PanelReportes clubId={clubId} />}
+      {tab === 'reportes' && clubId && esStaff && <PanelReportes clubId={clubId} />}
 
       {/* Profesores */}
-      {tab === 'profesores' && (
+      {tab === 'profesores' && esStaff && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
           {profesores.length === 0 && (
             <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
@@ -459,6 +483,52 @@ export default function HorarioPage() {
               <button onClick={guardar} disabled={guardando}
                 style={{ flex: 1, padding: 10, background: guardando ? '#e2e8f0' : '#4f46e5', border: 'none', borderRadius: 8, color: guardando ? '#94a3b8' : '#fff', fontSize: 13, fontWeight: 700, cursor: guardando ? 'default' : 'pointer' }}>
                 {guardando ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Día sin clase: feriados y suspensiones */}
+      {modalFeriado && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
+          onClick={e => { if (e.target === e.currentTarget) setModalFeriado(false) }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 380, boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Día sin clase</h2>
+              <button onClick={() => setModalFeriado(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted, display: 'flex' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: hint, marginBottom: 16 }}>
+              Deja de contar como entrenamiento para todos los grupos que funcionan ese día.
+              Sin esto, un feriado aparece como clase pendiente de registrar.
+            </p>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Fecha *</label>
+              <input type="date" style={inputStyle} value={feriado.fecha}
+                onChange={e => setFeriado(f => ({ ...f, fecha: e.target.value }))} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Motivo</label>
+              <input style={inputStyle} value={feriado.motivo} placeholder="Ej: feriado, gimnasio ocupado"
+                onChange={e => setFeriado(f => ({ ...f, motivo: e.target.value }))} />
+            </div>
+
+            {feriadoMsg && (
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: muted, marginBottom: 14 }}>
+                {feriadoMsg}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => guardarFeriado(true)} disabled={guardando || !feriado.fecha}
+                style={{ flex: 1, padding: 10, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: feriado.fecha ? 'pointer' : 'default' }}>
+                Deshacer
+              </button>
+              <button onClick={() => guardarFeriado(false)} disabled={guardando || !feriado.fecha}
+                style={{ flex: 1, padding: 10, background: guardando || !feriado.fecha ? '#e2e8f0' : '#4f46e5', border: 'none', borderRadius: 8, color: guardando || !feriado.fecha ? '#94a3b8' : '#fff', fontSize: 13, fontWeight: 700, cursor: feriado.fecha ? 'pointer' : 'default' }}>
+                {guardando ? 'Guardando...' : 'Marcar'}
               </button>
             </div>
           </div>

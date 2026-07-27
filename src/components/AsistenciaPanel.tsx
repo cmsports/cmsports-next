@@ -4,7 +4,7 @@
 // embeberlo como tab dentro de Jugadores. El wrapper AppLayout ahora vive
 // afuera (en la página que lo usa).
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
@@ -68,6 +68,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Los bloques de hoy del propio jugador, para saber si puede marcarse.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [misBloquesHoy, setMisBloquesHoy] = useState<any[] | null>(null)
+  const recargaPendiente = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
@@ -247,14 +248,23 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     const canal = supabase
       .channel(`asistencia-panel-${clubId}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'asistencia',
+        event: '*', schema: 'public', table: 'asistencia', filter: `club_id=eq.${clubId}`,
       }, () => {
-        void cargarDatos(clubId)
-        if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
+        // Pasar lista son veinte clicks seguidos, y cada uno llega también por
+        // acá. Sin agrupar serían cuarenta recargas de la lista completa en un
+        // minuto: la propia y la del eco. Se espera a que pare la ráfaga.
+        if (recargaPendiente.current) clearTimeout(recargaPendiente.current)
+        recargaPendiente.current = setTimeout(() => {
+          void cargarDatos(clubId)
+          if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
+        }, 600)
       })
       .subscribe()
 
-    return () => { void supabase.removeChannel(canal) }
+    return () => {
+      if (recargaPendiente.current) clearTimeout(recargaPendiente.current)
+      void supabase.removeChannel(canal)
+    }
   }, [cargarAsistenciasDia, cargarDatos, clubId, fechaVista, hoy])
 
   async function registrarAsistencia(jugadorId: string) {
@@ -617,7 +627,7 @@ function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, ho
     const canal = supabase
       .channel(`asistencia-calendario-${clubId}-${anio}-${mes}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'asistencia',
+        event: '*', schema: 'public', table: 'asistencia', filter: `club_id=eq.${clubId}`,
       }, () => { void cargar() })
       .subscribe()
 

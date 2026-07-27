@@ -129,9 +129,12 @@ function CalendarioContent() {
     }
     const canal = supabase
       .channel(`calendario-${clubId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'eventos' }, recargar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clases' }, recargar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'torneos' }, recargar)
+      // Sin el filtro de club, un cambio en cualquiera de los otros clubes de
+      // la base recarga esta pantalla. Reservas no tiene club_id propio, así que
+      // esa queda sin filtrar.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'eventos', filter: `club_id=eq.${clubId}` }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clases',  filter: `club_id=eq.${clubId}` }, recargar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'torneos', filter: `club_id=eq.${clubId}` }, recargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, recargar)
       .subscribe()
     return () => { void supabase.removeChannel(canal) }
