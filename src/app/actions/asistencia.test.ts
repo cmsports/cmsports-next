@@ -16,7 +16,7 @@ vi.mock('@/lib/domain/fechaChile', () => ({
   horaChile: mocks.horaChile,
 }))
 
-import { eliminarAsistencia, registrarAsistenciaAction } from './asistencia'
+import { corregirAsistencia, eliminarAsistencia, registrarAsistenciaAction } from './asistencia'
 
 // 2026-07-28 es martes. Menores Avanzado va los martes de 17:00 a 19:00.
 const MARTES = '2026-07-28'
@@ -177,5 +177,56 @@ describe('ventana horaria del autorregistro', () => {
 
     expect(resultado).toEqual({ ok: true, asistenciaId: 'asistencia-1' })
     expect(mocks.bloquesDelJugador).not.toHaveBeenCalled()
+  })
+})
+
+describe('corregirAsistencia', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.requirePerfil.mockResolvedValue({
+      error: null,
+      supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'admin', jugador_id: null },
+    })
+    mocks.rpc.mockResolvedValue({ data: null, error: null })
+  })
+
+  it('manda la corrección a la función de la base', async () => {
+    const r = await corregirAsistencia({ jugadorId: 'j1', fecha: '2026-08-04', estado: 'ausente', motivo: 'avisó' })
+
+    expect(r).toEqual({ ok: true })
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_asistencia_manual', {
+      p_jugador_id: 'j1', p_fecha: '2026-08-04', p_estado: 'ausente', p_motivo: 'avisó',
+    })
+  })
+
+  it('borrar el registro es un estado más, no otra función', async () => {
+    await corregirAsistencia({ jugadorId: 'j1', fecha: '2026-08-04', estado: 'sin_registro' })
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_asistencia_manual',
+      expect.objectContaining({ p_estado: 'sin_registro' }))
+  })
+
+  it('un motivo en blanco viaja como nulo, no como cadena vacía', async () => {
+    await corregirAsistencia({ jugadorId: 'j1', fecha: '2026-08-04', estado: 'presente', motivo: '   ' })
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_asistencia_manual',
+      expect.objectContaining({ p_motivo: null }))
+  })
+
+  it('el jugador no puede corregir su propia asistencia', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'jugador', jugador_id: 'j1' },
+    })
+
+    const r = await corregirAsistencia({ jugadorId: 'j1', fecha: '2026-08-04', estado: 'presente' })
+
+    expect(r).toEqual({ error: 'Solo el admin o el profesor pueden corregir la asistencia' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('el error de la base llega a la pantalla en vez de tragarse', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: 'El jugador no es de este club' } })
+    const r = await corregirAsistencia({ jugadorId: 'ajeno', fecha: '2026-08-04', estado: 'presente' })
+    expect(r).toEqual({ error: 'El jugador no es de este club' })
   })
 })
