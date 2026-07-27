@@ -8,11 +8,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
-import { eliminarAsistencia, registrarAsistenciaAction, registrarBloqueAction } from '@/app/actions/asistencia'
+import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
-import { diaDesdeFecha, hhmm, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
-import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import {
   guardarJugadoresCache,
   obtenerJugadoresCache,
@@ -53,15 +51,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const [pendientesCount, setPendientesCount] = useState(0)
 
-  const [bloquesFecha,        setBloquesFecha]        = useState(() => fechaChile())
-  const [bloqueId,            setBloqueId]            = useState('')
-  const [bloquesHorario,      setBloquesHorario]      = useState<BloqueHorario[]>([])
-  const [inscritosPorBloque,  setInscritosPorBloque]  = useState<Record<string, string[]>>({})
-  const [presenciaMap,        setPresenciaMap]        = useState<Record<string, boolean>>({})
-  const [registrandoBloque,   setRegistrandoBloque]   = useState(false)
-  const [mensajeBloque,       setMensajeBloque]       = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
-  const [bloquesYaCerrados,   setBloquesYaCerrados]   = useState<Set<string>>(new Set())
-  const [asistsBloqueCache,   setAsistsBloqueCache]   = useState<Record<string, Set<string>>>({}) // fecha → Set<jugador_id>
 
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
@@ -176,30 +165,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
   }, [cargarDatos, clubId, online, sincronizarCola])
 
-  // Los bloques del horario semanal y quién está inscrito en cada uno. Es lo
-  // que define la lista al cerrar: antes se armaba con el texto del horario del
-  // jugador, que no tiene sede y mezclaba Buin con Fátima.
-  useEffect(() => {
-    if (!clubId || !esAdminOProfesor) return
-    let vigente = true
-    void (async () => {
-      const [{ data: bloques }, { data: rel }] = await Promise.all([
-        supabase.from('bloques_horario')
-          .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
-          .eq('club_id', clubId).eq('activo', true)
-          .order('hora_inicio'),
-        supabase.from('bloque_jugadores').select('bloque_id,jugador_id'),
-      ])
-      if (!vigente) return
-      const porBloque: Record<string, string[]> = {}
-      for (const r of rel ?? []) {
-        porBloque[r.bloque_id] = [...(porBloque[r.bloque_id] ?? []), r.jugador_id]
-      }
-      setBloquesHorario((bloques ?? []) as BloqueHorario[])
-      setInscritosPorBloque(porBloque)
-    })()
-    return () => { vigente = false }
-  }, [clubId, esAdminOProfesor])
 
   useEffect(() => {
     if (!clubId || !fechaVista || fechaVista === hoy) return
@@ -315,86 +280,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     setEliminando(null)
   }
 
-  async function handleCerrarBloque() {
-    if (!clubId || !bloqueSel || jugadoresBloque.length === 0) return
-    setRegistrandoBloque(true)
-    setMensajeBloque(null)
-    const presentes = jugadoresBloque.filter(j => presenciaMap[j.id] !== false).map(j => j.id)
-    const ausentes  = jugadoresBloque.filter(j => presenciaMap[j.id] === false).map(j => j.id)
-    const result = await registrarBloqueAction({
-      clubId, fecha: bloquesFecha,
-      hora: hhmm(bloqueSel.hora_inicio) + ':00',
-      presentes, ausentes, bloqueId: bloqueSel.id,
-    })
-    if (result.error) {
-      setMensajeBloque({ tipo: 'error', texto: result.error })
-    } else {
-      const bloqueKey = `${bloquesFecha}|${bloqueSel.id}`
-      setBloquesYaCerrados(prev => new Set([...prev, bloqueKey]))
-      // Actualizar cache de asistencias para esa fecha
-      const idsPresentes = new Set(presentes)
-      setAsistsBloqueCache(prev => ({
-        ...prev,
-        [bloquesFecha]: new Set([...(prev[bloquesFecha] ?? []), ...idsPresentes]),
-      }))
-      setMensajeBloque({ tipo: 'ok', texto: `Bloque cerrado: ${presentes.length} presentes, ${ausentes.length} inasistentes` })
-      await cargarDatos()
-      setBloqueId('')
-      setPresenciaMap({})
-    }
-    setRegistrandoBloque(false)
-    setTimeout(() => setMensajeBloque(null), 6000)
-  }
-
-  // Cargar asistencias de la fecha del bloque si no es hoy (para saber si el bloque ya fue cerrado)
-  useEffect(() => {
-    if (!clubId || !bloquesFecha || !bloqueId) return
-    if (bloquesFecha === hoy) return // ya tenemos asistencias en `asistencias`
-    setAsistsBloqueCache(prev => {
-      if (prev[bloquesFecha]) return prev // ya lo tenemos, no recargar
-      // Disparar fetch fuera del setState
-      supabase.from('asistencia').select('jugador_id').eq('club_id', clubId).eq('fecha', bloquesFecha)
-        .then(({ data }) => {
-          setAsistsBloqueCache(p => ({
-            ...p,
-            [bloquesFecha]: new Set((data || []).map((a: any) => a.jugador_id)),
-          }))
-        })
-      return prev
-    })
-  }, [bloquesFecha, bloqueId, clubId, hoy])
-
-  // Solo los bloques que existen ese día de la semana. Cada uno trae su sede,
-  // así que el de Buin y el de Fátima quedan separados aunque compartan hora.
-  const diaBloque = diaDesdeFecha(bloquesFecha)
-  const bloquesDelDia = diaBloque ? bloquesHorario.filter(b => b.dia_semana === diaBloque) : []
-  const bloqueSel = bloquesHorario.find(b => b.id === bloqueId) ?? null
-
-  // La lista sale de los inscritos al bloque, no del texto del horario.
-  // Se cruza con `jugadores` para dejar fuera a los que se dieron de baja.
-  const inscritosDelBloque = new Set(inscritosPorBloque[bloqueId] ?? [])
-  const jugadoresBloque = bloqueSel ? jugadores.filter(j => inscritosDelBloque.has(j.id)) : []
-  const etiquetaBloque = bloqueSel
-    ? `${bloqueSel.nombre} · ${sedeLabel(bloqueSel.sede)} · ${rangoHorario(bloqueSel.hora_inicio, bloqueSel.hora_fin)}`
-    : ''
-
   const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
-
-  // Detectar si el bloque ya fue cerrado: sesión actual o asistencias cargadas
-  const bloqueKey = `${bloquesFecha}|${bloqueId}`
-  const asistsFecha: Set<string> = bloquesFecha === hoy
-    ? registradosHoy
-    : (asistsBloqueCache[bloquesFecha] ?? new Set())
-  const jugadoresBloqueConAsist = jugadoresBloque.filter(j => asistsFecha.has(j.id))
-  const bloqueYaCerrado = bloquesYaCerrados.has(bloqueKey) ||
-    (jugadoresBloque.length > 0 && jugadoresBloqueConAsist.length === jugadoresBloque.length)
-  const bloqueParcialmenteCerrado = !bloqueYaCerrado &&
-    jugadoresBloque.length > 0 && jugadoresBloqueConAsist.length > 0
-
-  function togglePresencia(id: string) {
-    setPresenciaMap(prev => ({ ...prev, [id]: prev[id] === false ? true : false }))
-  }
-
   const esJugador = perfil?.rol === 'jugador'
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
 
@@ -529,15 +415,21 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       {/* REGISTRO MANUAL (Admin/Profesor) */}
       {esAdminOProfesor && (
         <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 12 }}>✏️ Registro manual</div>
+          <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:10, marginBottom: 12, flexWrap:'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: text }}>✏️ Registro manual</div>
+            <div style={{ fontSize: 12, color: muted }}>
+              {registradosHoy.size} de {jugadores.length} registrados hoy
+            </div>
+          </div>
           <input
-            style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 10 }}
-            placeholder="Buscar jugador para registrar..."
+            style={{ width: '100%', boxSizing:'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 10 }}
+            placeholder="Buscar por nombre para achicar la lista..."
             value={busqueda} onChange={e => setBusqueda(e.target.value)}
           />
-          {busqueda && (
-            <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-              {filtrados.slice(0, 5).map(j => {
+          {/* La lista completa se ve sin buscar: es la única forma de pasar
+              lista, así que tiene que estar toda a mano. */}
+          <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
+              {filtrados.map(j => {
                 const ya = registradosHoy.has(j.id)
                 return (
                   <div key={j.id} onClick={() => !ya && registrarAsistencia(j.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e2e8f0', cursor: ya ? 'default' : 'pointer', opacity: ya ? 0.6 : 1 }}>
@@ -555,114 +447,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 )
               })}
               {filtrados.length === 0 && <div style={{ padding: 16, color: muted, fontSize: 13, textAlign: 'center' }}>Sin resultados</div>}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* REGISTRO POR BLOQUE (Admin/Profesor) */}
-      {esAdminOProfesor && (
-        <div style={{ ...card, padding: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>🗂️ Cerrar bloque</div>
-          <div style={{ fontSize: 12, color: muted, marginBottom: 14 }}>Registra asistencia e inasistencias para todos los jugadores de un bloque de una vez.</div>
-
-          {mensajeBloque && (
-            <div style={{ background: mensajeBloque.tipo==='ok'?'#f0fdf4':'#fef2f2', border:`1px solid ${mensajeBloque.tipo==='ok'?'#bbf7d0':'#fecaca'}`, borderRadius:8, padding:'10px 14px', marginBottom:12, fontSize:13, fontWeight:600, color:mensajeBloque.tipo==='ok'?'#16a34a':'#dc2626' }}>
-              {mensajeBloque.texto}
-            </div>
-          )}
-
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:14 }}>
-            <div style={{ display:'flex', flexDirection:'column', gap:4, flex:'1 1 140px' }}>
-              <label style={{ fontSize:11, color:muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px' }}>Fecha</label>
-              <input type="date" value={bloquesFecha} max={hoy}
-                onChange={e => { setBloquesFecha(e.target.value); setBloqueId(''); setPresenciaMap({}) }}
-                style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, color:text, outline:'none' }}
-              />
-            </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:4, flex:'1 1 260px' }}>
-              <label style={{ fontSize:11, color:muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px' }}>Bloque</label>
-              <select value={bloqueId}
-                onChange={e => { setBloqueId(e.target.value); setPresenciaMap({}) }}
-                style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, color:text, outline:'none', cursor:'pointer' }}>
-                <option value="">— Seleccionar —</option>
-                {bloquesDelDia.map(b => (
-                  <option key={b.id} value={b.id}>
-                    {b.nombre} · {sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
-
-          {bloquesDelDia.length === 0 && (
-            <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'20px', textAlign:'center', color:hint, fontSize:13 }}>
-              No hay bloques en el horario para ese día. El club entrena de lunes a viernes.
-            </div>
-          )}
-
-          {bloqueSel && jugadoresBloque.length === 0 && (
-            <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'20px', textAlign:'center', color:hint, fontSize:13 }}>
-              Nadie inscrito en {bloqueSel.nombre}. Se agregan desde <strong style={{ color: muted }}>Horario semanal → Cupos</strong>.
-            </div>
-          )}
-
-          {bloqueYaCerrado && bloqueSel && jugadoresBloque.length > 0 && (
-            <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', marginBottom:12, fontSize:13, fontWeight:600, color:'#92400e' }}>
-              ⚠️ Este bloque ya fue cerrado para el {bloquesFecha}. Podés volver a cerrarlo pero los jugadores que ya tienen asistencia no se duplicarán.
-            </div>
-          )}
-
-          {bloqueParcialmenteCerrado && bloqueSel && jugadoresBloque.length > 0 && (
-            <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'10px 14px', marginBottom:12, fontSize:13, color:'#1e40af' }}>
-              ℹ️ {jugadoresBloqueConAsist.length} de {jugadoresBloque.length} jugadores ya tienen asistencia registrada para este bloque.
-            </div>
-          )}
-
-          {bloqueSel && jugadoresBloque.length > 0 && (
-            <>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                <span style={{ fontSize:12, color:muted }}>{jugadoresBloque.length} jugadores en este bloque · {jugadoresBloque.filter(j => presenciaMap[j.id] !== false).length} presentes</span>
-                <div style={{ display:'flex', gap:6 }}>
-                  <button onClick={() => { const m: Record<string,boolean>={}; jugadoresBloque.forEach(j => m[j.id]=true); setPresenciaMap(m) }}
-                    style={{ padding:'4px 10px', fontSize:11, fontWeight:600, border:'1px solid #e2e8f0', borderRadius:6, background:'#f0fdf4', color:'#16a34a', cursor:'pointer' }}>
-                    Todos presentes
-                  </button>
-                  <button onClick={() => { const m: Record<string,boolean>={}; jugadoresBloque.forEach(j => m[j.id]=false); setPresenciaMap(m) }}
-                    style={{ padding:'4px 10px', fontSize:11, fontWeight:600, border:'1px solid #e2e8f0', borderRadius:6, background:'#fef2f2', color:'#dc2626', cursor:'pointer' }}>
-                    Todos ausentes
-                  </button>
-                </div>
-              </div>
-              <div style={{ border:'1px solid #e2e8f0', borderRadius:8, overflow:'hidden', marginBottom:14 }}>
-                {jugadoresBloque.map((j, i) => {
-                  const presente = presenciaMap[j.id] !== false
-                  const ya = registradosHoy.has(j.id) && bloquesFecha === hoy
-                  return (
-                    <div key={j.id} onClick={() => togglePresencia(j.id)} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderBottom: i < jugadoresBloque.length-1 ? '1px solid #f1f5f9' : 'none', cursor:'pointer', background: presente ? '#ffffff' : '#fef2f2' }}>
-                      <div style={{ width:20, height:20, borderRadius:4, border:`2px solid ${presente?'#16a34a':'#dc2626'}`, background:presente?'#16a34a':'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                        {presente && <span style={{ color:'white', fontSize:12, fontWeight:800 }}>✓</span>}
-                      </div>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:text }}>{j.nombre}</div>
-                        <div style={{ fontSize:11, color:muted }}>{j.categoria}</div>
-                      </div>
-                      <span style={{ fontSize:11, fontWeight:600, padding:'3px 8px', borderRadius:12, background:presente?'#f0fdf4':'#fef2f2', color:presente?'#16a34a':'#dc2626' }}>
-                        {presente ? 'Presente' : 'Ausente'}
-                      </span>
-                      {ya && <span style={{ fontSize:10, color:'#3730a3', background:'#ede9fe', padding:'2px 6px', borderRadius:8, fontWeight:600 }}>ya reg.</span>}
-                    </div>
-                  )
-                })}
-              </div>
-              <button onClick={handleCerrarBloque} disabled={registrandoBloque}
-                style={{ width:'100%', padding:'12px 16px', background:registrandoBloque?'#94a3b8':'#0f172a', color:'white', border:'none', borderRadius:10, fontSize:14, fontWeight:700, cursor:registrandoBloque?'not-allowed':'pointer' }}>
-                {registrandoBloque ? 'Cerrando bloque...' : `Cerrar ${etiquetaBloque} · ${bloquesFecha}`}
-              </button>
-            </>
-          )}
         </div>
       )}
+
     </div>
   )
 }

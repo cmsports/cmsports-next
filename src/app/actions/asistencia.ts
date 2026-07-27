@@ -26,36 +26,8 @@ export async function registrarAsistenciaAction(
   return { ok: true, asistenciaId: data as string }
 }
 
-export async function registrarBloqueAction(params: {
-  clubId: string
-  fecha: string
-  hora: string
-  presentes: string[]
-  ausentes: string[]
-  /** Bloque del horario en el que se tomó la lista. Deja rastro de a qué
-   *  grupo pertenece cada asistencia, que es lo que distingue Buin de Fátima. */
-  bloqueId?: string | null
-}) {
-  const { error: authErr, supabase, perfil } = await requirePerfil()
-  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
-
-  const esStaff = perfil.rol === 'admin' || perfil.rol === 'profesor'
-  if (!esStaff) return { error: 'Solo admin o profesor pueden cerrar bloques' }
-  if (params.clubId !== perfil.club_id) return { error: 'Acceso denegado' }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).rpc('registrar_bloque_asistencia', {
-    p_club_id:   params.clubId,
-    p_fecha:     params.fecha,
-    p_hora:      params.hora,
-    p_presentes: params.presentes,
-    p_ausentes:  params.ausentes,
-    p_bloque_id: params.bloqueId ?? null,
-  })
-  if (error) return { error: error.message }
-
-  return { ok: true }
-}
+// El cierre por bloque se quitó: la asistencia se pasa a mano, jugador por
+// jugador. La función `registrar_bloque_asistencia` sigue en la base sin uso.
 
 export async function eliminarAsistencia(asistenciaId: string) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
