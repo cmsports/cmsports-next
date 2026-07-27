@@ -15,6 +15,7 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import { MessageCircle } from 'lucide-react'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 
@@ -40,12 +41,22 @@ const CAT_LABEL: Record<string, string> = {
 
 const CLUBES_EXTERNOS = ['Club Nuevo Olimpo','Valentín Ramos','Club Deportivo La Florida','Club San Miguel','Club Maipú','Club Providencia','Otro']
 
-function InfoRow({ label, value, accent }: { label: string; value: string | null | undefined; accent?: boolean }) {
+function InfoRow({ label, value, accent, tel }: { label: string; value: string | null | undefined; accent?: boolean; tel?: boolean }) {
   if (!value) return null
+  // Los teléfonos se pinchan y abren WhatsApp. Si el número no sirve queda como
+  // texto plano: mejor que no pase nada a que abra un chat con un desconocido.
+  const wa = tel ? linkWhatsApp(value) : null
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid #f1f5f9', gap: 12 }}>
       <span style={{ fontSize: 12, color: muted, flexShrink: 0, minWidth: 90 }}>{label}</span>
-      <span style={{ fontSize: 13, color: accent ? '#dc2626' : text, fontWeight: 500, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+      {wa ? (
+        <a href={wa} target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: 13, color: '#16a34a', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          {value} <MessageCircle size={13} />
+        </a>
+      ) : (
+        <span style={{ fontSize: 13, color: accent ? '#dc2626' : text, fontWeight: 500, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+      )}
     </div>
   )
 }
@@ -888,7 +899,7 @@ export default function JugadorDetallePage() {
             <InfoRow label="Nombre" value={jugador.nombre} />
             <InfoRow label="RUT" value={jugador.rut} />
             <InfoRow label="Email" value={jugador.email} />
-            <InfoRow label="Teléfono" value={jugador.telefono} />
+            <InfoRow label="Teléfono" value={jugador.telefono} tel />
             <InfoRow
               label={(jugador.categorias?.length ?? 0) > 1 ? 'Categorías' : 'Categoría'}
               value={(jugador.categorias?.length ?? 0) > 0 ? jugador.categorias.join(' · ') : jugador.categoria}
@@ -1000,7 +1011,7 @@ export default function JugadorDetallePage() {
               {jugador.contacto_emergencia_nombre ? (
                 <>
                   <InfoRow label="Contacto" value={jugador.contacto_emergencia_nombre} />
-                  <InfoRow label="Tel. emergencia" value={jugador.contacto_emergencia_telefono} />
+                  <InfoRow label="Tel. emergencia" value={jugador.contacto_emergencia_telefono} tel />
                 </>
               ) : (
                 <div style={{ padding:'12px 0', fontSize:12, color: hint }}>Sin contacto de emergencia registrado</div>

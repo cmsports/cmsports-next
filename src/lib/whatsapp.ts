@@ -20,8 +20,16 @@ export function telefonoWhatsApp(raw: string | null | undefined): string | null 
   d = d.replace(/^0/, '')    // 0 de larga distancia
 
   // Celular chileno: nueve dígitos que empiezan con 9.
-  // Los fijos no sirven para WhatsApp, así que quedan fuera.
-  if (d.length === 9 && d.startsWith('9')) return `56${d}`
+  //
+  // Se toman los primeros nueve y no se exige que sean exactamente nueve,
+  // porque varios contactos de emergencia traen dos números en el mismo campo
+  // ("937222133 - 959493845", "+56962218144 / +56962218145"). Al sacar los
+  // símbolos quedan pegados; nos quedamos con el primero, que es el que el
+  // apoderado puso adelante.
+  //
+  // Exigir que arranque en 9 es lo que mantiene esto honesto: un fijo como
+  // 223456789 no entra, y tampoco un texto con números sueltos.
+  if (d.length >= 9 && d.startsWith('9')) return `56${d.slice(0, 9)}`
 
   return null
 }
