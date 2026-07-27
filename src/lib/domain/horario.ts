@@ -32,6 +32,37 @@ export function rangoHorario(inicio: string, fin: string): string {
   return `${hhmm(inicio)} - ${hhmm(fin)}`
 }
 
+/** Margen para que el alumno se marque desde la app: media hora para cada lado. */
+export const TOLERANCIA_ASISTENCIA_MIN = 30
+
+export function minutosDelDia(hora: string | null | undefined): number {
+  const [h, m] = hhmm(hora).split(':')
+  return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0)
+}
+
+/**
+ * Si a esta hora el alumno puede marcarse en ese bloque. Abre media hora antes
+ * y cierra media hora después, para el que llega justo y el que se acuerda al
+ * salir. Se recorta al día para que un bloque de 23:45 no dé la vuelta.
+ */
+export function ventanaAbierta(
+  horaInicio: string,
+  horaFin: string,
+  ahora: string,
+  tolerancia = TOLERANCIA_ASISTENCIA_MIN,
+): boolean {
+  const desde = Math.max(0,    minutosDelDia(horaInicio) - tolerancia)
+  const hasta = Math.min(1439, minutosDelDia(horaFin)    + tolerancia)
+  const t = minutosDelDia(ahora)
+  return t >= desde && t <= hasta
+}
+
+/** El texto de a qué hora se abre, para explicarle al alumno por qué no puede. */
+export function inicioVentana(horaInicio: string, tolerancia = TOLERANCIA_ASISTENCIA_MIN): string {
+  const m = Math.max(0, minutosDelDia(horaInicio) - tolerancia)
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+
 export function diaLabel(dia: string): string {
   return DIAS.find(d => d.value === dia)?.label ?? dia
 }

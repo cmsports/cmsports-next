@@ -11,6 +11,7 @@ import GraficoAsistencia from '@/components/GraficoAsistencia'
 import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
+import { hhmm, inicioVentana, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
 import {
   guardarJugadoresCache,
   obtenerJugadoresCache,
@@ -63,6 +64,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [gruposDeJugador, setGruposDeJugador] = useState<Record<string, string[]>>({})
   const [gruposHoy,       setGruposHoy]       = useState<Set<string>>(new Set())
   const [grupoFiltro,     setGrupoFiltro]     = useState('')
+
+  // Los bloques de hoy del propio jugador, para saber si puede marcarse.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [misBloquesHoy, setMisBloquesHoy] = useState<any[] | null>(null)
 
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
@@ -210,6 +215,27 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     return () => { vigente = false }
   }, [clubId, esAdminOProfesor])
 
+  // Los bloques que le tocan hoy al propio jugador.
+  useEffect(() => {
+    if (!perfil?.jugador_id || esAdminOProfesor) return
+    let vigente = true
+    void (async () => {
+      const { data } = await supabase.from('bloque_jugadores')
+        .select('bloques_horario(nombre,dia_semana,hora_inicio,hora_fin,activo)')
+        .eq('jugador_id', perfil.jugador_id)
+      if (!vigente) return
+      const dia = diaDeHoy()
+      setMisBloquesHoy((data ?? [])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((r: any) => r.bloques_horario)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter((b: any) => b && b.activo && b.dia_semana === dia)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .sort((a: any, b: any) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio))))
+    })()
+    return () => { vigente = false }
+  }, [perfil?.jugador_id, esAdminOProfesor])
+
   useEffect(() => {
     if (!clubId || !fechaVista || fechaVista === hoy) return
     const carga = window.setTimeout(() => { void cargarAsistenciasDia(fechaVista) }, 0)
@@ -326,6 +352,23 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
   const esJugador = perfil?.rol === 'jugador'
+
+  // El bloque en curso y, si no hay, por qué. Refleja lo que valida el servidor.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const miBloqueAbierto = misBloquesHoy?.find((b: any) => ventanaAbierta(b.hora_inicio, b.hora_fin, hora)) ?? null
+  const miVentana = misBloquesHoy === null ? null : (() => {
+    if (miBloqueAbierto) return { abierta: true, motivo: '' }
+    if (misBloquesHoy.length === 0) {
+      return { abierta: false, motivo: 'Hoy no tenés entrenamiento asignado. Si viniste igual, pedile al profe que te marque.' }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const proximo = misBloquesHoy.find((b: any) => hhmm(b.hora_inicio) > hora)
+    if (proximo) {
+      return { abierta: false, motivo: `Tu entrenamiento es a las ${hhmm(proximo.hora_inicio)}. Vas a poder marcar tu llegada desde las ${inicioVentana(proximo.hora_inicio)}.` }
+    }
+    const ultimo = misBloquesHoy[misBloquesHoy.length - 1]
+    return { abierta: false, motivo: `Ya cerró el registro de hoy (${rangoHorario(ultimo.hora_inicio, ultimo.hora_fin)}). Pedile al profe que te marque.` }
+  })()
   // Los grupos que entrenan hoy van primero: es lo que el profe busca al llegar.
   const gruposOrdenados = [...new Set(Object.values(gruposDeJugador).flat())]
     .sort((a, b) => {
@@ -387,8 +430,18 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
             <>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🏓</div>
               <div style={{ fontSize: 16, color: text, marginBottom: 6 }}>Hola, {jugadorPropio.nombre?.split(' ')[0]}</div>
-              <div style={{ fontSize: 13, color: muted, marginBottom: 20 }}>Marca tu asistencia al llegar al club</div>
-              {!mostrarConfirm ? (
+              <div style={{ fontSize: 13, color: muted, marginBottom: 20 }}>
+                {miBloqueAbierto
+                  ? `Estás en ${miBloqueAbierto.nombre}. Marcá tu llegada.`
+                  : 'Marca tu asistencia al llegar al club'}
+              </div>
+              {/* El servidor es el que decide de verdad; esto es para que no
+                  aprete un botón que le va a rebotar. */}
+              {miVentana && !miVentana.abierta ? (
+                <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:14, padding:'16px 20px', maxWidth:320, margin:'0 auto', fontSize:13, color: muted }}>
+                  {miVentana.motivo}
+                </div>
+              ) : !mostrarConfirm ? (
                 <button onClick={() => setMostrarConfirm(true)} style={{ width: '100%', maxWidth: 320, padding: '16px 24px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: 'pointer' }}>
                   Marcar asistencia
                 </button>
