@@ -8,7 +8,7 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import FiltroMultiSelect from '@/components/FiltroMultiSelect'
 import { SEDES, GRUPOS, entrenaEnSede } from '@/lib/domain/sedeGrupo'
-import { montoEsperado } from '@/lib/domain/mensualidades'
+import { montoEsperado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 
 const supabase = createClient()
 
@@ -299,7 +299,14 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                       {mens?.fecha_pago || '—'}
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:13, color:'#3730a3', fontFamily:'monospace' }}>
-                      {mens?.monto ? fmt(mens.monto) : '—'}
+                      {/* Un guion no dice nada: puede leerse como cero o como
+                          "no corresponde". Sin cuota asignada hay algo que hacer,
+                          y tiene que verse. */}
+                      {mens?.monto
+                        ? fmt(mens.monto)
+                        : montoEsperado(j, mens) != null
+                          ? fmt(montoEsperado(j, mens)!)
+                          : <span style={{ fontFamily:'inherit', fontSize:11, fontWeight:600, color:'#c2410c', background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:6, padding:'3px 7px', whiteSpace:'nowrap' }}>{SIN_CUOTA}</span>}
                     </td>
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>

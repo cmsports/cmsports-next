@@ -213,7 +213,11 @@ export default function PanelMensualidadesHistoricas({ clubId }: { clubId: strin
                   <span style={{ width: 10, height: 10, borderRadius: '50%', background: col.bg }} />
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: est === 'pagado' ? COLOR.pagado.bg : muted, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-                  {c?.monto != null ? fmt(c.monto) : futuro ? '—' : fmt(elegido.mensualidad)}
+                  {c?.monto != null
+                    ? fmt(c.monto)
+                    : futuro ? '—'
+                    : elegido.mensualidad != null ? fmt(elegido.mensualidad)
+                    : <span style={{ fontSize: 11, color: '#c2410c' }}>Cuota por asignar</span>}
                 </div>
                 <div style={{ fontSize: 10, color: hint, marginTop: 2 }}>
                   {futuro ? 'Aún no corresponde' : c?.fecha_pago ? `Pagó el ${c.fecha_pago}` : COLOR[est].label}
