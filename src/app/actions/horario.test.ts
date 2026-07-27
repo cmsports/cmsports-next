@@ -4,7 +4,7 @@ import { fakeSupabase, type FakeSupabase } from '@/lib/test/fakeSupabase'
 const mocks = vi.hoisted(() => ({ crear: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.crear }))
 
-import { asignarBloquesJugador, generarSemana, guardarGrupo, marcarDiaSinClase } from './horario'
+import { asignarBloquesJugador, estadoDiaSinClase, generarSemana, guardarGrupo, marcarDiaSinClase } from './horario'
 
 const BLOQUES = [
   { id: 'b-lun', grupo_id: 'g1', nombre: 'Todo Público 1', sede: 'buin', dia_semana: 'lun', hora_inicio: '16:30', hora_fin: '18:30', vigente_hasta: null },
@@ -244,5 +244,41 @@ describe('marcarDiaSinClase', () => {
 
     expect(res).toMatchObject({ deshecho: true })
     expect(fake.llamadas.some(l => l.tabla === 'bloque_excepciones' && l.op === 'delete')).toBe(true)
+  })
+})
+
+// El modal ofrecía "Marcar" y "Deshacer" sin decir cuál correspondía: había que
+// apretar uno para averiguar en qué estado estaba el día.
+describe('estadoDiaSinClase', () => {
+  it('un día normal reporta sus grupos y ninguna suspensión', async () => {
+    conBase({ bloques_horario: [{ id: 'b1' }, { id: 'b2' }], bloque_excepciones: [] })
+
+    const res = await estadoDiaSinClase({ fecha: '2026-09-17' })
+
+    expect(res).toEqual({ dia: 'jue', grupos: 2, suspendidos: 0, motivo: null })
+  })
+
+  it('un día ya marcado devuelve cuántos grupos y el motivo', async () => {
+    conBase({
+      bloques_horario: [{ id: 'b1' }, { id: 'b2' }],
+      bloque_excepciones: [{ motivo: 'feriado' }, { motivo: 'feriado' }],
+    })
+
+    const res = await estadoDiaSinClase({ fecha: '2026-09-18' })
+
+    expect(res).toMatchObject({ grupos: 2, suspendidos: 2, motivo: 'feriado' })
+  })
+
+  it('el fin de semana no se consulta', async () => {
+    const res = await estadoDiaSinClase({ fecha: '2026-08-09' })   // domingo
+    expect(res).toEqual({ error: 'El club no abre los fines de semana' })
+  })
+
+  it('un día sin grupos no tiene nada que suspender', async () => {
+    conBase({ bloques_horario: [] })
+
+    const res = await estadoDiaSinClase({ fecha: '2026-09-18' })
+
+    expect(res).toMatchObject({ grupos: 0, suspendidos: 0 })
   })
 })

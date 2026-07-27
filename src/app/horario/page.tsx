@@ -6,7 +6,7 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import { Pencil, Plus, Trash2, X, Clock, MapPin } from 'lucide-react'
-import { eliminarBloque, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
+import { eliminarBloque, estadoDiaSinClase, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
 import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
 import PanelCupos from '@/components/PanelCupos'
@@ -66,6 +66,11 @@ export default function HorarioPage() {
   const [modalFeriado, setModalFeriado] = useState(false)
   const [feriado, setFeriado] = useState({ fecha: '', motivo: '' })
   const [feriadoMsg, setFeriadoMsg] = useState('')
+  // Cómo está la fecha elegida antes de tocar nada: cuántos grupos se dictan y
+  // cuántos ya están suspendidos.
+  const [feriadoEstado, setFeriadoEstado] = useState<
+    { grupos: number; suspendidos: number; motivo: string | null } | null
+  >(null)
 
   const clubId = perfil?.club_id ?? null
   const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'
@@ -158,6 +163,26 @@ export default function HorarioPage() {
     if (clubId) void cargar(clubId)
   }
 
+  // Al elegir la fecha se consulta cómo está, para saber si toca marcar o
+  // deshacer antes de apretar.
+  useEffect(() => {
+    if (!modalFeriado || !feriado.fecha) { setFeriadoEstado(null); return }
+    let vigente = true
+    setFeriadoEstado(null)
+    void (async () => {
+      const res = await estadoDiaSinClase({ fecha: feriado.fecha })
+      if (!vigente) return
+      if ('error' in res && res.error) { setFeriadoMsg(res.error); return }
+      setFeriadoMsg('')
+      setFeriadoEstado({
+        grupos: (res as { grupos: number }).grupos,
+        suspendidos: (res as { suspendidos: number }).suspendidos,
+        motivo: (res as { motivo: string | null }).motivo,
+      })
+    })()
+    return () => { vigente = false }
+  }, [modalFeriado, feriado.fecha])
+
   async function guardarFeriado(deshacer: boolean) {
     setGuardando(true)
     setFeriadoMsg('')
@@ -167,6 +192,16 @@ export default function HorarioPage() {
     setFeriadoMsg(deshacer
       ? `Listo: el ${feriado.fecha} vuelve a contar como día de entrenamiento.`
       : `Listo: el ${feriado.fecha} no cuenta para ${res.grupos} grupo${res.grupos === 1 ? '' : 's'}.`)
+    // Volver a leer el estado deja el modal mostrando lo que quedó, no lo que
+    // había cuando se abrió.
+    const ahora = await estadoDiaSinClase({ fecha: feriado.fecha })
+    if (!('error' in ahora && ahora.error)) {
+      setFeriadoEstado({
+        grupos: (ahora as { grupos: number }).grupos,
+        suspendidos: (ahora as { suspendidos: number }).suspendidos,
+        motivo: (ahora as { motivo: string | null }).motivo,
+      })
+    }
   }
 
   async function eliminar(b: Bloque) {
@@ -515,22 +550,64 @@ export default function HorarioPage() {
                 onChange={e => setFeriado(f => ({ ...f, motivo: e.target.value }))} />
             </div>
 
+            {/* Cómo está esa fecha ahora mismo. Sin esto los dos botones hacen
+                lo contrario entre sí y no hay forma de saber cuál corresponde. */}
+            {feriado.fecha && feriadoEstado && (
+              feriadoEstado.grupos === 0 ? (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: muted, marginBottom: 14 }}>
+                  Ese día no funciona ningún grupo. No hay nada que suspender.
+                </div>
+              ) : feriadoEstado.suspendidos > 0 ? (
+                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#c2410c', marginBottom: 14, fontWeight: 600 }}>
+                  Ya está marcado sin clase para {feriadoEstado.suspendidos} de {feriadoEstado.grupos} grupo{feriadoEstado.grupos === 1 ? '' : 's'}
+                  {feriadoEstado.motivo ? ` — ${feriadoEstado.motivo}` : ''}.
+                </div>
+              ) : (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: '#16a34a', marginBottom: 14, fontWeight: 600 }}>
+                  Ese día funcionan {feriadoEstado.grupos} grupo{feriadoEstado.grupos === 1 ? '' : 's'} con normalidad.
+                </div>
+              )
+            )}
+
             {feriadoMsg && (
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '9px 12px', fontSize: 12, color: muted, marginBottom: 14 }}>
                 {feriadoMsg}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => guardarFeriado(true)} disabled={guardando || !feriado.fecha}
-                style={{ flex: 1, padding: 10, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, cursor: feriado.fecha ? 'pointer' : 'default' }}>
-                Deshacer
-              </button>
-              <button onClick={() => guardarFeriado(false)} disabled={guardando || !feriado.fecha}
-                style={{ flex: 1, padding: 10, background: guardando || !feriado.fecha ? '#e2e8f0' : '#4f46e5', border: 'none', borderRadius: 8, color: guardando || !feriado.fecha ? '#94a3b8' : '#fff', fontSize: 13, fontWeight: 700, cursor: feriado.fecha ? 'pointer' : 'default' }}>
-                {guardando ? 'Guardando...' : 'Marcar'}
-              </button>
-            </div>
+            {/* El botón destacado es el que corresponde al estado actual. */}
+            {(() => {
+              const suspendido = (feriadoEstado?.suspendidos ?? 0) > 0
+              const listo = !!feriado.fecha && !guardando && (feriadoEstado?.grupos ?? 0) > 0
+              const principal = { flex: 1, padding: 10, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                background: listo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#e2e8f0',
+                color: listo ? '#fff' : '#94a3b8', cursor: listo ? 'pointer' : 'default' } as const
+              const secundario = { flex: 1, padding: 10, background: 'transparent', border: '1px solid #e2e8f0',
+                borderRadius: 8, color: muted, fontSize: 13, cursor: listo ? 'pointer' : 'default' } as const
+              return (
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {suspendido ? (
+                    <>
+                      <button onClick={() => guardarFeriado(false)} disabled={!listo} style={secundario}>
+                        Volver a marcar
+                      </button>
+                      <button onClick={() => guardarFeriado(true)} disabled={!listo} style={principal}>
+                        {guardando ? 'Guardando...' : 'Deshacer: sí hay clases'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => guardarFeriado(true)} disabled={!listo} style={secundario}>
+                        Deshacer
+                      </button>
+                      <button onClick={() => guardarFeriado(false)} disabled={!listo} style={principal}>
+                        {guardando ? 'Guardando...' : 'Marcar sin clase'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}

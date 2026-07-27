@@ -12,6 +12,7 @@ import { eliminarAsistencia, registrarAsistenciaAction } from '@/app/actions/asi
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { hhmm, inicioVentana, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
+import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import {
   guardarJugadoresCache,
   obtenerJugadoresCache,
@@ -38,6 +39,15 @@ function marcaTiempoActual() {
   return Date.now()
 }
 
+/** Un bloque que se dicta hoy, con lo justo para elegirlo en pantalla. */
+type BloqueDelDia = {
+  id: string
+  nombre: string
+  sede: string
+  hora_inicio: string
+  hora_fin: string
+}
+
 // Día de la semana de hoy en el formato del horario ('lun'..'vie').
 function diaDeHoy(): string {
   return ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][
@@ -59,11 +69,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const [pendientesCount, setPendientesCount] = useState(0)
 
-  // Los grupos del horario, usados solo para achicar la lista al pasar lista.
-  // No mandan sobre la asistencia: registrar sigue siendo tocar un nombre.
-  const [gruposDeJugador, setGruposDeJugador] = useState<Record<string, string[]>>({})
-  const [gruposHoy,       setGruposHoy]       = useState<Set<string>>(new Set())
-  const [grupoFiltro,     setGrupoFiltro]     = useState('')
+  // Los bloques que se dictan hoy y quiénes están inscritos en cada uno. Sirven
+  // para achicar la lista al pasar lista; no mandan sobre la asistencia, que
+  // sigue siendo tocar un nombre.
+  const [bloquesHoy,   setBloquesHoy]   = useState<BloqueDelDia[]>([])
+  const [inscritosDe,  setInscritosDe]  = useState<Record<string, string[]>>({})
+  const [sedeSel,      setSedeSel]      = useState('')
+  const [bloqueSel,    setBloqueSel]    = useState('')
 
   // Los bloques de hoy del propio jugador, para saber si puede marcarse.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -184,37 +196,40 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   }, [cargarDatos, clubId, online, sincronizarCola])
 
 
-  // A qué grupos pertenece cada jugador, para poder filtrar la lista por grupo.
+  // Los bloques que se dictan hoy y sus inscritos. Es lo que permite pasar
+  // lista de a un grupo en vez de buscar veinte nombres entre ciento tres.
+  //
+  // Si esta consulta falla o el día no tiene bloques, la pantalla se queda con
+  // la lista completa y sin filtros: es exactamente como funcionaba antes, y
+  // el profe nunca se queda sin poder pasar lista.
   useEffect(() => {
     if (!clubId || !esAdminOProfesor) return
     let vigente = true
     void (async () => {
+      const dia = diaDeHoy()
       const [{ data: bloques }, { data: rel }] = await Promise.all([
-        supabase.from('bloques_horario').select('id,nombre,dia_semana')
-          .eq('club_id', clubId).eq('activo', true),
+        supabase.from('bloques_horario')
+          .select('id,nombre,sede,hora_inicio,hora_fin')
+          .eq('club_id', clubId).eq('activo', true).eq('dia_semana', dia)
+          .lte('vigente_desde', hoy)
+          .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
+          .order('hora_inicio'),
         supabase.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
       ])
       if (!vigente) return
 
-      const nombreDe = new Map<string, string>()
-      const diaDe    = new Map<string, string>()
-      for (const b of bloques ?? []) { nombreDe.set(b.id, b.nombre); diaDe.set(b.id, b.dia_semana) }
-
-      const dia = diaDeHoy()
-      const porJugador: Record<string, string[]> = {}
-      const hoyGrupos = new Set<string>()
+      const deHoy = (bloques ?? []) as BloqueDelDia[]
+      const suyos = new Set(deHoy.map(b => b.id))
+      const porBloque: Record<string, string[]> = {}
       for (const r of rel ?? []) {
-        const nombre = nombreDe.get(r.bloque_id)
-        if (!nombre) continue
-        const previos = porJugador[r.jugador_id] ?? []
-        if (!previos.includes(nombre)) porJugador[r.jugador_id] = [...previos, nombre]
-        if (diaDe.get(r.bloque_id) === dia) hoyGrupos.add(nombre)
+        if (!suyos.has(r.bloque_id)) continue
+        ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
       }
-      setGruposDeJugador(porJugador)
-      setGruposHoy(hoyGrupos)
+      setBloquesHoy(deHoy)
+      setInscritosDe(porBloque)
     })()
     return () => { vigente = false }
-  }, [clubId, esAdminOProfesor])
+  }, [clubId, esAdminOProfesor, hoy])
 
   // Los bloques que le tocan hoy al propio jugador.
   useEffect(() => {
@@ -379,18 +394,23 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     const ultimo = misBloquesHoy[misBloquesHoy.length - 1]
     return { abierta: false, motivo: `Ya cerró el registro de hoy (${rangoHorario(ultimo.hora_inicio, ultimo.hora_fin)}). Pedile al profe que te marque.` }
   })()
-  // Los grupos que entrenan hoy van primero: es lo que el profe busca al llegar.
-  const gruposOrdenados = [...new Set(Object.values(gruposDeJugador).flat())]
-    .sort((a, b) => {
-      const ha = gruposHoy.has(a) ? 0 : 1
-      const hb = gruposHoy.has(b) ? 0 : 1
-      return ha !== hb ? ha - hb : a.localeCompare(b)
-    })
+  // Recinto y horario, en ese orden: es como el profe piensa el día. Llega a
+  // una sede, a una hora, y tiene a ese grupo enfrente.
+  const sedesHoy = [...new Set(bloquesHoy.map(b => b.sede))].sort()
+  // Con una sola sede no hay nada que elegir: el paso sobra y se salta.
+  const sedeEfectiva = sedesHoy.length === 1 ? sedesHoy[0] : sedeSel
+  const bloquesDeLaSede = sedeEfectiva
+    ? bloquesHoy.filter(b => b.sede === sedeEfectiva)
+    : bloquesHoy
+
+  const inscritosDelBloque = bloqueSel ? new Set(inscritosDe[bloqueSel] ?? []) : null
 
   const filtrados = jugadores.filter(j =>
     j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) &&
-    (!grupoFiltro || (gruposDeJugador[j.id] ?? []).includes(grupoFiltro))
+    (!inscritosDelBloque || inscritosDelBloque.has(j.id))
   )
+
+  const bloqueElegido = bloquesHoy.find(b => b.id === bloqueSel) ?? null
 
   const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
 
@@ -536,8 +556,8 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:10, marginBottom: 12, flexWrap:'wrap' }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: text }}>✏️ Registro manual</div>
             <div style={{ fontSize: 12, color: muted }}>
-              {grupoFiltro
-                ? `${filtrados.filter(j => registradosHoy.has(j.id)).length} de ${filtrados.length} en ${grupoFiltro}`
+              {bloqueElegido
+                ? `${filtrados.filter(j => registradosHoy.has(j.id)).length} de ${filtrados.length} en ${bloqueElegido.nombre}`
                 : `${registradosHoy.size} de ${jugadores.length} registrados hoy`}
             </div>
           </div>
@@ -547,30 +567,57 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
             value={busqueda} onChange={e => setBusqueda(e.target.value)}
           />
 
-          {/* Los grupos del horario, solo para achicar la lista. Los que
-              entrenan hoy van primero y quedan marcados. */}
-          {gruposOrdenados.length > 0 && (
-            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:10 }}>
-              <button onClick={() => setGrupoFiltro('')}
-                style={{ padding:'5px 11px', fontSize:12, fontWeight:600, borderRadius:20, cursor:'pointer',
-                  border:`1px solid ${grupoFiltro === '' ? '#4f46e5' : '#e2e8f0'}`,
-                  background: grupoFiltro === '' ? '#4f46e5' : '#ffffff',
-                  color: grupoFiltro === '' ? '#ffffff' : muted }}>
-                Todos ({jugadores.length})
-              </button>
-              {gruposOrdenados.map(g => {
-                const activo = grupoFiltro === g
-                const esHoy  = gruposHoy.has(g)
-                return (
-                  <button key={g} onClick={() => setGrupoFiltro(activo ? '' : g)}
-                    style={{ padding:'5px 11px', fontSize:12, fontWeight:600, borderRadius:20, cursor:'pointer',
-                      border:`1px solid ${activo ? '#4f46e5' : esHoy ? '#c7d2fe' : '#e2e8f0'}`,
-                      background: activo ? '#4f46e5' : esHoy ? '#eef2ff' : '#ffffff',
-                      color: activo ? '#ffffff' : esHoy ? '#3730a3' : muted }}>
-                    {esHoy && '• '}{g}
-                  </button>
-                )
-              })}
+          {/* Recinto y horario. Solo aparecen los bloques que se dictan hoy:
+              el resto de la semana no sirve para pasar lista ahora. */}
+          {bloquesHoy.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+              {sedesHoy.length > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Recinto</span>
+                  {sedesHoy.map(s => {
+                    const activo = sedeSel === s
+                    return (
+                      <button key={s} onClick={() => { setSedeSel(activo ? '' : s); setBloqueSel('') }}
+                        style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                          border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
+                          background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
+                          color: activo ? '#ffffff' : muted }}>
+                        {sedeLabel(s)}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Horario</span>
+                <button onClick={() => setBloqueSel('')}
+                  style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                    border: `1px solid ${bloqueSel === '' ? '#4f46e5' : '#e2e8f0'}`,
+                    background: bloqueSel === '' ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
+                    color: bloqueSel === '' ? '#ffffff' : muted }}>
+                  Todos ({jugadores.length})
+                </button>
+                {bloquesDeLaSede.map(b => {
+                  const activo = bloqueSel === b.id
+                  const cuantos = (inscritosDe[b.id] ?? []).length
+                  return (
+                    <button key={b.id} onClick={() => setBloqueSel(activo ? '' : b.id)}
+                      style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                        border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
+                        background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
+                        color: activo ? '#ffffff' : muted }}>
+                      {rangoHorario(b.hora_inicio, b.hora_fin)} · {cuantos}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {bloqueElegido && (
+                <div style={{ fontSize: 11, color: hint }}>
+                  {bloqueElegido.nombre} — {sedeLabel(bloqueElegido.sede)}
+                </div>
+              )}
             </div>
           )}
           {/* La lista completa se ve sin buscar: es la única forma de pasar

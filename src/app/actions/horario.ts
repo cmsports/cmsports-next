@@ -63,6 +63,42 @@ async function guardarProfesores(
  * Sin esto, un feriado aparece como entrenamiento pendiente de registrar para
  * todos los inscritos y ensucia los porcentajes de ese mes.
  */
+/**
+ * Cómo está hoy una fecha: cuántos grupos se dictan y cuántos están suspendidos.
+ *
+ * Existe porque el modal pedía apretar a ciegas. "Marcar" y "Deshacer" son
+ * botones que hacen lo contrario y no había forma de saber cuál correspondía,
+ * así que la única manera de averiguarlo era apretar uno.
+ */
+export async function estadoDiaSinClase(params: { fecha: string }) {
+  const { error: authErr, supabase, clubId } = await requireStaff()
+  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
+
+  const dia = diaDesdeFecha(params.fecha)
+  if (!dia) return { error: 'El club no abre los fines de semana' }
+
+  const { data: bloques, error: errBloques } = await supabase.from('bloques_horario')
+    .select('id').eq('club_id', clubId).eq('dia_semana', dia)
+    .lte('vigente_desde', params.fecha)
+    .or(`vigente_hasta.is.null,vigente_hasta.gte.${params.fecha}`)
+  if (errBloques) return { error: 'No se pudo leer el horario: ' + errBloques.message }
+
+  const ids = (bloques ?? []).map((b: { id: string }) => b.id)
+  if (ids.length === 0) return { dia, grupos: 0, suspendidos: 0, motivo: null }
+
+  const { data: exc, error: errExc } = await supabase.from('bloque_excepciones')
+    .select('motivo').in('bloque_id', ids).eq('fecha', params.fecha)
+  if (errExc) return { error: 'No se pudieron leer las suspensiones: ' + errExc.message }
+
+  const motivos = (exc ?? []).map((e: { motivo: string | null }) => e.motivo).filter(Boolean)
+  return {
+    dia,
+    grupos: ids.length,
+    suspendidos: (exc ?? []).length,
+    motivo: (motivos[0] as string | undefined) ?? null,
+  }
+}
+
 export async function marcarDiaSinClase(params: { fecha: string; motivo?: string; deshacer?: boolean }) {
   const { error: authErr, supabase, clubId } = await requireStaff()
   if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
