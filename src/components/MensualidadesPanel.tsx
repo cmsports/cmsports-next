@@ -5,6 +5,9 @@ import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago } from '@/app/actions/mensualidades'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import FiltroMultiSelect from '@/components/FiltroMultiSelect'
+import { SEDES, GRUPOS, entrenaEnSede } from '@/lib/domain/sedeGrupo'
+import { montoEsperado } from '@/lib/domain/mensualidades'
 
 const supabase = createClient()
 
@@ -33,6 +36,9 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const clubInfoCargada = useRef(false)
   const [filtroEstado, setFiltroEstado] = useState<'todos'|'pagado'|'pendiente'|'atrasado'>('todos')
   const [busqueda, setBusqueda] = useState('')
+  const [filtroCat, setFiltroCat]     = useState<Set<string>>(new Set())
+  const [filtroGrupo, setFiltroGrupo] = useState<Set<string>>(new Set())
+  const [filtroSede, setFiltroSede]   = useState<Set<string>>(new Set())
   const [clubNombre, setClubNombre] = useState('')
   const clubId = perfil?.club_id ?? null
 
@@ -55,7 +61,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   async function cargarMensualidades(cid?: string) {
     const id = cid || clubId
     const [{ data: j }, { data: m }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite').eq('club_id', id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').order('nombre'),
+      supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono').eq('club_id', id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').order('nombre'),
       supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
     ])
     setJugadores(j || [])
@@ -176,12 +182,21 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const totalRecaudado = mensualidades.filter(m => m.estado === 'pagado').reduce((s,m) => s + (m.monto||0), 0)
   const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
+  const categoriasDisponibles = [...new Set(
+    jugadores.flatMap(j => (j.categorias?.length ? j.categorias : [j.categoria])).filter(Boolean)
+  )].sort((a, b) => String(a).localeCompare(String(b), 'es')) as string[]
+
   const jugadoresFiltrados = jugadores.filter(j => {
     const mens = mensualidades.find(m => m.jugador_id === j.id)
     const estado = mens?.estado || 'pendiente'
     const coincideEstado = filtroEstado === 'todos' || estado === filtroEstado
     const coincideBusqueda = !busqueda || j.nombre.toLowerCase().includes(busqueda.toLowerCase())
-    return coincideEstado && coincideBusqueda
+    // Un jugador puede competir en varias categorías (la suya por edad + TC).
+    const coincideCat = filtroCat.size === 0 ||
+      [...filtroCat].some(c => (j.categorias?.length ? j.categorias.includes(c) : j.categoria === c))
+    const coincideGrupo = filtroGrupo.size === 0 || filtroGrupo.has(j.grupo)
+    const coincideSede = filtroSede.size === 0 || [...filtroSede].some(s => entrenaEnSede(j.sede, s))
+    return coincideEstado && coincideBusqueda && coincideCat && coincideGrupo && coincideSede
   })
 
   if (loading) return <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>Cargando mensualidades...</div>
@@ -220,6 +235,25 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
         <input style={{ flex:1, minWidth:200, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'9px 12px', color: text, fontSize:13, outline:'none' }}
           placeholder="Buscar jugador..."
           value={busqueda} onChange={e => setBusqueda(e.target.value)} />
+
+        <FiltroMultiSelect
+          label="Categoría"
+          options={categoriasDisponibles.map(c => ({ value: c, label: c }))}
+          selected={filtroCat}
+          onChange={setFiltroCat}
+        />
+        <FiltroMultiSelect
+          label="Grupo"
+          options={GRUPOS.map(g => ({ value: g.value, label: g.label }))}
+          selected={filtroGrupo}
+          onChange={setFiltroGrupo}
+        />
+        <FiltroMultiSelect
+          label="Sede"
+          options={SEDES.map(s => ({ value: s.value, label: s.label }))}
+          selected={filtroSede}
+          onChange={setFiltroSede}
+        />
         {(['todos','pagado','pendiente','atrasado'] as const).map(e => (
           <button key={e} onClick={() => setFiltroEstado(e)}
             style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #e2e8f0', background: filtroEstado===e?'#ede9fe':'#ffffff', color: filtroEstado===e?'#3730a3': muted, fontSize:12, cursor:'pointer', textTransform:'capitalize', boxShadow: filtroEstado===e ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
@@ -272,7 +306,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                         {estado !== 'pagado' && (
-                          <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre }); setMontoPago(String(j.sesiones_limite === 16 ? 40000 : j.sesiones_limite === 12 ? 30000 : j.sesiones_limite === 8 ? 25000 : 15000)) }}
+                          <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado: montoEsperado(j, mens) }); setMontoPago(String(montoEsperado(j, mens))) }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
                             ✅ Marcar pagado
                           </button>
@@ -314,6 +348,13 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Monto (CLP)</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 type="number" value={montoPago} onChange={e => setMontoPago(e.target.value)} />
+              {/* Aviso si se está registrando algo distinto a la cuota del mes. */}
+              {modalPago.esperado && parseInt(montoPago) !== modalPago.esperado && (
+                <div style={{ marginTop:6, fontSize:11, color:'#c2410c', background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:6, padding:'6px 9px' }}>
+                  La cuota de este mes es <strong>{fmt(modalPago.esperado)}</strong>.
+                  {parseInt(montoPago) ? ` Estás registrando ${fmt(parseInt(montoPago))}.` : ''}
+                </div>
+              )}
             </div>
             <div style={{ marginBottom:20 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Método de pago</label>
