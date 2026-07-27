@@ -14,6 +14,7 @@ import { copiarTexto } from '@/lib/clipboard'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
+import { montoIngresado } from '@/lib/domain/mensualidades'
 
 const CLUB_BUIN_ID = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
 
@@ -70,7 +71,7 @@ export default function SolicitudesPage() {
     contacto_emergencia_nombre: '', contacto_emergencia_telefono: '',
     indicaciones_medicas: '', password: '', passwordConfirm: '',
   })
-  const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
+  const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '' })
   // Los grupos se eligen al aprobar: si entra sin bloque queda invisible para
   // la asistencia y no puede marcarse solo desde la app.
   const [bloquesClub, setBloquesClub] = useState<BloqueHorario[]>([])
@@ -147,7 +148,7 @@ export default function SolicitudesPage() {
       categoria: planForm.categoria,
       tipo_plan: planForm.tipo_plan,
       entrenamientos_por_semana: ent,
-      mensualidad: parseInt(planForm.mensualidad) || 0,
+      mensualidad: montoIngresado(planForm.mensualidad),
       sesiones_limite: ses,
       bloqueIds: [...bloquesSel],
     })
@@ -292,7 +293,7 @@ export default function SolicitudesPage() {
                               password: '',
                               passwordConfirm: '',
                             })
-                            setPlanForm({ categoria: catAuto, tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '30000' })
+                            setPlanForm({ categoria: catAuto, tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '' })
                             setErrorAprobar('')
                           }}
                             style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>

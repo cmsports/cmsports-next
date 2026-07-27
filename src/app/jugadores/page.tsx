@@ -13,6 +13,7 @@ import { SEDES, GRUPOS, sedeLabel, grupoLabel, entrenaEnSede } from '@/lib/domai
 import { firmarUrls } from '@/lib/supabase/privado'
 import FiltroMultiSelect, { setToggle, setDesdeParam } from '@/components/FiltroMultiSelect'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
+import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 
 const supabase = createClient()
 
@@ -54,7 +55,7 @@ export default function JugadoresPage() {
     categoria:'principiante',
     tipo_plan:'mensual',
     entrenamientos_por_semana:'3',
-    mensualidad:'30000',
+    mensualidad:'',
     fecha_nacimiento:'', direccion:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'',
     indicaciones_medicas:'', federado:false, comuna:'',
   }
@@ -260,7 +261,7 @@ export default function JugadoresPage() {
       nombre:j.nombre||'', rut:j.rut||'', email:j.email||'', telefono:j.telefono||'',
       categoria:j.categoria||(esClubBuin ? '' : 'principiante'), tipo_plan:j.tipo_plan||'mensual',
       entrenamientos_por_semana:String(j.entrenamientos_por_semana||3),
-      mensualidad:String(j.mensualidad||30000),
+      mensualidad: j.mensualidad != null ? String(j.mensualidad) : '',
       fecha_nacimiento:j.fecha_nacimiento||'', direccion:j.direccion||'',
       contacto_emergencia_nombre:j.contacto_emergencia_nombre||'', contacto_emergencia_telefono:j.contacto_emergencia_telefono||'',
       indicaciones_medicas:j.indicaciones_medicas||'', federado:!!j.federado, comuna:j.comuna||'',
@@ -282,7 +283,10 @@ export default function JugadoresPage() {
 
     const esLibre = form.tipo_plan === 'libre'
     const entSemana = esLibre ? null : (parseInt(form.entrenamientos_por_semana) || 3)
-    const mensualidad = parseInt(form.mensualidad) || 25000
+    // Sin cuota escrita el jugador queda sin cuota, no con $25.000. Se crea un
+    // jugador antes de saber cuánto va a pagar, y ese monto de relleno se veía
+    // igual de real que uno acordado con el apoderado.
+    const mensualidad = montoIngresado(form.mensualidad)
     const sesionesLimite = esLibre ? 99 : (entSemana || 3) * 4
 
     const planFields = {
@@ -348,7 +352,8 @@ export default function JugadoresPage() {
       'Nombre': j.nombre, 'RUT': j.rut || '', 'Email': j.email || '', 'Teléfono': j.telefono || '',
       'Categoría': j.categorias?.length ? j.categorias.join(' · ') : (j.categoria || ''),
       'Grupo': grupoLabel(j.grupo), 'Sede': sedeLabel(j.sede),
-      'Mensualidad': j.mensualidad || 0,
+      // Vacío, no cero: en una planilla un 0 se suma y descuadra el total.
+      'Mensualidad': j.mensualidad ?? '',
       'Horario': j.horario || '', 'Días': dias(j), 'Estado': j.estado
     }))
     const ws = utils.json_to_sheet(datos)
@@ -633,11 +638,11 @@ export default function JugadoresPage() {
                         />
                       ) : (
                         <span
-                          onClick={esAdmin ? () => { setEditandoMensualidadId(j.id); setMensualidadTemp(String(j.mensualidad || 0)) } : undefined}
+                          onClick={esAdmin ? () => { setEditandoMensualidadId(j.id); setMensualidadTemp(j.mensualidad != null ? String(j.mensualidad) : '') } : undefined}
                           title={esAdmin ? 'Clic para editar' : undefined}
-                          style={{ fontSize:13, color: j.mensualidad ? text : hint, fontWeight: j.mensualidad ? 600 : 400, cursor: esAdmin ? 'pointer' : 'default' }}
+                          style={{ fontSize: j.mensualidad ? 13 : 11, color: j.mensualidad ? text : '#c2410c', fontWeight: j.mensualidad ? 600 : 500, cursor: esAdmin ? 'pointer' : 'default' }}
                         >
-                          {j.mensualidad ? `$${j.mensualidad.toLocaleString('es-CL')}` : '—'}
+                          {j.mensualidad ? `$${j.mensualidad.toLocaleString('es-CL')}` : SIN_CUOTA}
                         </span>
                       )}
                     </td>
@@ -870,6 +875,9 @@ export default function JugadoresPage() {
                   value={form.mensualidad}
                   onChange={e => setForm(prev => ({ ...prev, mensualidad: e.target.value }))}
                 />
+                <div style={{ fontSize:11, color: hint, marginTop:5 }}>
+                  Si todavía no sabés cuánto va a pagar, dejalo vacío: queda como &ldquo;{SIN_CUOTA}&rdquo;.
+                </div>
               </div>
             </div>
             <div style={{ display:'flex', gap:10 }}>

@@ -20,7 +20,8 @@ export async function aprobarSolicitud(params: {
   categoria: string
   tipo_plan: string
   entrenamientos_por_semana: number | null
-  mensualidad: number
+  /** null cuando todavía nadie le asignó cuota. Nunca un monto de relleno. */
+  mensualidad: number | null
   sesiones_limite: number
   /** Grupos del horario a los que entra. Sin esto queda sin días ni sede, no
    *  aparece en ninguna lista y no se puede marcar la asistencia solo. */

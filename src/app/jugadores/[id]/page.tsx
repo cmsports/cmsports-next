@@ -20,6 +20,7 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { MessageCircle } from 'lucide-react'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
+import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 
 const supabase = createClient()
 
@@ -102,7 +103,7 @@ export default function JugadorDetallePage() {
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
   const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
-  const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
+  const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'' })
   const [editDias, setEditDias] = useState(false)
   // Los días salen de los bloques a los que está inscrito, no de casillas
   // sueltas: así la ficha y los cupos no pueden contradecirse.
@@ -332,7 +333,10 @@ export default function JugadorDetallePage() {
     setPlanFormState({
       tipo_plan: jugador?.tipo_plan || 'mensual',
       entrenamientos_por_semana: String(jugador?.entrenamientos_por_semana || 3),
-      mensualidad: String(jugador?.mensualidad || 30000),
+      // Sin cuota asignada el campo llega vacío. Antes llegaba con $30.000 ya
+      // escrito: bastaba abrir el plan y guardar para dejarle al jugador una
+      // cuota que nadie decidió, con toda la cara de estar bien puesta.
+      mensualidad: jugador?.mensualidad != null ? String(jugador.mensualidad) : '',
     })
     setDatosError('')
     setEditPlan(true)
@@ -343,10 +347,13 @@ export default function JugadorDetallePage() {
     setDatosError('')
     const ent = planFormState.tipo_plan === 'libre' ? null : parseInt(planFormState.entrenamientos_por_semana) || 3
     const sesLimite = planFormState.tipo_plan === 'libre' ? 99 : (ent || 3) * 4
+    // Campo vacío es "todavía no le asignan cuota", no "cuota cero". Guardar 0
+    // los sacaba de la lista de pendientes por asignar y los dejaba cobrando
+    // nada sin que nadie lo hubiera decidido.
     const datos = {
       tipo_plan: planFormState.tipo_plan,
       entrenamientos_por_semana: ent,
-      mensualidad: parseInt(planFormState.mensualidad) || 0,
+      mensualidad: montoIngresado(planFormState.mensualidad),
       sesiones_limite: sesLimite,
     }
     const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
@@ -623,7 +630,7 @@ export default function JugadorDetallePage() {
       const kpis = [
         { label: 'Asistencias (90 días)', value: String(totalAsist), r: 79, g: 70, b: 229 },
         { label: `Ranking ${jugador.categoria || ''}`, value: rankingPos ? `#${rankingPos} / ${rankingTotal}` : '—', r: 22, g: 163, b: 74 },
-        { label: 'Mensualidad', value: `$${(jugador.mensualidad || 0).toLocaleString('es-CL')}`, r: 14, g: 165, b: 233 },
+        { label: 'Mensualidad', value: jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : 'Por asignar', r: 14, g: 165, b: 233 },
       ]
       kpis.forEach((k, i) => {
         const x = 14 + i * (kpiW + 3)
@@ -863,8 +870,8 @@ export default function JugadorDetallePage() {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, marginBottom:20 }}>
         {esAdmin && (
           <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
-            <div style={{ fontSize: jugador.mensualidad ? 20 : 28, fontWeight:800, color: jugador.mensualidad ? '#4f46e5' : hint, fontVariantNumeric:'tabular-nums' }}>
-              {jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : '—'}
+            <div style={{ fontSize: jugador.mensualidad ? 20 : 12, fontWeight:800, color: jugador.mensualidad ? '#4f46e5' : '#c2410c', fontVariantNumeric:'tabular-nums' }}>
+              {jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : SIN_CUOTA}
             </div>
             <div style={{ fontSize:11, color: muted, marginTop:4 }}>Mensualidad</div>
           </div>
@@ -988,8 +995,10 @@ export default function JugadorDetallePage() {
         <div style={cardStyle}>
           <CardHeader title="Plan & Membresía" onEdit={puedeEditar ? abrirEditPlan : undefined} />
           <div style={{ padding:'16px 20px' }}>
-            <div style={{ fontSize:24, fontWeight:800, color: jugador.mensualidad ? text : hint, marginBottom:4 }}>
-              {jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : '—'}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span>
+            <div style={{ fontSize: jugador.mensualidad ? 24 : 15, fontWeight:800, color: jugador.mensualidad ? text : '#c2410c', marginBottom:4 }}>
+              {jugador.mensualidad
+                ? <>{`$${jugador.mensualidad.toLocaleString('es-CL')}`}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span></>
+                : SIN_CUOTA}
             </div>
             <div style={{ fontSize:13, color: muted }}>
               {jugador.tipo_plan ? jugador.tipo_plan.charAt(0).toUpperCase() + jugador.tipo_plan.slice(1) : 'Mensual'}

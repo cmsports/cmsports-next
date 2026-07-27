@@ -8,7 +8,7 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import FiltroMultiSelect from '@/components/FiltroMultiSelect'
 import { SEDES, GRUPOS, entrenaEnSede } from '@/lib/domain/sedeGrupo'
-import { montoEsperado, SIN_CUOTA } from '@/lib/domain/mensualidades'
+import { montoEsperado, montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 
 const supabase = createClient()
 
@@ -31,7 +31,8 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const tienePropsExternos = mesProp !== undefined
   const [modalPago, setModalPago] = useState<any>(null)
   const [metodoPago, setMetodoPago] = useState('efectivo')
-  const [montoPago, setMontoPago] = useState('25000')
+  const [montoPago, setMontoPago] = useState('')
+  const [errorPago, setErrorPago] = useState('')
   const [registrandoPago, setRegistrandoPago] = useState(false)
   const pagoOperacionId = useRef<string | null>(null)
   const clubInfoCargada = useRef(false)
@@ -51,7 +52,8 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       tasks.push(
         supabase.from('clubes').select('nombre,mensualidad_base').eq('id', clubId).single()
           .then(({ data }) => {
-            if (data?.mensualidad_base) setMontoPago(String(data.mensualidad_base))
+            // La cuota base del club no se precarga acá: el monto lo pone el
+            // modal con la cuota real del jugador, y si no tiene queda vacío.
             if (data?.nombre) setClubNombre(data.nombre)
           })
       )
@@ -94,17 +96,25 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
 
   async function marcarPagado(jugadorId: string, mensId: string) {
     if (registrandoPago) return
+    // Un pago es plata que entra al libro. Sin monto escrito no se registra
+    // nada: antes se guardaban $25.000 por defecto, y un movimiento inventado
+    // en finanzas no hay cómo distinguirlo después de uno real.
+    const monto = montoIngresado(montoPago)
+    if (monto == null || monto <= 0) {
+      setErrorPago('Escribí el monto que pagó. No se registra un pago sin monto.')
+      return
+    }
+    setErrorPago('')
     setRegistrandoPago(true)
     pagoOperacionId.current ??= crypto.randomUUID()
     const jugador = jugadores.find(j => j.id === jugadorId)
-    const monto = parseInt(montoPago) || 25000
     const resultado = await registrarPago({
       jugadorId, jugadorNombre: jugador?.nombre || '', mensualidadId: mensId || null,
       mes, anio, monto, metodo: metodoPago, registradoPor: perfil?.nombre || 'Admin',
       idempotencyKey: pagoOperacionId.current,
     })
     setRegistrandoPago(false)
-    if (resultado.error) return
+    if (resultado.error) { setErrorPago(resultado.error); return }
     pagoOperacionId.current = null
     setModalPago(null)
     cargarMensualidades()
@@ -311,7 +321,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                         {estado !== 'pagado' && (
-                          <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); const esperado = montoEsperado(j, mens); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado }); setMontoPago(esperado == null ? '' : String(esperado)) }}
+                          <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); const esperado = montoEsperado(j, mens); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado }); setMontoPago(esperado == null ? '' : String(esperado)); setErrorPago('') }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
                             ✅ Marcar pagado
                           </button>
@@ -360,6 +370,11 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                   {parseInt(montoPago) ? ` Estás registrando ${fmt(parseInt(montoPago))}.` : ''}
                 </div>
               )}
+              {!modalPago.esperado && (
+                <div style={{ marginTop:6, fontSize:11, color: hint }}>
+                  Este jugador no tiene cuota asignada. Escribí cuánto pagó.
+                </div>
+              )}
             </div>
             <div style={{ marginBottom:20 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Método de pago</label>
@@ -369,8 +384,15 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                 <option value="transferencia">Transferencia</option>
               </select>
             </div>
+            {/* El aviso vive dentro del modal. Arriba de la página quedaba
+                tapado y se leía como "apreté y no pasó nada". */}
+            {errorPago && (
+              <div style={{ marginBottom:14, fontSize:12, color:'#dc2626', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'9px 12px' }}>
+                {errorPago}
+              </div>
+            )}
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalPago(null)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={() => { setErrorPago(''); setModalPago(null) }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
               <button disabled={registrandoPago} onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId)} style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>{registrandoPago ? 'Registrando...' : 'Confirmar'}</button>
             </div>
           </div>

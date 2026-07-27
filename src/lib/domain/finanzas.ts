@@ -87,10 +87,9 @@ export function calcularKpis(
   }
 }
 
-export function montoPorPlan(sesionesLimite: number): number {
-  const plan = CONFIG.PLANES.find(p => p.sesiones === sesionesLimite)
-  return plan?.monto ?? CONFIG.MENSUALIDAD_BASE
-}
+// Acá vivía montoPorPlan(): deducía la cuota del plan de sesiones. Nadie la
+// llamaba, y era justo la lógica que no queremos —la cuota la pone el profe a
+// mano, jugador por jugador—. Se borra para que no la vuelva a enchufar nadie.
 
 export function formatCLP(monto: number | null | undefined): string {
   return (monto ?? 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 })

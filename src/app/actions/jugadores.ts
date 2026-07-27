@@ -11,7 +11,8 @@ type PlanFields = {
   categoria: string
   tipo_plan: string
   entrenamientos_por_semana: number | null
-  mensualidad: number
+  /** null cuando todavía nadie le asignó cuota. Nunca un monto de relleno. */
+  mensualidad: number | null
   sesiones_limite: number
 }
 

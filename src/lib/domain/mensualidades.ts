@@ -25,3 +25,16 @@ export function montoEsperado(jugador: JugadorCuota | null | undefined, cuota: C
 }
 
 export const SIN_CUOTA = 'Cuota por asignar'
+
+/**
+ * Lo que el profe escribió en un campo de monto, o null si dejó el campo vacío.
+ *
+ * Existe porque esta cuenta estaba copiada en cuatro pantallas y en tres de
+ * ellas terminaba en `|| 30000` o `|| 0`: el campo vacío se convertía en un
+ * monto. Vacío significa "todavía no le asignan cuota" y tiene que llegar así
+ * hasta la base.
+ */
+export function montoIngresado(texto: string): number | null {
+  const n = parseInt(texto, 10)
+  return Number.isFinite(n) ? n : null
+}

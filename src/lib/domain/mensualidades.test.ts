@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { montoEsperado } from './mensualidades'
+import { montoEsperado, montoIngresado } from './mensualidades'
 
 describe('montoEsperado', () => {
   it('manda el monto ya emitido para ese mes', () => {
@@ -22,5 +22,21 @@ describe('montoEsperado', () => {
 
   it('un cero no cuenta como monto asignado', () => {
     expect(montoEsperado({ mensualidad: 0 }, { monto: 0 })).toBeNull()
+  })
+})
+
+describe('montoIngresado', () => {
+  it('devuelve lo que escribieron', () => {
+    expect(montoIngresado('21000')).toBe(21000)
+    expect(montoIngresado('0')).toBe(0)
+  })
+
+  // El bug que se arrastraba: el formulario de jugador nuevo hacía
+  // `parseInt(form.mensualidad) || 25000`, así que crear un jugador sin
+  // escribir el monto le dejaba $25.000 puestos.
+  it('campo vacío es sin cuota, no un monto de relleno', () => {
+    expect(montoIngresado('')).toBeNull()
+    expect(montoIngresado('   ')).toBeNull()
+    expect(montoIngresado('abc')).toBeNull()
   })
 })
