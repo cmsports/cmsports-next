@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago } from '@/app/actions/mensualidades'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import { linkWhatsApp } from '@/lib/whatsapp'
 import FiltroMultiSelect from '@/components/FiltroMultiSelect'
 import { SEDES, GRUPOS, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 import { montoEsperado } from '@/lib/domain/mensualidades'
@@ -283,13 +284,10 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                   <tr key={j.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
                     <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>
                       {j.nombre}
-                      {j.telefono && estado !== 'pagado' && (
-                        <WhatsAppBtn
-                          href={`https://wa.me/${j.telefono.replace(/[^0-9]/g,'')}?text=${encodeURIComponent(`Hola ${j.nombre.split(' ')[0]}! 👋 Te contactamos desde ${clubNombre || 'el club'}. Tu mensualidad de ${mesesN[mes-1]} ${anio}${mens?.monto ? ` ($${Number(mens.monto).toLocaleString('es-CL')})` : ''} figura como *${estado === 'atrasado' ? 'atrasada ⚠️' : 'pendiente ⏳'}*. Por favor regularizá tu pago cuando puedas. ¡Gracias! 🏓`)}`}
-                          variant="compact"
-                          style={{ marginLeft:8 }}
-                        />
-                      )}
+                      {estado !== 'pagado' && (() => {
+                        const url = linkWhatsApp(j.telefono, `Hola ${j.nombre.split(' ')[0]}! 👋 Te contactamos desde ${clubNombre || 'el club'}. Tu mensualidad de ${mesesN[mes-1]} ${anio}${mens?.monto ? ` ($${Number(mens.monto).toLocaleString('es-CL')})` : ''} figura como *${estado === 'atrasado' ? 'atrasada ⚠️' : 'pendiente ⏳'}*. Por favor regularizá tu pago cuando puedas. ¡Gracias! 🏓`)
+                        return url ? <WhatsAppBtn href={url} variant="compact" style={{ marginLeft:8 }} /> : null
+                      })()}
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{j.sesiones_limite} ses.</td>
                     <td style={{ padding:'12px 16px' }}>

@@ -11,6 +11,7 @@ import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import DocumentosJugador from '@/components/DocumentosJugador'
+import { linkWhatsApp } from '@/lib/whatsapp'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
@@ -924,26 +925,34 @@ export default function JugadorDetallePage() {
             <InfoRow label="Sede" value={sedeLabel(jugador.sede)} />
             {jugador.horario && <InfoRow label="Horario" value={jugador.horario} />}
             {esClubBuin && <InfoRow label="Federado" value={jugador.federado ? 'Sí' : jugador.federado === false ? 'No' : '—'} />}
-            {(jugador.telefono || jugador.contacto_emergencia_telefono) && (
-              <div style={{ paddingTop:12, display:'flex', flexDirection:'column', gap:6 }}>
-                {edad !== null && edad < 18 && jugador.contacto_emergencia_telefono ? (
-                  <>
-                    <WhatsAppBtn href={`https://wa.me/${jugador.contacto_emergencia_telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
-                      WhatsApp apoderado
-                    </WhatsAppBtn>
-                    {jugador.telefono && (
-                      <WhatsAppBtn href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
-                        WhatsApp jugador
+            {(() => {
+              // Si el número no es un celular chileno válido no se muestra el
+              // botón: abría WhatsApp diciendo que el número no existe.
+              const waApoderado = linkWhatsApp(jugador.contacto_emergencia_telefono)
+              const waJugador   = linkWhatsApp(jugador.telefono)
+              const esMenor     = edad !== null && edad < 18
+              if (!waApoderado && !waJugador) return null
+              return (
+                <div style={{ paddingTop:12, display:'flex', flexDirection:'column', gap:6 }}>
+                  {esMenor && waApoderado ? (
+                    <>
+                      <WhatsAppBtn href={waApoderado} variant="compact" style={{ fontSize:12 }}>
+                        WhatsApp apoderado
                       </WhatsAppBtn>
-                    )}
-                  </>
-                ) : jugador.telefono ? (
-                  <WhatsAppBtn href={`https://wa.me/${jugador.telefono.replace(/[^0-9]/g,'')}`} variant="compact" style={{ fontSize:12 }}>
-                    WhatsApp
-                  </WhatsAppBtn>
-                ) : null}
-              </div>
-            )}
+                      {waJugador && (
+                        <WhatsAppBtn href={waJugador} variant="compact" style={{ fontSize:12 }}>
+                          WhatsApp jugador
+                        </WhatsAppBtn>
+                      )}
+                    </>
+                  ) : waJugador ? (
+                    <WhatsAppBtn href={waJugador} variant="compact" style={{ fontSize:12 }}>
+                      WhatsApp
+                    </WhatsAppBtn>
+                  ) : null}
+                </div>
+              )
+            })()}
           </div>
         </div>
 

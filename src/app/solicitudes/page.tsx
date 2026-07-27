@@ -10,6 +10,7 @@ import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
 import { copiarTexto } from '@/lib/clipboard'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import { linkWhatsApp } from '@/lib/whatsapp'
 
 const CLUB_BUIN_ID = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
 
@@ -148,11 +149,10 @@ export default function SolicitudesPage() {
     })
   }
 
-  function linkWhatsApp(info: NonNullable<typeof aprobadoInfo>) {
+  function linkAvisoAprobado(info: NonNullable<typeof aprobadoInfo>) {
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    const tel = (info.telefono || '').replace(/[^0-9]/g, '')
     const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud fue aprobada. Ya podés entrar en ${origin}/login con:\n📧 Email: ${info.email ?? ''}\n🔑 Contraseña: ${info.password ?? ''}\n¡Nos vemos en el club!`
-    return `https://wa.me/${tel}?text=${encodeURIComponent(msg)}`
+    return linkWhatsApp(info.telefono, msg)
   }
 
   async function rechazar(id: string) {
@@ -482,17 +482,22 @@ export default function SolicitudesPage() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10 }}>
-              {aprobadoInfo.telefono && (
-                <WhatsAppBtn href={linkWhatsApp(aprobadoInfo)} style={{ flex: 1, padding: 11, borderRadius: 8, fontSize: 13 }}>
-                  Enviar por WhatsApp
-                </WhatsAppBtn>
-              )}
-              <button onClick={() => setAprobadoInfo(null)}
-                style={{ flex: 1, padding: 11, background: aprobadoInfo.telefono ? 'transparent' : '#4f46e5', border: aprobadoInfo.telefono ? '1px solid #e2e8f0' : 'none', borderRadius: 8, color: aprobadoInfo.telefono ? muted : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                Listo
-              </button>
-            </div>
+            {(() => {
+              const url = linkAvisoAprobado(aprobadoInfo)
+              return (
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {url && (
+                    <WhatsAppBtn href={url} style={{ flex: 1, padding: 11, borderRadius: 8, fontSize: 13 }}>
+                      Enviar por WhatsApp
+                    </WhatsAppBtn>
+                  )}
+                  <button onClick={() => setAprobadoInfo(null)}
+                    style={{ flex: 1, padding: 11, background: url ? 'transparent' : '#4f46e5', border: url ? '1px solid #e2e8f0' : 'none', borderRadius: 8, color: url ? muted : '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Listo
+                  </button>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
