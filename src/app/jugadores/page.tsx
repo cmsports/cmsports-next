@@ -5,8 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
-import AsistenciaPanel from '@/components/AsistenciaPanel'
-import InasistenciasPanel from '@/components/InasistenciasPanel'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actualizarMensualidad } from '@/app/actions/jugadores'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
@@ -64,8 +62,6 @@ export default function JugadoresPage() {
   const esClubBuin = /bu[ií]n/i.test(clubNombre)
   const [guardando, setGuardando] = useState(false)
   const [toast, setToast] = useState('')
-  const tabInicial = searchParams.get('tab') === 'asistencia' ? 'asistencia' : searchParams.get('tab') === 'inasistencias' ? 'inasistencias' : 'jugadores'
-  const [tabJug, setTabJug] = useState<'jugadores'|'asistencia'|'inasistencias'>(tabInicial)
   const [filtroSinHorario, setFiltroSinHorario] = useState(() => searchParams.get('sinhorario') === '1')
   const [filtroDia, setFiltroDia]               = useState<Set<string>>(() => setDesdeParam(searchParams, 'dia'))
   const [filtroFederado, setFiltroFederado]     = useState<Set<string>>(() => setDesdeParam(searchParams, 'federado'))
@@ -196,7 +192,6 @@ export default function JugadoresPage() {
 
   useEffect(() => {
     const params = new URLSearchParams()
-    if (tabJug !== 'jugadores') params.set('tab', tabJug)
     if (busqueda) params.set('q', busqueda)
     if (filtroCat.size) params.set('cat', [...filtroCat].join(','))
     if (filtroEstado.size) params.set('estado', [...filtroEstado].join(','))
@@ -214,7 +209,7 @@ export default function JugadoresPage() {
     const qs = params.toString()
     router.replace(qs ? `/jugadores?${qs}` : '/jugadores', { scroll: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabJug, busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroPago, filtroHorario, filtroPresente, filtroSede, filtroGrupo, filtroSinHorario, edadMin, edadMax, orden])
+  }, [busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroPago, filtroHorario, filtroPresente, filtroSede, filtroGrupo, filtroSinHorario, edadMin, edadMax, orden])
 
   function mostrarToast(msg: string) {
     setToast(msg)
@@ -394,7 +389,7 @@ export default function JugadoresPage() {
               Exportar Excel
             </button>
           )}
-          {esAdmin && tabJug === 'jugadores' && (
+          {esAdmin && (
             <button onClick={abrirNuevo} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>
               + Nuevo jugador
             </button>
@@ -402,24 +397,8 @@ export default function JugadoresPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:16 }}>
-        {[{key:'jugadores',label:'Jugadores'},{key:'asistencia',label:'📋 Asistencia'},{key:'inasistencias',label:'📊 Inasistencias'}].map(t => (
-          <div key={t.key} onClick={() => setTabJug(t.key as any)}
-            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabJug===t.key?'#ffffff':'transparent', color:tabJug===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabJug===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
-            {t.label}
-          </div>
-        ))}
-      </div>
-
-      {/* TAB ASISTENCIA */}
-      {tabJug === 'asistencia' && <AsistenciaPanel perfil={perfil} />}
-
-      {/* TAB INASISTENCIAS */}
-      {tabJug === 'inasistencias' && clubId && <InasistenciasPanel clubId={clubId} />}
-
-      {/* TAB JUGADORES */}
-      {tabJug === 'jugadores' && <>
+      {/* Pasar lista y ver inasistencias vive en su propio módulo: /asistencia.
+          Acá quedan las personas, no la operación del día. */}
       <div style={{ ...card, padding:12, marginBottom:16 }}>
         {/* Búsqueda */}
         <input
@@ -657,8 +636,6 @@ export default function JugadoresPage() {
           </div>
         )}
       </div>
-
-      </>}
 
       {/* Modal crear/editar */}
       {modalOpen && (
