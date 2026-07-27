@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { diaDesdeFecha, hhmm } from '@/lib/domain/horario'
+import { diaDesdeFecha, diaLargo, hhmm } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
 
 // El horario semanal lo maneja el staff (admin o profesor). requireAdminClub
@@ -291,7 +291,8 @@ export async function generarSemana(params: {
         bloque_id: b.id,
         sede: b.sede,
         fecha,
-        dia_semana: dia,
+        // La tabla de clases exige el nombre largo; el horario usa el corto.
+        dia_semana: diaLargo(dia),
         hora_inicio: b.hora_inicio,
         hora_fin: b.hora_fin,
         contenido: b.nombre,
