@@ -21,7 +21,7 @@ import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/
 
 const supabase = createClient()
 
-const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, boxShadow: '0 4px 20px rgba(15,23,42,0.10)' } as const
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, boxShadow: '0 4px 20px rgba(15,23,42,0.10)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'

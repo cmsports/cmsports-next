@@ -25,7 +25,7 @@ type Partido = PartidoVivo
 type Snapshot = SnapshotTorneoVivo
 
 const text = '#0f172a', muted = '#64748b', hint = '#94a3b8', purple = '#4f46e5', green = '#16a34a'
-const card = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.12)' } as const
+const card = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.12)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 
 export default function VivoTorneoPage() {
   const params = useParams()

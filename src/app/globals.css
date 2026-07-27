@@ -11,6 +11,13 @@ body {
   background: #f1f5f9;
   color: #0f172a;
   min-height: 100vh;
+
+  /* Un punto más gruesa que el 400 de siempre. En pantallas chicas y con
+     tablas de números, el texto normal se veía lavado. Lo que ya declara su
+     peso (títulos, montos) no cambia: esto solo levanta el piso. */
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 :root {
@@ -73,6 +80,14 @@ body {
 }
 
 @keyframes entra {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Igual que `entra`, pero con nombre propio: cada módulo lo lleva en el estilo
+   en línea de su constante de tarjeta, y ese nombre es lo que después permite
+   engancharles el hover desde acá sin tocar treinta archivos otra vez. */
+@keyframes entraTarjeta {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: none; }
 }
@@ -172,4 +187,113 @@ button:not(:disabled):active,
   outline: 2px solid var(--sky);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LO QUE ALCANZA A TODOS LOS MÓDULOS
+
+   Casi toda la app está escrita con estilos en línea, así que una clase nueva
+   solo sirve donde alguien la escriba a mano. Lo de acá abajo apunta a
+   etiquetas —table, tr, input, button— y por eso llega a las treinta
+   pantallas sin tocarlas una por una.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Los controles heredan la tipografía. Sin esto el navegador les pone la
+   suya y los formularios se ven de otra app. */
+input, select, textarea, button {
+  font-family: inherit;
+  font-weight: inherit;
+}
+
+/* Cada cambio de pantalla entra en vez de aparecer de golpe */
+.anim-pagina { animation: entra var(--normal) var(--curva) both; }
+
+/* Tablas: la fila se ilumina al pasar por encima. Con ciento tres jugadores
+   en pantalla, seguir una fila con la vista sin esto es una tortura. */
+tbody tr {
+  transition: background var(--rapido) var(--curva);
+}
+@media (hover: hover) {
+  tbody tr:hover {
+    background: #f8fafc;
+  }
+}
+
+/* Y entran escalonadas la primera vez que se pintan */
+tbody tr { animation: aparece var(--normal) var(--curva) both; }
+tbody tr:nth-child(1) { animation-delay: 0ms; }
+tbody tr:nth-child(2) { animation-delay: 20ms; }
+tbody tr:nth-child(3) { animation-delay: 40ms; }
+tbody tr:nth-child(4) { animation-delay: 60ms; }
+tbody tr:nth-child(5) { animation-delay: 80ms; }
+tbody tr:nth-child(6) { animation-delay: 100ms; }
+tbody tr:nth-child(7) { animation-delay: 120ms; }
+tbody tr:nth-child(n+8) { animation-delay: 140ms; }
+
+/* Campos: el borde y la sombra acompañan al foco */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  transition: border-color var(--rapido) var(--curva),
+              box-shadow var(--rapido) var(--curva),
+              background var(--rapido) var(--curva);
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--sky) !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.13);
+}
+
+/* Botones: además del hundido al tocar, un levante al pasar por encima */
+@media (hover: hover) {
+  button:not(:disabled):hover,
+  [role="button"]:not(:disabled):hover {
+    filter: brightness(1.06);
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.13);
+  }
+  button:not(:disabled):active:hover {
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.13);
+  }
+}
+button:disabled { opacity: 0.6; }
+
+/* Las tarjetas responden al mouse. Se las reconoce por el nombre de su
+   animación de entrada, que va en el estilo en línea de cada módulo.
+   Solo se profundiza la sombra: levantarlas prometería un clic que la
+   mayoría no tiene. */
+@media (hover: hover) {
+  [style*="entraTarjeta"] {
+    transition: box-shadow var(--normal) var(--curva);
+  }
+  [style*="entraTarjeta"]:hover {
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+  }
+}
+
+/* Un acento de color bajo el título de cada módulo. Va como pseudo-elemento a
+   propósito: los estilos en línea de cada pantalla le ganan a cualquier regla
+   de acá, pero a un ::after no lo pueden pisar. Es la forma de que las treinta
+   pantallas compartan un detalle de color sin editarlas una por una. */
+.main-content h1 {
+  animation: entra var(--normal) var(--curva) both;
+}
+.main-content h1::after {
+  content: '';
+  display: block;
+  width: 42px;
+  height: 3px;
+  margin-top: 7px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--sky), #8b5cf6);
+}
+
+/* Modales y avisos que se dibujan con position:fixed. Se los agarra por el
+   estilo en línea porque no tienen clase: es feo, pero es eso o editar
+   cuarenta archivos para poner la misma animación. React serializa el estilo
+   sin espacios al renderizar en el servidor y con espacios al hidratar, así
+   que hay que contemplar las dos formas. */
+[style*="position:fixed"][style*="inset:0"],
+[style*="position: fixed"][style*="inset: 0"] {
+  animation: aparece var(--rapido) var(--curva) both;
 }

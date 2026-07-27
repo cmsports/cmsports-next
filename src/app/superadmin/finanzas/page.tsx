@@ -10,7 +10,7 @@ import { planVencido, type EstadoPlan } from '@/lib/domain/suscripciones'
 
 const supabase = createClient()
 
-const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12 } as const
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 

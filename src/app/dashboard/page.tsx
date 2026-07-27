@@ -366,7 +366,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── KPIs ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (tiene('finanzas') ? 3 : 0)},1fr)`, gap: 14, marginBottom: 16 }}>
+      <div className="anim-lista" style={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (tiene('finanzas') ? 3 : 0)},1fr)`, gap: 14, marginBottom: 16 }}>
 
         {/* Jugadores activos */}
         <KpiCard
@@ -446,7 +446,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div className="anim-lista" style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
 
         {/* Gastos este mes */}
         {tiene('finanzas') && (
@@ -635,7 +635,7 @@ function KpiCard({ icon, iconBg, label, value, valueColor, tooltip, tooltipId, s
   footer?: React.ReactNode
 }) {
   return (
-    <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 18, position: 'relative', boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+    <div className="tocable" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 18, position: 'relative', boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ width: 36, height: 36, borderRadius: 8, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {icon}

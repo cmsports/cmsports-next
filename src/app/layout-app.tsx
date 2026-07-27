@@ -398,7 +398,12 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             <span><strong>Cuenta de demostración</strong> — Puedes explorar la plataforma libremente. Algunas funciones de configuración están deshabilitadas.</span>
           </div>
         )}
-        {children}
+        {/* La `key` es lo que hace que la animación vuelva a correr: al cambiar
+            de módulo React monta un div nuevo y el contenido entra. Sin ella
+            solo se animaría la primera carga de la sesión. */}
+        <div key={pathname} className="anim-pagina">
+          {children}
+        </div>
       </main>
 
       {/* ── NAV MÓVIL ── */}

@@ -24,7 +24,7 @@ import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 
 const supabase = createClient()
 
-const cardStyle = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 1px 3px rgba(15,23,42,0.08)' } as const
+const cardStyle = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 1px 3px rgba(15,23,42,0.08)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'

@@ -13,7 +13,7 @@ import { Settings } from 'lucide-react'
 
 const supabase = createClient()
 
-const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12 } as const
+const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 
 const MODULOS_OPCIONALES = [
   { key: 'torneos', label: 'Torneos' },

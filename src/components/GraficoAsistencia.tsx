@@ -27,7 +27,7 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 const border = '#e2e8f0'
-const card = { background: '#ffffff', border: `1px solid ${border}`, borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const card = { background: '#ffffff', border: `1px solid ${border}`, borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 
 const diasSemanaLargo = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']

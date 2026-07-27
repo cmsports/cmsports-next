@@ -21,7 +21,7 @@ const C = {
   green: '#16a34a', greenL: '#f0fdf4',
 }
 
-const cardStyle = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
+const cardStyle = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const labelStyle = { fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 6, display: 'block' } as const
 const inputStyle = { width: '100%', padding: '9px 11px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, color: C.text, outline: 'none', boxSizing: 'border-box' } as const
 
