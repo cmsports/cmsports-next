@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import AsistenciaPanel from '@/components/AsistenciaPanel'
-import InasistenciasPanel from '@/components/InasistenciasPanel'
+import PanelAsistenciaHistorica from '@/components/PanelAsistenciaHistorica'
+import PanelRankingAsistencia from '@/components/PanelRankingAsistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 
 // Asistencia es su propio módulo: acá se pasa lista y se revisa quién faltó.
@@ -14,7 +15,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 export default function AsistenciaPage() {
   const { perfil, loading } = usePerfil()
   const router = useRouter()
-  const [tab, setTab] = useState<'pasar' | 'inasistencias'>('pasar')
+  const [tab, setTab] = useState<'pasar' | 'historica' | 'ranking'>('pasar')
 
   useEffect(() => {
     if (loading) return
@@ -37,7 +38,7 @@ export default function AsistenciaPage() {
           </div>
 
           <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 4, margin: '16px 0' }}>
-            {([['pasar', 'Pasar lista'], ['inasistencias', 'Inasistencias']] as const).map(([key, label]) => (
+            {([['pasar', 'Pasar lista'], ['historica', 'Asistencia histórica'], ['ranking', 'Panorama']] as const).map(([key, label]) => (
               <div key={key} onClick={() => setTab(key)}
                 style={{ flex: 1, padding: 9, textAlign: 'center', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500,
                   background: tab === key ? '#fff' : 'transparent', color: tab === key ? '#3730a3' : '#64748b',
@@ -50,8 +51,11 @@ export default function AsistenciaPage() {
       )}
 
       {(!esStaff || tab === 'pasar') && <AsistenciaPanel perfil={perfil} />}
-      {esStaff && tab === 'inasistencias' && perfil.club_id && (
-        <InasistenciasPanel clubId={perfil.club_id} />
+      {esStaff && tab === 'historica' && perfil.club_id && (
+        <PanelAsistenciaHistorica clubId={perfil.club_id} />
+      )}
+      {esStaff && tab === 'ranking' && perfil.club_id && (
+        <PanelRankingAsistencia clubId={perfil.club_id} />
       )}
     </AppLayout>
   )

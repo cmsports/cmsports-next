@@ -11,6 +11,7 @@ import { formatRut } from '@/lib/rut'
 import { trimestreActual } from '@/lib/domain/trimestre'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import DocumentosJugador from '@/components/DocumentosJugador'
+import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
@@ -939,6 +940,14 @@ export default function JugadorDetallePage() {
             })()}
           </div>
         </div>
+
+        {/* Asistencia del año */}
+        {jugador.club_id && (
+          <div style={cardStyle}>
+            <CardHeader title="Asistencia" />
+            <ResumenAsistenciaJugador clubId={jugador.club_id} jugadorId={jugadorId} />
+          </div>
+        )}
 
         {/* Días de entrenamiento */}
         <div style={cardStyle}>

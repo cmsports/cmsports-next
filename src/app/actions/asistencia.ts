@@ -85,6 +85,70 @@ export async function registrarAsistenciaAction(
 // El cierre por bloque se quitó: la asistencia se pasa a mano, jugador por
 // jugador. La función `registrar_bloque_asistencia` sigue en la base sin uso.
 
+/**
+ * Corrige el estado de un jugador en una fecha, desde Asistencia Histórica.
+ *
+ * `sin_registro` borra la fila y devuelve el día a azul. Todo pasa por la
+ * función de la base, que además de auditar recalcula las sesiones usadas:
+ * marcar una ausencia vieja mueve ese número hacia atrás.
+ */
+export async function corregirAsistencia(params: {
+  jugadorId: string
+  fecha: string
+  estado: 'presente' | 'ausente' | 'sin_registro'
+  motivo?: string
+}) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden corregir la asistencia' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('registrar_asistencia_manual', {
+    p_jugador_id: params.jugadorId,
+    p_fecha:      params.fecha,
+    p_estado:     params.estado,
+    p_motivo:     params.motivo?.trim() || null,
+  })
+  if (error) return { error: error.message }
+
+  return { ok: true }
+}
+
+/** Marca que un bloque no se dictó ese día: feriado, suspensión, lo que sea. */
+export async function marcarSinClase(params: { bloqueId: string; fecha: string; motivo?: string }) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden cambiar el horario' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('bloque_excepciones')
+    .insert({ bloque_id: params.bloqueId, fecha: params.fecha, motivo: params.motivo?.trim() || null })
+  // 23505 = ya estaba marcado; el resultado es el que se quería.
+  if (error && error.code !== '23505') return { error: error.message }
+
+  return { ok: true }
+}
+
+/** Deshace lo anterior: ese día vuelve a contar como entrenamiento. */
+export async function quitarSinClase(params: { bloqueId: string; fecha: string }) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden cambiar el horario' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('bloque_excepciones')
+    .delete().eq('bloque_id', params.bloqueId).eq('fecha', params.fecha)
+  if (error) return { error: error.message }
+
+  return { ok: true }
+}
+
 export async function eliminarAsistencia(asistenciaId: string) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
   if (authErr || !supabase || !perfil) return { error: authErr }

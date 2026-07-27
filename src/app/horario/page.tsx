@@ -6,7 +6,7 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import { Pencil, Plus, Trash2, X, Clock, MapPin } from 'lucide-react'
-import { crearBloque, editarBloque, eliminarBloque } from '@/app/actions/horario'
+import { eliminarBloque, guardarGrupo } from '@/app/actions/horario'
 import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
 import PanelCupos from '@/components/PanelCupos'
@@ -20,11 +20,14 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 type Profesor = { id: string; nombre: string }
-type Bloque = BloqueHorario & { profesorIds: string[] }
+type Bloque = BloqueHorario & { profesorIds: string[]; grupo_id: string }
+
+type HorarioDia = { hora_inicio: string; hora_fin: string }
 
 const FORM_VACIO = {
-  nombre: '', sede: 'buin', dia_semana: 'lun',
-  hora_inicio: '', hora_fin: '',
+  nombre: '', sede: 'buin',
+  // Un grupo tiene varios días y cada uno su horario propio.
+  dias: {} as Record<string, HorarioDia>,
   cupo_maximo: '12', cupo_libres: '5',
   profesorIds: [] as string[],
 }
@@ -67,7 +70,7 @@ export default function HorarioPage() {
   const cargar = useCallback(async (cid: string) => {
     const [{ data: bloquesData }, { data: profesoresData }, { data: rel }] = await Promise.all([
       supabase.from('bloques_horario')
-        .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
+        .select('id,grupo_id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
         .eq('club_id', cid).eq('activo', true)
         .order('hora_inicio'),
       supabase.from('profesores').select('id,nombre').eq('club_id', cid).eq('activo', true).order('nombre'),
@@ -79,7 +82,8 @@ export default function HorarioPage() {
       porBloque.set(r.bloque_id, [...(porBloque.get(r.bloque_id) ?? []), r.profesor_id])
     }
 
-    setBloques(((bloquesData ?? []) as BloqueHorario[]).map(b => ({ ...b, profesorIds: porBloque.get(b.id) ?? [] })))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setBloques(((bloquesData ?? []) as any[]).map(b => ({ ...b, profesorIds: porBloque.get(b.id) ?? [] })) as Bloque[])
     setProfesores((profesoresData ?? []) as Profesor[])
     setCargando(false)
   }, [])
@@ -91,17 +95,41 @@ export default function HorarioPage() {
     void cargar(perfil.club_id)
   }, [authLoading, perfil, router, cargar])
 
+  function toggleDia(dia: string) {
+    setForm(f => {
+      const dias = { ...f.dias }
+      if (dias[dia]) { delete dias[dia]; return { ...f, dias } }
+      // Se copia el horario de otro día ya marcado: casi siempre coinciden y
+      // el que no, se corrige a mano.
+      const modelo = Object.values(f.dias)[0]
+      dias[dia] = { hora_inicio: modelo?.hora_inicio ?? '', hora_fin: modelo?.hora_fin ?? '' }
+      return { ...f, dias }
+    })
+  }
+
+  function setHoraDia(dia: string, campo: 'hora_inicio' | 'hora_fin', valor: string) {
+    setForm(f => ({ ...f, dias: { ...f.dias, [dia]: { ...f.dias[dia], [campo]: valor } } }))
+  }
+
   function abrirNuevo(sede: string, dia?: string, hora?: string) {
-    setForm({ ...FORM_VACIO, sede, dia_semana: dia ?? 'lun', hora_inicio: hora ?? '',
-      cupo_maximo: sede === 'paine' ? '30' : '12' })
+    setForm({
+      ...FORM_VACIO, sede,
+      dias: dia ? { [dia]: { hora_inicio: hora ?? '', hora_fin: '' } } : {},
+      cupo_maximo: sede === 'paine' ? '30' : '12',
+    })
     setErrorForm('')
     setModal('nuevo')
   }
 
   function abrirEditar(b: Bloque) {
+    // Se edita el grupo entero, así que se juntan todos sus días.
+    const hermanos = bloques.filter(x => x.grupo_id === b.grupo_id)
+    const dias: Record<string, HorarioDia> = {}
+    for (const h of hermanos) {
+      dias[h.dia_semana] = { hora_inicio: hhmm(h.hora_inicio), hora_fin: hhmm(h.hora_fin) }
+    }
     setForm({
-      nombre: b.nombre, sede: b.sede, dia_semana: b.dia_semana,
-      hora_inicio: hhmm(b.hora_inicio), hora_fin: hhmm(b.hora_fin),
+      nombre: b.nombre, sede: b.sede, dias,
       cupo_maximo: String(b.cupo_maximo), cupo_libres: String(b.cupo_libres),
       profesorIds: b.profesorIds,
     })
@@ -112,16 +140,15 @@ export default function HorarioPage() {
   async function guardar() {
     setGuardando(true)
     setErrorForm('')
-    const datos = {
-      nombre: form.nombre, sede: form.sede, dia_semana: form.dia_semana,
-      hora_inicio: form.hora_inicio, hora_fin: form.hora_fin,
-      cupo_maximo: parseInt(form.cupo_maximo) || 0,
-      cupo_libres: parseInt(form.cupo_libres) || 0,
+    const res = await guardarGrupo({
+      grupoId: modal === 'nuevo' ? undefined : (modal as Bloque).grupo_id,
+      nombre: form.nombre,
+      sede: form.sede,
+      cupoMaximo: parseInt(form.cupo_maximo) || 0,
+      cupoLibres: parseInt(form.cupo_libres) || 0,
       profesorIds: form.profesorIds,
-    }
-    const res = modal === 'nuevo'
-      ? await crearBloque(datos)
-      : await editarBloque({ id: (modal as Bloque).id, ...datos })
+      dias: Object.entries(form.dias).map(([dia_semana, h]) => ({ dia_semana, ...h })),
+    })
     setGuardando(false)
     if (res?.error) { setErrorForm(String(res.error)); return }
     setModal(null)
@@ -336,7 +363,7 @@ export default function HorarioPage() {
           <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: '100%', maxWidth: 440, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(15,23,42,0.22)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>
-                {modal === 'nuevo' ? 'Nuevo bloque' : 'Editar bloque'}
+                {modal === 'nuevo' ? 'Nuevo grupo' : 'Editar grupo'}
               </h2>
               <button onClick={() => setModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: muted, display: 'flex' }}>
                 <X size={18} />
@@ -344,36 +371,45 @@ export default function HorarioPage() {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Nombre del bloque *</label>
+              <label style={labelStyle}>Nombre del grupo *</label>
               <input style={inputStyle} value={form.nombre} placeholder="Ej: Menores Avanzado"
                 onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={labelStyle}>Sede</label>
-                <select style={inputStyle} value={form.sede} onChange={e => setForm(f => ({ ...f, sede: e.target.value }))}>
-                  {SEDES.filter(s => s.value !== 'ambos').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Día</label>
-                <select style={inputStyle} value={form.dia_semana} onChange={e => setForm(f => ({ ...f, dia_semana: e.target.value }))}>
-                  {DIAS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                </select>
-              </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Sede</label>
+              <select style={inputStyle} value={form.sede} onChange={e => setForm(f => ({ ...f, sede: e.target.value }))}>
+                {SEDES.filter(s => s.value !== 'ambos').map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={labelStyle}>Hora inicio *</label>
-                <input type="time" style={inputStyle} value={form.hora_inicio}
-                  onChange={e => setForm(f => ({ ...f, hora_inicio: e.target.value }))} />
-              </div>
-              <div>
-                <label style={labelStyle}>Hora fin *</label>
-                <input type="time" style={inputStyle} value={form.hora_fin}
-                  onChange={e => setForm(f => ({ ...f, hora_fin: e.target.value }))} />
+            {/* Los días del grupo, cada uno con su horario: el mismo grupo
+                arranca 16:30 los lunes y 17:00 los martes. */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Días del grupo *</label>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
+                {DIAS.map(d => {
+                  const marcado = !!form.dias[d.value]
+                  return (
+                    <div key={d.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px' }}>
+                      <input type="checkbox" checked={marcado} onChange={() => toggleDia(d.value)} id={'dia-' + d.value} />
+                      <label htmlFor={'dia-' + d.value} style={{ fontSize: 13, color: marcado ? text : muted, width: 84, cursor: 'pointer' }}>
+                        {d.label}
+                      </label>
+                      {marcado && (
+                        <>
+                          <input type="time" style={{ ...inputStyle, width: 108, padding: '6px 8px' }}
+                            value={form.dias[d.value].hora_inicio}
+                            onChange={e => setHoraDia(d.value, 'hora_inicio', e.target.value)} />
+                          <span style={{ color: hint, fontSize: 12 }}>a</span>
+                          <input type="time" style={{ ...inputStyle, width: 108, padding: '6px 8px' }}
+                            value={form.dias[d.value].hora_fin}
+                            onChange={e => setHoraDia(d.value, 'hora_fin', e.target.value)} />
+                        </>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
