@@ -216,6 +216,105 @@ export async function agregarJugadorABloque(params: { bloqueId: string; jugadorI
   return { success: true, inscritos: count ?? 0, sobreCupo: (count ?? 0) > bloque.cupo_maximo }
 }
 
+/**
+ * Define de una vez a qué bloques pertenece un jugador, desde su ficha.
+ *
+ * Hace las dos cosas juntas —la inscripción a los bloques y los campos de días
+ * y sede de la ficha— porque tenerlas separadas fue el problema: se editaba una
+ * y la otra quedaba contradiciéndola. Acá salen siempre del mismo dato.
+ */
+export async function asignarBloquesJugador(params: { jugadorId: string; bloqueIds: string[] }) {
+  const { error: authErr, supabase, clubId } = await requireStaff()
+  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
+
+  // Los tipos generados de Supabase no incluyen entrena_* ni sede en jugadores.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any
+
+  const { data: jugador } = await db.from('jugadores')
+    .select('id,club_id,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+    .eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
+  if (!jugador) return { error: 'Jugador no encontrado' }
+
+  // Solo bloques del club: los ids llegan del navegador y no son de fiar.
+  const ids = [...new Set(params.bloqueIds)].filter(Boolean)
+  let bloques: { id: string; sede: string; dia_semana: string; hora_inicio: string; hora_fin: string }[] = []
+  if (ids.length > 0) {
+    const { data, error } = await supabase.from('bloques_horario')
+      .select('id,sede,dia_semana,hora_inicio,hora_fin')
+      .eq('club_id', clubId).in('id', ids)
+    if (error) return { error: 'No se pudieron leer los bloques: ' + error.message }
+    bloques = data ?? []
+  }
+  if (bloques.length !== ids.length) return { error: 'Alguno de los bloques no es de este club' }
+
+  // Se reemplaza la asignación completa: lo que no viene marcado, sale.
+  const { error: delErr } = await supabase.from('bloque_jugadores')
+    .delete().eq('jugador_id', params.jugadorId)
+  if (delErr) return { error: 'No se pudo actualizar la asignación: ' + delErr.message }
+
+  if (bloques.length > 0) {
+    const { error: insErr } = await supabase.from('bloque_jugadores')
+      .insert(bloques.map(b => ({ bloque_id: b.id, jugador_id: params.jugadorId })))
+    if (insErr) return { error: 'No se pudo asignar a los bloques: ' + insErr.message }
+  }
+
+  // Los campos de la ficha se derivan de los bloques recién elegidos.
+  const dia = (d: string) => bloques.some(b => b.dia_semana === d)
+  const enBuin  = bloques.some(b => b.sede === 'buin')
+  const enPaine = bloques.some(b => b.sede === 'paine')
+
+  // `horario` es un texto suelto que todavía usan algunos filtros. Se le pone
+  // el rango que más se repite entre sus bloques; con horarios distintos por
+  // día ningún texto los representa a todos.
+  const conteo = new Map<string, number>()
+  for (const b of bloques) {
+    const rango = `${hhmm(b.hora_inicio)}-${hhmm(b.hora_fin)}`
+    conteo.set(rango, (conteo.get(rango) ?? 0) + 1)
+  }
+  const horario = [...conteo.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+
+  const campos = {
+    horario,
+    entrena_lun: dia('lun'), entrena_mar: dia('mar'), entrena_mie: dia('mie'),
+    entrena_jue: dia('jue'), entrena_vie: dia('vie'),
+    ...(bloques.length > 0
+      ? { sede: enBuin && enPaine ? 'ambos' : enBuin ? 'buin' : 'paine' }
+      : {}),
+  }
+
+  const { error: updErr } = await db.from('jugadores')
+    .update(campos).eq('id', params.jugadorId).eq('club_id', clubId)
+  if (updErr) return { error: 'No se pudieron guardar los días: ' + updErr.message }
+
+  // El historial es lo que usa Inasistencias para saber qué días entrenaba
+  // alguien en una fecha pasada. Solo se corta el tramo si algo cambió.
+  const cambio = campos.horario !== (jugador.horario ?? null) ||
+    campos.entrena_lun !== (jugador.entrena_lun ?? false) ||
+    campos.entrena_mar !== (jugador.entrena_mar ?? false) ||
+    campos.entrena_mie !== (jugador.entrena_mie ?? false) ||
+    campos.entrena_jue !== (jugador.entrena_jue ?? false) ||
+    campos.entrena_vie !== (jugador.entrena_vie ?? false)
+
+  if (cambio) {
+    const hoy  = new Date().toISOString().slice(0, 10)
+    const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    await db.from('jugador_horario_historial')
+      .update({ vigente_hasta: ayer })
+      .eq('jugador_id', params.jugadorId).is('vigente_hasta', null).lt('vigente_desde', hoy)
+    await db.from('jugador_horario_historial').insert({
+      jugador_id: params.jugadorId, club_id: clubId,
+      horario: campos.horario,
+      entrena_lun: campos.entrena_lun, entrena_mar: campos.entrena_mar,
+      entrena_mie: campos.entrena_mie, entrena_jue: campos.entrena_jue,
+      entrena_vie: campos.entrena_vie,
+      vigente_desde: hoy,
+    })
+  }
+
+  return { success: true, campos }
+}
+
 export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorId: string }) {
   const { error: authErr, supabase, clubId } = await requireStaff()
   if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }

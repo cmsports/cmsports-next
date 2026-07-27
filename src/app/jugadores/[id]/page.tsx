@@ -15,6 +15,8 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import { asignarBloquesJugador } from '@/app/actions/horario'
+import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 
 const supabase = createClient()
 
@@ -89,7 +91,10 @@ export default function JugadorDetallePage() {
   const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'30000' })
   const [editDias, setEditDias] = useState(false)
-  const [diasForm, setDiasForm] = useState({ horario:'', entrena_lun:false, entrena_mar:false, entrena_mie:false, entrena_jue:false, entrena_vie:false })
+  // Los días salen de los bloques a los que está inscrito, no de casillas
+  // sueltas: así la ficha y los cupos no pueden contradecirse.
+  const [bloquesClub, setBloquesClub] = useState<BloqueHorario[]>([])
+  const [bloquesSel, setBloquesSel]   = useState<Set<string>>(new Set())
   const [guardandoDatos, setGuardandoDatos] = useState(false)
   const [datosError, setDatosError] = useState('')
   const [modalExternoOpen, setModalExternoOpen] = useState(false)
@@ -342,61 +347,29 @@ export default function JugadorDetallePage() {
     setGuardandoDatos(false)
   }
 
+  async function abrirBloques() {
+    setDatosError('')
+    setEditDias(true)
+    const [{ data: bloques }, { data: mios }] = await Promise.all([
+      supabase.from('bloques_horario')
+        .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
+        .eq('club_id', jugador.club_id).eq('activo', true).order('hora_inicio'),
+      supabase.from('bloque_jugadores').select('bloque_id').eq('jugador_id', jugadorId),
+    ])
+    setBloquesClub((bloques ?? []) as BloqueHorario[])
+    setBloquesSel(new Set((mios ?? []).map(b => b.bloque_id)))
+  }
+
   async function guardarDias() {
     setGuardandoDatos(true)
     setDatosError('')
 
-    const datos = {
-      horario:     diasForm.horario || null,
-      entrena_lun: diasForm.entrena_lun,
-      entrena_mar: diasForm.entrena_mar,
-      entrena_mie: diasForm.entrena_mie,
-      entrena_jue: diasForm.entrena_jue,
-      entrena_vie: diasForm.entrena_vie,
-    }
-
-    const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
-    if (error) {
-      setDatosError(`No se pudieron guardar los días: ${error.message}`)
-      setGuardandoDatos(false)
-      return
-    }
-
-    // Registrar cambio en historial si algo cambió
-    const cambio =
-      datos.horario      !== (jugador.horario || null) ||
-      datos.entrena_lun  !== (jugador.entrena_lun  ?? false) ||
-      datos.entrena_mar  !== (jugador.entrena_mar  ?? false) ||
-      datos.entrena_mie  !== (jugador.entrena_mie  ?? false) ||
-      datos.entrena_jue  !== (jugador.entrena_jue  ?? false) ||
-      datos.entrena_vie  !== (jugador.entrena_vie  ?? false)
-
-    if (cambio) {
-      const hoy = new Date().toISOString().split('T')[0]
-      // Cerrar registro activo anterior (vigente_hasta = ayer)
-      const ayer = new Date(Date.now() - 86400000).toISOString().split('T')[0]
-      await supabase.from('jugador_horario_historial')
-        .update({ vigente_hasta: ayer })
-        .eq('jugador_id', jugadorId)
-        .is('vigente_hasta', null)
-        .lt('vigente_desde', hoy)
-      // Abrir nuevo registro
-      await supabase.from('jugador_horario_historial').insert({
-        jugador_id:    jugadorId,
-        club_id:       jugador.club_id,
-        horario:       datos.horario,
-        entrena_lun:   datos.entrena_lun,
-        entrena_mar:   datos.entrena_mar,
-        entrena_mie:   datos.entrena_mie,
-        entrena_jue:   datos.entrena_jue,
-        entrena_vie:   datos.entrena_vie,
-        vigente_desde: hoy,
-      })
-    }
-
-    setJugador({ ...jugador, ...datos })
-    setEditDias(false)
+    const res = await asignarBloquesJugador({ jugadorId, bloqueIds: [...bloquesSel] })
     setGuardandoDatos(false)
+    if (res?.error) { setDatosError(res.error); return }
+
+    setJugador({ ...jugador, ...res.campos })
+    setEditDias(false)
   }
 
   async function guardarExterno() {
@@ -959,16 +932,7 @@ export default function JugadorDetallePage() {
         {/* Días de entrenamiento */}
         <div style={cardStyle}>
           <CardHeader title="Días de entrenamiento" onEdit={(esAdmin || esProfesor) ? () => {
-            setDiasForm({
-              horario:     jugador.horario    || '',
-              entrena_lun: jugador.entrena_lun ?? false,
-              entrena_mar: jugador.entrena_mar ?? false,
-              entrena_mie: jugador.entrena_mie ?? false,
-              entrena_jue: jugador.entrena_jue ?? false,
-              entrena_vie: jugador.entrena_vie ?? false,
-            })
-            setDatosError('')
-            setEditDias(true)
+            void abrirBloques()
           } : undefined} />
           <div style={{ padding:'4px 20px 16px' }}>
             {jugador.horario && (
@@ -1294,42 +1258,59 @@ export default function JugadorDetallePage() {
       {/* ══════ Modal: Días de entrenamiento ══════ */}
       {editDias && (
         <div style={modalOverlay}>
-          <div style={{ ...modalCard, maxWidth:380 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24 }}>
+          <div style={{ ...modalCard, maxWidth:460 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
               <div style={{ fontSize:18, fontWeight:700, color: text }}>Días de entrenamiento</div>
               <button onClick={() => setEditDias(false)} style={{ background:'#f1f5f9', border:'none', borderRadius:8, width:32, height:32, fontSize:16, cursor:'pointer', color: muted }}>✕</button>
             </div>
-            <div style={{ marginBottom:16 }}>
-              <label style={{ ...labelStyle, marginBottom:6 }}>Bloque horario</label>
-              <select
-                value={diasForm.horario}
-                onChange={e => setDiasForm(f => ({ ...f, horario: e.target.value }))}
-                style={{ ...inputStyle, cursor:'pointer' }}
-              >
-                <option value="">— Sin asignar —</option>
-                {['09:00-11:00','17:00-18:30','18:30-20:30','20:30-22:30'].map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
+            <div style={{ fontSize:12, color: muted, marginBottom:16 }}>
+              Marcá los grupos a los que va. Los días, la sede y los cupos se actualizan solos.
             </div>
-            <div style={{ fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:8 }}>Días de entrenamiento</div>
-            {([
-              { key:'entrena_lun', label:'Lunes' },
-              { key:'entrena_mar', label:'Martes' },
-              { key:'entrena_mie', label:'Miércoles' },
-              { key:'entrena_jue', label:'Jueves' },
-              { key:'entrena_vie', label:'Viernes' },
-            ] as const).map(({ key, label }) => (
-              <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 0', borderBottom:'1px solid #f1f5f9' }}>
-                <span style={{ fontSize:13, color: text, fontWeight:500 }}>{label}</span>
-                <div
-                  onClick={() => setDiasForm(f => ({ ...f, [key]: !f[key] }))}
-                  style={{ width:44, height:24, borderRadius:12, background: diasForm[key] ? '#4f46e5' : '#e2e8f0', transition:'background 0.2s', position:'relative', cursor:'pointer', flexShrink:0 }}
-                >
-                  <div style={{ position:'absolute', top:2, left: diasForm[key] ? 22 : 2, width:20, height:20, borderRadius:'50%', background:'white', transition:'left 0.2s', boxShadow:'0 1px 3px rgba(0,0,0,0.2)' }} />
+
+            <div style={{ maxHeight:'50vh', overflowY:'auto', margin:'0 -4px', padding:'0 4px' }}>
+              {DIAS.map(d => {
+                const delDia = bloquesClub.filter(b => b.dia_semana === d.value)
+                if (delDia.length === 0) return null
+                return (
+                  <div key={d.value} style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:6 }}>
+                      {diaLabel(d.value)}
+                    </div>
+                    {delDia.map(b => {
+                      const marcado = bloquesSel.has(b.id)
+                      return (
+                        <div key={b.id}
+                          onClick={() => setBloquesSel(prev => {
+                            const s = new Set(prev)
+                            if (s.has(b.id)) s.delete(b.id); else s.add(b.id)
+                            return s
+                          })}
+                          style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 10px', borderRadius:8, cursor:'pointer',
+                            background: marcado ? '#eef2ff' : 'transparent',
+                            border:`1px solid ${marcado ? '#c7d2fe' : '#f1f5f9'}`, marginBottom:4 }}>
+                          <div style={{ width:18, height:18, borderRadius:4, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
+                            border:`2px solid ${marcado ? '#4f46e5' : '#cbd5e1'}`, background: marcado ? '#4f46e5' : 'transparent' }}>
+                            {marcado && <span style={{ color:'white', fontSize:11, fontWeight:800 }}>✓</span>}
+                          </div>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:13, fontWeight:600, color: text }}>{b.nombre}</div>
+                            <div style={{ fontSize:11, color: muted }}>
+                              {sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              {bloquesClub.length === 0 && (
+                <div style={{ padding:'20px 0', textAlign:'center', fontSize:13, color: muted }}>
+                  Todavía no hay grupos en el horario semanal.
                 </div>
-              </div>
-            ))}
+              )}
+            </div>
+
             {datosError && <div style={{ margin:'12px 0', color:'#dc2626', fontSize:12, background:'#fef2f2', padding:'8px 12px', borderRadius:8 }}>{datosError}</div>}
             <div style={{ display:'flex', gap:10, marginTop:20 }}>
               <button onClick={() => setEditDias(false)} style={{ flex:1, padding:12, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer', fontWeight:600 }}>Cancelar</button>
