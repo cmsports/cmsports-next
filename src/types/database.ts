@@ -1762,6 +1762,27 @@ export interface Database {
           { foreignKeyName: 'bloques_horario_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
         ]
       }
+      bloque_jugadores: {
+        Row: {
+          bloque_id: string
+          jugador_id: string
+          creado_en: string
+        }
+        Insert: {
+          bloque_id: string
+          jugador_id: string
+          creado_en?: string
+        }
+        Update: {
+          bloque_id?: string
+          jugador_id?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'bloque_jugadores_bloque_id_fkey'; columns: ['bloque_id']; referencedRelation: 'bloques_horario'; referencedColumns: ['id'] },
+          { foreignKeyName: 'bloque_jugadores_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
+      }
       bloque_profesores: {
         Row: {
           bloque_id: string
