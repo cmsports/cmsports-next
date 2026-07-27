@@ -28,6 +28,7 @@ async function dentroDeSuBloque(
     .from('bloque_jugadores')
     .select('bloques_horario(nombre,dia_semana,hora_inicio,hora_fin,activo)')
     .eq('jugador_id', jugadorId)
+    .is('vigente_hasta', null)
   if (error) return { error: 'No se pudieron verificar tus horarios: ' + error.message }
 
   const deHoy = ((data ?? []) as { bloques_horario: BloqueDelJugador | null }[])

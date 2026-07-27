@@ -25,9 +25,11 @@ const BLOQUE_MARTES = {
   hora_inicio: '17:00:00', hora_fin: '19:00:00', activo: true,
 }
 
+// La consulta real es from().select().eq(jugador).is(vigente_hasta, null):
+// solo cuentan las inscripciones abiertas.
 const supabaseFalso = {
   rpc: mocks.rpc,
-  from: () => ({ select: () => ({ eq: () => mocks.bloquesDelJugador() }) }),
+  from: () => ({ select: () => ({ eq: () => ({ is: () => mocks.bloquesDelJugador() }) }) }),
 }
 
 describe('asistencia entre roles', () => {

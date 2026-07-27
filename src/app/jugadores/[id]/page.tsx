@@ -365,7 +365,7 @@ export default function JugadorDetallePage() {
       supabase.from('bloques_horario')
         .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
         .eq('club_id', jugador.club_id).eq('activo', true).order('hora_inicio'),
-      supabase.from('bloque_jugadores').select('bloque_id').eq('jugador_id', jugadorId),
+      supabase.from('bloque_jugadores').select('bloque_id').eq('jugador_id', jugadorId).is('vigente_hasta', null),
     ])
     setBloquesClub((bloques ?? []) as BloqueHorario[])
     setBloquesSel(new Set((mios ?? []).map(b => b.bloque_id)))

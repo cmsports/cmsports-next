@@ -191,7 +191,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       const [{ data: bloques }, { data: rel }] = await Promise.all([
         supabase.from('bloques_horario').select('id,nombre,dia_semana')
           .eq('club_id', clubId).eq('activo', true),
-        supabase.from('bloque_jugadores').select('bloque_id,jugador_id'),
+        supabase.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
       ])
       if (!vigente) return
 
@@ -222,7 +222,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     void (async () => {
       const { data } = await supabase.from('bloque_jugadores')
         .select('bloques_horario(nombre,dia_semana,hora_inicio,hora_fin,activo)')
-        .eq('jugador_id', perfil.jugador_id)
+        .eq('jugador_id', perfil.jugador_id).is('vigente_hasta', null)
       if (!vigente) return
       const dia = diaDeHoy()
       setMisBloquesHoy((data ?? [])

@@ -3,6 +3,7 @@
 import { requireAdminClub } from '@/lib/auth/require'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { diaDesdeFecha, hhmm } from '@/lib/domain/horario'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 // El horario semanal lo maneja el staff (admin o profesor). requireAdminClub
 // solo deja pasar al admin, así que acá va una comprobación propia.
@@ -14,7 +15,15 @@ async function requireStaff() {
   if (!perfil?.club_id || !['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
     return { error: 'Acceso denegado' as const, supabase: null, clubId: null }
   }
-  return { error: null, supabase, clubId: perfil.club_id }
+  // Los tipos generados de Supabase no traen las columnas de vigencia ni
+  // grupo_id, así que el cliente sale casteado para todo este archivo.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { error: null, supabase: supabase as any, clubId: perfil.club_id }
+}
+
+/** Hoy en Chile. Las vigencias son fechas, no instantes. */
+function hoyISO(): string {
+  return fechaChile()
 }
 
 type DatosBloque = {
@@ -44,9 +53,26 @@ async function guardarProfesores(
   bloqueId: string,
   profesorIds: string[],
 ) {
-  await supabase.from('bloque_profesores').delete().eq('bloque_id', bloqueId)
-  const filas = [...new Set(profesorIds)].filter(Boolean).map(profesor_id => ({ bloque_id: bloqueId, profesor_id }))
-  if (filas.length > 0) await supabase.from('bloque_profesores').insert(filas)
+  const quiero = [...new Set(profesorIds)].filter(Boolean)
+
+  const { data: abiertas } = await supabase.from('bloque_profesores')
+    .select('id,profesor_id').eq('bloque_id', bloqueId).is('vigente_hasta', null)
+  const actuales: string[] = (abiertas ?? []).map((r: { profesor_id: string }) => r.profesor_id)
+
+  // Al que sale se le cierra el período: quién dictaba en marzo tiene que
+  // seguir siendo consultable.
+  const salen = (abiertas ?? []).filter((r: { profesor_id: string }) => !quiero.includes(r.profesor_id))
+  if (salen.length > 0) {
+    await supabase.from('bloque_profesores')
+      .update({ vigente_hasta: hoyISO() })
+      .in('id', salen.map((r: { id: string }) => r.id))
+  }
+
+  const entran = quiero.filter(id => !actuales.includes(id))
+  if (entran.length > 0) {
+    await supabase.from('bloque_profesores')
+      .insert(entran.map(profesor_id => ({ bloque_id: bloqueId, profesor_id })))
+  }
 }
 
 export async function crearBloque(datos: DatosBloque) {
@@ -109,10 +135,18 @@ export async function eliminarBloque(params: { id: string }) {
   const { error: authErr, supabase, clubId } = await requireStaff()
   if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
 
-  // Las clases ya generadas se conservan: son historia y pueden tener
-  // asistencia registrada. Solo quedan sin bloque asociado.
-  const { error } = await supabase.from('bloques_horario').delete().eq('id', params.id).eq('club_id', clubId)
-  if (error) return { error: 'No se pudo eliminar el bloque: ' + error.message }
+  // El bloque no se borra: se le cierra la vigencia. Su historia —quién
+  // estaba inscrito, quién lo dictaba, quién asistió— tiene que seguir siendo
+  // consultable aunque el grupo deje de funcionar.
+  const { error } = await supabase.from('bloques_horario')
+    .update({ vigente_hasta: hoyISO() })
+    .eq('id', params.id).eq('club_id', clubId)
+  if (error) return { error: 'No se pudo dar de baja el bloque: ' + error.message }
+
+  // Y con él, las inscripciones que tenía abiertas.
+  await supabase.from('bloque_jugadores')
+    .update({ vigente_hasta: hoyISO() })
+    .eq('bloque_id', params.id).is('vigente_hasta', null)
   return { success: true }
 }
 
@@ -147,7 +181,8 @@ export async function generarSemana(params: {
   const { data: titulares } = await supabase
     .from('bloque_profesores')
     .select('bloque_id,profesor_id')
-    .in('bloque_id', bloques.map(b => b.id))
+    .is('vigente_hasta', null)
+    .in('bloque_id', bloques.map((b: { id: string }) => b.id))
 
   const profesorDe = new Map<string, string>()
   for (const t of titulares ?? []) {
@@ -158,7 +193,7 @@ export async function generarSemana(params: {
   for (const fecha of fechas) {
     const dia = diaDesdeFecha(fecha)
     if (!dia) continue   // fin de semana: el club no abre
-    for (const b of bloques.filter(x => x.dia_semana === dia)) {
+    for (const b of bloques.filter((x: { dia_semana: string }) => x.dia_semana === dia)) {
       filas.push({
         club_id: clubId,
         bloque_id: b.id,
@@ -200,18 +235,19 @@ export async function agregarJugadorABloque(params: { bloqueId: string; jugadorI
   if (!jugador) return { error: 'Jugador no encontrado' }
 
   const { error } = await supabase.from('bloque_jugadores')
-    .insert({ bloque_id: params.bloqueId, jugador_id: params.jugadorId })
+    .insert({ bloque_id: params.bloqueId, jugador_id: params.jugadorId, vigente_desde: hoyISO() })
 
-  // 23505 = ya estaba inscrito; no es un error para quien lo está usando.
+  // 23505 = ya tiene una inscripción abierta en este bloque. No es un error
+  // para quien lo está usando: el resultado es el que quería.
   if (error && error.code !== '23505') {
     return { error: 'No se pudo agregar al bloque: ' + error.message }
   }
 
   // El cupo no bloquea: el club a veces pasa de doce y prefiere verlo avisado
-  // antes que no poder registrarlo.
+  // antes que no poder registrarlo. Solo cuentan las inscripciones abiertas.
   const { count } = await supabase.from('bloque_jugadores')
-    .select('jugador_id', { count: 'exact', head: true })
-    .eq('bloque_id', params.bloqueId)
+    .select('id', { count: 'exact', head: true })
+    .eq('bloque_id', params.bloqueId).is('vigente_hasta', null)
 
   return { success: true, inscritos: count ?? 0, sobreCupo: (count ?? 0) > bloque.cupo_maximo }
 }
@@ -227,11 +263,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   const { error: authErr, supabase, clubId } = await requireStaff()
   if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
 
-  // Los tipos generados de Supabase no incluyen entrena_* ni sede en jugadores.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = supabase as any
-
-  const { data: jugador } = await db.from('jugadores')
+  const { data: jugador } = await supabase.from('jugadores')
     .select('id,club_id,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
     .eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
   if (!jugador) return { error: 'Jugador no encontrado' }
@@ -248,15 +280,29 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   }
   if (bloques.length !== ids.length) return { error: 'Alguno de los bloques no es de este club' }
 
-  // Se reemplaza la asignación completa: lo que no viene marcado, sale.
-  const { error: delErr } = await supabase.from('bloque_jugadores')
-    .delete().eq('jugador_id', params.jugadorId)
-  if (delErr) return { error: 'No se pudo actualizar la asignación: ' + delErr.message }
+  // Se calcula la diferencia contra lo que ya tenía abierto, en vez de borrar
+  // y volver a insertar. Borrar perdería desde cuándo está en los grupos que
+  // no cambió, que es justo lo que el calendario necesita saber.
+  const { data: abiertas, error: leerErr } = await supabase.from('bloque_jugadores')
+    .select('id,bloque_id').eq('jugador_id', params.jugadorId).is('vigente_hasta', null)
+  if (leerErr) return { error: 'No se pudo leer su asignación actual: ' + leerErr.message }
 
-  if (bloques.length > 0) {
-    const { error: insErr } = await supabase.from('bloque_jugadores')
-      .insert(bloques.map(b => ({ bloque_id: b.id, jugador_id: params.jugadorId })))
-    if (insErr) return { error: 'No se pudo asignar a los bloques: ' + insErr.message }
+  type Abierta = { id: string; bloque_id: string }
+  const yaEstaba = (abiertas ?? []).map((r: Abierta) => r.bloque_id)
+  const salen = (abiertas ?? []).filter((r: Abierta) => !ids.includes(r.bloque_id))
+  const entran = ids.filter(id => !yaEstaba.includes(id))
+
+  if (salen.length > 0) {
+    const { error } = await supabase.from('bloque_jugadores')
+      .update({ vigente_hasta: hoyISO() })
+      .in('id', salen.map((r: Abierta) => r.id))
+    if (error) return { error: 'No se pudo cerrar la asignación anterior: ' + error.message }
+  }
+
+  if (entran.length > 0) {
+    const { error } = await supabase.from('bloque_jugadores')
+      .insert(entran.map(bloque_id => ({ bloque_id, jugador_id: params.jugadorId, vigente_desde: hoyISO() })))
+    if (error) return { error: 'No se pudo asignar a los bloques: ' + error.message }
   }
 
   // Los campos de la ficha se derivan de los bloques recién elegidos.
@@ -283,7 +329,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
       : {}),
   }
 
-  const { error: updErr } = await db.from('jugadores')
+  const { error: updErr } = await supabase.from('jugadores')
     .update(campos).eq('id', params.jugadorId).eq('club_id', clubId)
   if (updErr) return { error: 'No se pudieron guardar los días: ' + updErr.message }
 
@@ -299,10 +345,10 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   if (cambio) {
     const hoy  = new Date().toISOString().slice(0, 10)
     const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-    await db.from('jugador_horario_historial')
+    await supabase.from('jugador_horario_historial')
       .update({ vigente_hasta: ayer })
       .eq('jugador_id', params.jugadorId).is('vigente_hasta', null).lt('vigente_desde', hoy)
-    await db.from('jugador_horario_historial').insert({
+    await supabase.from('jugador_horario_historial').insert({
       jugador_id: params.jugadorId, club_id: clubId,
       horario: campos.horario,
       entrena_lun: campos.entrena_lun, entrena_mar: campos.entrena_mar,
@@ -323,8 +369,12 @@ export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorI
     .select('id').eq('id', params.bloqueId).eq('club_id', clubId).maybeSingle()
   if (!bloque) return { error: 'Bloque no encontrado' }
 
+  // No se borra: se cierra el período. Que alguien haya dejado el grupo no
+  // borra que estuvo, ni las asistencias que tuvo mientras estaba.
   const { error } = await supabase.from('bloque_jugadores')
-    .delete().eq('bloque_id', params.bloqueId).eq('jugador_id', params.jugadorId)
+    .update({ vigente_hasta: hoyISO() })
+    .eq('bloque_id', params.bloqueId).eq('jugador_id', params.jugadorId)
+    .is('vigente_hasta', null)
   if (error) return { error: 'No se pudo quitar del bloque: ' + error.message }
 
   return { success: true }

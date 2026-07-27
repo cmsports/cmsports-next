@@ -71,7 +71,7 @@ export default function HorarioPage() {
         .eq('club_id', cid).eq('activo', true)
         .order('hora_inicio'),
       supabase.from('profesores').select('id,nombre').eq('club_id', cid).eq('activo', true).order('nombre'),
-      supabase.from('bloque_profesores').select('bloque_id,profesor_id'),
+      supabase.from('bloque_profesores').select('bloque_id,profesor_id').is('vigente_hasta', null),
     ])
 
     const porBloque = new Map<string, string[]>()

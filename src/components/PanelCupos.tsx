@@ -36,8 +36,8 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
       supabase.from('jugadores').select('id,nombre,grupo,categoria')
         .eq('club_id', clubId).eq('estado', 'activo')
         .or('es_externo.is.null,es_externo.eq.false').order('nombre'),
-      supabase.from('bloque_jugadores').select('bloque_id,jugador_id'),
-      supabase.from('bloque_profesores').select('bloque_id,profesor_id'),
+      supabase.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
+      supabase.from('bloque_profesores').select('bloque_id,profesor_id').is('vigente_hasta', null),
       supabase.from('profesores').select('id,nombre').eq('club_id', clubId),
     ])
 

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { DIAS, diaLabel, rangoHorario, minutosDelDia, type BloqueHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { vigenteEn, type Vigencia } from '@/lib/domain/vigencia'
 
 const supabase = createClient()
 
@@ -15,6 +16,7 @@ const hint  = '#94a3b8'
 
 type Bloque = BloqueHorario & { profesorIds: string[] }
 type Profesor = { id: string; nombre: string }
+type Inscripcion = { bloque_id: string; jugador_id: string } & Vigencia
 
 /** Fechas (YYYY-MM-DD) de lunes a viernes entre dos días, inclusive. */
 function diasHabiles(desde: string, hasta: string): { fecha: string; dia: string }[] {
@@ -56,7 +58,7 @@ const num = { ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-n
 export default function PanelReportes({ clubId }: { clubId: string }) {
   const [bloques, setBloques]       = useState<Bloque[]>([])
   const [profesores, setProfesores] = useState<Profesor[]>([])
-  const [inscritos, setInscritos]   = useState<Record<string, string[]>>({})
+  const [inscritos, setInscritos]   = useState<Record<string, Inscripcion[]>>({})
   const [asistPorFecha, setAsist]   = useState<Record<string, Set<string>>>({})
   const [semanas, setSemanas]       = useState(4)
   const [cargando, setCargando]     = useState(true)
@@ -70,14 +72,18 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
         .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
         .eq('club_id', clubId).eq('activo', true).order('hora_inicio'),
       supabase.from('profesores').select('id,nombre').eq('club_id', clubId).eq('activo', true).order('nombre'),
-      supabase.from('bloque_jugadores').select('bloque_id,jugador_id'),
-      supabase.from('bloque_profesores').select('bloque_id,profesor_id'),
+      // Con vigencia: un reporte de hace dos meses tiene que contar a quien
+      // estaba en el grupo entonces, no a quien está hoy.
+      supabase.from('bloque_jugadores').select('bloque_id,jugador_id,vigente_desde,vigente_hasta'),
+      supabase.from('bloque_profesores').select('bloque_id,profesor_id').is('vigente_hasta', null),
       supabase.from('asistencia').select('jugador_id,fecha')
         .eq('club_id', clubId).gte('fecha', desde).lte('fecha', hoy),
     ])
 
-    const porBloque: Record<string, string[]> = {}
-    for (const r of rel ?? []) porBloque[r.bloque_id] = [...(porBloque[r.bloque_id] ?? []), r.jugador_id]
+    const porBloque: Record<string, Inscripcion[]> = {}
+    for (const r of (rel ?? []) as Inscripcion[]) {
+      porBloque[r.bloque_id] = [...(porBloque[r.bloque_id] ?? []), r]
+    }
 
     const profDe = new Map<string, string[]>()
     for (const r of relProf ?? []) profDe.set(r.bloque_id, [...(profDe.get(r.bloque_id) ?? []), r.profesor_id])
@@ -104,21 +110,29 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   // Por cada bloque: cuánta gente tiene, cuánto cabe, y de las veces que se
   // dictó en el período, cuántas asistencias hubo de su propia gente.
   const filas = bloques.map(b => {
-    const gente = inscritos[b.id] ?? []
-    const sesiones = fechas.filter(f => f.dia === b.dia_semana).length
+    const historia = inscritos[b.id] ?? []
+    const fechasDelBloque = fechas.filter(f => f.dia === b.dia_semana)
+
+    // Se recorre fecha por fecha, no se multiplica: un mes con cinco lunes
+    // tiene cinco sesiones y otro cuatro, y quien entró a mitad de mes solo
+    // debe las que le tocaban desde que entró.
+    let esperadas = 0
     let presentes = 0
-    for (const f of fechas) {
-      if (f.dia !== b.dia_semana) continue
+    for (const f of fechasDelBloque) {
       const delDia = asistPorFecha[f.fecha]
-      if (!delDia) continue
-      for (const j of gente) if (delDia.has(j)) presentes++
+      for (const i of historia) {
+        if (!vigenteEn(i, f.fecha)) continue
+        esperadas++
+        if (delDia?.has(i.jugador_id)) presentes++
+      }
     }
-    const esperadas = gente.length * sesiones
+
+    const hoyDentro = historia.filter(i => vigenteEn(i, hoy)).length
     return {
       b,
-      inscritos: gente.length,
-      ocupacion: b.cupo_maximo > 0 ? Math.round((gente.length / b.cupo_maximo) * 100) : 0,
-      sesiones,
+      inscritos: hoyDentro,
+      ocupacion: b.cupo_maximo > 0 ? Math.round((hoyDentro / b.cupo_maximo) * 100) : 0,
+      sesiones: fechasDelBloque.length,
       presentes,
       esperadas,
       asistencia: esperadas > 0 ? Math.round((presentes / esperadas) * 100) : null,
@@ -135,7 +149,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
     const suyos = bloques.filter(b => b.profesorIds.includes(p.id))
     const minutos = suyos.reduce((s, b) => s + (minutosDelDia(b.hora_fin) - minutosDelDia(b.hora_inicio)), 0)
     const alumnos = new Set<string>()
-    for (const b of suyos) for (const j of inscritos[b.id] ?? []) alumnos.add(j)
+    for (const b of suyos) for (const i of inscritos[b.id] ?? []) if (vigenteEn(i, hoy)) alumnos.add(i.jugador_id)
     const sedes = [...new Set(suyos.map(b => b.sede))]
     return { p, bloques: suyos.length, horas: minutos / 60, alumnos: alumnos.size, sedes }
   }).sort((a, b) => b.horas - a.horas)
