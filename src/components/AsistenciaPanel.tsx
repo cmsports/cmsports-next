@@ -88,8 +88,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // sigue siendo tocar un nombre.
   // Dos listas y a propósito. Los filtros muestran toda la semana, para poder
   // buscar a cualquiera. Pero "hoy entrena o no" tiene que salir solo de los
-  // bloques de hoy: si sale de todos, nadie es candidato a clase extra nunca.
-  const [bloquesTodos, setBloquesTodos] = useState<BloqueDelDia[]>([])
+  // bloques de hoy: si sale de todos, nadie es candidato a clase extra nunca.
   const [bloquesHoy,   setBloquesHoy]   = useState<BloqueDelDia[]>([])
   const [inscritosDe,  setInscritosDe]  = useState<Record<string, string[]>>({})
   const [inscritosHoy, setInscritosHoy] = useState<Record<string, string[]>>({})
@@ -323,8 +322,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         if (!suyos.has(r.bloque_id)) continue
         ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
         if (idsHoy.has(r.bloque_id)) (porBloqueHoy[r.bloque_id] ??= []).push(r.jugador_id)
-      }
-      setBloquesTodos(todos)
+      }
       setBloquesHoy(deHoy)
       setInscritosDe(porBloque)
       setInscritosHoy(porBloqueHoy)
@@ -598,24 +596,20 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Recinto y horario, en ese orden: es como el profe piensa el día. Llega a
   // una sede, a una hora, y tiene a ese grupo enfrente.
   //
-  // Salen de toda la semana, no solo de hoy. Son para buscar: que una
-  // combinación no tenga a nadie porque ese día no hay clase ahí es una
-  // respuesta válida, no un motivo para esconder el filtro.
-  const sedesHoy = [...new Set(bloquesTodos.map(b => b.sede))].sort()
+  // Solo los grupos de HOY. Antes salían los de toda la semana y eran diecisiete
+  // pastillas un martes que tiene dos grupos: elegir una era encontrarse con
+  // gente que hoy no entrena. Y esta lista escribe en la fecha de hoy, así que
+  // ofrecer el grupo del jueves es invitar a marcar presente a quien no vino.
+  //
+  // Para alguien de otro grupo está "Vino alguien de otro grupo", que se busca
+  // por nombre y queda como clase extra.
+  const sedesHoy = [...new Set(bloquesHoy.map(b => b.sede))].sort()
   // Con una sola sede no hay nada que elegir: el paso sobra y se salta.
   const sedeEfectiva = sedesHoy.length === 1 ? sedesHoy[0] : sedeSel
-  // Hoy primero, que es lo que se usa el 99% de las veces; después el resto de
-  // la semana en orden, y dentro de cada día por hora.
-  const ORDEN_DIAS = ['lun', 'mar', 'mie', 'jue', 'vie']
   const bloquesDeLaSede = (sedeEfectiva
-    ? bloquesTodos.filter(b => b.sede === sedeEfectiva)
-    : bloquesTodos
-  ).slice().sort((a, b) => {
-    const hoyDia = diaDeHoy()
-    const peso = (d: string) => (d === hoyDia ? -1 : ORDEN_DIAS.indexOf(d))
-    return peso(a.dia_semana) - peso(b.dia_semana)
-      || hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio))
-  })
+    ? bloquesHoy.filter(b => b.sede === sedeEfectiva)
+    : bloquesHoy
+  ).slice().sort((a, b) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio)))
 
   const inscritosDelBloque = bloqueSel ? new Set(inscritosDe[bloqueSel] ?? []) : null
 
@@ -624,8 +618,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     (!inscritosDelBloque || inscritosDelBloque.has(j.id))
   )
 
-  const bloqueElegido = bloquesTodos.find(b => b.id === bloqueSel) ?? null
-  const bloqueSelEsDeHoy = !!bloqueElegido && bloquesHoy.some(b => b.id === bloqueSel)
+  const bloqueElegido = bloquesHoy.find(b => b.id === bloqueSel) ?? null
 
   // Los que hoy no están en ningún bloque: para ellos, venir es una clase extra.
   // Solo los de hoy: si contara toda la semana, nadie sería candidato a extra.
@@ -865,9 +858,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
             value={busqueda} onChange={e => setBusqueda(e.target.value)}
           />
 
-          {/* Recinto y horario, de toda la semana. Son para encontrar a alguien,
-              no solo para pasar lista de hoy. */}
-          {bloquesTodos.length > 0 && (
+          {/* Recinto y horario de hoy. Elegir uno deja en la lista exactamente
+              a sus inscritos, y a nadie más. */}
+          {bloquesHoy.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
               {sedesHoy.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -905,16 +898,16 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 {bloquesDeLaSede.map(b => {
                   const activo = bloqueSel === b.id
                   const cuantos = (inscritosDe[b.id] ?? []).length
-                  // Con la semana entera, dos grupos pueden compartir hora en
-                  // días distintos. Sin el día en la etiqueta son iguales.
-                  const esHoy = b.dia_semana === diaDeHoy()
+                  // El nombre del grupo va en la pastilla: dos grupos del mismo
+                  // día pueden empezar a la misma hora en sedes distintas, y por
+                  // la hora sola no se distinguen.
                   return (
                     <button key={b.id} onClick={() => setBloqueSel(activo ? '' : b.id)}
                       style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
-                        border: `1px solid ${activo ? '#4f46e5' : esHoy ? '#c7d2fe' : '#e2e8f0'}`,
+                        border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
                         background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
-                        color: activo ? '#ffffff' : esHoy ? text : muted }}>
-                      {esHoy ? 'hoy' : b.dia_semana} · {rangoHorario(b.hora_inicio, b.hora_fin)} · {cuantos}
+                        color: activo ? '#ffffff' : muted }}>
+                      {rangoHorario(b.hora_inicio, b.hora_fin)} · {b.nombre} · {cuantos}
                     </button>
                   )
                 })}
@@ -922,8 +915,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
               {bloqueElegido && (
                 <div style={{ fontSize: 11, color: hint }}>
-                  {bloqueElegido.nombre} — {sedeLabel(bloqueElegido.sede)}
-                  {!bloqueSelEsDeHoy && ' · ese grupo no entrena hoy'}
+                  {sedeLabel(bloqueElegido.sede)} · {filtrados.length} inscritos
                 </div>
               )}
             </div>
