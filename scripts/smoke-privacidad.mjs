@@ -33,6 +33,23 @@ for (const a of archivos('src')) {
   for (const m of readFileSync(a, 'utf8').matchAll(/\.from\(['"]([a-z_]+)['"]\)/g)) tablas.add(m[1])
 }
 
+// Y además todas las tablas de la base, no solo las que el código menciona.
+//
+// Buscar solo donde el código mira fue justo lo que dejó pasar el agujero de
+// `clase_jugadores`: 888 filas legibles —y escribibles— con la llave pública,
+// en una tabla que ninguna pantalla usa. Una tabla que nadie lee sigue teniendo
+// los datos adentro.
+if (env.SUPABASE_SERVICE_ROLE_KEY) {
+  const svc = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
+  const { data, error } = await svc.rpc('_auditoria_politicas')
+  if (error) {
+    console.log('Aviso: sin la función _auditoria_politicas (migración 102) solo se revisan')
+    console.log('las tablas que el código menciona, y las olvidadas quedan sin probar.\n')
+  } else {
+    for (const f of data) tablas.add(f.tabla)
+  }
+}
+
 console.log(`Intentando leer ${tablas.size} tablas sin sesión\n`)
 
 const expuestas = []
