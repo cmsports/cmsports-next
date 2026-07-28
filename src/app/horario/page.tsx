@@ -6,7 +6,7 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import { Pencil, Plus, Trash2, X, Clock, MapPin } from 'lucide-react'
-import { eliminarBloque, estadoDiaSinClase, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
+import { diasSinClase, eliminarBloque, estadoDiaSinClase, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
 import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
 import PanelCupos from '@/components/PanelCupos'
@@ -71,6 +71,12 @@ export default function HorarioPage() {
   const [feriadoEstado, setFeriadoEstado] = useState<
     { grupos: number; suspendidos: number; motivo: string | null } | null
   >(null)
+  // Los días ya marcados, para poder devolver el que se marcó por error sin
+  // tener que acordarse de la fecha exacta.
+  const [marcados, setMarcados] = useState<
+    { fecha: string; dia: string; motivo: string | null; grupos: number }[] | null
+  >(null)
+  const [restaurando, setRestaurando] = useState<string | null>(null)
 
   const clubId = perfil?.club_id ?? null
   const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'
@@ -183,6 +189,38 @@ export default function HorarioPage() {
     return () => { vigente = false }
   }, [modalFeriado, feriado.fecha])
 
+  const cargarMarcados = useCallback(async () => {
+    const res = await diasSinClase()
+    setMarcados('error' in res && res.error ? [] : ((res as { dias: typeof marcados }).dias ?? []))
+  }, [])
+
+  useEffect(() => {
+    if (modalFeriado) void cargarMarcados()
+  }, [modalFeriado, cargarMarcados])
+
+  /** Devolver un día de la lista. No pide confirmación: se puede volver a marcar. */
+  async function restaurarFecha(fecha: string) {
+    setRestaurando(fecha)
+    setFeriadoMsg('')
+    const res = await marcarDiaSinClase({ fecha, deshacer: true })
+    setRestaurando(null)
+    if (res?.error) { setFeriadoMsg(res.error); return }
+    setFeriadoMsg(`Listo: el ${fecha} vuelve a contar como día de entrenamiento.`)
+    await cargarMarcados()
+    // Si es justo la fecha del campo, el cartel de arriba también tiene que
+    // reflejar lo que quedó.
+    if (fecha === feriado.fecha) {
+      const ahora = await estadoDiaSinClase({ fecha })
+      if (!('error' in ahora && ahora.error)) {
+        setFeriadoEstado({
+          grupos: (ahora as { grupos: number }).grupos,
+          suspendidos: (ahora as { suspendidos: number }).suspendidos,
+          motivo: (ahora as { motivo: string | null }).motivo,
+        })
+      }
+    }
+  }
+
   async function guardarFeriado(deshacer: boolean) {
     setGuardando(true)
     setFeriadoMsg('')
@@ -202,6 +240,7 @@ export default function HorarioPage() {
         motivo: (ahora as { motivo: string | null }).motivo,
       })
     }
+    await cargarMarcados()
   }
 
   async function eliminar(b: Bloque) {
@@ -614,6 +653,43 @@ export default function HorarioPage() {
                 </div>
               )
             })()}
+
+            {/* Los días ya marcados. Si te equivocaste de fecha, acá lo ves y
+                lo devolvés; sin esto había que adivinar cuál marcaste. */}
+            <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 18, paddingTop: 14 }}>
+              <div style={{ fontSize: 11, color: muted, fontWeight: 600, marginBottom: 8 }}>
+                Días marcados sin clase
+              </div>
+
+              {marcados === null ? (
+                <div style={{ fontSize: 12, color: hint }}>Buscando...</div>
+              ) : marcados.length === 0 ? (
+                <div style={{ fontSize: 12, color: hint }}>No hay ninguno marcado.</div>
+              ) : (
+                <div style={{ maxHeight: 190, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {marcados.map(d => (
+                    <div key={d.fecha}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                        background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '7px 10px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#c2410c' }}>
+                          {d.dia ? `${d.dia} ` : ''}{d.fecha}
+                        </div>
+                        <div style={{ fontSize: 11, color: muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {d.motivo || 'sin motivo'} · {d.grupos} grupo{d.grupos === 1 ? '' : 's'}
+                        </div>
+                      </div>
+                      <button onClick={() => restaurarFecha(d.fecha)} disabled={restaurando === d.fecha}
+                        style={{ flexShrink: 0, padding: '6px 11px', fontSize: 12, fontWeight: 600, borderRadius: 7,
+                          border: '1px solid #e2e8f0', background: '#fff', color: muted,
+                          cursor: restaurando === d.fecha ? 'default' : 'pointer' }}>
+                        {restaurando === d.fecha ? 'Restaurando...' : 'Sí hubo clase'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

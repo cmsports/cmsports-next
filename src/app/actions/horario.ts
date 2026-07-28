@@ -145,6 +145,43 @@ export async function marcarDiaSinClase(params: { fecha: string; motivo?: string
   return { success: true, grupos: ids.length }
 }
 
+/**
+ * Los días que el club tiene marcados sin clase, del más nuevo al más viejo.
+ *
+ * Existe para arreglar un error de tipeo. Marcar el día equivocado se arregla
+ * solo si te acordás de cuál marcaste: había que escribir la fecha exacta en el
+ * campo para recién ahí ver que estaba suspendida. Si te equivocaste de día, no
+ * tenías cómo encontrarlo.
+ */
+export async function diasSinClase() {
+  const { error: authErr, supabase, clubId } = await requireStaff()
+  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
+
+  const { data: bloques, error: errBloques } = await supabase.from('bloques_horario')
+    .select('id').eq('club_id', clubId)
+  if (errBloques) return { error: 'No se pudo leer el horario: ' + errBloques.message }
+
+  const ids = (bloques ?? []).map((b: { id: string }) => b.id)
+  if (ids.length === 0) return { dias: [] }
+
+  const { data: exc, error: errExc } = await supabase.from('bloque_excepciones')
+    .select('fecha,motivo').in('bloque_id', ids).order('fecha', { ascending: false })
+  if (errExc) return { error: 'No se pudieron leer las suspensiones: ' + errExc.message }
+
+  // Una fecha suspendida son varias filas, una por grupo. El profe piensa en
+  // días, no en grupos: se agrupan por fecha y se cuenta cuántos cayeron.
+  const porFecha = new Map<string, { fecha: string; motivo: string | null; grupos: number }>()
+  for (const e of (exc ?? []) as { fecha: string; motivo: string | null }[]) {
+    const ya = porFecha.get(e.fecha)
+    if (ya) { ya.grupos += 1; ya.motivo = ya.motivo ?? e.motivo }
+    else porFecha.set(e.fecha, { fecha: e.fecha, motivo: e.motivo, grupos: 1 })
+  }
+
+  return {
+    dias: [...porFecha.values()].map(d => ({ ...d, dia: diaDesdeFecha(d.fecha) ?? '' })),
+  }
+}
+
 export type DiaDeGrupo = { dia_semana: string; hora_inicio: string; hora_fin: string }
 
 /**

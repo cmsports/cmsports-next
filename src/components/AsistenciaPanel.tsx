@@ -761,14 +761,20 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               el resto de la semana no sirve para pasar lista ahora. */}
           {bloquesHoy.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-              {sedesHoy.length > 1 && (
+              {sedesHoy.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                   <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Recinto</span>
                   {sedesHoy.map(s => {
-                    const activo = sedeSel === s
+                    // Con una sola sede el recinto igual se muestra: es el dato
+                    // de dónde se juega hoy. Va prendido y no se puede apagar,
+                    // porque apagarlo no cambiaría la lista y solo confunde.
+                    const unica = sedesHoy.length === 1
+                    const activo = unica || sedeSel === s
                     return (
-                      <button key={s} onClick={() => { setSedeSel(activo ? '' : s); setBloqueSel('') }}
-                        style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                      <button key={s} disabled={unica}
+                        onClick={() => { setSedeSel(activo ? '' : s); setBloqueSel('') }}
+                        style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20,
+                          cursor: unica ? 'default' : 'pointer',
                           border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
                           background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
                           color: activo ? '#ffffff' : muted }}>
