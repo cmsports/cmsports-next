@@ -145,7 +145,9 @@ export async function registrarClaseExtraordinaria(params: {
   const { data, error } = await (supabase as any).rpc('registrar_clase_extraordinaria', {
     p_jugador_id: params.jugadorId,
     p_fecha:      params.fecha,
-    p_bloque_id:  params.bloqueId ?? null,
+    // `|| null` y no `?? null`: una cadena vacía tiene que llegar como nulo. Un
+    // "" en un campo uuid revienta con «invalid input syntax for type uuid».
+    p_bloque_id:  params.bloqueId || null,
     p_hora:       params.hora ?? null,
     p_monto:      params.monto ?? null,
     p_motivo:     params.motivo?.trim() || null,
@@ -168,9 +170,11 @@ export async function asignarBloqueClaseExtraordinaria(params: { id: string; blo
     return { error: 'Solo el admin o el profesor pueden cambiar el grupo' }
   }
 
+  if (!params.id) return { error: 'Falta la clase a modificar' }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).rpc('asignar_bloque_clase_extraordinaria', {
-    p_id: params.id, p_bloque_id: params.bloqueId,
+    p_id: params.id, p_bloque_id: params.bloqueId || null,
   })
   if (error) return { error: error.message }
 
@@ -184,6 +188,7 @@ export async function asignarMontoClaseExtraordinaria(params: { id: string; mont
   if (!STAFF.includes(perfil.rol ?? '')) {
     return { error: 'Solo el admin o el profesor pueden cambiar el monto' }
   }
+  if (!params.id) return { error: 'Falta la clase a modificar' }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).rpc('asignar_monto_clase_extraordinaria', {
@@ -201,6 +206,7 @@ export async function eliminarClaseExtraordinaria(params: { id: string }) {
   if (!STAFF.includes(perfil.rol ?? '')) {
     return { error: 'Solo el admin o el profesor pueden borrar una clase extraordinaria' }
   }
+  if (!params.id) return { error: 'Falta la clase a borrar' }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).rpc('eliminar_clase_extraordinaria', { p_id: params.id })

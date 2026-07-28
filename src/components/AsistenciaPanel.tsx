@@ -12,7 +12,6 @@ import {
   asignarMontoClaseExtraordinaria, eliminarAsistencia, eliminarClaseExtraordinaria,
   registrarAsistenciaAction, registrarClaseExtraordinaria,
 } from '@/app/actions/asistencia'
-import { estadoDiaSinClase, marcarDiaSinClase } from '@/app/actions/horario'
 import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
@@ -100,13 +99,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [extrasDeHoy,  setExtrasDeHoy]  = useState<ClaseExtraHoy[]>([])
   const [mostrarOtros, setMostrarOtros] = useState(false)
   const [buscaOtro,    setBuscaOtro]    = useState('')
-  // Suspender el día se hacía solo desde Horario. El profe vive acá: si hoy no
-  // hubo clase, es acá donde se da cuenta.
-  const [modalDia,     setModalDia]     = useState(false)
-  const [estadoDia,    setEstadoDia]    = useState<{ grupos: number; suspendidos: number; motivo: string | null } | null>(null)
-  const [motivoDia,    setMotivoDia]    = useState('')
-  const [msgDia,       setMsgDia]       = useState('')
-  const [guardandoDia, setGuardandoDia] = useState(false)
 
   const [modalMonto,   setModalMonto]   = useState<ClaseExtraHoy | null>(null)
   const [montoTexto,   setMontoTexto]   = useState('')
@@ -369,8 +361,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
    */
   async function registrarExtra(jugadorId: string, bloqueId?: string | null) {
     setRegistrando(jugadorId)
+    // El `||` y no `??`: sin horario elegido `bloqueSel` es cadena vacía, no
+    // null, y `??` no la atrapa. Esa cadena vacía llegaba a un campo uuid y la
+    // base contestaba «invalid input syntax for type uuid: ""».
+    const bloque = (bloqueId ?? bloqueSel) || null
     const res = await registrarClaseExtraordinaria({
-      jugadorId, fecha: hoy, bloqueId: bloqueId ?? bloqueSel ?? null, hora,
+      jugadorId, fecha: hoy, bloqueId: bloque, hora,
     })
     setRegistrando(null)
     if (res.error) {
@@ -380,35 +376,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
     setBuscaOtro('')
     await cargarExtras(hoy)
-  }
-
-  async function abrirDiaSinClase() {
-    setMsgDia(''); setMotivoDia(''); setEstadoDia(null); setModalDia(true)
-    const res = await estadoDiaSinClase({ fecha: fechaVista })
-    if ('error' in res && res.error) { setMsgDia(res.error); return }
-    setEstadoDia({
-      grupos: (res as { grupos: number }).grupos,
-      suspendidos: (res as { suspendidos: number }).suspendidos,
-      motivo: (res as { motivo: string | null }).motivo,
-    })
-  }
-
-  async function guardarDiaSinClase(deshacer: boolean) {
-    setGuardandoDia(true); setMsgDia('')
-    const res = await marcarDiaSinClase({ fecha: fechaVista, motivo: motivoDia, deshacer })
-    setGuardandoDia(false)
-    if (res?.error) { setMsgDia(res.error); return }
-    setMsgDia(deshacer
-      ? 'Listo: el día vuelve a contar como entrenamiento.'
-      : `Listo: el día no cuenta para ${res.grupos} grupo${res.grupos === 1 ? '' : 's'}.`)
-    const ahora = await estadoDiaSinClase({ fecha: fechaVista })
-    if (!('error' in ahora && ahora.error)) {
-      setEstadoDia({
-        grupos: (ahora as { grupos: number }).grupos,
-        suspendidos: (ahora as { suspendidos: number }).suspendidos,
-        motivo: (ahora as { motivo: string | null }).motivo,
-      })
-    }
   }
 
   async function guardarMonto() {
@@ -604,18 +571,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   return (
     <div>
-      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: text, marginBottom: 4 }}>📋 Asistencia</h2>
-          <p style={{ fontSize: 13, color: muted }}>Hoy {hoy} · ✅ {asistencias.length} registros</p>
-        </div>
-        {esAdminOProfesor && (
-          <button onClick={abrirDiaSinClase}
-            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 8,
-              border: '1px solid #e2e8f0', background: '#fff', color: muted, cursor: 'pointer' }}>
-            🚫 Día sin clase
-          </button>
-        )}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: text, marginBottom: 4 }}>📋 Asistencia</h2>
+        <p style={{ fontSize: 13, color: muted }}>Hoy {hoy} · ✅ {asistencias.length} registros</p>
       </div>
 
       {!online && (
@@ -953,79 +911,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               )}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Suspender o restaurar el día */}
-      {modalDia && (
-        <div className="anim-fondo" onClick={e => { if (e.target === e.currentTarget) setModalDia(false) }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
-          <div className="anim-modal" style={{ ...card, padding: 22, width: '100%', maxWidth: 360 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: text }}>Día sin clase</div>
-            <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 14, textTransform: 'capitalize' }}>
-              {formatFechaLarga(fechaVista)}
-            </div>
-
-            {estadoDia && (
-              estadoDia.grupos === 0 ? (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8,
-                  padding: '9px 12px', fontSize: 12, color: muted, marginBottom: 14 }}>
-                  Ese día no funciona ningún grupo.
-                </div>
-              ) : estadoDia.suspendidos > 0 ? (
-                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8,
-                  padding: '9px 12px', fontSize: 12, color: '#c2410c', marginBottom: 14, fontWeight: 600 }}>
-                  Está marcado sin clase para {estadoDia.suspendidos} de {estadoDia.grupos} grupo{estadoDia.grupos === 1 ? '' : 's'}
-                  {estadoDia.motivo ? ` — ${estadoDia.motivo}` : ''}.
-                </div>
-              ) : (
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8,
-                  padding: '9px 12px', fontSize: 12, color: '#16a34a', marginBottom: 14, fontWeight: 600 }}>
-                  Funcionan {estadoDia.grupos} grupo{estadoDia.grupos === 1 ? '' : 's'} con normalidad.
-                </div>
-              )
-            )}
-
-            {(estadoDia?.suspendidos ?? 0) === 0 && (
-              <>
-                <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Motivo</label>
-                <input value={motivoDia} onChange={e => setMotivoDia(e.target.value)}
-                  placeholder="Ej: feriado, gimnasio ocupado"
-                  style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
-                    borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 14 }} />
-              </>
-            )}
-
-            {msgDia && (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8,
-                padding: '9px 12px', fontSize: 12, color: muted, marginBottom: 12 }}>
-                {msgDia}
-              </div>
-            )}
-
-            {/* Restaurar nunca se deshabilita: si no se pudo leer el estado, el
-                día igual tiene que poder devolverse. */}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => guardarDiaSinClase(true)} disabled={guardandoDia}
-                style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0',
-                  borderRadius: 8, color: muted, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                Restaurar día
-              </button>
-              <button onClick={() => guardarDiaSinClase(false)} disabled={guardandoDia || (estadoDia?.grupos ?? 0) === 0}
-                style={{ flex: 1, padding: 11, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700,
-                  background: (estadoDia?.grupos ?? 0) > 0 ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#e2e8f0',
-                  color: (estadoDia?.grupos ?? 0) > 0 ? '#fff' : '#94a3b8', cursor: 'pointer' }}>
-                {guardandoDia ? 'Guardando...' : 'Marcar sin clase'}
-              </button>
-            </div>
-
-            <button onClick={() => { setModalDia(false); void cargarExtras(fechaVista) }}
-              style={{ width: '100%', padding: '9px 14px', marginTop: 10, borderRadius: 8, fontSize: 13,
-                border: 'none', background: 'transparent', color: muted, cursor: 'pointer' }}>
-              Cerrar
-            </button>
-          </div>
         </div>
       )}
 
