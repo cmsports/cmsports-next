@@ -90,6 +90,8 @@ export default function JugadorDetallePage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
+  // Clases extra sin cobrar. Se muestran en el recuadro de Membresía.
+  const [extrasImpagas, setExtrasImpagas] = useState<{ id: string; monto: number | null }[]>([])
   const [partidos, setPartidos] = useState<any[]>([])
   const [externos, setExternos] = useState<any[]>([])
   const [evaluaciones, setEvaluaciones] = useState<any[]>([])
@@ -169,6 +171,13 @@ export default function JugadorDetallePage() {
             ? supabase.from('mensualidades').select('id,jugador_id,mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
             : Promise.resolve({ data: null }),
         ])
+
+        // Lo que debe por clases extra. Si la 098 no corrió, esto devuelve
+        // error y data null: el bloque simplemente no aparece.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: extrasPend } = await (supabase as any).from('clases_extraordinarias')
+          .select('id,monto').eq('jugador_id', jugadorId).is('pagada_en', null)
+        setExtrasImpagas((extrasPend ?? []) as { id: string; monto: number | null }[])
 
         if (perfil.rol === 'admin') {
           const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
@@ -328,6 +337,9 @@ export default function JugadorDetallePage() {
     setEditContacto(false)
     setGuardandoDatos(false)
   }
+
+  const totalExtras   = extrasImpagas.reduce((s, e) => s + (e.monto ?? 0), 0)
+  const extrasSinMonto = extrasImpagas.filter(e => e.monto == null).length
 
   function abrirEditPlan() {
     setPlanFormState({
@@ -1004,6 +1016,25 @@ export default function JugadorDetallePage() {
               {jugador.tipo_plan ? jugador.tipo_plan.charAt(0).toUpperCase() + jugador.tipo_plan.slice(1) : 'Mensual'}
               {jugador.tipo_plan === 'libre' ? ' — Libre acceso' : jugador.entrenamientos_por_semana ? ` — ${jugador.entrenamientos_por_semana} entrenamientos/semana` : ''}
             </div>
+
+            {/* Lo que debe por venir a grupos que no son el suyo. Va aparte de
+                la cuota a propósito: no es una mensualidad más cara, son clases
+                sueltas que se cobran por separado. */}
+            {extrasImpagas.length > 0 && (
+              <div style={{ marginTop:14, paddingTop:12, borderTop:'1px solid #e2e8f0',
+                display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:10 }}>
+                <div>
+                  <div style={{ fontSize:12, fontWeight:600, color:'#a16207' }}>🟡 Costo clase extra</div>
+                  <div style={{ fontSize:11, color: hint, marginTop:1 }}>
+                    {extrasImpagas.length} clase{extrasImpagas.length === 1 ? '' : 's'} sin cobrar
+                    {extrasSinMonto > 0 ? ` · ${extrasSinMonto} sin monto` : ''}
+                  </div>
+                </div>
+                <div style={{ fontSize:18, fontWeight:800, color:'#a16207', fontVariantNumeric:'tabular-nums' }}>
+                  {totalExtras > 0 ? `$${totalExtras.toLocaleString('es-CL')}` : '—'}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

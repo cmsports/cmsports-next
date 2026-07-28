@@ -35,6 +35,7 @@ export const CONFIG = {
     'inscripcion_torneo',
     'arriendo_cancha',
     'donacion',
+    'clase_extraordinaria',
     'otro_ingreso',
   ] as const,
 
@@ -53,6 +54,7 @@ export const CONFIG = {
     inscripcion_torneo: 'Inscripcion torneo',
     arriendo_cancha: 'Arriendo cancha',
     donacion: 'Donacion',
+    clase_extraordinaria: 'Clase extra',
     otro_ingreso: 'Otro ingreso',
     sueldo_profesor: 'Sueldo profesor',
     sueldo_staff: 'Sueldo staff',

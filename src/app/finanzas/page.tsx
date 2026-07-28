@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, Suspense } from 'react'
 import PanelMensualidadesHistoricas from '@/components/PanelMensualidadesHistoricas'
+import PanelClasesExtra from '@/components/PanelClasesExtra'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -442,6 +443,13 @@ function FinanzasContent() {
       {/* TAB MENSUALIDADES */}
       <div style={{ display: tabActivo === 'mensualidades' ? 'block' : 'none' }}>
         {mensualidadesVista && <MensualidadesPanel mes={mes} anio={anio} onPagoRegistrado={() => cargarMovimientos()} />}
+        {/* Las clases extra van acá abajo y no en su propia pestaña: se cobran
+            en la misma conversación que la mensualidad. */}
+        {mensualidadesVista && (
+          <div style={{ marginTop: 16 }}>
+            <PanelClasesExtra clubId={clubId} />
+          </div>
+        )}
       </div>
 
       {/* TAB REPORTES */}
