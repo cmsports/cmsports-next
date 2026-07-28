@@ -50,6 +50,7 @@ type BloqueDelDia = {
   sede: string
   hora_inicio: string
   hora_fin: string
+  dia_semana: string
 }
 
 /** Una clase extra ya registrada hoy. */
@@ -85,8 +86,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Los bloques que se dictan hoy y quiénes están inscritos en cada uno. Sirven
   // para achicar la lista al pasar lista; no mandan sobre la asistencia, que
   // sigue siendo tocar un nombre.
+  // Dos listas y a propósito. Los filtros muestran toda la semana, para poder
+  // buscar a cualquiera. Pero "hoy entrena o no" tiene que salir solo de los
+  // bloques de hoy: si sale de todos, nadie es candidato a clase extra nunca.
+  const [bloquesTodos, setBloquesTodos] = useState<BloqueDelDia[]>([])
   const [bloquesHoy,   setBloquesHoy]   = useState<BloqueDelDia[]>([])
   const [inscritosDe,  setInscritosDe]  = useState<Record<string, string[]>>({})
+  const [inscritosHoy, setInscritosHoy] = useState<Record<string, string[]>>({})
   const [sedeSel,      setSedeSel]      = useState('')
   const [bloqueSel,    setBloqueSel]    = useState('')
 
@@ -267,10 +273,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     let vigente = true
     void (async () => {
       const dia = diaDeHoy()
+      // Toda la semana en una sola consulta: los de hoy salen de filtrar esto.
       const [{ data: bloques }, { data: rel }] = await Promise.all([
         supabase.from('bloques_horario')
-          .select('id,nombre,sede,hora_inicio,hora_fin')
-          .eq('club_id', clubId).eq('activo', true).eq('dia_semana', dia)
+          .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
+          .eq('club_id', clubId).eq('activo', true)
           .lte('vigente_desde', hoy)
           .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
           .order('hora_inicio'),
@@ -278,15 +285,21 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       ])
       if (!vigente) return
 
-      const deHoy = (bloques ?? []) as BloqueDelDia[]
-      const suyos = new Set(deHoy.map(b => b.id))
+      const todos = (bloques ?? []) as BloqueDelDia[]
+      const deHoy = todos.filter(b => b.dia_semana === dia)
+      const suyos = new Set(todos.map(b => b.id))
+      const idsHoy = new Set(deHoy.map(b => b.id))
       const porBloque: Record<string, string[]> = {}
+      const porBloqueHoy: Record<string, string[]> = {}
       for (const r of rel ?? []) {
         if (!suyos.has(r.bloque_id)) continue
         ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
+        if (idsHoy.has(r.bloque_id)) (porBloqueHoy[r.bloque_id] ??= []).push(r.jugador_id)
       }
+      setBloquesTodos(todos)
       setBloquesHoy(deHoy)
       setInscritosDe(porBloque)
+      setInscritosHoy(porBloqueHoy)
     })()
     return () => { vigente = false }
   }, [clubId, esAdminOProfesor, hoy])
@@ -364,7 +377,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     // El `||` y no `??`: sin horario elegido `bloqueSel` es cadena vacía, no
     // null, y `??` no la atrapa. Esa cadena vacía llegaba a un campo uuid y la
     // base contestaba «invalid input syntax for type uuid: ""».
-    const bloque = (bloqueId ?? bloqueSel) || null
+    //
+    // Y el bloque solo si de verdad funciona hoy: desde que los filtros
+    // muestran toda la semana, `bloqueSel` puede ser el del jueves. Colgarle la
+    // clase extra de hoy a un bloque de otro día es dato falso; mejor sin
+    // grupo, que después se completa desde el histórico.
+    const delFiltro = bloquesHoy.some(b => b.id === bloqueSel) ? bloqueSel : ''
+    const bloque = (bloqueId ?? delFiltro) || null
     const res = await registrarClaseExtraordinaria({
       jugadorId, fecha: hoy, bloqueId: bloque, hora,
     })
@@ -525,12 +544,25 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   })()
   // Recinto y horario, en ese orden: es como el profe piensa el día. Llega a
   // una sede, a una hora, y tiene a ese grupo enfrente.
-  const sedesHoy = [...new Set(bloquesHoy.map(b => b.sede))].sort()
+  //
+  // Salen de toda la semana, no solo de hoy. Son para buscar: que una
+  // combinación no tenga a nadie porque ese día no hay clase ahí es una
+  // respuesta válida, no un motivo para esconder el filtro.
+  const sedesHoy = [...new Set(bloquesTodos.map(b => b.sede))].sort()
   // Con una sola sede no hay nada que elegir: el paso sobra y se salta.
   const sedeEfectiva = sedesHoy.length === 1 ? sedesHoy[0] : sedeSel
-  const bloquesDeLaSede = sedeEfectiva
-    ? bloquesHoy.filter(b => b.sede === sedeEfectiva)
-    : bloquesHoy
+  // Hoy primero, que es lo que se usa el 99% de las veces; después el resto de
+  // la semana en orden, y dentro de cada día por hora.
+  const ORDEN_DIAS = ['lun', 'mar', 'mie', 'jue', 'vie']
+  const bloquesDeLaSede = (sedeEfectiva
+    ? bloquesTodos.filter(b => b.sede === sedeEfectiva)
+    : bloquesTodos
+  ).slice().sort((a, b) => {
+    const hoyDia = diaDeHoy()
+    const peso = (d: string) => (d === hoyDia ? -1 : ORDEN_DIAS.indexOf(d))
+    return peso(a.dia_semana) - peso(b.dia_semana)
+      || hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio))
+  })
 
   const inscritosDelBloque = bloqueSel ? new Set(inscritosDe[bloqueSel] ?? []) : null
 
@@ -539,10 +571,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     (!inscritosDelBloque || inscritosDelBloque.has(j.id))
   )
 
-  const bloqueElegido = bloquesHoy.find(b => b.id === bloqueSel) ?? null
+  const bloqueElegido = bloquesTodos.find(b => b.id === bloqueSel) ?? null
+  const bloqueSelEsDeHoy = !!bloqueElegido && bloquesHoy.some(b => b.id === bloqueSel)
 
   // Los que hoy no están en ningún bloque: para ellos, venir es una clase extra.
-  const conBloqueHoy = new Set(Object.values(inscritosDe).flat())
+  // Solo los de hoy: si contara toda la semana, nadie sería candidato a extra.
+  const conBloqueHoy = new Set(Object.values(inscritosHoy).flat())
   function tieneBloqueHoy(jugadorId: string) {
     return conBloqueHoy.has(jugadorId)
   }
@@ -757,9 +791,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
             value={busqueda} onChange={e => setBusqueda(e.target.value)}
           />
 
-          {/* Recinto y horario. Solo aparecen los bloques que se dictan hoy:
-              el resto de la semana no sirve para pasar lista ahora. */}
-          {bloquesHoy.length > 0 && (
+          {/* Recinto y horario, de toda la semana. Son para encontrar a alguien,
+              no solo para pasar lista de hoy. */}
+          {bloquesTodos.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
               {sedesHoy.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -797,13 +831,16 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 {bloquesDeLaSede.map(b => {
                   const activo = bloqueSel === b.id
                   const cuantos = (inscritosDe[b.id] ?? []).length
+                  // Con la semana entera, dos grupos pueden compartir hora en
+                  // días distintos. Sin el día en la etiqueta son iguales.
+                  const esHoy = b.dia_semana === diaDeHoy()
                   return (
                     <button key={b.id} onClick={() => setBloqueSel(activo ? '' : b.id)}
                       style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
-                        border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
+                        border: `1px solid ${activo ? '#4f46e5' : esHoy ? '#c7d2fe' : '#e2e8f0'}`,
                         background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
-                        color: activo ? '#ffffff' : muted }}>
-                      {rangoHorario(b.hora_inicio, b.hora_fin)} · {cuantos}
+                        color: activo ? '#ffffff' : esHoy ? text : muted }}>
+                      {esHoy ? 'hoy' : b.dia_semana} · {rangoHorario(b.hora_inicio, b.hora_fin)} · {cuantos}
                     </button>
                   )
                 })}
@@ -812,6 +849,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               {bloqueElegido && (
                 <div style={{ fontSize: 11, color: hint }}>
                   {bloqueElegido.nombre} — {sedeLabel(bloqueElegido.sede)}
+                  {!bloqueSelEsDeHoy && ' · ese grupo no entrena hoy'}
                 </div>
               )}
             </div>
