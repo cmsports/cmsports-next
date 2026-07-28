@@ -32,6 +32,10 @@ export type BloqueVigente = Vigencia & {
   nombre: string
   sede: string
   dia_semana: string
+  // El cálculo no las mira; las pantallas que dejan elegir un bloque sí, porque
+  // es la hora lo que distingue dos grupos del mismo día.
+  hora_inicio?: string
+  hora_fin?: string
 }
 
 export type InscripcionVigente = Vigencia & {
@@ -48,8 +52,19 @@ export type RegistroAsistencia = {
 /** Excepción: ese día ese bloque no se dictó. */
 export type Excepcion = { bloque_id: string; fecha: string }
 
-/** Vino a un grupo que no es el suyo. Se cobra aparte y no consume sesión. */
-export type ClaseExtra = { jugador_id: string; fecha: string }
+/**
+ * Vino a un grupo que no es el suyo. Se cobra aparte y no consume sesión.
+ *
+ * Al cálculo le alcanza con saber quién y qué día. El resto lo llevan las
+ * pantallas que además la editan, y por eso va opcional.
+ */
+export type ClaseExtra = {
+  jugador_id: string
+  fecha: string
+  id?: string
+  bloque_id?: string | null
+  monto?: number | null
+}
 
 const DIA_POR_INDICE = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
 
@@ -173,6 +188,28 @@ export function calendarioJugador(
     out.push({ fecha, dia, estado: estadoDe.get(fecha) ?? 'pendiente', bloques: nombres, extra })
   }
   return out
+}
+
+/**
+ * Los grupos que se dictaban ese día y en los que el jugador NO estaba.
+ *
+ * Es la definición de "un grupo que no es el suyo", que es lo único que hace
+ * extraordinaria a una clase. La base vuelve a comprobarlo antes de escribir:
+ * esto es para ofrecerle al profe una lista corta y correcta, no para decidir.
+ */
+export function bloquesSinInscripcion(
+  datos: DatosHistorial,
+  jugadorId: string,
+  fecha: string,
+  dia: string,
+): BloqueVigente[] {
+  const suyos = new Set(
+    datos.inscripciones
+      .filter(i => i.jugador_id === jugadorId && vigenteEn(i, fecha))
+      .map(i => i.bloque_id),
+  )
+  return datos.bloques.filter(b =>
+    b.dia_semana === dia && vigenteEn(b, fecha) && !suyos.has(b.id))
 }
 
 export type Indicadores = {

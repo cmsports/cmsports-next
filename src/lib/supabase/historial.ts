@@ -24,7 +24,7 @@ export async function cargarHistorialJugador(
   const [{ data: bloques }, { data: inscripciones }, { data: asistencias }, { data: excepciones }, { data: extras }] =
     await Promise.all([
       db.from('bloques_horario')
-        .select('id,nombre,sede,dia_semana,vigente_desde,vigente_hasta')
+        .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,vigente_desde,vigente_hasta')
         .eq('club_id', clubId),
       db.from('bloque_jugadores')
         .select('bloque_id,jugador_id,vigente_desde,vigente_hasta')
@@ -37,7 +37,7 @@ export async function cargarHistorialJugador(
       // Si la migración 098 todavía no corrió, esto devuelve error y data null.
       // El `?? []` lo absorbe: el calendario queda como antes en vez de romperse.
       db.from('clases_extraordinarias')
-        .select('jugador_id,fecha')
+        .select('id,jugador_id,fecha,bloque_id,monto')
         .eq('jugador_id', jugadorId).gte('fecha', desde).lte('fecha', hasta),
     ])
 
@@ -62,7 +62,7 @@ export async function cargarHistorialClub(
   const [{ data: bloques }, { data: inscripciones }, { data: asistencias }, { data: excepciones }, { data: extras }] =
     await Promise.all([
       db.from('bloques_horario')
-        .select('id,nombre,sede,dia_semana,vigente_desde,vigente_hasta')
+        .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,vigente_desde,vigente_hasta')
         .eq('club_id', clubId),
       db.from('bloque_jugadores')
         .select('bloque_id,jugador_id,vigente_desde,vigente_hasta'),

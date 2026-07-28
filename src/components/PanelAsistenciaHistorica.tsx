@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { corregirAsistencia } from '@/app/actions/asistencia'
+import {
+  asignarMontoClaseExtraordinaria, corregirAsistencia,
+  eliminarClaseExtraordinaria, registrarClaseExtraordinaria,
+} from '@/app/actions/asistencia'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
-import { diaLabel } from '@/lib/domain/horario'
+import { diaLabel, rangoHorario } from '@/lib/domain/horario'
+import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
+import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import {
-  calendarioJugador, indicadores,
-  type DatosHistorial, type DiaCalendario, type EstadoDia,
+  bloquesSinInscripcion, calendarioJugador, indicadores,
+  type BloqueVigente, type DatosHistorial, type DiaCalendario, type EstadoDia,
 } from '@/lib/domain/historialAsistencia'
 
 const supabase = createClient()
@@ -41,7 +46,12 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
   const [cargando, setCargando]   = useState(false)
   const [guardando, setGuardando] = useState<string | null>(null)
   const [mensaje, setMensaje]     = useState('')
-  const [abierto, setAbierto]     = useState<DiaCalendario | null>(null)
+  // El modal trabaja sobre una fecha, no sobre un día ya programado: también se
+  // abre en días en que no le tocaba entrenar, para registrar que vino igual.
+  const [abierto, setAbierto]     = useState<{ fecha: string; dia: string } | null>(null)
+  const [bloqueExtra, setBloqueExtra] = useState('')
+  const [montoExtra, setMontoExtra]   = useState('')
+  const [ocupado, setOcupado]         = useState(false)
 
   const hoy = fechaChile()
 
@@ -79,15 +89,66 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
   const porFecha = useMemo(() => new Map(dias.map(d => [d.fecha, d])), [dias])
   const ind = useMemo(() => indicadores(dias), [dias])
 
-  async function cambiar(dia: DiaCalendario, estado: 'presente' | 'ausente' | 'sin_registro') {
+  async function cambiar(fecha: string, estado: 'presente' | 'ausente' | 'sin_registro') {
     if (!elegido) return
-    setGuardando(dia.fecha)
+    setGuardando(fecha)
     setMensaje('')
-    const res = await corregirAsistencia({ jugadorId: elegido.id, fecha: dia.fecha, estado })
+    const res = await corregirAsistencia({ jugadorId: elegido.id, fecha, estado })
     setGuardando(null)
     if (res?.error) { setMensaje(res.error); return }
     setAbierto(null)
     await cargarHistorial(elegido.id, anio)
+  }
+
+  function bloquesParaExtra(fecha: string, dia: string): BloqueVigente[] {
+    if (!datos || !elegido) return []
+    return bloquesSinInscripcion(datos, elegido.id, fecha, dia)
+  }
+
+  function extraDe(fecha: string) {
+    return (datos?.extraordinarias ?? []).find(e => e.fecha === fecha) ?? null
+  }
+
+  async function crearExtra(fecha: string) {
+    if (!elegido || !bloqueExtra) return
+    setOcupado(true)
+    setMensaje('')
+    const res = await registrarClaseExtraordinaria({
+      jugadorId: elegido.id, fecha, bloqueId: bloqueExtra,
+      monto: montoIngresado(montoExtra),
+    })
+    setOcupado(false)
+    if (res.error) { setMensaje(res.error); return }
+    setAbierto(null)
+    await cargarHistorial(elegido.id, anio)
+  }
+
+  async function guardarMontoExtra(id: string) {
+    setOcupado(true)
+    setMensaje('')
+    const res = await asignarMontoClaseExtraordinaria({ id, monto: montoIngresado(montoExtra) })
+    setOcupado(false)
+    if (res.error) { setMensaje(res.error); return }
+    setAbierto(null)
+    if (elegido) await cargarHistorial(elegido.id, anio)
+  }
+
+  async function borrarExtra(id: string) {
+    setOcupado(true)
+    setMensaje('')
+    const res = await eliminarClaseExtraordinaria({ id })
+    setOcupado(false)
+    if (res.error) { setMensaje(res.error); return }
+    setAbierto(null)
+    if (elegido) await cargarHistorial(elegido.id, anio)
+  }
+
+  function abrirDia(fecha: string, dia: string) {
+    const ex = extraDe(fecha)
+    setBloqueExtra('')
+    setMontoExtra(ex?.monto != null ? String(ex.monto) : '')
+    setMensaje('')
+    setAbierto({ fecha, dia })
   }
 
   const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
@@ -194,7 +255,7 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
         <div className="anim-lista" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>
           {MESES.map((nombreMes, m) => (
             <Mes key={m} anio={anio} mes={m} nombre={nombreMes} porFecha={porFecha} hoy={hoy}
-              onDia={d => setAbierto(d)} />
+              onDia={abrirDia} />
           ))}
         </div>
       )}
@@ -205,10 +266,17 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
           className="anim-fondo"
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
             alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
-          <div className="anim-modal" style={{ ...card, padding: 20, width: '100%', maxWidth: 360 }}>
+          {(() => {
+            const dia      = porFecha.get(abierto.fecha) ?? null
+            const extra    = extraDe(abierto.fecha)
+            const programado = !!dia && dia.estado !== 'extraordinaria'
+            const candidatos = bloquesParaExtra(abierto.fecha, abierto.dia)
+            return (
+          <div className="anim-modal" style={{ ...card, padding: 20, width: '100%', maxWidth: 380 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: text }}>{abierto.fecha}</div>
             <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 16 }}>
-              {diaLabel(abierto.dia)} · {abierto.bloques.join(' · ')}
+              {diaLabel(abierto.dia)}
+              {programado ? ` · ${dia!.bloques.join(' · ')}` : ' · no le tocaba entrenar'}
             </div>
             {/* El error va acá adentro y no arriba de la página: con el modal
                 abierto, un mensaje de fondo no se ve y parece que el botón no
@@ -220,25 +288,19 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
               </div>
             )}
 
-            {/* Un día de clase extra no tiene "asistió" ni "faltó": no era su
-                grupo, así que no había obligación que cumplir. Ofrecer esos
-                botones escribiría una asistencia en un día no programado, que
-                es justo el error que la clase extra vino a arreglar. */}
-            {abierto.estado === 'extraordinaria' ? (
-              <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 8,
-                padding: '11px 13px', fontSize: 12, color: '#713f12', marginBottom: 12 }}>
-                Ese día vino a un grupo que no es el suyo. No le descuenta sesiones
-                y no entra en su porcentaje de asistencia; se cobra aparte.
-              </div>
-            ) : ([
+            {/* Asistió / faltó solo existe si ese día le tocaba entrenar. En un
+                día que no le tocaba, esos botones escribirían una asistencia sin
+                clase programada: justo el error que la clase extra vino a
+                arreglar. */}
+            {programado && ([
               ['presente', 'Asistió'],
               ['ausente', 'Faltó'],
               ['sin_registro', 'Dejar sin registrar'],
             ] as const).map(([estado, label]) => {
-              const actual = estado === 'sin_registro' ? abierto.estado === 'pendiente' : abierto.estado === estado
+              const actual = estado === 'sin_registro' ? dia!.estado === 'pendiente' : dia!.estado === estado
               const c = estado === 'sin_registro' ? COLOR.pendiente : COLOR[estado]
               return (
-                <button key={estado} onClick={() => cambiar(abierto, estado)} disabled={guardando === abierto.fecha}
+                <button key={estado} onClick={() => cambiar(abierto.fecha, estado)} disabled={guardando === abierto.fecha}
                   style={{ width: '100%', padding: '11px 14px', marginBottom: 8, borderRadius: 9, fontSize: 13, fontWeight: 600,
                     cursor: guardando ? 'wait' : 'pointer', textAlign: 'left',
                     border: `1px solid ${actual ? c.bg : '#e2e8f0'}`,
@@ -248,12 +310,86 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
                 </button>
               )
             })}
+
+            {/* ── Clase extra ── */}
+            <div style={{ marginTop: programado ? 14 : 0, paddingTop: programado ? 14 : 0,
+              borderTop: programado ? '1px solid #e2e8f0' : 'none' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#713f12', marginBottom: 8 }}>
+                🟡 Clase extra
+              </div>
+
+              {extra ? (
+                <>
+                  <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
+                    Vino a un grupo que no es el suyo. No le descuenta sesiones ni
+                    entra en su porcentaje; se cobra aparte.
+                  </div>
+                  <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4 }}>
+                    Monto por esta clase (CLP)
+                  </label>
+                  <input type="number" value={montoExtra} onChange={e => setMontoExtra(e.target.value)}
+                    placeholder={SIN_CUOTA}
+                    style={{ width: '100%', boxSizing: 'border-box', background: '#fffbeb', border: '1px solid #fde047',
+                      borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none', marginBottom: 10 }} />
+                  <button onClick={() => guardarMontoExtra(extra.id!)} disabled={ocupado || !extra.id}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+                      border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+                      cursor: ocupado ? 'wait' : 'pointer' }}>
+                    {ocupado ? 'Guardando...' : 'Guardar monto'}
+                  </button>
+                  <button onClick={() => borrarExtra(extra.id!)} disabled={ocupado || !extra.id}
+                    style={{ width: '100%', padding: '8px 14px', marginTop: 6, borderRadius: 9, fontSize: 12,
+                      border: 'none', background: 'transparent', color: '#dc2626', cursor: ocupado ? 'wait' : 'pointer' }}>
+                    Borrar esta clase extra
+                  </button>
+                </>
+              ) : candidatos.length === 0 ? (
+                <div style={{ fontSize: 11, color: hint }}>
+                  Ese día no había ningún otro grupo al que pudiera venir.
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
+                    ¿Vino a otro grupo ese día? Elegí a cuál.
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
+                    {candidatos.map(b => {
+                      const sel = bloqueExtra === b.id
+                      return (
+                        <button key={b.id} onClick={() => setBloqueExtra(sel ? '' : b.id)}
+                          style={{ padding: '8px 11px', borderRadius: 8, fontSize: 12, fontWeight: 600, textAlign: 'left',
+                            border: `1px solid ${sel ? '#eab308' : '#e2e8f0'}`,
+                            background: sel ? '#fefce8' : '#fff', color: text, cursor: 'pointer' }}>
+                          {b.hora_inicio && b.hora_fin ? `${rangoHorario(b.hora_inicio, b.hora_fin)} · ` : ''}
+                          {b.nombre}
+                          <span style={{ color: hint, fontWeight: 400 }}> — {sedeLabel(b.sede)}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <input type="number" value={montoExtra} onChange={e => setMontoExtra(e.target.value)}
+                    placeholder={`Monto — ${SIN_CUOTA.toLowerCase()}`}
+                    style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
+                      borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none', marginBottom: 10 }} />
+                  <button onClick={() => crearExtra(abierto.fecha)} disabled={ocupado || !bloqueExtra}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+                      border: 'none', color: bloqueExtra ? '#422006' : '#94a3b8',
+                      background: bloqueExtra ? '#eab308' : '#e2e8f0',
+                      cursor: bloqueExtra && !ocupado ? 'pointer' : 'default' }}>
+                    {ocupado ? 'Registrando...' : 'Registrar clase extra'}
+                  </button>
+                </>
+              )}
+            </div>
+
             <button onClick={() => setAbierto(null)}
-              style={{ width: '100%', padding: '9px 14px', marginTop: 4, borderRadius: 9, fontSize: 13,
+              style={{ width: '100%', padding: '9px 14px', marginTop: 10, borderRadius: 9, fontSize: 13,
                 border: 'none', background: 'transparent', color: muted, cursor: 'pointer' }}>
-              Cancelar
+              Cerrar
             </button>
           </div>
+            )
+          })()}
         </div>
       )}
     </div>
@@ -267,7 +403,7 @@ function Mes({ anio, mes, nombre, porFecha, hoy, onDia }: {
   nombre: string
   porFecha: Map<string, DiaCalendario>
   hoy: string
-  onDia: (d: DiaCalendario) => void
+  onDia: (fecha: string, dia: string) => void
 }) {
   const primero = new Date(anio, mes, 1)
   const dias = new Date(anio, mes + 1, 0).getDate()
@@ -279,6 +415,9 @@ function Mes({ anio, mes, nombre, porFecha, hoy, onDia }: {
     const fecha = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     celdas.push(porFecha.get(fecha) ?? d)
   }
+
+  const diaDeFecha = (f: string) =>
+    (['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'])[new Date(f + 'T12:00:00').getDay()]
 
   const conEntreno = celdas.filter(c => typeof c === 'object' && c !== null).length
 
@@ -294,8 +433,22 @@ function Mes({ anio, mes, nombre, porFecha, hoy, onDia }: {
         ))}
         {celdas.map((c, i) => {
           if (c === null) return <div key={i} />
+          // Un día en que no le tocaba entrenar. Se puede abrir igual: es donde
+          // se registra que vino a otro grupo. El fin de semana no, porque el
+          // club no abre y no hay ningún bloque al que pudiera haber venido.
           if (typeof c === 'number') {
-            return <div key={i} style={{ fontSize: 10, color: '#cbd5e1', textAlign: 'center', padding: '4px 0' }}>{c}</div>
+            const fecha = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(c).padStart(2, '0')}`
+            const dia = diaDeFecha(fecha)
+            const habil = dia !== 'sab' && dia !== 'dom'
+            return (
+              <div key={i}
+                onClick={habil ? () => onDia(fecha, dia) : undefined}
+                title={habil ? `${fecha} · no le tocaba entrenar` : undefined}
+                style={{ fontSize: 10, color: '#cbd5e1', textAlign: 'center', padding: '4px 0',
+                  borderRadius: 4, cursor: habil ? 'pointer' : 'default' }}>
+                {c}
+              </div>
+            )
           }
           const col = COLOR[c.estado]
           const esHoy = c.fecha === hoy
@@ -304,7 +457,7 @@ function Mes({ anio, mes, nombre, porFecha, hoy, onDia }: {
           const puntoExtra = c.extra && c.estado !== 'extraordinaria'
           const detalle = c.bloques.length > 0 ? ` · ${c.bloques.join(', ')}` : ''
           return (
-            <div key={i} onClick={() => onDia(c)}
+            <div key={i} onClick={() => onDia(c.fecha, c.dia)}
               title={`${c.fecha} · ${col.label}${detalle}${puntoExtra ? ' · + clase extra' : ''}`}
               style={{ position: 'relative', fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '4px 0', borderRadius: 4,
                 background: col.bg, color: col.fg, cursor: 'pointer',

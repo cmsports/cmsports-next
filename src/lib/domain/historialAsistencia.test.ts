@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  calendarioJugador, diasHabiles, indexar, indicadores,
+  bloquesSinInscripcion, calendarioJugador, diasHabiles, indexar, indicadores,
   type DatosHistorial, type EstadoDia,
 } from './historialAsistencia'
 
@@ -318,6 +318,47 @@ describe('clases extraordinarias', () => {
       extraordinarias: [{ jugador_id: 'otro', fecha: '2026-08-03' }],
     }))
     expect(cal).toEqual([])
+  })
+})
+
+describe('bloquesSinInscripcion', () => {
+  const inscritoMar = [
+    { bloque_id: 'b-mar', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null },
+  ]
+
+  it('deja fuera el grupo en el que sí está', () => {
+    // Martes: existe b-mar, y está inscrito. No hay otro martes.
+    const libres = bloquesSinInscripcion(datos({ inscripciones: inscritoMar }), JUG, '2026-08-04', 'mar')
+    expect(libres).toEqual([])
+  })
+
+  it('ofrece los grupos de ese día en los que no está', () => {
+    // Lunes: existe b-lun y no está inscrito.
+    const libres = bloquesSinInscripcion(datos({ inscripciones: inscritoMar }), JUG, '2026-08-03', 'lun')
+    expect(libres.map(b => b.id)).toEqual(['b-lun'])
+  })
+
+  it('no ofrece grupos de otro día de la semana', () => {
+    const libres = bloquesSinInscripcion(datos({ inscripciones: [] }), JUG, '2026-08-03', 'lun')
+    expect(libres.map(b => b.id)).not.toContain('b-mar')
+  })
+
+  it('no ofrece un grupo que todavía no existía', () => {
+    const futuro = { id: 'b-nuevo', nombre: 'Nuevo', sede: 'buin', dia_semana: 'lun', vigente_desde: '2026-10-01', vigente_hasta: null }
+    const libres = bloquesSinInscripcion(
+      datos({ bloques: [bloqueLun, futuro], inscripciones: [] }), JUG, '2026-08-03', 'lun')
+    expect(libres.map(b => b.id)).toEqual(['b-lun'])
+  })
+
+  // Si en marzo estaba en ese grupo y en agosto ya no, en marzo su asistencia
+  // era la normal y en agosto venir ahí es una clase extra.
+  it('mira la inscripción tal como estaba esa fecha', () => {
+    const cerrada = [
+      { bloque_id: 'b-lun', jugador_id: JUG, vigente_desde: '2026-03-01', vigente_hasta: '2026-06-30' },
+    ]
+    const d = datos({ inscripciones: cerrada })
+    expect(bloquesSinInscripcion(d, JUG, '2026-03-02', 'lun').map(b => b.id)).toEqual([])
+    expect(bloquesSinInscripcion(d, JUG, '2026-08-03', 'lun').map(b => b.id)).toEqual(['b-lun'])
   })
 })
 
