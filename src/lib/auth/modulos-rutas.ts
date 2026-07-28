@@ -6,9 +6,11 @@ export const MODULOS_CLUB = [
 export type ModuloClub = typeof MODULOS_CLUB[number]
 
 const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly string[] }> = [
-  { modulo: 'torneos', rutas: ['/torneos', '/torneos-externos'] },
+  { modulo: 'torneos', rutas: ['/torneos'] },
   { modulo: 'liga', rutas: ['/liga'] },
-  { modulo: 'clases', rutas: ['/clases', '/mis-clases', '/horario'] },
+  // `/mi-horario` es la vista del jugador de lo mismo que el staff arma en
+  // `/horario`, así que depende del mismo módulo.
+  { modulo: 'clases', rutas: ['/clases', '/mis-clases', '/horario', '/mi-horario'] },
   { modulo: 'calendario', rutas: ['/calendario'] },
   { modulo: 'asistencia', rutas: ['/asistencia'] },
   { modulo: 'mensualidades', rutas: ['/mensualidades', '/estado-cuenta'] },

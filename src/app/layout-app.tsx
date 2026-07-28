@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect } from 'react'
 import type { LucideIcon } from 'lucide-react'
@@ -71,8 +71,8 @@ const navJugador = [
   { label: 'Central de Pago', emoji: '🏦',     icon: Landmark,      href: '/central-de-pago' },
   { label: 'Asistencia', emoji: '✅',          icon: ClipboardCheck,href: '/asistencia',    modulo: 'asistencia' },
   { section: 'Club' },
+  { label: 'Mi horario', emoji: '🗓️',         icon: CalendarClock, href: '/mi-horario',    modulo: 'clases' },
   { label: 'Mis clases', emoji: '📚',          icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
-  { label: 'Mis Torneos', emoji: '🌎',         icon: Globe,         href: '/torneos-externos', modulo: 'torneos' },
   { label: 'Ranking', emoji: '🥇',             icon: Award,         href: '/ranking',          modulo: 'torneos' },
   { label: 'Calendario', emoji: '📅',          icon: Calendar,      href: '/calendario',    modulo: 'calendario' },
   { section: 'Tienda' },
@@ -101,7 +101,7 @@ const mobileNavJugador = [
   { label: 'Perfil', emoji: '👤',     icon: User,           href: '/perfil' },
   { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia',    modulo: 'asistencia' },
   { label: 'Mis clases', emoji: '📚', icon: BookOpen,        href: '/mis-clases',    modulo: 'clases' },
-  { label: 'Mis Torneos', emoji: '🌎', icon: Trophy,          href: '/torneos-externos', modulo: 'torneos' },
+  { label: 'Mi horario', emoji: '🗓️', icon: CalendarClock,   href: '/mi-horario',    modulo: 'clases' },
 ]
 
 type NavLink = { label: string; icon: LucideIcon; emoji?: string; href: string; modulo?: string }

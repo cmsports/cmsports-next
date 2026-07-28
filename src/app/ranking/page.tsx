@@ -151,8 +151,16 @@ export default function RankingPage() {
       return gOrder(a.genero) - gOrder(b.genero)
     })
 
-    setRankingPorCategoria(resultado)
-    if (resultado.length > 0 && !categoriaActiva) setCategoriaActiva(`${resultado[0].categoria}||${resultado[0].genero ?? ''}`)
+    // El jugador solo ve la categoría donde compite. Se filtra por dónde
+    // aparece él y no por su `categoria` de ficha: la del ranking sale del
+    // torneo y las dos no siempre se escriben igual, así que compararlas por
+    // texto lo dejaría sin ranking sin que nadie entendiera por qué.
+    const soloSuyas = perfil?.rol === 'jugador' && perfil.jugador_id
+      ? resultado.filter(r => r.filas.some(f => f.jugadorId === perfil.jugador_id))
+      : resultado
+
+    setRankingPorCategoria(soloSuyas)
+    if (soloSuyas.length > 0 && !categoriaActiva) setCategoriaActiva(`${soloSuyas[0].categoria}||${soloSuyas[0].genero ?? ''}`)
     setLoading(false)
   }
 
@@ -221,12 +229,15 @@ export default function RankingPage() {
 
         {rankingPorCategoria.length === 0 ? (
           <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
-            No hay partidos registrados en torneos internos
+            {perfil?.rol === 'jugador'
+              ? 'Todavía no jugaste partidos en torneos internos'
+              : 'No hay partidos registrados en torneos internos'}
           </div>
         ) : (
           <>
-            {/* Tabs de categorías */}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            {/* Tabs de categorías. Con una sola no hay nada que elegir, que es
+                el caso del jugador: solo ve la suya. */}
+            <div style={{ display: rankingPorCategoria.length > 1 ? 'flex' : 'none', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               {rankingPorCategoria.map(r => (
                 <button
                   key={`${r.categoria}||${r.genero ?? ''}`}
