@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   requirePerfil: vi.fn(),
   rpc: vi.fn(),
   bloquesDelJugador: vi.fn(),
+  suspensionesDeHoy: vi.fn(),
   fechaChile: vi.fn(),
   horaChile: vi.fn(),
 }))
@@ -24,16 +25,21 @@ import {
 
 // 2026-07-28 es martes. Menores Avanzado va los martes de 17:00 a 19:00.
 const MARTES = '2026-07-28'
+// Con vigencia, que en la base es NOT NULL: sin ella la fixture describía una
+// fila que no puede existir.
 const BLOQUE_MARTES = {
-  nombre: 'Menores Avanzado', dia_semana: 'mar',
+  id: 'b-mar', nombre: 'Menores Avanzado', dia_semana: 'mar',
   hora_inicio: '17:00:00', hora_fin: '19:00:00', activo: true,
+  vigente_desde: '2026-01-01', vigente_hasta: null,
 }
 
-// La consulta real es from().select().eq(jugador).is(vigente_hasta, null):
-// solo cuentan las inscripciones abiertas.
+// Dos consultas distintas: las inscripciones abiertas del jugador
+// —select().eq().is()— y las suspensiones del día —select().in().eq()—.
 const supabaseFalso = {
   rpc: mocks.rpc,
-  from: () => ({ select: () => ({ eq: () => ({ is: () => mocks.bloquesDelJugador() }) }) }),
+  from: (tabla: string) => tabla === 'bloque_excepciones'
+    ? { select: () => ({ in: () => ({ eq: () => mocks.suspensionesDeHoy() }) }) }
+    : { select: () => ({ eq: () => ({ is: () => mocks.bloquesDelJugador() }) }) },
 }
 
 describe('asistencia entre roles', () => {
@@ -48,6 +54,7 @@ describe('asistencia entre roles', () => {
     mocks.bloquesDelJugador.mockResolvedValue({
       data: [{ bloques_horario: BLOQUE_MARTES }], error: null,
     })
+    mocks.suspensionesDeHoy.mockResolvedValue({ data: [], error: null })
     mocks.fechaChile.mockReturnValue(MARTES)
     mocks.horaChile.mockReturnValue('18:00')   // en pleno entrenamiento
   })
@@ -113,6 +120,7 @@ describe('ventana horaria del autorregistro', () => {
     mocks.bloquesDelJugador.mockResolvedValue({
       data: [{ bloques_horario: BLOQUE_MARTES }], error: null,
     })
+    mocks.suspensionesDeHoy.mockResolvedValue({ data: [], error: null })
     mocks.fechaChile.mockReturnValue(MARTES)
   })
 
@@ -167,6 +175,77 @@ describe('ventana horaria del autorregistro', () => {
     const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
 
     expect(resultado.error).toContain('no tenés entrenamiento')
+  })
+
+  // El día marcado sin clase existe para que ese día no cuente. Sin esta
+  // comprobación el alumno se registraba igual en pleno feriado, y esa
+  // asistencia después ensuciaba el porcentaje del mes.
+  it('no deja marcar si el día está marcado sin clase, y dice el motivo', async () => {
+    mocks.horaChile.mockReturnValue('18:00')
+    mocks.suspensionesDeHoy.mockResolvedValue({
+      data: [{ bloque_id: 'b-mar', motivo: 'feriado' }], error: null,
+    })
+
+    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
+
+    expect(resultado.error).toContain('no hay clase')
+    expect(resultado.error).toContain('feriado')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('sin motivo escrito igual avisa que no hay clase', async () => {
+    mocks.horaChile.mockReturnValue('18:00')
+    mocks.suspensionesDeHoy.mockResolvedValue({
+      data: [{ bloque_id: 'b-mar', motivo: null }], error: null,
+    })
+
+    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
+
+    expect(resultado.error).toContain('no hay clase')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  // Suspender un grupo no tiene por qué suspender el otro del mismo día.
+  it('con dos grupos el mismo día, si solo uno se suspende igual puede marcar', async () => {
+    mocks.horaChile.mockReturnValue('18:00')
+    mocks.bloquesDelJugador.mockResolvedValue({
+      data: [
+        { bloques_horario: BLOQUE_MARTES },
+        { bloques_horario: { ...BLOQUE_MARTES, id: 'b-mar-2', nombre: 'Refuerzo' } },
+      ],
+      error: null,
+    })
+    mocks.suspensionesDeHoy.mockResolvedValue({
+      data: [{ bloque_id: 'b-mar', motivo: 'feriado' }], error: null,
+    })
+
+    await expect(registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00'))
+      .resolves.toEqual({ ok: true, asistenciaId: 'asistencia-1' })
+  })
+
+  // Dar de baja un grupo le cierra la vigencia; `activo` sigue en true.
+  it('ignora un grupo que ya cerró', async () => {
+    mocks.horaChile.mockReturnValue('18:00')
+    mocks.bloquesDelJugador.mockResolvedValue({
+      data: [{ bloques_horario: { ...BLOQUE_MARTES, vigente_hasta: '2026-07-01' } }], error: null,
+    })
+
+    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
+
+    expect(resultado.error).toContain('no tenés entrenamiento')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('ignora un grupo que todavía no empezó', async () => {
+    mocks.horaChile.mockReturnValue('18:00')
+    mocks.bloquesDelJugador.mockResolvedValue({
+      data: [{ bloques_horario: { ...BLOQUE_MARTES, vigente_desde: '2026-09-01' } }], error: null,
+    })
+
+    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
+
+    expect(resultado.error).toContain('no tenés entrenamiento')
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it('al staff no se le aplica la ventana', async () => {

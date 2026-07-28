@@ -114,6 +114,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Los bloques de hoy del propio jugador, para saber si puede marcarse.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [misBloquesHoy, setMisBloquesHoy] = useState<any[] | null>(null)
+  // Le tocaba entrenar hoy, pero el día está marcado sin clase.
+  const [hoySinClase,   setHoySinClase]   = useState(false)
+  // Lo mismo pero para el staff, sobre el día que está mirando.
+  const [suspension,    setSuspension]    = useState<{ grupos: number; motivo: string | null } | null>(null)
   const recargaPendiente = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
@@ -223,6 +227,25 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     setExtrasDeHoy((deHoy ?? []) as ClaseExtraHoy[])
   }, [clubId])
 
+  // El staff marca el día sin clase en Horario y acá no había ninguna señal:
+  // se podía pasar lista de un día que el club dio por suspendido, y esas
+  // asistencias no las descuenta nadie. Es aviso, no control: marcarlo y
+  // deshacerlo se sigue haciendo en Horario, que es donde vive el horario.
+  const cargarSuspension = useCallback(async (fecha: string, cid?: string) => {
+    const id = cid || clubId
+    if (!id || !esAdminOProfesor) return
+    const { data: bl } = await supabase.from('bloques_horario')
+      .select('id').eq('club_id', id)
+    const ids = (bl ?? []).map((b: { id: string }) => b.id)
+    if (ids.length === 0) { setSuspension(null); return }
+    const { data } = await supabase.from('bloque_excepciones')
+      .select('motivo').in('bloque_id', ids).eq('fecha', fecha)
+    const filas = (data ?? []) as { motivo: string | null }[]
+    setSuspension(filas.length === 0
+      ? null
+      : { grupos: filas.length, motivo: filas.map(f => f.motivo).find(Boolean) ?? null })
+  }, [clubId, esAdminOProfesor])
+
   const cargarAsistenciasDia = useCallback(async (fecha: string) => {
     if (!clubId) return
     setCargandoDia(true)
@@ -250,10 +273,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     void cargar()
   }, [cargarDatos, cargarExtras, perfil, router, sincronizarCola])
 
-  // Las extras se recargan al cambiar el día que se está mirando.
+  // Las extras y el aviso de día suspendido se recargan al cambiar el día que
+  // se está mirando.
   useEffect(() => {
-    if (clubId && fechaVista) void cargarExtras(fechaVista)
-  }, [cargarExtras, clubId, fechaVista])
+    if (!clubId || !fechaVista) return
+    void cargarExtras(fechaVista)
+    void cargarSuspension(fechaVista)
+  }, [cargarExtras, cargarSuspension, clubId, fechaVista])
 
   useEffect(() => {
     if (online && clubId) {
@@ -310,20 +336,40 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     let vigente = true
     void (async () => {
       const { data } = await supabase.from('bloque_jugadores')
-        .select('bloques_horario(nombre,dia_semana,hora_inicio,hora_fin,activo)')
+        .select('bloques_horario(id,nombre,dia_semana,hora_inicio,hora_fin,activo,vigente_desde,vigente_hasta)')
         .eq('jugador_id', perfil.jugador_id).is('vigente_hasta', null)
       if (!vigente) return
       const dia = diaDeHoy()
-      setMisBloquesHoy((data ?? [])
+      const suyos = (data ?? [])
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((r: any) => r.bloques_horario)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter((b: any) => b && b.activo && b.dia_semana === dia)
+        .filter((b: any) => b && b.activo && b.dia_semana === dia
+          && b.vigente_desde <= hoy && (b.vigente_hasta === null || b.vigente_hasta >= hoy))
+
+      // Lo mismo que comprueba el servidor antes de dejar marcar: si el día
+      // está sin clase, no hay entrenamiento que anunciar. Si el panel dijera
+      // "tu entrenamiento es a las 17:00" y el botón contestara "hoy no hay
+      // clase", el alumno pensaría que la app está rota.
+      const { data: susp } = suyos.length > 0
+        ? await supabase.from('bloque_excepciones').select('bloque_id')
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .in('bloque_id', suyos.map((b: any) => b.id)).eq('fecha', hoy)
+        : { data: [] }
+      if (!vigente) return
+      const sinClase = new Set((susp ?? []).map((e: { bloque_id: string }) => e.bloque_id))
+
+      // Se distingue "hoy no te toca" de "hoy se suspendió": para el alumno no
+      // son lo mismo y el cartel tiene que decir cuál es.
+      setHoySinClase(suyos.length > 0 && sinClase.size === suyos.length)
+      setMisBloquesHoy(suyos
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter((b: any) => !sinClase.has(b.id))
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .sort((a: any, b: any) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio))))
     })()
     return () => { vigente = false }
-  }, [perfil?.jugador_id, esAdminOProfesor])
+  }, [perfil?.jugador_id, esAdminOProfesor, hoy])
 
   useEffect(() => {
     if (!clubId || !fechaVista || fechaVista === hoy) return
@@ -532,7 +578,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const miVentana = misBloquesHoy === null ? null : (() => {
     if (miBloqueAbierto) return { abierta: true, motivo: '' }
     if (misBloquesHoy.length === 0) {
-      return { abierta: false, motivo: 'Hoy no tenés entrenamiento asignado. Si viniste igual, pedile al profe que te marque.' }
+      return {
+        abierta: false,
+        motivo: hoySinClase
+          ? 'Hoy no hay clase: el día está suspendido. No hace falta que marques nada.'
+          : 'Hoy no tenés entrenamiento asignado. Si viniste igual, pedile al profe que te marque.',
+      }
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const proximo = misBloquesHoy.find((b: any) => hhmm(b.hora_inicio) > hora)
@@ -629,6 +680,20 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           fontSize: 14, fontWeight: 600, color: mensaje.tipo === 'ok' ? '#16a34a' : '#dc2626',
         }}>
           {mensaje.texto}
+        </div>
+      )}
+
+      {/* El día está marcado sin clase desde Horario. Acá solo se avisa: sin
+          esto se podía pasar lista de un día que el club dio por suspendido. */}
+      {esAdminOProfesor && suspension && (
+        <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12,
+          padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#c2410c' }}>
+          <strong>🚫 Este día está marcado sin clase</strong>
+          {suspension.motivo ? ` — ${suspension.motivo}` : ''}
+          {` · ${suspension.grupos} grupo${suspension.grupos === 1 ? '' : 's'}.`}
+          <div style={{ fontSize: 12, marginTop: 3, color: muted }}>
+            No cuenta para el porcentaje de nadie. Si al final sí hubo clase, se restaura desde Horario → Día sin clase.
+          </div>
         </div>
       )}
 

@@ -3,13 +3,17 @@
 import { requirePerfil } from '@/lib/auth/require'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { diaDesdeFecha, hhmm, inicioVentana, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
+import { vigenteEn } from '@/lib/domain/vigencia'
 
 type BloqueDelJugador = {
+  id: string
   nombre: string
   dia_semana: string
   hora_inicio: string
   hora_fin: string
   activo: boolean
+  vigente_desde: string
+  vigente_hasta: string | null
 }
 
 /**
@@ -21,22 +25,42 @@ async function dentroDeSuBloque(
   supabase: any,
   jugadorId: string,
 ): Promise<{ error?: string }> {
-  const dia = diaDesdeFecha(fechaChile())
+  const hoy = fechaChile()
+  const dia = diaDesdeFecha(hoy)
   if (!dia) return { error: 'El club no tiene entrenamientos los fines de semana' }
 
   const { data, error } = await supabase
     .from('bloque_jugadores')
-    .select('bloques_horario(nombre,dia_semana,hora_inicio,hora_fin,activo)')
+    .select('bloques_horario(id,nombre,dia_semana,hora_inicio,hora_fin,activo,vigente_desde,vigente_hasta)')
     .eq('jugador_id', jugadorId)
     .is('vigente_hasta', null)
   if (error) return { error: 'No se pudieron verificar tus horarios: ' + error.message }
 
-  const deHoy = ((data ?? []) as { bloques_horario: BloqueDelJugador | null }[])
+  const vigentesHoy = ((data ?? []) as { bloques_horario: BloqueDelJugador | null }[])
     .map(r => r.bloques_horario)
-    .filter((b): b is BloqueDelJugador => !!b && b.activo && b.dia_semana === dia)
+    .filter((b): b is BloqueDelJugador =>
+      !!b && b.activo && b.dia_semana === dia && vigenteEn(b, hoy))
     .sort((a, b) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio)))
 
-  if (deHoy.length === 0) return { error: 'Hoy no tenés entrenamiento asignado' }
+  if (vigentesHoy.length === 0) return { error: 'Hoy no tenés entrenamiento asignado' }
+
+  // Si el día está marcado sin clase, no hay nada que marcar. Sin esto, el
+  // alumno veía "tu entrenamiento es a las 17:00" en pleno feriado y se
+  // registraba igual, que es justo lo que marcar el día venía a evitar: esa
+  // asistencia después ensucia el porcentaje del mes.
+  const { data: suspendidos } = await supabase.from('bloque_excepciones')
+    .select('bloque_id,motivo')
+    .in('bloque_id', vigentesHoy.map(b => b.id))
+    .eq('fecha', hoy)
+
+  const sinClase = new Map((suspendidos ?? []).map(
+    (e: { bloque_id: string; motivo: string | null }) => [e.bloque_id, e.motivo]))
+  const deHoy = vigentesHoy.filter(b => !sinClase.has(b.id))
+
+  if (deHoy.length === 0) {
+    const motivo = [...sinClase.values()].find(Boolean)
+    return { error: motivo ? `Hoy no hay clase: ${motivo}.` : 'Hoy no hay clase.' }
+  }
 
   const ahora = horaChile()
   if (deHoy.some(b => ventanaAbierta(b.hora_inicio, b.hora_fin, ahora))) return {}
