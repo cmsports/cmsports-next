@@ -9,6 +9,8 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { trimestreActual } from '@/lib/domain/trimestre'
 import DocumentosJugador from '@/components/DocumentosJugador'
+import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
@@ -35,6 +37,7 @@ export default function PerfilPage() {
   const [supabase] = useState(() => createClient())
   const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const router = useRouter()
+  const { tiene } = useModulos()
 
   const trimestre = trimestreActual()
   const hoy = fechaChile()
@@ -214,6 +217,26 @@ export default function PerfilPage() {
           </div>
         )}
       </div>
+
+      {/* Auspiciadores — los mismos tres logos que ve el admin en su dashboard.
+          Los descuentos son de los jugadores: son ellos los que los usan, así
+          que tienen que estar donde ellos entran.
+
+          `esStaff={false}` es lo único que cambia respecto del dashboard: sin
+          eso, el componente muestra los botones de subir y borrar, y también
+          los vouchers dados de baja. Acá solo ve los activos, y los mira. */}
+      {tiene('tienda_buin') && (
+        <div style={{ ...card, padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: text, marginBottom: 10 }}>
+            🎟️ Descuentos para socios
+          </div>
+          <MarcasAuspiciadores
+            clubId={perfil?.club_id ?? null}
+            esStaff={false}
+            borderColor="#e2e8f0"
+          />
+        </div>
+      )}
 
       {/* Marcar asistencia */}
       {mensaje && (
