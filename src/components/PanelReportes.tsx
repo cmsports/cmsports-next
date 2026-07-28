@@ -3,280 +3,365 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
-import { DIAS, diaLabel, rangoHorario, minutosDelDia, type BloqueHorario } from '@/lib/domain/horario'
+import { diaLabel, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
-import { vigenteEn, type Vigencia } from '@/lib/domain/vigencia'
+import {
+  calcularReporteMes, diaDe, horas, semanasDelMes,
+  type AsignacionProfesor, type BloqueMes, type ClaseOmitida,
+  type DiaSuspendido, type InscripcionMes, type ReporteMes,
+} from '@/lib/domain/reportesMes'
 
 const supabase = createClient()
 
-const card  = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
+const card  = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' } as const
 const text  = '#0f172a'
 const muted = '#64748b'
 const hint  = '#94a3b8'
+const aviso = '#c2410c'
 
-type Bloque = BloqueHorario & { profesorIds: string[] }
-type Profesor = { id: string; nombre: string }
-type Inscripcion = { bloque_id: string; jugador_id: string } & Vigencia
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-/** Fechas (YYYY-MM-DD) de lunes a viernes entre dos días, inclusive. */
-function diasHabiles(desde: string, hasta: string): { fecha: string; dia: string }[] {
-  const out: { fecha: string; dia: string }[] = []
-  const d = new Date(desde + 'T12:00:00')
-  const fin = new Date(hasta + 'T12:00:00')
-  while (d <= fin) {
-    const dow = d.getDay()
-    if (dow >= 1 && dow <= 5) {
-      out.push({
-        fecha: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-        dia: ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][dow],
-      })
-    }
-    d.setDate(d.getDate() + 1)
-  }
-  return out
-}
+/** El número del día, que es lo único que cambia dentro de un mismo grupo. */
+function nDia(fecha: string) { return Number(fecha.slice(8, 10)) }
+/** Para fechas sueltas, donde el día de la semana sí aporta. */
+function diaYN(fecha: string) { return `${diaLabel(diaDe(fecha)).toLowerCase()} ${nDia(fecha)}` }
 
-function restarDias(fecha: string, n: number): string {
-  const d = new Date(fecha + 'T12:00:00')
-  d.setDate(d.getDate() - n)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function Barra({ pct, color }: { pct: number; color: string }) {
+/** Una fila que se abre. El título es el resumen; adentro va de dónde salió. */
+function Desplegable({ abierto, onToggle, cabecera, children }: {
+  abierto: boolean
+  onToggle: () => void
+  cabecera: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <div style={{ height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden', minWidth: 70 }}>
-      <div style={{ width: `${Math.min(100, pct)}%`, height: '100%', background: color, borderRadius: 3 }} />
+    <div style={{ borderBottom: '1px solid #f1f5f9' }}>
+      <button onClick={onToggle}
+        style={{ width: '100%', display: 'block', textAlign: 'left', padding: '12px 16px',
+          background: abierto ? '#f8fafc' : 'transparent', border: 'none', cursor: 'pointer' }}>
+        {cabecera}
+      </button>
+      {abierto && <div style={{ padding: '4px 16px 16px' }}>{children}</div>}
     </div>
   )
 }
 
-const th = { padding: '9px 12px', textAlign: 'left' as const, fontSize: 11, fontWeight: 600, color: muted,
-  textTransform: 'uppercase' as const, letterSpacing: '0.4px', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' as const }
-const td = { padding: '10px 12px', fontSize: 13, color: text, borderBottom: '1px solid #f1f5f9' }
-const num = { ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }
+function Omitidas({ items, color }: { items: ClaseOmitida[]; color: string }) {
+  if (items.length === 0) return null
+  // Se agrupan por motivo: "jue 16, 23, 30 — el grupo cerró" se lee de una;
+  // tres líneas iguales con distinta fecha, no.
+  const porMotivo = new Map<string, string[]>()
+  for (const o of items) porMotivo.set(o.motivo, [...(porMotivo.get(o.motivo) ?? []), o.fecha])
+  return (
+    <>
+      {[...porMotivo.entries()].map(([motivo, fechas]) => (
+        <div key={motivo} style={{ fontSize: 12, color, marginTop: 3 }}>
+          ✕ {fechas.map(diaYN).join(', ')} — {motivo}
+        </div>
+      ))}
+    </>
+  )
+}
 
 export default function PanelReportes({ clubId }: { clubId: string }) {
-  const [bloques, setBloques]       = useState<Bloque[]>([])
-  const [profesores, setProfesores] = useState<Profesor[]>([])
-  const [inscritos, setInscritos]   = useState<Record<string, Inscripcion[]>>({})
-  const [asistPorFecha, setAsist]   = useState<Record<string, Set<string>>>({})
-  const [semanas, setSemanas]       = useState(4)
-  const [cargando, setCargando]     = useState(true)
-
   const hoy = fechaChile()
-  const desde = restarDias(hoy, semanas * 7 - 1)
+  const [anio, setAnio] = useState(Number(hoy.slice(0, 4)))
+  const [mes, setMes]   = useState(Number(hoy.slice(5, 7)))
+  const [abierto, setAbierto] = useState<Set<string>>(new Set())
+  const [cargando, setCargando] = useState(true)
+
+  const [bloques, setBloques]           = useState<BloqueMes[]>([])
+  const [asignaciones, setAsignaciones] = useState<AsignacionProfesor[]>([])
+  const [inscripciones, setInscrip]     = useState<InscripcionMes[]>([])
+  const [suspensiones, setSuspen]       = useState<DiaSuspendido[]>([])
+  const [profesores, setProfesores]     = useState<{ id: string; nombre: string }[]>([])
+  const [jugadores, setJugadores]       = useState<{ id: string; nombre: string }[]>([])
+
+  const toggle = (k: string) => setAbierto(s => {
+    const n = new Set(s)
+    if (n.has(k)) n.delete(k); else n.add(k)
+    return n
+  })
 
   const cargar = useCallback(async () => {
-    const [{ data: bl }, { data: prof }, { data: rel }, { data: relProf }, { data: asis }] = await Promise.all([
-      supabase.from('bloques_horario')
-        .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
-        .eq('club_id', clubId).eq('activo', true).order('hora_inicio'),
-      supabase.from('profesores').select('id,nombre').eq('club_id', clubId).eq('activo', true).order('nombre'),
-      // Con vigencia: un reporte de hace dos meses tiene que contar a quien
-      // estaba en el grupo entonces, no a quien está hoy.
-      supabase.from('bloque_jugadores').select('bloque_id,jugador_id,vigente_desde,vigente_hasta'),
-      supabase.from('bloque_profesores').select('bloque_id,profesor_id').is('vigente_hasta', null),
-      supabase.from('asistencia').select('jugador_id,fecha')
-        .eq('club_id', clubId).gte('fecha', desde).lte('fecha', hoy),
+    // Sin filtrar por `activo`: la vigencia es la que manda. Un grupo dado de
+    // baja tiene que seguir contando en los meses en que sí funcionó, y dejar
+    // de contar en los siguientes.
+    const { data: bl } = await supabase.from('bloques_horario')
+      .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,vigente_desde,vigente_hasta')
+      .eq('club_id', clubId)
+    const ids = (bl ?? []).map((b: { id: string }) => b.id)
+
+    const [{ data: ap }, { data: ins }, { data: exc }, { data: pr }, { data: jg }] = await Promise.all([
+      supabase.from('bloque_profesores').select('bloque_id,profesor_id,vigente_desde,vigente_hasta').in('bloque_id', ids),
+      supabase.from('bloque_jugadores').select('bloque_id,jugador_id,vigente_desde,vigente_hasta').in('bloque_id', ids),
+      supabase.from('bloque_excepciones').select('bloque_id,fecha,motivo').in('bloque_id', ids),
+      supabase.from('profesores').select('id,nombre').eq('club_id', clubId),
+      supabase.from('jugadores').select('id,nombre').eq('club_id', clubId),
     ])
 
-    const porBloque: Record<string, Inscripcion[]> = {}
-    for (const r of (rel ?? []) as Inscripcion[]) {
-      porBloque[r.bloque_id] = [...(porBloque[r.bloque_id] ?? []), r]
-    }
-
-    const profDe = new Map<string, string[]>()
-    for (const r of relProf ?? []) profDe.set(r.bloque_id, [...(profDe.get(r.bloque_id) ?? []), r.profesor_id])
-
-    const porFecha: Record<string, Set<string>> = {}
-    for (const a of asis ?? []) {
-      if (!porFecha[a.fecha]) porFecha[a.fecha] = new Set()
-      porFecha[a.fecha].add(a.jugador_id)
-    }
-
-    setBloques(((bl ?? []) as BloqueHorario[]).map(b => ({ ...b, profesorIds: profDe.get(b.id) ?? [] })))
-    setProfesores((prof ?? []) as Profesor[])
-    setInscritos(porBloque)
-    setAsist(porFecha)
+    setBloques((bl ?? []) as BloqueMes[])
+    setAsignaciones((ap ?? []) as AsignacionProfesor[])
+    setInscrip((ins ?? []) as InscripcionMes[])
+    setSuspen((exc ?? []) as DiaSuspendido[])
+    setProfesores((pr ?? []) as { id: string; nombre: string }[])
+    setJugadores((jg ?? []) as { id: string; nombre: string }[])
     setCargando(false)
-  }, [clubId, desde, hoy])
+  }, [clubId])
 
   useEffect(() => { void cargar() }, [cargar])
-  // Si alguien mueve gente de grupo desde otra pantalla, esto se entera.
-  useEnVivo(['bloque_jugadores', 'bloques_horario', 'asistencia'], clubId, cargar, { conClub: ['asistencia', 'bloques_horario'] })
+  useEnVivo(['bloque_jugadores', 'bloques_horario', 'bloque_excepciones'], clubId, cargar, { conClub: ['bloques_horario'] })
 
   if (cargando) return <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Calculando...</div>
 
-  const fechas = diasHabiles(desde, hoy)
+  const r: ReporteMes = calcularReporteMes({ anio, mes, hoy, bloques, asignaciones, inscripciones, suspensiones })
+  const nombreProf = (id: string) => profesores.find(p => p.id === id)?.nombre ?? 'Profesor dado de baja'
+  const nombreJug  = (id: string) => jugadores.find(j => j.id === id)?.nombre ?? '—'
+  const semanas = semanasDelMes(r.fechas)
 
-  // Por cada bloque: cuánta gente tiene, cuánto cabe, y de las veces que se
-  // dictó en el período, cuántas asistencias hubo de su propia gente.
-  const filas = bloques.map(b => {
-    const historia = inscritos[b.id] ?? []
-    const fechasDelBloque = fechas.filter(f => f.dia === b.dia_semana)
+  const mover = (n: number) => {
+    const d = new Date(Date.UTC(anio, mes - 1 + n, 1))
+    setAnio(d.getUTCFullYear()); setMes(d.getUTCMonth() + 1); setAbierto(new Set())
+  }
+  const esMesActual = anio === Number(hoy.slice(0, 4)) && mes === Number(hoy.slice(5, 7))
 
-    // Se recorre fecha por fecha, no se multiplica: un mes con cinco lunes
-    // tiene cinco sesiones y otro cuatro, y quien entró a mitad de mes solo
-    // debe las que le tocaban desde que entró.
-    let esperadas = 0
-    let presentes = 0
-    for (const f of fechasDelBloque) {
-      const delDia = asistPorFecha[f.fecha]
-      for (const i of historia) {
-        if (!vigenteEn(i, f.fecha)) continue
-        esperadas++
-        if (delDia?.has(i.jugador_id)) presentes++
-      }
-    }
+  // Grupos que en este mes no llegaron a existir nunca: ensucian la tabla y no
+  // dicen nada. Se cuentan aparte.
+  const gruposDelMes = r.grupos.filter(g => g.dictadas.length + g.suspendidas.length > 0)
+  const gruposFuera  = r.grupos.length - gruposDelMes.length
 
-    const hoyDentro = historia.filter(i => vigenteEn(i, hoy)).length
-    return {
-      b,
-      inscritos: hoyDentro,
-      ocupacion: b.cupo_maximo > 0 ? Math.round((hoyDentro / b.cupo_maximo) * 100) : 0,
-      sesiones: fechasDelBloque.length,
-      presentes,
-      esperadas,
-      asistencia: esperadas > 0 ? Math.round((presentes / esperadas) * 100) : null,
-    }
-  })
+  // Un grupo con dos profesores le suma horas a los dos, pero se dicta una sola
+  // vez. Por eso la suma por profesor puede pasar el total del club, y hay que
+  // decirlo: si no, el desglose parece contradecir el número de arriba.
+  const minutosProfesores = r.profesores.reduce((s, p) => s + p.minutos, 0)
+  const gruposCompartidos = gruposDelMes.filter(g =>
+    new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id)).size > 1
+  ).length
 
-  const totalInscritos = filas.reduce((s, f) => s + f.inscritos, 0)
-  const totalPresentes = filas.reduce((s, f) => s + f.presentes, 0)
-  const totalEsperadas = filas.reduce((s, f) => s + f.esperadas, 0)
-  const promedio = totalEsperadas > 0 ? Math.round((totalPresentes / totalEsperadas) * 100) : null
-
-  // Por profesor: cuántos bloques toma, cuántas horas suma y a cuánta gente ve.
-  const porProfesor = profesores.map(p => {
-    const suyos = bloques.filter(b => b.profesorIds.includes(p.id))
-    const minutos = suyos.reduce((s, b) => s + (minutosDelDia(b.hora_fin) - minutosDelDia(b.hora_inicio)), 0)
-    const alumnos = new Set<string>()
-    for (const b of suyos) for (const i of inscritos[b.id] ?? []) if (vigenteEn(i, hoy)) alumnos.add(i.jugador_id)
-    const sedes = [...new Set(suyos.map(b => b.sede))]
-    return { p, bloques: suyos.length, horas: minutos / 60, alumnos: alumnos.size, sedes }
-  }).sort((a, b) => b.horas - a.horas)
-
-  const colorOcup = (pct: number) => pct > 100 ? '#dc2626' : pct >= 100 ? '#d97706' : '#16a34a'
-  const colorAsis = (pct: number) => pct >= 75 ? '#16a34a' : pct >= 50 ? '#d97706' : '#dc2626'
+  const flecha = { padding: '5px 11px', fontSize: 14, borderRadius: 8, border: '1px solid #e2e8f0',
+    background: '#fff', color: muted, cursor: 'pointer' } as const
+  const tituloSec = { fontSize: 14, fontWeight: 700, color: text } as const
+  const comoSe = { fontSize: 11, color: hint, marginTop: 3, lineHeight: 1.5 } as const
+  const chip = { fontSize: 11, background: '#eef2ff', color: '#4338ca', padding: '3px 8px',
+    borderRadius: 6, fontWeight: 600 } as const
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* Período */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: muted }}>Período:</span>
-        {[2, 4, 8, 12].map(n => (
-          <button key={n} onClick={() => { setCargando(true); setSemanas(n) }}
-            style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
-              border: `1px solid ${semanas === n ? '#4f46e5' : '#e2e8f0'}`,
-              background: semanas === n ? '#4f46e5' : '#fff',
-              color: semanas === n ? '#fff' : muted }}>
-            {n} semanas
-          </button>
-        ))}
-        <span style={{ fontSize: 11, color: hint }}>{desde} al {hoy}</span>
+        <button onClick={() => mover(-1)} style={flecha}>‹</button>
+        <span style={{ fontSize: 15, fontWeight: 700, color: text, textTransform: 'capitalize', minWidth: 130, textAlign: 'center' }}>
+          {MESES[mes - 1]} {anio}
+        </span>
+        <button onClick={() => mover(1)} style={flecha} disabled={esMesActual}>›</button>
+        <span style={{ fontSize: 11, color: hint }}>
+          {r.fechas.length} días hábiles
+          {esMesActual && ' · el mes va corriendo, los números crecen hasta fin de mes'}
+        </span>
       </div>
 
       {/* Resumen */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         {([
-          ['Grupos activos', String(bloques.length), text],
-          ['Inscripciones', String(totalInscritos), text],
-          ['Asistencias registradas', String(totalPresentes), text],
-          ['Asistencia promedio', promedio === null ? '—' : `${promedio}%`, promedio === null ? muted : colorAsis(promedio)],
-        ] as const).map(([label, valor, color]) => (
-          <div key={label} style={{ ...card, padding: 14 }}>
+          ['Horas dictadas', horas(r.minutosTotales) + ' h', 'resumen-horas'],
+          ['Clases dictadas', String(r.clasesDictadas), 'resumen-clases'],
+          ['Grupos del mes', String(gruposDelMes.length), 'resumen-grupos'],
+        ] as const).map(([label, valor, clave]) => (
+          <div key={clave} style={{ ...card, padding: 14, cursor: 'pointer' }} onClick={() => toggle(clave)}>
             <div style={{ fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{valor}</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: text, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{valor}</div>
+            <div style={{ fontSize: 11, color: '#6366f1', fontWeight: 600, marginTop: 4 }}>
+              {abierto.has(clave) ? 'ocultar' : 'cómo se calcula'}
+            </div>
+            {abierto.has(clave) && (
+              <div style={{ fontSize: 12, color: muted, marginTop: 8, borderTop: '1px solid #f1f5f9', paddingTop: 8, lineHeight: 1.6 }}>
+                {clave === 'resumen-horas' && (
+                  <>
+                    Horas de clase dictadas: cada clase cuenta una vez, sin importar cuántos profesores la tomen.
+                    {r.clasesSuspendidas > 0 && <> No cuenta {r.clasesSuspendidas} clase{r.clasesSuspendidas === 1 ? '' : 's'} marcada{r.clasesSuspendidas === 1 ? '' : 's'} sin clase.</>}
+                    <div style={{ marginTop: 6 }}>
+                      {r.profesores.map(p => (
+                        <div key={p.profesorId}>{nombreProf(p.profesorId)}: {horas(p.minutos)} h</div>
+                      ))}
+                      {r.profesores.length === 0 && <>Ningún grupo tiene profesor asignado.</>}
+                    </div>
+                    {minutosProfesores !== r.minutosTotales && (
+                      <div style={{ marginTop: 6, color: aviso }}>
+                        Sumadas dan {horas(minutosProfesores)} h, más que las {horas(r.minutosTotales)} h de arriba:
+                        {' '}{gruposCompartidos} grupo{gruposCompartidos === 1 ? '' : 's'} tiene{gruposCompartidos === 1 ? '' : 'n'} dos profesores,
+                        así que esa clase le suma horas a cada uno pero se dicta una sola vez.
+                      </div>
+                    )}
+                  </>
+                )}
+                {clave === 'resumen-clases' && (
+                  <>
+                    Cada vez que un grupo vigente cayó en su día de la semana.
+                    {r.clasesSuspendidas > 0
+                      ? <> Otras {r.clasesSuspendidas} tocaban pero están marcadas sin clase.</>
+                      : <> Ninguna quedó marcada sin clase este mes.</>}
+                  </>
+                )}
+                {clave === 'resumen-grupos' && (
+                  <>
+                    Grupos que funcionaron al menos un día de este mes.
+                    {gruposFuera > 0 && <> Hay {gruposFuera} más en el horario que este mes no existían todavía o ya habían cerrado.</>}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      {/* Ocupación y asistencia por grupo */}
+      {/* Horas por profesor */}
       <div style={{ ...card, overflow: 'hidden' }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text }}>Ocupación por grupo</div>
-          <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>
-            Cuánta gente tiene cada grupo sobre su cupo. La asistencia vive en Asistencia → Panorama,
-            que sale del historial: acá se duplicaría el cálculo.
+          <div style={tituloSec}>Horas por profesor</div>
+          <div style={comoSe}>
+            Se recorre el mes día por día: cada clase que le tocó dictar suma su duración.
+            No suman los días marcados sin clase, ni los grupos antes de que se los asignaran o después de que se los sacaran.
+            Tocá un profesor para ver de qué clases salió el número.
           </div>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={th}>Grupo</th>
-                <th style={th}>Sede</th>
-                <th style={th}>Día</th>
-                <th style={{ ...th, textAlign: 'right' }}>Inscritos</th>
-                <th style={th}>Ocupación</th>
-                <th style={{ ...th, textAlign: 'right' }}>Clases</th>
-              </tr>
-            </thead>
-            <tbody>
-              {DIAS.flatMap(d => filas.filter(f => f.b.dia_semana === d.value)).map(f => (
-                <tr key={f.b.id}>
-                  <td style={{ ...td, fontWeight: 600 }}>
-                    {f.b.nombre}
-                    <div style={{ fontSize: 11, color: muted, fontWeight: 400 }}>{rangoHorario(f.b.hora_inicio, f.b.hora_fin)}</div>
-                  </td>
-                  <td style={{ ...td, color: muted }}>{sedeLabel(f.b.sede)}</td>
-                  <td style={{ ...td, color: muted }}>{diaLabel(f.b.dia_semana)}</td>
-                  <td style={num}>{f.inscritos} <span style={{ color: hint }}>/ {f.b.cupo_maximo}</span></td>
-                  <td style={td}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Barra pct={f.ocupacion} color={colorOcup(f.ocupacion)} />
-                      <span style={{ fontSize: 12, color: colorOcup(f.ocupacion), fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{f.ocupacion}%</span>
+
+        {r.profesores.map(p => {
+          const clave = 'prof-' + p.profesorId
+          const dias = p.diasTrabajados.length
+          return (
+            <Desplegable key={p.profesorId} abierto={abierto.has(clave)} onToggle={() => toggle(clave)}
+              cabecera={
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: text }}>{nombreProf(p.profesorId)}</span>
+                    <span style={{ fontSize: 18, fontWeight: 700, color: text, marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+                      {horas(p.minutos)} h
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: muted, marginTop: 4 }}>
+                    <span>{horas(semanas > 0 ? p.minutos / semanas : 0)} h por semana</span>
+                    <span>{horas(dias > 0 ? p.minutos / dias : 0)} h por día</span>
+                    <span>{dias} día{dias === 1 ? '' : 's'}</span>
+                    <span>{p.porGrupo.length} grupo{p.porGrupo.length === 1 ? '' : 's'}</span>
+                  </div>
+                </>
+              }>
+              <div style={{ fontSize: 12, color: muted, marginBottom: 10 }}>
+                {horas(p.minutos)} h ÷ {semanas.toFixed(1).replace('.', ',')} semanas del mes = {horas(semanas > 0 ? p.minutos / semanas : 0)} h por semana.
+                {' '}÷ {dias} día{dias === 1 ? '' : 's'} trabajado{dias === 1 ? '' : 's'} = {horas(dias > 0 ? p.minutos / dias : 0)} h por día.
+              </div>
+
+              {p.porGrupo.map(g => (
+                <div key={g.bloque.id} style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: text }}>{g.bloque.nombre}</span>
+                    <span style={{ fontSize: 11, color: hint }}>
+                      {diaLabel(g.bloque.dia_semana)} {rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)} · {sedeLabel(g.bloque.sede)}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: text, marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+                      {horas(g.minutos)} h
+                    </span>
+                  </div>
+                  {g.dictadas.length > 0 && (
+                    <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>
+                      {g.dictadas.length} × {horas(g.dictadas[0].minutos)} h — {diaLabel(g.bloque.dia_semana).toLowerCase()} {g.dictadas.map(d => nDia(d.fecha)).join(', ')}
                     </div>
-                  </td>
-                  <td style={num}>{f.sesiones}</td>
-                </tr>
+                  )}
+                  <Omitidas items={g.omitidas} color={aviso} />
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                <span style={{ fontSize: 12, color: muted }}>Total</span>
+                <span style={{ fontSize: 11, color: hint }}>{p.porGrupo.map(g => horas(g.minutos)).join(' + ')}</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: text, marginLeft: 'auto' }}>{horas(p.minutos)} h</span>
+              </div>
+            </Desplegable>
+          )
+        })}
+
+        {r.profesores.length === 0 && (
+          <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>
+            Este mes no hay clases con profesor asignado.
+          </div>
+        )}
       </div>
 
-      {/* Carga por profesor */}
+      {/* Grupos */}
       <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text }}>
-          Carga por profesor
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0' }}>
+          <div style={tituloSec}>Grupos</div>
+          <div style={comoSe}>
+            Cuántas veces se dictó cada grupo este mes y cuánta gente tiene hoy.
+            Tocá uno para ver las fechas, lo que no se dictó y quiénes están inscritos.
+          </div>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={th}>Profesor</th>
-                <th style={{ ...th, textAlign: 'right' }}>Grupos</th>
-                <th style={{ ...th, textAlign: 'right' }}>Horas / semana</th>
-                <th style={{ ...th, textAlign: 'right' }}>Alumnos</th>
-                <th style={th}>Sedes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {porProfesor.map(p => (
-                <tr key={p.p.id}>
-                  <td style={{ ...td, fontWeight: 600 }}>{p.p.nombre}</td>
-                  <td style={num}>{p.bloques}</td>
-                  <td style={num}>{p.horas % 1 === 0 ? p.horas : p.horas.toFixed(1)}</td>
-                  <td style={num}>{p.alumnos}</td>
-                  <td style={{ ...td, color: muted }}>{p.sedes.map(sedeLabel).join(' · ') || '—'}</td>
-                </tr>
-              ))}
-              {porProfesor.length === 0 && (
-                <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: hint }}>Sin profesores cargados</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+
+        {gruposDelMes.map(g => {
+          const clave = 'grupo-' + g.bloque.id
+          const tocaban = g.dictadas.length + g.suspendidas.length
+          const libres = g.bloque.cupo_maximo - g.inscritos
+          const suyos = inscripciones.filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
+          const profes = [...new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id))]
+          return (
+            <Desplegable key={g.bloque.id} abierto={abierto.has(clave)} onToggle={() => toggle(clave)}
+              cabecera={
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: text }}>{g.bloque.nombre}</span>
+                    <span style={{ fontSize: 11, color: hint }}>
+                      {diaLabel(g.bloque.dia_semana)} {rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)} · {sedeLabel(g.bloque.sede)}
+                      {profes.length > 0 && ' · ' + profes.map(nombreProf).join(', ')}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, marginTop: 4 }}>
+                    <span style={{ color: g.suspendidas.length > 0 ? aviso : muted }}>
+                      {g.dictadas.length} de {tocaban} clase{tocaban === 1 ? '' : 's'}
+                      {g.suspendidas.length > 0 && ` · ${g.suspendidas.length} sin clase`}
+                    </span>
+                    <span style={{ color: muted }}>{horas(g.minutos)} h</span>
+                    <span style={{ color: muted }}>
+                      {g.inscritos} de {g.bloque.cupo_maximo}
+                      {libres > 0 ? ` · ${libres} libre${libres === 1 ? '' : 's'}` : libres === 0 ? ' · lleno' : ` · ${-libres} de más`}
+                    </span>
+                  </div>
+                </>
+              }>
+              <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>
+                {g.dictadas.length > 0
+                  ? <>Se dictó {diaLabel(g.bloque.dia_semana).toLowerCase()} {g.dictadas.map(d => nDia(d.fecha)).join(', ')} — {g.dictadas.length} × {horas(g.dictadas[0].minutos)} h = {horas(g.minutos)} h.</>
+                  : <>No se dictó ninguna vez este mes.</>}
+              </div>
+              <Omitidas items={g.suspendidas} color={aviso} />
+              <Omitidas items={g.fueraDeVigencia} color={hint} />
+
+              <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
+                <div style={{ fontSize: 12, color: muted, marginBottom: 6 }}>
+                  Inscritos hoy: {g.inscritos} de {g.bloque.cupo_maximo} cupos.
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {suyos.map(i => <span key={i.jugador_id} style={chip}>{nombreJug(i.jugador_id)}</span>)}
+                  {suyos.length === 0 && <span style={{ fontSize: 12, color: hint }}>Sin nadie inscrito.</span>}
+                </div>
+              </div>
+            </Desplegable>
+          )
+        })}
+
+        {gruposDelMes.length === 0 && (
+          <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>
+            Ningún grupo del horario funcionaba en {MESES[mes - 1]} {anio}.
+          </div>
+        )}
       </div>
 
-      <div style={{ fontSize: 11, color: hint, lineHeight: 1.6 }}>
-        Un jugador que entrena dos veces el mismo día cuenta una sola asistencia, así que
-        su porcentaje aparece más bajo de lo real en esos dos grupos.
-        La asistencia se toma de lo registrado, y solo desde que se empezó a pasar lista.
-      </div>
+      {gruposFuera > 0 && (
+        <div style={{ fontSize: 11, color: hint, lineHeight: 1.6 }}>
+          Hay {gruposFuera} grupo{gruposFuera === 1 ? '' : 's'} más en el horario que este mes no aparece{gruposFuera === 1 ? '' : 'n'}:
+          se creó después o ya había cerrado. La asistencia y los porcentajes viven en Asistencia → Panorama.
+        </div>
+      )}
     </div>
   )
 }
