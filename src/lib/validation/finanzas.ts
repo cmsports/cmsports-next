@@ -82,6 +82,30 @@ export const movimientoSchema = z.object({
   }
 })
 
+// El cobro de clases extraordinarias validaba a mano y era el único de
+// finanzas que lo hacía. Un id vacío no daba "no encontrado": llegaba a la
+// base y volvía como «invalid input syntax for type uuid», que es el error
+// crudo de Postgres en la cara del admin.
+const IDS_CLASES = z.array(UUID)
+  .min(1, 'No hay clases seleccionadas')
+  .max(500, 'Demasiadas clases de una vez')
+  .transform(ids => [...new Set(ids)])
+
+export const enviarClasesExtraSchema = z.object({ ids: IDS_CLASES })
+
+export const pagarClasesExtraSchema = z.object({
+  ids: IDS_CLASES,
+  metodo: z.enum(METODOS_PAGO),
+  // Obligatoria y no opcional: sin ella no hay nada que frene el doble clic,
+  // que es justo lo que este cobro tiene que evitar.
+  idempotencyKey: UUID,
+})
+
+export const revertirClasesExtraSchema = z.object({
+  movimientoId: UUID,
+  idempotencyKey: UUID,
+})
+
 export function validationError(error: z.ZodError) {
   return error.issues[0]?.message ?? 'Datos inválidos'
 }

@@ -8,6 +8,9 @@
 // exige admin.
 
 import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
+import {
+  enviarClasesExtraSchema, pagarClasesExtraSchema, revertirClasesExtraSchema, validationError,
+} from '@/lib/validation/finanzas'
 
 const STAFF = ['admin', 'superadmin', 'profesor']
 
@@ -21,11 +24,12 @@ export async function enviarClasesExtraACobro(params: { ids: string[] }) {
   if (!STAFF.includes(perfil.rol ?? '')) {
     return { error: 'Solo el admin o el profesor pueden enviar a cobro' }
   }
-  if (params.ids.length === 0) return { error: 'No hay clases seleccionadas' }
+  const v = enviarClasesExtraSchema.safeParse(params)
+  if (!v.success) return { error: validationError(v.error) }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).rpc('enviar_clases_extra_a_cobro', {
-    p_ids: params.ids,
+    p_ids: v.data.ids,
   })
   if (error) return { error: error.message }
 
@@ -46,13 +50,14 @@ export async function pagarClasesExtra(params: {
 }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr || !supabase) return { error: authErr ?? 'Acceso denegado' }
-  if (params.ids.length === 0) return { error: 'No hay clases seleccionadas' }
+  const v = pagarClasesExtraSchema.safeParse(params)
+  if (!v.success) return { error: validationError(v.error) }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).rpc('registrar_pago_clases_extra_atomico', {
-    p_ids: params.ids,
-    p_metodo: params.metodo,
-    p_idempotency_key: params.idempotencyKey,
+    p_ids: v.data.ids,
+    p_metodo: v.data.metodo,
+    p_idempotency_key: v.data.idempotencyKey,
   })
   if (error || !data) return { error: error?.message ?? 'No se pudo registrar el pago' }
 
@@ -60,7 +65,13 @@ export async function pagarClasesExtra(params: {
   return { ok: true, movimientoId: r.movimiento_id, monto: r.monto, clases: r.clases }
 }
 
-/** Deshace el cobro: borra el movimiento y las devuelve a "por cobrar". */
+/**
+ * Deshace el cobro: borra el movimiento y las devuelve a "por cobrar".
+ *
+ * Les queda puesto el `cobrada_en`, así que siguen apareciendo como "enviadas".
+ * Es cierto —se enviaron a cobro— y no las traba: cobrar solo exige que no
+ * estén pagadas.
+ */
 export async function revertirPagoClasesExtra(params: {
   movimientoId: string
   idempotencyKey: string
@@ -68,10 +79,13 @@ export async function revertirPagoClasesExtra(params: {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr || !supabase) return { error: authErr ?? 'Acceso denegado' }
 
+  const v = revertirClasesExtraSchema.safeParse(params)
+  if (!v.success) return { error: validationError(v.error) }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).rpc('revertir_pago_clases_extra_atomico', {
-    p_movimiento_id: params.movimientoId,
-    p_idempotency_key: params.idempotencyKey,
+    p_movimiento_id: v.data.movimientoId,
+    p_idempotency_key: v.data.idempotencyKey,
   })
   if (error) return { error: error.message }
 
