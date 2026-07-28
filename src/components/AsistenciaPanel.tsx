@@ -94,6 +94,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Los que vinieron a un grupo que no es el suyo. Van aparte de `asistencias`
   // porque no descuentan sesión ni cuentan en el porcentaje: se cobran aparte.
   const [extrasHoy,    setExtrasHoy]    = useState<ClaseExtraHoy[]>([])
+  // Las de hoy, aparte de las del día que se esté mirando: la lista de registro
+  // manual siempre escribe en hoy, así que la marca de "ya tiene extra" tiene
+  // que salir de hoy y no del día que el profe fue a revisar.
+  const [extrasDeHoy,  setExtrasDeHoy]  = useState<ClaseExtraHoy[]>([])
   const [mostrarOtros, setMostrarOtros] = useState(false)
   const [buscaOtro,    setBuscaOtro]    = useState('')
   // Suspender el día se hacía solo desde Horario. El profe vive acá: si hoy no
@@ -201,11 +205,24 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const cargarExtras = useCallback(async (fecha: string, cid?: string) => {
     const id = cid || clubId
     if (!id) return
+    const hoyISO = fechaChile()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any).from('clases_extraordinarias')
+    const db = supabase as any
+    const traer = (f: string) => db.from('clases_extraordinarias')
       .select('id,jugador_id,bloque_id,hora,monto')
-      .eq('club_id', id).eq('fecha', fecha)
-    setExtrasHoy((data ?? []) as ClaseExtraHoy[])
+      .eq('club_id', id).eq('fecha', f)
+
+    if (fecha === hoyISO) {
+      const { data } = await traer(fecha)
+      const filas = (data ?? []) as ClaseExtraHoy[]
+      setExtrasHoy(filas)
+      setExtrasDeHoy(filas)
+      return
+    }
+
+    const [{ data: delDia }, { data: deHoy }] = await Promise.all([traer(fecha), traer(hoyISO)])
+    setExtrasHoy((delDia ?? []) as ClaseExtraHoy[])
+    setExtrasDeHoy((deHoy ?? []) as ClaseExtraHoy[])
   }, [clubId])
 
   const cargarAsistenciasDia = useCallback(async (fecha: string) => {
@@ -565,7 +582,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   // Candidatos a clase extra: cualquiera que no esté inscrito en el bloque
   // elegido. La base vuelve a comprobarlo antes de escribir.
-  const yaTieneExtra = new Set(extrasHoy.map(e => e.jugador_id))
+  // Sale de las de hoy, no de las del día que se esté mirando: la lista de
+  // registro manual escribe siempre en hoy.
+  const yaTieneExtra = new Set(extrasDeHoy.map(e => e.jugador_id))
   const otrosJugadores = bloqueSel
     ? jugadores.filter(j =>
         !inscritosDelBloque?.has(j.id) &&

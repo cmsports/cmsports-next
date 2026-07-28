@@ -128,7 +128,10 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
   const totalPorCobrar = grupos.reduce((s, g) => s + g.total, 0)
   const detalle = (e: Extra) => {
     const b = e.bloque_id ? bloques[e.bloque_id] : null
-    return b ? `${e.fecha} · ${rangoHorario(b.hora_inicio, b.hora_fin)}` : e.fecha
+    if (b) return `${e.fecha} · ${rangoHorario(b.hora_inicio, b.hora_fin)}`
+    // Sin grupo se cobra igual: se registró de un toque y a cuál vino se
+    // completa desde Asistencia histórica, si a alguien le interesa.
+    return `${e.fecha} · sin grupo`
   }
 
   return (

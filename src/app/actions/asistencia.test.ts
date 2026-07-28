@@ -17,8 +17,9 @@ vi.mock('@/lib/domain/fechaChile', () => ({
 }))
 
 import {
-  asignarMontoClaseExtraordinaria, corregirAsistencia, eliminarAsistencia,
-  eliminarClaseExtraordinaria, registrarAsistenciaAction, registrarClaseExtraordinaria,
+  asignarBloqueClaseExtraordinaria, asignarMontoClaseExtraordinaria, corregirAsistencia,
+  eliminarAsistencia, eliminarClaseExtraordinaria, registrarAsistenciaAction,
+  registrarClaseExtraordinaria,
 } from './asistencia'
 
 // 2026-07-28 es martes. Menores Avanzado va los martes de 17:00 a 19:00.
@@ -347,6 +348,44 @@ describe('clase extraordinaria', () => {
     })
 
     const r = await eliminarClaseExtraordinaria({ id: 'extra-1' })
+
+    expect(r.error).toContain('Solo el admin o el profesor')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  // El caso que se rompía en producción: marcar a alguien que hoy no entrena.
+  // La pantalla lo bloqueaba con un mensaje porque la base exigía un bloque.
+  it('sin bloque se registra igual: es el caso del que hoy no entrena', async () => {
+    await registrarClaseExtraordinaria({ jugadorId: 'j1', fecha: '2026-08-03' })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_clase_extraordinaria',
+      expect.objectContaining({ p_bloque_id: null }))
+  })
+
+  it('con un horario elegido manda ese bloque', async () => {
+    await registrarClaseExtraordinaria({ jugadorId: 'j1', fecha: '2026-08-03', bloqueId: 'b-lun' })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_clase_extraordinaria',
+      expect.objectContaining({ p_bloque_id: 'b-lun' }))
+  })
+
+  it('poner el grupo después manda id y bloque', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: null })
+
+    const r = await asignarBloqueClaseExtraordinaria({ id: 'extra-1', bloqueId: 'b-lun' })
+
+    expect(r).toEqual({ ok: true })
+    expect(mocks.rpc).toHaveBeenCalledWith('asignar_bloque_clase_extraordinaria',
+      { p_id: 'extra-1', p_bloque_id: 'b-lun' })
+  })
+
+  it('el jugador no cambia el grupo de una clase extra', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'jugador', jugador_id: 'j1' },
+    })
+
+    const r = await asignarBloqueClaseExtraordinaria({ id: 'extra-1', bloqueId: 'b-lun' })
 
     expect(r.error).toContain('Solo el admin o el profesor')
     expect(mocks.rpc).not.toHaveBeenCalled()

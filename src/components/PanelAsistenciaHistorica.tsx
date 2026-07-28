@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  asignarMontoClaseExtraordinaria, corregirAsistencia,
+  asignarBloqueClaseExtraordinaria, asignarMontoClaseExtraordinaria, corregirAsistencia,
   eliminarClaseExtraordinaria, registrarClaseExtraordinaria,
 } from '@/app/actions/asistencia'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -136,6 +136,15 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
     setOcupado(false)
     if (res.error) { setMensaje(res.error); return }
     setAbierto(null)
+    if (elegido) await cargarHistorial(elegido.id, anio)
+  }
+
+  async function ponerBloque(id: string, bloqueId: string) {
+    setOcupado(true)
+    setMensaje('')
+    const res = await asignarBloqueClaseExtraordinaria({ id, bloqueId })
+    setOcupado(false)
+    if (res.error) { setMensaje(res.error); return }
     if (elegido) await cargarHistorial(elegido.id, anio)
   }
 
@@ -342,8 +351,24 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
                       <div key={id} style={{ background: '#fffbeb', border: '1px solid #fde047',
                         borderRadius: 9, padding: 10, marginBottom: 8 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#713f12', marginBottom: 6 }}>
-                          {b ? `${b.hora_inicio && b.hora_fin ? rangoHorario(b.hora_inicio, b.hora_fin) + ' · ' : ''}${b.nombre}` : 'Grupo eliminado'}
+                          {b
+                            ? `${b.hora_inicio && b.hora_fin ? rangoHorario(b.hora_inicio, b.hora_fin) + ' · ' : ''}${b.nombre}`
+                            : e.bloque_id ? 'Grupo eliminado' : 'Sin grupo asignado'}
                         </div>
+                        {/* Se registró sin decir a qué grupo vino. Se completa
+                            acá; el cobro funciona igual sin esto. */}
+                        {!e.bloque_id && candidatos.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                            {candidatos.map(c => (
+                              <button key={c.id} onClick={() => ponerBloque(id, c.id)} disabled={ocupado}
+                                style={{ padding: '4px 9px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                                  border: '1px solid #fde047', background: '#fff', color: '#713f12',
+                                  cursor: ocupado ? 'wait' : 'pointer' }}>
+                                {c.hora_inicio && c.hora_fin ? rangoHorario(c.hora_inicio, c.hora_fin) : c.nombre}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <input type="number" value={montos[id] ?? ''}
                           onChange={ev => setMontos(m => ({ ...m, [id]: ev.target.value }))}
                           placeholder={SIN_CUOTA}

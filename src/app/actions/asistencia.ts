@@ -128,7 +128,9 @@ const STAFF = ['admin', 'superadmin', 'profesor']
 export async function registrarClaseExtraordinaria(params: {
   jugadorId: string
   fecha: string
-  bloqueId: string
+  /** El grupo al que vino. Opcional: el que hoy no entrena no tiene ninguno, y
+   *  anotar que vino no puede depender de saberlo. Se completa después. */
+  bloqueId?: string | null
   hora?: string | null
   monto?: number | null
   motivo?: string | null
@@ -143,7 +145,7 @@ export async function registrarClaseExtraordinaria(params: {
   const { data, error } = await (supabase as any).rpc('registrar_clase_extraordinaria', {
     p_jugador_id: params.jugadorId,
     p_fecha:      params.fecha,
-    p_bloque_id:  params.bloqueId,
+    p_bloque_id:  params.bloqueId ?? null,
     p_hora:       params.hora ?? null,
     p_monto:      params.monto ?? null,
     p_motivo:     params.motivo?.trim() || null,
@@ -151,6 +153,28 @@ export async function registrarClaseExtraordinaria(params: {
   if (error) return { error: error.message }
 
   return { ok: true, id: data as string }
+}
+
+/**
+ * Le pone —o le cambia— el grupo a una clase extra.
+ *
+ * Existe porque registrar a alguien que hoy no entrena no exige elegir grupo:
+ * primero se anota que vino, y a cuál fue se completa después.
+ */
+export async function asignarBloqueClaseExtraordinaria(params: { id: string; bloqueId: string | null }) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!STAFF.includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden cambiar el grupo' }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('asignar_bloque_clase_extraordinaria', {
+    p_id: params.id, p_bloque_id: params.bloqueId,
+  })
+  if (error) return { error: error.message }
+
+  return { ok: true }
 }
 
 /** Cuánto se le cobra por esa clase. null la deja otra vez por asignar. */
