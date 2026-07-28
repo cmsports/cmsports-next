@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { UserPlus, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { crearProfesor, cambiarEstadoProfesor, crearAccesoProfesor } from '@/app/actions/profesores'
+import CampoContrasena from '@/components/CampoContrasena'
 
 type Profesor = { id: string; nombre: string; email: string | null; especialidad: string | null; activo: boolean | null }
 
@@ -80,7 +81,7 @@ export default function GestionProfesores({ clubId }: { clubId: string }) {
         <input name="profesor-nombre" autoComplete="off" placeholder="Nombre completo" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} style={input} />
         <input name="profesor-email" type="email" autoComplete="off" placeholder="Correo de acceso" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} style={input} />
         <input name="profesor-especialidad" autoComplete="off" placeholder="Especialidad (opcional)" value={form.especialidad} onChange={e => setForm({ ...form, especialidad: e.target.value })} style={input} />
-        <input type="password" placeholder="Contraseña inicial (mínimo 6)" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={input} />
+        <CampoContrasena placeholder="Contraseña inicial (mínimo 6)" value={form.password} onChange={v => setForm({ ...form, password: v })} style={input} />
       </div>
       {error && <div style={{ color: '#dc2626', fontSize: 12, marginTop: 10 }}>{error}</div>}
       {mensaje && <div style={{ color: '#16a34a', fontSize: 12, marginTop: 10 }}>{mensaje}</div>}
@@ -121,8 +122,8 @@ export default function GestionProfesores({ clubId }: { clubId: string }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <input type="email" autoComplete="off" placeholder="Correo de acceso"
                   value={acceso.email} onChange={e => setAcceso({ ...acceso, email: e.target.value })} style={input} />
-                <input type="password" autoComplete="new-password" placeholder="Contraseña inicial (mínimo 6)"
-                  value={acceso.password} onChange={e => setAcceso({ ...acceso, password: e.target.value })} style={input} />
+                <CampoContrasena autoComplete="new-password" placeholder="Contraseña inicial (mínimo 6)"
+                  value={acceso.password} onChange={v => setAcceso({ ...acceso, password: v })} style={input} />
               </div>
               <button onClick={() => darAcceso(profesor)} disabled={guardando}
                 style={{ marginTop: 9, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', border: 0, borderRadius: 8, padding: '8px 14px', fontWeight: 600, fontSize: 12, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center' }}>
