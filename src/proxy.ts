@@ -17,7 +17,7 @@ const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/rep
 // administrativas dentro de esas pantallas siguen reservadas al admin.
 const staffRoutes = ['/jugadores']
 const profesorRoutes = ['/dashboard-profesor']
-const jugadorRoutes = ['/perfil', '/mis-clases', '/estado-cuenta', '/mi-horario']
+const jugadorRoutes = ['/perfil', '/estado-cuenta', '/mi-horario']
 const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada']
 
 function getRolRedirect(rol: string | null): string {

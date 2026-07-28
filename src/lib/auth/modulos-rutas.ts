@@ -10,7 +10,7 @@ const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly stri
   { modulo: 'liga', rutas: ['/liga'] },
   // `/mi-horario` es la vista del jugador de lo mismo que el staff arma en
   // `/horario`, así que depende del mismo módulo.
-  { modulo: 'clases', rutas: ['/clases', '/mis-clases', '/horario', '/mi-horario'] },
+  { modulo: 'clases', rutas: ['/clases', '/horario', '/mi-horario'] },
   { modulo: 'calendario', rutas: ['/calendario'] },
   { modulo: 'asistencia', rutas: ['/asistencia'] },
   { modulo: 'mensualidades', rutas: ['/mensualidades', '/estado-cuenta'] },

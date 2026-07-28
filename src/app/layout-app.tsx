@@ -72,7 +72,6 @@ const navJugador = [
   { label: 'Asistencia', emoji: '✅',          icon: ClipboardCheck,href: '/asistencia',    modulo: 'asistencia' },
   { section: 'Club' },
   { label: 'Mi horario', emoji: '🗓️',         icon: CalendarClock, href: '/mi-horario',    modulo: 'clases' },
-  { label: 'Mis clases', emoji: '📚',          icon: BookOpen,      href: '/mis-clases',    modulo: 'clases' },
   { label: 'Ranking', emoji: '🥇',             icon: Award,         href: '/ranking',          modulo: 'torneos' },
   { label: 'Calendario', emoji: '📅',          icon: Calendar,      href: '/calendario',    modulo: 'calendario' },
   { section: 'Tienda' },
@@ -100,8 +99,8 @@ const mobileNavProfesor = [
 const mobileNavJugador = [
   { label: 'Perfil', emoji: '👤',     icon: User,           href: '/perfil' },
   { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia',    modulo: 'asistencia' },
-  { label: 'Mis clases', emoji: '📚', icon: BookOpen,        href: '/mis-clases',    modulo: 'clases' },
   { label: 'Mi horario', emoji: '🗓️', icon: CalendarClock,   href: '/mi-horario',    modulo: 'clases' },
+  { label: 'Ranking', emoji: '🥇',    icon: Award,           href: '/ranking',       modulo: 'torneos' },
 ]
 
 type NavLink = { label: string; icon: LucideIcon; emoji?: string; href: string; modulo?: string }
