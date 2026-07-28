@@ -130,6 +130,8 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const hora = horaChile()
   const clubId = perfil?.club_id ?? null
   const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor'
+  // El profesor marca la clase extra; el precio lo decide un administrador.
+  const puedeMontos = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
 
   const sincronizarCola = useCallback(async (cid?: string) => {
     const id = cid || clubId
@@ -802,14 +804,21 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                       </td>
                       {esAdminOProfesor && (
                         <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <button
-                            onClick={() => { setModalMonto(e); setMontoTexto(e.monto != null ? String(e.monto) : ''); setErrorMonto('') }}
-                            style={{ background: e.monto != null ? '#fff' : '#fff7ed',
-                              border: `1px solid ${e.monto != null ? '#e2e8f0' : '#fed7aa'}`,
-                              borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
-                              color: e.monto != null ? text : '#c2410c', cursor: 'pointer' }}>
-                            {fmtMonto(e.monto) ?? SIN_CUOTA}
-                          </button>
+                          {puedeMontos ? (
+                            <button
+                              onClick={() => { setModalMonto(e); setMontoTexto(e.monto != null ? String(e.monto) : ''); setErrorMonto('') }}
+                              style={{ background: e.monto != null ? '#fff' : '#fff7ed',
+                                border: `1px solid ${e.monto != null ? '#e2e8f0' : '#fed7aa'}`,
+                                borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                                color: e.monto != null ? text : '#c2410c', cursor: 'pointer' }}>
+                              {fmtMonto(e.monto) ?? SIN_CUOTA}
+                            </button>
+                          ) : (
+                            // El profesor la ve registrada pero no le pone precio.
+                            <span style={{ fontSize: 11, color: hint }}>
+                              {fmtMonto(e.monto) ?? 'la cobra el admin'}
+                            </span>
+                          )}
                         </td>
                       )}
                     </tr>

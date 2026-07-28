@@ -379,7 +379,17 @@ describe('clase extraordinaria', () => {
     expect(r.error).toContain('su asistencia es la normal')
   })
 
+  // Este describe corre como profesor, que es lo habitual: el que pasa lista.
+  // Las pruebas del camino de admin lo dicen a mano.
+  function comoAdmin() {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'admin', jugador_id: null },
+    })
+  }
+
   it('asignar el monto manda el id y el monto', async () => {
+    comoAdmin()
     mocks.rpc.mockResolvedValue({ data: null, error: null })
 
     const r = await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: 8000 })
@@ -389,9 +399,19 @@ describe('clase extraordinaria', () => {
       { p_id: 'extra-1', p_monto: 8000 })
   })
 
+  // El profesor marca la clase; cuánto se cobra lo decide un administrador.
+  // Esconder el campo en la pantalla no alcanza: la acción tiene que rebotar.
+  it('el profesor no le pone precio', async () => {
+    const r = await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: 8000 })
+
+    expect(r.error).toContain('administrador')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
   // Vaciar el campo la devuelve a "por asignar". Un null tiene que llegar como
   // null y no convertirse en cero por el camino.
   it('vaciar el monto manda null, no cero', async () => {
+    comoAdmin()
     mocks.rpc.mockResolvedValue({ data: null, error: null })
 
     await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: null })
@@ -401,6 +421,7 @@ describe('clase extraordinaria', () => {
   })
 
   it('no se cambia el monto de una ya pagada', async () => {
+    comoAdmin()
     mocks.rpc.mockResolvedValue({
       data: null,
       error: { message: 'Esa clase ya está pagada: hay que revertir el pago antes de cambiar el monto' },

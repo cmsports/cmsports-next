@@ -141,6 +141,8 @@ export async function corregirAsistencia(params: {
 }
 
 const STAFF = ['admin', 'superadmin', 'profesor']
+// Lo que toca plata: el profesor queda afuera.
+const ADMIN = ['admin', 'superadmin']
 
 /**
  * El jugador vino a un grupo que no es el suyo.
@@ -209,8 +211,10 @@ export async function asignarBloqueClaseExtraordinaria(params: { id: string; blo
 export async function asignarMontoClaseExtraordinaria(params: { id: string; monto: number | null }) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
-  if (!STAFF.includes(perfil.rol ?? '')) {
-    return { error: 'Solo el admin o el profesor pueden cambiar el monto' }
+  // El profesor marca la clase; el precio lo decide un administrador. La base
+  // lo vuelve a comprobar: esconder el campo no es una restricción.
+  if (!ADMIN.includes(perfil.rol ?? '')) {
+    return { error: 'El precio de una clase extra lo pone un administrador' }
   }
   if (!params.id) return { error: 'Falta la clase a modificar' }
 

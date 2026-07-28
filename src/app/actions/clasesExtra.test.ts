@@ -41,20 +41,23 @@ describe('enviarClasesExtraACobro', () => {
     expect(fake.argsDe('enviar_clases_extra_a_cobro')[0]).toEqual({ p_ids: [ID_A, ID_B] })
   })
 
-  it('el profesor también puede: marcar y enviar es su trabajo', async () => {
-    conBase({ id: 'u2', club_id: 'club-1', rol: 'profesor' }, { enviar_clases_extra_a_cobro: 1 })
+  // Mandar a cobro es decidir plata. El profesor marca la clase y ahí termina
+  // lo suyo: el precio y el cobro los pone un administrador.
+  it('el profesor no manda a cobro', async () => {
+    conBase({ id: 'u2', club_id: 'club-1', rol: 'profesor' })
 
     const res = await enviarClasesExtraACobro({ ids: [ID_A] })
 
-    expect(res).toMatchObject({ ok: true })
+    expect(res.error).toContain('administrador')
+    expect(fake.rpcs).toHaveLength(0)
   })
 
-  it('el jugador no', async () => {
+  it('el jugador tampoco', async () => {
     conBase({ id: 'u3', club_id: 'club-1', rol: 'jugador' })
 
     const res = await enviarClasesExtraACobro({ ids: [ID_A] })
 
-    expect(res.error).toContain('Solo el admin o el profesor')
+    expect(res.error).toContain('administrador')
     expect(fake.rpcs).toHaveLength(0)
   })
 

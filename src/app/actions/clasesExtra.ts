@@ -12,7 +12,7 @@ import {
   enviarClasesExtraSchema, pagarClasesExtraSchema, revertirClasesExtraSchema, validationError,
 } from '@/lib/validation/finanzas'
 
-const STAFF = ['admin', 'superadmin', 'profesor']
+const ADMIN = ['admin', 'superadmin']
 
 /**
  * Las manda a cobro: pasan de "el profe les puso precio" a "se le está
@@ -21,8 +21,9 @@ const STAFF = ['admin', 'superadmin', 'profesor']
 export async function enviarClasesExtraACobro(params: { ids: string[] }) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
-  if (!STAFF.includes(perfil.rol ?? '')) {
-    return { error: 'Solo el admin o el profesor pueden enviar a cobro' }
+  // Mandar a cobro es decidir plata: queda para el administrador.
+  if (!ADMIN.includes(perfil.rol ?? '')) {
+    return { error: 'Mandar a cobro es cosa de un administrador' }
   }
   const v = enviarClasesExtraSchema.safeParse(params)
   if (!v.success) return { error: validationError(v.error) }

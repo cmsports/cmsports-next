@@ -52,7 +52,10 @@ export default function AsistenciaPage() {
 
       {(!esStaff || tab === 'pasar') && <AsistenciaPanel perfil={perfil} />}
       {esStaff && tab === 'historica' && perfil.club_id && (
-        <PanelAsistenciaHistorica clubId={perfil.club_id} />
+        <PanelAsistenciaHistorica
+          clubId={perfil.club_id}
+          puedeMontos={perfil.rol === 'admin' || perfil.rol === 'superadmin'}
+        />
       )}
       {esStaff && tab === 'ranking' && perfil.club_id && (
         <PanelRankingAsistencia clubId={perfil.club_id} />

@@ -37,7 +37,11 @@ const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
 
 type Jugador = { id: string; nombre: string; categoria: string | null }
 
-export default function PanelAsistenciaHistorica({ clubId }: { clubId: string }) {
+export default function PanelAsistenciaHistorica({ clubId, puedeMontos = false }: {
+  clubId: string
+  /** El profesor registra la clase extra; el precio lo decide un admin. */
+  puedeMontos?: boolean
+}) {
   const [jugadores, setJugadores] = useState<Jugador[]>([])
   const [busqueda, setBusqueda]   = useState('')
   const [elegido, setElegido]     = useState<Jugador | null>(null)
@@ -369,24 +373,39 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
                             ))}
                           </div>
                         )}
-                        <input type="number" value={montos[id] ?? ''}
-                          onChange={ev => setMontos(m => ({ ...m, [id]: ev.target.value }))}
-                          placeholder={SIN_CUOTA}
-                          style={{ width: '100%', boxSizing: 'border-box', background: '#fff', border: '1px solid #fde047',
-                            borderRadius: 8, padding: '8px 11px', color: text, fontSize: 13, outline: 'none', marginBottom: 8 }} />
+                        {puedeMontos ? (
+                          <input type="number" value={montos[id] ?? ''}
+                            onChange={ev => setMontos(m => ({ ...m, [id]: ev.target.value }))}
+                            placeholder={SIN_CUOTA}
+                            style={{ width: '100%', boxSizing: 'border-box', background: '#fff', border: '1px solid #fde047',
+                              borderRadius: 8, padding: '8px 11px', color: text, fontSize: 13, outline: 'none', marginBottom: 8 }} />
+                        ) : (
+                          // El profesor la ve, pero el precio lo decide un admin.
+                          <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
+                            {e.monto != null
+                              ? `Monto: $${Number(e.monto).toLocaleString('es-CL')}`
+                              : 'El monto lo asigna un administrador.'}
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: 8 }}>
-                          <button onClick={() => guardarMontoExtra(id)} disabled={ocupado || !id}
-                            style={{ flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                              border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
-                              cursor: ocupado ? 'wait' : 'pointer' }}>
-                            {ocupado ? 'Guardando...' : 'Guardar monto'}
-                          </button>
-                          <button onClick={() => borrarExtra(id)} disabled={ocupado || !id}
-                            style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12,
-                              border: 'none', background: 'transparent', color: '#dc2626',
-                              cursor: ocupado ? 'wait' : 'pointer' }}>
-                            Borrar
-                          </button>
+                          {puedeMontos && (
+                            <button onClick={() => guardarMontoExtra(id)} disabled={ocupado || !id}
+                              style={{ flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                                border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+                                cursor: ocupado ? 'wait' : 'pointer' }}>
+                              {ocupado ? 'Guardando...' : 'Guardar monto'}
+                            </button>
+                          )}
+                          {/* Sin precio la puede deshacer quien la puso; con precio
+                              hay un cobro en camino y lo borra un admin. */}
+                          {(puedeMontos || e.monto == null) && (
+                            <button onClick={() => borrarExtra(id)} disabled={ocupado || !id}
+                              style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12,
+                                border: 'none', background: 'transparent', color: '#dc2626',
+                                cursor: ocupado ? 'wait' : 'pointer' }}>
+                              Borrar
+                            </button>
+                          )}
                         </div>
                       </div>
                     )
@@ -420,10 +439,14 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
                       )
                     })}
                   </div>
-                  <input type="number" value={montoNuevo} onChange={e => setMontoNuevo(e.target.value)}
-                    placeholder={`Monto — ${SIN_CUOTA.toLowerCase()}`}
-                    style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
-                      borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none', marginBottom: 10 }} />
+                  {/* Al registrarla el profesor no le pone precio: la deja
+                      marcada y el administrador decide cuánto se cobra. */}
+                  {puedeMontos && (
+                    <input type="number" value={montoNuevo} onChange={e => setMontoNuevo(e.target.value)}
+                      placeholder={`Monto — ${SIN_CUOTA.toLowerCase()}`}
+                      style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
+                        borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none', marginBottom: 10 }} />
+                  )}
                   <button onClick={() => crearExtra(abierto.fecha)} disabled={ocupado || !bloqueExtra}
                     style={{ width: '100%', padding: '10px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700,
                       border: 'none', color: bloqueExtra ? '#422006' : '#94a3b8',
