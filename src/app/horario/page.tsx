@@ -9,6 +9,8 @@ import { Pencil, Plus, Trash2, X, Clock, MapPin } from 'lucide-react'
 import { diasSinClase, eliminarBloque, estadoDiaSinClase, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
 import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
+import { fechaChile } from '@/lib/domain/fechaChile'
+import { soloVigentes } from '@/lib/supabase/vigentes'
 import PanelCupos from '@/components/PanelCupos'
 import PanelReportes from '@/components/PanelReportes'
 
@@ -83,9 +85,11 @@ export default function HorarioPage() {
 
   const cargar = useCallback(async (cid: string) => {
     const [{ data: bloquesData }, { data: profesoresData }, { data: rel }] = await Promise.all([
-      supabase.from('bloques_horario')
+      // `activo` no alcanza: dar de baja un grupo le cierra la vigencia y deja
+      // `activo` en true. Sin este filtro, el grupo que borrabas seguía acá.
+      soloVigentes(supabase.from('bloques_horario')
         .select('id,grupo_id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
-        .eq('club_id', cid).eq('activo', true)
+        .eq('club_id', cid).eq('activo', true), fechaChile())
         .order('hora_inicio'),
       supabase.from('profesores').select('id,nombre').eq('club_id', cid).eq('activo', true).order('nombre'),
       supabase.from('bloque_profesores').select('bloque_id,profesor_id').is('vigente_hasta', null),
@@ -244,7 +248,17 @@ export default function HorarioPage() {
   }
 
   async function eliminar(b: Bloque) {
-    if (!confirm(`¿Eliminar el bloque "${b.nombre}" del ${b.dia_semana}?\n\nLas clases ya generadas se conservan.`)) return
+    // El aviso decía solo que las clases se conservan. Lo que no decía es que a
+    // todos los inscritos se les cierra la inscripción, y como los días de
+    // entrenamiento salen de ahí, esa gente queda sin días.
+    const { count } = await supabase.from('bloque_jugadores')
+      .select('jugador_id', { count: 'exact', head: true })
+      .eq('bloque_id', b.id).is('vigente_hasta', null)
+    const cuantos = count ?? 0
+    const aviso = cuantos > 0
+      ? `\n\nSe le cierra la inscripción a ${cuantos} jugador${cuantos === 1 ? '' : 'es'}: ese grupo deja de ser uno de sus días de entrenamiento.`
+      : ''
+    if (!confirm(`¿Dar de baja el grupo "${b.nombre}" del ${b.dia_semana}?${aviso}\n\nLas clases ya generadas y el historial se conservan.`)) return
     setEliminandoId(b.id)
     const res = await eliminarBloque({ id: b.id })
     setEliminandoId(null)

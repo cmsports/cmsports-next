@@ -9,6 +9,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actualizarMensualidad } from '@/app/actions/jugadores'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { soloVigentes } from '@/lib/supabase/vigentes'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 import { firmarUrls } from '@/lib/supabase/privado'
 import FiltroMultiSelect, { setToggle, setDesdeParam } from '@/components/FiltroMultiSelect'
@@ -241,9 +242,11 @@ export default function JugadoresPage() {
 
   const cargarBloques = useCallback(async () => {
     if (!clubId) return
-    const { data } = await supabase.from('bloques_horario')
+    // Con vigencia: inscribir a alguien en un grupo ya cerrado le deja días de
+    // entrenamiento que no existen.
+    const { data } = await soloVigentes(supabase.from('bloques_horario')
       .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
-      .eq('club_id', clubId).eq('activo', true).order('hora_inicio')
+      .eq('club_id', clubId).eq('activo', true), fechaChile()).order('hora_inicio')
     setBloquesClub((data ?? []) as BloqueHorario[])
   }, [clubId])
 

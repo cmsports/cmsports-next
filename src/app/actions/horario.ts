@@ -3,6 +3,7 @@
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { diaDesdeFecha, diaLargo, hhmm } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { vigenteEn } from '@/lib/domain/vigencia'
 
 // El horario semanal lo maneja el staff (admin o profesor). requireAdminClub
 // solo deja pasar al admin, así que acá va una comprobación propia.
@@ -345,14 +346,26 @@ export async function generarSemana(params: {
   if (fechas.length === 0) return { error: 'Elegí al menos un día' }
   if (fechas.length > 60) return { error: 'Demasiados días de una vez (máximo 60)' }
 
+  // La vigencia se mira contra cada fecha, no contra hoy: generar tres semanas
+  // adelante de un grupo que cierra el viernes tiene que parar el viernes.
   let query = supabase.from('bloques_horario')
-    .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin')
+    .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,vigente_desde,vigente_hasta')
     .eq('club_id', clubId).eq('activo', true)
   if (params.sedes?.length) query = query.in('sede', params.sedes)
 
   const { data: bloques, error: bloquesErr } = await query
   if (bloquesErr) return { error: 'No se pudo leer el horario: ' + bloquesErr.message }
   if (!bloques?.length) return { error: 'No hay bloques en el horario semanal' }
+
+  // Los días marcados sin clase. El comentario de esta función decía que los
+  // feriados quedaban fuera y no había nada que los dejara fuera: se generaban
+  // clases el 18 de septiembre y aparecían como pendientes de registrar.
+  const { data: suspendidos } = await supabase.from('bloque_excepciones')
+    .select('bloque_id,fecha')
+    .in('bloque_id', bloques.map((b: { id: string }) => b.id))
+    .in('fecha', fechas)
+  const sinClase = new Set((suspendidos ?? []).map(
+    (e: { bloque_id: string; fecha: string }) => `${e.bloque_id}|${e.fecha}`))
 
   // Solo el profesor titular queda en la clase: `clases.profesor_id` admite uno
   // y los bloques de Fátima tienen dos. El bloque conserva la lista completa.
@@ -372,6 +385,8 @@ export async function generarSemana(params: {
     const dia = diaDesdeFecha(fecha)
     if (!dia) continue   // fin de semana: el club no abre
     for (const b of bloques.filter((x: { dia_semana: string }) => x.dia_semana === dia)) {
+      if (!vigenteEn(b, fecha)) continue        // el grupo no existía ese día
+      if (sinClase.has(`${b.id}|${fecha}`)) continue   // marcado sin clase
       filas.push({
         club_id: clubId,
         bloque_id: b.id,

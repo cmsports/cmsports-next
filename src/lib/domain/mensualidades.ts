@@ -33,8 +33,15 @@ export const SIN_CUOTA = 'Cuota por asignar'
  * ellas terminaba en `|| 30000` o `|| 0`: el campo vacío se convertía en un
  * monto. Vacío significa "todavía no le asignan cuota" y tiene que llegar así
  * hasta la base.
+ *
+ * Se leen solo los dígitos, y por eso: `parseInt('12.500')` devuelve 12, no
+ * 12.500. Acá el punto es separador de miles —así se escribe la plata en
+ * Chile— y quien tipeaba "12.500" guardaba doce pesos sin enterarse. El peso
+ * no tiene decimales, así que no hay nada que un punto pueda significar.
  */
 export function montoIngresado(texto: string): number | null {
-  const n = parseInt(texto, 10)
+  const digitos = (texto ?? '').replace(/\D/g, '')
+  if (digitos === '') return null
+  const n = parseInt(digitos, 10)
   return Number.isFinite(n) ? n : null
 }

@@ -39,4 +39,13 @@ describe('montoIngresado', () => {
     expect(montoIngresado('   ')).toBeNull()
     expect(montoIngresado('abc')).toBeNull()
   })
+
+  // El punto es separador de miles: así se escribe la plata acá. Con parseInt,
+  // escribir "12.500" guardaba doce pesos y nadie se enteraba.
+  it('el separador de miles no recorta el monto', () => {
+    expect(montoIngresado('12.500')).toBe(12500)
+    expect(montoIngresado('12,500')).toBe(12500)
+    expect(montoIngresado('$ 12.500')).toBe(12500)
+    expect(montoIngresado('1.250.000')).toBe(1250000)
+  })
 })

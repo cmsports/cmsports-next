@@ -7,6 +7,8 @@ import { Plus, X, Search, Users } from 'lucide-react'
 import { agregarJugadorABloque, quitarJugadorDeBloque } from '@/app/actions/horario'
 import { DIAS, hhmm, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
+import { fechaChile } from '@/lib/domain/fechaChile'
+import { soloVigentes } from '@/lib/supabase/vigentes'
 
 const supabase = createClient()
 
@@ -31,9 +33,10 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
 
   const cargar = useCallback(async () => {
     const [{ data: bloquesData }, { data: jugadoresData }, { data: rel }, { data: profRel }, { data: profs }] = await Promise.all([
-      supabase.from('bloques_horario')
+      // Sin el filtro de vigencia, un grupo dado de baja seguía ocupando cupos.
+      soloVigentes(supabase.from('bloques_horario')
         .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
-        .eq('club_id', clubId).eq('activo', true).order('hora_inicio'),
+        .eq('club_id', clubId).eq('activo', true), fechaChile()).order('hora_inicio'),
       supabase.from('jugadores').select('id,nombre,grupo,categoria')
         .eq('club_id', clubId).eq('estado', 'activo')
         .or('es_externo.is.null,es_externo.eq.false').order('nombre'),

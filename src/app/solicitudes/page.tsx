@@ -15,6 +15,8 @@ import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/c
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { montoIngresado } from '@/lib/domain/mensualidades'
+import { fechaChile } from '@/lib/domain/fechaChile'
+import { soloVigentes } from '@/lib/supabase/vigentes'
 
 const CLUB_BUIN_ID = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
 
@@ -120,9 +122,11 @@ export default function SolicitudesPage() {
 
   const cargarBloques = useCallback(async () => {
     if (!clubId) return
-    const { data } = await supabase.from('bloques_horario')
+    // Igual que en Jugadores: aprobar una solicitud hacia un grupo cerrado deja
+    // al recién llegado con días que no existen.
+    const { data } = await soloVigentes(supabase.from('bloques_horario')
       .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
-      .eq('club_id', clubId).eq('activo', true).order('hora_inicio')
+      .eq('club_id', clubId).eq('activo', true), fechaChile()).order('hora_inicio')
     setBloquesClub((data ?? []) as BloqueHorario[])
   }, [clubId])
 

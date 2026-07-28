@@ -6,9 +6,11 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.crear }))
 
 import { asignarBloquesJugador, estadoDiaSinClase, generarSemana, guardarGrupo, marcarDiaSinClase } from './horario'
 
+// `vigente_desde` es NOT NULL en la base, así que acá también: sin ella, las
+// fixtures describían una fila que no puede existir.
 const BLOQUES = [
-  { id: 'b-lun', grupo_id: 'g1', nombre: 'Todo Público 1', sede: 'buin', dia_semana: 'lun', hora_inicio: '16:30', hora_fin: '18:30', vigente_hasta: null },
-  { id: 'b-mar', grupo_id: 'g1', nombre: 'Menores Avanzado', sede: 'buin', dia_semana: 'mar', hora_inicio: '17:00', hora_fin: '19:00', vigente_hasta: null },
+  { id: 'b-lun', grupo_id: 'g1', nombre: 'Todo Público 1', sede: 'buin', dia_semana: 'lun', hora_inicio: '16:30', hora_fin: '18:30', vigente_desde: '2026-01-01', vigente_hasta: null },
+  { id: 'b-mar', grupo_id: 'g1', nombre: 'Menores Avanzado', sede: 'buin', dia_semana: 'mar', hora_inicio: '17:00', hora_fin: '19:00', vigente_desde: '2026-01-01', vigente_hasta: null },
 ]
 
 let fake: FakeSupabase
@@ -42,6 +44,44 @@ describe('generarSemana', () => {
 
     const upsert = fake.llamadas.find(l => l.tabla === 'clases' && l.op === 'upsert')
     expect(upsert?.opciones).toMatchObject({ onConflict: 'bloque_id,fecha', ignoreDuplicates: true })
+  })
+
+  // Dar de baja un grupo le cierra la vigencia, no lo borra. Generar tres
+  // semanas adelante le seguía creando clases para siempre.
+  it('no genera clases de un grupo que ya cerró', async () => {
+    conBase({
+      bloques_horario: [{ ...BLOQUES[0], vigente_hasta: '2026-08-05' }],
+      bloque_profesores: [], clases: [],
+    })
+
+    await generarSemana({ fechas: ['2026-08-03', '2026-08-10'], publicar: false })
+
+    expect(fake.escrituras('clases').map(f => f.fecha)).toEqual(['2026-08-03'])
+  })
+
+  it('no genera clases antes de que el grupo existiera', async () => {
+    conBase({
+      bloques_horario: [{ ...BLOQUES[0], vigente_desde: '2026-08-06' }],
+      bloque_profesores: [], clases: [],
+    })
+
+    await generarSemana({ fechas: ['2026-08-03', '2026-08-10'], publicar: false })
+
+    expect(fake.escrituras('clases').map(f => f.fecha)).toEqual(['2026-08-10'])
+  })
+
+  // La función decía en su comentario que los feriados quedaban fuera y no
+  // había nada que los dejara fuera.
+  it('no genera clases en un día marcado sin clase', async () => {
+    conBase({
+      bloques_horario: [BLOQUES[0]],
+      bloque_excepciones: [{ bloque_id: 'b-lun', fecha: '2026-08-10' }],
+      bloque_profesores: [], clases: [],
+    })
+
+    await generarSemana({ fechas: ['2026-08-03', '2026-08-10'], publicar: false })
+
+    expect(fake.escrituras('clases').map(f => f.fecha)).toEqual(['2026-08-03'])
   })
 
   it('deja fuera los fines de semana', async () => {
