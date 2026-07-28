@@ -106,6 +106,26 @@ export async function marcarDiaSinClase(params: { fecha: string; motivo?: string
   const dia = diaDesdeFecha(params.fecha)
   if (!dia) return { error: 'El club no abre los fines de semana' }
 
+  // Deshacer va primero y por su cuenta: borra las suspensiones de esa fecha
+  // sin fijarse en qué grupos funcionan hoy ese día de la semana.
+  //
+  // Antes compartía la consulta de abajo, así que si el horario había cambiado
+  // —el grupo se cerró, se movió de día, se le puso fecha de fin— el día
+  // quedaba suspendido para siempre: no había ningún bloque vigente que
+  // encontrar y la función se iba con "No hay grupos que funcionen los mar".
+  if (params.deshacer) {
+    const { data: todos, error: errTodos } = await supabase.from('bloques_horario')
+      .select('id').eq('club_id', clubId)
+    if (errTodos) return { error: 'No se pudo leer el horario: ' + errTodos.message }
+    const idsClub = (todos ?? []).map((b: { id: string }) => b.id)
+    if (idsClub.length === 0) return { success: true, grupos: 0, deshecho: true }
+
+    const { error } = await supabase.from('bloque_excepciones')
+      .delete().in('bloque_id', idsClub).eq('fecha', params.fecha)
+    if (error) return { error: 'No se pudo deshacer: ' + error.message }
+    return { success: true, grupos: idsClub.length, deshecho: true }
+  }
+
   const { data: bloques, error: errBloques } = await supabase.from('bloques_horario')
     .select('id').eq('club_id', clubId).eq('dia_semana', dia)
     .lte('vigente_desde', params.fecha)
@@ -114,13 +134,6 @@ export async function marcarDiaSinClase(params: { fecha: string; motivo?: string
   if (!bloques?.length) return { error: `No hay grupos que funcionen los ${dia}` }
 
   const ids = bloques.map((b: { id: string }) => b.id)
-
-  if (params.deshacer) {
-    const { error } = await supabase.from('bloque_excepciones')
-      .delete().in('bloque_id', ids).eq('fecha', params.fecha)
-    if (error) return { error: 'No se pudo deshacer: ' + error.message }
-    return { success: true, grupos: ids.length, deshecho: true }
-  }
 
   const { error } = await supabase.from('bloque_excepciones')
     .upsert(

@@ -12,6 +12,7 @@ import {
   asignarMontoClaseExtraordinaria, eliminarAsistencia, eliminarClaseExtraordinaria,
   registrarAsistenciaAction, registrarClaseExtraordinaria,
 } from '@/app/actions/asistencia'
+import { estadoDiaSinClase, marcarDiaSinClase } from '@/app/actions/horario'
 import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
@@ -95,6 +96,14 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [extrasHoy,    setExtrasHoy]    = useState<ClaseExtraHoy[]>([])
   const [mostrarOtros, setMostrarOtros] = useState(false)
   const [buscaOtro,    setBuscaOtro]    = useState('')
+  // Suspender el día se hacía solo desde Horario. El profe vive acá: si hoy no
+  // hubo clase, es acá donde se da cuenta.
+  const [modalDia,     setModalDia]     = useState(false)
+  const [estadoDia,    setEstadoDia]    = useState<{ grupos: number; suspendidos: number; motivo: string | null } | null>(null)
+  const [motivoDia,    setMotivoDia]    = useState('')
+  const [msgDia,       setMsgDia]       = useState('')
+  const [guardandoDia, setGuardandoDia] = useState(false)
+
   const [modalMonto,   setModalMonto]   = useState<ClaseExtraHoy | null>(null)
   const [montoTexto,   setMontoTexto]   = useState('')
   const [errorMonto,   setErrorMonto]   = useState('')
@@ -302,34 +311,49 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   useEffect(() => {
     if (!clubId) return
+
+    // Pasar lista son veinte clicks seguidos, y cada uno vuelve también por
+    // acá. Sin agrupar serían cuarenta recargas de la lista completa en un
+    // minuto: la propia y la del eco. Se espera a que pare la ráfaga.
+    const refrescar = () => {
+      if (recargaPendiente.current) clearTimeout(recargaPendiente.current)
+      recargaPendiente.current = setTimeout(() => {
+        void cargarDatos(clubId)
+        void cargarExtras(fechaVista)
+        if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
+      }, 600)
+    }
+
     const canal = supabase
       .channel(`asistencia-panel-${clubId}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'asistencia', filter: `club_id=eq.${clubId}`,
-      }, () => {
-        // Pasar lista son veinte clicks seguidos, y cada uno llega también por
-        // acá. Sin agrupar serían cuarenta recargas de la lista completa en un
-        // minuto: la propia y la del eco. Se espera a que pare la ráfaga.
-        if (recargaPendiente.current) clearTimeout(recargaPendiente.current)
-        recargaPendiente.current = setTimeout(() => {
-          void cargarDatos(clubId)
-          if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
-        }, 600)
-      })
+      }, refrescar)
+      // Las clases extra viven en otra tabla, así que necesitan su propia
+      // suscripción: sin esto, el profe que registra una desde el celular no la
+      // ve aparecer en el computador del club.
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'clases_extraordinarias', filter: `club_id=eq.${clubId}`,
+      }, refrescar)
       .subscribe()
 
     return () => {
       if (recargaPendiente.current) clearTimeout(recargaPendiente.current)
       void supabase.removeChannel(canal)
     }
-  }, [cargarAsistenciasDia, cargarDatos, clubId, fechaVista, hoy])
+  }, [cargarAsistenciasDia, cargarDatos, cargarExtras, clubId, fechaVista, hoy])
 
-  /** El jugador vino a un grupo que no es el suyo. Se cobra aparte. */
-  async function registrarExtra(jugadorId: string) {
-    if (!bloqueSel) return
+  /**
+   * El jugador vino a un grupo que no es el suyo. Se cobra aparte.
+   *
+   * El bloque es opcional: si hay un horario elegido se usa ese, y si no queda
+   * sin grupo hasta que alguien lo complete. Marcar que alguien vino tiene que
+   * ser un toque; de qué grupo fue y cuánto cuesta se resuelve después.
+   */
+  async function registrarExtra(jugadorId: string, bloqueId?: string | null) {
     setRegistrando(jugadorId)
     const res = await registrarClaseExtraordinaria({
-      jugadorId, fecha: hoy, bloqueId: bloqueSel, hora,
+      jugadorId, fecha: hoy, bloqueId: bloqueId ?? bloqueSel ?? null, hora,
     })
     setRegistrando(null)
     if (res.error) {
@@ -339,6 +363,35 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
     setBuscaOtro('')
     await cargarExtras(hoy)
+  }
+
+  async function abrirDiaSinClase() {
+    setMsgDia(''); setMotivoDia(''); setEstadoDia(null); setModalDia(true)
+    const res = await estadoDiaSinClase({ fecha: fechaVista })
+    if ('error' in res && res.error) { setMsgDia(res.error); return }
+    setEstadoDia({
+      grupos: (res as { grupos: number }).grupos,
+      suspendidos: (res as { suspendidos: number }).suspendidos,
+      motivo: (res as { motivo: string | null }).motivo,
+    })
+  }
+
+  async function guardarDiaSinClase(deshacer: boolean) {
+    setGuardandoDia(true); setMsgDia('')
+    const res = await marcarDiaSinClase({ fecha: fechaVista, motivo: motivoDia, deshacer })
+    setGuardandoDia(false)
+    if (res?.error) { setMsgDia(res.error); return }
+    setMsgDia(deshacer
+      ? 'Listo: el día vuelve a contar como entrenamiento.'
+      : `Listo: el día no cuenta para ${res.grupos} grupo${res.grupos === 1 ? '' : 's'}.`)
+    const ahora = await estadoDiaSinClase({ fecha: fechaVista })
+    if (!('error' in ahora && ahora.error)) {
+      setEstadoDia({
+        grupos: (ahora as { grupos: number }).grupos,
+        suspendidos: (ahora as { suspendidos: number }).suspendidos,
+        motivo: (ahora as { motivo: string | null }).motivo,
+      })
+    }
   }
 
   async function guardarMonto() {
@@ -367,17 +420,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   async function registrarAsistencia(jugadorId: string) {
     if (asistencias.find(a => a.jugador_id === jugadorId)) return
 
-    // El error que se arrastraba: marcar presente a alguien un día que no
-    // entrena le descontaba una sesión del plan y el día no aparecía en su
-    // calendario, porque no estaba programado. Si no tiene ningún bloque hoy,
-    // lo que vino a hacer es una clase extra y hay que elegirle el horario.
+    // Quien hoy no tiene ningún bloque no puede tener una asistencia normal:
+    // no había clase suya que cumplir. Se registra directo como clase extra, sin
+    // preguntar nada. Antes esto le descontaba una sesión del plan y el día ni
+    // siquiera aparecía en su calendario, porque no estaba programado.
     if (esAdminOProfesor && bloquesHoy.length > 0 && !tieneBloqueHoy(jugadorId)) {
-      const jug = jugadores.find(j => j.id === jugadorId)
-      setMensaje({
-        tipo: 'error',
-        texto: `${jug?.nombre ?? 'Ese jugador'} no entrena hoy. Elegí el horario al que vino y agregalo desde "Vino alguien de otro grupo": queda como clase extra y no le descuenta sesiones.`,
-      })
-      setTimeout(() => setMensaje(null), 9000)
+      await registrarExtra(jugadorId, null)
       return
     }
 
@@ -537,9 +585,18 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, color: text, marginBottom: 4 }}>📋 Asistencia</h2>
-        <p style={{ fontSize: 13, color: muted }}>Hoy {hoy} · ✅ {asistencias.length} registros</p>
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: text, marginBottom: 4 }}>📋 Asistencia</h2>
+          <p style={{ fontSize: 13, color: muted }}>Hoy {hoy} · ✅ {asistencias.length} registros</p>
+        </div>
+        {esAdminOProfesor && (
+          <button onClick={abrirDiaSinClase}
+            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 8,
+              border: '1px solid #e2e8f0', background: '#fff', color: muted, cursor: 'pointer' }}>
+            🚫 Día sin clase
+          </button>
+        )}
       </div>
 
       {!online && (
@@ -705,7 +762,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       {esAdminOProfesor && (
         <div style={{ ...card, padding: 16, marginBottom: 16 }}>
           <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:10, marginBottom: 12, flexWrap:'wrap' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: text }}>✏️ Registro manual</div>
+            {/* Dice "de hoy" porque escribe en la fecha de hoy aunque arriba se
+                esté mirando otro día: sin decirlo, el profe cree que está
+                completando el día que tiene a la vista. */}
+            <div style={{ fontSize: 13, fontWeight: 600, color: text }}>
+              ✏️ Registro manual {fechaVista !== hoy && <span style={{ fontWeight: 400, color: '#c2410c' }}>— registra en el día de hoy</span>}
+            </div>
             <div style={{ fontSize: 12, color: muted }}>
               {bloqueElegido
                 ? `${filtrados.filter(j => registradosHoy.has(j.id)).length} de ${filtrados.length} en ${bloqueElegido.nombre}`
@@ -776,17 +838,33 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
               {filtrados.map(j => {
                 const ya = registradosHoy.has(j.id)
+                const yaExtra = yaTieneExtra.has(j.id)
+                // Quien hoy no tiene ningún grupo no puede tener asistencia
+                // normal: lo suyo es siempre una clase extra. El botón lo dice
+                // desde antes de apretarlo, en vez de avisarlo después.
+                const esExtra = bloquesHoy.length > 0 && !tieneBloqueHoy(j.id)
+                const hecho = ya || yaExtra
                 return (
-                  <div key={j.id} onClick={() => !ya && registrarAsistencia(j.id)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e2e8f0', cursor: ya ? 'default' : 'pointer', opacity: ya ? 0.6 : 1 }}>
+                  <div key={j.id} onClick={() => !hecho && registrarAsistencia(j.id)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
+                      borderBottom: '1px solid #e2e8f0', cursor: hecho ? 'default' : 'pointer', opacity: hecho ? 0.6 : 1,
+                      background: esExtra && !hecho ? '#fffbeb' : undefined }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
-                      <div style={{ fontSize: 11, color: muted }}>{j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}</div>
+                      <div style={{ fontSize: 11, color: muted }}>
+                        {j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}
+                        {esExtra && <span style={{ color: '#a16207', fontWeight: 600 }}> · hoy no entrena</span>}
+                      </div>
                     </div>
-                    {ya
-                      ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>
-                      : registrando === j.id
-                        ? <span style={{ color: muted, fontSize: 12 }}>Registrando...</span>
-                        : <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Registrar</button>
+                    {yaExtra
+                      ? <span style={{ background: '#fef9c3', color: '#713f12', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🟡 Clase extra</span>
+                      : ya
+                        ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>
+                        : registrando === j.id
+                          ? <span style={{ color: muted, fontSize: 12 }}>Registrando...</span>
+                          : esExtra
+                            ? <button style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
+                            : <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Registrar</button>
                     }
                   </div>
                 )
@@ -795,8 +873,17 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           </div>
 
           {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:
-              sin saber a qué horario vino no se puede cobrar la clase. */}
-          {bloqueElegido && (
+              sin saber a qué horario vino no se puede cobrar la clase.
+              Solo con el día de hoy a la vista: esta sección escribe en la
+              fecha de hoy, y ofrecerla mirando otro día haría que la clase se
+              guardara en un día distinto del que el profe está viendo. */}
+          {bloqueElegido && fechaVista !== hoy && (
+            <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12, fontSize: 11, color: hint }}>
+              Estás viendo otro día. Para registrar una clase extra pasada, usá
+              <strong style={{ color: muted }}> Asistencia histórica</strong>.
+            </div>
+          )}
+          {bloqueElegido && fechaVista === hoy && (
             <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
               {!mostrarOtros ? (
                 <button onClick={() => setMostrarOtros(true)}
@@ -847,6 +934,79 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Suspender o restaurar el día */}
+      {modalDia && (
+        <div className="anim-fondo" onClick={e => { if (e.target === e.currentTarget) setModalDia(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
+          <div className="anim-modal" style={{ ...card, padding: 22, width: '100%', maxWidth: 360 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: text }}>Día sin clase</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 14, textTransform: 'capitalize' }}>
+              {formatFechaLarga(fechaVista)}
+            </div>
+
+            {estadoDia && (
+              estadoDia.grupos === 0 ? (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8,
+                  padding: '9px 12px', fontSize: 12, color: muted, marginBottom: 14 }}>
+                  Ese día no funciona ningún grupo.
+                </div>
+              ) : estadoDia.suspendidos > 0 ? (
+                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8,
+                  padding: '9px 12px', fontSize: 12, color: '#c2410c', marginBottom: 14, fontWeight: 600 }}>
+                  Está marcado sin clase para {estadoDia.suspendidos} de {estadoDia.grupos} grupo{estadoDia.grupos === 1 ? '' : 's'}
+                  {estadoDia.motivo ? ` — ${estadoDia.motivo}` : ''}.
+                </div>
+              ) : (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8,
+                  padding: '9px 12px', fontSize: 12, color: '#16a34a', marginBottom: 14, fontWeight: 600 }}>
+                  Funcionan {estadoDia.grupos} grupo{estadoDia.grupos === 1 ? '' : 's'} con normalidad.
+                </div>
+              )
+            )}
+
+            {(estadoDia?.suspendidos ?? 0) === 0 && (
+              <>
+                <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Motivo</label>
+                <input value={motivoDia} onChange={e => setMotivoDia(e.target.value)}
+                  placeholder="Ej: feriado, gimnasio ocupado"
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
+                    borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none', marginBottom: 14 }} />
+              </>
+            )}
+
+            {msgDia && (
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8,
+                padding: '9px 12px', fontSize: 12, color: muted, marginBottom: 12 }}>
+                {msgDia}
+              </div>
+            )}
+
+            {/* Restaurar nunca se deshabilita: si no se pudo leer el estado, el
+                día igual tiene que poder devolverse. */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => guardarDiaSinClase(true)} disabled={guardandoDia}
+                style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0',
+                  borderRadius: 8, color: muted, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Restaurar día
+              </button>
+              <button onClick={() => guardarDiaSinClase(false)} disabled={guardandoDia || (estadoDia?.grupos ?? 0) === 0}
+                style={{ flex: 1, padding: 11, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                  background: (estadoDia?.grupos ?? 0) > 0 ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#e2e8f0',
+                  color: (estadoDia?.grupos ?? 0) > 0 ? '#fff' : '#94a3b8', cursor: 'pointer' }}>
+                {guardandoDia ? 'Guardando...' : 'Marcar sin clase'}
+              </button>
+            </div>
+
+            <button onClick={() => { setModalDia(false); void cargarExtras(fechaVista) }}
+              style={{ width: '100%', padding: '9px 14px', marginTop: 10, borderRadius: 8, fontSize: 13,
+                border: 'none', background: 'transparent', color: muted, cursor: 'pointer' }}>
+              Cerrar
+            </button>
+          </div>
         </div>
       )}
 

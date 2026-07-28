@@ -245,6 +245,38 @@ describe('marcarDiaSinClase', () => {
     expect(res).toMatchObject({ deshecho: true })
     expect(fake.llamadas.some(l => l.tabla === 'bloque_excepciones' && l.op === 'delete')).toBe(true)
   })
+
+  // El bug: deshacer compartía la consulta de marcar, que solo trae los grupos
+  // vigentes de ese día de la semana. Si el horario había cambiado —el grupo se
+  // cerró o se movió de día— no encontraba ninguno, salía con "No hay grupos
+  // que funcionen los mar" y el día quedaba suspendido para siempre.
+  it('deshacer funciona aunque ya no haya grupos ese día de la semana', async () => {
+    // La consulta de marcar filtra por dia_semana y no devolvería nada; la de
+    // deshacer pide todos los del club, y ahí sí hay.
+    conBase({ bloques_horario: [{ id: 'b-viejo' }] })
+
+    const res = await marcarDiaSinClase({ fecha: '2026-09-18', deshacer: true })
+
+    expect(res).toMatchObject({ deshecho: true })
+    expect(res).not.toHaveProperty('error')
+  })
+
+  it('deshacer no se cae en un club sin ningún grupo', async () => {
+    conBase({ bloques_horario: [] })
+
+    const res = await marcarDiaSinClase({ fecha: '2026-09-18', deshacer: true })
+
+    expect(res).toMatchObject({ deshecho: true })
+    expect(res).not.toHaveProperty('error')
+  })
+
+  it('marcar sí exige que ese día haya grupos', async () => {
+    conBase({ bloques_horario: [] })
+
+    const res = await marcarDiaSinClase({ fecha: '2026-09-18' })
+
+    expect(res).toHaveProperty('error')
+  })
 })
 
 // El modal ofrecía "Marcar" y "Deshacer" sin decir cuál correspondía: había que

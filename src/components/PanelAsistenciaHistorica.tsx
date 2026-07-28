@@ -50,7 +50,9 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
   // abre en días en que no le tocaba entrenar, para registrar que vino igual.
   const [abierto, setAbierto]     = useState<{ fecha: string; dia: string } | null>(null)
   const [bloqueExtra, setBloqueExtra] = useState('')
-  const [montoExtra, setMontoExtra]   = useState('')
+  const [montoNuevo, setMontoNuevo]   = useState('')
+  // Un monto por clase: el mismo día puede tener más de una.
+  const [montos, setMontos]           = useState<Record<string, string>>({})
   const [ocupado, setOcupado]         = useState(false)
 
   const hoy = fechaChile()
@@ -105,8 +107,11 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
     return bloquesSinInscripcion(datos, elegido.id, fecha, dia)
   }
 
-  function extraDe(fecha: string) {
-    return (datos?.extraordinarias ?? []).find(e => e.fecha === fecha) ?? null
+  // Todas las de ese día, no la primera: la restricción única es por jugador,
+  // fecha Y bloque, así que alguien puede venir a dos grupos distintos el mismo
+  // día. Mostrar solo una dejaría la otra invisible y sin poder cobrarla.
+  function extrasDe(fecha: string) {
+    return (datos?.extraordinarias ?? []).filter(e => e.fecha === fecha)
   }
 
   async function crearExtra(fecha: string) {
@@ -115,18 +120,19 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
     setMensaje('')
     const res = await registrarClaseExtraordinaria({
       jugadorId: elegido.id, fecha, bloqueId: bloqueExtra,
-      monto: montoIngresado(montoExtra),
+      monto: montoIngresado(montoNuevo),
     })
     setOcupado(false)
     if (res.error) { setMensaje(res.error); return }
-    setAbierto(null)
+    setBloqueExtra('')
+    setMontoNuevo('')
     await cargarHistorial(elegido.id, anio)
   }
 
   async function guardarMontoExtra(id: string) {
     setOcupado(true)
     setMensaje('')
-    const res = await asignarMontoClaseExtraordinaria({ id, monto: montoIngresado(montoExtra) })
+    const res = await asignarMontoClaseExtraordinaria({ id, monto: montoIngresado(montos[id] ?? '') })
     setOcupado(false)
     if (res.error) { setMensaje(res.error); return }
     setAbierto(null)
@@ -144,9 +150,11 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
   }
 
   function abrirDia(fecha: string, dia: string) {
-    const ex = extraDe(fecha)
     setBloqueExtra('')
-    setMontoExtra(ex?.monto != null ? String(ex.monto) : '')
+    setMontoNuevo('')
+    setMontos(Object.fromEntries(
+      extrasDe(fecha).map(e => [e.id ?? '', e.monto != null ? String(e.monto) : '']),
+    ))
     setMensaje('')
     setAbierto({ fecha, dia })
   }
@@ -268,9 +276,12 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
             alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
           {(() => {
             const dia      = porFecha.get(abierto.fecha) ?? null
-            const extra    = extraDe(abierto.fecha)
+            const suyas    = extrasDe(abierto.fecha)
             const programado = !!dia && dia.estado !== 'extraordinaria'
-            const candidatos = bloquesParaExtra(abierto.fecha, abierto.dia)
+            // Los grupos ya usados ese día no se vuelven a ofrecer: la base
+            // rechazaría el duplicado y el profe no sabría por qué.
+            const usados    = new Set(suyas.map(e => e.bloque_id).filter(Boolean))
+            const candidatos = bloquesParaExtra(abierto.fecha, abierto.dia).filter(b => !usados.has(b.id))
             return (
           <div className="anim-modal" style={{ ...card, padding: 20, width: '100%', maxWidth: 380 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: text }}>{abierto.fecha}</div>
@@ -318,39 +329,56 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
                 🟡 Clase extra
               </div>
 
-              {extra ? (
+              {suyas.length > 0 && (
                 <>
                   <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
-                    Vino a un grupo que no es el suyo. No le descuenta sesiones ni
-                    entra en su porcentaje; se cobra aparte.
+                    Vino a {suyas.length === 1 ? 'un grupo que no es el suyo' : `${suyas.length} grupos que no son el suyo`}.
+                    No le descuenta sesiones ni entra en su porcentaje; se cobra aparte.
                   </div>
-                  <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4 }}>
-                    Monto por esta clase (CLP)
-                  </label>
-                  <input type="number" value={montoExtra} onChange={e => setMontoExtra(e.target.value)}
-                    placeholder={SIN_CUOTA}
-                    style={{ width: '100%', boxSizing: 'border-box', background: '#fffbeb', border: '1px solid #fde047',
-                      borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none', marginBottom: 10 }} />
-                  <button onClick={() => guardarMontoExtra(extra.id!)} disabled={ocupado || !extra.id}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700,
-                      border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
-                      cursor: ocupado ? 'wait' : 'pointer' }}>
-                    {ocupado ? 'Guardando...' : 'Guardar monto'}
-                  </button>
-                  <button onClick={() => borrarExtra(extra.id!)} disabled={ocupado || !extra.id}
-                    style={{ width: '100%', padding: '8px 14px', marginTop: 6, borderRadius: 9, fontSize: 12,
-                      border: 'none', background: 'transparent', color: '#dc2626', cursor: ocupado ? 'wait' : 'pointer' }}>
-                    Borrar esta clase extra
-                  </button>
+                  {suyas.map(e => {
+                    const id = e.id ?? ''
+                    const b = e.bloque_id ? datos?.bloques.find(x => x.id === e.bloque_id) : null
+                    return (
+                      <div key={id} style={{ background: '#fffbeb', border: '1px solid #fde047',
+                        borderRadius: 9, padding: 10, marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#713f12', marginBottom: 6 }}>
+                          {b ? `${b.hora_inicio && b.hora_fin ? rangoHorario(b.hora_inicio, b.hora_fin) + ' · ' : ''}${b.nombre}` : 'Grupo eliminado'}
+                        </div>
+                        <input type="number" value={montos[id] ?? ''}
+                          onChange={ev => setMontos(m => ({ ...m, [id]: ev.target.value }))}
+                          placeholder={SIN_CUOTA}
+                          style={{ width: '100%', boxSizing: 'border-box', background: '#fff', border: '1px solid #fde047',
+                            borderRadius: 8, padding: '8px 11px', color: text, fontSize: 13, outline: 'none', marginBottom: 8 }} />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={() => guardarMontoExtra(id)} disabled={ocupado || !id}
+                            style={{ flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                              border: 'none', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+                              cursor: ocupado ? 'wait' : 'pointer' }}>
+                            {ocupado ? 'Guardando...' : 'Guardar monto'}
+                          </button>
+                          <button onClick={() => borrarExtra(id)} disabled={ocupado || !id}
+                            style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12,
+                              border: 'none', background: 'transparent', color: '#dc2626',
+                              cursor: ocupado ? 'wait' : 'pointer' }}>
+                            Borrar
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </>
-              ) : candidatos.length === 0 ? (
-                <div style={{ fontSize: 11, color: hint }}>
-                  Ese día no había ningún otro grupo al que pudiera venir.
-                </div>
+              )}
+
+              {candidatos.length === 0 ? (
+                suyas.length === 0 && (
+                  <div style={{ fontSize: 11, color: hint }}>
+                    Ese día no había ningún otro grupo al que pudiera venir.
+                  </div>
+                )
               ) : (
                 <>
-                  <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
-                    ¿Vino a otro grupo ese día? Elegí a cuál.
+                  <div style={{ fontSize: 11, color: hint, marginBottom: 8, marginTop: suyas.length > 0 ? 10 : 0 }}>
+                    {suyas.length > 0 ? '¿Vino a otro grupo más ese día?' : '¿Vino a otro grupo ese día? Elegí a cuál.'}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
                     {candidatos.map(b => {
@@ -367,7 +395,7 @@ export default function PanelAsistenciaHistorica({ clubId }: { clubId: string })
                       )
                     })}
                   </div>
-                  <input type="number" value={montoExtra} onChange={e => setMontoExtra(e.target.value)}
+                  <input type="number" value={montoNuevo} onChange={e => setMontoNuevo(e.target.value)}
                     placeholder={`Monto — ${SIN_CUOTA.toLowerCase()}`}
                     style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
                       borderRadius: 8, padding: '9px 12px', color: text, fontSize: 13, outline: 'none', marginBottom: 10 }} />

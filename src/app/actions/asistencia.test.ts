@@ -16,7 +16,10 @@ vi.mock('@/lib/domain/fechaChile', () => ({
   horaChile: mocks.horaChile,
 }))
 
-import { corregirAsistencia, eliminarAsistencia, registrarAsistenciaAction } from './asistencia'
+import {
+  asignarMontoClaseExtraordinaria, corregirAsistencia, eliminarAsistencia,
+  eliminarClaseExtraordinaria, registrarAsistenciaAction, registrarClaseExtraordinaria,
+} from './asistencia'
 
 // 2026-07-28 es martes. Menores Avanzado va los martes de 17:00 a 19:00.
 const MARTES = '2026-07-28'
@@ -228,5 +231,124 @@ describe('corregirAsistencia', () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { message: 'El jugador no es de este club' } })
     const r = await corregirAsistencia({ jugadorId: 'ajeno', fecha: '2026-08-04', estado: 'presente' })
     expect(r).toEqual({ error: 'El jugador no es de este club' })
+  })
+})
+
+// Vino a un grupo que no es el suyo. Registrar eso es de asistencia; cobrarlo
+// es de finanzas y vive en clasesExtra.ts.
+describe('clase extraordinaria', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'profesor', jugador_id: null },
+    })
+    mocks.rpc.mockResolvedValue({ data: 'extra-1', error: null })
+  })
+
+  const base = { jugadorId: 'j1', fecha: '2026-08-03', bloqueId: 'b-lun' }
+
+  it('registra con el bloque y la hora', async () => {
+    const r = await registrarClaseExtraordinaria({ ...base, hora: '17:05' })
+
+    expect(r).toEqual({ ok: true, id: 'extra-1' })
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_clase_extraordinaria', {
+      p_jugador_id: 'j1', p_fecha: '2026-08-03', p_bloque_id: 'b-lun',
+      p_hora: '17:05', p_monto: null, p_motivo: null,
+    })
+  })
+
+  // Sin monto se registra igual: primero se anota que vino, después se decide
+  // cuánto. Es la misma regla que las cuotas — nunca un monto inventado.
+  it('sin monto se registra lo mismo', async () => {
+    await registrarClaseExtraordinaria(base)
+
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_clase_extraordinaria',
+      expect.objectContaining({ p_monto: null, p_hora: null }))
+  })
+
+  it('un motivo en blanco viaja como nulo', async () => {
+    await registrarClaseExtraordinaria({ ...base, motivo: '  ' })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_clase_extraordinaria',
+      expect.objectContaining({ p_motivo: null }))
+  })
+
+  it('el jugador no se la registra solo', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'jugador', jugador_id: 'j1' },
+    })
+
+    const r = await registrarClaseExtraordinaria(base)
+
+    expect(r.error).toContain('Solo el admin o el profesor')
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  // La base rechaza registrar como extra a alguien que sí pertenece al grupo:
+  // eso es su asistencia normal. El mensaje tiene que llegar a la pantalla.
+  it('el rechazo por pertenecer al grupo llega tal cual', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'Ese jugador sí pertenece a ese grupo: su asistencia es la normal, no una extra' },
+    })
+
+    const r = await registrarClaseExtraordinaria(base)
+
+    expect(r.error).toContain('su asistencia es la normal')
+  })
+
+  it('asignar el monto manda el id y el monto', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: null })
+
+    const r = await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: 8000 })
+
+    expect(r).toEqual({ ok: true })
+    expect(mocks.rpc).toHaveBeenCalledWith('asignar_monto_clase_extraordinaria',
+      { p_id: 'extra-1', p_monto: 8000 })
+  })
+
+  // Vaciar el campo la devuelve a "por asignar". Un null tiene que llegar como
+  // null y no convertirse en cero por el camino.
+  it('vaciar el monto manda null, no cero', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: null })
+
+    await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: null })
+
+    expect(mocks.rpc).toHaveBeenCalledWith('asignar_monto_clase_extraordinaria',
+      { p_id: 'extra-1', p_monto: null })
+  })
+
+  it('no se cambia el monto de una ya pagada', async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { message: 'Esa clase ya está pagada: hay que revertir el pago antes de cambiar el monto' },
+    })
+
+    const r = await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: 9000 })
+
+    expect(r.error).toContain('ya está pagada')
+  })
+
+  it('borrar manda el id', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: null })
+
+    const r = await eliminarClaseExtraordinaria({ id: 'extra-1' })
+
+    expect(r).toEqual({ ok: true })
+    expect(mocks.rpc).toHaveBeenCalledWith('eliminar_clase_extraordinaria', { p_id: 'extra-1' })
+  })
+
+  it('el jugador no borra una clase extra', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'jugador', jugador_id: 'j1' },
+    })
+
+    const r = await eliminarClaseExtraordinaria({ id: 'extra-1' })
+
+    expect(r.error).toContain('Solo el admin o el profesor')
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
 })

@@ -20,15 +20,22 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
+// Los nombres de las categorías se escriben acá y no en config.ts porque acá
+// llevan tildes. Al agregar una categoría hay que tocar los dos lados: si falta
+// en este mapa, el movimiento se muestra con su nombre interno crudo.
 const catLabel: Record<string, string> = {
   mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo',
   inscripcion_liga:'Inscripción liga', premio_torneo:'Premio torneo',
-  arriendo_cancha:'Arriendo cancha', donacion:'Donación', otro_ingreso:'Otro ingreso',
+  arriendo_cancha:'Arriendo cancha', donacion:'Donación',
+  clase_extraordinaria:'Clase extra', otro_ingreso:'Otro ingreso',
   sueldo_profesor:'Sueldo profesor', sueldo_staff:'Sueldo staff',
   material_deportivo:'Material deportivo', servicios_basicos:'Servicios básicos',
   mantenimiento:'Mantenimiento', otro_gasto:'Otro gasto'
 }
 
+// La clase extra no está en esta lista a propósito: se cobra desde su propia
+// sección, que además marca la clase como pagada. Cargarla a mano crearía el
+// ingreso y dejaría la clase figurando como impaga para siempre.
 const categoriasIngreso = ['mensualidad','inscripcion_torneo','inscripcion_liga','arriendo_cancha','donacion','otro_ingreso']
 const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','material_deportivo','servicios_basicos','mantenimiento','otro_gasto']
 

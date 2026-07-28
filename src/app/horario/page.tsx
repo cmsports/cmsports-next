@@ -578,29 +578,35 @@ export default function HorarioPage() {
             {/* El botón destacado es el que corresponde al estado actual. */}
             {(() => {
               const suspendido = (feriadoEstado?.suspendidos ?? 0) > 0
+              // Marcar necesita saber que ese día hay grupos. Deshacer no: si
+              // no se pudo leer el estado, o el horario cambió y ya no hay
+              // grupos ese día, igual tiene que poder devolverse el día. Atarlo
+              // al estado dejaba los dos botones muertos y el día suspendido
+              // para siempre.
               const listo = !!feriado.fecha && !guardando && (feriadoEstado?.grupos ?? 0) > 0
-              const principal = { flex: 1, padding: 10, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700,
-                background: listo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#e2e8f0',
-                color: listo ? '#fff' : '#94a3b8', cursor: listo ? 'pointer' : 'default' } as const
-              const secundario = { flex: 1, padding: 10, background: 'transparent', border: '1px solid #e2e8f0',
-                borderRadius: 8, color: muted, fontSize: 13, cursor: listo ? 'pointer' : 'default' } as const
+              const puedeDeshacer = !!feriado.fecha && !guardando
+              const principal = (activo: boolean) => ({ flex: 1, padding: 10, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#e2e8f0',
+                color: activo ? '#fff' : '#94a3b8', cursor: activo ? 'pointer' : 'default' }) as const
+              const secundario = (activo: boolean) => ({ flex: 1, padding: 10, background: 'transparent', border: '1px solid #e2e8f0',
+                borderRadius: 8, color: muted, fontSize: 13, cursor: activo ? 'pointer' : 'default' }) as const
               return (
                 <div style={{ display: 'flex', gap: 10 }}>
                   {suspendido ? (
                     <>
-                      <button onClick={() => guardarFeriado(false)} disabled={!listo} style={secundario}>
+                      <button onClick={() => guardarFeriado(false)} disabled={!listo} style={secundario(listo)}>
                         Volver a marcar
                       </button>
-                      <button onClick={() => guardarFeriado(true)} disabled={!listo} style={principal}>
-                        {guardando ? 'Guardando...' : 'Deshacer: sí hay clases'}
+                      <button onClick={() => guardarFeriado(true)} disabled={!puedeDeshacer} style={principal(puedeDeshacer)}>
+                        {guardando ? 'Guardando...' : 'Restaurar: sí hay clases'}
                       </button>
                     </>
                   ) : (
                     <>
-                      <button onClick={() => guardarFeriado(true)} disabled={!listo} style={secundario}>
-                        Deshacer
+                      <button onClick={() => guardarFeriado(true)} disabled={!puedeDeshacer} style={secundario(puedeDeshacer)}>
+                        Restaurar día
                       </button>
-                      <button onClick={() => guardarFeriado(false)} disabled={!listo} style={principal}>
+                      <button onClick={() => guardarFeriado(false)} disabled={!listo} style={principal(listo)}>
                         {guardando ? 'Guardando...' : 'Marcar sin clase'}
                       </button>
                     </>
