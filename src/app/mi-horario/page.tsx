@@ -78,7 +78,12 @@ export default function MiHorarioPage() {
   }, [cargar, loading, perfil, router])
 
   // Si el profe le cambia el grupo, se ve sin recargar la página.
-  useEnVivo(['bloque_jugadores', 'bloques_horario'], clubId, cargar)
+  //
+  // `bloques_horario` se filtra por club: hay cuatro clubes en la misma base y
+  // sin el filtro un cambio de horario en cualquiera recargaba esta pantalla.
+  // `bloque_jugadores` no tiene columna de club —cuelga del bloque—, así que no
+  // se puede filtrar ahí; lo acota el RLS, que ya solo le deja ver las suyas.
+  useEnVivo(['bloque_jugadores', 'bloques_horario'], clubId, cargar, { conClub: ['bloques_horario'] })
 
   if (loading || !perfil) return null
 

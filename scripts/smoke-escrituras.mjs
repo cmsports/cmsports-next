@@ -178,6 +178,42 @@ await probar('Evento en el calendario', async () => {
     .select('id').single(), 'eventos')
 })
 
+console.log('\n=== CLASES EXTRAORDINARIAS ===')
+// El jugador que viene a un grupo que no es el suyo. Se escribe a mano y no por
+// la función de la base porque acá no hay sesión: la service key deja auth.uid()
+// en nulo y el guardia de rol la rechazaría. Lo que se comprueba es que la
+// tabla acepte exactamente lo que la aplicación le manda.
+let extraId
+await probar('Registrarla sin grupo, que es el que hoy no entrena', async () => {
+  extraId = debe(await db.from('clases_extraordinarias').insert({
+    club_id: BUIN, jugador_id: JUG, fecha: F, bloque_id: null, hora: '19:00',
+  }).select('id').single(), 'clases_extraordinarias').id
+})
+await probar('Ponerle precio después', async () => {
+  debe(await db.from('clases_extraordinarias')
+    .update({ monto: 8000 }).eq('id', extraId).select('id').single())
+})
+await probar('Completarle el grupo después', async () => {
+  debe(await db.from('clases_extraordinarias')
+    .update({ bloque_id: bloqueId }).eq('id', extraId).select('id').single())
+})
+await rechaza('No deja repetir jugador, fecha y grupo', () =>
+  db.from('clases_extraordinarias').insert({
+    club_id: BUIN, jugador_id: JUG, fecha: F, bloque_id: bloqueId,
+  }))
+await rechaza('No acepta monto cero ni negativo', () =>
+  db.from('clases_extraordinarias').update({ monto: 0 }).eq('id', extraId))
+await probar('No le descuenta sesiones al jugador', async () => {
+  const { data } = await db.from('jugadores').select('sesiones_usadas').eq('id', JUG).single()
+  const { count } = await db.from('asistencia')
+    .select('*', { count: 'exact', head: true }).eq('jugador_id', JUG)
+  // El contador sale de `asistencia`. Si la clase extra se hubiera colado ahí,
+  // estos dos números dejarían de coincidir.
+  if (data.sesiones_usadas !== count) {
+    throw new Error(`sesiones_usadas ${data.sesiones_usadas} != asistencias ${count}`)
+  }
+})
+
 console.log('\n=== LIMPIEZA ===')
 for (const [tabla, id] of basura.reverse()) await db.from(tabla).delete().eq('id', id)
 await db.from('bloque_jugadores').delete().eq('bloque_id', bloqueId)
@@ -187,7 +223,7 @@ await db.from('grupos_entrenamiento').delete().eq('id', grupoId)
 await db.rpc('recalcular_sesiones', { p_jugador: JUG })
 
 const sobras = []
-for (const [t, col] of [['clases', 'fecha'], ['asistencia', 'fecha'], ['mensualidades', null], ['eventos', 'fecha_inicio']]) {
+for (const [t, col] of [['clases', 'fecha'], ['asistencia', 'fecha'], ['mensualidades', null], ['eventos', 'fecha_inicio'], ['clases_extraordinarias', 'fecha']]) {
   const q = db.from(t).select('*', { count: 'exact', head: true })
   const { count } = col ? await q.eq(col, F) : await q.eq('anio', 2099)
   if (count) sobras.push(`${t}: ${count}`)
