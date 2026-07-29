@@ -427,7 +427,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       return
     }
     setBuscaOtro('')
-    await cargarExtras(hoy)
+    // La fecha que se está mirando, no hoy: anotar una visita en un día pasado
+    // recargaba las extras de hoy y la recién creada no aparecía.
+    await cargarExtras(fechaVista)
   }
 
   async function guardarMonto() {
@@ -451,6 +453,23 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (res.error) { setMensaje({ tipo: 'error', texto: res.error }); setTimeout(() => setMensaje(null), 6000); return }
     setModalMonto(null)
     await cargarExtras(fechaVista)
+  }
+
+  /**
+   * Recarga lo que la pantalla está mostrando de verdad.
+   *
+   * Hay dos listas y cada una tiene su carga: la de hoy (`asistencias`) y la
+   * del día que se está mirando (`asistenciasDia`). Llamar siempre a la de hoy
+   * hacía que registrar en una fecha pasada guardara bien y no se viera: la
+   * fila seguía ofreciendo "Marcar presente" como si el clic no hubiera hecho
+   * nada, y quedaba pareciendo que el botón estaba roto.
+   *
+   * Va en una función y no repetido en cada sitio porque justamente eso fue lo
+   * que falló: el borrado sí distinguía las dos listas y el registro no.
+   */
+  async function refrescarDia() {
+    if (fechaVista === hoy) await cargarDatos()
+    else await cargarAsistenciasDia(fechaVista)
   }
 
   /**
@@ -479,7 +498,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       setMensaje({ tipo: 'error', texto: `Quedó marcada la asistencia, pero la clase extra no se pudo borrar: ${borrada.error}` })
       setTimeout(() => setMensaje(null), 9000)
     }
-    await cargarDatos()
+    await refrescarDia()
     await cargarExtras(fechaVista)
   }
 
@@ -538,7 +557,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       setRegistrando(null)
       return
     }
-    await cargarDatos()
+    await refrescarDia()
     setRegistrando(null)
     setBusqueda('')
   }
@@ -549,10 +568,8 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     const result = await eliminarAsistencia(asistenciaId)
     if (result.error) {
       setMensaje({ tipo: 'error', texto: result.error })
-    } else if (fechaVista === hoy) {
-      await cargarDatos()
     } else {
-      await cargarAsistenciasDia(fechaVista)
+      await refrescarDia()
     }
     setEliminando(null)
   }
