@@ -499,6 +499,47 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     if (error) return { error: 'No se pudo asignar a los bloques: ' + error.message }
   }
 
+  // La inscripción arranca a las 00:00 de hoy, así que alcanza para atrás las
+  // clases que ya ocurrieron hoy. Si a esta persona le anotaron una "visita" a
+  // uno de los grupos al que recién entra, esa visita deja de tener sentido —no
+  // se visita el grupo propio— y el día queda diciendo dos cosas opuestas: en la
+  // ficha es del grupo, en el registro es de afuera.
+  //
+  // Es exactamente lo que pasa con el alumno nuevo: viene, entrena, el profe lo
+  // anota como extra porque todavía no está en la nómina, y recién después lo
+  // inscriben. Convertirla acá cierra el caso sin que nadie tenga que acordarse.
+  const convertidas: string[] = []
+  const trabadas: string[] = []
+  if (entran.length > 0) {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const db = supabase as any
+    const { data: visitas } = await db.from('clases_extraordinarias')
+      .select('id,fecha,pagada_en,cobrada_en')
+      .eq('jugador_id', params.jugadorId)
+      .in('bloque_id', entran)
+      .gte('fecha', hoyISO())
+
+    for (const v of (visitas ?? []) as { id: string; fecha: string; pagada_en: string | null; cobrada_en: string | null }[]) {
+      // Si ya se cobró, hay plata de por medio: eso se revierte desde Finanzas,
+      // a mano y a la vista, no como efecto secundario de guardar un horario.
+      if (v.pagada_en || v.cobrada_en) { trabadas.push(v.fecha); continue }
+
+      const { error: errMarca } = await db.rpc('registrar_asistencia_manual', {
+        p_jugador_id: params.jugadorId,
+        p_fecha:      v.fecha,
+        p_estado:     'presente',
+        p_motivo:     'Entró al grupo: la clase extra de ese día pasó a ser asistencia normal',
+      })
+      if (errMarca) { trabadas.push(v.fecha); continue }
+
+      const { error: errBorra } = await db.rpc('eliminar_clase_extraordinaria', { p_id: v.id })
+      if (errBorra) { trabadas.push(v.fecha); continue }
+
+      convertidas.push(v.fecha)
+    }
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  }
+
   // Los campos de la ficha se derivan de los bloques recién elegidos.
   const dia = (d: string) => bloques.some(b => b.dia_semana === d)
   const enBuin  = bloques.some(b => b.sede === 'buin')
@@ -552,7 +593,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     })
   }
 
-  return { success: true, campos }
+  return { success: true, campos, extrasConvertidas: convertidas, extrasTrabadas: trabadas }
 }
 
 export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorId: string }) {

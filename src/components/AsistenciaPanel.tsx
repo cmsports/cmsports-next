@@ -453,6 +453,43 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     await cargarExtras(fechaVista)
   }
 
+  /**
+   * "Es de este grupo": convierte una visita mal anotada en asistencia normal.
+   *
+   * Primero marca la asistencia y después borra la extra, y no al revés: si el
+   * borrado falla queda el día registrado dos veces —molesto pero visible y
+   * recuperable—, mientras que al revés se perdería el registro entero.
+   */
+  async function convertirExtraEnAsistencia(jugadorId: string, extraId: string) {
+    setRegistrando(jugadorId)
+    const horaRegistro = fechaVista !== hoy && bloqueElegido ? hhmm(bloqueElegido.hora_inicio) : hora
+
+    const marcada = await registrarAsistenciaAction(clubId!, jugadorId, fechaVista, horaRegistro)
+    if (marcada.error) {
+      setMensaje({ tipo: 'error', texto: marcada.error })
+      setRegistrando(null)
+      setTimeout(() => setMensaje(null), 6000)
+      return
+    }
+
+    const borrada = await eliminarClaseExtraordinaria({ id: extraId })
+    setRegistrando(null)
+    if (borrada.error) {
+      // El caso típico: la extra ya se cobró. La plata no se deshace desde acá.
+      setMensaje({ tipo: 'error', texto: `Quedó marcada la asistencia, pero la clase extra no se pudo borrar: ${borrada.error}` })
+      setTimeout(() => setMensaje(null), 9000)
+    }
+    await cargarDatos()
+    await cargarExtras(fechaVista)
+  }
+
+  async function quitarAsistencia(jugadorId: string) {
+    const id = asistenciaIdDe.get(jugadorId)
+    if (!id) return
+    const nombre = jugadores.find(j => j.id === jugadorId)?.nombre ?? 'este jugador'
+    await handleEliminar(id, nombre)
+  }
+
   async function registrarAsistencia(jugadorId: string) {
     if (yaRegistrado.has(jugadorId)) return
 
@@ -581,6 +618,37 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // apaga con esto, así que tiene que salir del día que se está pasando y no
   // siempre de hoy.
   const yaRegistrado = new Set(asistenciasMostradas.map(a => a.jugador_id))
+
+  // Para poder deshacer desde la misma lista: antes había que bajar a la tabla
+  // de abajo a buscar la fila y apretar la cruz.
+  const asistenciaIdDe = new Map(asistenciasMostradas.map(a => [a.jugador_id, a.id]))
+  const extraDe = new Map(extrasHoy.map(e => [e.jugador_id, e]))
+
+  // Registrar es lo que se hace en la cancha; completar un día viejo es otra
+  // cosa y el botón tiene que decirlo antes de que lo aprieten.
+  const etiquetaMarcar = fechaVista === hoy ? '✅ Registrar' : '✅ Marcar presente'
+
+  /**
+   * Una clase extra que no puede ser cierta: dice que el jugador vino de visita
+   * a un grupo del que sí es parte ese día.
+   *
+   * Pasa cuando lo inscriben al grupo después de haberle anotado la visita —el
+   * mismo día, más tarde—, porque la inscripción arranca a las 00:00 y alcanza
+   * para atrás la clase que ya había ocurrido. La fila queda diciendo dos cosas
+   * opuestas y hasta ahora no había forma de arreglarla desde acá.
+   *
+   * Venir a OTRO grupo un día en que además entrenás en el tuyo sí es legítimo,
+   * y por eso no alcanza con "tiene extra y tiene grupo": se mira a qué grupo
+   * apunta la extra.
+   */
+  function extraContradice(jugadorId: string) {
+    const e = extraDe.get(jugadorId)
+    if (!e) return false
+    if (!tieneBloqueEseDia(jugadorId)) return false
+    // Sin grupo anotado, la extra solo vale para quien ese día no entrenaba.
+    if (!e.bloque_id) return true
+    return (inscritosDe[e.bloque_id] ?? []).includes(jugadorId)
+  }
 
   if (loading) return (
     <div style={{ padding: 40, textAlign: 'center', color: hint }}>Cargando...</div>
@@ -895,33 +963,53 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
               {filtrados.map(j => {
                 const ya = yaRegistrado.has(j.id)
-                const yaExtra = yaTieneExtra.has(j.id)
+                const extra = extraDe.get(j.id)
+                const contradice = extraContradice(j.id)
                 // Quien ese día no tiene ningún grupo no puede tener asistencia
                 // normal: lo suyo es siempre una clase extra. El botón lo dice
                 // desde antes de apretarlo, en vez de avisarlo después.
                 const esExtra = bloquesDelDia.length > 0 && !tieneBloqueEseDia(j.id)
-                const hecho = ya || yaExtra
+                // La fila solo se apaga cuando el día quedó resuelto de verdad.
+                // Tener una clase extra ya no la congela: esa era la única razón
+                // por la que una contradicción no se podía arreglar desde acá.
+                const resuelto = ya
+                const enCurso = registrando === j.id
                 return (
-                  <div key={j.id} onClick={() => !hecho && registrarAsistencia(j.id)}
+                  <div key={j.id}
+                    onClick={() => {
+                      if (resuelto || enCurso) return
+                      if (contradice && extra) void convertirExtraEnAsistencia(j.id, extra.id)
+                      else void registrarAsistencia(j.id)
+                    }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
-                      borderBottom: '1px solid #e2e8f0', cursor: hecho ? 'default' : 'pointer', opacity: hecho ? 0.6 : 1,
-                      background: esExtra && !hecho ? '#fffbeb' : undefined }}>
+                      borderBottom: '1px solid #e2e8f0', cursor: resuelto || enCurso ? 'default' : 'pointer', opacity: resuelto ? 0.6 : 1,
+                      background: contradice ? '#fef2f2' : esExtra && !resuelto ? '#fffbeb' : undefined }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
                       <div style={{ fontSize: 11, color: muted }}>
                         {j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}
                         {esExtra && <span style={{ color: '#a16207', fontWeight: 600 }}> · ese día no entrena</span>}
+                        {contradice && <span style={{ color: '#b91c1c', fontWeight: 600 }}> · anotado como visita, pero es de este grupo</span>}
                       </div>
                     </div>
-                    {yaExtra
-                      ? <span style={{ background: '#fef9c3', color: '#713f12', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🟡 Clase extra</span>
+                    {enCurso
+                      ? <span style={{ color: muted, fontSize: 12 }}>Guardando...</span>
                       : ya
-                        ? <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>
-                        : registrando === j.id
-                          ? <span style={{ color: muted, fontSize: 12 }}>Registrando...</span>
-                          : esExtra
-                            ? <button style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
-                            : <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Registrar</button>
+                        ? <button onClick={e => { e.stopPropagation(); void quitarAsistencia(j.id) }}
+                            title="Quitar la asistencia de este día"
+                            style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✅ Registrado</button>
+                        : contradice
+                          ? <button style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>Es de este grupo</button>
+                          : extra
+                            // Vino a otro grupo y además le tocaba el suyo: las dos
+                            // cosas son ciertas, así que se avisa y se deja marcar.
+                            ? <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ background: '#fef9c3', color: '#713f12', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🟡 Clase extra</span>
+                                <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>{etiquetaMarcar}</button>
+                              </div>
+                            : esExtra
+                              ? <button style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
+                              : <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>{etiquetaMarcar}</button>
                     }
                   </div>
                 )

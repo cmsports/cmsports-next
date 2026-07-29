@@ -216,6 +216,67 @@ describe('asignarBloquesJugador', () => {
     expect(fake.llamadas.some(l => l.tabla === 'bloque_jugadores' && l.op === 'delete')).toBe(false)
   })
 
+  // El caso Colomba. Entra a un grupo el mismo día en que le habían anotado
+  // una visita a ese grupo: la inscripción arranca a las 00:00 y alcanza para
+  // atrás esa clase, así que la visita deja de poder ser cierta.
+  describe('la visita al grupo propio se convierte sola', () => {
+    function conVisita(extra: Record<string, unknown>) {
+      conBase({
+        jugadores: { id: 'j1', club_id: 'club-1' },
+        bloques_horario: [{ id: 'b-mar', sede: 'buin', dia_semana: 'mar', hora_inicio: '18:30', hora_fin: '20:30' }],
+        bloque_jugadores: [],
+        clases_extraordinarias: [extra],
+      })
+    }
+
+    it('la marca presente y borra la clase extra', async () => {
+      conVisita({ id: 'ce1', fecha: '2026-07-28', pagada_en: null, cobrada_en: null })
+
+      const res = await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: ['b-mar'] })
+
+      expect(fake.argsDe('registrar_asistencia_manual')[0]).toMatchObject({
+        p_jugador_id: 'j1', p_fecha: '2026-07-28', p_estado: 'presente',
+      })
+      expect(fake.argsDe('eliminar_clase_extraordinaria')[0]).toMatchObject({ p_id: 'ce1' })
+      expect(res).toMatchObject({ extrasConvertidas: ['2026-07-28'], extrasTrabadas: [] })
+    })
+
+    // Si ya se cobró hay plata de por medio: eso se revierte en Finanzas, a la
+    // vista, y no como efecto secundario de guardar un horario.
+    it('no toca una clase extra ya pagada', async () => {
+      conVisita({ id: 'ce1', fecha: '2026-07-28', pagada_en: '2026-07-29T10:00:00Z', cobrada_en: null })
+
+      const res = await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: ['b-mar'] })
+
+      expect(fake.argsDe('eliminar_clase_extraordinaria')).toHaveLength(0)
+      expect(fake.argsDe('registrar_asistencia_manual')).toHaveLength(0)
+      expect(res).toMatchObject({ extrasConvertidas: [], extrasTrabadas: ['2026-07-28'] })
+    })
+
+    it('tampoco toca una que ya se mandó a cobro', async () => {
+      conVisita({ id: 'ce1', fecha: '2026-07-28', pagada_en: null, cobrada_en: '2026-07-29T10:00:00Z' })
+
+      const res = await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: ['b-mar'] })
+
+      expect(fake.argsDe('eliminar_clase_extraordinaria')).toHaveLength(0)
+      expect(res).toMatchObject({ extrasTrabadas: ['2026-07-28'] })
+    })
+
+    it('sin visitas no llama a nada', async () => {
+      conBase({
+        jugadores: { id: 'j1', club_id: 'club-1' },
+        bloques_horario: [{ id: 'b-mar', sede: 'buin', dia_semana: 'mar', hora_inicio: '18:30', hora_fin: '20:30' }],
+        bloque_jugadores: [],
+        clases_extraordinarias: [],
+      })
+
+      const res = await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: ['b-mar'] })
+
+      expect(fake.argsDe('registrar_asistencia_manual')).toHaveLength(0)
+      expect(res).toMatchObject({ extrasConvertidas: [] })
+    })
+  })
+
   it('los días y la sede de la ficha salen de los bloques', async () => {
     conBase({
       jugadores: { id: 'j1', club_id: 'club-1' },
