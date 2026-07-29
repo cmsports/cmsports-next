@@ -7,7 +7,6 @@ import AppLayout from '@/app/layout-app'
 import { registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
-import { trimestreActual } from '@/lib/domain/trimestre'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import { useModulos } from '@/lib/hooks/useModulos'
@@ -27,19 +26,16 @@ export default function PerfilPage() {
   const [jugador, setJugador] = useState<any>(null)
   const [asistencias, setAsistencias] = useState<any[]>([])
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
-  const [evaluaciones, setEvaluaciones] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [yaRegistroHoy, setYaRegistroHoy] = useState(false)
   const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [registrando, setRegistrando] = useState(false)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
-  const [aceptandoCompromiso, setAceptandoCompromiso] = useState(false)
   const [supabase] = useState(() => createClient())
   const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const router = useRouter()
   const { tiene } = useModulos()
 
-  const trimestre = trimestreActual()
   const hoy = fechaChile()
   const hora = horaChile()
 
@@ -57,7 +53,6 @@ export default function PerfilPage() {
           supabase.from('jugadores').select('id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single(),
           supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
           supabase.from('mensualidades').select('id,mes,anio,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
-          supabase.from('evaluaciones_trimestrales').select('id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', perfil.jugador_id).order('creado_en', { ascending: false }).limit(2),
           supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
         ])
 
@@ -72,14 +67,12 @@ export default function PerfilPage() {
           { data: j },
           { data: a },
           { data: mens },
-          { data: evs },
           { data: asistHoy },
         ] = resultados
 
         setJugador(j)
         setAsistencias(a || [])
         setMensualidadActual(mens)
-        setEvaluaciones(evs || [])
         setYaRegistroHoy((asistHoy || []).length > 0)
       }
       setLoading(false)
@@ -106,54 +99,6 @@ export default function PerfilPage() {
     msgTimerRef.current = setTimeout(() => setMensaje(null), 4000)
   }
 
-  // Mantiene visible al instante el feedback enviado mientras el alumno está en su perfil.
-  useEffect(() => {
-    if (!perfil?.jugador_id) return
-    const jugadorId = perfil.jugador_id
-
-    async function recargarEvaluaciones() {
-      const { data: evs } = await supabase
-        .from('evaluaciones_trimestrales')
-        .select('id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en')
-        .eq('jugador_id', jugadorId)
-        .order('creado_en', { ascending: false })
-        .limit(2)
-      setEvaluaciones(evs || [])
-    }
-
-    const canal = supabase
-      .channel(`feedback-perfil-${perfil.id}-${jugadorId}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'evaluaciones_trimestrales',
-        filter: `jugador_id=eq.${jugadorId}`,
-      }, recargarEvaluaciones)
-      .subscribe()
-
-    return () => { void supabase.removeChannel(canal) }
-  }, [perfil?.id, perfil?.jugador_id, supabase])
-
-  async function aceptarCompromiso() {
-    const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
-    if (!evalActual) return
-    setAceptandoCompromiso(true)
-    setMensaje(null)
-    try {
-      const { error } = await supabase.rpc('confirmar_feedback_jugador', { p_evaluacion_id: evalActual.id })
-      if (error) {
-        setMensaje({ tipo: 'error', texto: `No se pudo aceptar el compromiso: ${error.message}` })
-        return
-      }
-      setEvaluaciones(prev => prev.map(ev => ev.id === evalActual.id ? { ...ev, firmado_alumno: true } : ev))
-      setMensaje({ tipo: 'ok', texto: 'Compromiso aceptado correctamente' })
-    } catch {
-      setMensaje({ tipo: 'error', texto: 'Ocurrió un error al aceptar el compromiso. Intenta nuevamente.' })
-    } finally {
-      setAceptandoCompromiso(false)
-    }
-  }
-
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
@@ -174,8 +119,6 @@ export default function PerfilPage() {
   const mensEstado = mensualidadActual?.estado
   const mensLabel = mensEstado === 'pagado' ? '✅ Pagado' : mensEstado === 'atrasado' ? '❌ Atrasado' : mensEstado === 'pendiente' ? '⚠️ Pendiente' : '—'
   const mensColor = mensEstado === 'pagado' ? '#86efac' : mensEstado === 'atrasado' ? '#fca5a5' : mensEstado === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
-
-  const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
 
   return (
     <AppLayout perfil={perfil}>
@@ -271,29 +214,6 @@ export default function PerfilPage() {
         )}
       </div>
 
-      {/* Feedback del entrenador */}
-      {evalActual?.feedback_profesor && (
-        <div style={{ ...card, padding: 20, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 8 }}>📝 Informe del entrenador — {trimestre}</div>
-          <div style={{ fontSize: 13, color: text, lineHeight: 1.6, marginBottom: evalActual.meta_proximo_periodo ? 12 : 0 }}>{evalActual.feedback_profesor}</div>
-          {evalActual.meta_proximo_periodo && (
-            <div style={{ background: '#ede9fe', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, color: '#3730a3', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Meta del próximo período</div>
-              <div style={{ fontSize: 13, color: text, lineHeight: 1.6 }}>{evalActual.meta_proximo_periodo}</div>
-            </div>
-          )}
-          {evalActual.firmado_alumno ? (
-            <div style={{ background: '#f0fdf4', color: '#16a34a', padding: '10px 14px', borderRadius: 10, fontSize: 13, textAlign: 'center', border: '1px solid #bbf7d0', marginTop: 12 }}>✅ Compromiso aceptado</div>
-          ) : (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 12, color: muted, marginBottom: 10 }}>He leído el informe y acepto las metas del próximo período.</div>
-              <button onClick={aceptarCompromiso} disabled={aceptandoCompromiso} style={{ width: '100%', padding: 12, background: 'linear-gradient(135deg,#3730a3,#4f46e5)', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: aceptandoCompromiso ? 'not-allowed' : 'pointer' }}>
-                {aceptandoCompromiso ? 'Guardando...' : '✍️ Aceptar compromiso del trimestre'}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
 
       {/* Documentos firmados — el jugador puede subir los suyos */}

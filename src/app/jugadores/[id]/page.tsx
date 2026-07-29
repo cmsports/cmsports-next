@@ -7,9 +7,7 @@ import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
-import { guardarFeedbackAction } from '@/app/actions/feedback'
 import { formatRut } from '@/lib/rut'
-import { trimestreActual } from '@/lib/domain/trimestre'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
@@ -94,14 +92,9 @@ export default function JugadorDetallePage() {
   const [extrasImpagas, setExtrasImpagas] = useState<{ id: string; monto: number | null }[]>([])
   const [partidos, setPartidos] = useState<any[]>([])
   const [externos, setExternos] = useState<any[]>([])
-  const [evaluaciones, setEvaluaciones] = useState<any[]>([])
   const [tab, setTab] = useState(0)
   const [loading, setLoading] = useState(true)
   const [errorCarga, setErrorCarga] = useState('')
-  const [guardandoFeedback, setGuardandoFeedback] = useState(false)
-  const [feedbackError, setFeedbackError] = useState('')
-  const [feedbackExito, setFeedbackExito] = useState('')
-  const [feedbackForm, setFeedbackForm] = useState({ feedback:'', meta:'' })
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
   const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
@@ -147,7 +140,6 @@ export default function JugadorDetallePage() {
   const params = useParams()
   const jugadorId = params.id as string
 
-  const trimestre = trimestreActual()
 
   useEffect(() => {
     async function cargar() {
@@ -162,11 +154,10 @@ export default function JugadorDetallePage() {
       const anioActual = new Date().getFullYear()
 
       try {
-        const [{ data: j }, { data: e }, { data: ext }, { data: evs }, { data: mens }] = await Promise.all([
+        const [{ data: j }, { data: e }, { data: ext }, { data: mens }] = await Promise.all([
           supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
-          supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2),
           perfil.rol === 'admin'
             ? supabase.from('mensualidades').select('id,jugador_id,mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).eq('mes', mesActual).eq('anio', anioActual).maybeSingle()
             : Promise.resolve({ data: null }),
@@ -194,11 +185,7 @@ export default function JugadorDetallePage() {
         setJugador(j)
         setPartidos(e || [])
         setExternos(ext || [])
-        setEvaluaciones(evs || [])
         setMensualidadActual(mens)
-
-        const evalActual = evs?.find((ev: any) => ev.periodo_trimestre === trimestre)
-        if (evalActual) setFeedbackForm({ feedback: evalActual.feedback_profesor || '', meta: evalActual.meta_proximo_periodo || '' })
       } catch {
         setErrorCarga('No se pudieron cargar los datos del jugador. Verificá tu conexión.')
       }
@@ -206,7 +193,7 @@ export default function JugadorDetallePage() {
       setLoading(false)
     }
     cargar()
-  }, [authLoading, perfil, jugadorId, recargaVersion, router, trimestre])
+  }, [authLoading, perfil, jugadorId, recargaVersion, router])
 
   useEffect(() => {
     if (!jugadorId || !perfil?.club_id || !['admin', 'profesor'].includes(perfil.rol || '')) return
@@ -214,7 +201,6 @@ export default function JugadorDetallePage() {
     const canal = supabase
       .channel(`jugador-detalle-${perfil.id}-${jugadorId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores', filter: `id=eq.${jugadorId}` }, recargar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'evaluaciones_trimestrales', filter: `jugador_id=eq.${jugadorId}` }, recargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'torneos_externos', filter: `jugador_id=eq.${jugadorId}` }, recargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mensualidades', filter: `jugador_id=eq.${jugadorId}` }, recargar)
       .subscribe()
@@ -248,34 +234,6 @@ export default function JugadorDetallePage() {
   const mensLabel = mensEstado === 'pagado' ? 'Pagado' : mensEstado === 'atrasado' ? 'Atrasado' : mensEstado === 'pendiente' ? 'Pendiente' : '—'
   const mensColor = mensEstado === 'pagado' ? '#16a34a' : mensEstado === 'atrasado' ? '#dc2626' : mensEstado === 'pendiente' ? '#d97706' : hint
   const mensBg = mensEstado === 'pagado' ? '#f0fdf4' : mensEstado === 'atrasado' ? '#fef2f2' : mensEstado === 'pendiente' ? '#fffbeb' : '#f8fafc'
-
-  const evalActual = evaluaciones.find(ev => ev.periodo_trimestre === trimestre)
-
-  async function guardarFeedback() {
-    if (!feedbackForm.feedback.trim()) {
-      setFeedbackError('El feedback es obligatorio')
-      return
-    }
-    setGuardandoFeedback(true)
-    setFeedbackError('')
-    setFeedbackExito('')
-    const resultado = await guardarFeedbackAction({
-      jugadorId,
-      evaluacionId: evalActual?.id,
-      periodo: trimestre,
-      feedback: feedbackForm.feedback,
-      meta: feedbackForm.meta,
-    })
-    if (resultado.error) {
-      setFeedbackError(resultado.error)
-      setGuardandoFeedback(false)
-      return
-    }
-    const { data: evs } = await supabase.from('evaluaciones_trimestrales').select('id,jugador_id,periodo_trimestre,feedback_profesor,meta_proximo_periodo,firmado_alumno,creado_en').eq('jugador_id', jugadorId).order('creado_en', { ascending: false }).limit(2)
-    setEvaluaciones(evs || [])
-    setFeedbackExito('Feedback guardado. El jugador debe confirmarlo.')
-    setGuardandoFeedback(false)
-  }
 
   function abrirEditContacto() {
     setContactoForm({
