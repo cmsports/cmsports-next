@@ -6,18 +6,21 @@ import { FileText, Upload, Download, Trash2 } from 'lucide-react'
 import { subirDocumentoJugador, eliminarDocumentoJugador, type TipoDocumento } from '@/app/actions/jugadores'
 import { firmarUrls } from '@/lib/supabase/privado'
 
-const DOCS: { tipo: TipoDocumento; label: string; icono: string; plantilla?: string; comoSeHace?: string }[] = [
+const DOCS: { tipo: TipoDocumento; label: string; icono: string; plantilla?: string; comoSeHace?: string; nota?: string }[] = [
   {
     tipo: 'derecho_formacion', label: 'Derecho de formación', icono: '📄',
     // El formulario en blanco vive en /public: es el mismo para todos y no
     // tiene datos de nadie, así que no hace falta pasarlo por la base.
     plantilla: '/documentos/formulario-ingreso-federado.docx',
-    comoSeHace: 'Descargá el formulario, imprimilo, llenalo a mano y firmalo. Después sacale una foto o escanealo y subilo acá.',
+    comoSeHace: 'Descargá el formulario, imprimilo, llenalo a mano y firmalo. Después escanealo y subilo acá.',
+    nota: 'El punto 3 del formulario es solo para menores de edad. Si el jugador es mayor de edad, ese punto no aplica y se deja en blanco.',
   },
-  { tipo: 'carta_compromiso',  label: 'Carta de compromiso',  icono: '✍️' },
 ]
 
-const ACEPTA = '.pdf,.doc,.docx,image/*'
+// Solo PDF: es lo que se puede timbrar y archivar sin depender de qué programa
+// tenga cada uno instalado. Antes se aceptaba también Word y foto, y quien
+// escaneaba con el celular subía cualquier formato de imagen.
+const ACEPTA = '.pdf,application/pdf'
 
 type Doc = { tipo: string; archivo_url: string | null; archivo_path: string | null; nombre_archivo: string | null; subido_por: string | null; creado_en: string }
 
@@ -64,6 +67,10 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
     e.target.value = ''
     if (!file) return
     if (file.size > 10 * 1024 * 1024) { setError('El archivo supera los 10 MB'); return }
+    // El chequeo real va en el servidor, que mira el contenido y no el nombre.
+    // Este es solo para no hacer subir un archivo entero para recién ahí
+    // avisar que el formato no sirve.
+    if (file.type !== 'application/pdf') { setError('Formato inválido. Solo se aceptan archivos PDF.'); return }
 
     setError('')
     setSubiendo(tipo)
@@ -101,7 +108,7 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, padding: '4px 20px 16px' }}>
-        {DOCS.map(({ tipo, label, icono, plantilla, comoSeHace }) => {
+        {DOCS.map(({ tipo, label, icono, plantilla, comoSeHace, nota }) => {
           const doc = docs[tipo]
           const estaSubiendo = subiendo === tipo
 
@@ -123,6 +130,13 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
 
               {!doc && comoSeHace && !cargando && (
                 <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.45 }}>{comoSeHace}</div>
+              )}
+
+              {!doc && nota && !cargando && (
+                <div style={{ fontSize: 10, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a',
+                  borderRadius: 6, padding: '6px 8px', lineHeight: 1.4 }}>
+                  ℹ️ {nota}
+                </div>
               )}
 
               {!doc && plantilla && !cargando && (
@@ -179,7 +193,7 @@ export default function DocumentosJugador({ jugadorId, puedeEditar }: {
               ) : (
                 <>
                   <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>
-                    Sin documento. Sube el escaneado en PDF, Word o foto.
+                    Sin documento. Solo se acepta PDF.
                   </div>
                   {puedeEditar ? (
                     <button

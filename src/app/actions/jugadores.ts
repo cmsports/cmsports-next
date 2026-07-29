@@ -249,15 +249,11 @@ export async function subirFotoJugador(params: { jugadorId: string; base64: stri
 const TIPOS_DOC = ['derecho_formacion', 'carta_compromiso'] as const
 export type TipoDocumento = typeof TIPOS_DOC[number]
 
-// Extensiones aceptadas para los contratos escaneados (PDF, Word o foto).
+// Solo PDF. Antes se aceptaba también Word y foto; el criterio quedó en un
+// solo formato que se archiva y se timbra igual sin depender de qué programa
+// tenga cada uno instalado.
 const EXT_DOC: Record<string, string> = {
   'application/pdf': 'pdf',
-  'application/msword': 'doc',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/webp': 'webp',
-  'image/heic': 'heic',
 }
 
 // El jugador puede subir sus propios documentos; el staff, los de cualquiera.
@@ -290,7 +286,7 @@ export async function subirDocumentoJugador(params: {
 
   const mime = params.base64.match(/^data:([^;]+);base64,/)?.[1] || ''
   const ext = EXT_DOC[mime]
-  if (!ext) return { error: 'Formato no permitido. Sube un PDF, Word o una foto.' }
+  if (!ext) return { error: 'Formato inválido. Solo se aceptan archivos PDF.' }
 
   const buffer = Buffer.from(params.base64.replace(/^data:[^;]+;base64,/, ''), 'base64')
   if (buffer.byteLength > 10 * 1024 * 1024) return { error: 'El archivo supera los 10 MB' }
