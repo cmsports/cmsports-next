@@ -59,24 +59,57 @@ describe('asistencia entre roles', () => {
     mocks.horaChile.mockReturnValue('18:00')   // en pleno entrenamiento
   })
 
-  it('permite al jugador registrar únicamente su propia asistencia', async () => {
+  // El profe lo pidió así: ni el jugador adulto ni el menor pasan asistencia.
+  // Como el rol es uno solo —`jugador`, sin distinción de edad— basta con
+  // cerrarle a ese rol para cubrir las dos categorías.
+  it('no deja que el jugador se registre a sí mismo', async () => {
     const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
 
+    expect(resultado).toEqual({ error: 'Solo el profesor o el administrador registran la asistencia' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('tampoco deja que el jugador registre a otra persona', async () => {
+    const resultado = await registrarAsistenciaAction('club-1', 'jugador-2', MARTES, '18:00')
+
+    expect(resultado).toEqual({ error: 'Solo el profesor o el administrador registran la asistencia' })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('el profesor registra a cualquier jugador de su club, a cualquier hora', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null,
+      supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'profesor', jugador_id: null },
+    })
+
+    const resultado = await registrarAsistenciaAction('club-1', 'jugador-9', MARTES, '03:00')
+
     expect(resultado).toEqual({ ok: true, asistenciaId: 'asistencia-1' })
-    expect(mocks.rpc).toHaveBeenCalledOnce()
     expect(mocks.rpc).toHaveBeenCalledWith('registrar_asistencia_segura', {
-      p_jugador_id: 'jugador-1',
+      p_jugador_id: 'jugador-9', p_fecha: MARTES, p_hora: '03:00',
     })
   })
 
-  it('rechaza que el jugador registre a otra persona sin tocar la base', async () => {
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-2', MARTES, '18:00')
+  it('el profesor no puede registrar en otro club', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null,
+      supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'profesor', jugador_id: null },
+    })
+
+    const resultado = await registrarAsistenciaAction('club-2', 'jugador-9', MARTES, '18:00')
 
     expect(resultado).toEqual({ error: 'Acceso denegado' })
     expect(mocks.rpc).not.toHaveBeenCalled()
   })
 
   it('propaga el error transaccional y no muestra éxito', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null,
+      supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'admin', jugador_id: null },
+    })
     mocks.rpc.mockResolvedValue({ data: null, error: { message: 'La asistencia ya fue registrada para ese día' } })
 
     const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
@@ -105,161 +138,6 @@ describe('asistencia entre roles', () => {
 
     expect(resultado).toEqual({ error: 'Solo el admin o profesor puede eliminar asistencias' })
     expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-})
-
-describe('ventana horaria del autorregistro', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.requirePerfil.mockResolvedValue({
-      error: null,
-      supabase: supabaseFalso,
-      perfil: { club_id: 'club-1', rol: 'jugador', jugador_id: 'jugador-1' },
-    })
-    mocks.rpc.mockResolvedValue({ data: 'asistencia-1', error: null })
-    mocks.bloquesDelJugador.mockResolvedValue({
-      data: [{ bloques_horario: BLOQUE_MARTES }], error: null,
-    })
-    mocks.suspensionesDeHoy.mockResolvedValue({ data: [], error: null })
-    mocks.fechaChile.mockReturnValue(MARTES)
-  })
-
-  it('deja marcar media hora antes de empezar', async () => {
-    mocks.horaChile.mockReturnValue('16:30')
-    await expect(registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '16:30'))
-      .resolves.toEqual({ ok: true, asistenciaId: 'asistencia-1' })
-  })
-
-  it('deja marcar media hora después de terminar', async () => {
-    mocks.horaChile.mockReturnValue('19:30')
-    await expect(registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '19:30'))
-      .resolves.toEqual({ ok: true, asistenciaId: 'asistencia-1' })
-  })
-
-  it('no deja marcar antes de que abra, y dice desde cuándo', async () => {
-    mocks.horaChile.mockReturnValue('14:00')
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '14:00')
-
-    expect(resultado.error).toContain('16:30')
-    expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-
-  it('no deja marcar una vez cerrada la ventana', async () => {
-    mocks.horaChile.mockReturnValue('22:00')
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '22:00')
-
-    expect(resultado.error).toContain('cerró')
-    expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-
-  it('rechaza si hoy no le toca entrenar', async () => {
-    mocks.horaChile.mockReturnValue('18:00')
-    mocks.bloquesDelJugador.mockResolvedValue({
-      data: [{ bloques_horario: { ...BLOQUE_MARTES, dia_semana: 'jue' } }], error: null,
-    })
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
-
-    expect(resultado.error).toContain('no tenés entrenamiento')
-    expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-
-  it('ignora los bloques desactivados', async () => {
-    mocks.horaChile.mockReturnValue('18:00')
-    mocks.bloquesDelJugador.mockResolvedValue({
-      data: [{ bloques_horario: { ...BLOQUE_MARTES, activo: false } }], error: null,
-    })
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
-
-    expect(resultado.error).toContain('no tenés entrenamiento')
-  })
-
-  // El día marcado sin clase existe para que ese día no cuente. Sin esta
-  // comprobación el alumno se registraba igual en pleno feriado, y esa
-  // asistencia después ensuciaba el porcentaje del mes.
-  it('no deja marcar si el día está marcado sin clase, y dice el motivo', async () => {
-    mocks.horaChile.mockReturnValue('18:00')
-    mocks.suspensionesDeHoy.mockResolvedValue({
-      data: [{ bloque_id: 'b-mar', motivo: 'feriado' }], error: null,
-    })
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
-
-    expect(resultado.error).toContain('no hay clase')
-    expect(resultado.error).toContain('feriado')
-    expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-
-  it('sin motivo escrito igual avisa que no hay clase', async () => {
-    mocks.horaChile.mockReturnValue('18:00')
-    mocks.suspensionesDeHoy.mockResolvedValue({
-      data: [{ bloque_id: 'b-mar', motivo: null }], error: null,
-    })
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
-
-    expect(resultado.error).toContain('no hay clase')
-    expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-
-  // Suspender un grupo no tiene por qué suspender el otro del mismo día.
-  it('con dos grupos el mismo día, si solo uno se suspende igual puede marcar', async () => {
-    mocks.horaChile.mockReturnValue('18:00')
-    mocks.bloquesDelJugador.mockResolvedValue({
-      data: [
-        { bloques_horario: BLOQUE_MARTES },
-        { bloques_horario: { ...BLOQUE_MARTES, id: 'b-mar-2', nombre: 'Refuerzo' } },
-      ],
-      error: null,
-    })
-    mocks.suspensionesDeHoy.mockResolvedValue({
-      data: [{ bloque_id: 'b-mar', motivo: 'feriado' }], error: null,
-    })
-
-    await expect(registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00'))
-      .resolves.toEqual({ ok: true, asistenciaId: 'asistencia-1' })
-  })
-
-  // Dar de baja un grupo le cierra la vigencia; `activo` sigue en true.
-  it('ignora un grupo que ya cerró', async () => {
-    mocks.horaChile.mockReturnValue('18:00')
-    mocks.bloquesDelJugador.mockResolvedValue({
-      data: [{ bloques_horario: { ...BLOQUE_MARTES, vigente_hasta: '2026-07-01' } }], error: null,
-    })
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
-
-    expect(resultado.error).toContain('no tenés entrenamiento')
-    expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-
-  it('ignora un grupo que todavía no empezó', async () => {
-    mocks.horaChile.mockReturnValue('18:00')
-    mocks.bloquesDelJugador.mockResolvedValue({
-      data: [{ bloques_horario: { ...BLOQUE_MARTES, vigente_desde: '2026-09-01' } }], error: null,
-    })
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-1', MARTES, '18:00')
-
-    expect(resultado.error).toContain('no tenés entrenamiento')
-    expect(mocks.rpc).not.toHaveBeenCalled()
-  })
-
-  it('al staff no se le aplica la ventana', async () => {
-    mocks.horaChile.mockReturnValue('03:00')
-    mocks.requirePerfil.mockResolvedValue({
-      error: null,
-      supabase: supabaseFalso,
-      perfil: { club_id: 'club-1', rol: 'profesor', jugador_id: null },
-    })
-
-    const resultado = await registrarAsistenciaAction('club-1', 'jugador-9', MARTES, '18:00')
-
-    expect(resultado).toEqual({ ok: true, asistenciaId: 'asistencia-1' })
-    expect(mocks.bloquesDelJugador).not.toHaveBeenCalled()
   })
 })
 

@@ -15,7 +15,7 @@ import {
 import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
-import { diaDesdeFecha, hhmm, inicioVentana, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
+import { diaDesdeFecha, hhmm, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import {
   guardarJugadoresCache,
@@ -78,7 +78,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [eliminando, setEliminando] = useState<string | null>(null)
   const [jugadorPropio, setJugadorPropio] = useState<any>(null)
   const [yaRegistroHoy, setYaRegistroHoy] = useState(false)
-  const [mostrarConfirm, setMostrarConfirm] = useState(false)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
 
   const [pendientesCount, setPendientesCount] = useState(0)
@@ -110,7 +109,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [misBloquesHoy, setMisBloquesHoy] = useState<any[] | null>(null)
   // Le tocaba entrenar hoy, pero el día está marcado sin clase.
-  const [hoySinClase,   setHoySinClase]   = useState(false)
   // Lo mismo pero para el staff, sobre el día que está mirando.
   const [suspension,    setSuspension]    = useState<{ grupos: number; motivo: string | null } | null>(null)
   const recargaPendiente = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -350,9 +348,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       if (!vigente) return
       const sinClase = new Set((susp ?? []).map((e: { bloque_id: string }) => e.bloque_id))
 
-      // Se distingue "hoy no te toca" de "hoy se suspendió": para el alumno no
-      // son lo mismo y el cartel tiene que decir cuál es.
-      setHoySinClase(suyos.length > 0 && sinClase.size === suyos.length)
       setMisBloquesHoy(suyos
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .filter((b: any) => !sinClase.has(b.id))
@@ -511,51 +506,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     setBusqueda('')
   }
 
-  async function handleMarcarPropia() {
-    if (!jugadorPropio || !clubId) return
-    setMostrarConfirm(false)
-    setRegistrando('propio')
-    if (asistencias.find(a => a.jugador_id === jugadorPropio.id)) {
-      setMensaje({ tipo: 'error', texto: 'Ya registraste asistencia hoy' })
-      setRegistrando(null)
-      setTimeout(() => setMensaje(null), 4000)
-      return
-    }
-
-    if (!navigator.onLine) {
-      const item: AsistenciaPendiente = {
-        id: `pending-${jugadorPropio.id}-${hoy}`,
-        clubId,
-        jugadorId: jugadorPropio.id,
-        fecha: hoy,
-        hora,
-        jugadorNombre: jugadorPropio.nombre || '',
-        creadoEn: marcaTiempoActual(),
-      }
-      await encolarAsistencia(item)
-      setAsistencias(prev => [...prev, { id: item.id, jugador_id: jugadorPropio.id, hora, pendienteSync: true }])
-      setPendientesCount(prev => prev + 1)
-      setMensaje({ tipo: 'ok', texto: 'Sin conexión — se sincronizará al recuperar internet' })
-      setYaRegistroHoy(true)
-      setRegistrando(null)
-      setTimeout(() => setMensaje(null), 5000)
-      return
-    }
-
-    const result = await registrarAsistenciaAction(clubId!, jugadorPropio.id, hoy, hora)
-    if (result.error) {
-      setMensaje({ tipo: 'error', texto: result.error })
-      setRegistrando(null)
-      setTimeout(() => setMensaje(null), 6000)
-      return
-    }
-    setMensaje({ tipo: 'ok', texto: '¡Asistencia registrada!' })
-    setYaRegistroHoy(true)
-    await cargarDatos()
-    setRegistrando(null)
-    setTimeout(() => setMensaje(null), 4000)
-  }
-
   async function handleEliminar(asistenciaId: string, nombreJugador: string) {
     if (!confirm(`¿Eliminar asistencia de ${nombreJugador}?`)) return
     setEliminando(asistenciaId)
@@ -570,30 +520,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     setEliminando(null)
   }
 
-  const registradosHoy = new Set(asistencias.map(a => a.jugador_id))
   const esJugador = perfil?.rol === 'jugador'
 
-  // El bloque en curso y, si no hay, por qué. Refleja lo que valida el servidor.
+  // El grupo que le toca hoy, solo para saludarlo con el nombre. Ya no decide
+  // nada: el jugador no marca, así que no hay ventana que calcular.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const miBloqueAbierto = misBloquesHoy?.find((b: any) => ventanaAbierta(b.hora_inicio, b.hora_fin, hora)) ?? null
-  const miVentana = misBloquesHoy === null ? null : (() => {
-    if (miBloqueAbierto) return { abierta: true, motivo: '' }
-    if (misBloquesHoy.length === 0) {
-      return {
-        abierta: false,
-        motivo: hoySinClase
-          ? 'Hoy no hay clase: el día está suspendido. No hace falta que marques nada.'
-          : 'Hoy no tenés entrenamiento asignado. Si viniste igual, pedile al profe que te marque.',
-      }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const proximo = misBloquesHoy.find((b: any) => hhmm(b.hora_inicio) > hora)
-    if (proximo) {
-      return { abierta: false, motivo: `Tu entrenamiento es a las ${hhmm(proximo.hora_inicio)}. Vas a poder marcar tu llegada desde las ${inicioVentana(proximo.hora_inicio)}.` }
-    }
-    const ultimo = misBloquesHoy[misBloquesHoy.length - 1]
-    return { abierta: false, motivo: `Ya cerró el registro de hoy (${rangoHorario(ultimo.hora_inicio, ultimo.hora_fin)}). Pedile al profe que te marque.` }
-  })()
   // Recinto y horario, en ese orden: es como el profe piensa el día. Llega a
   // una sede, a una hora, y tiene a ese grupo enfrente.
   //
@@ -697,47 +629,33 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         </div>
       )}
 
-      {/* BOTÓN JUGADOR */}
+      {/* ESTADO DEL JUGADOR — sin botón: la asistencia la pasa el profe */}
       {esJugador && jugadorPropio && (
         <div style={{ ...card, padding: 24, marginBottom: 20, textAlign: 'center' }}>
           {yaRegistroHoy ? (
             <>
               <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: '#16a34a', marginBottom: 6 }}>Asistencia registrada</div>
-              <div style={{ fontSize: 13, color: muted }}>Ya marcaste tu asistencia hoy. ¡Buen entrenamiento!</div>
+              <div style={{ fontSize: 13, color: muted }}>Tu profesor ya te marcó hoy. ¡Buen entrenamiento!</div>
             </>
           ) : (
             <>
               <div style={{ fontSize: 48, marginBottom: 12 }}>🏓</div>
               <div style={{ fontSize: 16, color: text, marginBottom: 6 }}>Hola, {jugadorPropio.nombre?.split(' ')[0]}</div>
-              <div style={{ fontSize: 13, color: muted, marginBottom: 20 }}>
+              <div style={{ fontSize: 13, color: muted }}>
                 {miBloqueAbierto
-                  ? `Estás en ${miBloqueAbierto.nombre}. Marcá tu llegada.`
-                  : 'Marca tu asistencia al llegar al club'}
+                  ? `Hoy te toca ${miBloqueAbierto.nombre}.`
+                  : 'Todavía no tienes asistencia registrada hoy.'}
               </div>
-              {/* El servidor es el que decide de verdad; esto es para que no
-                  aprete un botón que le va a rebotar. */}
-              {miVentana && !miVentana.abierta ? (
-                <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:14, padding:'16px 20px', maxWidth:320, margin:'0 auto', fontSize:13, color: muted }}>
-                  {miVentana.motivo}
-                </div>
-              ) : !mostrarConfirm ? (
-                <button onClick={() => setMostrarConfirm(true)} style={{ width: '100%', maxWidth: 320, padding: '16px 24px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 14, fontSize: 17, fontWeight: 700, cursor: 'pointer' }}>
-                  Marcar asistencia
-                </button>
-              ) : (
-                <div style={{ background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: 14, padding: 20, maxWidth: 320, margin: '0 auto' }}>
-                  <div style={{ fontSize: 14, color: text, marginBottom: 16 }}>¿Confirmar asistencia para hoy?</div>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <button onClick={() => setMostrarConfirm(false)} style={{ flex: 1, padding: '12px 16px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, color: muted, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
-                    <button onClick={handleMarcarPropia} disabled={registrando === 'propio'} style={{ flex: 1, padding: '12px 16px', background: registrando === 'propio' ? '#94a3b8' : '#4f46e5', border: 'none', borderRadius: 10, color: 'white', fontSize: 14, fontWeight: 600, cursor: registrando === 'propio' ? 'not-allowed' : 'pointer' }}>
-                      {registrando === 'propio' ? 'Registrando...' : 'Confirmar'}
-                    </button>
-                  </div>
-                </div>
-              )}
             </>
           )}
+          <div style={{
+            background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12,
+            padding: '12px 16px', marginTop: 16, fontSize: 13, color: '#1e40af', lineHeight: 1.5,
+          }}>
+            La asistencia ahora la registra tu profesor al pasar lista. Si crees que falta
+            un día tuyo, avísale a él o al administrador del club.
+          </div>
         </div>
       )}
 

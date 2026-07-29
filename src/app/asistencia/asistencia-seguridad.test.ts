@@ -14,6 +14,12 @@ const migracionKiosco = readFileSync(
   new URL('../../../supabase/migrations/042_seguridad_kiosco_y_solicitudes.sql', import.meta.url),
   'utf8',
 )
+const migracionSoloStaff = readFileSync(
+  new URL('../../../supabase/migrations/105_solo_staff_registra_asistencia.sql', import.meta.url),
+  'utf8',
+)
+const panel = readFileSync(new URL('../../components/AsistenciaPanel.tsx', import.meta.url), 'utf8')
+const perfil = readFileSync(new URL('../perfil/page.tsx', import.meta.url), 'utf8')
 
 describe('seguridad de asistencia y reservas', () => {
   it('permite los métodos usados por autorregistro y kiosco RUT', () => {
@@ -48,6 +54,24 @@ describe('seguridad de asistencia y reservas', () => {
   it('la eliminación también revierte sesiones atómicamente', () => {
     expect(migracion).toContain('FUNCTION public.eliminar_asistencia_segura')
     expect(migracion).toMatch(/DELETE FROM public\.asistencia[\s\S]*sesiones_usadas = GREATEST/)
+  })
+
+  // Lo pidió el profe: ni el jugador adulto ni el menor pasan asistencia. El
+  // guardia tiene que estar en la función, no en la pantalla: la RPC está
+  // otorgada a `authenticated`, así que esconder el botón no cierra nada.
+  it('solo el profesor o el admin pueden ejecutar el registro de asistencia', () => {
+    expect(migracionSoloStaff).toContain('FUNCTION public.registrar_asistencia_segura')
+    expect(migracionSoloStaff).toContain("v_rol NOT IN ('admin', 'superadmin', 'profesor')")
+    expect(migracionSoloStaff).toContain('v_rol IS NULL')
+    expect(migracionSoloStaff).toContain('Solo el profesor o el administrador registran la asistencia')
+    expect(migracionSoloStaff).toContain('El jugador no es de este club')
+  })
+
+  it('el jugador ya no tiene por dónde marcarse en la interfaz', () => {
+    expect(panel).not.toContain('handleMarcarPropia')
+    expect(panel).not.toContain('>Marcar asistencia<')
+    expect(perfil).not.toContain('registrarAsistenciaAction')
+    expect(perfil).not.toContain('Marcar asistencia de hoy')
   })
 
   it('la reserva permite insertar, cancelar y reactivar sin duplicados', () => {

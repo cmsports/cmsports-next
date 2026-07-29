@@ -1,12 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
-import { registrarAsistenciaAction } from '@/app/actions/asistencia'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
+import { fechaChile } from '@/lib/domain/fechaChile'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import { useModulos } from '@/lib/hooks/useModulos'
@@ -30,16 +29,12 @@ export default function PerfilPage() {
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [yaRegistroHoy, setYaRegistroHoy] = useState(false)
-  const [mostrarConfirm, setMostrarConfirm] = useState(false)
-  const [registrando, setRegistrando] = useState(false)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const [supabase] = useState(() => createClient())
-  const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const router = useRouter()
   const { tiene } = useModulos()
 
   const hoy = fechaChile()
-  const hora = horaChile()
 
   useEffect(() => {
     async function cargar() {
@@ -82,25 +77,6 @@ export default function PerfilPage() {
     }
     cargar()
   }, [authLoading, perfil, hoy, router, supabase])
-
-  async function handleMarcarAsistencia() {
-    if (!jugador || !perfil?.club_id) return
-    setMostrarConfirm(false)
-    setRegistrando(true)
-    const result = await registrarAsistenciaAction(perfil.club_id, jugador.id, hoy, hora)
-    if (result.error) {
-      setMensaje({ tipo: 'error', texto: result.error })
-      setRegistrando(false)
-      if (msgTimerRef.current) clearTimeout(msgTimerRef.current)
-      msgTimerRef.current = setTimeout(() => setMensaje(null), 6000)
-      return
-    }
-    setMensaje({ tipo: 'ok', texto: '¡Asistencia registrada!' })
-    setYaRegistroHoy(true)
-    setRegistrando(false)
-    if (msgTimerRef.current) clearTimeout(msgTimerRef.current)
-    msgTimerRef.current = setTimeout(() => setMensaje(null), 4000)
-  }
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
@@ -196,6 +172,8 @@ export default function PerfilPage() {
         </div>
       )}
 
+      {/* La asistencia la registra el profe. El jugador ve si ya quedó marcado,
+          pero no puede marcarse: lo decidió el club y lo impone la migración 105. */}
       <div style={{ ...card, padding: 16, marginBottom: 16 }}>
         {yaRegistroHoy ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -205,20 +183,14 @@ export default function PerfilPage() {
               <div style={{ fontSize: 12, color: muted }}>¡Buen entrenamiento hoy!</div>
             </div>
           </div>
-        ) : mostrarConfirm ? (
-          <div>
-            <div style={{ fontSize: 13, color: text, marginBottom: 12 }}>¿Confirmar asistencia para hoy?</div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setMostrarConfirm(false)} style={{ flex: 1, padding: '10px', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, color: muted, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={handleMarcarAsistencia} disabled={registrando} style={{ flex: 1, padding: '10px', background: registrando ? '#94a3b8' : '#4f46e5', border: 'none', borderRadius: 8, color: 'white', fontSize: 13, fontWeight: 600, cursor: registrando ? 'not-allowed' : 'pointer' }}>
-                {registrando ? 'Registrando...' : 'Confirmar'}
-              </button>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 28 }}>🏓</span>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: text }}>Todavía sin asistencia hoy</div>
+              <div style={{ fontSize: 12, color: muted }}>Tu profesor la registra al pasar lista.</div>
             </div>
           </div>
-        ) : (
-          <button onClick={() => setMostrarConfirm(true)} style={{ width: '100%', padding: '12px 16px', background: 'linear-gradient(135deg,#3730a3,#4f46e5)', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-            🏓 Marcar asistencia de hoy
-          </button>
         )}
       </div>
 
