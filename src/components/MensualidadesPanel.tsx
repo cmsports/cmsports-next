@@ -42,6 +42,10 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   // una cuota, debe tres.
   const [alcance, setAlcance] = useState<'mes'|'deuda'>('mes')
   const [impagas, setImpagas] = useState<any[]>([])
+  // Deudores que no están en `jugadores`: se fueron del club, o deben un mes
+  // viejo y no tienen cuota del mes que se está mirando. La deuda no se borra
+  // porque la persona ya no venga.
+  const [jugadoresDeuda, setJugadoresDeuda] = useState<any[]>([])
   const [cargandoDeuda, setCargandoDeuda] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [filtroCat, setFiltroCat]     = useState<Set<string>>(new Set())
@@ -116,7 +120,22 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       .eq('club_id', id)
       .neq('estado', 'pagado')
       .order('anio').order('mes')
-    setImpagas(data || [])
+    const deudas = data || []
+    setImpagas(deudas)
+
+    // Sin esto, quien debe marzo pero ya no figura en la tabla del mes que se
+    // está mirando desaparece de la lista y su deuda queda invisible. Es el
+    // mismo agujero que la vista del mes ya tapó para los dados de baja.
+    const conocidos = new Set(jugadores.map((j: any) => j.id))
+    const faltantes = [...new Set(deudas.map((m: any) => m.jugador_id).filter((jid: string) => !conocidos.has(jid)))]
+    if (faltantes.length > 0) {
+      const { data: extras } = await supabase.from('jugadores')
+        .select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono')
+        .in('id', faltantes as string[])
+      setJugadoresDeuda(extras || [])
+    } else {
+      setJugadoresDeuda([])
+    }
     setCargandoDeuda(false)
   }
 
@@ -281,7 +300,11 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   // una deuda, aunque figure como pendiente.
   const periodoHoy = new Date().getFullYear() * 100 + (new Date().getMonth() + 1)
 
-  const deudores = jugadores
+  // Por id y no concatenando a secas: si la deuda se cargó antes que la tabla
+  // del mes, el mismo jugador viene por las dos listas y saldría dos veces.
+  const deudores = [...new Map(
+    [...jugadores, ...jugadoresDeuda].map((j: any) => [j.id, j]),
+  ).values()]
     .filter(coincidePerfil)
     .map(j => {
       const cuotas = impagas
