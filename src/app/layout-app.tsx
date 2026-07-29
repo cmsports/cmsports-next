@@ -11,7 +11,7 @@ import { verificarBloqueoPerfil } from '@/app/actions/jugadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
-  BookOpen, CreditCard, DollarSign, User, BarChart2, Globe,
+  CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
   Store, Library, BookLock, Eye, Award, Home, Landmark, CalendarClock,
 } from 'lucide-react'
@@ -29,7 +29,6 @@ const navAdmin = [
   { label: 'Liga', emoji: '📈',           icon: BarChart2,        href: '/liga',             modulo: 'liga' },
   { section: 'Gestión' },
   { label: 'Asistencia', emoji: '✅',      icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
-  { label: 'Clases', emoji: '📚',        icon: BookOpen,         href: '/clases',     modulo: 'clases' },
   { label: 'Horario semanal', emoji: '🗓️', icon: CalendarClock,  href: '/horario',    modulo: 'clases' },
   { label: 'Calendario', emoji: '📅',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
   { label: 'Finanzas', emoji: '💰',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
@@ -48,7 +47,6 @@ const navProfesor = [
   { label: 'Jugadores', emoji: '🏓',  icon: Users,           href: '/jugadores' },
   { section: 'Gestión' },
   { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
-  { label: 'Mis clases', emoji: '📚', icon: BookOpen,        href: '/clases',     modulo: 'clases' },
   { label: 'Horario semanal', emoji: '🗓️', icon: CalendarClock, href: '/horario',   modulo: 'clases' },
   { label: 'Calendario', emoji: '📅', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
   { label: 'Torneo Externo', emoji: '🌎', icon: Globe,           href: '/torneos',          modulo: 'torneos' },
@@ -91,7 +89,6 @@ const mobileNavAdmin = [
 
 const mobileNavProfesor = [
   { label: 'Inicio', emoji: '🏠',     icon: LayoutDashboard, href: '/dashboard-profesor' },
-  { label: 'Clases', emoji: '📚',     icon: BookOpen,        href: '/clases',     modulo: 'clases' },
   { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
   { label: 'Alumnos', emoji: '🏓',    icon: Users,           href: '/jugadores' },
 ]
