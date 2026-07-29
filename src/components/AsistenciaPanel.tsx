@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
 import {
-  asignarMontoClaseExtraordinaria, eliminarAsistencia, eliminarClaseExtraordinaria,
+  asignarMontoClaseExtraordinaria, corregirAsistencia, eliminarAsistencia, eliminarClaseExtraordinaria,
   registrarAsistenciaAction, registrarClaseExtraordinaria,
 } from '@/app/actions/asistencia'
 import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
@@ -175,7 +175,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     }
 
     const { data: a, error: asistenciasError } = await supabase
-      .from('asistencia').select('id,jugador_id,hora,fecha')
+      .from('asistencia').select('id,jugador_id,hora,fecha,estado')
       .eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
     if (asistenciasError) {
       setMensaje({ tipo: 'error', texto: asistenciasError.message })
@@ -234,7 +234,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const cargarAsistenciasDia = useCallback(async (fecha: string) => {
     if (!clubId) return
     setCargandoDia(true)
-    const { data, error } = await supabase.from('asistencia').select('id,jugador_id,hora,fecha').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
+    const { data, error } = await supabase.from('asistencia').select('id,jugador_id,hora,fecha,estado').eq('club_id', clubId).eq('fecha', fecha).order('hora', { ascending: false })
     if (error) setMensaje({ tipo: 'error', texto: error.message })
     setAsistenciasDia(data || [])
     setCargandoDia(false)
@@ -509,6 +509,27 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     await handleEliminar(id, nombre)
   }
 
+  /**
+   * Marca ausente sin descontar sesión: el jugador estaba inscrito ese día y no
+   * llegó. Pasa por `corregirAsistencia` para que el estado quede auditado y
+   * las sesiones usadas se recalculen. Igual que Presente, se puede deshacer
+   * desde el mismo botón (queda como "quitar" para volver a azul).
+   */
+  async function registrarAusente(jugadorId: string) {
+    if (yaRegistrado.has(jugadorId)) return
+    setRegistrando(jugadorId)
+    const result = await corregirAsistencia({ jugadorId, fecha: fechaVista, estado: 'ausente' })
+    if (result.error) {
+      setMensaje({ tipo: 'error', texto: result.error })
+      setRegistrando(null)
+      setTimeout(() => setMensaje(null), 6000)
+      return
+    }
+    await refrescarDia()
+    setRegistrando(null)
+    setBusqueda('')
+  }
+
   async function registrarAsistencia(jugadorId: string) {
     if (yaRegistrado.has(jugadorId)) return
 
@@ -639,6 +660,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Para poder deshacer desde la misma lista: antes había que bajar a la tabla
   // de abajo a buscar la fila y apretar la cruz.
   const asistenciaIdDe = new Map(asistenciasMostradas.map(a => [a.jugador_id, a.id]))
+  const estadoDe = new Map<string, string>(asistenciasMostradas.map(a => [a.jugador_id, a.estado ?? 'presente']))
   const extraDe = new Map(extrasHoy.map(e => [e.jugador_id, e]))
 
   // Registrar es lo que se hace en la cancha; completar un día viejo es otra
@@ -772,9 +794,18 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 <tbody>
                   {asistenciasMostradas.map(a => {
                     const jug = jugadores.find(j => j.id === a.jugador_id)
+                    const filaAusente = a.estado === 'ausente'
                     return (
-                      <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px 16px', fontWeight: 600, color: text }}>{jug?.nombre || '—'}</td>
+                      <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9', background: filaAusente ? '#fef2f2' : undefined }}>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, color: text }}>
+                          {jug?.nombre || '—'}
+                          {filaAusente && (
+                            <span style={{ marginLeft: 8, background: '#dc2626', color: 'white',
+                              padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>
+                              AUSENTE
+                            </span>
+                          )}
+                        </td>
                         <td style={{ padding: '12px 16px', fontSize: 13, color: muted, fontVariantNumeric: 'tabular-nums' }}>{a.hora?.slice(0, 5)}</td>
                         {esAdminOProfesor && (
                           <td style={{ padding: '12px 16px', textAlign: 'right' }}>
@@ -980,6 +1011,8 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
               {filtrados.map(j => {
                 const ya = yaRegistrado.has(j.id)
+                const estado = estadoDe.get(j.id)
+                const esAusente = ya && estado === 'ausente'
                 const extra = extraDe.get(j.id)
                 const contradice = extraContradice(j.id)
                 // Quien ese día no tiene ningún grupo no puede tener asistencia
@@ -1000,7 +1033,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                     }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
                       borderBottom: '1px solid #e2e8f0', cursor: resuelto || enCurso ? 'default' : 'pointer', opacity: resuelto ? 0.6 : 1,
-                      background: contradice ? '#fef2f2' : esExtra && !resuelto ? '#fffbeb' : undefined }}>
+                      background: esAusente ? '#fef2f2' : contradice ? '#fef2f2' : esExtra && !resuelto ? '#fffbeb' : undefined }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
                       <div style={{ fontSize: 11, color: muted }}>
@@ -1012,9 +1045,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                     {enCurso
                       ? <span style={{ color: muted, fontSize: 12 }}>Guardando...</span>
                       : ya
-                        ? <button onClick={e => { e.stopPropagation(); void quitarAsistencia(j.id) }}
-                            title="Quitar la asistencia de este día"
-                            style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✅ Registrado</button>
+                        ? esAusente
+                          ? <button onClick={e => { e.stopPropagation(); void quitarAsistencia(j.id) }}
+                              title="Quitar la ausencia de este día"
+                              style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✗ Ausente</button>
+                          : <button onClick={e => { e.stopPropagation(); void quitarAsistencia(j.id) }}
+                              title="Quitar la asistencia de este día"
+                              style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✅ Registrado</button>
                         : contradice
                           ? <button style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>Es de este grupo</button>
                           : extra
@@ -1026,7 +1063,16 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                               </div>
                             : esExtra
                               ? <button style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
-                              : <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>{etiquetaMarcar}</button>
+                              // No registrado y le tocaba entrenar: dos botones.
+                              // El de presente sigue disparándose al tocar la fila,
+                              // así que el clic ancho de siempre no cambia; el de
+                              // ausente detiene la propagación para que solo él actúe.
+                              : <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>{etiquetaMarcar}</button>
+                                  <button onClick={e => { e.stopPropagation(); void registrarAusente(j.id) }}
+                                    title="Marcar ausente"
+                                    style={{ background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✗ Ausente</button>
+                                </div>
                     }
                   </div>
                 )
