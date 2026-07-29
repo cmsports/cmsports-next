@@ -15,9 +15,17 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '10mb',
     },
     staleTimes: {
+      // static: 0 es inválido (mínimo 30) y Next lo ignoraba cayendo al
+      // default de 300s — cinco minutos de HTML viejo, lo contrario de la
+      // intención. 30 es lo más fresco que la config permite.
       dynamic: 0,
-      static: 0,
+      static: 30,
     },
+  },
+  // Sin esto, Turbopack adivina la raíz por los lockfiles y encuentra el de
+  // C:\Users\Benja primero: warning en cada arranque y resolución más lenta.
+  turbopack: {
+    root: __dirname,
   },
   async headers() {
     return [

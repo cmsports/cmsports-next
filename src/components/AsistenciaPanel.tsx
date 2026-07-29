@@ -158,25 +158,32 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       ? `asist:jug:${perfil.jugador_id}`
       : `asist:jugs:${id}`
 
+    // Las dos consultas son independientes —la asistencia del día no necesita
+    // la lista de jugadores— y antes iban una después de la otra: dos viajes
+    // en fila en la pantalla que más se abre. Se lanzan juntas y se revisan en
+    // el mismo orden que antes, así el mensaje de error no cambia.
+    const jugadoresPide = cachedFetch(jugKey, async () => {
+      let q = supabase.from('jugadores')
+        .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+        .eq('club_id', id).eq('estado', 'activo').order('nombre')
+      if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
+      const { data, error } = await q
+      if (error) throw error
+      return data || []
+    }, 60_000)
+    const asistenciasPide = supabase
+      .from('asistencia').select('id,jugador_id,hora,fecha,estado')
+      .eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
+
     let j: any[]
     try {
-      j = await cachedFetch(jugKey, async () => {
-        let q = supabase.from('jugadores')
-          .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
-          .eq('club_id', id).eq('estado', 'activo').order('nombre')
-        if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
-        const { data, error } = await q
-        if (error) throw error
-        return data || []
-      }, 60_000)
+      j = await jugadoresPide
     } catch (e: any) {
       setMensaje({ tipo: 'error', texto: e?.message || 'No fue posible cargar los jugadores' })
       return
     }
 
-    const { data: a, error: asistenciasError } = await supabase
-      .from('asistencia').select('id,jugador_id,hora,fecha,estado')
-      .eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
+    const { data: a, error: asistenciasError } = await asistenciasPide
     if (asistenciasError) {
       setMensaje({ tipo: 'error', texto: asistenciasError.message })
       return

@@ -57,11 +57,9 @@ export function ventanaAbierta(
   return t >= desde && t <= hasta
 }
 
-/** El texto de a qué hora se abre, para explicarle al alumno por qué no puede. */
-export function inicioVentana(horaInicio: string, tolerancia = TOLERANCIA_ASISTENCIA_MIN): string {
-  const m = Math.max(0, minutosDelDia(horaInicio) - tolerancia)
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-}
+// `inicioVentana` explicaba al alumno a qué hora se abría su marcado. El
+// alumno ya no se marca solo (migración 105), así que no queda nadie a quien
+// explicarle.
 
 export function diaLabel(dia: string): string {
   return DIAS.find(d => d.value === dia)?.label ?? dia
@@ -77,34 +75,11 @@ export function diaDesdeFecha(fechaISO: string): DiaSemana | null {
   return DIA_POR_INDICE[d.getDay()] ?? null
 }
 
-/** Lunes de la semana con el desplazamiento indicado (0 = semana actual). */
-export function lunesDeSemana(offset: number, hoy = new Date()): Date {
-  const dia = hoy.getDay()
-  const haciaLunes = dia === 0 ? 6 : dia - 1
-  const lunes = new Date(hoy)
-  lunes.setDate(hoy.getDate() - haciaLunes + offset * 7)
-  lunes.setHours(0, 0, 0, 0)
-  return lunes
-}
-
-/** Fecha en formato YYYY-MM-DD sin pasar por UTC (evita correr un día). */
-export function fechaISO(d: Date): string {
-  const mes = String(d.getMonth() + 1).padStart(2, '0')
-  const dia = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${mes}-${dia}`
-}
-
-/** Fecha de cada día hábil de la semana, indexada por día. */
-export function fechasDeSemana(offset: number, hoy = new Date()): Record<DiaSemana, string> {
-  const lunes = lunesDeSemana(offset, hoy)
-  const fechas = {} as Record<DiaSemana, string>
-  DIAS.forEach((d, i) => {
-    const fecha = new Date(lunes)
-    fecha.setDate(lunes.getDate() + i)
-    fechas[d.value] = fechaISO(fecha)
-  })
-  return fechas
-}
+// Acá vivían `lunesDeSemana`, `fechaISO` y `fechasDeSemana`: armaban la semana
+// que la pantalla de Clases pedía generar. Esa pantalla y su tabla se
+// eliminaron (migración 111) y estas tres quedaron llamándose solo entre
+// ellas. Para la fecha de hoy en Chile está `fechaChile()`, que es la que
+// corresponde: estas usaban la zona horaria del navegador.
 
 /** Horas de inicio distintas, ordenadas: son las filas de la grilla. */
 export function franjasDe(bloques: BloqueHorario[]): string[] {

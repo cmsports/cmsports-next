@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inicioVentana, minutosDelDia, ventanaAbierta } from './horario'
+import { minutosDelDia, ventanaAbierta } from './horario'
 
 describe('minutosDelDia', () => {
   it('acepta el HH:MM:SS que devuelve Postgres', () => {
@@ -48,16 +48,5 @@ describe('ventanaAbierta', () => {
   })
 })
 
-describe('inicioVentana', () => {
-  it('dice desde qué hora se puede marcar', () => {
-    expect(inicioVentana('18:30:00')).toBe('18:00')
-  })
-
-  it('cruza bien la hora en punto', () => {
-    expect(inicioVentana('17:00:00')).toBe('16:30')
-  })
-
-  it('no baja de las 00:00', () => {
-    expect(inicioVentana('00:10:00')).toBe('00:00')
-  })
-})
+// Las pruebas de `inicioVentana` se fueron con la función: el alumno ya no se
+// marca solo, así que no hay a quién explicarle desde qué hora podía.

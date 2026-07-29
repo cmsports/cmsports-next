@@ -102,15 +102,26 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
     if (clubId) void cargar()
 
     const supabase = createClient()
+    // Pasar lista son veinte clics seguidos y cada uno llegaba acá como un
+    // recálculo entero del gráfico: veinte consultas al club completo para
+    // dibujar veinte veces lo mismo. Se espera a que la ráfaga termine.
+    let pendiente: ReturnType<typeof setTimeout> | null = null
+    const refrescar = () => {
+      if (pendiente) clearTimeout(pendiente)
+      pendiente = setTimeout(() => { pendiente = null; void cargar() }, 1200)
+    }
     const canal = supabase
       .channel(`grafico-asistencia-${clubId}`)
       .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'asistencia',
-      }, () => { void cargar() })
+        // Con el filtro por club: sin él llegaban también los cambios de
+        // asistencia de los demás clubes, y cada uno recargaba este gráfico.
+        event: '*', schema: 'public', table: 'asistencia', filter: `club_id=eq.${clubId}`,
+      }, refrescar)
       .subscribe()
 
     return () => {
       activo = false
+      if (pendiente) clearTimeout(pendiente)
       void supabase.removeChannel(canal)
     }
   }, [clubId])
