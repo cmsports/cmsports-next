@@ -6,8 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
-import { traspasarJugador } from '@/app/actions/superadmin'
+import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador, traspasarJugador } from '@/app/actions/jugadores'
 import { formatRut } from '@/lib/rut'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import DocumentosJugador from '@/components/DocumentosJugador'
@@ -154,7 +153,7 @@ export default function JugadorDetallePage() {
     async function cargar() {
       if (authLoading) return
       if (!perfil) { router.push('/login'); return }
-      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor' && perfil.rol !== 'superadmin') {
+      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor') {
         router.replace(perfil.rol === 'jugador' ? '/perfil' : '/')
         return
       }
@@ -231,18 +230,18 @@ export default function JugadorDetallePage() {
   }, [jugador?.foto_path, jugador?.foto_url])
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'
-  const esSuperadmin = perfil?.rol === 'superadmin'
+  const puedeTraspasar = esAdmin || esProfesor
 
-  // Traspasar un jugador entre clubes es superadmin-only: solo esa cuenta
-  // manda sobre todos los clubes a la vez. La lista se pide una unica vez.
+  // La lista de clubes se pide solo si el rol puede traspasar: sin eso queda
+  // haciendo un query inutil en cada visita a una ficha.
   useEffect(() => {
-    if (!esSuperadmin) return
+    if (!puedeTraspasar) return
     let activo = true
     void supabase.from('clubes').select('id,nombre').order('nombre').then(({ data }) => {
       if (activo) setClubesDisponibles((data ?? []) as { id: string; nombre: string }[])
     })
     return () => { activo = false }
-  }, [esSuperadmin])
+  }, [puedeTraspasar])
 
   async function handleTraspasar() {
     if (!traspasarClubId || !jugador?.id) return
@@ -967,10 +966,10 @@ export default function JugadorDetallePage() {
           </div>
         )}
 
-        {/* Traspasar de club — solo superadmin. Cambiar la columna club_id a
-            mano dejaba la asistencia, mensualidades y clases extra apuntando
-            al club anterior; esto lo mueve todo junto. */}
-        {esSuperadmin && (
+        {/* Traspasar de club — admin o profesor. Cambiar la columna club_id
+            a mano dejaba la asistencia, mensualidades y clases extra
+            apuntando al club anterior; esto lo mueve todo junto. */}
+        {puedeTraspasar && (
           <div style={cardStyle}>
             <CardHeader title="Traspasar de club" />
             <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>

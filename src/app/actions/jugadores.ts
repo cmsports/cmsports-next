@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { requireAdminClub } from '@/lib/auth/require'
+import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
 import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
 import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
 
@@ -345,4 +345,29 @@ export async function resetearPasswordJugador(params: { jugadorId: string; nueva
   const { error } = await admin.auth.admin.updateUserById(perfilData.id, { password: params.nuevaPassword })
   if (error) return { error: 'No se pudo cambiar la contraseña: ' + error.message }
   return { success: true }
+}
+
+/**
+ * Mueve un jugador a otro club junto con su asistencia, mensualidades y clases
+ * extras. Antes cambiar jugadores.club_id a mano dejaba las filas viejas
+ * apuntando al club anterior; esto las mueve todas juntas.
+ *
+ * bloque_jugadores no se traslada: los bloques pertenecen al club anterior y
+ * no existen en el nuevo. El admin del club receptor lo inscribe en los suyos.
+ */
+export async function traspasarJugador(input: { jugadorId: string; clubIdNuevo: string }) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!['admin', 'profesor', 'superadmin'].includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin, el profesor o el superadmin pueden traspasar un jugador' }
+  }
+  if (!input.jugadorId || !input.clubIdNuevo) return { error: 'Falta el jugador o el club de destino' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('traspasar_jugador', {
+    p_jugador_id: input.jugadorId,
+    p_club_id_nuevo: input.clubIdNuevo,
+  })
+  if (error) return { error: error.message }
+  return { ok: true }
 }
