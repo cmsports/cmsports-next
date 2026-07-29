@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador, traspasarJugador } from '@/app/actions/jugadores'
+import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
 import { formatRut } from '@/lib/rut'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import DocumentosJugador from '@/components/DocumentosJugador'
@@ -119,14 +119,6 @@ export default function JugadorDetallePage() {
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
   const [recargaVersion, setRecargaVersion] = useState(0)
   const [clubNombre, setClubNombre] = useState('')
-  // Traspasar el jugador a otro club (solo superadmin). La lista de clubes se
-  // carga una sola vez cuando el rol lo permite: al admin del club nunca le
-  // aparece este bloque, asi que traerla siempre seria trabajo inutil.
-  const [clubesDisponibles, setClubesDisponibles] = useState<{ id: string; nombre: string }[]>([])
-  const [traspasarClubId, setTraspasarClubId] = useState('')
-  const [traspasando, setTraspasando] = useState(false)
-  const [traspasarError, setTraspasarError] = useState('')
-  const [traspasarOk, setTraspasarOk] = useState(false)
   const [generandoReporte, setGenerandoReporte] = useState(false)
   // Foto
   const [modalFoto, setModalFoto] = useState(false)
@@ -230,35 +222,6 @@ export default function JugadorDetallePage() {
   }, [jugador?.foto_path, jugador?.foto_url])
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'
-  const puedeTraspasar = esAdmin || esProfesor
-
-  // La lista de clubes se pide solo si el rol puede traspasar: sin eso queda
-  // haciendo un query inutil en cada visita a una ficha.
-  useEffect(() => {
-    if (!puedeTraspasar) return
-    let activo = true
-    void supabase.from('clubes').select('id,nombre').order('nombre').then(({ data }) => {
-      if (activo) setClubesDisponibles((data ?? []) as { id: string; nombre: string }[])
-    })
-    return () => { activo = false }
-  }, [puedeTraspasar])
-
-  async function handleTraspasar() {
-    if (!traspasarClubId || !jugador?.id) return
-    if (traspasarClubId === jugador.club_id) {
-      setTraspasarError('Ese ya es el club actual del jugador')
-      return
-    }
-    setTraspasando(true)
-    setTraspasarError('')
-    setTraspasarOk(false)
-    const res = await traspasarJugador({ jugadorId: jugador.id, clubIdNuevo: traspasarClubId })
-    setTraspasando(false)
-    if (res?.error) { setTraspasarError(res.error); return }
-    setTraspasarOk(true)
-    setTraspasarClubId('')
-    setRecargaVersion(v => v + 1)
-  }
   const puedeVerTodo = esAdmin || esProfesor
   const puedeEditar = esAdmin
   const puedeEvaluar = esAdmin || esProfesor
@@ -963,48 +926,6 @@ export default function JugadorDetallePage() {
           <div style={cardStyle}>
             <CardHeader title="Asistencia" />
             <ResumenAsistenciaJugador clubId={jugador.club_id} jugadorId={jugadorId} />
-          </div>
-        )}
-
-        {/* Traspasar de club — admin o profesor. Cambiar la columna club_id
-            a mano dejaba la asistencia, mensualidades y clases extra
-            apuntando al club anterior; esto lo mueve todo junto. */}
-        {puedeTraspasar && (
-          <div style={cardStyle}>
-            <CardHeader title="Traspasar de club" />
-            <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: 12, color: muted }}>
-                Club actual: <strong style={{ color: text }}>{clubNombre || '—'}</strong>. Mueve al jugador
-                y su historial (asistencia, mensualidades y clases extra) al nuevo club. El horario no se
-                traslada: los bloques pertenecen al club viejo y hay que inscribirlo en los del nuevo.
-              </div>
-              <select value={traspasarClubId}
-                onChange={e => { setTraspasarClubId(e.target.value); setTraspasarError(''); setTraspasarOk(false) }}
-                style={inputStyle}>
-                <option value="">Elegir club de destino…</option>
-                {clubesDisponibles
-                  .filter(c => c.id !== jugador.club_id)
-                  .map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
-              {traspasarError && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
-                  {traspasarError}
-                </div>
-              )}
-              {traspasarOk && (
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
-                  Jugador traspasado. Ya podés verlo en el club nuevo.
-                </div>
-              )}
-              <div>
-                <button onClick={() => { void handleTraspasar() }} disabled={traspasando || !traspasarClubId}
-                  style={{ background: traspasando || !traspasarClubId ? '#e2e8f0' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                    color: traspasando || !traspasarClubId ? muted : '#fff', border: 'none', borderRadius: 8,
-                    padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: traspasando || !traspasarClubId ? 'not-allowed' : 'pointer' }}>
-                  {traspasando ? 'Traspasando…' : 'Traspasar'}
-                </button>
-              </div>
-            </div>
           </div>
         )}
 
