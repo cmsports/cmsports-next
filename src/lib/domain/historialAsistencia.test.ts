@@ -11,12 +11,19 @@ const bloqueMar = { id: 'b-mar', nombre: 'Menores Avanzado', sede: 'buin', dia_s
 const bloqueJue = { id: 'b-jue', nombre: 'Menores Avanzado', sede: 'buin', dia_semana: 'jue', vigente_desde: '2026-08-01', vigente_hasta: null }
 const bloqueLun = { id: 'b-lun', nombre: 'Todo Público 1',   sede: 'buin', dia_semana: 'lun', vigente_desde: '2026-08-01', vigente_hasta: null }
 
+// `hoy` fijo en el 1 de agosto: todo lo que estas pruebas arman cae ese día o
+// después, así que un día sin registro sigue siendo 'pendiente' y los casos de
+// siempre miden lo que medían. La regla de "día vencido sin registro = ausente"
+// se prueba aparte, moviendo el `hoy` hacia adelante.
+const HOY = '2026-08-01'
+
 function datos(p: Partial<DatosHistorial> = {}): DatosHistorial {
   return {
     bloques: [bloqueMar, bloqueJue, bloqueLun],
     inscripciones: [],
     asistencias: [],
     excepciones: [],
+    hoy: HOY,
     ...p,
   }
 }
@@ -144,6 +151,60 @@ describe('indexar', () => {
       expect(calendarioJugador(quien, '2026-08-01', '2026-08-31', d, i))
         .toEqual(calendarioJugador(quien, '2026-08-01', '2026-08-31', d))
     }
+  })
+
+  // La regla que pidió el club: el olvido del profe tiene que verse.
+  describe('día vencido sin registro', () => {
+    const inscritoMar = [{ bloque_id: 'b-mar', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null }]
+
+    it('cuenta como ausencia si la fecha ya pasó', () => {
+      const cal = calendarioJugador(JUG, '2026-08-04', '2026-08-04', datos({
+        inscripciones: inscritoMar, hoy: '2026-08-05',
+      }))
+      expect(cal[0].estado).toBe('ausente')
+    })
+
+    it('sigue pendiente el mismo día, que todavía no termina', () => {
+      const cal = calendarioJugador(JUG, '2026-08-04', '2026-08-04', datos({
+        inscripciones: inscritoMar, hoy: '2026-08-04',
+      }))
+      expect(cal[0].estado).toBe('pendiente')
+    })
+
+    it('sigue pendiente si la fecha todavía no llegó', () => {
+      const cal = calendarioJugador(JUG, '2026-08-11', '2026-08-11', datos({
+        inscripciones: inscritoMar, hoy: '2026-08-04',
+      }))
+      expect(cal[0].estado).toBe('pendiente')
+    })
+
+    it('lo registrado manda: un presente viejo no se convierte en falta', () => {
+      const cal = calendarioJugador(JUG, '2026-08-04', '2026-08-04', datos({
+        inscripciones: inscritoMar, hoy: '2026-08-20',
+        asistencias: [{ jugador_id: JUG, fecha: '2026-08-04', estado: 'presente' }],
+      }))
+      expect(cal[0].estado).toBe('presente')
+    })
+
+    it('un día suspendido no se vuelve falta aunque haya vencido', () => {
+      const cal = calendarioJugador(JUG, '2026-08-04', '2026-08-04', datos({
+        inscripciones: inscritoMar, hoy: '2026-08-20',
+        excepciones: [{ bloque_id: 'b-mar', fecha: '2026-08-04' }],
+      }))
+      expect(cal).toEqual([])
+    })
+
+    it('el grupo sin lista pasada deja de marcar 100%', () => {
+      // Cuatro martes vencidos, ninguno registrado. Antes: sin resueltos, el
+      // porcentaje era null y la pantalla lo leía como "nada que reprochar".
+      const cal = calendarioJugador(JUG, '2026-08-01', '2026-08-28', datos({
+        inscripciones: inscritoMar, hoy: '2026-08-29',
+      }))
+      const ind = indicadores(cal)
+      expect(ind.ausentes).toBe(4)
+      expect(ind.pendientes).toBe(0)
+      expect(ind.porcentaje).toBe(0)
+    })
   })
 
   it('no le pasa a un jugador la asistencia de otro', () => {

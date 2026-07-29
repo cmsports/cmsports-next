@@ -69,7 +69,11 @@ function clubCompleto(): { datos: DatosHistorial; ids: string[] } {
     { bloque_id: 'b1', fecha: '2026-09-18' },
   ]
 
-  return { datos: { bloques, inscripciones, asistencias, excepciones, extraordinarias }, ids }
+  // `hoy` a mitad del rango a propósito: deja medio año vencido —donde un día
+  // sin registro pesa como ausencia— y medio por venir —donde sigue pendiente—,
+  // así el volumen ejercita los dos caminos. Fijo, además, para que la prueba
+  // no cambie de significado según el día en que se corra.
+  return { datos: { bloques, inscripciones, asistencias, excepciones, extraordinarias, hoy: '2026-07-01' }, ids }
 }
 
 describe('estrés del motor', () => {

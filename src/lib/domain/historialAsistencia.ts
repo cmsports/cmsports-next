@@ -9,7 +9,15 @@
 // reales del calendario, nunca multiplicando semanas por días. Agosto de 2026
 // tiene cinco lunes y septiembre cuatro; quien entrena solo los lunes debe
 // cinco sesiones un mes y cuatro el otro.
+//
+// La segunda regla, decidida por el club en julio de 2026: un día que ya pasó
+// y quedó sin registrar cuenta como ausencia, no como "no se sabe". Antes se
+// dejaba fuera del porcentaje —el argumento era que un olvido del profe no es
+// falta del alumno—, pero en la práctica eso hacía que un grupo entero sin
+// lista pasada tuviera 100% de asistencia, que es peor mentira que la
+// contraria. El olvido ahora se ve, y se corrige a mano donde corresponde.
 
+import { fechaChile } from './fechaChile'
 import { vigenteEn, type Vigencia } from './vigencia'
 
 // 'extraordinaria' es un día en que vino a un grupo que no es el suyo. No es un
@@ -93,6 +101,15 @@ export type DatosHistorial = {
   excepciones: Excepcion[]
   /** Opcional: las pantallas viejas que no las cargan siguen funcionando. */
   extraordinarias?: ClaseExtra[]
+  /**
+   * Qué día es hoy, para saber cuáles ya vencieron. Por defecto, hoy en Chile.
+   *
+   * Va acá y no leído del reloj adentro del cálculo para que el módulo siga
+   * siendo puro: los tests fijan la fecha y dejan de depender de cuándo se
+   * corren. Sin esto, una prueba escrita con fechas de agosto empieza a fallar
+   * sola en septiembre.
+   */
+  hoy?: string
 }
 
 /**
@@ -158,6 +175,7 @@ export function calendarioJugador(
   indice?: IndiceHistorial,
 ): DiaCalendario[] {
   const { bloquePorId, inscripcionesDe, estadoDe: todos, sinClase, extrasDe } = indice ?? indexar(datos)
+  const hoy = datos.hoy ?? fechaChile()
   const mias = inscripcionesDe.get(jugadorId) ?? []
   const estadoDe = todos.get(jugadorId) ?? new Map<string, 'presente' | 'ausente'>()
   const misExtras = extrasDe.get(jugadorId) ?? new Set<string>()
@@ -185,7 +203,15 @@ export function calendarioJugador(
 
     // Si además le tocaba entrenar, manda su estado normal: la extra es algo
     // que pasó ese día, no reemplaza si asistió o faltó a lo suyo.
-    out.push({ fecha, dia, estado: estadoDe.get(fecha) ?? 'pendiente', bloques: nombres, extra })
+    //
+    // Sin registro, decide la fecha. Un día que ya pasó y nadie marcó cuenta
+    // como ausencia: le tocaba entrenar, el cupo estaba tomado y no hay nada
+    // que diga que vino. Hoy y lo que viene siguen 'pendiente', porque el profe
+    // todavía puede pasar la lista y llamar falta a un día que no terminó sería
+    // inventar. Cualquier día se corrige a mano desde Asistencia Histórica.
+    const registrado = estadoDe.get(fecha)
+    const estado: EstadoDia = registrado ?? (fecha < hoy ? 'ausente' : 'pendiente')
+    out.push({ fecha, dia, estado, bloques: nombres, extra })
   }
   return out
 }
@@ -234,8 +260,9 @@ export type Indicadores = {
 /**
  * Los indicadores de un calendario ya armado.
  *
- * Los pendientes quedan fuera del porcentaje a propósito: un entrenamiento que
- * el profe no alcanzó a registrar no es una falta del alumno.
+ * Quedan 'pendiente' solo hoy y los días que vienen, y esos no entran en el
+ * porcentaje: todavía no pasaron, no hay nada que contar. Un día vencido sin
+ * registro ya llegó como 'ausente' desde `calendarioJugador` y sí pesa.
  *
  * Las clases extraordinarias quedan fuera de todo el cálculo. Vino a un grupo
  * que no era el suyo: eso no le suma asistencia —no era su obligación— y
