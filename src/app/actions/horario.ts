@@ -49,8 +49,11 @@ async function guardarProfesores(
 
   const entran = quiero.filter(id => !actuales.includes(id))
   if (entran.length > 0) {
+    // vigente_desde explícito: el DEFAULT current_date de la base corre en UTC
+    // y de noche asignaba al profe desde "mañana", perdiendo el día en el
+    // reporte de horas.
     await supabase.from('bloque_profesores')
-      .insert(entran.map(profesor_id => ({ bloque_id: bloqueId, profesor_id })))
+      .insert(entran.map(profesor_id => ({ bloque_id: bloqueId, profesor_id, vigente_desde: hoyISO() })))
   }
 }
 
@@ -587,8 +590,11 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     campos.entrena_vie !== (jugador.entrena_vie ?? false)
 
   if (cambio) {
-    const hoy  = new Date().toISOString().slice(0, 10)
-    const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    // En Chile, no en UTC: desde las 20:00 el toISOString ya iba un día
+    // adelante y el tramo del historial nacía mañana mientras la inscripción
+    // (hoyISO) nacía hoy — Inasistencias leía dos verdades distintas.
+    const hoy  = hoyISO()
+    const ayer = fechaChile(new Date(Date.now() - 86400000))
     await supabase.from('jugador_horario_historial')
       .update({ vigente_hasta: ayer })
       .eq('jugador_id', params.jugadorId).is('vigente_hasta', null).lt('vigente_desde', hoy)

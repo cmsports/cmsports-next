@@ -88,7 +88,7 @@ export default function ReportesPage() {
     const [{ data: jug }, { data: mov }, { data: asist }, { data: torn }, { data: mens }] = await Promise.all([
       supabase.from('jugadores').select('id,nombre,estado,categoria').eq('club_id', clubId),
       supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-      supabase.from('asistencia').select('id,jugador_id,fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin),
+      supabase.from('asistencia').select('id,jugador_id,fecha').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin),
       supabase.from('torneos').select('id,nombre,estado,fecha_inicio,tipo').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
       supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes)
     ])
@@ -116,7 +116,7 @@ export default function ReportesPage() {
     const [{ data: jugador }, { data: mens }, { data: asist }, { data: torneoJug }, { data: ligaJug }] = await Promise.all([
       supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,fecha_nacimiento,estado').eq('id', jugadorId).single(),
       supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }),
-      supabase.from('asistencia').select('id,jugador_id,fecha').eq('jugador_id', jugadorId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
+      supabase.from('asistencia').select('id,jugador_id,fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
       supabase.from('torneo_jugadores').select('id,torneo_id,torneos(id,nombre,fecha_inicio,estado)').eq('jugador_id', jugadorId),
       supabase.from('liga_division_jugadores').select('id,jugador_id,liga_divisiones(id,nombre,ligas(id,nombre))').eq('jugador_id', jugadorId),
     ])
@@ -160,7 +160,7 @@ export default function ReportesPage() {
   async function cargarDatosAsistencia() {
     const { inicio, fin } = getRango()
     const [{ data: asist }, { data: jug }] = await Promise.all([
-      supabase.from('asistencia').select('jugador_id,fecha,jugadores(nombre,categoria)').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
+      supabase.from('asistencia').select('jugador_id,fecha,jugadores(nombre,categoria)').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
       supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo')
     ])
     const porDia: Record<string, number> = {}

@@ -80,7 +80,9 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
 
       const [{ data: jugs }, { data: asist }, { data: clases }] = await Promise.all([
         supabase.from('jugadores').select('id,nombre').eq('club_id', clubId).eq('estado', 'activo'),
-        supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).gte('fecha', desdeStr),
+        // Solo presencias: desde que existe el botón Ausente, la tabla también
+        // guarda faltas y contarlas acá inflaba el porcentaje del club.
+        supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', desdeStr),
         supabase.from('clases').select('fecha').eq('club_id', clubId).eq('publicada', true).gte('fecha', desdeStr),
       ])
 
@@ -172,7 +174,7 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
     try {
       const supabase = createClient()
       const [{ data: asistAll }, { data: jugsAll }, { data: clasesAll }] = await Promise.all([
-        supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).order('fecha', { ascending: true }),
+        supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).eq('estado', 'presente').order('fecha', { ascending: true }),
         supabase.from('jugadores').select('id').eq('club_id', clubId).eq('estado', 'activo'),
         supabase.from('clases').select('fecha').eq('club_id', clubId).eq('publicada', true),
       ])

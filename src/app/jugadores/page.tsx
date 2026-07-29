@@ -208,7 +208,7 @@ export default function JugadoresPage() {
   useEffect(() => {
     if (!clubId) return
     let activo = true
-    supabase.from('asistencia').select('jugador_id').eq('club_id', clubId).eq('fecha', fechaChile())
+    supabase.from('asistencia').select('jugador_id').eq('club_id', clubId).eq('fecha', fechaChile()).eq('estado', 'presente')
       .then(({ data }) => { if (activo) setAsistenciaHoy(new Set((data || []).map((a: any) => a.jugador_id))) })
     return () => { activo = false }
   }, [clubId])

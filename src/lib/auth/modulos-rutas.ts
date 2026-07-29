@@ -6,7 +6,9 @@ export const MODULOS_CLUB = [
 export type ModuloClub = typeof MODULOS_CLUB[number]
 
 const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly string[] }> = [
-  { modulo: 'torneos', rutas: ['/torneos'] },
+  // El torneo interno y el ranking viven en rutas propias que no cuelgan de
+  // /torneos: sin nombrarlas acá, apagar el módulo las dejaba abiertas por URL.
+  { modulo: 'torneos', rutas: ['/torneos', '/torneos-internos', '/ranking'] },
   { modulo: 'liga', rutas: ['/liga'] },
   // `/mi-horario` es la vista del jugador de lo mismo que el staff arma en
   // `/horario`, así que depende del mismo módulo.

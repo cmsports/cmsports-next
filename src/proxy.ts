@@ -37,8 +37,15 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse
   }
 
-  // Flujo de crear/recuperar contraseña — siempre accesible, no redirigir
+  // Flujo de crear/recuperar contraseña — siempre accesible, no redirigir.
+  // Salvo la cuenta demo: este early-return corría antes que su bloqueo de
+  // más abajo y lo dejaba muerto, así que la demo sí podía cambiar la clave.
   if (authFlowRoutes.some((r) => pathname.startsWith(r))) {
+    if (user && esCuentaDemo(user.email)) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/'
+      return NextResponse.redirect(url)
+    }
     return supabaseResponse
   }
 
@@ -131,9 +138,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Cuenta demo: bloquear configuracion y redes-sociales
+  // Cuenta demo: bloquear configuracion y redes-sociales. Los flujos de
+  // contraseña se bloquean arriba, en el early-return de authFlowRoutes.
   if (esCuentaDemo(user.email)) {
-    if (pathname.startsWith('/configuracion') || pathname.startsWith('/redes-sociales') || pathname.startsWith('/recuperar-contrasena') || pathname.startsWith('/crear-contrasena')) {
+    if (pathname.startsWith('/configuracion') || pathname.startsWith('/redes-sociales')) {
       const url = request.nextUrl.clone()
       url.pathname = getRolRedirect(rol)
       return NextResponse.redirect(url)

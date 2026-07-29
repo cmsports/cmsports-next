@@ -544,7 +544,7 @@ export default function JugadorDetallePage() {
 
       // Asistencia, mensualidades y ranking en paralelo
       const [{ data: asist }, { data: mens3 }, { data: torneosClub }] = await Promise.all([
-        supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).gte('fecha', desde).order('fecha'),
+        supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', desde).order('fecha'),
         supabase.from('mensualidades').select('mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(3),
         supabase.from('torneos').select('id,categoria').eq('club_id', jugador.club_id).eq('tipo', 'interno').eq('estado', 'finalizado'),
       ])

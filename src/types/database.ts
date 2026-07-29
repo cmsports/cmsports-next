@@ -414,6 +414,7 @@ export interface Database {
           hora: string | null
           metodo: string | null
           registrado_por: string | null
+          estado: string
         }
         Insert: {
           id?: string
@@ -423,6 +424,7 @@ export interface Database {
           hora?: string | null
           metodo?: string | null
           registrado_por?: string | null
+          estado?: string
         }
         Update: {
           id?: string
@@ -432,6 +434,7 @@ export interface Database {
           hora?: string | null
           metodo?: string | null
           registrado_por?: string | null
+          estado?: string
         }
         Relationships: [
           { foreignKeyName: 'asistencia_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },

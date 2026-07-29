@@ -48,9 +48,11 @@ export default function PerfilPage() {
         // Todo lo suyo, en paralelo.
         const resultados = await Promise.all([
           supabase.from('jugadores').select('id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite,foto_path').eq('id', perfil.jugador_id).single(),
-          supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
+          // Solo presencias: la lista se llama "Últimas asistencias" y el aviso
+          // de hoy dice "¡Buen entrenamiento!" — una falta registrada no es eso.
+          supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).eq('estado', 'presente').order('fecha', { ascending: false }).limit(10),
           supabase.from('mensualidades').select('id,mes,anio,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
-          supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
+          supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy).eq('estado', 'presente'),
         ])
 
         const errorInicial = resultados.find(resultado => resultado.error)?.error

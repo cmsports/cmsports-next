@@ -16,6 +16,7 @@ import {
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import { linkWhatsApp } from '@/lib/whatsapp'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -178,18 +179,21 @@ export default function DashboardPage() {
   }
 
   async function cargarInactivos(cid: string) {
-    const hoy   = new Date()
+    // Fechas ancladas a Chile: con toISOString (UTC) el corte de "hoy" saltaba
+    // al día siguiente desde las 20:00 de acá.
+    const hoy   = new Date(fechaChile() + 'T12:00:00')
     const limite = new Date(hoy)
     limite.setDate(limite.getDate() - 14)
     const limiteFecha = limite.toISOString().split('T')[0]
 
-    const hace30 = new Date()
+    const hace30 = new Date(hoy)
     hace30.setDate(hace30.getDate() - 30)
     const desde30 = hace30.toISOString().split('T')[0]
 
     const [{ data: jugsActivos }, { data: asistencias }] = await Promise.all([
       supabase.from('jugadores').select('id, nombre, telefono').eq('club_id', cid).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
-      supabase.from('asistencia').select('jugador_id, fecha').eq('club_id', cid).gte('fecha', desde30).order('fecha', { ascending: false }),
+      // Solo presencias: una racha de ausentes registrados no es "venir".
+      supabase.from('asistencia').select('jugador_id, fecha').eq('club_id', cid).eq('estado', 'presente').gte('fecha', desde30).order('fecha', { ascending: false }),
     ])
 
     // última asistencia por jugador
@@ -222,11 +226,12 @@ export default function DashboardPage() {
   }
 
   async function cargarAsistenciaHoy(cid: string) {
-    const hoy = new Date().toISOString().split('T')[0]
+    const hoy = fechaChile()
     const { data } = await supabase
       .from('asistencia')
       .select('jugador_id, jugadores(nombre)')
       .eq('club_id', cid)
+      .eq('estado', 'presente')
       .eq('fecha', hoy)
     const nombres = (data || []).map((r: any) => r.jugadores?.nombre || '').filter(Boolean)
     const resultado = { total: nombres.length, nombres }
