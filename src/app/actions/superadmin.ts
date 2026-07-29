@@ -256,3 +256,26 @@ export async function registrarPagoClub(input: {
   return { success: true }
 }
 
+/**
+ * Mueve un jugador (y su asistencia, mensualidades y clases extras) a otro
+ * club. La funcion de la base tambien exige superadmin: el guard de aca evita
+ * el viaje de ida cuando el rol no corresponde.
+ *
+ * bloque_jugadores no se toca a proposito: los bloques pertenecen al club
+ * viejo. Al inscribirlo en un bloque del club nuevo, el admin decide en que
+ * horario cabe ahora.
+ */
+export async function traspasarJugador(input: { jugadorId: string; clubIdNuevo: string }) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  if (!input.jugadorId || !input.clubIdNuevo) return { error: 'Falta el jugador o el club de destino' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('traspasar_jugador', {
+    p_jugador_id: input.jugadorId,
+    p_club_id_nuevo: input.clubIdNuevo,
+  })
+  if (error) return { error: error.message }
+  return { ok: true }
+}
+
