@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diasVigentes, vigenteEn, vigentesEn } from './vigencia'
+import { cierreVigencia, diasVigentes, vigenteEn, vigentesEn } from './vigencia'
 
 const abierta = { vigente_desde: '2026-08-01', vigente_hasta: null }
 const cerrada = { vigente_desde: '2026-03-01', vigente_hasta: '2026-05-15' }
@@ -19,6 +19,37 @@ describe('vigenteEn', () => {
     expect(vigenteEn(abierta, '2026-08-01')).toBe(true)
     expect(vigenteEn(abierta, '2030-01-01')).toBe(true)
     expect(vigenteEn(abierta, '2026-07-31')).toBe(false)
+  })
+})
+
+describe('cierreVigencia', () => {
+  it('el último día que valió es el anterior', () => {
+    expect(cierreVigencia('2026-07-29')).toBe('2026-07-28')
+  })
+
+  it('cruza el fin de mes y el fin de año', () => {
+    expect(cierreVigencia('2026-08-01')).toBe('2026-07-31')
+    expect(cierreVigencia('2026-01-01')).toBe('2025-12-31')
+    expect(cierreVigencia('2028-03-01')).toBe('2028-02-29')   // bisiesto
+  })
+
+  // El bug de Sofía: la sacaron del grupo por la mañana y a la tarde seguía
+  // saliendo en la lista de asistencia de ese mismo día.
+  it('quien sale del grupo deja de estar vigente hoy mismo', () => {
+    const hoy = '2026-07-29'
+    const suya = { vigente_desde: '2026-03-01', vigente_hasta: cierreVigencia(hoy) }
+    expect(vigenteEn(suya, hoy)).toBe(false)
+    expect(vigenteEn(suya, '2026-07-28')).toBe(true)
+  })
+
+  // Cerrar con la fecha de hoy dejaba al jugador en los dos grupos ese día:
+  // el viejo todavía vigente y el nuevo ya empezado.
+  it('el cambio de grupo no deja al jugador en los dos a la vez', () => {
+    const hoy = '2026-08-13'
+    const viejo = { vigente_desde: '2026-08-01', vigente_hasta: cierreVigencia(hoy) }
+    const nuevo = { vigente_desde: hoy, vigente_hasta: null }
+    expect(vigenteEn(viejo, hoy)).toBe(false)
+    expect(vigenteEn(nuevo, hoy)).toBe(true)
   })
 })
 

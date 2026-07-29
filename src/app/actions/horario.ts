@@ -3,6 +3,7 @@
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { diaDesdeFecha, hhmm } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { cierreVigencia } from '@/lib/domain/vigencia'
 
 // El horario semanal lo maneja el staff (admin o profesor). requireAdminClub
 // solo deja pasar al admin, así que acá va una comprobación propia.
@@ -25,6 +26,17 @@ function hoyISO(): string {
   return fechaChile()
 }
 
+/**
+ * Con qué fecha se cierra lo que deja de valer ahora mismo: ayer.
+ *
+ * Cerrar con hoy no saca a nadie —`vigente_hasta` es inclusive— y dejaba al
+ * jugador en la lista de asistencia del día en que lo sacaban del grupo, o en
+ * los dos grupos a la vez el día que lo cambiaban de horario.
+ */
+function cierreISO(): string {
+  return cierreVigencia(hoyISO())
+}
+
 async function guardarProfesores(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
@@ -42,7 +54,7 @@ async function guardarProfesores(
   const salen = (abiertas ?? []).filter((r: { profesor_id: string }) => !quiero.includes(r.profesor_id))
   if (salen.length > 0) {
     await supabase.from('bloque_profesores')
-      .update({ vigente_hasta: hoyISO() })
+      .update({ vigente_hasta: cierreISO() })
       .in('id', salen.map((r: { id: string }) => r.id))
   }
 
@@ -276,11 +288,11 @@ export async function guardarGrupo(params: {
     } else if (b.vigente_hasta === null) {
       // Se destildó: se cierra, junto con sus inscripciones.
       const { error } = await supabase.from('bloques_horario')
-        .update({ vigente_hasta: hoyISO() }).eq('id', b.id)
+        .update({ vigente_hasta: cierreISO() }).eq('id', b.id)
       if (error) return { error: `No se pudo dar de baja el ${b.dia_semana}: ${error.message}` }
 
       const { error: errIns } = await supabase.from('bloque_jugadores')
-        .update({ vigente_hasta: hoyISO() }).eq('bloque_id', b.id).is('vigente_hasta', null)
+        .update({ vigente_hasta: cierreISO() }).eq('bloque_id', b.id).is('vigente_hasta', null)
       if (errIns) return { error: `El día se cerró pero las inscripciones no: ${errIns.message}` }
     }
   }
@@ -320,13 +332,13 @@ export async function eliminarBloque(params: { id: string }) {
   // estaba inscrito, quién lo dictaba, quién asistió— tiene que seguir siendo
   // consultable aunque el grupo deje de funcionar.
   const { error } = await supabase.from('bloques_horario')
-    .update({ vigente_hasta: hoyISO() })
+    .update({ vigente_hasta: cierreISO() })
     .eq('id', params.id).eq('club_id', clubId)
   if (error) return { error: 'No se pudo dar de baja el bloque: ' + error.message }
 
   // Y con él, las inscripciones que tenía abiertas.
   await supabase.from('bloque_jugadores')
-    .update({ vigente_hasta: hoyISO() })
+    .update({ vigente_hasta: cierreISO() })
     .eq('bloque_id', params.id).is('vigente_hasta', null)
   return { success: true }
 }
@@ -416,7 +428,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
 
   if (salen.length > 0) {
     const { error } = await supabase.from('bloque_jugadores')
-      .update({ vigente_hasta: hoyISO() })
+      .update({ vigente_hasta: cierreISO() })
       .in('id', salen.map((r: Abierta) => r.id))
     if (error) return { error: 'No se pudo cerrar la asignación anterior: ' + error.message }
   }
@@ -499,9 +511,8 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     // adelante y el tramo del historial nacía mañana mientras la inscripción
     // (hoyISO) nacía hoy — Inasistencias leía dos verdades distintas.
     const hoy  = hoyISO()
-    const ayer = fechaChile(new Date(Date.now() - 86400000))
     await supabase.from('jugador_horario_historial')
-      .update({ vigente_hasta: ayer })
+      .update({ vigente_hasta: cierreISO() })
       .eq('jugador_id', params.jugadorId).is('vigente_hasta', null).lt('vigente_desde', hoy)
     await supabase.from('jugador_horario_historial').insert({
       jugador_id: params.jugadorId, club_id: clubId,
@@ -527,7 +538,7 @@ export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorI
   // No se borra: se cierra el período. Que alguien haya dejado el grupo no
   // borra que estuvo, ni las asistencias que tuvo mientras estaba.
   const { error } = await supabase.from('bloque_jugadores')
-    .update({ vigente_hasta: hoyISO() })
+    .update({ vigente_hasta: cierreISO() })
     .eq('bloque_id', params.bloqueId).eq('jugador_id', params.jugadorId)
     .is('vigente_hasta', null)
   if (error) return { error: 'No se pudo quitar del bloque: ' + error.message }

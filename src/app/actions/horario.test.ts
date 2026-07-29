@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeSupabase, type FakeSupabase } from '@/lib/test/fakeSupabase'
+import { cierreVigencia, vigenteEn } from '@/lib/domain/vigencia'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const mocks = vi.hoisted(() => ({ crear: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.crear }))
@@ -233,6 +235,45 @@ describe('asignarBloquesJugador', () => {
     // Se cierra la inscripción; los días de la ficha los apaga el trigger.
     expect(fake.llamadas.some(l => l.tabla === 'bloque_jugadores' && l.op === 'update')).toBe(true)
     expect(fake.llamadas.some(l => l.tabla === 'jugadores' && l.op === 'update')).toBe(false)
+  })
+
+  // El caso Sofía. La sacaron de todos los grupos por la mañana: la ficha y los
+  // cupos la daban por fuera al toque, pero la lista de asistencia de ESE MISMO
+  // día la seguía mostrando en su horario viejo, y hasta dejaba marcarle
+  // presente. Cerrar con la fecha de hoy no saca a nadie, porque `vigente_hasta`
+  // es el último día en que vale.
+  describe('salir de un grupo tiene efecto hoy, no mañana', () => {
+    it('la inscripción se cierra con ayer, no con hoy', async () => {
+      conBase({
+        jugadores: { id: 'j1', club_id: 'club-1' },
+        bloque_jugadores: [{ id: 'i-lun', bloque_id: 'b-lun' }],
+      })
+
+      await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: [] })
+
+      const cierre = fake.llamadas.find(l => l.tabla === 'bloque_jugadores' && l.op === 'update')
+      const hasta = (cierre?.datos as Record<string, string>).vigente_hasta
+      expect(hasta).toBe(cierreVigencia(fechaChile()))
+      expect(vigenteEn({ vigente_desde: '2026-01-01', vigente_hasta: hasta }, fechaChile())).toBe(false)
+    })
+
+    it('el que se cambia de grupo no queda en los dos el mismo día', async () => {
+      conBase({
+        jugadores: { id: 'j1', club_id: 'club-1' },
+        bloques_horario: [{ id: 'b-vie', sede: 'buin', dia_semana: 'vie', hora_inicio: '16:30', hora_fin: '18:30' }],
+        bloque_jugadores: [{ id: 'i-lun', bloque_id: 'b-lun' }],
+      })
+
+      await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: ['b-vie'] })
+
+      const hoy = fechaChile()
+      const cierre = fake.llamadas.find(l => l.tabla === 'bloque_jugadores' && l.op === 'update')
+      const viejo = { vigente_desde: '2026-01-01', vigente_hasta: (cierre?.datos as Record<string, string>).vigente_hasta }
+      const nuevo = fake.escrituras('bloque_jugadores').find(e => e.bloque_id === 'b-vie')
+
+      expect(vigenteEn(viejo, hoy)).toBe(false)
+      expect(nuevo?.vigente_desde).toBe(hoy)
+    })
   })
 })
 
