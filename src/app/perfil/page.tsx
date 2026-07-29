@@ -10,6 +10,7 @@ import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import { useModulos } from '@/lib/hooks/useModulos'
+import { firmarUrl } from '@/lib/supabase/privado'
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
@@ -24,6 +25,7 @@ const hint = '#94a3b8'
 export default function PerfilPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
+  const [fotoUrl, setFotoUrl] = useState<string | null>(null)
   const [asistencias, setAsistencias] = useState<any[]>([])
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -50,7 +52,7 @@ export default function PerfilPage() {
 
         // Todo lo suyo, en paralelo.
         const resultados = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single(),
+          supabase.from('jugadores').select('id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite,foto_path').eq('id', perfil.jugador_id).single(),
           supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).order('fecha', { ascending: false }).limit(10),
           supabase.from('mensualidades').select('id,mes,anio,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
           supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy),
@@ -71,6 +73,7 @@ export default function PerfilPage() {
         ] = resultados
 
         setJugador(j)
+        setFotoUrl(await firmarUrl((j as any)?.foto_path))
         setAsistencias(a || [])
         setMensualidadActual(mens)
         setYaRegistroHoy((asistHoy || []).length > 0)
@@ -125,9 +128,14 @@ export default function PerfilPage() {
       {/* Hero */}
       <div style={{ background: 'linear-gradient(135deg,#3730a3,#4f46e5)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-          <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: 'white', flexShrink: 0 }}>
-            {iniciales}
-          </div>
+          {fotoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={fotoUrl} alt={jugador.nombre} style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,255,255,0.3)', flexShrink: 0 }} />
+          ) : (
+            <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 800, color: 'white', flexShrink: 0 }}>
+              {iniciales}
+            </div>
+          )}
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>{jugador.nombre}</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{jugador.categoria}</div>

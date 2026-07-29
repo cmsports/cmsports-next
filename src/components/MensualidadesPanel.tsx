@@ -67,8 +67,19 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono').eq('club_id', id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').order('nombre'),
       supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
     ])
-    setJugadores(j || [])
-    setMensualidades(m || [])
+    // ponytail: un jugador dado de baja igual puede tener mensualidad del mes;
+    // sin esto desaparece de la tabla y su pago queda invisible
+    const jugActivos = j || []
+    const mens = m || []
+    const idsActivos = new Set(jugActivos.map((jug: any) => jug.id))
+    const idsFaltantes = [...new Set(mens.filter((me: any) => !idsActivos.has(me.jugador_id)).map((me: any) => me.jugador_id))]
+    let jugTodos = jugActivos
+    if (idsFaltantes.length > 0) {
+      const { data: extras } = await supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono').in('id', idsFaltantes)
+      if (extras?.length) jugTodos = [...jugActivos, ...extras].sort((a: any, b: any) => (a.nombre || '').localeCompare(b.nombre || ''))
+    }
+    setJugadores(jugTodos)
+    setMensualidades(mens)
 
     // Auto-generar registros pendientes solo para el mes actual para no crear
     // filas históricas al navegar a meses anteriores
