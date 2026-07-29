@@ -422,11 +422,16 @@ export async function agregarJugadorABloque(params: { bloqueId: string; jugadorI
 
   // El bloque y el jugador tienen que ser del club de quien lo hace.
   const [{ data: bloque }, { data: jugador }] = await Promise.all([
-    supabase.from('bloques_horario').select('id,cupo_maximo').eq('id', params.bloqueId).eq('club_id', clubId).maybeSingle(),
+    supabase.from('bloques_horario').select('id,cupo_maximo,vigente_hasta').eq('id', params.bloqueId).eq('club_id', clubId).maybeSingle(),
     supabase.from('jugadores').select('id').eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle(),
   ])
   if (!bloque) return { error: 'Bloque no encontrado' }
   if (!jugador) return { error: 'Jugador no encontrado' }
+  // Un bloque cerrado (vigente_hasta pasada) no acepta inscripciones nuevas:
+  // sin esto se podia sumar gente a un grupo que ya no se dicta.
+  if (bloque.vigente_hasta && bloque.vigente_hasta < hoyISO()) {
+    return { error: 'Este bloque ya no está vigente, no se pueden agregar jugadores' }
+  }
 
   const { error } = await supabase.from('bloque_jugadores')
     .insert({ bloque_id: params.bloqueId, jugador_id: params.jugadorId, vigente_desde: hoyISO() })
@@ -464,15 +469,19 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
 
   // Solo bloques del club: los ids llegan del navegador y no son de fiar.
   const ids = [...new Set(params.bloqueIds)].filter(Boolean)
-  let bloques: { id: string; sede: string; dia_semana: string; hora_inicio: string; hora_fin: string }[] = []
+  let bloques: { id: string; sede: string; dia_semana: string; hora_inicio: string; hora_fin: string; vigente_hasta: string | null }[] = []
   if (ids.length > 0) {
     const { data, error } = await supabase.from('bloques_horario')
-      .select('id,sede,dia_semana,hora_inicio,hora_fin')
+      .select('id,sede,dia_semana,hora_inicio,hora_fin,vigente_hasta')
       .eq('club_id', clubId).in('id', ids)
     if (error) return { error: 'No se pudieron leer los bloques: ' + error.message }
     bloques = data ?? []
   }
   if (bloques.length !== ids.length) return { error: 'Alguno de los bloques no es de este club' }
+  const vencidos = bloques.filter(b => b.vigente_hasta && b.vigente_hasta < hoyISO())
+  if (vencidos.length > 0) {
+    return { error: `Hay ${vencidos.length} bloque(s) fuera de vigencia entre los elegidos. No se pueden asignar.` }
+  }
 
   // Se calcula la diferencia contra lo que ya tenía abierto, en vez de borrar
   // y volver a insertar. Borrar perdería desde cuándo está en los grupos que

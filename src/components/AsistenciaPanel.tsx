@@ -289,28 +289,34 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       const dia = diaDesdeFecha(fechaVista)
       if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
 
-      const [{ data: bloques }, { data: rel }] = await Promise.all([
-        supabase.from('bloques_horario')
-          .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
-          .eq('club_id', clubId).eq('dia_semana', dia)
+      const { data: bloques } = await supabase.from('bloques_horario')
+        .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
+        .eq('club_id', clubId).eq('dia_semana', dia)
+        .lte('vigente_desde', fechaVista)
+        .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
+        .order('hora_inicio')
+      if (!vigente) return
+      const delDia = (bloques ?? []) as BloqueDelDia[]
+      const bloqueIds = delDia.map(b => b.id)
+
+      // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
+      // alguien pudo haber salido del grupo la semana pasada y ese dia si
+      // entrenaba. Se pide con `in(bloque_id)` sobre los bloques ya filtrados
+      // por club — antes se apoyaba solo en RLS y arrastraba todo el club
+      // hasta filtrarlo en el cliente.
+      let rel: { bloque_id: string; jugador_id: string }[] = []
+      if (bloqueIds.length > 0) {
+        const { data } = await supabase.from('bloque_jugadores')
+          .select('bloque_id,jugador_id')
+          .in('bloque_id', bloqueIds)
           .lte('vigente_desde', fechaVista)
           .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
-          .order('hora_inicio'),
-        // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
-        // alguien pudo haber salido del grupo la semana pasada y ese dia si
-        // entrenaba.
-        supabase.from('bloque_jugadores')
-          .select('bloque_id,jugador_id')
-          .lte('vigente_desde', fechaVista)
-          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`),
-      ])
+        rel = (data ?? []) as { bloque_id: string; jugador_id: string }[]
+      }
       if (!vigente) return
 
-      const delDia = (bloques ?? []) as BloqueDelDia[]
-      const suyos = new Set(delDia.map(b => b.id))
       const porBloque: Record<string, string[]> = {}
-      for (const r of rel ?? []) {
-        if (!suyos.has(r.bloque_id)) continue
+      for (const r of rel) {
         ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
       }
       setBloquesDelDia(delDia)
