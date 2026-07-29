@@ -82,6 +82,39 @@ export const movimientoSchema = z.object({
   }
 })
 
+// Editar es más estrecho que crear: el tipo no viaja (la RPC lo toma de la
+// fila, cambiarlo daría vuelta el balance de un mes ya cerrado) y 'mensualidad'
+// no es categoría válida porque esos movimientos son el espejo de un pago y se
+// corrigen revirtiéndolo.
+export const CATEGORIAS_INGRESO_EDITABLES = CATEGORIAS_INGRESO.filter(c => c !== 'mensualidad')
+
+export const editarMovimientoSchema = z.object({
+  movimientoId: UUID,
+  categoria: z.string().min(1, 'Categoría requerida').refine(
+    c => (CATEGORIAS_INGRESO_EDITABLES as string[]).includes(c) || (CATEGORIAS_GASTO as readonly string[]).includes(c),
+    'Categoría inválida',
+  ),
+  descripcion: z.string().trim().min(1, 'Descripción requerida').max(500, 'Descripción demasiado larga'),
+  monto: MONTO,
+  fecha: FECHA,
+  profesorId: UUID.optional(),
+  mesCorrespondiente: MES.optional(),
+  anioCorrespondiente: ANIO.optional(),
+  idempotencyKey: UUID,
+}).superRefine((data, ctx) => {
+  if ((data.mesCorrespondiente === undefined) !== (data.anioCorrespondiente === undefined)) {
+    ctx.addIssue({ code: 'custom', path: ['mesCorrespondiente'], message: 'Mes y año deben informarse juntos' })
+  }
+  if ((data.categoria === 'sueldo_profesor' || data.categoria === 'sueldo_staff') && data.mesCorrespondiente === undefined) {
+    ctx.addIssue({ code: 'custom', path: ['mesCorrespondiente'], message: 'Los sueldos requieren mes y año' })
+  }
+})
+
+export const eliminarMovimientoSchema = z.object({
+  movimientoId: UUID,
+  idempotencyKey: UUID,
+})
+
 // El cobro de clases extraordinarias validaba a mano y era el único de
 // finanzas que lo hacía. Un id vacío no daba "no encontrado": llegaba a la
 // base y volvía como «invalid input syntax for type uuid», que es el error

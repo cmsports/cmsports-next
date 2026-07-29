@@ -1947,6 +1947,24 @@ export interface Database {
         }
         Returns: Json
       }
+      editar_movimiento_financiero_atomico: {
+        Args: {
+          p_movimiento_id: string
+          p_categoria: string
+          p_descripcion: string
+          p_monto: number
+          p_fecha: string
+          p_profesor_id: string | null
+          p_mes_correspondiente: number | null
+          p_anio_correspondiente: number | null
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      eliminar_movimiento_financiero_atomico: {
+        Args: { p_movimiento_id: string; p_idempotency_key: string }
+        Returns: Json
+      }
       generar_mensualidades_jugadores_seguro: {
         Args: { p_jugador_ids: string[]; p_mes: number; p_anio: number }
         Returns: number

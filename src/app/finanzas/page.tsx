@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { registrarMovimiento } from '@/app/actions/finanzas'
+import { registrarMovimiento, editarMovimiento, eliminarMovimiento } from '@/app/actions/finanzas'
 import { MensualidadesPanel } from '@/components/MensualidadesPanel'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
@@ -74,10 +74,14 @@ function FinanzasContent() {
   const [form, setForm] = useState({
     tipo: 'ingreso', categoria: 'mensualidad', descripcion: '',
     monto: '', fecha: new Date().toISOString().slice(0,10),
-    profesorId: '', mesCorr: String(new Date().getMonth()+1), anioCorr: String(new Date().getFullYear())
+    profesorId: '', nombreStaff: '', mesCorr: String(new Date().getMonth()+1), anioCorr: String(new Date().getFullYear())
   })
   const [guardando, setGuardando] = useState(false)
   const [errorMovimiento, setErrorMovimiento] = useState('')
+  const [editando, setEditando] = useState<any>(null)
+  const [bloqueados, setBloqueados] = useState<Set<string>>(new Set())
+  const [confirmarBorrado, setConfirmarBorrado] = useState<any>(null)
+  const [borrando, setBorrando] = useState(false)
   const movimientoOperacionId = useRef<string | null>(null)
   const historialCache = useRef<Map<string, any[]>>(new Map())
   const router = useRouter()
@@ -105,8 +109,34 @@ function FinanzasContent() {
     const inicio = `${anio}-${mesStr}-01`
     const fin = `${anio}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`
     // Solo movimientos: la lista de jugadores no cambia por mes, se carga aparte una sola vez
-    const { data } = await supabase.from('movimientos').select('id,tipo,categoria,descripcion,monto,fecha,registrado_por_nombre,creado_en').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
+    const { data } = await supabase.from('movimientos').select('id,tipo,categoria,descripcion,monto,fecha,registrado_por_nombre,creado_en,mensualidad_id,torneo_id,profesor_id,mes_correspondiente,anio_correspondiente').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
     setMovimientos(data || [])
+    await cargarBloqueados(data || [])
+  }
+
+  // Un movimiento que es el reflejo de otra cosa no se edita desde acá. El
+  // vínculo con mensualidad y torneo viaja en la propia fila; el de liga y
+  // clases extra vive en la otra tabla, así que hay que ir a buscarlo. Si la
+  // consulta falla se asume desbloqueado: la RPC igual lo rechaza, solo se
+  // pierde el candado de la tabla.
+  async function cargarBloqueados(movs: any[]) {
+    const ids = movs.map(m => m.id)
+    if (ids.length === 0) { setBloqueados(new Set()); return }
+    const [{ data: abonos }, { data: extras }] = await Promise.all([
+      supabase.from('liga_abonos').select('movimiento_id').in('movimiento_id', ids),
+      supabase.from('clases_extraordinarias').select('movimiento_id').in('movimiento_id', ids),
+    ])
+    const set = new Set<string>()
+    ;(abonos || []).forEach((a: any) => a.movimiento_id && set.add(a.movimiento_id))
+    ;(extras || []).forEach((c: any) => c.movimiento_id && set.add(c.movimiento_id))
+    setBloqueados(set)
+  }
+
+  function motivoBloqueo(m: any): string | null {
+    if (m.mensualidad_id || m.categoria === 'mensualidad') return 'Pago de mensualidad — se corrige revirtiendo el pago en la pestaña Mensualidades'
+    if (m.torneo_id) return 'Viene de un torneo — se corrige desde la ficha del torneo'
+    if (bloqueados.has(m.id)) return 'Viene de liga o clases extra — se corrige revirtiendo el cobro en su propia pantalla'
+    return null
   }
 
   async function cargarJugadores(cid?: string) {
@@ -144,35 +174,115 @@ function FinanzasContent() {
     setAnio(nuevoAnio)
   }
 
-  const categoriasActuales = form.tipo === 'ingreso' ? categoriasIngreso : categoriasGasto
+  const esEdicion = editando !== null
+  // Editando no se ofrece 'mensualidad': esos movimientos son el espejo de un
+  // pago y ni siquiera llegan al modal, pero tampoco tiene sentido convertir
+  // otro movimiento en uno.
+  const categoriasActuales = form.tipo === 'ingreso'
+    ? (esEdicion ? categoriasIngreso.filter(c => c !== 'mensualidad') : categoriasIngreso)
+    : categoriasGasto
   const esSueldo = form.categoria === 'sueldo_profesor' || form.categoria === 'sueldo_staff'
+  const esStaff = form.categoria === 'sueldo_staff'
+
+  const formVacio = () => ({
+    tipo:'ingreso', categoria:'mensualidad', descripcion:'', monto:'',
+    fecha:new Date().toISOString().slice(0,10), profesorId:'', nombreStaff:'',
+    mesCorr:String(new Date().getMonth()+1), anioCorr:String(new Date().getFullYear()),
+  })
+
+  function abrirNuevo() {
+    setEditando(null)
+    setErrorMovimiento('')
+    setForm(formVacio())
+    movimientoOperacionId.current = null
+    setModalOpen(true)
+  }
+
+  function abrirEdicion(m: any) {
+    setEditando(m)
+    setErrorMovimiento('')
+    setForm({
+      tipo: m.tipo,
+      categoria: m.categoria || (m.tipo === 'ingreso' ? 'otro_ingreso' : 'otro_gasto'),
+      descripcion: m.descripcion || '',
+      monto: String(m.monto ?? ''),
+      fecha: m.fecha || new Date().toISOString().slice(0,10),
+      profesorId: m.profesor_id || '',
+      nombreStaff: '',
+      mesCorr: String(m.mes_correspondiente ?? new Date().getMonth()+1),
+      anioCorr: String(m.anio_correspondiente ?? new Date().getFullYear()),
+    })
+    movimientoOperacionId.current = null
+    setModalOpen(true)
+  }
+
+  function cerrarModal() {
+    setModalOpen(false)
+    setEditando(null)
+    setErrorMovimiento('')
+    movimientoOperacionId.current = null
+  }
 
   async function guardarMovimiento() {
     if (!form.monto || !form.fecha) return
+    // Al crear un sueldo de staff el nombre es lo único que distingue un pago
+    // de otro: sin él quedan varias filas idénticas de "Sueldo staff".
+    if (!esEdicion && esStaff && !form.nombreStaff.trim()) {
+      setErrorMovimiento('Escribí el nombre de la persona a la que se le paga.')
+      return
+    }
     setGuardando(true)
     movimientoOperacionId.current ??= crypto.randomUUID()
 
-    let descripcion = form.descripcion
-    if (esSueldo && !descripcion) {
-      const prof = profesores.find(p => p.id === form.profesorId)
-      descripcion = `${catLabel[form.categoria]} — ${prof?.nombre || 'Staff'} · ${mesesN[parseInt(form.mesCorr)-1]} ${form.anioCorr}`
+    let descripcion = form.descripcion.trim()
+
+    if (!esEdicion && esSueldo) {
+      const periodo = `${mesesN[parseInt(form.mesCorr)-1]} ${form.anioCorr}`
+      const quien = esStaff
+        ? form.nombreStaff.trim()
+        : (profesores.find(p => p.id === form.profesorId)?.nombre || 'Sin asignar')
+      const base = `${catLabel[form.categoria]} — ${quien} · ${periodo}`
+      descripcion = descripcion ? `${base} · ${descripcion}` : base
     }
     if (!descripcion) descripcion = catLabel[form.categoria] || form.categoria
 
-    const resultado = await registrarMovimiento({
-      tipo: form.tipo, categoria: form.categoria,
-      descripcion, monto: parseInt(form.monto), fecha: form.fecha,
-      ...(esSueldo && form.profesorId ? { profesorId: form.profesorId } : {}),
+    const comunes = {
+      categoria: form.categoria,
+      descripcion,
+      monto: parseInt(form.monto),
+      fecha: form.fecha,
+      // El staff no está en la tabla de profesores; su nombre vive en la descripción.
+      ...(form.categoria === 'sueldo_profesor' && form.profesorId ? { profesorId: form.profesorId } : {}),
       ...(esSueldo ? { mesCorrespondiente: parseInt(form.mesCorr), anioCorrespondiente: parseInt(form.anioCorr) } : {}),
-      idempotencyKey: movimientoOperacionId.current,
-    })
+    }
+
+    const resultado = esEdicion
+      ? await editarMovimiento({ movimientoId: editando.id, ...comunes, idempotencyKey: movimientoOperacionId.current })
+      : await registrarMovimiento({ tipo: form.tipo, ...comunes, idempotencyKey: movimientoOperacionId.current })
 
     setGuardando(false)
-    if (resultado.error) { setErrorMovimiento(resultado.error); return }
+    if (resultado.error) {
+      setErrorMovimiento(resultado.error)
+      // La clave ya quedó consumida por la operación que falló; reintentar con
+      // la misma daría "ya fue usada" en vez del error real.
+      movimientoOperacionId.current = null
+      return
+    }
     movimientoOperacionId.current = null
     setErrorMovimiento('')
     setModalOpen(false)
-    setForm({ tipo:'ingreso', categoria:'mensualidad', descripcion:'', monto:'', fecha:new Date().toISOString().slice(0,10), profesorId:'', mesCorr:String(new Date().getMonth()+1), anioCorr:String(new Date().getFullYear()) })
+    setEditando(null)
+    setForm(formVacio())
+    cargarMovimientos()
+  }
+
+  async function borrarMovimiento() {
+    if (!confirmarBorrado) return
+    setBorrando(true)
+    const resultado = await eliminarMovimiento({ movimientoId: confirmarBorrado.id, idempotencyKey: crypto.randomUUID() })
+    setBorrando(false)
+    if (resultado.error) { setErrorMovimiento(resultado.error); return }
+    setConfirmarBorrado(null)
     cargarMovimientos()
   }
 
@@ -253,7 +363,7 @@ function FinanzasContent() {
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📊 Exportar Excel</button>
-          <button onClick={() => setModalOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>➕ Movimiento</button>
+          <button onClick={abrirNuevo} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>➕ Movimiento</button>
         </div>
       </div>
 
@@ -417,13 +527,15 @@ function FinanzasContent() {
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:500 }}>
             <thead>
               <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-                {['Fecha','Categoría','Descripción','Registrado por','Monto'].map(h => (
-                  <th key={h} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
+                {['Fecha','Categoría','Descripción','Registrado por','Monto',''].map((h, i) => (
+                  <th key={i} style={{ padding:'10px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {movimientosFiltrados.map(m => (
+              {movimientosFiltrados.map(m => {
+                const bloqueo = motivoBloqueo(m)
+                return (
                 <tr key={m.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
                   <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{m.fecha || '—'}</td>
                   <td style={{ padding:'12px 16px' }}>
@@ -436,8 +548,21 @@ function FinanzasContent() {
                   <td style={{ padding:'12px 16px', fontWeight:700, fontFamily:'monospace', whiteSpace:'nowrap', color: m.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>
                     {m.tipo === 'ingreso' ? '+' : '-'}{fmt(m.monto)}
                   </td>
+                  <td style={{ padding:'12px 16px', whiteSpace:'nowrap' }}>
+                    {bloqueo ? (
+                      <span title={bloqueo} style={{ fontSize:13, color: hint, cursor:'help' }}>🔒</span>
+                    ) : (
+                      <div style={{ display:'flex', gap:6 }}>
+                        <button onClick={() => abrirEdicion(m)} title="Editar movimiento"
+                          style={{ background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:6, padding:'4px 8px', fontSize:12, cursor:'pointer', color: muted }}>✏️</button>
+                        <button onClick={() => { setErrorMovimiento(''); setConfirmarBorrado(m) }} title="Eliminar movimiento"
+                          style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:6, padding:'4px 8px', fontSize:12, cursor:'pointer', color:'#dc2626' }}>🗑️</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -474,16 +599,18 @@ function FinanzasContent() {
       {modalOpen && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
-            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>💳 Nuevo movimiento</div>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>{esEdicion ? '✏️ Editar movimiento' : '💳 Nuevo movimiento'}</div>
 
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
               <div>
                 <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Tipo</label>
-                <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                <select disabled={esEdicion}
+                  style={{ width:'100%', background: esEdicion ? '#e2e8f0' : '#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: esEdicion ? muted : text, fontSize:14, outline:'none', cursor: esEdicion ? 'not-allowed' : 'pointer' }}
                   value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value, categoria: e.target.value === 'ingreso' ? 'mensualidad' : 'sueldo_profesor' }))}>
                   <option value="ingreso">💰 Ingreso</option>
                   <option value="gasto">💸 Gasto</option>
                 </select>
+                {esEdicion && <div style={{ fontSize:11, color: hint, marginTop:4 }}>El tipo no se cambia. Si está mal, borrá y cargá de nuevo.</div>}
               </div>
               <div>
                 <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha</label>
@@ -502,14 +629,28 @@ function FinanzasContent() {
 
             {esSueldo && (
               <>
-                <div style={{ marginBottom:14 }}>
-                  <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Profesor / Staff</label>
-                  <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-                    value={form.profesorId} onChange={e => setForm(f => ({ ...f, profesorId: e.target.value }))}>
-                    <option value="">— Seleccionar —</option>
-                    {profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                  </select>
-                </div>
+                {/* El staff no está en la tabla de profesores —son gente de aseo,
+                    arbitraje, apoyo puntual—, así que el nombre se escribe libre
+                    y queda guardado dentro de la descripción. */}
+                {esStaff ? (
+                  !esEdicion && (
+                    <div style={{ marginBottom:14 }}>
+                      <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nombre de la persona</label>
+                      <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                        placeholder="Ej: María González" value={form.nombreStaff}
+                        onChange={e => setForm(f => ({ ...f, nombreStaff: e.target.value }))} />
+                    </div>
+                  )
+                ) : (
+                  <div style={{ marginBottom:14 }}>
+                    <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Profesor</label>
+                    <select style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                      value={form.profesorId} onChange={e => setForm(f => ({ ...f, profesorId: e.target.value }))}>
+                      <option value="">— Seleccionar —</option>
+                      {profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
                   <div>
                     <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Mes correspondiente</label>
@@ -528,9 +669,12 @@ function FinanzasContent() {
             )}
 
             <div style={{ marginBottom:14 }}>
-              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Descripción</label>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>
+                {!esEdicion && esSueldo ? 'Detalle (opcional)' : 'Descripción'}
+              </label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-                placeholder="Descripción del movimiento" value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
+                placeholder={!esEdicion && esSueldo ? 'Se agrega al final de la descripción automática' : 'Descripción del movimiento'}
+                value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
             </div>
 
             <div style={{ marginBottom:20 }}>
@@ -545,9 +689,38 @@ function FinanzasContent() {
               </div>
             )}
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => { setModalOpen(false); setErrorMovimiento('') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={cerrarModal} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
               <button onClick={guardarMovimiento} disabled={guardando} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
-                {guardando ? 'Guardando...' : 'Guardar'}
+                {guardando ? 'Guardando...' : esEdicion ? 'Guardar cambios' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmación de borrado */}
+      {confirmarBorrado && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:110 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+            <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:12 }}>🗑️ Eliminar movimiento</div>
+            <div style={{ fontSize:13, color: muted, marginBottom:8 }}>Se va a borrar del libro del mes:</div>
+            <div style={{ background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'12px 14px', marginBottom:14 }}>
+              <div style={{ fontSize:13, color: text, marginBottom:4 }}>{confirmarBorrado.descripcion}</div>
+              <div style={{ fontSize:13, fontWeight:700, fontFamily:'monospace', color: confirmarBorrado.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>
+                {confirmarBorrado.tipo === 'ingreso' ? '+' : '-'}{fmt(confirmarBorrado.monto)} · {confirmarBorrado.fecha}
+              </div>
+            </div>
+            <div style={{ fontSize:12, color: hint, marginBottom:16 }}>Queda registrado en la auditoría, pero deja de contar en los totales.</div>
+
+            {errorMovimiento && (
+              <div style={{ marginBottom:12, padding:'10px 14px', borderRadius:8, fontSize:12, fontWeight:500, background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca' }}>
+                {errorMovimiento}
+              </div>
+            )}
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => { setConfirmarBorrado(null); setErrorMovimiento('') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={borrarMovimiento} disabled={borrando} style={{ flex:1, padding:11, background:'#dc2626', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
+                {borrando ? 'Eliminando...' : 'Eliminar'}
               </button>
             </div>
           </div>

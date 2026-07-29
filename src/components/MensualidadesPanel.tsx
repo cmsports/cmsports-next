@@ -37,6 +37,12 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const pagoOperacionId = useRef<string | null>(null)
   const clubInfoCargada = useRef(false)
   const [filtroEstado, setFiltroEstado] = useState<'todos'|'pagado'|'pendiente'|'atrasado'>('todos')
+  // "Este mes" es la vista de siempre. "Deuda acumulada" junta todo lo impago
+  // de meses ya vencidos: es lo que hace falta para cobrar, porque nadie debe
+  // una cuota, debe tres.
+  const [alcance, setAlcance] = useState<'mes'|'deuda'>('mes')
+  const [impagas, setImpagas] = useState<any[]>([])
+  const [cargandoDeuda, setCargandoDeuda] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [filtroCat, setFiltroCat]     = useState<Set<string>>(new Set())
   const [filtroGrupo, setFiltroGrupo] = useState<Set<string>>(new Set())
@@ -96,6 +102,28 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     }
   }
 
+  // Todo lo impago del club, sin importar el mes. No se filtra por período en
+  // la consulta: las mensualidades solo se emiten para el mes en curso, así que
+  // no existen filas anteriores al ingreso de cada jugador y no hay forma de
+  // que alguien aparezca debiendo meses en los que todavía no estaba.
+  async function cargarDeuda(cid?: string) {
+    const id = cid || clubId
+    if (!id) return
+    setCargandoDeuda(true)
+    const { data } = await supabase
+      .from('mensualidades')
+      .select('id,jugador_id,mes,anio,monto,estado')
+      .eq('club_id', id)
+      .neq('estado', 'pagado')
+      .order('anio').order('mes')
+    setImpagas(data || [])
+    setCargandoDeuda(false)
+  }
+
+  useEffect(() => {
+    if (alcance === 'deuda' && clubId) void cargarDeuda(clubId)
+  }, [alcance, clubId])
+
   function cambiarMes(dir: number) {
     let nuevoMes = mes + dir
     let nuevoAnio = anio
@@ -145,6 +173,28 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
 
   async function exportarExcel() {
     const { utils, writeFile } = await import('xlsx')
+
+    // En deuda acumulada se exporta lo que se está mirando y nada más: es la
+    // lista con la que se sale a cobrar, y mezclarla con el mes suelto la
+    // vuelve inútil.
+    if (alcance === 'deuda') {
+      const wbDeuda = utils.book_new()
+      const filas = deudores.map(d => ({
+        'Nombre': d.jugador.nombre,
+        'RUT': d.jugador.rut || '',
+        'Teléfono': d.jugador.telefono || '',
+        'Meses adeudados': d.cuotas.length,
+        'Cuáles': d.cuotas.map(etiquetaCuota).join(', '),
+        'Total adeudado': d.total,
+        'Monto incompleto': d.incompleto ? 'Sí — hay cuotas sin monto asignado' : '',
+      }))
+      const wsDeuda = utils.json_to_sheet(filas)
+      wsDeuda['!cols'] = [{ wch:30 },{ wch:14 },{ wch:16 },{ wch:16 },{ wch:34 },{ wch:16 },{ wch:34 }]
+      utils.book_append_sheet(wbDeuda, wsDeuda, 'Deuda acumulada')
+      writeFile(wbDeuda, `deuda_acumulada_${new Date().toISOString().slice(0,10)}.xlsx`)
+      return
+    }
+
     const { data: historial } = await supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado,fecha_pago,metodo,notas').eq('club_id', clubId).order('anio').order('mes')
     const wb = utils.book_new()
 
@@ -208,18 +258,55 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     jugadores.flatMap(j => (j.categorias?.length ? j.categorias : [j.categoria])).filter(Boolean)
   )].sort((a, b) => String(a).localeCompare(String(b), 'es')) as string[]
 
-  const jugadoresFiltrados = jugadores.filter(j => {
-    const mens = mensualidades.find(m => m.jugador_id === j.id)
-    const estado = mens?.estado || 'pendiente'
-    const coincideEstado = filtroEstado === 'todos' || estado === filtroEstado
+  // Los filtros de quién es el jugador. Se comparten entre las dos vistas; el
+  // de estado no, porque en deuda acumulada todo lo listado es impago.
+  function coincidePerfil(j: any) {
     const coincideBusqueda = !busqueda || j.nombre.toLowerCase().includes(busqueda.toLowerCase())
     // Un jugador puede competir en varias categorías (la suya por edad + TC).
     const coincideCat = filtroCat.size === 0 ||
       [...filtroCat].some(c => (j.categorias?.length ? j.categorias.includes(c) : j.categoria === c))
     const coincideGrupo = filtroGrupo.size === 0 || filtroGrupo.has(j.grupo)
     const coincideSede = filtroSede.size === 0 || [...filtroSede].some(s => entrenaEnSede(j.sede, s))
-    return coincideEstado && coincideBusqueda && coincideCat && coincideGrupo && coincideSede
+    return coincideBusqueda && coincideCat && coincideGrupo && coincideSede
+  }
+
+  const jugadoresFiltrados = jugadores.filter(j => {
+    const mens = mensualidades.find(m => m.jugador_id === j.id)
+    const estado = mens?.estado || 'pendiente'
+    const coincideEstado = filtroEstado === 'todos' || estado === filtroEstado
+    return coincideEstado && coincidePerfil(j)
   })
+
+  // El mes de hoy, no el que se está mirando: una cuota del mes que viene no es
+  // una deuda, aunque figure como pendiente.
+  const periodoHoy = new Date().getFullYear() * 100 + (new Date().getMonth() + 1)
+
+  const deudores = jugadores
+    .filter(coincidePerfil)
+    .map(j => {
+      const cuotas = impagas
+        .filter(m => m.jugador_id === j.id && (m.anio * 100 + m.mes) <= periodoHoy)
+        .sort((a, b) => (a.anio * 100 + a.mes) - (b.anio * 100 + b.mes))
+      return {
+        jugador: j,
+        cuotas,
+        total: cuotas.reduce((s, c) => s + (montoEsperado(j, c) ?? 0), 0),
+        // Si a alguna cuota no le asignaron monto, el total que se muestra es
+        // menor al real. Hay que decirlo, no dejar que se lea como exacto.
+        incompleto: cuotas.some(c => montoEsperado(j, c) == null),
+      }
+    })
+    .filter(d => d.cuotas.length > 0)
+    .sort((a, b) => b.cuotas.length - a.cuotas.length || b.total - a.total)
+
+  const totalAdeudado = deudores.reduce((s, d) => s + d.total, 0)
+  const cuotasImpagas = deudores.reduce((s, d) => s + d.cuotas.length, 0)
+  const masAntigua = deudores.flatMap(d => d.cuotas).reduce<{ mes: number; anio: number } | null>(
+    (viejo, c) => (!viejo || (c.anio * 100 + c.mes) < (viejo.anio * 100 + viejo.mes) ? { mes: c.mes, anio: c.anio } : viejo),
+    null,
+  )
+  const etiquetaCuota = (c: { mes: number; anio: number }) =>
+    c.anio === new Date().getFullYear() ? mesesN[c.mes - 1] : `${mesesN[c.mes - 1]} ${c.anio}`
 
   if (loading) return <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>Cargando mensualidades...</div>
 
@@ -227,7 +314,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     <div>
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
-        {!tienePropsExternos && (
+        {!tienePropsExternos && alcance === 'mes' && (
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <button onClick={() => cambiarMes(-1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>◀</button>
             <span style={{ fontSize:16, fontWeight:600, color: text, minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
@@ -237,14 +324,32 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
         <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📊 Exportar Excel</button>
       </div>
 
+      {/* Alcance: un mes suelto o todo lo que se debe */}
+      <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:16 }}>
+        {([
+          { key:'mes',   label:`📅 ${mesesN[mes-1]} ${anio}` },
+          { key:'deuda', label:'🧾 Deuda acumulada' },
+        ] as const).map(t => (
+          <div key={t.key} onClick={() => setAlcance(t.key)}
+            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background: alcance===t.key?'#ffffff':'transparent', color: alcance===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: alcance===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
+            {t.label}
+          </div>
+        ))}
+      </div>
+
       {/* KPIs */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        {[
+        {(alcance === 'deuda' ? [
+          { label:'👥 Deudores', value:deudores.length, color:'#dc2626', bg:'#fef2f2' },
+          { label:'🧾 Cuotas impagas', value:cuotasImpagas, color:'#d97706', bg:'#fffbeb' },
+          { label:'💸 Total adeudado', value:fmt(totalAdeudado), color:'#dc2626', bg:'#fef2f2' },
+          { label:'📅 Más antigua', value: masAntigua ? etiquetaCuota(masAntigua) : '—', color:'#3730a3', bg:'#ede9fe' },
+        ] : [
           { label:'✅ Pagados', value:pagados, color:'#16a34a', bg:'#f0fdf4' },
           { label:'⏳ Pendientes', value:pendientes, color:'#d97706', bg:'#fffbeb' },
           { label:'⚠️ Atrasados', value:atrasados, color:'#dc2626', bg:'#fef2f2' },
           { label:'💰 Recaudado', value:fmt(totalRecaudado), color:'#3730a3', bg:'#ede9fe' },
-        ].map(s => (
+        ]).map(s => (
           <div key={s.label} style={{ background: s.bg, border:`1px solid ${s.color}33`, borderRadius:14, padding:16, boxShadow:'0 4px 16px rgba(15,23,42,0.18)' }}>
             <div style={{ fontSize:22, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
             <div style={{ fontSize:12, color: muted, marginTop:4 }}>{s.label}</div>
@@ -276,7 +381,8 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
           selected={filtroSede}
           onChange={setFiltroSede}
         />
-        {(['todos','pagado','pendiente','atrasado'] as const).map(e => (
+        {/* En deuda acumulada no van: todo lo que se lista está impago. */}
+        {alcance === 'mes' && (['todos','pagado','pendiente','atrasado'] as const).map(e => (
           <button key={e} onClick={() => setFiltroEstado(e)}
             style={{ padding:'8px 14px', borderRadius:8, border:'1px solid #e2e8f0', background: filtroEstado===e?'#ede9fe':'#ffffff', color: filtroEstado===e?'#3730a3': muted, fontSize:12, cursor:'pointer', textTransform:'capitalize', boxShadow: filtroEstado===e ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {e === 'todos' ? '🔍 Todos' : e === 'pagado' ? '✅ Pagados' : e === 'pendiente' ? '⏳ Pendientes' : '⚠️ Atrasados'}
@@ -284,7 +390,65 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
         ))}
       </div>
 
-      {/* Tabla */}
+      {/* Tabla de deuda acumulada */}
+      {alcance === 'deuda' && (
+        <div style={{ ...card, overflow:'hidden' }}>
+          {cargandoDeuda ? (
+            <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>Calculando la deuda...</div>
+          ) : deudores.length === 0 ? (
+            <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>
+              🎉 No hay deuda pendiente con los filtros aplicados.
+            </div>
+          ) : (
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
+                <thead>
+                  <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+                    {['Nombre','Meses','Cuáles','Total adeudado'].map(h => (
+                      <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {deudores.map(d => {
+                    const detalle = d.cuotas.map(etiquetaCuota).join(', ')
+                    const url = linkWhatsApp(
+                      d.jugador.telefono,
+                      `Hola ${d.jugador.nombre.split(' ')[0]}! 👋 Te escribimos de ${clubNombre || 'el club'}. Tenés ${d.cuotas.length} ${d.cuotas.length === 1 ? 'mensualidad pendiente' : 'mensualidades pendientes'}: *${detalle}*${d.total > 0 ? `, por un total de $${d.total.toLocaleString('es-CL')}` : ''}. Cuando puedas, regularicemos. ¡Gracias! 🏓`,
+                    )
+                    return (
+                      <tr key={d.jugador.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                        <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>
+                          {d.jugador.nombre}
+                          {url && <WhatsAppBtn href={url} variant="compact" style={{ marginLeft:8 }} />}
+                        </td>
+                        <td style={{ padding:'12px 16px' }}>
+                          <span style={{ background: d.cuotas.length >= 3 ? '#fef2f2' : '#fffbeb', color: d.cuotas.length >= 3 ? '#dc2626' : '#d97706', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:700 }}>
+                            {d.cuotas.length}
+                          </span>
+                        </td>
+                        <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{detalle}</td>
+                        <td style={{ padding:'12px 16px', fontSize:13, fontWeight:700, fontFamily:'monospace', color:'#dc2626', whiteSpace:'nowrap' }}>
+                          {fmt(d.total)}
+                          {d.incompleto && (
+                            <span title={`Hay cuotas sin monto asignado: el total es menor al real. ${SIN_CUOTA}.`}
+                              style={{ marginLeft:6, fontFamily:'inherit', fontSize:10, fontWeight:600, color:'#c2410c', background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:6, padding:'2px 6px', cursor:'help' }}>
+                              incompleto
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tabla del mes */}
+      {alcance === 'mes' && (
       <div style={{ ...card, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:500 }}>
@@ -363,6 +527,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
           </div>
         )}
       </div>
+      )}
 
       {/* Modal pago */}
       {modalPago && (
