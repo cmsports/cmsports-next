@@ -15,7 +15,7 @@ import {
 import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
-import { hhmm, inicioVentana, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
+import { diaDesdeFecha, hhmm, inicioVentana, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import {
   guardarJugadoresCache,
@@ -88,20 +88,16 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // sigue siendo tocar un nombre.
   // Dos listas y a propósito. Los filtros muestran toda la semana, para poder
   // buscar a cualquiera. Pero "hoy entrena o no" tiene que salir solo de los
-  // bloques de hoy: si sale de todos, nadie es candidato a clase extra nunca.
-  const [bloquesHoy,   setBloquesHoy]   = useState<BloqueDelDia[]>([])
-  const [inscritosDe,  setInscritosDe]  = useState<Record<string, string[]>>({})
-  const [inscritosHoy, setInscritosHoy] = useState<Record<string, string[]>>({})
+  // bloques de hoy: si sale de todos, nadie es candidato a clase extra nunca.
+  const [bloquesDelDia, setBloquesDelDia] = useState<BloqueDelDia[]>([])
+  const [inscritosDe,   setInscritosDe]   = useState<Record<string, string[]>>({})
   const [sedeSel,      setSedeSel]      = useState('')
   const [bloqueSel,    setBloqueSel]    = useState('')
 
   // Los que vinieron a un grupo que no es el suyo. Van aparte de `asistencias`
   // porque no descuentan sesión ni cuentan en el porcentaje: se cobran aparte.
   const [extrasHoy,    setExtrasHoy]    = useState<ClaseExtraHoy[]>([])
-  // Las de hoy, aparte de las del día que se esté mirando: la lista de registro
-  // manual siempre escribe en hoy, así que la marca de "ya tiene extra" tiene
-  // que salir de hoy y no del día que el profe fue a revisar.
-  const [extrasDeHoy,  setExtrasDeHoy]  = useState<ClaseExtraHoy[]>([])
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
   const [mostrarOtros, setMostrarOtros] = useState(false)
   const [buscaOtro,    setBuscaOtro]    = useState('')
 
@@ -205,27 +201,17 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Las clases extra del día que se está mirando. Si la migración 098 todavía
   // no corrió, esto devuelve error y data null: el `?? []` lo absorbe y la
   // pantalla queda como antes.
+  // Las de la fecha elegida. Antes cargaba dos fechas porque la lista de
+  // registro escribía siempre en hoy aunque se mirara otro día; ahora manda una
+  // sola fecha en toda la pantalla y esa distinción sobra.
   const cargarExtras = useCallback(async (fecha: string, cid?: string) => {
     const id = cid || clubId
     if (!id) return
-    const hoyISO = fechaChile()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
-    const traer = (f: string) => db.from('clases_extraordinarias')
+    const { data } = await (supabase as any).from('clases_extraordinarias')
       .select('id,jugador_id,bloque_id,hora,monto')
-      .eq('club_id', id).eq('fecha', f)
-
-    if (fecha === hoyISO) {
-      const { data } = await traer(fecha)
-      const filas = (data ?? []) as ClaseExtraHoy[]
-      setExtrasHoy(filas)
-      setExtrasDeHoy(filas)
-      return
-    }
-
-    const [{ data: delDia }, { data: deHoy }] = await Promise.all([traer(fecha), traer(hoyISO)])
-    setExtrasHoy((delDia ?? []) as ClaseExtraHoy[])
-    setExtrasDeHoy((deHoy ?? []) as ClaseExtraHoy[])
+      .eq('club_id', id).eq('fecha', fecha)
+    setExtrasHoy((data ?? []) as ClaseExtraHoy[])
   }, [clubId])
 
   // El staff marca el día sin clase en Horario y acá no había ninguna señal:
@@ -295,40 +281,45 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Si esta consulta falla o el día no tiene bloques, la pantalla se queda con
   // la lista completa y sin filtros: es exactamente como funcionaba antes, y
   // el profe nunca se queda sin poder pasar lista.
+  // Todo se calcula para la FECHA ELEGIDA, no para hoy. Es lo que permite
+  // completar el dia que se olvido: los grupos que se dictaban ese dia y los
+  // que estaban inscritos ENTONCES, que no son necesariamente los de ahora.
   useEffect(() => {
-    if (!clubId || !esAdminOProfesor) return
+    if (!clubId || !esAdminOProfesor || !fechaVista) return
     let vigente = true
     void (async () => {
-      const dia = diaDeHoy()
-      // Toda la semana en una sola consulta: los de hoy salen de filtrar esto.
+      const dia = diaDesdeFecha(fechaVista)
+      if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
+
       const [{ data: bloques }, { data: rel }] = await Promise.all([
         supabase.from('bloques_horario')
           .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
-          .eq('club_id', clubId).eq('activo', true)
-          .lte('vigente_desde', hoy)
-          .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
+          .eq('club_id', clubId).eq('dia_semana', dia)
+          .lte('vigente_desde', fechaVista)
+          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
           .order('hora_inicio'),
-        supabase.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
+        // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
+        // alguien pudo haber salido del grupo la semana pasada y ese dia si
+        // entrenaba.
+        supabase.from('bloque_jugadores')
+          .select('bloque_id,jugador_id')
+          .lte('vigente_desde', fechaVista)
+          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`),
       ])
       if (!vigente) return
 
-      const todos = (bloques ?? []) as BloqueDelDia[]
-      const deHoy = todos.filter(b => b.dia_semana === dia)
-      const suyos = new Set(todos.map(b => b.id))
-      const idsHoy = new Set(deHoy.map(b => b.id))
+      const delDia = (bloques ?? []) as BloqueDelDia[]
+      const suyos = new Set(delDia.map(b => b.id))
       const porBloque: Record<string, string[]> = {}
-      const porBloqueHoy: Record<string, string[]> = {}
       for (const r of rel ?? []) {
         if (!suyos.has(r.bloque_id)) continue
         ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
-        if (idsHoy.has(r.bloque_id)) (porBloqueHoy[r.bloque_id] ??= []).push(r.jugador_id)
-      }
-      setBloquesHoy(deHoy)
+      }
+      setBloquesDelDia(delDia)
       setInscritosDe(porBloque)
-      setInscritosHoy(porBloqueHoy)
     })()
     return () => { vigente = false }
-  }, [clubId, esAdminOProfesor, hoy])
+  }, [clubId, esAdminOProfesor, fechaVista])
 
   // Los bloques que le tocan hoy al propio jugador.
   useEffect(() => {
@@ -428,10 +419,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     // muestran toda la semana, `bloqueSel` puede ser el del jueves. Colgarle la
     // clase extra de hoy a un bloque de otro día es dato falso; mejor sin
     // grupo, que después se completa desde el histórico.
-    const delFiltro = bloquesHoy.some(b => b.id === bloqueSel) ? bloqueSel : ''
+    const delFiltro = bloquesDelDia.some(b => b.id === bloqueSel) ? bloqueSel : ''
     const bloque = (bloqueId ?? delFiltro) || null
     const res = await registrarClaseExtraordinaria({
-      jugadorId, fecha: hoy, bloqueId: bloque, hora,
+      jugadorId, fecha: fechaVista, bloqueId: bloque,
+      hora: fechaVista !== hoy && bloqueElegido ? hhmm(bloqueElegido.hora_inicio) : hora,
     })
     setRegistrando(null)
     if (res.error) {
@@ -467,20 +459,29 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   }
 
   async function registrarAsistencia(jugadorId: string) {
-    if (asistencias.find(a => a.jugador_id === jugadorId)) return
+    if (yaRegistrado.has(jugadorId)) return
 
-    // Quien hoy no tiene ningún bloque no puede tener una asistencia normal:
-    // no había clase suya que cumplir. Se registra directo como clase extra, sin
-    // preguntar nada. Antes esto le descontaba una sesión del plan y el día ni
-    // siquiera aparecía en su calendario, porque no estaba programado.
-    if (esAdminOProfesor && bloquesHoy.length > 0 && !tieneBloqueHoy(jugadorId)) {
+    // Quien ese día no tiene ningún bloque no puede tener una asistencia
+    // normal: no había clase suya que cumplir. Se registra directo como clase
+    // extra, sin preguntar nada. Antes esto le descontaba una sesión del plan y
+    // el día ni siquiera aparecía en su calendario, porque no estaba programado.
+    if (esAdminOProfesor && bloquesDelDia.length > 0 && !tieneBloqueEseDia(jugadorId)) {
       await registrarExtra(jugadorId, null)
       return
     }
 
     setRegistrando(jugadorId)
 
-    if (!navigator.onLine) {
+    // La hora sale del bloque elegido cuando se completa un día pasado: poner
+    // la hora actual dejaría una llegada a las once de la noche en una clase de
+    // las cinco de la tarde.
+    const horaRegistro = fechaVista !== hoy && bloqueElegido
+      ? hhmm(bloqueElegido.hora_inicio)
+      : hora
+
+    // Sin conexión solo se encola el día de hoy: la cola se pensó para pasar
+    // lista en la cancha, y completar un día viejo desde ahí sería adivinar.
+    if (!navigator.onLine && fechaVista === hoy) {
       const jug = jugadores.find(j => j.id === jugadorId)
       const item: AsistenciaPendiente = {
         id: `pending-${jugadorId}-${hoy}`,
@@ -499,7 +500,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       return
     }
 
-    const result = await registrarAsistenciaAction(clubId!, jugadorId, hoy, hora)
+    const result = await registrarAsistenciaAction(clubId!, jugadorId, fechaVista, horaRegistro)
     if (result.error) {
       setMensaje({ tipo: 'error', texto: result.error })
       setRegistrando(null)
@@ -603,12 +604,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   //
   // Para alguien de otro grupo está "Vino alguien de otro grupo", que se busca
   // por nombre y queda como clase extra.
-  const sedesHoy = [...new Set(bloquesHoy.map(b => b.sede))].sort()
+  const sedesHoy = [...new Set(bloquesDelDia.map(b => b.sede))].sort()
   // Con una sola sede no hay nada que elegir: el paso sobra y se salta.
   const sedeEfectiva = sedesHoy.length === 1 ? sedesHoy[0] : sedeSel
   const bloquesDeLaSede = (sedeEfectiva
-    ? bloquesHoy.filter(b => b.sede === sedeEfectiva)
-    : bloquesHoy
+    ? bloquesDelDia.filter(b => b.sede === sedeEfectiva)
+    : bloquesDelDia
   ).slice().sort((a, b) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio)))
 
   const inscritosDelBloque = bloqueSel ? new Set(inscritosDe[bloqueSel] ?? []) : null
@@ -618,20 +619,19 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     (!inscritosDelBloque || inscritosDelBloque.has(j.id))
   )
 
-  const bloqueElegido = bloquesHoy.find(b => b.id === bloqueSel) ?? null
+  const bloqueElegido = bloquesDelDia.find(b => b.id === bloqueSel) ?? null
 
-  // Los que hoy no están en ningún bloque: para ellos, venir es una clase extra.
-  // Solo los de hoy: si contara toda la semana, nadie sería candidato a extra.
-  const conBloqueHoy = new Set(Object.values(inscritosHoy).flat())
-  function tieneBloqueHoy(jugadorId: string) {
-    return conBloqueHoy.has(jugadorId)
+  // Los que ese día no están en ningún bloque: para ellos, venir es una clase
+  // extra. Sale de los bloques de la fecha elegida, no de la semana entera: si
+  // contara toda la semana, nadie sería candidato nunca.
+  const conBloqueEseDia = new Set(Object.values(inscritosDe).flat())
+  function tieneBloqueEseDia(jugadorId: string) {
+    return conBloqueEseDia.has(jugadorId)
   }
 
   // Candidatos a clase extra: cualquiera que no esté inscrito en el bloque
   // elegido. La base vuelve a comprobarlo antes de escribir.
-  // Sale de las de hoy, no de las del día que se esté mirando: la lista de
-  // registro manual escribe siempre en hoy.
-  const yaTieneExtra = new Set(extrasDeHoy.map(e => e.jugador_id))
+  const yaTieneExtra = new Set(extrasHoy.map(e => e.jugador_id))
   const otrosJugadores = bloqueSel
     ? jugadores.filter(j =>
         !inscritosDelBloque?.has(j.id) &&
@@ -644,6 +644,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const fmtMonto = (n: number | null) => n == null ? null : '$' + Number(n).toLocaleString('es-CL')
 
   const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
+
+  // Quién ya está marcado en la fecha elegida. La lista de registro manual se
+  // apaga con esto, así que tiene que salir del día que se está pasando y no
+  // siempre de hoy.
+  const yaRegistrado = new Set(asistenciasMostradas.map(a => a.jugador_id))
 
   if (loading) return (
     <div style={{ padding: 40, textAlign: 'center', color: hint }}>Cargando...</div>
@@ -844,12 +849,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 esté mirando otro día: sin decirlo, el profe cree que está
                 completando el día que tiene a la vista. */}
             <div style={{ fontSize: 13, fontWeight: 600, color: text }}>
-              ✏️ Registro manual {fechaVista !== hoy && <span style={{ fontWeight: 400, color: '#c2410c' }}>— registra en el día de hoy</span>}
+              ✏️ Registro manual {fechaVista !== hoy && <span style={{ fontWeight: 400, color: '#c2410c', textTransform: 'capitalize' }}>— {formatFechaLarga(fechaVista)}</span>}
             </div>
             <div style={{ fontSize: 12, color: muted }}>
               {bloqueElegido
-                ? `${filtrados.filter(j => registradosHoy.has(j.id)).length} de ${filtrados.length} en ${bloqueElegido.nombre}`
-                : `${registradosHoy.size} de ${jugadores.length} registrados hoy`}
+                ? `${filtrados.filter(j => yaRegistrado.has(j.id)).length} de ${filtrados.length} en ${bloqueElegido.nombre}`
+                : `${yaRegistrado.size} de ${jugadores.length} registrados`}
             </div>
           </div>
           <input
@@ -858,10 +863,57 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
             value={busqueda} onChange={e => setBusqueda(e.target.value)}
           />
 
-          {/* Recinto y horario de hoy. Elegir uno deja en la lista exactamente
-              a sus inscritos, y a nadie más. */}
-          {bloquesHoy.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+          {/* Los filtros van plegados: sin abrirlos se ve la lista completa,
+              que es lo que el profe usa la mayoría de las veces. */}
+          <button onClick={() => setFiltrosAbiertos(a => !a)}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: 'none',
+              padding: '2px 0 8px', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: muted }}>
+            <span style={{ display: 'inline-block', transition: 'transform var(--rapido) var(--curva)',
+              transform: filtrosAbiertos ? 'rotate(90deg)' : 'none' }}>▸</span>
+            Filtros
+            {(fechaVista !== hoy || bloqueElegido) && (
+              <span style={{ background: '#ede9fe', color: '#3730a3', borderRadius: 20, padding: '2px 9px', fontSize: 11 }}>
+                {fechaVista !== hoy ? formatFechaLarga(fechaVista) : ''}
+                {fechaVista !== hoy && bloqueElegido ? ' · ' : ''}
+                {bloqueElegido?.nombre ?? ''}
+              </span>
+            )}
+          </button>
+
+          {filtrosAbiertos && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10,
+              background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
+
+              {/* La fecha manda sobre todo lo demás: cambia qué grupos existen,
+                  quiénes estaban inscritos entonces y dónde se escribe. */}
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
+                <input type="date" value={fechaVista} max={hoy}
+                  onChange={e => { if (e.target.value) { setFechaVista(e.target.value); setBloqueSel('') } }}
+                  style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
+                    padding: '7px 10px', color: text, fontSize: 13, outline: 'none' }} />
+                {fechaVista !== hoy && (
+                  <button onClick={() => { setFechaVista(hoy); setBloqueSel('') }}
+                    style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: 12,
+                      fontWeight: 600, cursor: 'pointer' }}>
+                    Volver a hoy
+                  </button>
+                )}
+              </div>
+
+              {bloquesDelDia.length === 0 && (
+                <div style={{ fontSize: 11, color: hint }}>
+                  Ese día no funciona ningún grupo.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Recinto y horario del día elegido. Elegir uno deja en la lista
+              exactamente a sus inscritos, y a nadie más. */}
+          {filtrosAbiertos && bloquesDelDia.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10,
+              background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12 }}>
               {sedesHoy.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                   <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Recinto</span>
@@ -924,12 +976,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               lista, así que tiene que estar toda a mano. */}
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
               {filtrados.map(j => {
-                const ya = registradosHoy.has(j.id)
+                const ya = yaRegistrado.has(j.id)
                 const yaExtra = yaTieneExtra.has(j.id)
-                // Quien hoy no tiene ningún grupo no puede tener asistencia
+                // Quien ese día no tiene ningún grupo no puede tener asistencia
                 // normal: lo suyo es siempre una clase extra. El botón lo dice
                 // desde antes de apretarlo, en vez de avisarlo después.
-                const esExtra = bloquesHoy.length > 0 && !tieneBloqueHoy(j.id)
+                const esExtra = bloquesDelDia.length > 0 && !tieneBloqueEseDia(j.id)
                 const hecho = ya || yaExtra
                 return (
                   <div key={j.id} onClick={() => !hecho && registrarAsistencia(j.id)}
@@ -940,7 +992,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
                       <div style={{ fontSize: 11, color: muted }}>
                         {j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}
-                        {esExtra && <span style={{ color: '#a16207', fontWeight: 600 }}> · hoy no entrena</span>}
+                        {esExtra && <span style={{ color: '#a16207', fontWeight: 600 }}> · ese día no entrena</span>}
                       </div>
                     </div>
                     {yaExtra
@@ -960,17 +1012,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           </div>
 
           {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:
-              sin saber a qué horario vino no se puede cobrar la clase.
-              Solo con el día de hoy a la vista: esta sección escribe en la
-              fecha de hoy, y ofrecerla mirando otro día haría que la clase se
-              guardara en un día distinto del que el profe está viendo. */}
-          {bloqueElegido && fechaVista !== hoy && (
-            <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12, fontSize: 11, color: hint }}>
-              Estás viendo otro día. Para registrar una clase extra pasada, usá
-              <strong style={{ color: muted }}> Asistencia histórica</strong>.
-            </div>
-          )}
-          {bloqueElegido && fechaVista === hoy && (
+              sin saber a qué horario vino no se puede cobrar la clase. Sirve
+              también para días pasados, porque escribe en la fecha elegida. */}
+          {bloqueElegido && (
             <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
               {!mostrarOtros ? (
                 <button onClick={() => setMostrarOtros(true)}
