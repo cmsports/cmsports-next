@@ -13,7 +13,7 @@ import DocumentosJugador from '@/components/DocumentosJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { firmarUrl } from '@/lib/supabase/privado'
-import { SEDES, GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
+import { GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { MessageCircle } from 'lucide-react'
 import { asignarBloquesJugador } from '@/app/actions/horario'
@@ -312,7 +312,7 @@ export default function JugadorDetallePage() {
         ...(contactoForm.categoria ? [contactoForm.categoria] : []),
         ...contactoForm.categorias,
       ])],
-      sede: contactoForm.sede || null,
+      // La sede no viaja: es un espejo de los bloques y la escribe la base.
       grupo: contactoForm.grupo || null,
       fecha_nacimiento: contactoForm.fecha_nacimiento || null,
       direccion: contactoForm.direccion?.trim() || null,
@@ -1179,11 +1179,12 @@ export default function JugadorDetallePage() {
                       {GRUPOS.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
                     </select>
                   </FormField>
+                  {/* La sede ya no se edita a mano: sale de los bloques a los
+                      que está inscrito, y la base la recalcula sola (111). */}
                   <FormField label="Sede habitual">
-                    <select style={inputStyle} value={contactoForm.sede} onChange={e => setContactoForm(f => ({ ...f, sede: e.target.value }))}>
-                      <option value="">— Sin sede —</option>
-                      {SEDES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
+                    <div style={{ ...inputStyle, background:'#f1f5f9', color:'#64748b' }}>
+                      {jugador?.sede ? sedeLabel(jugador.sede) : 'Se define por sus grupos'}
+                    </div>
                   </FormField>
                 </div>
 

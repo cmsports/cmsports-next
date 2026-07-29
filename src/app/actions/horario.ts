@@ -1,9 +1,8 @@
 'use server'
 
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { diaDesdeFecha, diaLargo, hhmm } from '@/lib/domain/horario'
+import { diaDesdeFecha, hhmm } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
-import { vigenteEn } from '@/lib/domain/vigencia'
 
 // El horario semanal lo maneja el staff (admin o profesor). requireAdminClub
 // solo deja pasar al admin, así que acá va una comprobación propia.
@@ -332,92 +331,9 @@ export async function eliminarBloque(params: { id: string }) {
   return { success: true }
 }
 
-/**
- * Crea las clases de una semana a partir del horario. Se puede repetir sin
- * duplicar: las clases que ya existen para ese bloque y fecha se omiten.
- */
-export async function generarSemana(params: {
-  /** Fecha (YYYY-MM-DD) de cada día a generar. Los feriados se dejan fuera. */
-  fechas: string[]
-  sedes?: string[]
-  publicar: boolean
-}) {
-  const { error: authErr, supabase, clubId } = await requireStaff()
-  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
-
-  const fechas = [...new Set(params.fechas)].filter(Boolean)
-  if (fechas.length === 0) return { error: 'Elegí al menos un día' }
-  if (fechas.length > 60) return { error: 'Demasiados días de una vez (máximo 60)' }
-
-  // La vigencia se mira contra cada fecha, no contra hoy: generar tres semanas
-  // adelante de un grupo que cierra el viernes tiene que parar el viernes.
-  let query = supabase.from('bloques_horario')
-    .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,vigente_desde,vigente_hasta')
-    .eq('club_id', clubId).eq('activo', true)
-  if (params.sedes?.length) query = query.in('sede', params.sedes)
-
-  const { data: bloques, error: bloquesErr } = await query
-  if (bloquesErr) return { error: 'No se pudo leer el horario: ' + bloquesErr.message }
-  if (!bloques?.length) return { error: 'No hay bloques en el horario semanal' }
-
-  // Los días marcados sin clase. El comentario de esta función decía que los
-  // feriados quedaban fuera y no había nada que los dejara fuera: se generaban
-  // clases el 18 de septiembre y aparecían como pendientes de registrar.
-  const { data: suspendidos } = await supabase.from('bloque_excepciones')
-    .select('bloque_id,fecha')
-    .in('bloque_id', bloques.map((b: { id: string }) => b.id))
-    .in('fecha', fechas)
-  const sinClase = new Set((suspendidos ?? []).map(
-    (e: { bloque_id: string; fecha: string }) => `${e.bloque_id}|${e.fecha}`))
-
-  // Solo el profesor titular queda en la clase: `clases.profesor_id` admite uno
-  // y los bloques de Fátima tienen dos. El bloque conserva la lista completa.
-  const { data: titulares } = await supabase
-    .from('bloque_profesores')
-    .select('bloque_id,profesor_id')
-    .is('vigente_hasta', null)
-    .in('bloque_id', bloques.map((b: { id: string }) => b.id))
-
-  const profesorDe = new Map<string, string>()
-  for (const t of titulares ?? []) {
-    if (!profesorDe.has(t.bloque_id)) profesorDe.set(t.bloque_id, t.profesor_id)
-  }
-
-  const filas = []
-  for (const fecha of fechas) {
-    const dia = diaDesdeFecha(fecha)
-    if (!dia) continue   // fin de semana: el club no abre
-    for (const b of bloques.filter((x: { dia_semana: string }) => x.dia_semana === dia)) {
-      if (!vigenteEn(b, fecha)) continue        // el grupo no existía ese día
-      if (sinClase.has(`${b.id}|${fecha}`)) continue   // marcado sin clase
-      filas.push({
-        club_id: clubId,
-        bloque_id: b.id,
-        sede: b.sede,
-        fecha,
-        // La tabla de clases exige el nombre largo; el horario usa el corto.
-        dia_semana: diaLargo(dia),
-        hora_inicio: b.hora_inicio,
-        hora_fin: b.hora_fin,
-        contenido: b.nombre,
-        profesor_id: profesorDe.get(b.id) ?? null,
-        publicada: params.publicar,
-      })
-    }
-  }
-
-  if (filas.length === 0) return { error: 'No hay bloques para los días elegidos' }
-
-  const { data: creadas, error } = await supabase
-    .from('clases')
-    .upsert(filas, { onConflict: 'bloque_id,fecha', ignoreDuplicates: true })
-    .select('id')
-
-  if (error) return { error: 'No se pudieron generar las clases: ' + error.message }
-
-  const creadasN = creadas?.length ?? 0
-  return { success: true, creadas: creadasN, omitidas: filas.length - creadasN }
-}
+// `generarSemana` se eliminó junto con el módulo Clases (2026-07-29): la tabla
+// `clases` ya no existe. El horario semanal vive en bloques_horario y la
+// asistencia se pasa directo sobre los bloques.
 
 export async function agregarJugadorABloque(params: { bloqueId: string; jugadorId: string }) {
   const { error: authErr, supabase, clubId } = await requireStaff()
@@ -552,33 +468,22 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     /* eslint-enable @typescript-eslint/no-explicit-any */
   }
 
-  // Los campos de la ficha se derivan de los bloques recién elegidos.
-  const dia = (d: string) => bloques.some(b => b.dia_semana === d)
-  const enBuin  = bloques.some(b => b.sede === 'buin')
-  const enPaine = bloques.some(b => b.sede === 'paine')
-
-  // `horario` es un texto suelto que todavía usan algunos filtros. Se le pone
-  // el rango que más se repite entre sus bloques; con horarios distintos por
-  // día ningún texto los representa a todos.
-  const conteo = new Map<string, number>()
-  for (const b of bloques) {
-    const rango = `${hhmm(b.hora_inicio)}-${hhmm(b.hora_fin)}`
-    conteo.set(rango, (conteo.get(rango) ?? 0) + 1)
-  }
-  const horario = [...conteo.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
-
+  // Los días, la sede y el horario de la ficha ya no se escriben desde acá:
+  // los recalcula la base (migración 111) cada vez que cambia una inscripción,
+  // y cualquier escritura manual la corrige en silencio. Acá solo se leen de
+  // vuelta, para cortar el tramo del historial si algo cambió.
+  const { data: actualizado } = await supabase.from('jugadores')
+    .select('horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
+    .eq('id', params.jugadorId).single()
   const campos = {
-    horario,
-    entrena_lun: dia('lun'), entrena_mar: dia('mar'), entrena_mie: dia('mie'),
-    entrena_jue: dia('jue'), entrena_vie: dia('vie'),
-    ...(bloques.length > 0
-      ? { sede: enBuin && enPaine ? 'ambos' : enBuin ? 'buin' : 'paine' }
-      : {}),
+    horario:     actualizado?.horario ?? null,
+    entrena_lun: actualizado?.entrena_lun ?? false,
+    entrena_mar: actualizado?.entrena_mar ?? false,
+    entrena_mie: actualizado?.entrena_mie ?? false,
+    entrena_jue: actualizado?.entrena_jue ?? false,
+    entrena_vie: actualizado?.entrena_vie ?? false,
+    sede:        actualizado?.sede ?? null,
   }
-
-  const { error: updErr } = await supabase.from('jugadores')
-    .update(campos).eq('id', params.jugadorId).eq('club_id', clubId)
-  if (updErr) return { error: 'No se pudieron guardar los días: ' + updErr.message }
 
   // El historial es lo que usa Inasistencias para saber qué días entrenaba
   // alguien en una fecha pasada. Solo se corta el tramo si algo cambió.
@@ -630,35 +535,4 @@ export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorI
   return { success: true }
 }
 
-export async function editarClase(params: {
-  id: string
-  contenido: string
-  hora_inicio: string
-  hora_fin: string
-  profesorId: string | null
-  sede: string | null
-  grupo: string | null
-  publicada: boolean
-}) {
-  const { error: authErr, supabase, clubId } = await requireStaff()
-  if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
-
-  if (!params.contenido.trim()) return { error: 'El nombre de la clase es obligatorio' }
-  if (!params.hora_inicio) return { error: 'Falta la hora de inicio' }
-  if (params.hora_fin && hhmm(params.hora_fin) <= hhmm(params.hora_inicio)) {
-    return { error: 'La hora de fin debe ser posterior a la de inicio' }
-  }
-
-  const { error } = await supabase.from('clases').update({
-    contenido: params.contenido.trim(),
-    hora_inicio: params.hora_inicio,
-    hora_fin: params.hora_fin || null,
-    profesor_id: params.profesorId || null,
-    sede: params.sede || null,
-    grupo: params.grupo?.trim() || null,
-    publicada: params.publicada,
-  }).eq('id', params.id).eq('club_id', clubId)
-
-  if (error) return { error: 'No se pudo guardar la clase: ' + error.message }
-  return { success: true }
-}
+// `editarClase` se fue con el módulo Clases: no queda tabla que editar.

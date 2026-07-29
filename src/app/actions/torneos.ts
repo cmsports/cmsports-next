@@ -15,6 +15,7 @@ import {
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { requireAdmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 type AdminSupabase = NonNullable<Awaited<ReturnType<typeof requireAdmin>>['supabase']>
 
@@ -1441,7 +1442,7 @@ export async function actualizarEstadoPago(params: {
   if (authErr) return { error: authErr }
 
   const { torneoId, jugadorId, estado, metodoPago } = params
-  const fechaPago = estado === 'pagado' ? new Date().toISOString().slice(0, 10) : null
+  const fechaPago = estado === 'pagado' ? fechaChile() : null
   const metodoFinal = estado === 'pagado' ? (metodoPago || 'efectivo') : null
 
   // ponytail: delete duplicates then upsert — prevents race condition on rapid clicks
@@ -1703,7 +1704,7 @@ export async function inscribirEnMesa(params: {
       jugador_id: jugadorId,
       estado: estaPagado ? 'pagado' : 'pendiente',
       metodo_pago: estaPagado ? metodoPago : null,
-      fecha_pago: estaPagado ? new Date().toISOString().slice(0, 10) : null,
+      fecha_pago: estaPagado ? fechaChile() : null,
     })
     if (pagoError) {
       await supabase.from('grupo_jugadores').delete().eq('grupo_id', grupoMesa.id).eq('jugador_id', jugadorId)
@@ -1842,7 +1843,7 @@ export async function guardarGastosGestion(params: {
     categoria: 'otro_gasto',
     descripcion: `${g.tipo.trim()} — ${params.torneoNombre}`,
     monto: g.monto,
-    fecha: new Date().toISOString().slice(0, 10),
+    fecha: fechaChile(),
     registrado_por_nombre: admin,
   }))
 

@@ -72,17 +72,6 @@ const DIA_POR_INDICE: Record<number, DiaSemana | undefined> = {
   1: 'lun', 2: 'mar', 3: 'mie', 4: 'jue', 5: 'vie',
 }
 
-/**
- * El nombre largo que guarda `clases.dia_semana`: 'lunes', 'martes'…
- *
- * Las dos formas conviven porque el horario semanal usa la corta ('lun') y la
- * tabla de clases nació con la larga, con una restricción que la exige. Sin
- * esta conversión, generar la semana falla en cada fila.
- */
-export function diaLargo(dia: string): string {
-  return ({ lun: 'lunes', mar: 'martes', mie: 'miercoles', jue: 'jueves', vie: 'viernes' } as Record<string, string>)[dia] ?? dia
-}
-
 export function diaDesdeFecha(fechaISO: string): DiaSemana | null {
   const d = new Date(`${fechaISO}T12:00:00`)
   return DIA_POR_INDICE[d.getDay()] ?? null

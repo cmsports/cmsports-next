@@ -18,7 +18,9 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 const MODULOS_OPCIONALES = [
   { key: 'torneos', label: 'Torneos' },
   { key: 'liga', label: 'Liga' },
-  { key: 'clases', label: 'Clases' },
+  // La clave sigue siendo 'clases' en la base, pero el módulo hoy solo gobierna
+  // el horario semanal: la pantalla de clases generadas se eliminó.
+  { key: 'clases', label: 'Horario semanal' },
   { key: 'calendario', label: 'Calendario' },
   { key: 'asistencia', label: 'Asistencia' },
   { key: 'mensualidades', label: 'Mensualidades' },

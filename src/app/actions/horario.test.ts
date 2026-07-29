@@ -4,7 +4,7 @@ import { fakeSupabase, type FakeSupabase } from '@/lib/test/fakeSupabase'
 const mocks = vi.hoisted(() => ({ crear: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.crear }))
 
-import { asignarBloquesJugador, estadoDiaSinClase, generarSemana, guardarGrupo, marcarDiaSinClase } from './horario'
+import { asignarBloquesJugador, estadoDiaSinClase, guardarGrupo, marcarDiaSinClase } from './horario'
 
 // `vigente_desde` es NOT NULL en la base, así que acá también: sin ella, las
 // fixtures describían una fila que no puede existir.
@@ -23,94 +23,7 @@ function conBase(respuestas = {}, usuario = { id: 'u1', club_id: 'club-1', rol: 
 
 beforeEach(() => { vi.clearAllMocks(); conBase() })
 
-describe('generarSemana', () => {
-  // El bug: la tabla de clases exige el nombre largo del día ('lunes') y el
-  // horario semanal trabaja con el corto ('lun'). Mandaba el corto y la base
-  // rechazaba las 20 filas. Nadie lo notó porque nunca se había usado.
-  it('escribe el día en el formato que acepta la tabla de clases', async () => {
-    conBase({ bloques_horario: BLOQUES, bloque_profesores: [], clases: [{ id: 'c1' }, { id: 'c2' }] })
-
-    await generarSemana({ fechas: ['2026-08-03', '2026-08-04'], publicar: false })
-
-    const dias = fake.escrituras('clases').map(f => f.dia_semana)
-    expect(dias).toEqual(['lunes', 'martes'])
-    expect(dias).not.toContain('lun')
-  })
-
-  it('apunta el upsert al índice de bloque y fecha, para poder repetirlo', async () => {
-    conBase({ bloques_horario: BLOQUES, bloque_profesores: [], clases: [] })
-
-    await generarSemana({ fechas: ['2026-08-03'], publicar: false })
-
-    const upsert = fake.llamadas.find(l => l.tabla === 'clases' && l.op === 'upsert')
-    expect(upsert?.opciones).toMatchObject({ onConflict: 'bloque_id,fecha', ignoreDuplicates: true })
-  })
-
-  // Dar de baja un grupo le cierra la vigencia, no lo borra. Generar tres
-  // semanas adelante le seguía creando clases para siempre.
-  it('no genera clases de un grupo que ya cerró', async () => {
-    conBase({
-      bloques_horario: [{ ...BLOQUES[0], vigente_hasta: '2026-08-05' }],
-      bloque_profesores: [], clases: [],
-    })
-
-    await generarSemana({ fechas: ['2026-08-03', '2026-08-10'], publicar: false })
-
-    expect(fake.escrituras('clases').map(f => f.fecha)).toEqual(['2026-08-03'])
-  })
-
-  it('no genera clases antes de que el grupo existiera', async () => {
-    conBase({
-      bloques_horario: [{ ...BLOQUES[0], vigente_desde: '2026-08-06' }],
-      bloque_profesores: [], clases: [],
-    })
-
-    await generarSemana({ fechas: ['2026-08-03', '2026-08-10'], publicar: false })
-
-    expect(fake.escrituras('clases').map(f => f.fecha)).toEqual(['2026-08-10'])
-  })
-
-  // La función decía en su comentario que los feriados quedaban fuera y no
-  // había nada que los dejara fuera.
-  it('no genera clases en un día marcado sin clase', async () => {
-    conBase({
-      bloques_horario: [BLOQUES[0]],
-      bloque_excepciones: [{ bloque_id: 'b-lun', fecha: '2026-08-10' }],
-      bloque_profesores: [], clases: [],
-    })
-
-    await generarSemana({ fechas: ['2026-08-03', '2026-08-10'], publicar: false })
-
-    expect(fake.escrituras('clases').map(f => f.fecha)).toEqual(['2026-08-03'])
-  })
-
-  it('deja fuera los fines de semana', async () => {
-    conBase({ bloques_horario: BLOQUES, bloque_profesores: [], clases: [] })
-
-    await generarSemana({ fechas: ['2026-08-08', '2026-08-09'], publicar: false })   // sábado y domingo
-
-    expect(await generarSemana({ fechas: ['2026-08-08'], publicar: false }))
-      .toEqual({ error: 'No hay bloques para los días elegidos' })
-  })
-
-  it('no acepta una tanda desmedida', async () => {
-    // Tienen que ser distintas: la acción deduplica antes de contar.
-    const muchas = Array.from({ length: 61 }, (_, i) => {
-      const d = new Date(2026, 7, 1)
-      d.setDate(d.getDate() + i)
-      return d.toISOString().slice(0, 10)
-    })
-    expect(new Set(muchas).size).toBe(61)
-    expect(await generarSemana({ fechas: muchas, publicar: false }))
-      .toEqual({ error: 'Demasiados días de una vez (máximo 60)' })
-  })
-
-  it('rechaza al que no es del staff sin tocar la base', async () => {
-    conBase({}, { club_id: 'club-1', rol: 'jugador' })
-    expect(await generarSemana({ fechas: ['2026-08-03'], publicar: false })).toEqual({ error: 'Acceso denegado' })
-    expect(fake.escrituras('clases')).toEqual([])
-  })
-})
+// `generarSemana` y sus pruebas se fueron con el módulo Clases (2026-07-29).
 
 describe('guardarGrupo', () => {
   const base = {
@@ -277,7 +190,11 @@ describe('asignarBloquesJugador', () => {
     })
   })
 
-  it('los días y la sede de la ficha salen de los bloques', async () => {
+  // Desde la migración 111 los días, la sede y el horario de la ficha los
+  // escribe la BASE (trigger sobre bloque_jugadores), no esta acción. Acá solo
+  // se comprueba que la acción ya no los toca: si volviera a escribirlos,
+  // habría dos manos sobre el mismo campo y volverían a desincronizarse.
+  it('no escribe los días ni la sede a mano: eso es de la base', async () => {
     conBase({
       jugadores: { id: 'j1', club_id: 'club-1' },
       bloques_horario: [
@@ -287,14 +204,10 @@ describe('asignarBloquesJugador', () => {
       bloque_jugadores: [],
     })
 
-    await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: ['b-lun', 'b-vie'] })
+    const res = await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: ['b-lun', 'b-vie'] })
 
-    const ficha = fake.escrituras('jugadores')[0]
-    expect(ficha).toMatchObject({
-      entrena_lun: true, entrena_vie: true,
-      entrena_mar: false, entrena_mie: false, entrena_jue: false,
-      sede: 'ambos',   // está en las dos
-    })
+    expect(res).toMatchObject({ success: true })
+    expect(fake.llamadas.some(l => l.tabla === 'jugadores' && l.op === 'update')).toBe(false)
   })
 
   it('rechaza un bloque que no es del club', async () => {
@@ -308,18 +221,18 @@ describe('asignarBloquesJugador', () => {
     expect(res).toEqual({ error: 'Alguno de los bloques no es de este club' })
   })
 
-  it('dejarlo sin ningún grupo es válido y le apaga todos los días', async () => {
+  it('dejarlo sin ningún grupo es válido: cierra la inscripción y nada más', async () => {
     conBase({
       jugadores: { id: 'j1', club_id: 'club-1' },
       bloque_jugadores: [{ id: 'i-lun', bloque_id: 'b-lun' }],
     })
 
-    await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: [] })
+    const res = await asignarBloquesJugador({ jugadorId: 'j1', bloqueIds: [] })
 
-    const ficha = fake.escrituras('jugadores')[0]
-    expect(ficha).toMatchObject({ entrena_lun: false, entrena_vie: false, horario: null })
-    // Sin bloques no se toca la sede: no se sabe dónde entrenaba.
-    expect(ficha).not.toHaveProperty('sede')
+    expect(res).toMatchObject({ success: true })
+    // Se cierra la inscripción; los días de la ficha los apaga el trigger.
+    expect(fake.llamadas.some(l => l.tabla === 'bloque_jugadores' && l.op === 'update')).toBe(true)
+    expect(fake.llamadas.some(l => l.tabla === 'jugadores' && l.op === 'update')).toBe(false)
   })
 })
 

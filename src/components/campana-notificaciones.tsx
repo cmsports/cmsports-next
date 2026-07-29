@@ -116,39 +116,11 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
     }
 
     if (rol === 'profesor') {
-      const [
-        { data: clasesHoy },
-        { data: torneos },
-        { data: reservasProfesor },
-      ] = await Promise.all([
-        supabase.from('clases')
-          .select('id,hora_inicio,contenido').eq('club_id', perfil.club_id).eq('publicada', true).eq('fecha', hoy).order('hora_inicio'),
-        supabase.from('torneos')
-          .select('id,nombre,fecha_inicio').eq('club_id', perfil.club_id).in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy).limit(2),
-        supabase.from('reservas')
-          .select('id,estado,creado_en,jugadores(nombre),clases!inner(id,club_id,contenido,fecha,hora_inicio)')
-          .eq('clases.club_id', perfil.club_id).gte('clases.fecha', hoy)
-          .order('creado_en', { ascending: false }).limit(20),
-      ])
-
-      if (clasesHoy?.length) {
-        notificaciones.push({ id: `clases-hoy-${hoy}`, tipo: 'clase', titulo: `${clasesHoy.length} clase${clasesHoy.length > 1 ? 's' : ''} hoy`, mensaje: clasesHoy.map((c: any) => `${c.hora_inicio?.slice(0, 5)} ${c.contenido}`).join(' · '), fecha: hoy, leida: false, color: '#4f46e5', href: `/calendario?fecha=${hoy}` })
-      }
-
-      reservasProfesor?.forEach((reserva: any) => {
-        const clase = reserva.clases
-        const confirmada = reserva.estado === 'confirmado'
-        notificaciones.push({
-          id: `reserva-profesor-${reserva.id}-${reserva.estado || 'pendiente'}`,
-          tipo: 'clase',
-          titulo: confirmada ? 'Jugador confirmó una clase' : 'Jugador canceló una clase',
-          mensaje: `${reserva.jugadores?.nombre || 'Un jugador'} · ${clase?.contenido || 'Clase'}${clase?.fecha ? ` · ${clase.fecha}` : ''}`,
-          fecha: reserva.creado_en || clase?.fecha || hoy,
-          leida: false,
-          color: confirmada ? '#16a34a' : '#d97706',
-          href: `/calendario?fecha=${clase?.fecha || hoy}`,
-        })
-      })
+      // Las clases y reservas se fueron con el módulo Clases (2026-07-29): el
+      // día del profe se arma desde bloques_horario, no desde una tabla de
+      // clases generadas.
+      const { data: torneos } = await supabase.from('torneos')
+        .select('id,nombre,fecha_inicio').eq('club_id', perfil.club_id).in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy).limit(2)
 
       torneos?.forEach((t: any) => {
         notificaciones.push({ id: `torneo-${t.id}`, tipo: 'torneo', titulo: 'Torneo próximo', mensaje: `${t.nombre} — ${t.fecha_inicio ? new Date(t.fecha_inicio).toLocaleDateString('es-CL') : 'Fecha por confirmar'}`, fecha: t.fecha_inicio || hoy, leida: false, color: '#f43f5e', href: `/torneos/${t.id}` })
@@ -177,10 +149,8 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
 
       const [
         { data: movimientos },
-        { data: clasesRecientes },
         { data: eventosRecientes },
         { data: jugadoresRecientes },
-        { data: reservasRecientes },
         { data: torneosAdmin },
         { data: solicitudes },
       ] = await Promise.all([
@@ -188,10 +158,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
           .select('id,tipo,categoria,descripcion,monto,creado_en,fecha,jugador_id,jugadores(nombre)')
           .eq('club_id', perfil.club_id).gte('creado_en', desdeActividad)
           .order('creado_en', { ascending: false }).limit(15),
-        supabase.from('clases')
-          .select('id,contenido,fecha,hora_inicio,publicada,creado_en,profesores(nombre)')
-          .eq('club_id', perfil.club_id).gte('creado_en', desdeActividad)
-          .order('creado_en', { ascending: false }).limit(12),
         supabase.from('eventos')
           .select('id,titulo,tipo,fecha_inicio,hora_inicio,creado_en,usuarios(nombre,rol)')
           .eq('club_id', perfil.club_id).gte('creado_en', desdeActividad)
@@ -200,10 +166,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
           .select('id,nombre,categoria,creado_en')
           .eq('club_id', perfil.club_id).gte('creado_en', desdeActividad)
           .order('creado_en', { ascending: false }).limit(12),
-        supabase.from('reservas')
-          .select('id,estado,creado_en,jugadores(nombre),clases!inner(id,club_id,contenido,fecha,hora_inicio)')
-          .eq('clases.club_id', perfil.club_id).gte('creado_en', desdeActividad)
-          .order('creado_en', { ascending: false }).limit(15),
         supabase.from('torneos')
           .select('id,nombre,fecha_inicio,estado').eq('club_id', perfil.club_id)
           .in('estado', ['programado', 'en_curso']).gte('fecha_inicio', hoy)
@@ -225,20 +187,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
           leida: false,
           color: esIngreso ? '#16a34a' : '#dc2626',
           href: '/finanzas',
-        })
-      })
-
-      clasesRecientes?.forEach((clase: any) => {
-        const profesor = clase.profesores?.nombre || 'profesor por confirmar'
-        notificaciones.push({
-          id: `clase-creada-${clase.id}`,
-          tipo: 'clase',
-          titulo: 'Nueva clase en el calendario',
-          mensaje: `${profesor}: ${clase.contenido || 'Clase'} · ${clase.fecha || 'fecha pendiente'} ${clase.hora_inicio?.slice(0, 5) || ''}`.trim(),
-          fecha: clase.creado_en || clase.fecha || hoy,
-          leida: false,
-          color: '#4f46e5',
-          href: `/calendario?fecha=${clase.fecha || hoy}`,
         })
       })
 
@@ -267,21 +215,6 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
           leida: false,
           color: '#0ea5e9',
           href: `/jugadores/${jugador.id}`,
-        })
-      })
-
-      reservasRecientes?.forEach((reserva: any) => {
-        const clase = reserva.clases
-        const confirmada = reserva.estado === 'confirmado'
-        notificaciones.push({
-          id: `reserva-${reserva.id}-${reserva.estado || 'pendiente'}`,
-          tipo: 'clase',
-          titulo: confirmada ? 'Nueva reserva de clase' : 'Reserva de clase actualizada',
-          mensaje: `${reserva.jugadores?.nombre || 'Un jugador'} · ${clase?.contenido || 'Clase'}${clase?.fecha ? ` · ${clase.fecha}` : ''}`,
-          fecha: reserva.creado_en || clase?.fecha || hoy,
-          leida: false,
-          color: confirmada ? '#16a34a' : '#d97706',
-          href: `/calendario?fecha=${clase?.fecha || hoy}`,
         })
       })
 
@@ -393,10 +326,8 @@ export default function CampanaNotificaciones({ perfil, placement = 'bottom' }: 
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'torneo_felicitaciones' }, refrescar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mensualidades', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clases', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'eventos', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jugadores', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, refrescar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitudes_jugador', filter: `club_id=eq.${perfil.club_id}` }, refrescar)
       .subscribe()
     return () => {

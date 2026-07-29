@@ -78,20 +78,25 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
       const desde = inicioMes < lunes ? inicioMes : lunes
       const desdeStr = desde.toISOString().slice(0, 10)
 
-      const [{ data: jugs }, { data: asist }, { data: clases }] = await Promise.all([
+      // Una sola consulta con estado: las presencias alimentan el numerador y
+      // CUALQUIER registro (presente o ausente) marca que ese día se pasó
+      // lista — es el denominador. Antes los días salían de la tabla `clases`,
+      // que se eliminó junto con su módulo; un día con todos ausentes tiene
+      // que seguir contando como día de 0%, no desaparecer.
+      const [{ data: jugs }, { data: asist }] = await Promise.all([
         supabase.from('jugadores').select('id,nombre').eq('club_id', clubId).eq('estado', 'activo'),
-        // Solo presencias: desde que existe el botón Ausente, la tabla también
-        // guarda faltas y contarlas acá inflaba el porcentaje del club.
-        supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', desdeStr),
-        supabase.from('clases').select('fecha').eq('club_id', clubId).eq('publicada', true).gte('fecha', desdeStr),
+        supabase.from('asistencia').select('fecha,jugador_id,estado').eq('club_id', clubId).gte('fecha', desdeStr),
       ])
 
       if (!activo) return
       const jugadoresData = jugs || []
-      const filasData = (asist || []).map((a: any) => ({ fecha: a.fecha, date: new Date(a.fecha + 'T12:00:00'), jugador_id: a.jugador_id }))
+      const registros = asist || []
+      const filasData = registros
+        .filter((a: any) => a.estado === 'presente')
+        .map((a: any) => ({ fecha: a.fecha, date: new Date(a.fecha + 'T12:00:00'), jugador_id: a.jugador_id }))
       setJugadoresActivos(jugadoresData)
       setFilas(filasData)
-      setDiasEntrenamiento((clases || []).flatMap(c => c.fecha ? [c.fecha] : []))
+      setDiasEntrenamiento([...new Set(registros.map((a: any) => a.fecha as string))])
       setLoading(false)
     }
     if (clubId) void cargar()
@@ -101,9 +106,6 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
       .channel(`grafico-asistencia-${clubId}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'asistencia',
-      }, () => { void cargar() })
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'clases',
       }, () => { void cargar() })
       .subscribe()
 
@@ -173,30 +175,25 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard' }: { club
     setExportando(true)
     try {
       const supabase = createClient()
-      const [{ data: asistAll }, { data: jugsAll }, { data: clasesAll }] = await Promise.all([
-        supabase.from('asistencia').select('fecha,jugador_id').eq('club_id', clubId).eq('estado', 'presente').order('fecha', { ascending: true }),
+      const [{ data: asistAll }, { data: jugsAll }] = await Promise.all([
+        supabase.from('asistencia').select('fecha,jugador_id,estado').eq('club_id', clubId).order('fecha', { ascending: true }),
         supabase.from('jugadores').select('id').eq('club_id', clubId).eq('estado', 'activo'),
-        supabase.from('clases').select('fecha').eq('club_id', clubId).eq('publicada', true),
       ])
 
       const activos = (jugsAll || []).length || 1
       const porMes: Record<string, { jugadores: Set<string>; dias: Set<string>; total: number; porDiaSemana: Record<number, number> }> = {}
 
+      // Todo registro marca el día como "con lista pasada" (denominador); solo
+      // las presencias suman al total y a los jugadores que vinieron.
       ;(asistAll || []).forEach((a: any) => {
         const mesKey = a.fecha.slice(0, 7)
         if (!porMes[mesKey]) porMes[mesKey] = { jugadores: new Set(), dias: new Set(), total: 0, porDiaSemana: {} }
-        porMes[mesKey].jugadores.add(a.jugador_id)
         porMes[mesKey].dias.add(a.fecha)
+        if (a.estado !== 'presente') return
+        porMes[mesKey].jugadores.add(a.jugador_id)
         porMes[mesKey].total += 1
         const ds = new Date(a.fecha + 'T12:00:00').getDay()
         porMes[mesKey].porDiaSemana[ds] = (porMes[mesKey].porDiaSemana[ds] || 0) + 1
-      })
-
-      ;(clasesAll || []).forEach(c => {
-        if (!c.fecha) return
-        const mesKey = c.fecha.slice(0, 7)
-        if (!porMes[mesKey]) porMes[mesKey] = { jugadores: new Set(), dias: new Set(), total: 0, porDiaSemana: {} }
-        porMes[mesKey].dias.add(c.fecha)
       })
 
       const filasExport = Object.entries(porMes).sort(([a], [b]) => a.localeCompare(b)).map(([mesKey, d]) => {
