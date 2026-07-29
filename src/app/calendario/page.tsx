@@ -42,14 +42,11 @@ function CalendarioContent() {
   const [mes, setMes] = useState(calendarioInicial.getMonth())
   const [anio, setAnio] = useState(calendarioInicial.getFullYear())
   const [eventos, setEventos] = useState<any[]>([])
-  const [clases, setClases] = useState<any[]>([])
   const [torneos, setTorneos] = useState<any[]>([])
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(fechaInicial)
   const [modalEvento, setModalEvento] = useState(false)
-  const [reservasJugador, setReservasJugador] = useState<Set<string>>(new Set())
   const [form, setForm] = useState({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
-  const [reservaLoading, setReservaLoading] = useState<string | null>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
 
@@ -68,28 +65,17 @@ function CalendarioContent() {
     if (!clubId) return
     const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
     const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
-    const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
+    const [{ data: ev, error: evError }, { data: tr, error: trError }] = await Promise.all([
       supabase.from('eventos').select('id,titulo,descripcion,tipo,fecha_inicio,hora_inicio,hora_fin').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-      supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,profesores(nombre,especialidad)').eq('club_id', clubId).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
       supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
     ])
-    if (evError || clError || trError) {
-      setMensaje({ tipo: 'error', texto: evError?.message || clError?.message || trError?.message || 'No fue posible cargar el calendario' })
+    if (evError || trError) {
+      setMensaje({ tipo: 'error', texto: evError?.message || trError?.message || 'No fue posible cargar el calendario' })
       return
     }
     setEventos(ev || [])
-    setClases(cl || [])
     setTorneos(tr || [])
   }, [anio, clubId, mes])
-
-  const cargarReservasJugador = useCallback(async (jugadorId: string) => {
-    const { data, error } = await supabase.from('reservas').select('clase_id').eq('jugador_id', jugadorId).eq('estado', 'confirmado')
-    if (error) {
-      setMensaje({ tipo: 'error', texto: error.message })
-      return
-    }
-    setReservasJugador(new Set((data || []).map(r => r.clase_id)))
-  }, [])
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
@@ -102,18 +88,16 @@ function CalendarioContent() {
     const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
 
     async function cargar() {
-      const [{ data: ev, error: evError }, { data: cl, error: clError }, { data: tr, error: trError }] = await Promise.all([
+      const [{ data: ev, error: evError }, { data: tr, error: trError }] = await Promise.all([
         supabase.from('eventos').select('id,titulo,descripcion,tipo,fecha_inicio,hora_inicio,hora_fin').eq('club_id', clubId!).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-        supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,profesores(nombre,especialidad)').eq('club_id', clubId!).eq('publicada', true).gte('fecha', inicio).lte('fecha', fin),
         supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId!).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
       ])
       if (!activo) return
-      if (evError || clError || trError) {
-        setMensaje({ tipo: 'error', texto: evError?.message || clError?.message || trError?.message || 'No fue posible cargar el calendario' })
+      if (evError || trError) {
+        setMensaje({ tipo: 'error', texto: evError?.message || trError?.message || 'No fue posible cargar el calendario' })
         return
       }
       setEventos(ev || [])
-      setClases(cl || [])
       setTorneos(tr || [])
     }
 
@@ -123,41 +107,16 @@ function CalendarioContent() {
 
   useEffect(() => {
     if (!clubId) return
-    const recargar = () => {
-      void cargarMes()
-      if (perfil?.jugador_id) void cargarReservasJugador(perfil.jugador_id)
-    }
+    const recargar = () => { void cargarMes() }
     const canal = supabase
       .channel(`calendario-${clubId}`)
       // Sin el filtro de club, un cambio en cualquiera de los otros clubes de
-      // la base recarga esta pantalla. Reservas no tiene club_id propio, así que
-      // esa queda sin filtrar.
+      // la base recarga esta pantalla.
       .on('postgres_changes', { event: '*', schema: 'public', table: 'eventos', filter: `club_id=eq.${clubId}` }, recargar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clases',  filter: `club_id=eq.${clubId}` }, recargar)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'torneos', filter: `club_id=eq.${clubId}` }, recargar)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas' }, recargar)
       .subscribe()
     return () => { void supabase.removeChannel(canal) }
-  }, [cargarMes, cargarReservasJugador, clubId, perfil?.jugador_id])
-
-  useEffect(() => {
-    const jugadorId = perfil?.jugador_id
-    if (!jugadorId) return
-    let activo = true
-
-    async function cargar() {
-      const { data, error } = await supabase.from('reservas').select('clase_id').eq('jugador_id', jugadorId!).eq('estado', 'confirmado')
-      if (!activo) return
-      if (error) {
-        setMensaje({ tipo: 'error', texto: error.message })
-        return
-      }
-      setReservasJugador(new Set((data || []).map(r => r.clase_id)))
-    }
-
-    void cargar()
-    return () => { activo = false }
-  }, [perfil?.jugador_id])
+  }, [cargarMes, clubId])
 
   function cambiarMes(dir: number) {
     let nuevoMes = mes + dir
@@ -194,35 +153,9 @@ function CalendarioContent() {
     cargarMes()
   }
 
-  async function reservarClase(claseId: string) {
-    if (!perfil?.jugador_id) return
-    setReservaLoading(claseId)
-    setMensaje(null)
-    const { error } = await supabase.rpc('cambiar_reserva_clase', { p_clase_id: claseId, p_confirmar: true })
-    if (error) {
-      setMensaje({ tipo: 'error', texto: error.message })
-      setReservaLoading(null)
-      return
-    }
-    cargarReservasJugador(perfil.jugador_id)
-    setMensaje({ tipo: 'ok', texto: 'Reserva confirmada' })
-    setReservaLoading(null)
-  }
-
-  async function cancelarReserva(claseId: string) {
-    if (!perfil?.jugador_id) return
-    setReservaLoading(claseId)
-    setMensaje(null)
-    const { error } = await supabase.rpc('cambiar_reserva_clase', { p_clase_id: claseId, p_confirmar: false })
-    if (error) {
-      setMensaje({ tipo: 'error', texto: error.message })
-      setReservaLoading(null)
-      return
-    }
-    cargarReservasJugador(perfil.jugador_id)
-    setMensaje({ tipo: 'ok', texto: 'Reserva cancelada' })
-    setReservaLoading(null)
-  }
+  // Acá vivían reservarClase y cancelarReserva: el jugador confirmaba si iba a
+  // una clase publicada. Se van con las clases del calendario — sin la tarjeta
+  // desde donde se apretaban, no las llamaba nadie.
 
   const primerDia = new Date(anio, mes, 1).getDay()
   const diasEnMes = new Date(anio, mes+1, 0).getDate()
@@ -236,10 +169,10 @@ function CalendarioContent() {
     const f = e.fecha_inicio?.slice(0,10)
     if (f) { if (!diasConItems[f]) diasConItems[f] = []; diasConItems[f].push({ ...e, tipo_item:'evento' }) }
   })
-  clases.forEach(c => {
-    const f = c.fecha?.slice(0,10)
-    if (f) { if (!diasConItems[f]) diasConItems[f] = []; diasConItems[f].push({ ...c, tipo_item:'clase' }) }
-  })
+  // Los bloques del horario no entran acá. Se repiten todas las semanas y
+  // llenaban el mes entero, tapando lo que el calendario tiene que mostrar:
+  // torneos, feriados, pagos. Quién entrena cuándo se ve en Horario semanal y,
+  // para el jugador, en Mi horario.
   torneos.forEach(t => {
     const f = t.fecha_inicio?.slice(0,10)
     if (f) { if (!diasConItems[f]) diasConItems[f] = []; diasConItems[f].push({ ...t, tipo_item:'torneo', tipo:'torneo', titulo: t.nombre }) }
@@ -319,20 +252,6 @@ function CalendarioContent() {
               </div>
               <button onClick={() => setDiaSeleccionado(null)} style={{ background:'transparent', border:'none', color: muted, cursor:'pointer', fontSize:18 }}>✕</button>
             </div>
-
-            {itemsDelDia.filter(i => i.tipo_item === 'clase').map((c, i) => (
-              <div key={i} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:'3px solid #f43f5e' }}>
-                <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:4 }}>🏓 {c.contenido}</div>
-                <div style={{ fontSize:11, color: muted, marginBottom:8 }}>
-                  {c.hora_inicio?.slice(0,5)}{c.hora_fin ? ' - '+c.hora_fin.slice(0,5) : ''}
-                </div>
-                {esJugador && (
-                  reservasJugador.has(c.id)
-                    ? <button onClick={() => cancelarReserva(c.id)} disabled={reservaLoading === c.id} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:6, padding:'5px 12px', fontSize:11, cursor: reservaLoading === c.id ? 'not-allowed' : 'pointer', width:'100%', opacity: reservaLoading === c.id ? 0.6 : 1 }}>{reservaLoading === c.id ? 'Guardando...' : '✕ Cancelar reserva'}</button>
-                    : <button onClick={() => reservarClase(c.id)} disabled={reservaLoading === c.id} style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:6, padding:'5px 12px', fontSize:11, cursor: reservaLoading === c.id ? 'not-allowed' : 'pointer', width:'100%', opacity: reservaLoading === c.id ? 0.6 : 1 }}>{reservaLoading === c.id ? 'Guardando...' : '✓ Voy a ir'}</button>
-                )}
-              </div>
-            ))}
 
             {itemsDelDia.filter(i => i.tipo_item === 'evento').map((ev, i) => (
               <div key={i} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:`3px solid ${coloresEvento[ev.tipo] || '#64748b'}` }}>

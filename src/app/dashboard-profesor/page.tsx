@@ -1,13 +1,21 @@
-﻿'use client'
+'use client'
+
+// Lo que el profe necesita al llegar: qué le toca hoy, dónde, a qué hora y
+// quiénes son sus alumnos de esos grupos.
+//
+// Antes traía además el total de alumnos del club, las evaluaciones pendientes
+// y una lista de quiénes no venían hace cinco días. Nada de eso le sirve para
+// entrar a la cancha, y el feedback trimestral se sacó del sistema entero.
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { trimestreActual } from '@/lib/domain/trimestre'
-import WhatsAppBtn from '@/components/WhatsAppBtn'
-import { linkWhatsApp } from '@/lib/whatsapp'
+import { fechaChile } from '@/lib/domain/fechaChile'
+import { diaDesdeFecha, hhmm, rangoHorario } from '@/lib/domain/horario'
+import { sedeLabel } from '@/lib/domain/sedeGrupo'
 
 const supabase = createClient()
 
@@ -16,172 +24,161 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
+type Bloque = {
+  id: string
+  nombre: string
+  sede: string
+  hora_inicio: string
+  hora_fin: string
+  alumnos: { id: string; nombre: string; categoria: string | null }[]
+}
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+
 export default function DashboardProfesorPage() {
   const { perfil, loading: authLoading } = usePerfil()
-  const [clases, setClases] = useState<any[]>([])
-  const [alertas, setAlertas] = useState<any[]>([])
-  const [totalAlumnos, setTotalAlumnos] = useState(0)
-  const [evalPendientes, setEvalPendientes] = useState(0)
+  const [bloques, setBloques] = useState<Bloque[]>([])
   const [loading, setLoading] = useState(true)
-  const [ddOpen, setDdOpen] = useState<string | null>(null)
-  const [ddData, setDdData] = useState<any[]>([])
   const router = useRouter()
 
-  const hoy = new Date()
-  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
-  const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
-
-  const hoyISO = hoy.toISOString().slice(0, 10)
-  const diaSemana = hoy.getDay()
-  const diasHastaDom = diaSemana === 0 ? 0 : 7 - diaSemana
-  const domingo = new Date(hoy)
-  domingo.setDate(hoy.getDate() + diasHastaDom)
-  const domingoISO = domingo.toISOString().slice(0, 10)
-  const cincoDiasAtras = new Date(hoy)
-  cincoDiasAtras.setDate(hoy.getDate() - 5)
-  const cincoDiasAtrasISO = cincoDiasAtras.toISOString().slice(0, 10)
+  const ahora = new Date()
+  const hoy = fechaChile()
 
   useEffect(() => {
     async function cargar() {
       if (authLoading) return
       if (!perfil) { router.push('/login'); return }
-      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor') { router.push('/dashboard'); return }
-      if (perfil.club_id) {
-        const trimestre = trimestreActual(hoy)
-        const [{ data: jugadores }, { data: clasesHoy }, { data: evals }, { data: asist5 }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,telefono,categoria').eq('club_id', perfil.club_id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
-          supabase.from('clases').select('id,contenido,fecha,hora_inicio,hora_fin,grupo,publicada,profesor_id').eq('club_id', perfil.club_id).gte('fecha', hoyISO).lte('fecha', domingoISO).order('fecha').order('hora_inicio'),
-          supabase.from('evaluaciones_trimestrales').select('jugador_id').eq('club_id', perfil.club_id).eq('periodo_trimestre', trimestre),
-          supabase.from('asistencia').select('jugador_id').eq('club_id', perfil.club_id).gte('fecha', cincoDiasAtrasISO),
-        ])
-        setTotalAlumnos(jugadores?.length || 0)
-        setClases(clasesHoy || [])
-        const evalIds = new Set((evals || []).map(e => e.jugador_id))
-        const sinEval = (jugadores || []).filter(j => !evalIds.has(j.id))
-        setEvalPendientes(sinEval.length)
-        const asistIds = new Set((asist5 || []).map(a => a.jugador_id))
-        const ausentes = (jugadores || []).filter(j => !asistIds.has(j.id))
-        const nuevasAlertas = []
-        if (sinEval.length > 0) nuevasAlertas.push({ tipo:'warning', msg:`${sinEval.length} alumno${sinEval.length>1?'s':''} sin evaluación trimestral (${trimestre})`, data: sinEval, key:'eval' })
-        if (ausentes.length > 0) nuevasAlertas.push({ tipo:'error', msg:`${ausentes.length} alumno${ausentes.length>1?'s':''} sin asistir en los últimos 5 días`, data: ausentes, key:'ausentes' })
-        setAlertas(nuevasAlertas)
+      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor' && perfil.rol !== 'superadmin') {
+        router.push('/dashboard'); return
       }
+      if (!perfil.club_id) { setLoading(false); return }
+
+      const dia = diaDesdeFecha(hoy)
+      if (!dia) { setBloques([]); setLoading(false); return }   // fin de semana
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = supabase as any
+      const [{ data: bs }, { data: rel }, { data: jug }, { data: exc }] = await Promise.all([
+        db.from('bloques_horario')
+          .select('id,nombre,sede,hora_inicio,hora_fin')
+          .eq('club_id', perfil.club_id).eq('activo', true).eq('dia_semana', dia)
+          .lte('vigente_desde', hoy)
+          .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
+          .order('hora_inicio'),
+        db.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
+        db.from('jugadores').select('id,nombre,categoria')
+          .eq('club_id', perfil.club_id).eq('estado', 'activo')
+          .or('es_externo.is.null,es_externo.eq.false'),
+        // Un día suspendido no es un día de clase: si el grupo no se dicta, no
+        // tiene por qué aparecerle en la lista de hoy.
+        db.from('bloque_excepciones').select('bloque_id').eq('fecha', hoy),
+      ])
+
+      const suspendidos = new Set((exc ?? []).map((e: { bloque_id: string }) => e.bloque_id))
+      const porId = new Map((jug ?? []).map((j: { id: string }) => [j.id, j]))
+      const armados: Bloque[] = ((bs ?? []) as Bloque[])
+        .filter(b => !suspendidos.has(b.id))
+        .map(b => ({
+          ...b,
+          alumnos: (rel ?? [])
+            .filter((r: { bloque_id: string }) => r.bloque_id === b.id)
+            .map((r: { jugador_id: string }) => porId.get(r.jugador_id))
+            .filter(Boolean)
+            .sort((a: { nombre: string }, z: { nombre: string }) => a.nombre.localeCompare(z.nombre)),
+        }))
+
+      setBloques(armados)
       setLoading(false)
     }
     void cargar()
-  }, [authLoading, cincoDiasAtrasISO, domingoISO, hoyISO, perfil, router])
+  }, [authLoading, hoy, perfil, router])
 
   if (loading) return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
     </div>
   )
 
+  const saludo = ahora.getHours() < 12 ? 'Buenos días' : ahora.getHours() < 20 ? 'Buenas tardes' : 'Buenas noches'
+  const totalAlumnos = bloques.reduce((s, b) => s + b.alumnos.length, 0)
+  const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`
+
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ marginBottom:16 }}>
-        <div style={{ fontSize:20, fontWeight:600, color: text, marginBottom:4 }}>
-          {hoy.getHours() < 12 ? 'Buenos días' : hoy.getHours() < 20 ? 'Buenas tardes' : 'Buenas noches'}, {perfil?.nombre?.split(' ')[0] || 'Profesor'}
-        </div>
-        <div style={{ fontSize:13, color: muted }}>
-          {diasSemana[hoy.getDay()]} {hoy.getDate()} de {meses[hoy.getMonth()]} {hoy.getFullYear()}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:14, marginBottom:16 }}>
-        <div style={{ background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:24 }}>👥</div>
-          <div style={{ fontSize:28, fontWeight:700, color:'#3730a3', fontFamily:'monospace', margin:'8px 0 4px' }}>{totalAlumnos}</div>
-          <div style={{ fontSize:12, color:'#3730a3' }}>Mis alumnos</div>
-        </div>
-        <div style={{ background: evalPendientes > 0 ? '#fffbeb' : '#f0fdf4', border:`1px solid ${evalPendientes > 0 ? '#fde68a' : '#bbf7d0'}`, borderRadius:14, padding:18 }}>
-          <div style={{ fontSize:24 }}>📋</div>
-          <div style={{ fontSize:28, fontWeight:700, color: evalPendientes > 0 ? '#d97706' : '#16a34a', fontFamily:'monospace', margin:'8px 0 4px' }}>{evalPendientes}</div>
-          <div style={{ fontSize:12, color: evalPendientes > 0 ? '#d97706' : '#16a34a' }}>Eval. pendientes</div>
+      <div style={{ marginBottom: 16 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: text, margin: 0 }}>
+          {saludo}, {perfil?.nombre?.split(' ')[0] || 'Profesor'}
+        </h1>
+        <div style={{ fontSize: 13, color: muted, marginTop: 2 }}>
+          {DIAS[ahora.getDay()]} {ahora.getDate()} de {MESES[ahora.getMonth()]} {ahora.getFullYear()}
+          {bloques.length > 0 && ` · ${bloques.length} grupo${bloques.length === 1 ? '' : 's'} · ${totalAlumnos} alumnos`}
         </div>
       </div>
 
-      {/* Clases de la semana */}
-      <div style={{ ...card, padding:16, marginBottom:16 }}>
-        <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Clases esta semana</div>
-        {clases.length === 0
-          ? <p style={{ fontSize:13, color: muted, textAlign:'center', padding:'16px 0' }}>Sin clases programadas</p>
-          : (() => {
-              const porFecha: Record<string, any[]> = {}
-              clases.forEach(c => { const f = c.fecha || ''; if (!porFecha[f]) porFecha[f] = []; porFecha[f].push(c) })
-              return Object.keys(porFecha).sort().map(fecha => {
-                const d = new Date(fecha + 'T00:00:00')
-                const esHoy = fecha === hoyISO
-                return (
-                  <div key={fecha} style={{ marginBottom:12 }}>
-                    <div style={{ fontSize:11, fontWeight:700, color: esHoy ? '#4f46e5' : muted, textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
-                      {diasSemana[d.getDay()]} {d.getDate()}
-                      {esHoy && <span style={{ background:'#ede9fe', color:'#3730a3', padding:'1px 6px', borderRadius:10, fontSize:9, fontWeight:700 }}>HOY</span>}
-                    </div>
-                    {porFecha[fecha].map(c => (
-                      <div key={c.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 12px', background:'#f4f7fa', borderRadius:10, marginBottom:6 }}>
-                        <div style={{ background:'#ede9fe', color:'#3730a3', padding:'6px 10px', borderRadius:8, fontSize:11, fontWeight:600, minWidth:80, textAlign:'center', flexShrink:0 }}>
-                          {c.hora_inicio?.slice(0,5) || '—'}<br/>
-                          <span style={{ fontSize:10, color: muted, fontWeight:400 }}>{c.hora_fin?.slice(0,5) || ''}</span>
-                        </div>
-                        <div>
-                          <div style={{ fontSize:13, color: text, fontWeight:600 }}>{c.contenido || 'Clase'}</div>
-                          <div style={{ fontSize:11, color: muted }}>{c.grupo || 'Grupo general'}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })
-            })()
-        }
-      </div>
-
-      {/* Alertas */}
-      <div style={{ ...card, padding:16 }}>
-        <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12, textTransform:'uppercase', letterSpacing:'0.5px' }}>Alertas</div>
-        {alertas.length === 0
-          ? <p style={{ fontSize:13, color:'#16a34a', padding:'8px 0' }}>✓ Sin alertas pendientes</p>
-          : alertas.map(a => (
-            <div key={a.key} onClick={() => { setDdOpen(a.key); setDdData(a.data) }}
-              style={{ display:'flex', gap:10, padding:12, background: a.tipo==='warning' ? '#fffbeb' : '#fef2f2', borderRadius:10, marginBottom:8, cursor:'pointer', border:`1px solid ${a.tipo==='warning' ? '#fde68a' : '#fecaca'}` }}>
-              <span style={{ fontSize:18 }}>{a.tipo==='warning' ? '⚠️' : '🔴'}</span>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:13, color: a.tipo==='warning' ? '#d97706' : '#dc2626' }}>{a.msg}</div>
-                <div style={{ fontSize:11, color: muted, marginTop:2 }}>Toca para ver detalle →</div>
-              </div>
-            </div>
-          ))
-        }
-      </div>
-
-      {/* Modal detalle alerta */}
-      {ddOpen && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:24, width:'100%', maxWidth:480, maxHeight:'80vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <div style={{ fontSize:15, fontWeight:600, color: text }}>
-                {ddOpen === 'eval' ? '⚠️ Sin evaluación trimestral' : '🔴 Sin asistir (últimos 5 días)'}
-              </div>
-              <button onClick={() => setDdOpen(null)} style={{ background:'transparent', border:'none', color: muted, cursor:'pointer', fontSize:20 }}>✕</button>
-            </div>
-            {ddData.map((j: any) => (
-              <div key={j.id} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
-                <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg,#3730a3,#4f46e5)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, color:'white', flexShrink:0 }}>
-                  {j.nombre?.split(' ').map((n:string)=>n[0]).join('').slice(0,2)}
-                </div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13, color: text, fontWeight:500 }}>{j.nombre}</div>
-                  <div style={{ fontSize:11, color: muted }}>{j.categoria}</div>
-                </div>
-                <div style={{ display:'flex', gap:6 }}>
-                  {linkWhatsApp(j.telefono) && <WhatsAppBtn href={linkWhatsApp(j.telefono)!} variant="compact" />}
-                  {ddOpen === 'eval' && <button onClick={() => { setDdOpen(null); router.push(`/jugadores/${j.id}`) }} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'5px 10px', fontSize:11, cursor:'pointer' }}>Evaluar</button>}
-                </div>
-              </div>
-            ))}
+      {bloques.length === 0 ? (
+        <div style={{ ...card, padding: 34, textAlign: 'center' }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>☕</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: text, marginBottom: 4 }}>Hoy no hay clases</div>
+          <div style={{ fontSize: 12, color: muted }}>
+            Ningún grupo entrena hoy, o el día está marcado sin clase.
           </div>
+        </div>
+      ) : (
+        <div className="anim-lista" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {bloques.map(b => {
+            // El que está corriendo ahora se destaca: es el que el profe tiene
+            // enfrente cuando abre el teléfono.
+            const enCurso = horaAhora >= hhmm(b.hora_inicio) && horaAhora <= hhmm(b.hora_fin)
+            return (
+              <div key={b.id} style={{ ...card, overflow: 'hidden',
+                border: enCurso ? '2px solid #4f46e5' : '1px solid #e2e8f0' }}>
+                <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 18, fontWeight: 800, color: text, fontVariantNumeric: 'tabular-nums' }}>
+                        {rangoHorario(b.hora_inicio, b.hora_fin)}
+                      </span>
+                      {enCurso && (
+                        <span style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+                          fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 20 }}>
+                          AHORA
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: text, marginTop: 3 }}>{b.nombre}</div>
+                    <div style={{ fontSize: 12, color: muted, marginTop: 1 }}>📍 {sedeLabel(b.sede)}</div>
+                  </div>
+                  <Link href="/asistencia"
+                    style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+                      textDecoration: 'none', borderRadius: 9, padding: '9px 15px', fontSize: 13, fontWeight: 700 }}>
+                    Pasar lista
+                  </Link>
+                </div>
+
+                <div style={{ padding: '12px 18px' }}>
+                  <div style={{ fontSize: 11, color: hint, fontWeight: 600, textTransform: 'uppercase',
+                    letterSpacing: '0.4px', marginBottom: 8 }}>
+                    {b.alumnos.length} alumno{b.alumnos.length === 1 ? '' : 's'}
+                  </div>
+                  {b.alumnos.length === 0 ? (
+                    <div style={{ fontSize: 12, color: hint }}>Este grupo todavía no tiene inscritos.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {b.alumnos.map(a => (
+                        <span key={a.id}
+                          style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 20,
+                            padding: '5px 11px', fontSize: 12, color: text }}>
+                          {a.nombre}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </AppLayout>

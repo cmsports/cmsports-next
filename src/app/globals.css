@@ -79,17 +79,30 @@ body {
   }
 }
 
+/* Las entradas de contenedores son SOLO opacidad, sin `transform`.
+   ─────────────────────────────────────────────────────────────────────────
+   Un `transform` en un elemento hace que sus descendientes `position: fixed`
+   se posicionen contra él en vez de contra la pantalla. Como esto se aplica a
+   la página entera y a cada tarjeta, y los modales viven adentro, el overlay
+   quedaba con alto 0: la pantalla se oscurecía y el modal no aparecía nunca.
+   Medido en el navegador: con `translateY(8px)` el hijo fijo mide 0px; con
+   solo opacidad mide los 720px de la pantalla.
+   El movimiento se conserva donde el elemento animado no envuelve a nadie
+   fijo: `surge` para la caja del modal y `entraDesdeAbajo` para los avisos. */
 @keyframes entra {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* Igual que `entra`, pero con nombre propio: cada módulo lo lleva en el estilo
    en línea de su constante de tarjeta, y ese nombre es lo que después permite
    engancharles el hover desde acá sin tocar treinta archivos otra vez. */
+/* Sin `transform` por lo mismo: hay tarjetas que llevan su modal adentro, y
+   con transform el overlay se posicionaba contra la tarjeta —que además suele
+   tener overflow:hidden— en vez de contra la pantalla. */
 @keyframes entraTarjeta {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 @keyframes aparece {
