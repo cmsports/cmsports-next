@@ -4,7 +4,7 @@
 // embeberlo como tab dentro de Jugadores. El wrapper AppLayout ahora vive
 // afuera (en la página que lo usa).
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
@@ -16,7 +16,7 @@ import { montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { diaDesdeFecha, hhmm, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
-import { sedeLabel } from '@/lib/domain/sedeGrupo'
+import { entrenaEnSede, sedeLabel } from '@/lib/domain/sedeGrupo'
 import {
   guardarJugadoresCache,
   obtenerJugadoresCache,
@@ -25,8 +25,7 @@ import {
   quitarDeCola,
   type AsistenciaPendiente,
 } from '@/lib/offline/db'
-import { cachedFetch, invalidate } from '@/lib/query-cache'
-import { useEnVivo } from '@/lib/useEnVivo'
+import { cachedFetch } from '@/lib/query-cache'
 
 const supabase = createClient()
 
@@ -76,6 +75,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [busqueda, setBusqueda] = useState('')
   const [loading, setLoading] = useState(true)
   const [registrando, setRegistrando] = useState<string | null>(null)
+  const [registrandoAusente, setRegistrandoAusente] = useState<string | null>(null)
   const [eliminando, setEliminando] = useState<string | null>(null)
   const [jugadorPropio, setJugadorPropio] = useState<any>(null)
   const [yaRegistroHoy, setYaRegistroHoy] = useState(false)
@@ -98,6 +98,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // porque no descuentan sesión ni cuentan en el porcentaje: se cobran aparte.
   const [extrasHoy,    setExtrasHoy]    = useState<ClaseExtraHoy[]>([])
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
+  const [sedeFiltraTabla, setSedeFiltraTabla] = useState('')
   const [mostrarOtros, setMostrarOtros] = useState(false)
   const [buscaOtro,    setBuscaOtro]    = useState('')
 
@@ -159,32 +160,25 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       ? `asist:jug:${perfil.jugador_id}`
       : `asist:jugs:${id}`
 
-    // Las dos consultas son independientes —la asistencia del día no necesita
-    // la lista de jugadores— y antes iban una después de la otra: dos viajes
-    // en fila en la pantalla que más se abre. Se lanzan juntas y se revisan en
-    // el mismo orden que antes, así el mensaje de error no cambia.
-    const jugadoresPide = cachedFetch(jugKey, async () => {
-      let q = supabase.from('jugadores')
-        .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
-        .eq('club_id', id).eq('estado', 'activo').order('nombre')
-      if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
-      const { data, error } = await q
-      if (error) throw error
-      return data || []
-    }, 60_000, ['jugadores'])
-    const asistenciasPide = supabase
-      .from('asistencia').select('id,jugador_id,hora,fecha,estado')
-      .eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
-
     let j: any[]
     try {
-      j = await jugadoresPide
+      j = await cachedFetch(jugKey, async () => {
+        let q = supabase.from('jugadores')
+          .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
+          .eq('club_id', id).eq('estado', 'activo').order('nombre')
+        if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
+        const { data, error } = await q
+        if (error) throw error
+        return data || []
+      }, 60_000)
     } catch (e: any) {
       setMensaje({ tipo: 'error', texto: e?.message || 'No fue posible cargar los jugadores' })
       return
     }
 
-    const { data: a, error: asistenciasError } = await asistenciasPide
+    const { data: a, error: asistenciasError } = await supabase
+      .from('asistencia').select('id,jugador_id,hora,fecha,estado')
+      .eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
     if (asistenciasError) {
       setMensaje({ tipo: 'error', texto: asistenciasError.message })
       return
@@ -290,61 +284,42 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Todo se calcula para la FECHA ELEGIDA, no para hoy. Es lo que permite
   // completar el dia que se olvido: los grupos que se dictaban ese dia y los
   // que estaban inscritos ENTONCES, que no son necesariamente los de ahora.
-  const cargarBloquesDelDia = useCallback(async () => {
+  useEffect(() => {
     if (!clubId || !esAdminOProfesor || !fechaVista) return
-    const dia = diaDesdeFecha(fechaVista)
-    if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
+    let vigente = true
+    void (async () => {
+      const dia = diaDesdeFecha(fechaVista)
+      if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
 
-    const { data: bloques } = await supabase.from('bloques_horario')
-      .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
-      .eq('club_id', clubId).eq('dia_semana', dia)
-      .lte('vigente_desde', fechaVista)
-      .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
-      .order('hora_inicio')
-    const delDia = (bloques ?? []) as BloqueDelDia[]
-    const bloqueIds = delDia.map(b => b.id)
+      const [{ data: bloques }, { data: rel }] = await Promise.all([
+        supabase.from('bloques_horario')
+          .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
+          .eq('club_id', clubId).eq('dia_semana', dia)
+          .lte('vigente_desde', fechaVista)
+          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
+          .order('hora_inicio'),
+        // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
+        // alguien pudo haber salido del grupo la semana pasada y ese dia si
+        // entrenaba.
+        supabase.from('bloque_jugadores')
+          .select('bloque_id,jugador_id')
+          .lte('vigente_desde', fechaVista)
+          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`),
+      ])
+      if (!vigente) return
 
-    // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
-    // alguien pudo haber salido del grupo la semana pasada y ese dia si
-    // entrenaba. Se pide con `in(bloque_id)` sobre los bloques ya filtrados
-    // por club — antes se apoyaba solo en RLS y arrastraba todo el club
-    // hasta filtrarlo en el cliente.
-    let rel: { bloque_id: string; jugador_id: string }[] = []
-    if (bloqueIds.length > 0) {
-      const { data } = await supabase.from('bloque_jugadores')
-        .select('bloque_id,jugador_id')
-        .in('bloque_id', bloqueIds)
-        .lte('vigente_desde', fechaVista)
-        .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
-      rel = (data ?? []) as { bloque_id: string; jugador_id: string }[]
-    }
-
-    const porBloque: Record<string, string[]> = {}
-    for (const r of rel) {
-      ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
-    }
-    setBloquesDelDia(delDia)
-    setInscritosDe(porBloque)
+      const delDia = (bloques ?? []) as BloqueDelDia[]
+      const suyos = new Set(delDia.map(b => b.id))
+      const porBloque: Record<string, string[]> = {}
+      for (const r of rel ?? []) {
+        if (!suyos.has(r.bloque_id)) continue
+        ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
+      }
+      setBloquesDelDia(delDia)
+      setInscritosDe(porBloque)
+    })()
+    return () => { vigente = false }
   }, [clubId, esAdminOProfesor, fechaVista])
-
-  // La carga es asincrónica: el setState ocurre cuando vuelve la consulta, no
-  // durante el efecto. La regla no distingue ese caso y marca falso positivo.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void cargarBloquesDelDia() }, [cargarBloquesDelDia])
-
-  // Cambiar a alguien de grupo o de sede se hace desde su ficha, en otra
-  // pantalla. Sin esto, la lista se quedaba con el reparto que trajo al abrirse:
-  // los cupos se movían al toque —esa pantalla sí escuchaba la tabla— pero acá
-  // el jugador seguía saliendo en su bloque y su sede viejos, y no había forma
-  // de pasarle lista en el nuevo salvo recargar la página entera.
-  //
-  // Se refresca también la lista de jugadores, que va por caché de un minuto y
-  // trae el horario y la sede que muestra cada fila.
-  useEnVivo(['bloque_jugadores', 'bloques_horario'], clubId, () => {
-    if (clubId) invalidate(`asist:jugs:${clubId}`)
-    void cargarBloquesDelDia()
-    if (clubId) void cargarDatos(clubId)
-  }, { conClub: ['bloques_horario'] })
 
   // Los bloques que le tocan hoy al propio jugador.
   useEffect(() => {
@@ -454,9 +429,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       return
     }
     setBuscaOtro('')
-    // La fecha que se está mirando, no hoy: anotar una visita en un día pasado
-    // recargaba las extras de hoy y la recién creada no aparecía.
-    await cargarExtras(fechaVista)
+    await cargarExtras(hoy)
   }
 
   async function guardarMonto() {
@@ -480,81 +453,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (res.error) { setMensaje({ tipo: 'error', texto: res.error }); setTimeout(() => setMensaje(null), 6000); return }
     setModalMonto(null)
     await cargarExtras(fechaVista)
-  }
-
-  /**
-   * Recarga lo que la pantalla está mostrando de verdad.
-   *
-   * Hay dos listas y cada una tiene su carga: la de hoy (`asistencias`) y la
-   * del día que se está mirando (`asistenciasDia`). Llamar siempre a la de hoy
-   * hacía que registrar en una fecha pasada guardara bien y no se viera: la
-   * fila seguía ofreciendo "Marcar presente" como si el clic no hubiera hecho
-   * nada, y quedaba pareciendo que el botón estaba roto.
-   *
-   * Va en una función y no repetido en cada sitio porque justamente eso fue lo
-   * que falló: el borrado sí distinguía las dos listas y el registro no.
-   */
-  async function refrescarDia() {
-    if (fechaVista === hoy) await cargarDatos()
-    else await cargarAsistenciasDia(fechaVista)
-  }
-
-  /**
-   * "Es de este grupo": convierte una visita mal anotada en asistencia normal.
-   *
-   * Primero marca la asistencia y después borra la extra, y no al revés: si el
-   * borrado falla queda el día registrado dos veces —molesto pero visible y
-   * recuperable—, mientras que al revés se perdería el registro entero.
-   */
-  async function convertirExtraEnAsistencia(jugadorId: string, extraId: string) {
-    setRegistrando(jugadorId)
-    const horaRegistro = fechaVista !== hoy && bloqueElegido ? hhmm(bloqueElegido.hora_inicio) : hora
-
-    const marcada = await registrarAsistenciaAction(clubId!, jugadorId, fechaVista, horaRegistro)
-    if (marcada.error) {
-      setMensaje({ tipo: 'error', texto: marcada.error })
-      setRegistrando(null)
-      setTimeout(() => setMensaje(null), 6000)
-      return
-    }
-
-    const borrada = await eliminarClaseExtraordinaria({ id: extraId })
-    setRegistrando(null)
-    if (borrada.error) {
-      // El caso típico: la extra ya se cobró. La plata no se deshace desde acá.
-      setMensaje({ tipo: 'error', texto: `Quedó marcada la asistencia, pero la clase extra no se pudo borrar: ${borrada.error}` })
-      setTimeout(() => setMensaje(null), 9000)
-    }
-    await refrescarDia()
-    await cargarExtras(fechaVista)
-  }
-
-  async function quitarAsistencia(jugadorId: string) {
-    const id = asistenciaIdDe.get(jugadorId)
-    if (!id) return
-    const nombre = jugadores.find(j => j.id === jugadorId)?.nombre ?? 'este jugador'
-    await handleEliminar(id, nombre)
-  }
-
-  /**
-   * Marca ausente sin descontar sesión: el jugador estaba inscrito ese día y no
-   * llegó. Pasa por `corregirAsistencia` para que el estado quede auditado y
-   * las sesiones usadas se recalculen. Igual que Presente, se puede deshacer
-   * desde el mismo botón (queda como "quitar" para volver a azul).
-   */
-  async function registrarAusente(jugadorId: string) {
-    if (yaRegistrado.has(jugadorId)) return
-    setRegistrando(jugadorId)
-    const result = await corregirAsistencia({ jugadorId, fecha: fechaVista, estado: 'ausente' })
-    if (result.error) {
-      setMensaje({ tipo: 'error', texto: result.error })
-      setRegistrando(null)
-      setTimeout(() => setMensaje(null), 6000)
-      return
-    }
-    await refrescarDia()
-    setRegistrando(null)
-    setBusqueda('')
   }
 
   async function registrarAsistencia(jugadorId: string) {
@@ -605,9 +503,22 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       setRegistrando(null)
       return
     }
-    await refrescarDia()
+    await cargarDatos()
     setRegistrando(null)
     setBusqueda('')
+  }
+
+  async function registrarAusente(jugadorId: string) {
+    setRegistrandoAusente(jugadorId)
+    const result = await corregirAsistencia({ jugadorId, fecha: fechaVista, estado: 'ausente' })
+    if (result.error) {
+      setMensaje({ tipo: 'error', texto: result.error })
+      setTimeout(() => setMensaje(null), 6000)
+    } else {
+      if (fechaVista === hoy) await cargarDatos()
+      else await cargarAsistenciasDia(fechaVista)
+    }
+    setRegistrandoAusente(null)
   }
 
   async function handleEliminar(asistenciaId: string, nombreJugador: string) {
@@ -616,8 +527,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     const result = await eliminarAsistencia(asistenciaId)
     if (result.error) {
       setMensaje({ tipo: 'error', texto: result.error })
+    } else if (fechaVista === hoy) {
+      await cargarDatos()
     } else {
-      await refrescarDia()
+      await cargarAsistenciasDia(fechaVista)
     }
     setEliminando(null)
   }
@@ -684,45 +597,28 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // siempre de hoy.
   const yaRegistrado = new Set(asistenciasMostradas.map(a => a.jugador_id))
 
-  // Para poder deshacer desde la misma lista: antes había que bajar a la tabla
-  // de abajo a buscar la fila y apretar la cruz.
-  const asistenciaIdDe = new Map(asistenciasMostradas.map(a => [a.jugador_id, a.id]))
-  const estadoDe = new Map<string, string>(asistenciasMostradas.map(a => [a.jugador_id, a.estado ?? 'presente']))
-  const extraDe = new Map(extrasHoy.map(e => [e.jugador_id, e]))
+  const sedesDisponibles = useMemo(() =>
+    [...new Set(jugadores.map((j: any) => j.sede).filter((s: string) => s && s !== 'ambos'))].sort() as string[]
+  , [jugadores])
 
-  // Registrar es lo que se hace en la cancha; completar un día viejo es otra
-  // cosa y el botón tiene que decirlo antes de que lo aprieten.
-  const etiquetaMarcar = fechaVista === hoy ? '✅ Registrar' : '✅ Marcar presente'
+  const jugadorBloqueNombreMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const [bloqueId, ids] of Object.entries(inscritosDe)) {
+      const bloque = bloquesDelDia.find(b => b.id === bloqueId)
+      if (!bloque) continue
+      for (const jid of ids) { if (!map.has(jid)) map.set(jid, bloque.nombre) }
+    }
+    return map
+  }, [inscritosDe, bloquesDelDia])
 
-  // El calendario llega hasta donde uno quiera: ver quién entrena el martes que
-  // viene es planificación, y antes había que abrir el horario para saberlo.
-  //
-  // Lo que no se puede es marcar asistencia ahí. Nadie vino todavía: quedaría
-  // una presencia inventada que descuenta una sesión del plan, y como el día no
-  // venció nadie la va a ir a corregir. La lista se ve, los botones no.
-  const esFuturo = fechaVista > hoy
-
-  /**
-   * Una clase extra que no puede ser cierta: dice que el jugador vino de visita
-   * a un grupo del que sí es parte ese día.
-   *
-   * Pasa cuando lo inscriben al grupo después de haberle anotado la visita —el
-   * mismo día, más tarde—, porque la inscripción arranca a las 00:00 y alcanza
-   * para atrás la clase que ya había ocurrido. La fila queda diciendo dos cosas
-   * opuestas y hasta ahora no había forma de arreglarla desde acá.
-   *
-   * Venir a OTRO grupo un día en que además entrenás en el tuyo sí es legítimo,
-   * y por eso no alcanza con "tiene extra y tiene grupo": se mira a qué grupo
-   * apunta la extra.
-   */
-  function extraContradice(jugadorId: string) {
-    const e = extraDe.get(jugadorId)
-    if (!e) return false
-    if (!tieneBloqueEseDia(jugadorId)) return false
-    // Sin grupo anotado, la extra solo vale para quien ese día no entrenaba.
-    if (!e.bloque_id) return true
-    return (inscritosDe[e.bloque_id] ?? []).includes(jugadorId)
-  }
+  const asistenciasFiltradas = useMemo(() =>
+    sedeFiltraTabla
+      ? asistenciasMostradas.filter(a => {
+          const jug = jugadores.find((j: any) => j.id === a.jugador_id)
+          return jug && entrenaEnSede(jug.sede, sedeFiltraTabla)
+        })
+      : asistenciasMostradas
+  , [asistenciasMostradas, sedeFiltraTabla, jugadores])
 
   if (loading) return (
     <div style={{ padding: 40, textAlign: 'center', color: hint }}>Cargando...</div>
@@ -804,13 +700,29 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       {/* ASISTENCIAS DEL DÍA */}
       <div style={{ ...card, overflow: 'hidden', marginBottom: 24 }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text, textTransform: 'capitalize' }}>
-          Asistencias {fechaVista === hoy ? 'de hoy' : `del ${formatFechaLarga(fechaVista)}`} ({asistenciasMostradas.length})
+          Asistencias {fechaVista === hoy ? 'de hoy' : `del ${formatFechaLarga(fechaVista)}`} ({asistenciasFiltradas.length})
           {extrasMostradas.length > 0 && (
             <span style={{ marginLeft: 8, fontWeight: 600, color: '#a16207' }}>
               · {extrasMostradas.length} clase{extrasMostradas.length === 1 ? '' : 's'} extra
             </span>
           )}
         </div>
+        {sedesDisponibles.length > 1 && (
+          <div style={{ display: 'flex', gap: 6, padding: '8px 16px', borderBottom: '1px solid #e2e8f0' }}>
+            {(['', ...sedesDisponibles] as string[]).map(s => {
+              const label = s === '' ? 'Todas' : s === 'paine' ? 'Fátima' : s.charAt(0).toUpperCase() + s.slice(1)
+              const activo = s === sedeFiltraTabla
+              return (
+                <button key={s} onClick={() => setSedeFiltraTabla(s)}
+                  style={{ padding: '4px 12px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                    border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
+                    background: activo ? '#ede9fe' : '#fff', color: activo ? '#4f46e5' : muted }}>
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
         <div style={{ display: 'flex', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
             {cargandoDia ? (
@@ -823,25 +735,26 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Jugador</th>
                     <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Hora</th>
+                    {bloquesDelDia.length > 0 && <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Bloque</th>}
                     {esAdminOProfesor && <th style={{ padding: '10px 16px', width: 60 }}></th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {asistenciasMostradas.map(a => {
+                  {asistenciasFiltradas.map(a => {
                     const jug = jugadores.find(j => j.id === a.jugador_id)
-                    const filaAusente = a.estado === 'ausente'
+                    const ausente = a.estado === 'ausente'
                     return (
-                      <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9', background: filaAusente ? '#fef2f2' : undefined }}>
-                        <td style={{ padding: '12px 16px', fontWeight: 600, color: text }}>
+                      <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9', background: ausente ? '#fff1f2' : undefined }}>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, color: ausente ? '#dc2626' : text }}>
                           {jug?.nombre || '—'}
-                          {filaAusente && (
-                            <span style={{ marginLeft: 8, background: '#dc2626', color: 'white',
-                              padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>
-                              AUSENTE
-                            </span>
-                          )}
+                          {ausente && <span style={{ marginLeft: 8, background: '#fee2e2', color: '#dc2626', padding: '2px 6px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>AUSENTE</span>}
                         </td>
                         <td style={{ padding: '12px 16px', fontSize: 13, color: muted, fontVariantNumeric: 'tabular-nums' }}>{a.hora?.slice(0, 5)}</td>
+                        {bloquesDelDia.length > 0 && (
+                          <td style={{ padding: '12px 16px', fontSize: 12, color: hint }}>
+                            {jugadorBloqueNombreMap.get(a.jugador_id) ?? '—'}
+                          </td>
+                        )}
                         {esAdminOProfesor && (
                           <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                             {a.pendienteSync ? (
@@ -906,7 +819,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       {/* GRÁFICO DE ASISTENCIA (Admin/Profesor) */}
       {esAdminOProfesor && clubId && (
         <div style={{ marginBottom: 24 }}>
-          <GraficoAsistencia clubId={clubId} modo="completo" />
+          <GraficoAsistencia clubId={clubId} modo="completo" fechaSeleccionada={fechaVista} bloquesDelDia={bloquesDelDia} inscritosDe={inscritosDe} />
         </div>
       )}
 
@@ -957,7 +870,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                   quiénes estaban inscritos entonces y dónde se escribe. */}
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
-                <input type="date" value={fechaVista}
+                <input type="date" value={fechaVista} max={hoy}
                   onChange={e => { if (e.target.value) { setFechaVista(e.target.value); setBloqueSel('') } }}
                   style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
                     padding: '7px 10px', color: text, fontSize: 13, outline: 'none' }} />
@@ -973,14 +886,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               {bloquesDelDia.length === 0 && (
                 <div style={{ fontSize: 11, color: hint }}>
                   Ese día no funciona ningún grupo.
-                </div>
-              )}
-
-              {esFuturo && (
-                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
-                  padding: '8px 11px', fontSize: 11, color: '#1e40af', lineHeight: 1.5 }}>
-                  Día que todavía no llega: se ve quién tiene entrenamiento, pero no se
-                  puede pasar lista hasta que sea el día.
                 </div>
               )}
             </div>
@@ -1054,70 +959,38 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
               {filtrados.map(j => {
                 const ya = yaRegistrado.has(j.id)
-                const estado = estadoDe.get(j.id)
-                const esAusente = ya && estado === 'ausente'
-                const extra = extraDe.get(j.id)
-                const contradice = extraContradice(j.id)
+                const yaExtra = yaTieneExtra.has(j.id)
                 // Quien ese día no tiene ningún grupo no puede tener asistencia
                 // normal: lo suyo es siempre una clase extra. El botón lo dice
                 // desde antes de apretarlo, en vez de avisarlo después.
                 const esExtra = bloquesDelDia.length > 0 && !tieneBloqueEseDia(j.id)
-                // La fila solo se apaga cuando el día quedó resuelto de verdad.
-                // Tener una clase extra ya no la congela: esa era la única razón
-                // por la que una contradicción no se podía arreglar desde acá.
-                const resuelto = ya
-                const enCurso = registrando === j.id
+                const hecho = ya || yaExtra
                 return (
-                  <div key={j.id}
-                    onClick={() => {
-                      if (resuelto || enCurso || esFuturo) return
-                      if (contradice && extra) void convertirExtraEnAsistencia(j.id, extra.id)
-                      else void registrarAsistencia(j.id)
-                    }}
+                  <div key={j.id} onClick={() => !hecho && !esExtra && registrarAsistencia(j.id)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
-                      borderBottom: '1px solid #e2e8f0', cursor: resuelto || enCurso || esFuturo ? 'default' : 'pointer', opacity: resuelto ? 0.6 : 1,
-                      background: esAusente ? '#fef2f2' : contradice ? '#fef2f2' : esExtra && !resuelto ? '#fffbeb' : undefined }}>
+                      borderBottom: '1px solid #e2e8f0', cursor: hecho || esExtra ? 'default' : 'pointer', opacity: hecho ? 0.6 : 1,
+                      background: esExtra && !hecho ? '#fffbeb' : undefined }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
                       <div style={{ fontSize: 11, color: muted }}>
                         {j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}
                         {esExtra && <span style={{ color: '#a16207', fontWeight: 600 }}> · ese día no entrena</span>}
-                        {contradice && <span style={{ color: '#b91c1c', fontWeight: 600 }}> · anotado como visita, pero es de este grupo</span>}
                       </div>
                     </div>
-                    {enCurso
-                      ? <span style={{ color: muted, fontSize: 12 }}>Guardando...</span>
-                      : esFuturo
-                      ? <span style={{ color: hint, fontSize: 11 }}>{esExtra ? 'ese día no entrena' : 'le toca'}</span>
+                    {yaExtra
+                      ? <span style={{ background: '#fef9c3', color: '#713f12', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🟡 Clase extra</span>
                       : ya
-                        ? esAusente
-                          ? <button onClick={e => { e.stopPropagation(); void quitarAsistencia(j.id) }}
-                              title="Quitar la ausencia de este día"
-                              style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✗ Ausente</button>
-                          : <button onClick={e => { e.stopPropagation(); void quitarAsistencia(j.id) }}
-                              title="Quitar la asistencia de este día"
-                              style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>✅ Registrado</button>
-                        : contradice
-                          ? <button style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>Es de este grupo</button>
-                          : extra
-                            // Vino a otro grupo y además le tocaba el suyo: las dos
-                            // cosas son ciertas, así que se avisa y se deja marcar.
-                            ? <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ background: '#fef9c3', color: '#713f12', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>🟡 Clase extra</span>
-                                <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>{etiquetaMarcar}</button>
+                        ? (asistenciasMostradas.find(a => a.jugador_id === j.id)?.estado === 'ausente'
+                            ? <span style={{ background: '#fee2e2', color: '#dc2626', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>✗ Ausente</span>
+                            : <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>)
+                        : (registrando === j.id || registrandoAusente === j.id)
+                          ? <span style={{ color: muted, fontSize: 12 }}>{registrandoAusente === j.id ? 'Marcando ausente...' : 'Registrando...'}</span>
+                          : esExtra
+                            ? <button onClick={e => { e.stopPropagation(); registrarExtra(j.id, null) }} style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
+                            : <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                                <button onClick={() => registrarAsistencia(j.id)} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Presente</button>
+                                <button onClick={() => registrarAusente(j.id)} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>✗ Ausente</button>
                               </div>
-                            : esExtra
-                              ? <button style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
-                              // No registrado y le tocaba entrenar: dos botones.
-                              // El de presente sigue disparándose al tocar la fila,
-                              // así que el clic ancho de siempre no cambia; el de
-                              // ausente detiene la propagación para que solo él actúe.
-                              : <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <button style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>{etiquetaMarcar}</button>
-                                  <button onClick={e => { e.stopPropagation(); void registrarAusente(j.id) }}
-                                    title="Marcar ausente"
-                                    style={{ background: '#fff', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✗ Ausente</button>
-                                </div>
                     }
                   </div>
                 )
@@ -1128,7 +1001,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:
               sin saber a qué horario vino no se puede cobrar la clase. Sirve
               también para días pasados, porque escribe en la fecha elegida. */}
-          {bloqueElegido && !esFuturo && (
+          {bloqueElegido && (
             <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
               {!mostrarOtros ? (
                 <button onClick={() => setMostrarOtros(true)}
