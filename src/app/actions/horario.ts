@@ -37,6 +37,19 @@ function cierreISO(): string {
   return cierreVigencia(hoyISO())
 }
 
+/** Fechas de lun-vie de la semana actual en Chile (clave = dia_semana del bloque). */
+function fechasDeSemanaChile(): Record<string, string> {
+  const hoy = new Date()
+  const diaStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Santiago', weekday: 'short' }).format(hoy)
+  const diaJS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(diaStr)
+  const offsetLunes = diaJS === 0 ? 6 : diaJS - 1 // cuántos días desde el lunes
+  const result: Record<string, string> = {}
+  for (const [dia, idx] of Object.entries({ lun: 0, mar: 1, mie: 2, jue: 3, vie: 4 })) {
+    result[dia] = fechaChile(new Date(hoy.getTime() + (idx - offsetLunes) * 86400000))
+  }
+  return result
+}
+
 async function guardarProfesores(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
@@ -433,10 +446,41 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     if (error) return { error: 'No se pudo cerrar la asignación anterior: ' + error.message }
   }
 
+  const semana = fechasDeSemanaChile()
+
   if (entran.length > 0) {
+    // ponytail: vigente_desde = lunes de esta semana para que el jugador aparezca
+    // en la lista de asistencia de todos los días que ya pasaron en la semana actual
     const { error } = await supabase.from('bloque_jugadores')
-      .insert(entran.map(bloque_id => ({ bloque_id, jugador_id: params.jugadorId, vigente_desde: hoyISO() })))
+      .insert(entran.map(bloque_id => ({ bloque_id, jugador_id: params.jugadorId, vigente_desde: semana['lun'] })))
     if (error) return { error: 'No se pudo asignar a los bloques: ' + error.message }
+  }
+
+  // Transferir asistencias de esta semana cuando un día cambia por otro del mismo horario.
+  // Ej: sale miércoles 17:00, entra martes 17:00 → mueve la asistencia del mie al mar.
+  if (salen.length > 0 && entran.length > 0) {
+    const { data: bloquesSalen } = await supabase.from('bloques_horario')
+      .select('id,dia_semana,hora_inicio')
+      .in('id', salen.map((r: Abierta) => r.bloque_id))
+
+    for (const bSale of (bloquesSalen ?? [])) {
+      const bEntra = bloques.find(b => entran.includes(b.id) && b.hora_inicio === bSale.hora_inicio)
+      if (!bEntra || bEntra.dia_semana === bSale.dia_semana) continue
+
+      const fechaVieja = semana[bSale.dia_semana]
+      const fechaNueva = semana[bEntra.dia_semana]
+      if (!fechaVieja || !fechaNueva) continue
+
+      const { data: asistVieja } = await supabase.from('asistencia')
+        .select('id').eq('jugador_id', params.jugadorId).eq('fecha', fechaVieja).maybeSingle()
+      if (!asistVieja) continue
+
+      const { data: asistNueva } = await supabase.from('asistencia')
+        .select('id').eq('jugador_id', params.jugadorId).eq('fecha', fechaNueva).maybeSingle()
+      if (asistNueva) continue // ya hay asistencia ese día, no sobreescribir
+
+      await supabase.from('asistencia').update({ fecha: fechaNueva }).eq('id', asistVieja.id)
+    }
   }
 
   // La inscripción arranca a las 00:00 de hoy, así que alcanza para atrás las
