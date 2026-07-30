@@ -25,7 +25,8 @@ import {
   quitarDeCola,
   type AsistenciaPendiente,
 } from '@/lib/offline/db'
-import { cachedFetch } from '@/lib/query-cache'
+import { cachedFetch, invalidate } from '@/lib/query-cache'
+import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
 
@@ -170,7 +171,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       const { data, error } = await q
       if (error) throw error
       return data || []
-    }, 60_000)
+    }, 60_000, ['jugadores'])
     const asistenciasPide = supabase
       .from('asistencia').select('id,jugador_id,hora,fecha,estado')
       .eq('club_id', id).eq('fecha', hoy).order('hora', { ascending: false })
@@ -289,48 +290,61 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Todo se calcula para la FECHA ELEGIDA, no para hoy. Es lo que permite
   // completar el dia que se olvido: los grupos que se dictaban ese dia y los
   // que estaban inscritos ENTONCES, que no son necesariamente los de ahora.
-  useEffect(() => {
+  const cargarBloquesDelDia = useCallback(async () => {
     if (!clubId || !esAdminOProfesor || !fechaVista) return
-    let vigente = true
-    void (async () => {
-      const dia = diaDesdeFecha(fechaVista)
-      if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
+    const dia = diaDesdeFecha(fechaVista)
+    if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
 
-      const { data: bloques } = await supabase.from('bloques_horario')
-        .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
-        .eq('club_id', clubId).eq('dia_semana', dia)
+    const { data: bloques } = await supabase.from('bloques_horario')
+      .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
+      .eq('club_id', clubId).eq('dia_semana', dia)
+      .lte('vigente_desde', fechaVista)
+      .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
+      .order('hora_inicio')
+    const delDia = (bloques ?? []) as BloqueDelDia[]
+    const bloqueIds = delDia.map(b => b.id)
+
+    // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
+    // alguien pudo haber salido del grupo la semana pasada y ese dia si
+    // entrenaba. Se pide con `in(bloque_id)` sobre los bloques ya filtrados
+    // por club — antes se apoyaba solo en RLS y arrastraba todo el club
+    // hasta filtrarlo en el cliente.
+    let rel: { bloque_id: string; jugador_id: string }[] = []
+    if (bloqueIds.length > 0) {
+      const { data } = await supabase.from('bloque_jugadores')
+        .select('bloque_id,jugador_id')
+        .in('bloque_id', bloqueIds)
         .lte('vigente_desde', fechaVista)
         .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
-        .order('hora_inicio')
-      if (!vigente) return
-      const delDia = (bloques ?? []) as BloqueDelDia[]
-      const bloqueIds = delDia.map(b => b.id)
+      rel = (data ?? []) as { bloque_id: string; jugador_id: string }[]
+    }
 
-      // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
-      // alguien pudo haber salido del grupo la semana pasada y ese dia si
-      // entrenaba. Se pide con `in(bloque_id)` sobre los bloques ya filtrados
-      // por club — antes se apoyaba solo en RLS y arrastraba todo el club
-      // hasta filtrarlo en el cliente.
-      let rel: { bloque_id: string; jugador_id: string }[] = []
-      if (bloqueIds.length > 0) {
-        const { data } = await supabase.from('bloque_jugadores')
-          .select('bloque_id,jugador_id')
-          .in('bloque_id', bloqueIds)
-          .lte('vigente_desde', fechaVista)
-          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
-        rel = (data ?? []) as { bloque_id: string; jugador_id: string }[]
-      }
-      if (!vigente) return
-
-      const porBloque: Record<string, string[]> = {}
-      for (const r of rel) {
-        ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
-      }
-      setBloquesDelDia(delDia)
-      setInscritosDe(porBloque)
-    })()
-    return () => { vigente = false }
+    const porBloque: Record<string, string[]> = {}
+    for (const r of rel) {
+      ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
+    }
+    setBloquesDelDia(delDia)
+    setInscritosDe(porBloque)
   }, [clubId, esAdminOProfesor, fechaVista])
+
+  // La carga es asincrónica: el setState ocurre cuando vuelve la consulta, no
+  // durante el efecto. La regla no distingue ese caso y marca falso positivo.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void cargarBloquesDelDia() }, [cargarBloquesDelDia])
+
+  // Cambiar a alguien de grupo o de sede se hace desde su ficha, en otra
+  // pantalla. Sin esto, la lista se quedaba con el reparto que trajo al abrirse:
+  // los cupos se movían al toque —esa pantalla sí escuchaba la tabla— pero acá
+  // el jugador seguía saliendo en su bloque y su sede viejos, y no había forma
+  // de pasarle lista en el nuevo salvo recargar la página entera.
+  //
+  // Se refresca también la lista de jugadores, que va por caché de un minuto y
+  // trae el horario y la sede que muestra cada fila.
+  useEnVivo(['bloque_jugadores', 'bloques_horario'], clubId, () => {
+    if (clubId) invalidate(`asist:jugs:${clubId}`)
+    void cargarBloquesDelDia()
+    if (clubId) void cargarDatos(clubId)
+  }, { conClub: ['bloques_horario'] })
 
   // Los bloques que le tocan hoy al propio jugador.
   useEffect(() => {
