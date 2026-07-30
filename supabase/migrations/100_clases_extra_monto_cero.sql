@@ -19,7 +19,8 @@ ALTER TABLE public.clases_extraordinarias
   CHECK (monto IS NULL OR monto >= 0);
 
 
--- ══ 2. registrar_clase_extraordinaria — permitir p_monto = 0 ════════════════
+-- ══ 2. registrar_clase_extraordinaria — permitir p_monto = 0 ════════════
+DROP FUNCTION IF EXISTS public.registrar_clase_extraordinaria(uuid, date, uuid, time, integer, text);
 CREATE OR REPLACE FUNCTION public.registrar_clase_extraordinaria(
   p_jugador_id uuid,
   p_fecha      date,
@@ -116,6 +117,11 @@ BEGIN
   UPDATE clases_extraordinarias SET monto = p_monto WHERE id = p_id;
 END;
 $$;
+
+
+-- Reponer permisos (el DROP borra los GRANTs anteriores)
+REVOKE EXECUTE ON FUNCTION public.registrar_clase_extraordinaria(uuid, date, uuid, time, integer, text) FROM PUBLIC, anon;
+GRANT  EXECUTE ON FUNCTION public.registrar_clase_extraordinaria(uuid, date, uuid, time, integer, text) TO authenticated;
 
 
 COMMIT;
