@@ -18,7 +18,9 @@ const supabase = createClient()
  *
  * Agrupa las ráfagas. Pasar lista son veinte clics seguidos y cada uno vuelve
  * por acá; sin esperar a que la ráfaga termine serían veinte recargas de la
- * lista completa en un minuto.
+ * lista completa en un minuto. 250ms alcanza a agrupar dos clics rápidos
+ * (los del profe caen cada 300-500ms) y deja el delay entre pestañas por
+ * debajo del cuarto de segundo, que es lo que se pedía notar.
  */
 export function useEnVivo(
   tablas: string[],
@@ -26,7 +28,7 @@ export function useEnVivo(
   recargar: () => void,
   opciones: { conClub?: string[]; esperaMs?: number } = {},
 ) {
-  const { conClub = [], esperaMs = 400 } = opciones
+  const { conClub = [], esperaMs = 250 } = opciones
 
   // La función de recarga se rearma en cada render. Guardarla en una referencia
   // evita volver a suscribirse cada vez, y se actualiza en un efecto porque
