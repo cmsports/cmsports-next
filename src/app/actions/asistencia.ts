@@ -1,10 +1,25 @@
 'use server'
 
 import { requirePerfil } from '@/lib/auth/require'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const STAFF = ['admin', 'superadmin', 'profesor']
 // Lo que toca plata: el profesor queda afuera.
 const ADMIN = ['admin', 'superadmin']
+
+/**
+ * Nadie asistió a una clase que no ocurrió.
+ *
+ * El calendario deja mirar hacia adelante —ver quién entrena el martes que viene
+ * es planificación— y la pantalla no muestra los botones esos días. Pero la
+ * pantalla no es el guardia: queda la pestaña vieja, la cola de offline que
+ * despierta tarde y quien llame la acción por su cuenta. Una presencia con fecha
+ * futura descuenta una sesión del plan y nadie la va a ir a corregir, porque el
+ * día todavía no venció.
+ */
+function fechaFutura(fecha: string): boolean {
+  return fecha > fechaChile()
+}
 
 /**
  * Registra la asistencia de un jugador. Solo el profesor o el administrador.
@@ -27,6 +42,9 @@ export async function registrarAsistenciaAction(
     return { error: 'Solo el profesor o el administrador registran la asistencia' }
   }
   if (clubId !== perfil.club_id) return { error: 'Acceso denegado' }
+  if (fechaFutura(fecha)) {
+    return { error: 'Ese día todavía no llega: la asistencia se pasa el mismo día o después' }
+  }
 
   const { data, error } = await supabase.rpc('registrar_asistencia_segura', {
     p_jugador_id: jugadorId, p_fecha: fecha, p_hora: hora,
@@ -56,6 +74,11 @@ export async function corregirAsistencia(params: {
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
   if (!['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
     return { error: 'Solo el admin o el profesor pueden corregir la asistencia' }
+  }
+  // Corregir el futuro no es corregir: es inventarlo. Vale igual para 'ausente',
+  // que también escribe una fila y cuenta en el porcentaje del jugador.
+  if (fechaFutura(params.fecha)) {
+    return { error: 'Ese día todavía no llega: no hay nada que corregir' }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -91,6 +114,11 @@ export async function registrarClaseExtraordinaria(params: {
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
   if (!STAFF.includes(perfil.rol ?? '')) {
     return { error: 'Solo el admin o el profesor pueden registrar una clase extraordinaria' }
+  }
+  // La visita también se cobra: anotarla antes de que ocurra es facturar algo
+  // que todavía no pasó.
+  if (fechaFutura(params.fecha)) {
+    return { error: 'Ese día todavía no llega: la visita se anota cuando ocurre' }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

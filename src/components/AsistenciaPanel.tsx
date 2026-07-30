@@ -694,6 +694,14 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // cosa y el botón tiene que decirlo antes de que lo aprieten.
   const etiquetaMarcar = fechaVista === hoy ? '✅ Registrar' : '✅ Marcar presente'
 
+  // El calendario llega hasta donde uno quiera: ver quién entrena el martes que
+  // viene es planificación, y antes había que abrir el horario para saberlo.
+  //
+  // Lo que no se puede es marcar asistencia ahí. Nadie vino todavía: quedaría
+  // una presencia inventada que descuenta una sesión del plan, y como el día no
+  // venció nadie la va a ir a corregir. La lista se ve, los botones no.
+  const esFuturo = fechaVista > hoy
+
   /**
    * Una clase extra que no puede ser cierta: dice que el jugador vino de visita
    * a un grupo del que sí es parte ese día.
@@ -949,7 +957,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                   quiénes estaban inscritos entonces y dónde se escribe. */}
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
-                <input type="date" value={fechaVista} max={hoy}
+                <input type="date" value={fechaVista}
                   onChange={e => { if (e.target.value) { setFechaVista(e.target.value); setBloqueSel('') } }}
                   style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
                     padding: '7px 10px', color: text, fontSize: 13, outline: 'none' }} />
@@ -965,6 +973,14 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               {bloquesDelDia.length === 0 && (
                 <div style={{ fontSize: 11, color: hint }}>
                   Ese día no funciona ningún grupo.
+                </div>
+              )}
+
+              {esFuturo && (
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
+                  padding: '8px 11px', fontSize: 11, color: '#1e40af', lineHeight: 1.5 }}>
+                  Día que todavía no llega: se ve quién tiene entrenamiento, pero no se
+                  puede pasar lista hasta que sea el día.
                 </div>
               )}
             </div>
@@ -1054,12 +1070,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 return (
                   <div key={j.id}
                     onClick={() => {
-                      if (resuelto || enCurso) return
+                      if (resuelto || enCurso || esFuturo) return
                       if (contradice && extra) void convertirExtraEnAsistencia(j.id, extra.id)
                       else void registrarAsistencia(j.id)
                     }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
-                      borderBottom: '1px solid #e2e8f0', cursor: resuelto || enCurso ? 'default' : 'pointer', opacity: resuelto ? 0.6 : 1,
+                      borderBottom: '1px solid #e2e8f0', cursor: resuelto || enCurso || esFuturo ? 'default' : 'pointer', opacity: resuelto ? 0.6 : 1,
                       background: esAusente ? '#fef2f2' : contradice ? '#fef2f2' : esExtra && !resuelto ? '#fffbeb' : undefined }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
@@ -1071,6 +1087,8 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                     </div>
                     {enCurso
                       ? <span style={{ color: muted, fontSize: 12 }}>Guardando...</span>
+                      : esFuturo
+                      ? <span style={{ color: hint, fontSize: 11 }}>{esExtra ? 'ese día no entrena' : 'le toca'}</span>
                       : ya
                         ? esAusente
                           ? <button onClick={e => { e.stopPropagation(); void quitarAsistencia(j.id) }}
@@ -1110,7 +1128,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:
               sin saber a qué horario vino no se puede cobrar la clase. Sirve
               también para días pasados, porque escribe en la fecha elegida. */}
-          {bloqueElegido && (
+          {bloqueElegido && !esFuturo && (
             <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
               {!mostrarOtros ? (
                 <button onClick={() => setMostrarOtros(true)}
