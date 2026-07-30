@@ -372,11 +372,22 @@ export async function resetearPasswordJugador(params: { jugadorId: string; nueva
   if (params.nuevaPassword.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
 
   const admin = createAdminClient()
-  const { data: perfilData } = await admin.from('perfiles').select('id').eq('jugador_id', params.jugadorId).eq('club_id', clubId).maybeSingle()
+  const { data: perfilData } = await admin.from('perfiles').select('id,email').eq('jugador_id', params.jugadorId).eq('club_id', clubId).maybeSingle()
   if (!perfilData) return { error: 'Este jugador no tiene cuenta de acceso' }
 
   const { error } = await admin.auth.admin.updateUserById(perfilData.id, { password: params.nuevaPassword })
   if (error) return { error: 'No se pudo cambiar la contraseña: ' + error.message }
+
+  // Espejar en el reporte: si no, quedaba viendo la clave vieja hasta el
+  // próximo reset masivo o hasta que alguien la volviera a cambiar. El admin
+  // acaba de tipearla, saberla es el motivo del reporte.
+  const { data: jug } = await admin.from('jugadores').select('email,telefono,rut').eq('id', params.jugadorId).single()
+  const { login, tipo } = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
+  await admin.from('credencial_visible').upsert({
+    usuario_id: perfilData.id, club_id: clubId, password_plano: params.nuevaPassword,
+    usuario_login: login, tipo_login: tipo,
+  })
+
   return { success: true }
 }
 

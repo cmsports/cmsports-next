@@ -23,7 +23,7 @@ describe('listarCredenciales', () => {
     mocks.requireAdminClub.mockResolvedValue({ error: null, clubId: CLUB })
   })
 
-  it('mezcla perfiles con su espejo y completa el login con datos del jugador cuando no tiene espejo', async () => {
+  it('mezcla perfiles con su espejo, y para los que no lo tienen genera la clave al vuelo', async () => {
     const perfiles = {
       select: () => ({ eq: () => ({ order: () => ({ order: () => Promise.resolve({ data: [
         { id: 'u-admin', nombre: 'Ana', email: 'ana@x.cl', rol: 'admin', jugador_id: null },
@@ -35,6 +35,7 @@ describe('listarCredenciales', () => {
       select: () => ({ eq: () => Promise.resolve({ data: [
         { usuario_id: 'u-j1', password_plano: 'colombagonzalez123', usuario_login: '958730364', tipo_login: 'celular', actualizado_en: '2026-07-30' },
       ] }) }),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
     }
     const jugadores = {
       select: () => ({ eq: () => Promise.resolve({ data: [
@@ -42,18 +43,25 @@ describe('listarCredenciales', () => {
         { id: 'j2', telefono: '931266944', rut: null },
       ] }) }),
     }
-    mocks.createAdminClient.mockReturnValue(adminConTablas({ perfiles, credencial_visible: espejos, jugadores }))
+    const updateUserById = vi.fn().mockResolvedValue({ error: null })
+    mocks.createAdminClient.mockReturnValue(adminConTablas(
+      { perfiles, credencial_visible: espejos, jugadores },
+      { auth: { admin: { updateUserById } } },
+    ))
 
     const r = await listarCredenciales()
 
     expect(r.filas).toHaveLength(3)
-    // El admin sale con su email como usuario.
-    expect(r.filas![0]).toMatchObject({ nombre: 'Ana', rol: 'admin', usuarioLogin: 'ana@x.cl', tipoLogin: 'email', passwordPlano: null })
-    // El jugador con espejo trae la clave.
+    // El admin sin espejo: se le generó y se muestra la clave.
+    expect(r.filas![0]).toMatchObject({ nombre: 'Ana', rol: 'admin', usuarioLogin: 'ana@x.cl', tipoLogin: 'email', passwordPlano: 'ana123' })
+    // El jugador que ya tenía espejo trae la clave existente.
     expect(r.filas![1]).toMatchObject({ nombre: 'Colomba Gonzalez', usuarioLogin: '958730364', passwordPlano: 'colombagonzalez123' })
-    // El jugador sin espejo se lista igual, con la clave en null para que el
-    // admin lo vea y pueda usar el botón de reseteo.
-    expect(r.filas![2]).toMatchObject({ nombre: 'Sofia Gaete', usuarioLogin: '931266944', tipoLogin: 'celular', passwordPlano: null })
+    // El jugador sin espejo se genera y ya sale con clave.
+    expect(r.filas![2]).toMatchObject({ nombre: 'Sofia Gaete', usuarioLogin: '931266944', tipoLogin: 'celular', passwordPlano: 'sofiagaete123' })
+    // Se aplicó en auth para los dos que no tenían.
+    expect(updateUserById).toHaveBeenCalledWith('u-admin', { password: 'ana123' })
+    expect(updateUserById).toHaveBeenCalledWith('u-j2', { password: 'sofiagaete123' })
+    expect(espejos.upsert).toHaveBeenCalled()
   })
 
   it('sin admin no lista nada', async () => {
@@ -143,12 +151,12 @@ describe('resetearTodasLasCredenciales', () => {
       auth: { admin: { updateUserById } },
       from: vi.fn((tabla: string) => {
         if (tabla === 'perfiles') return {
-          // El código encadena .eq('club_id', ...).eq('rol', 'jugador'), así
-          // que el mock devuelve los perfiles cuando llega la segunda cadena.
-          select: () => ({ eq: () => ({ eq: () => Promise.resolve({ data: [
+          // Solo un .eq('club_id', ...): el reset masivo ahora alcanza a todos
+          // los roles, no solo jugadores.
+          select: () => ({ eq: () => Promise.resolve({ data: [
             { id: 'u-j1', nombre: 'Colomba Gonzalez', email: null, jugador_id: 'j1' },
             { id: 'u-j2', nombre: 'Sofia Gaete', email: null, jugador_id: 'j2' },
-          ] }) }) }),
+          ] }) }),
         }
         if (tabla === 'jugadores') return {
           select: () => ({ in: () => Promise.resolve({ data: [

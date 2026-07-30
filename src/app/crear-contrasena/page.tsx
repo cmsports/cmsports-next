@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { cambiarPasswordPropia } from '@/app/actions/credenciales'
 
 const supabase = createClient()
 
@@ -54,9 +55,12 @@ export default function CrearContrasenaPage() {
     if (password !== confirmar) { setError('Las contraseñas no coinciden'); return }
     setGuardando(true)
     setError('')
-    const { error: err } = await supabase.auth.updateUser({ password })
+    // Pasa por una server action en vez de tocar auth directo, para que el
+    // espejo del reporte del admin también quede al día. Si esto falla, la
+    // clave sigue siendo la vieja y el usuario reintenta.
+    const r = await cambiarPasswordPropia(password)
     setGuardando(false)
-    if (err) { setError('No se pudo guardar la contraseña. El link puede haber expirado.'); return }
+    if (r.error) { setError(r.error); return }
     const { data: { session } } = await supabase.auth.getSession()
     const { data: p } = await supabase.from('perfiles').select('rol').eq('id', session?.user.id).single()
     if (p?.rol === 'superadmin') router.push('/superadmin')

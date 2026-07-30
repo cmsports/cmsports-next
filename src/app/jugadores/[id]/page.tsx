@@ -7,6 +7,7 @@ import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
+import { credencialDelJugador } from '@/app/actions/credenciales'
 import { formatRut } from '@/lib/rut'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import DocumentosJugador from '@/components/DocumentosJugador'
@@ -118,6 +119,7 @@ export default function JugadorDetallePage() {
   const [cambiandoPassword, setCambiandoPassword] = useState(false)
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
   const [recargaVersion, setRecargaVersion] = useState(0)
+  const [credencial, setCredencial] = useState<{ login: string; password: string } | null>(null)
   const [clubNombre, setClubNombre] = useState('')
   const [generandoReporte, setGenerandoReporte] = useState(false)
   // Foto
@@ -222,6 +224,19 @@ export default function JugadorDetallePage() {
   }, [jugador?.foto_path, jugador?.foto_url])
   const esAdmin = perfil?.rol === 'admin'
   const esProfesor = perfil?.rol === 'profesor'
+
+  // Traé la credencial cuando el admin abre la ficha, para que la tarjeta de
+  // WhatsApp la pueda armar sin pedirle un clic extra al usuario. Si no tiene
+  // espejo, la action la genera al vuelo y la guarda.
+  useEffect(() => {
+    if (!esAdmin || !jugadorId) return
+    let vivo = true
+    void credencialDelJugador(jugadorId).then(r => {
+      if (!vivo || !r.login || !r.password) return
+      setCredencial({ login: r.login, password: r.password })
+    })
+    return () => { vivo = false }
+  }, [esAdmin, jugadorId, passwordMsg])
   const puedeVerTodo = esAdmin || esProfesor
   const puedeEditar = esAdmin
   const puedeEvaluar = esAdmin || esProfesor
@@ -835,6 +850,34 @@ export default function JugadorDetallePage() {
           </div>
         )}
       </div>
+
+      {/* Envío de credenciales por WhatsApp. Solo para admins: el mensaje
+          contiene la clave y no es cosa del profesor. Si el jugador no tiene
+          celular chileno, el botón se deshabilita con la razón. */}
+      {esAdmin && credencial && (() => {
+        const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
+        const nombre = jugador?.nombre ?? ''
+        const mensaje = `Hola ${nombre}! Estas son tus credenciales para entrar a CmSports:\n\nUsuario: ${credencial.login}\nContraseña: ${credencial.password}\n\nIngresá en: ${appUrl}/login\n\nTe recomendamos cambiar la contraseña después del primer ingreso.`
+        const wa = linkWhatsApp(jugador?.telefono, mensaje)
+        return (
+          <div style={{ ...cardStyle, padding: 16, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: '#dcfce7', color: '#15803d', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <MessageCircle size={20} />
+            </div>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Enviar credenciales por WhatsApp</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                Le llega nombre de usuario, contraseña y el link para entrar.
+              </div>
+            </div>
+            {wa ? (
+              <WhatsAppBtn href={wa}>Enviar por WhatsApp</WhatsAppBtn>
+            ) : (
+              <span style={{ fontSize: 11, color: '#c2410c' }}>Sin celular válido para enviar</span>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ── Stats ── */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, marginBottom:20 }}>
