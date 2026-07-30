@@ -192,8 +192,12 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
       fecha,
       date: new Date(fecha + 'T12:00:00'),
       count: filas.filter(f => f.fecha === fecha).length,
+      // Denominador: jugadores con registro ese día (presentes + ausentes explícitos).
+      // Cada jugador tiene max 1 registro por día (unique constraint), así que
+      // el length es equivalente a un COUNT DISTINCT.
+      total: registrosTodos.filter(r => r.fecha === fecha).length,
     }))
-  }, [filas, diasEntrenamiento])
+  }, [filas, diasEntrenamiento, registrosTodos])
 
   const puntos = useMemo(() => {
     const offsets = generarOffsets(dias.length)
@@ -201,12 +205,13 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
       const fin = offset - 1
       const ini = Math.max(0, fin - VENTANA + 1)
       const tramo = dias.slice(ini, fin + 1)
-      const tasa = activosCount > 0 && tramo.length > 0
-        ? (tramo.reduce((s, d) => s + d.count, 0) / (activosCount * tramo.length)) * 100
+      const totalVentana = tramo.reduce((s, d) => s + d.total, 0)
+      const tasa = totalVentana > 0
+        ? (tramo.reduce((s, d) => s + d.count, 0) / totalVentana) * 100
         : 0
       return { offset, fecha: tramo[tramo.length - 1]?.date ?? dias[0]?.date ?? new Date(), valor: Math.round(tasa * 10) / 10 }
     })
-  }, [dias, activosCount])
+  }, [dias])
 
   const asistenciaPromedio = puntos.length > 0 ? puntos[puntos.length - 1].valor : 0
   const deltaPromedio = puntos.length > 1 ? Math.round((puntos[puntos.length - 1].valor - puntos[puntos.length - 2].valor) * 10) / 10 : 0
@@ -349,7 +354,7 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
     <div>
       <div style={{ ...card, padding: 20, height: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-          <div style={{ fontSize: 12, color: muted }}>Asistencia promedio</div>
+          <div style={{ fontSize: 12, color: muted }}>Promedio rodante — últimos 5 días</div>
           {modo === 'dashboard' && (
             <button onClick={exportarExcel} disabled={exportando} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: `1px solid ${border}`, borderRadius: 8, padding: '5px 10px', color: muted, fontSize: 11, cursor: exportando ? 'not-allowed' : 'pointer' }}>
               <Download size={12} />
