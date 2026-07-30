@@ -730,8 +730,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
             ) : asistenciasMostradas.length === 0 && extrasMostradas.length === 0 ? (
               <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Sin asistencias registradas este día</div>
             ) : (
+              <div style={{ maxHeight: 420, overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Jugador</th>
                     <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>Hora</th>
@@ -789,7 +790,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                               onClick={() => { setModalMonto(e); setMontoTexto(e.monto != null ? String(e.monto) : ''); setErrorMonto('') }}
                               style={{ background: e.monto != null ? '#fff' : '#fff7ed',
                                 border: `1px solid ${e.monto != null ? '#e2e8f0' : '#fed7aa'}`,
-                                borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                                borderRadius: 6, padding: '2px 7px', fontSize: 10, fontWeight: 600,
                                 color: e.monto != null ? text : '#c2410c', cursor: 'pointer' }}>
                               {fmtMonto(e.monto) ?? SIN_CUOTA}
                             </button>
@@ -805,6 +806,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 
