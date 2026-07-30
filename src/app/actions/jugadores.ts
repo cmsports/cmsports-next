@@ -4,7 +4,28 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
-import { getInviteRedirectUrl } from '@/lib/auth/invite-url'
+import { generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
+
+/**
+ * El correo con el que se registra el jugador en auth.
+ *
+ * Si tiene email real, se usa ese. Si solo tiene celular o RUT, se arma un
+ * email sintético que le permite loguearse desde la pantalla de ingreso con
+ * cualquiera de los tres (la pantalla ya sabe transformar el celular en
+ * `<celular>@cel.cmsports.cl` y el RUT en `<rut-sin-guion>@rut.cmsports.cl`).
+ *
+ * Devuelve null cuando no hay ninguno: sin uno de los tres no hay forma de
+ * darle acceso ni de saber cuál es su usuario en el reporte.
+ */
+function emailParaAuth(datos: { email?: string | null; telefono?: string | null; rut?: string | null }): string | null {
+  const email = datos.email?.trim().toLowerCase()
+  if (email) return email
+  const tel = datos.telefono?.trim()
+  if (tel && /^\d{9}$/.test(tel)) return `${tel}@cel.cmsports.cl`
+  const rut = datos.rut?.trim().replace('-', '')
+  if (rut && /^\d{7,8}[\dkK]$/.test(rut)) return `${rut}@rut.cmsports.cl`
+  return null
+}
 import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
 
 type PlanFields = {
@@ -42,12 +63,9 @@ export async function crearJugador(params: {
   if (authErr) return { error: authErr }
 
   const { nombre, rut, email, telefono, bloqueIds, ...planFields } = params
-  const emailNormalizado = email.trim().toLowerCase()
-  if (!emailNormalizado) return { error: 'El email es obligatorio' }
-  let redirectTo: string
-  try { redirectTo = getInviteRedirectUrl() } catch {
-    return { error: 'Falta configurar NEXT_PUBLIC_APP_URL para enviar invitaciones.' }
-  }
+  const emailNormalizado = email.trim().toLowerCase() || null
+  const authEmail = emailParaAuth({ email: emailNormalizado, telefono, rut })
+  if (!authEmail) return { error: 'Falta email, celular (9 dígitos) o RUT para poder darle acceso' }
 
   const { data: nuevoJugador, error } = await supabase.from('jugadores').insert({
     club_id: clubId, nombre: nombre.trim(), rut: rut || null, email: emailNormalizado, telefono: telefono || null,
@@ -55,20 +73,28 @@ export async function crearJugador(params: {
   }).select().single()
   if (error || !nuevoJugador) return { error: 'Error al crear: ' + error?.message }
 
+  // Contraseña generada por el sistema; queda espejada en `credencial_visible`
+  // y el admin se la entrega al jugador desde el reporte del dashboard. Antes
+  // se mandaba invitación por email, que dejaba al jugador sin acceso cuando
+  // no tenía correo real (caso familiar con celular compartido).
+  const password = generarPasswordInicial(nombre)
+
   const admin = createAdminClient()
-  const { data: creado, error: createError } = await admin.auth.admin.inviteUserByEmail(emailNormalizado, {
-    redirectTo,
-    data: { nombre: nombre.trim() },
+  const { data: creado, error: createError } = await admin.auth.admin.createUser({
+    email: authEmail,
+    password,
+    email_confirm: true,
+    user_metadata: { nombre: nombre.trim() },
   })
   if (createError || !creado?.user) {
     await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
     return { error: createError?.message?.toLowerCase().includes('already')
-      ? 'Ese email ya tiene una cuenta'
+      ? 'Ese usuario ya tiene una cuenta'
       : 'No se pudo crear la cuenta de acceso' }
   }
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
-    id: creado.user.id, club_id: clubId, nombre: nombre.trim(), email: emailNormalizado,
+    id: creado.user.id, club_id: clubId, nombre: nombre.trim(), email: authEmail,
     rol: 'jugador', jugador_id: nuevoJugador.id,
   })
   if (perfilError) {
@@ -77,46 +103,47 @@ export async function crearJugador(params: {
     return { error: 'No se pudo vincular la cuenta del jugador' }
   }
 
+  const { login, tipo } = usuarioLoginDe({ email: emailNormalizado, telefono, rut })
+  await admin.from('credencial_visible').upsert({
+    usuario_id: creado.user.id, club_id: clubId, password_plano: password,
+    usuario_login: login, tipo_login: tipo,
+  })
+
   // Al final: si esto falla el jugador ya existe y se arregla desde su ficha,
   // mientras que deshacer la cuenta recién creada no.
   if (bloqueIds?.length) {
     await asignarBloquesJugador({ jugadorId: nuevoJugador.id, bloqueIds })
   }
 
-  return { success: true, invitacionEnviada: true }
+  return { success: true, password }
 }
 
 export async function crearAccesoJugador(params: { jugadorId: string }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { data: jugador } = await supabase.from('jugadores').select('id,email,nombre').eq('id', params.jugadorId).eq('club_id', clubId).single()
+  const { data: jugador } = await supabase.from('jugadores').select('id,email,nombre,telefono,rut').eq('id', params.jugadorId).eq('club_id', clubId).single()
   if (!jugador) return { error: 'Jugador no encontrado' }
-  if (!jugador.email) return { error: 'El jugador no tiene email registrado' }
+  const authEmail = emailParaAuth({ email: jugador.email, telefono: jugador.telefono, rut: jugador.rut })
+  if (!authEmail) return { error: 'El jugador necesita email, celular (9 dígitos) o RUT para tener acceso' }
 
   const admin = createAdminClient()
   const { data: existente } = await admin.from('perfiles').select('id').eq('jugador_id', params.jugadorId).maybeSingle()
   if (existente) return { error: 'Este jugador ya tiene una cuenta de acceso' }
 
-  let redirectTo: string
-  try { redirectTo = getInviteRedirectUrl() } catch {
-    return { error: 'Falta configurar NEXT_PUBLIC_APP_URL para enviar invitaciones.' }
-  }
-
-  const { data: creado, error: createError } = await admin.auth.admin.inviteUserByEmail(jugador.email, {
-    redirectTo,
-    data: { nombre: jugador.nombre },
+  const password = generarPasswordInicial(jugador.nombre)
+  const { data: creado, error: createError } = await admin.auth.admin.createUser({
+    email: authEmail, password, email_confirm: true, user_metadata: { nombre: jugador.nombre },
   })
-
   const userId = creado?.user?.id
   if (createError || !userId) {
     return { error: createError?.message?.toLowerCase().includes('already')
-      ? 'Ese email ya tiene una cuenta. Usa recuperación de contraseña o soporte.'
-      : 'No se pudo enviar la invitación: ' + (createError?.message || 'error desconocido') }
+      ? 'Ese usuario ya tiene una cuenta. Usa recuperación de contraseña o soporte.'
+      : 'No se pudo crear la cuenta: ' + (createError?.message || 'error desconocido') }
   }
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
-    id: userId, club_id: clubId, nombre: jugador.nombre, email: jugador.email,
+    id: userId, club_id: clubId, nombre: jugador.nombre, email: authEmail,
     rol: 'jugador', jugador_id: params.jugadorId,
   })
   if (perfilError) {
@@ -124,7 +151,13 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
     return { error: 'No se pudo vincular la cuenta: ' + perfilError.message }
   }
 
-  return { success: true, invitacionEnviada: true }
+  const { login, tipo } = usuarioLoginDe({ email: jugador.email, telefono: jugador.telefono, rut: jugador.rut })
+  await admin.from('credencial_visible').upsert({
+    usuario_id: userId, club_id: clubId, password_plano: password,
+    usuario_login: login, tipo_login: tipo,
+  })
+
+  return { success: true, password }
 }
 
 export async function editarJugador(params: {

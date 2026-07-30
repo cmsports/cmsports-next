@@ -535,6 +535,23 @@ export default function DashboardPage() {
             </Link>
           )}
         </div>
+
+        {/* Credenciales oficiales — reporte para entregar accesos.
+            El admin decide cuándo ver la clave; la tarjeta no la muestra. */}
+        <Link href="/credenciales" style={{ textDecoration: 'none' }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <ClipboardCheck size={15} color={C.skyD} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔑 Credenciales oficiales del club</span>
+            </div>
+            <p style={{ fontSize: 12, color: C.muted, margin: '0 0 10px' }}>
+              Nombre, usuario y clave de cada admin y jugador. Se actualiza sola cuando aceptás una solicitud o creás un jugador.
+            </p>
+            <span style={{ display: 'inline-block', background: C.skyL, color: C.skyD, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600 }}>
+              Ver reporte →
+            </span>
+          </div>
+        </Link>
       </div>
 
       {/* ── Modal retención ── */}

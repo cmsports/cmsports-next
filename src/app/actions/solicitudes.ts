@@ -3,6 +3,7 @@
 import { requireAdminClub } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
+import { usuarioLoginDe } from '@/lib/domain/credenciales'
 
 export async function aprobarSolicitud(params: {
   solicitudId: string
@@ -96,6 +97,16 @@ export async function aprobarSolicitud(params: {
     await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
     return { error: 'No se pudo vincular el perfil de acceso del jugador.' }
   }
+
+  // Espejo de la contraseña recién creada, para que el admin la pueda ver en
+  // el reporte del dashboard. Si falla, el alta sigue en pie: la clave la sabe
+  // el jugador (la eligió él), y no tener el espejo se arregla con el botón
+  // "Resetear" desde el reporte. Es peor abortar el alta por esto.
+  const { login, tipo } = usuarioLoginDe({ email: emailNormalizado, telefono: telefono || null, rut: rut || null })
+  await admin.from('credencial_visible').upsert({
+    usuario_id: userId, club_id: clubId, password_plano: password,
+    usuario_login: login, tipo_login: tipo,
+  })
 
   // Los grupos van al final: si algo falla acá el jugador ya existe y se puede
   // arreglar desde su ficha, mientras que deshacer la cuenta creada no.

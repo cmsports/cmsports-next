@@ -1701,6 +1701,33 @@ export interface Database {
           { foreignKeyName: 'bloque_profesores_profesor_id_fkey'; columns: ['profesor_id']; referencedRelation: 'profesores'; referencedColumns: ['id'] },
         ]
       }
+      credencial_visible: {
+        Row: {
+          usuario_id: string
+          club_id: string
+          password_plano: string
+          usuario_login: string
+          tipo_login: string
+          actualizado_en: string
+        }
+        Insert: {
+          usuario_id: string
+          club_id: string
+          password_plano: string
+          usuario_login: string
+          tipo_login: string
+          actualizado_en?: string
+        }
+        Update: {
+          usuario_id?: string
+          club_id?: string
+          password_plano?: string
+          usuario_login?: string
+          tipo_login?: string
+          actualizado_en?: string
+        }
+        Relationships: []
+      }
     }
     Views: {}
     Functions: {
