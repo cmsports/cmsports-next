@@ -7,7 +7,7 @@
 // y una lista de quiénes no venían hace cinco días. Nada de eso le sirve para
 // entrar a la cancha, y el feedback trimestral se sacó del sistema entero.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -16,6 +16,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { diaDesdeFecha, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
+import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
 
@@ -45,54 +46,69 @@ export default function DashboardProfesorPage() {
   const ahora = new Date()
   const hoy = fechaChile()
 
+  // La carga sale del efecto para que la pueda repetir la suscripción. El
+  // control de acceso se queda adentro: redirigir es cosa de entrar a la
+  // pantalla, no de que alguien haya movido un dato.
+  const cargar = useCallback(async () => {
+    const club = perfil?.club_id
+    if (!club) { setLoading(false); return }
+
+    const dia = diaDesdeFecha(hoy)
+    if (!dia) { setBloques([]); setLoading(false); return }   // fin de semana
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as any
+    const [{ data: bs }, { data: rel }, { data: jug }, { data: exc }] = await Promise.all([
+      db.from('bloques_horario')
+        .select('id,nombre,sede,hora_inicio,hora_fin')
+        .eq('club_id', club).eq('activo', true).eq('dia_semana', dia)
+        .lte('vigente_desde', hoy)
+        .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
+        .order('hora_inicio'),
+      db.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
+      db.from('jugadores').select('id,nombre,categoria')
+        .eq('club_id', club).eq('estado', 'activo')
+        .or('es_externo.is.null,es_externo.eq.false'),
+      // Un día suspendido no es un día de clase: si el grupo no se dicta, no
+      // tiene por qué aparecerle en la lista de hoy.
+      db.from('bloque_excepciones').select('bloque_id').eq('fecha', hoy),
+    ])
+
+    const suspendidos = new Set((exc ?? []).map((e: { bloque_id: string }) => e.bloque_id))
+    const porId = new Map((jug ?? []).map((j: { id: string }) => [j.id, j]))
+    const armados: Bloque[] = ((bs ?? []) as Bloque[])
+      .filter(b => !suspendidos.has(b.id))
+      .map(b => ({
+        ...b,
+        alumnos: (rel ?? [])
+          .filter((r: { bloque_id: string }) => r.bloque_id === b.id)
+          .map((r: { jugador_id: string }) => porId.get(r.jugador_id))
+          .filter(Boolean)
+          .sort((a: { nombre: string }, z: { nombre: string }) => a.nombre.localeCompare(z.nombre)),
+      }))
+
+    setBloques(armados)
+    setLoading(false)
+  }, [hoy, perfil?.club_id])
+
   useEffect(() => {
-    async function cargar() {
-      if (authLoading) return
-      if (!perfil) { router.push('/login'); return }
-      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor' && perfil.rol !== 'superadmin') {
-        router.push('/dashboard'); return
-      }
-      if (!perfil.club_id) { setLoading(false); return }
-
-      const dia = diaDesdeFecha(hoy)
-      if (!dia) { setBloques([]); setLoading(false); return }   // fin de semana
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const db = supabase as any
-      const [{ data: bs }, { data: rel }, { data: jug }, { data: exc }] = await Promise.all([
-        db.from('bloques_horario')
-          .select('id,nombre,sede,hora_inicio,hora_fin')
-          .eq('club_id', perfil.club_id).eq('activo', true).eq('dia_semana', dia)
-          .lte('vigente_desde', hoy)
-          .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
-          .order('hora_inicio'),
-        db.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
-        db.from('jugadores').select('id,nombre,categoria')
-          .eq('club_id', perfil.club_id).eq('estado', 'activo')
-          .or('es_externo.is.null,es_externo.eq.false'),
-        // Un día suspendido no es un día de clase: si el grupo no se dicta, no
-        // tiene por qué aparecerle en la lista de hoy.
-        db.from('bloque_excepciones').select('bloque_id').eq('fecha', hoy),
-      ])
-
-      const suspendidos = new Set((exc ?? []).map((e: { bloque_id: string }) => e.bloque_id))
-      const porId = new Map((jug ?? []).map((j: { id: string }) => [j.id, j]))
-      const armados: Bloque[] = ((bs ?? []) as Bloque[])
-        .filter(b => !suspendidos.has(b.id))
-        .map(b => ({
-          ...b,
-          alumnos: (rel ?? [])
-            .filter((r: { bloque_id: string }) => r.bloque_id === b.id)
-            .map((r: { jugador_id: string }) => porId.get(r.jugador_id))
-            .filter(Boolean)
-            .sort((a: { nombre: string }, z: { nombre: string }) => a.nombre.localeCompare(z.nombre)),
-        }))
-
-      setBloques(armados)
-      setLoading(false)
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
+    if (perfil.rol !== 'admin' && perfil.rol !== 'profesor' && perfil.rol !== 'superadmin') {
+      router.push('/dashboard'); return
     }
+    // La carga es asincrónica: el setState ocurre cuando vuelven las consultas,
+    // no durante el efecto. La regla no distingue ese caso.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void cargar()
-  }, [authLoading, hoy, perfil, router])
+  }, [authLoading, perfil, router, cargar])
+
+  // Es la pantalla que el profe deja abierta toda la tarde mientras entrena:
+  // la que más rato pasa sin que nadie la recargue. Si mientras tanto inscriben
+  // a alguien, lo cambian de grupo o suspenden el día, se enteraba mañana.
+  useEnVivo(['bloque_jugadores', 'bloques_horario', 'bloque_excepciones'],
+    perfil?.club_id ?? null, () => { void cargar() },
+    { conClub: ['bloques_horario'] })
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>

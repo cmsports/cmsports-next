@@ -11,6 +11,7 @@ import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario
 import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
+import { useEnVivo } from '@/lib/useEnVivo'
 import PanelCupos from '@/components/PanelCupos'
 import PanelReportes from '@/components/PanelReportes'
 
@@ -112,6 +113,15 @@ export default function HorarioPage() {
     if (!perfil.club_id) { setCargando(false); return }
     void cargar(perfil.club_id)
   }, [authLoading, perfil, router, cargar])
+
+  // El horario lo editan entre varios —los dos admin-entrenadores y el profe—,
+  // muchas veces con la pantalla abierta en paralelo. Sin esto, el que llegaba
+  // segundo guardaba encima de un horario que ya no era el que estaba viendo.
+  // `bloque_jugadores` va incluido porque la cuenta de inscritos de cada bloque
+  // se muestra acá y cambia desde la ficha del jugador.
+  useEnVivo(['bloques_horario', 'bloque_profesores', 'bloque_jugadores'], perfil?.club_id ?? null,
+    () => { if (perfil?.club_id) void cargar(perfil.club_id) },
+    { conClub: ['bloques_horario'] })
 
   function toggleDia(dia: string) {
     setForm(f => {
