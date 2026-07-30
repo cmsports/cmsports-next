@@ -11,7 +11,8 @@ import { registrarMovimiento, editarMovimiento, eliminarMovimiento } from '@/app
 import { MensualidadesPanel } from '@/components/MensualidadesPanel'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
-import { cachedFetch, invalidate } from '@/lib/query-cache'
+import { cachedFetch } from '@/lib/query-cache'
+import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
 
@@ -102,6 +103,16 @@ function FinanzasContent() {
     cargarMovimientos()
   }, [mes, anio])
 
+  // Finanzas no escuchaba nada: era la única pantalla del sistema que se
+  // quedaba con la foto del momento en que se abrió. Dos personas cobrando a la
+  // vez —o la misma con el celular y el computador— veían totales distintos, y
+  // la única forma de enterarse era recargar. Los movimientos entran también
+  // por otros módulos (clases extra, ligas, torneos), así que el saldo cambia
+  // sin que nadie haya tocado esta pantalla.
+  useEnVivo(['movimientos', 'mensualidades'], clubId, () => {
+    void cargarMovimientos()
+  }, { conClub: ['movimientos', 'mensualidades'] })
+
   async function cargarMovimientos(cid?: string) {
     const id = cid || clubId
     const mesStr = String(mes).padStart(2, '0')
@@ -148,6 +159,7 @@ function FinanzasContent() {
         return data || []
       },
       120_000,
+      ['jugadores'],
     )
     setJugadoresFinanzas(jugs)
   }
@@ -161,6 +173,7 @@ function FinanzasContent() {
         return data || []
       },
       120_000,
+      ['profesores'],
     )
     setProfesores(data)
   }

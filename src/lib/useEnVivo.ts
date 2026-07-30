@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { invalidarPorTabla } from '@/lib/query-cache'
 
 const supabase = createClient()
 
@@ -50,6 +51,10 @@ export function useEnVivo(
           ? { event: '*', schema: 'public', table: tabla, filter: `club_id=eq.${clubId}` }
           : { event: '*', schema: 'public', table: tabla },
         () => {
+          // El caché se tira en el acto, no dentro de la espera: si algo lee
+          // mientras dura la ráfaga, tiene que leer datos nuevos. La recarga sí
+          // espera, que es lo caro.
+          invalidarPorTabla(tabla)
           if (pendiente) clearTimeout(pendiente)
           pendiente = setTimeout(() => alCambiar.current(), esperaMs)
         },

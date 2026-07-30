@@ -12,6 +12,13 @@ type Inflight<T> = Promise<T>
 const store = new Map<string, Entry<unknown>>()
 const inflight = new Map<string, Inflight<unknown>>()
 
+// De qué tablas salió cada clave. Sin esto, invalidar depende de que alguien se
+// acuerde de escribir la llamada a mano en cada pantalla, y acordarse no escala:
+// Finanzas importaba `invalidate` y nunca llegó a llamarlo. El resultado es el
+// peor de los dos mundos —la pantalla se entera del cambio, pide los datos de
+// nuevo y el caché le devuelve los viejos—, que se ve igual que un bug de datos.
+const fuentes = new Map<string, string[]>()
+
 export function getCached<T>(key: string): T | null {
   const e = store.get(key) as Entry<T> | undefined
   if (!e) return null
@@ -25,32 +32,65 @@ export function setCached<T>(key: string, data: T, ttl = DEFAULT_TTL): void {
 
 export function invalidate(keyOrPrefix: string): void {
   for (const k of store.keys()) {
-    if (k === keyOrPrefix || k.startsWith(keyOrPrefix + ':')) store.delete(k)
+    if (k === keyOrPrefix || k.startsWith(keyOrPrefix + ':')) { store.delete(k); fuentes.delete(k) }
+  }
+}
+
+/**
+ * Tira lo que salió de esa tabla. Lo llama `useEnVivo` cuando la tabla cambia,
+ * así el caché no puede quedar sirviendo lo viejo detrás de una pantalla que sí
+ * se enteró del cambio.
+ */
+export function invalidarPorTabla(tabla: string): void {
+  for (const [clave, tablas] of fuentes) {
+    if (!tablas.includes(tabla)) continue
+    store.delete(clave)
+    // También la petición en vuelo: salió antes del cambio, así que va a
+    // guardar datos ya viejos apenas vuelva.
+    inflight.delete(clave)
+    fuentes.delete(clave)
   }
 }
 
 export function clearAll(): void {
   store.clear()
   inflight.clear()
+  fuentes.clear()
 }
 
 // Fetch con deduplication: si ya hay un fetch en vuelo con esta key, devuelve la misma promise.
+//
+// `tablas` es de qué tablas salen estos datos. Declararlas es lo que permite que
+// el caché se tire solo cuando alguna cambia, en vez de esperar a que venza el
+// minuto o a que alguien invalide a mano desde la pantalla.
 export async function cachedFetch<T>(
   key: string,
   fetcher: () => Promise<T>,
   ttl = DEFAULT_TTL,
+  tablas: string[] = [],
 ): Promise<T> {
   const hit = getCached<T>(key)
   if (hit !== null) return hit
 
   if (inflight.has(key)) return inflight.get(key) as Promise<T>
 
+  // Las tablas se anotan al LANZAR la consulta, no al recibirla: si se anotaran
+  // al volver, un cambio ocurrido mientras la consulta viajaba no encontraría la
+  // clave y el resultado viejo terminaría igual en el caché.
+  if (tablas.length > 0) fuentes.set(key, tablas)
+
   const promise = fetcher().then(data => {
-    setCached(key, data, ttl)
-    inflight.delete(key)
+    // Si mientras la consulta estaba en vuelo llegó un cambio en alguna de sus
+    // tablas, `invalidarPorTabla` ya borró la petición: guardar el resultado
+    // ahora sería volver a meter en el caché justo lo que se acaba de tirar.
+    if (inflight.has(key)) {
+      setCached(key, data, ttl)
+      inflight.delete(key)
+    }
     return data
   }).catch(err => {
     inflight.delete(key)
+    fuentes.delete(key)
     throw err
   })
 
