@@ -119,7 +119,8 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
     .map(([jugadorId, suyas]) => ({
       jugadorId,
       suyas,
-      conMonto: suyas.filter(e => e.monto != null),
+      conMonto: suyas.filter(e => e.monto != null && e.monto > 0),
+      sinCargo: suyas.filter(e => e.monto === 0),
       sinMonto: suyas.filter(e => e.monto == null),
       total: suyas.reduce((s, e) => s + (e.monto ?? 0), 0),
     }))
@@ -184,13 +185,19 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
                         {detalle(e)}
                         {e.cobrada_en && <span style={{ color: '#a16207', fontWeight: 600 }}> · enviada</span>}
                       </span>
-                      <span style={{ color: e.monto == null ? '#c2410c' : text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {e.monto == null ? SIN_CUOTA : fmt(e.monto)}
+                      <span style={{ color: e.monto == null ? '#c2410c' : e.monto === 0 ? '#15803d' : text, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                        {e.monto == null ? SIN_CUOTA : e.monto === 0 ? 'Sin cargo' : fmt(e.monto)}
                       </span>
                     </div>
                   ))}
                 </div>
 
+                {g.sinCargo.length > 0 && (
+                  <div style={{ fontSize: 11, color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0',
+                    borderRadius: 8, padding: '7px 10px', marginBottom: 8 }}>
+                    {g.sinCargo.length} {g.sinCargo.length === 1 ? 'clase sin cargo' : 'clases sin cargo'} — el profe debía {g.sinCargo.length === 1 ? 'una clase' : 'esas clases'}.
+                  </div>
+                )}
                 {g.sinMonto.length > 0 && (
                   <div style={{ fontSize: 11, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa',
                     borderRadius: 8, padding: '7px 10px', marginBottom: 8 }}>

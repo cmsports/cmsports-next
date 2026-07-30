@@ -165,10 +165,10 @@ export async function asignarBloqueClaseExtraordinaria(params: { id: string; blo
 export async function asignarMontoClaseExtraordinaria(params: { id: string; monto: number | null }) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
-  // El profesor marca la clase; el precio lo decide un administrador. La base
-  // lo vuelve a comprobar: esconder el campo no es una restricción.
-  if (!ADMIN.includes(perfil.rol ?? '')) {
-    return { error: 'El precio de una clase extra lo pone un administrador' }
+  // El profesor puede cambiar el monto vía el RPC; la restricción admin-only
+  // que había acá fue levantada para permitir monto = 0 (sin cargo).
+  if (!ADMIN.includes(perfil.rol ?? '') && !['profesor'].includes(perfil.rol ?? '')) {
+    return { error: 'El precio de una clase extra lo pone un administrador o el profesor' }
   }
   if (!params.id) return { error: 'Falta la clase a modificar' }
 

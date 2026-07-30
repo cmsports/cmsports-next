@@ -107,6 +107,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [errorMonto,   setErrorMonto]   = useState('')
   const [guardandoMonto, setGuardandoMonto] = useState(false)
 
+  // Modal previo al registro: el profesor elige si la clase tiene cargo o no.
+  const [pendienteExtra, setPendienteExtra] = useState<{ jugadorId: string; bloqueId?: string | null } | null>(null)
+
   // Los bloques de hoy del propio jugador, para saber si puede marcarse.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [misBloquesHoy, setMisBloquesHoy] = useState<any[] | null>(null)
@@ -406,21 +409,14 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
    * sin grupo hasta que alguien lo complete. Marcar que alguien vino tiene que
    * ser un toque; de qué grupo fue y cuánto cuesta se resuelve después.
    */
-  async function registrarExtra(jugadorId: string, bloqueId?: string | null) {
+  async function registrarExtra(jugadorId: string, bloqueId?: string | null, monto?: number | null) {
     setRegistrando(jugadorId)
-    // El `||` y no `??`: sin horario elegido `bloqueSel` es cadena vacía, no
-    // null, y `??` no la atrapa. Esa cadena vacía llegaba a un campo uuid y la
-    // base contestaba «invalid input syntax for type uuid: ""».
-    //
-    // Y el bloque solo si de verdad funciona hoy: desde que los filtros
-    // muestran toda la semana, `bloqueSel` puede ser el del jueves. Colgarle la
-    // clase extra de hoy a un bloque de otro día es dato falso; mejor sin
-    // grupo, que después se completa desde el histórico.
     const delFiltro = bloquesDelDia.some(b => b.id === bloqueSel) ? bloqueSel : ''
     const bloque = (bloqueId ?? delFiltro) || null
     const res = await registrarClaseExtraordinaria({
       jugadorId, fecha: fechaVista, bloqueId: bloque,
       hora: fechaVista !== hoy && bloqueElegido ? hhmm(bloqueElegido.hora_inicio) : hora,
+      monto: monto ?? null,
     })
     setRegistrando(null)
     if (res.error) {
@@ -435,7 +431,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   async function guardarMonto() {
     if (!modalMonto) return
     const monto = montoIngresado(montoTexto)
-    if (monto != null && monto <= 0) { setErrorMonto('El monto tiene que ser mayor a cero.'); return }
+    if (monto != null && monto < 0) { setErrorMonto('El monto no puede ser negativo.'); return }
     setGuardandoMonto(true)
     setErrorMonto('')
     const res = await asignarMontoClaseExtraordinaria({ id: modalMonto.id, monto })
@@ -988,7 +984,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                         : (registrando === j.id || registrandoAusente === j.id)
                           ? <span style={{ color: muted, fontSize: 12 }}>{registrandoAusente === j.id ? 'Marcando ausente...' : 'Registrando...'}</span>
                           : esExtra
-                            ? <button onClick={e => { e.stopPropagation(); registrarExtra(j.id, null) }} style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
+                            ? <button onClick={e => { e.stopPropagation(); setPendienteExtra({ jugadorId: j.id, bloqueId: null }) }} style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
                             : <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                                 <button onClick={() => registrarAsistencia(j.id)} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Presente</button>
                                 <button onClick={() => registrarAusente(j.id)} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>✗ Ausente</button>
@@ -1033,7 +1029,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                   {buscaOtro.trim().length > 0 && (
                     <div style={{ border: '1px solid #fde047', borderRadius: 8, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
                       {otrosJugadores.slice(0, 25).map(j => (
-                        <div key={j.id} onClick={() => registrarExtra(j.id)}
+                        <div key={j.id} onClick={() => setPendienteExtra({ jugadorId: j.id, bloqueId: bloqueElegido?.id })}
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                             padding: '10px 14px', borderBottom: '1px solid #fef9c3', cursor: 'pointer', background: '#fffbeb' }}>
                           <span style={{ fontSize: 13, fontWeight: 600, color: text }}>{j.nombre}</span>
@@ -1074,7 +1070,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none' }}
               value={montoTexto} onChange={e => setMontoTexto(e.target.value)} />
             <div style={{ fontSize: 11, color: hint, marginTop: 6, marginBottom: 16 }}>
-              Si todavía no sabés cuánto, dejalo vacío: queda como &ldquo;{SIN_CUOTA}&rdquo;.
+              Vacío = pendiente ({SIN_CUOTA}). Pon <strong>0</strong> si el profe debe esta clase y no se cobra.
             </div>
 
             {errorMonto && (
@@ -1101,6 +1097,43 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               style={{ width: '100%', padding: '9px 14px', marginTop: 10, borderRadius: 8, fontSize: 12,
                 border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>
               {eliminando === modalMonto.id ? 'Borrando...' : 'Borrar esta clase extra'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmar cargo antes de registrar la clase extra */}
+      {pendienteExtra && (
+        <div className="anim-fondo" onClick={e => { if (e.target === e.currentTarget) setPendienteExtra(null) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
+          <div className="anim-modal" style={{ ...card, padding: 22, width: '100%', maxWidth: 310 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: text }}>Clase extra</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 18 }}>
+              {nombreDe(pendienteExtra.jugadorId)} — ¿esta clase tiene cargo?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                onClick={() => { const p = pendienteExtra; setPendienteExtra(null); void registrarExtra(p.jugadorId, p.bloqueId, null) }}
+                disabled={registrando !== null}
+                style={{ padding: '10px 14px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', textAlign: 'left' }}>
+                Sí — el admin asignará el precio
+              </button>
+              <button
+                onClick={() => { const p = pendienteExtra; setPendienteExtra(null); void registrarExtra(p.jugadorId, p.bloqueId, 0) }}
+                disabled={registrando !== null}
+                style={{ padding: '10px 14px', background: '#fef9c3', border: '1px solid #fde047',
+                  borderRadius: 8, color: '#713f12', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', textAlign: 'left' }}>
+                No — sin cargo (el profe debe esta clase)
+              </button>
+            </div>
+            <button onClick={() => setPendienteExtra(null)}
+              style={{ background: 'none', border: 'none', padding: '10px 0 0', fontSize: 12,
+                color: muted, cursor: 'pointer', width: '100%', textAlign: 'center', display: 'block' }}>
+              Cancelar
             </button>
           </div>
         </div>
