@@ -140,27 +140,46 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
 
   const activosCount = jugadoresActivos.length
 
+  // Todos los jugadores con bloque ese día (union de todos los bloques)
+  const inscritosDelDia = useMemo(() => {
+    if (!inscritosDe) return new Set<string>()
+    return new Set(Object.values(inscritosDe).flat())
+  }, [inscritosDe])
+
   const asistenciaDia = useMemo(() => {
     if (!fechaSeleccionada) return null
-    const count = filas.filter(f => f.fecha === fechaSeleccionada).length
-    return { count, pct: activosCount > 0 ? Math.round((count / activosCount) * 1000) / 10 : 0 }
-  }, [filas, fechaSeleccionada, activosCount])
+    const presentesIds = filas.filter(f => f.fecha === fechaSeleccionada).map(f => f.jugador_id)
+    const total = inscritosDelDia.size > 0 ? inscritosDelDia.size : activosCount
+    // Solo cuentan los que tenían bloque ese día; extras no entran al denominador
+    const count = inscritosDelDia.size > 0
+      ? presentesIds.filter(id => inscritosDelDia.has(id)).length
+      : presentesIds.length
+    const extras = inscritosDelDia.size > 0
+      ? presentesIds.filter(id => !inscritosDelDia.has(id)).length
+      : 0
+    return { count, total, extras, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0 }
+  }, [filas, fechaSeleccionada, inscritosDelDia, activosCount])
 
   const bloqueStats = useMemo(() => {
     if (!bloqueSelGrafico || !fechaSeleccionada || !inscritosDe) return null
     const inscritos = inscritosDe[bloqueSelGrafico] ?? []
-    const presentesDiaSet = new Set(filas.filter(f => f.fecha === fechaSeleccionada).map(f => f.jugador_id))
+    const inscritosSet = new Set(inscritos)
+    const presentesDia = filas.filter(f => f.fecha === fechaSeleccionada).map(f => f.jugador_id)
+    const presentesDiaSet = new Set(presentesDia)
     const ausentesDiaSet = new Set(
       registrosTodos.filter(r => r.fecha === fechaSeleccionada && r.estado === 'ausente').map(r => r.jugador_id)
     )
     const nombre = (id: string) => jugadoresActivos.find(j => j.id === id)?.nombre ?? '—'
+    // Extras: vinieron ese día pero NO están en ningún bloque → clase extraordinaria
+    const extras = presentesDia.filter(id => !inscritosDelDia.has(id)).map(id => ({ id, nombre: nombre(id) }))
     return {
       total: inscritos.length,
       presentes: inscritos.filter(id => presentesDiaSet.has(id)).map(id => ({ id, nombre: nombre(id) })),
       ausentes: inscritos.filter(id => ausentesDiaSet.has(id) && !presentesDiaSet.has(id)).map(id => ({ id, nombre: nombre(id) })),
       sinRegistro: inscritos.filter(id => !presentesDiaSet.has(id) && !ausentesDiaSet.has(id)).map(id => ({ id, nombre: nombre(id) })),
+      extras,
     }
-  }, [bloqueSelGrafico, fechaSeleccionada, inscritosDe, filas, registrosTodos, jugadoresActivos])
+  }, [bloqueSelGrafico, fechaSeleccionada, inscritosDe, inscritosDelDia, filas, registrosTodos, jugadoresActivos])
 
   const dias = useMemo(() => {
     const hoy = fechaChile()
@@ -370,9 +389,16 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
             </div>
             <div style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px' }}>
               {asistenciaDia ? (
-                <div style={{ fontSize: 22, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>
-                  {asistenciaDia.count}/{activosCount}
-                </div>
+                <>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>
+                    {asistenciaDia.count} de {asistenciaDia.total}
+                  </div>
+                  {asistenciaDia.extras > 0 && (
+                    <div style={{ fontSize: 11, color: '#a16207', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+                      +{asistenciaDia.extras} extra{asistenciaDia.extras > 1 ? 's' : ''}
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
                   <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Día más visitado</div>
@@ -463,6 +489,18 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                   {bloqueStats.sinRegistro.map(j => (
                     <div key={j.id} style={{ background: '#fff', border: `1px solid ${border}`, borderRadius: 20, padding: '3px 10px', fontSize: 11, color: muted }}>{j.nombre}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {bloqueStats.extras.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#a16207', marginBottom: 6 }}>
+                  ★ Extras ({bloqueStats.extras.length})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {bloqueStats.extras.map(j => (
+                    <div key={j.id} style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#a16207' }}>{j.nombre}</div>
                   ))}
                 </div>
               </div>
