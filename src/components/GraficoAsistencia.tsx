@@ -338,8 +338,8 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
             </button>
           )}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 190px', gap: 16 }}>
-          {/* Chart + header */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 150px', gap: 16 }}>
+          {/* Chart + número grande */}
           <div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 14 }}>
               <span style={{ fontSize: 26, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{asistenciaPromedio}%</span>
@@ -354,114 +354,124 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
             </div>
           </div>
 
-          {/* Métricas laterales */}
+          {/* 2 tarjetas: % del día | cuenta absoluta */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* Asistencia promedio / del día */}
             <div style={{ background: '#eff6ff', border: `2px solid ${AZUL}`, borderRadius: 12, padding: '12px 14px' }}>
-              <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>
-                {asistenciaDia ? 'Asistencia del día' : 'Asistencia promedio'}
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>
-                {asistenciaDia ? `${asistenciaDia.pct}%` : `${asistenciaPromedio}%`}
-              </div>
-              {asistenciaDia && (
-                <div style={{ fontSize: 11, color: hint, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
-                  {asistenciaDia.count}/{activosCount} jugadores
+              {asistenciaDia ? (
+                <div style={{ fontSize: 22, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>
+                  {asistenciaDia.pct}%
                 </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Asistencia promedio</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>{asistenciaPromedio}%</div>
+                </>
               )}
             </div>
-            {/* Día más visitado */}
             <div style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px' }}>
-              <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Día más visitado</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: text }}>{diaMasVisitado.nombre}</div>
-              <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>
-                <span style={{ fontWeight: 700, fontSize: 13, color: text, fontVariantNumeric: 'tabular-nums' }}>{diaMasVisitado.count}</span> asistencias este mes
-              </div>
-            </div>
-            {/* Filtro por bloque (completo) o Sin asistencia (dashboard) */}
-            {(bloquesDelDia?.length ?? 0) > 0 ? (
-              <div style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px' }}>
-                <div style={{ fontSize: 11, color: muted, marginBottom: 8 }}>Ver por bloque</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {bloquesDelDia!.map(b => {
-                    const activo = bloqueSelGrafico === b.id
-                    return (
-                      <button key={b.id} onClick={() => setBloqueSelGrafico(activo ? '' : b.id)}
-                        style={{ textAlign: 'left', padding: '4px 8px', fontSize: 11, fontWeight: 600, borderRadius: 6,
-                          cursor: 'pointer', border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
-                          background: activo ? '#ede9fe' : 'transparent', color: activo ? '#4f46e5' : muted }}>
-                        {b.hora_inicio.slice(0, 5)} · {b.nombre}
-                      </button>
-                    )
-                  })}
+              {asistenciaDia ? (
+                <div style={{ fontSize: 22, fontWeight: 700, color: text, fontVariantNumeric: 'tabular-nums' }}>
+                  {asistenciaDia.count}/{activosCount}
                 </div>
-                {bloqueStats && (
-                  <div style={{ fontSize: 11, color: hint, marginTop: 6, fontVariantNumeric: 'tabular-nums' }}>
-                    {bloqueStats.presentes.length}/{bloqueStats.total} presentes
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Día más visitado</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: text }}>{diaMasVisitado.nombre}</div>
+                  <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: text, fontVariantNumeric: 'tabular-nums' }}>{diaMasVisitado.count}</span> este mes
                   </div>
-                )}
-              </div>
-            ) : (
-              <div
-                onClick={() => modo === 'completo' && sinAsistencia.length > 0 && setMostrarSinAsistencia(!mostrarSinAsistencia)}
-                style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 12, padding: '12px 14px', cursor: modo === 'completo' && sinAsistencia.length > 0 ? 'pointer' : 'default' }}
-              >
-                <div style={{ fontSize: 11, color: muted, marginBottom: 6 }}>Sin asistencia</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: sinAsistencia.length > 0 ? ROJO : VERDE, fontVariantNumeric: 'tabular-nums' }}>{sinAsistencia.length}</div>
-                  {modo === 'completo' && sinAsistencia.length > 0 && (
-                    <span style={{ fontSize: 12, color: hint, transform: mostrarSinAsistencia ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Filtro de bloque: fila horizontal compacta */}
+        {(bloquesDelDia?.length ?? 0) > 0 && (
+          <div style={{ borderTop: `1px solid ${border}`, marginTop: 16, paddingTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: hint, flexShrink: 0 }}>Bloque</span>
+            {bloquesDelDia!.map(b => {
+              const activo = bloqueSelGrafico === b.id
+              return (
+                <button key={b.id} onClick={() => setBloqueSelGrafico(activo ? '' : b.id)}
+                  style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                    border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
+                    background: activo ? '#ede9fe' : '#fff', color: activo ? '#4f46e5' : muted,
+                    display: 'flex', alignItems: 'center', gap: 5 }}>
+                  {b.hora_inicio.slice(0, 5)} · {b.nombre}
+                  {activo && bloqueStats && (
+                    <span style={{ background: '#4f46e5', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
+                      {bloqueStats.presentes.length}/{bloqueStats.total}
+                    </span>
                   )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Sin asistencia (solo dashboard / sin bloques) */}
+        {(bloquesDelDia?.length ?? 0) === 0 && (
+          <div style={{ borderTop: `1px solid ${border}`, marginTop: 16, paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 11, color: muted }}>Sin asistencia {modo === 'completo' ? 'esta semana' : 'este mes'}</span>
+            <div
+              onClick={() => modo === 'completo' && sinAsistencia.length > 0 && setMostrarSinAsistencia(!mostrarSinAsistencia)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: modo === 'completo' && sinAsistencia.length > 0 ? 'pointer' : 'default' }}
+            >
+              <span style={{ fontSize: 16, fontWeight: 700, color: sinAsistencia.length > 0 ? ROJO : VERDE, fontVariantNumeric: 'tabular-nums' }}>{sinAsistencia.length}</span>
+              {modo === 'completo' && sinAsistencia.length > 0 && (
+                <span style={{ fontSize: 11, color: hint, display: 'inline-block', transform: mostrarSinAsistencia ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Lista expandida del bloque seleccionado */}
+      {bloqueStats && (
+        <div style={{ background: '#f8fafc', border: `1px solid ${border}`, borderRadius: 14, padding: '14px 16px', marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            {bloqueStats.presentes.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: VERDE, marginBottom: 6 }}>
+                  ✓ Presentes ({bloqueStats.presentes.length})
                 </div>
-                <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>{modo === 'completo' ? 'esta semana' : 'este mes'}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {bloqueStats.presentes.map(j => (
+                    <div key={j.id} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: VERDE }}>{j.nombre}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {bloqueStats.ausentes.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: ROJO, marginBottom: 6 }}>
+                  ✗ Ausentes ({bloqueStats.ausentes.length})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {bloqueStats.ausentes.map(j => (
+                    <div key={j.id} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: ROJO }}>{j.nombre}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {bloqueStats.sinRegistro.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: hint, marginBottom: 6 }}>
+                  — Sin registrar ({bloqueStats.sinRegistro.length})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {bloqueStats.sinRegistro.map(j => (
+                    <div key={j.id} style={{ background: '#fff', border: `1px solid ${border}`, borderRadius: 20, padding: '3px 10px', fontSize: 11, color: muted }}>{j.nombre}</div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
-      </div>
-
-      {bloqueStats && (
-        <div style={{ background: '#f8fafc', border: `1px solid ${border}`, borderRadius: 14, padding: 16, marginTop: 12 }}>
-          {bloqueStats.presentes.length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: VERDE, marginBottom: 6 }}>
-                ✓ Presentes ({bloqueStats.presentes.length})
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {bloqueStats.presentes.map(j => (
-                  <div key={j.id} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '4px 10px', fontSize: 12, color: VERDE }}>{j.nombre}</div>
-                ))}
-              </div>
-            </div>
-          )}
-          {bloqueStats.ausentes.length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: ROJO, marginBottom: 6 }}>
-                ✗ Ausentes ({bloqueStats.ausentes.length})
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {bloqueStats.ausentes.map(j => (
-                  <div key={j.id} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '4px 10px', fontSize: 12, color: ROJO }}>{j.nombre}</div>
-                ))}
-              </div>
-            </div>
-          )}
-          {bloqueStats.sinRegistro.length > 0 && (
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: hint, marginBottom: 6 }}>
-                ? Sin registrar ({bloqueStats.sinRegistro.length})
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {bloqueStats.sinRegistro.map(j => (
-                  <div key={j.id} style={{ background: '#ffffff', border: `1px solid ${border}`, borderRadius: 8, padding: '4px 10px', fontSize: 12, color: muted }}>{j.nombre}</div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
       )}
       {!bloqueStats && modo === 'completo' && mostrarSinAsistencia && sinAsistencia.length > 0 && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 14, padding: 16, marginTop: 12 }}>
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 14, padding: 16, marginTop: 10 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: ROJO, marginBottom: 12 }}>
             Jugadores sin asistencia esta semana ({sinAsistencia.length})
           </div>
