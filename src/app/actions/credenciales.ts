@@ -2,7 +2,7 @@
 
 import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
+import { generarEmailInicial, generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
 
 export type FilaCredencial = {
   usuarioId: string
@@ -137,46 +137,68 @@ export async function resetearCredencial(params: { usuarioId: string }): Promise
 }
 
 /**
- * Sincroniza la tabla espejo con todos los jugadores actuales del club.
+ * Reset masivo del club: reescribe usuario y clave para todos los perfiles.
  *
- * One-shot para poner al día lo que hoy no está guardado: recorre cada perfil
- * de jugador, le asigna la clave `nombreapellido123` y la escribe en auth y en
- * el espejo. Se puede correr más de una vez: cae en el mismo estado, así que
- * no hace daño.
+ * El usuario nuevo sigue el patrón `<inicial-nombre><primer-apellido><inicial-
+ * segundo-apellido>@cmsports.cl`. Un mismo patrón puede caer más de una vez
+ * —dos "Sofia Salgado G"— así que las colisiones internas se resuelven con un
+ * numerito al final (`sofiasalgadog2@cmsports.cl`). La clave sigue el patrón
+ * `nombreapellido123`.
  *
- * Cambia las contraseñas actuales aunque el jugador ya haya elegido la suya.
- * Es lo que el admin espera del reporte inicial —consistencia total con el
- * PDF impreso que reparte—; después cada jugador la cambia si quiere.
+ * Cambios que trae para los jugadores:
+ *   - Los que hoy loguean con celular o RUT quedan solo con ese email nuevo.
+ *     El celular sigue en su ficha, pero deja de servir para entrar.
+ *   - Las contraseñas que hayan elegido por su cuenta se pierden.
+ *
+ * Es el trade-off que el admin aceptó: un patrón consistente y visible en el
+ * reporte impreso, a costa de reeducar a la gente para que use el email nuevo.
  */
 export async function resetearTodasLasCredenciales(): Promise<{ error?: string; cambiadas?: number; fallidas?: number }> {
   const { error: authErr, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
   const admin = createAdminClient()
-  // Incluye también admins y profes: la queja del admin fue justamente esa —
-  // "veo 'sin registro' para gente que no es jugador". El reset masivo tenía
-  // que alcanzarlos a todos si se apretaba el botón.
+  // Alcanza a admins, profes y jugadores: la queja del admin fue justamente
+  // que se limitaba a jugadores y dejaba huecos en los otros roles.
   const { data: perfiles } = await admin.from('perfiles')
-    .select('id,nombre,email,jugador_id').eq('club_id', clubId)
+    .select('id,nombre').eq('club_id', clubId)
   if (!perfiles?.length) return { cambiadas: 0, fallidas: 0 }
 
-  const jugadorIds = perfiles.map((p: { jugador_id: string | null }) => p.jugador_id).filter(Boolean) as string[]
-  const { data: jugadores } = await admin.from('jugadores')
-    .select('id,email,telefono,rut').in('id', jugadorIds)
-  const jugPorId = new Map((jugadores ?? []).map((j: { id: string; email: string | null; telefono: string | null; rut: string | null }) => [j.id, j]))
+  // Resolvemos colisiones dentro de este batch: si dos nombres generan el
+  // mismo email, el segundo lleva "2", el tercero "3", y así. Los fallos por
+  // colisión con emails de OTROS clubes se cuentan como fallidas —caen en el
+  // update de auth con "email already registered"—.
+  const emailsUsados = new Set<string>()
+  const emailUnico = (base: string): string => {
+    if (!emailsUsados.has(base)) { emailsUsados.add(base); return base }
+    let n = 2
+    let candidato = base.replace('@cmsports.cl', `${n}@cmsports.cl`)
+    while (emailsUsados.has(candidato)) {
+      n++
+      candidato = base.replace('@cmsports.cl', `${n}@cmsports.cl`)
+    }
+    emailsUsados.add(candidato)
+    return candidato
+  }
 
   let cambiadas = 0
   let fallidas = 0
-  for (const p of perfiles as { id: string; nombre: string; email: string | null; jugador_id: string | null }[]) {
+  for (const p of perfiles as { id: string; nombre: string }[]) {
     const password = generarPasswordInicial(p.nombre)
-    const { error: upErr } = await admin.auth.admin.updateUserById(p.id, { password })
-    if (upErr) { fallidas++; continue }
+    const email = emailUnico(generarEmailInicial(p.nombre))
 
-    const jug = p.jugador_id ? jugPorId.get(p.jugador_id) : null
-    const { login, tipo } = usuarioLoginDe({ email: p.email, telefono: jug?.telefono ?? null, rut: jug?.rut ?? null })
+    // Se cambia email y clave en la misma llamada: si falla, no se toca el
+    // espejo (queda mostrando lo viejo, coherente con lo que hay en auth).
+    const { error: authUpErr } = await admin.auth.admin.updateUserById(p.id, { email, password })
+    if (authUpErr) { fallidas++; continue }
+
+    // perfiles.email se mantiene alineado con auth.email para que el resto
+    // del sistema (que suele leer perfiles) no muestre datos viejos.
+    await admin.from('perfiles').update({ email }).eq('id', p.id)
+
     const { error: espejoErr } = await admin.from('credencial_visible').upsert({
       usuario_id: p.id, club_id: clubId, password_plano: password,
-      usuario_login: login, tipo_login: tipo,
+      usuario_login: email, tipo_login: 'email',
     })
     if (espejoErr) fallidas++
     else cambiadas++

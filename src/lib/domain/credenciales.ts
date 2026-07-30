@@ -22,6 +22,40 @@ export function generarPasswordInicial(nombreCompleto: string): string {
 }
 
 /**
+ * El email de auth con el patrón del reset masivo: primera letra del nombre,
+ * primer apellido completo, primera letra del segundo apellido, `@cmsports.cl`.
+ *
+ * Se asume convención chilena: nombres primero, apellidos al final. Los dos
+ * últimos tokens son los apellidos, pase lo que pase entre medio.
+ *
+ * Casos borde:
+ * - un solo token (nombre) → `agustin@cmsports.cl`
+ * - dos tokens (nombre y un apellido) → `ahonores@cmsports.cl`
+ * - tres o más → primer nombre + primer apellido + inicial segundo apellido
+ *
+ * Los duplicados NO se resuelven acá: el que llama sabe qué está usado en el
+ * batch y agrega el numerito. Así esta función queda pura.
+ */
+export function generarEmailInicial(nombreCompleto: string): string {
+  const partes = nombreCompleto
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/ñ/g, 'n')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+
+  if (partes.length === 0) return 'usuario@cmsports.cl'
+  if (partes.length === 1) return `${partes[0]}@cmsports.cl`
+  if (partes.length === 2) return `${partes[0][0]}${partes[1]}@cmsports.cl`
+
+  const apellido1 = partes[partes.length - 2]
+  const apellido2 = partes[partes.length - 1]
+  return `${partes[0][0]}${apellido1}${apellido2[0]}@cmsports.cl`
+}
+
+/**
  * Con qué se loguea el usuario en la práctica. Es lo que va en la columna
  * "Usuario" del reporte. El email manda si existe; el celular si no; el RUT
  * es la salida cuando varios jugadores comparten celular (caso familiar).

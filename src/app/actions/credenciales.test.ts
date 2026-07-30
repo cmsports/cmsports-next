@@ -141,28 +141,25 @@ describe('resetearCredencial', () => {
 describe('resetearTodasLasCredenciales', () => {
   const updateUserById = vi.fn()
   const espejoUpsert = vi.fn()
+  const perfilesUpdate = vi.fn()
+  let perfilesData: Array<{ id: string; nombre: string }> = []
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.requireAdminClub.mockResolvedValue({ error: null, clubId: CLUB })
     updateUserById.mockResolvedValue({ error: null })
     espejoUpsert.mockResolvedValue({ error: null })
+    perfilesUpdate.mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+    perfilesData = [
+      { id: 'u-1', nombre: 'Colomba Gonzalez Gonzalez' },
+      { id: 'u-2', nombre: 'Sofia Salgado Gaete' },
+    ]
     mocks.createAdminClient.mockReturnValue({
       auth: { admin: { updateUserById } },
       from: vi.fn((tabla: string) => {
         if (tabla === 'perfiles') return {
-          // Solo un .eq('club_id', ...): el reset masivo ahora alcanza a todos
-          // los roles, no solo jugadores.
-          select: () => ({ eq: () => Promise.resolve({ data: [
-            { id: 'u-j1', nombre: 'Colomba Gonzalez', email: null, jugador_id: 'j1' },
-            { id: 'u-j2', nombre: 'Sofia Gaete', email: null, jugador_id: 'j2' },
-          ] }) }),
-        }
-        if (tabla === 'jugadores') return {
-          select: () => ({ in: () => Promise.resolve({ data: [
-            { id: 'j1', email: null, telefono: '958730364', rut: null },
-            { id: 'j2', email: null, telefono: '931266944', rut: null },
-          ] }) }),
+          select: () => ({ eq: () => Promise.resolve({ data: perfilesData }) }),
+          update: perfilesUpdate,
         }
         if (tabla === 'credencial_visible') return { upsert: espejoUpsert }
         return {}
@@ -170,13 +167,35 @@ describe('resetearTodasLasCredenciales', () => {
     })
   })
 
-  it('recorre cada jugador y suma los cambios', async () => {
+  it('a cada perfil le reescribe email y clave con el patrón del club', async () => {
     const r = await resetearTodasLasCredenciales()
 
     expect(r).toEqual({ cambiadas: 2, fallidas: 0 })
-    expect(updateUserById).toHaveBeenCalledWith('u-j1', { password: 'colombagonzalez123' })
-    expect(updateUserById).toHaveBeenCalledWith('u-j2', { password: 'sofiagaete123' })
-    expect(espejoUpsert).toHaveBeenCalledTimes(2)
+    // La clave sigue el patrón viejo, el email el nuevo.
+    expect(updateUserById).toHaveBeenCalledWith('u-1', { email: 'cgonzalezg@cmsports.cl', password: 'colombagonzalez123' })
+    expect(updateUserById).toHaveBeenCalledWith('u-2', { email: 'ssalgadog@cmsports.cl', password: 'sofiagaete123' })
+    // El espejo guarda el email como usuario_login y tipo=email.
+    expect(espejoUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      usuario_id: 'u-1', usuario_login: 'cgonzalezg@cmsports.cl', tipo_login: 'email',
+    }))
+    // perfiles.email también queda alineado para que el resto del sistema
+    // (dashboards, tarjetas de contacto) no muestre el email viejo.
+    expect(perfilesUpdate).toHaveBeenCalledWith({ email: 'cgonzalezg@cmsports.cl' })
+  })
+
+  // Sin esto, dos "Sofia Salgado Gaete" fallarían por email duplicado en auth
+  // y la segunda quedaría contada como "fallida", con la clave ya cambiada.
+  it('dos personas con el mismo patrón: al segundo le pone un numerito', async () => {
+    perfilesData = [
+      { id: 'u-1', nombre: 'Sofia Salgado Gaete' },
+      { id: 'u-2', nombre: 'Sofia Salgado Gomez' },   // sale igual: ssalgadog
+    ]
+
+    const r = await resetearTodasLasCredenciales()
+
+    expect(r).toEqual({ cambiadas: 2, fallidas: 0 })
+    expect(updateUserById).toHaveBeenCalledWith('u-1', expect.objectContaining({ email: 'ssalgadog@cmsports.cl' }))
+    expect(updateUserById).toHaveBeenCalledWith('u-2', expect.objectContaining({ email: 'ssalgadog2@cmsports.cl' }))
   })
 
   it('un fallo en auth se cuenta y no aborta el resto', async () => {

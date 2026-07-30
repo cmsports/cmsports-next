@@ -325,8 +325,8 @@ export default function CredencialesPage() {
       </div>
       )}
 
-      {/* Reset masivo: forzar la clave nombreapellido123 para todo el club,
-          aun sobreescribiendo la que la persona haya elegido después. */}
+      {/* Reset masivo: reescribe usuario y clave con el patrón del club.
+          Aviso fuerte porque cambia cómo entran los que hoy usan celular. */}
       <div style={{ marginTop: 20, padding: 14, background: C.card, border: `1px dashed ${C.border}`, borderRadius: 10 }}>
         <button onClick={() => setBulkAbierto(a => !a)}
           style={{ background: 'transparent', border: 'none', fontSize: 12, color: C.muted, cursor: 'pointer', padding: 0 }}>
@@ -334,7 +334,16 @@ export default function CredencialesPage() {
         </button>
         {bulkAbierto && (
           <div style={{ marginTop: 10, fontSize: 12, color: C.muted, lineHeight: 1.5 }}>
-            Le asigna a todos —admins, profes y jugadores— la contraseña <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>nombreapellido123</code>. Cambia también las contraseñas que hayan elegido por su cuenta.
+            Le asigna a todos —admins, profes y jugadores— este par de credenciales:
+            <div style={{ marginTop: 6 }}>
+              • <strong>Usuario:</strong> <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>inicialnombre + apellido + inicialsegundoapellido @cmsports.cl</code>
+            </div>
+            <div>
+              • <strong>Contraseña:</strong> <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>nombreapellido123</code>
+            </div>
+            <div style={{ marginTop: 10, padding: '8px 10px', background: C.orangeL, border: `1px solid ${C.orangeD}`, borderRadius: 6, color: C.orangeD, fontSize: 11 }}>
+              <strong>Ojo:</strong> los jugadores que hoy entran con celular o RUT dejan de poder hacerlo. Van a tener que usar su email nuevo (que va a estar en el reporte). Las contraseñas que hayan elegido por su cuenta se pierden.
+            </div>
             <div style={{ marginTop: 10 }}>
               <button onClick={correrBulk} disabled={bulkCorriendo}
                 style={{ background: C.orangeD, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: bulkCorriendo ? 'wait' : 'pointer' }}>
