@@ -7,10 +7,12 @@ import { diaLabel, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import {
-  calcularReporteMes, diaDe, horas, semanasDelMes,
+  calcularReporteMes, diaDe, horas, porDia, semanasDelMes,
   type AsignacionProfesor, type BloqueMes, type ClaseOmitida,
   type DiaSuspendido, type InscripcionMes, type ReporteMes,
 } from '@/lib/domain/reportesMes'
+import { descargarExcelReporteMes } from '@/lib/reportesMes-excel'
+import { descargarPdfReporteMes } from '@/lib/reportesMes-pdf'
 
 const supabase = createClient()
 
@@ -70,6 +72,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   const [mes, setMes]   = useState(Number(hoy.slice(5, 7)))
   const [abierto, setAbierto] = useState<Set<string>>(new Set())
   const [cargando, setCargando] = useState(true)
+  const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null)
 
   const [bloques, setBloques]           = useState<BloqueMes[]>([])
   const [asignaciones, setAsignaciones] = useState<AsignacionProfesor[]>([])
@@ -119,6 +122,19 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   const nombreProf = (id: string) => profesores.find(p => p.id === id)?.nombre ?? 'Profesor dado de baja'
   const nombreJug  = (id: string) => jugadores.find(j => j.id === id)?.nombre ?? '—'
   const semanas = semanasDelMes(r.fechas)
+  const dias = porDia(r, asignaciones)
+  const tituloMes = `${MESES[mes - 1]} ${anio}`
+
+  async function exportar(formato: 'excel' | 'pdf') {
+    setExportando(formato)
+    try {
+      const args = { clubNombre: 'CmSports', tituloMes, r, dias, asignaciones, nombreProf }
+      if (formato === 'excel') await descargarExcelReporteMes(args)
+      else await descargarPdfReporteMes(args)
+    } finally {
+      setExportando(null)
+    }
+  }
 
   const mover = (n: number) => {
     const d = new Date(Date.UTC(anio, mes - 1 + n, 1))
@@ -159,6 +175,18 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
           {r.fechas.length} días hábiles
           {esMesActual && ' · el mes va corriendo, los números crecen hasta fin de mes'}
         </span>
+        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+          <button onClick={() => exportar('excel')} disabled={exportando !== null}
+            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: '1px solid #bbf7d0',
+              background: '#f0fdf4', color: '#16a34a', cursor: exportando ? 'default' : 'pointer', opacity: exportando ? 0.6 : 1 }}>
+            {exportando === 'excel' ? 'Generando...' : 'Exportar Excel'}
+          </button>
+          <button onClick={() => exportar('pdf')} disabled={exportando !== null}
+            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: '1px solid #fecaca',
+              background: '#fef2f2', color: '#dc2626', cursor: exportando ? 'default' : 'pointer', opacity: exportando ? 0.6 : 1 }}>
+            {exportando === 'pdf' ? 'Generando...' : 'Exportar PDF'}
+          </button>
+        </div>
       </div>
 
       {/* Resumen */}
@@ -213,6 +241,61 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Detalle por día: el mes en orden cronológico, agrupado por sede
+          dentro de cada día — la forma en que conviene revisarlo. */}
+      <div style={{ ...card, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0' }}>
+          <div style={tituloSec}>Detalle por día</div>
+          <div style={comoSe}>Cada día del mes, con lo que se dictó por sede y lo que quedó sin clase.</div>
+        </div>
+
+        {dias.map(d => {
+          const clave = 'dia-' + d.fecha
+          const totalDia = d.sedes.reduce((s, sede) => s + sede.clases.length, 0)
+          const suspendidasDia = d.sedes.reduce((s, sede) => s + sede.suspendidas.length, 0)
+          return (
+            <Desplegable key={d.fecha} abierto={abierto.has(clave)} onToggle={() => toggle(clave)}
+              cabecera={
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: text, textTransform: 'capitalize' }}>{diaYN(d.fecha)}</span>
+                  <span style={{ fontSize: 11, color: hint }}>{d.fecha}</span>
+                  <span style={{ fontSize: 12, color: muted, marginLeft: 'auto' }}>
+                    {totalDia} clase{totalDia === 1 ? '' : 's'}
+                    {suspendidasDia > 0 && ` · ${suspendidasDia} sin clase`}
+                  </span>
+                </div>
+              }>
+              {d.sedes.map(s => (
+                <div key={s.sede} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: hint, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                    {sedeLabel(s.sede)}
+                  </div>
+                  {s.clases.map(c => (
+                    <div key={c.bloque.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 12, color: text, padding: '2px 0', flexWrap: 'wrap' }}>
+                      <span style={{ color: muted, minWidth: 92 }}>{rangoHorario(c.bloque.hora_inicio, c.bloque.hora_fin)}</span>
+                      <span style={{ fontWeight: 600 }}>{c.bloque.nombre}</span>
+                      {c.profesorIds.length > 0 && <span style={{ color: muted }}>{c.profesorIds.map(nombreProf).filter(Boolean).join(' + ')}</span>}
+                      <span style={{ color: hint, marginLeft: 'auto' }}>{c.inscritos} inscritos</span>
+                    </div>
+                  ))}
+                  {s.suspendidas.map(sus => (
+                    <div key={sus.bloque.id} style={{ fontSize: 12, color: aviso, padding: '2px 0' }}>
+                      ✕ {rangoHorario(sus.bloque.hora_inicio, sus.bloque.hora_fin)} {sus.bloque.nombre} — {sus.motivo}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </Desplegable>
+          )
+        })}
+
+        {dias.length === 0 && (
+          <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>
+            Ningún día con clases o suspensiones en {MESES[mes - 1]} {anio}.
+          </div>
+        )}
       </div>
 
       {/* Horas por profesor */}

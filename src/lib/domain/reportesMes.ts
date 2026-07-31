@@ -210,6 +210,62 @@ export function calcularReporteMes(params: {
   }
 }
 
+export type ClaseDelDia = {
+  bloque: BloqueMes
+  profesorIds: string[]
+  minutos: number
+  inscritos: number
+}
+
+export type DiaMes = {
+  fecha: string
+  sedes: {
+    sede: string
+    clases: ClaseDelDia[]
+    suspendidas: { bloque: BloqueMes; motivo: string }[]
+  }[]
+}
+
+/**
+ * El mismo reporte, reordenado día por día y, dentro de cada día, por sede.
+ * Es la forma en que conviene mirarlo y exportarlo: por profesor o por grupo
+ * salta de un día a otro sin orden cronológico.
+ */
+export function porDia(r: ReporteMes, asignaciones: AsignacionProfesor[]): DiaMes[] {
+  const porFecha = new Map<string, Map<string, { clases: ClaseDelDia[]; suspendidas: { bloque: BloqueMes; motivo: string }[] }>>()
+
+  function celda(fecha: string, sede: string) {
+    let m = porFecha.get(fecha)
+    if (!m) { m = new Map(); porFecha.set(fecha, m) }
+    let c = m.get(sede)
+    if (!c) { c = { clases: [], suspendidas: [] }; m.set(sede, c) }
+    return c
+  }
+
+  for (const g of r.grupos) {
+    for (const c of g.dictadas) {
+      const profesorIds = asignaciones.filter(a => a.bloque_id === g.bloque.id && vigenteEn(a, c.fecha)).map(a => a.profesor_id)
+      celda(c.fecha, g.bloque.sede).clases.push({ bloque: g.bloque, profesorIds, minutos: c.minutos, inscritos: g.inscritos })
+    }
+    for (const s of g.suspendidas) {
+      celda(s.fecha, g.bloque.sede).suspendidas.push({ bloque: g.bloque, motivo: s.motivo })
+    }
+  }
+
+  return [...porFecha.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([fecha, sedesMap]) => ({
+      fecha,
+      sedes: [...sedesMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([sede, v]) => ({
+          sede,
+          clases: [...v.clases].sort((x, y) => x.bloque.hora_inicio.localeCompare(y.bloque.hora_inicio)),
+          suspendidas: [...v.suspendidas].sort((x, y) => x.bloque.hora_inicio.localeCompare(y.bloque.hora_inicio)),
+        })),
+    }))
+}
+
 /** Horas con una decimal y coma, como se escriben acá. */
 export function horas(minutos: number): string {
   const h = minutos / 60
