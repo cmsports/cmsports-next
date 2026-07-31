@@ -7,7 +7,6 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { calendarioJugador, indexar, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
-import { vigenteEn } from '@/lib/domain/vigencia'
 import { descargarExcelAsistenciaPorBloque } from '@/lib/asistencia-bloque-excel'
 
 const supabase = createClient()
@@ -153,8 +152,9 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   // Los índices se arman una vez y se comparten: son ciento tres llamadas
   // sobre exactamente los mismos datos.
   const indice = indexar(datos)
-  const filas: Fila[] = jugadores.map(j => {
-    const ind = indicadores(calendarioJugador(j.id, desde, hoy, datos, indice))
+  const calendarios = jugadores.map(j => ({ jugador: j, dias: calendarioJugador(j.id, desde, hoy, datos, indice) }))
+  const filas: Fila[] = calendarios.map(({ jugador: j, dias }) => {
+    const ind = indicadores(dias)
     return {
       jugador: j,
       programados: ind.programados,
@@ -196,23 +196,22 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const porCategoria = agrupar(f => f.jugador.categoria)
   const porSede      = agrupar(f => f.jugador.sede)
 
-  // Promedio por grupo de entrenamiento. Un jugador que va a dos grupos suma
-  // en los dos: la pregunta es cómo anda cada grupo, no repartir culpas.
-  const nombreBloque = new Map(datos.bloques.map(b => [b.id, b.nombre]))
+  // Promedio por grupo de entrenamiento, día por día: cada jornada se cuenta en
+  // el bloque al que pertenecía ESE día (dia.bloques, ya resuelto por fecha en
+  // calendarioJugador), no en el bloque actual del jugador. Así un cambio de
+  // bloque a mitad del período no reescribe a qué grupo perteneció lo ya vivido.
   const porGrupo = (() => {
     const m = new Map<string, { si: number; no: number; jugadores: Set<string> }>()
-    const deJugador = new Map<string, Fila>(filas.map(f => [f.jugador.id, f]))
-    for (const i of datos.inscripciones) {
-      if (!vigenteEn(i, hoy)) continue
-      const f = deJugador.get(i.jugador_id)
-      const nombre = nombreBloque.get(i.bloque_id)
-      if (!f || !nombre) continue
-      const acc = m.get(nombre) ?? { si: 0, no: 0, jugadores: new Set<string>() }
-      if (!acc.jugadores.has(f.jugador.id)) {
-        acc.si += f.presentes; acc.no += f.ausentes
-        acc.jugadores.add(f.jugador.id)
+    for (const { jugador: j, dias } of calendarios) {
+      for (const d of dias) {
+        if (d.estado !== 'presente' && d.estado !== 'ausente') continue
+        for (const nombre of d.bloques) {
+          const acc = m.get(nombre) ?? { si: 0, no: 0, jugadores: new Set<string>() }
+          if (d.estado === 'presente') acc.si++; else acc.no++
+          acc.jugadores.add(j.id)
+          m.set(nombre, acc)
+        }
       }
-      m.set(nombre, acc)
     }
     return [...m.entries()]
       .map(([k, v]) => ({ k, jugadores: v.jugadores.size, pct: v.si + v.no > 0 ? Math.round((v.si / (v.si + v.no)) * 100) : null }))
