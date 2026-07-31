@@ -33,7 +33,7 @@ export default function AsistenciaPage() {
           <div style={{ marginBottom: 6 }}>
             <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0f172a', margin: 0 }}>Asistencia</h1>
             <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-              Pasá lista del día. Los grupos y sus inscritos se arman en Horario semanal.
+              Pasá lista del día. Los grupos y sus inscritos se arman en Cupos/bloques.
             </p>
           </div>
 

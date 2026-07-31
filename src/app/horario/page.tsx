@@ -292,7 +292,7 @@ export default function HorarioPage() {
     <AppLayout perfil={perfil}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, color: text, margin: 0 }}>Horario semanal</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 600, color: text, margin: 0 }}>Cupos/bloques</h1>
           <p style={{ fontSize: 12, color: hint, marginTop: 2 }}>
             La plantilla fija del club. Desde acá se generan las clases de cada semana.
           </p>

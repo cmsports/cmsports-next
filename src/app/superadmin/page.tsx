@@ -20,7 +20,7 @@ const MODULOS_OPCIONALES = [
   { key: 'liga', label: 'Liga' },
   // La clave sigue siendo 'clases' en la base, pero el módulo hoy solo gobierna
   // el horario semanal: la pantalla de clases generadas se eliminó.
-  { key: 'clases', label: 'Horario semanal' },
+  { key: 'clases', label: 'Cupos/bloques' },
   { key: 'calendario', label: 'Calendario' },
   { key: 'asistencia', label: 'Asistencia' },
   { key: 'mensualidades', label: 'Mensualidades' },
