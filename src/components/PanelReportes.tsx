@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
-import { diaLabel, rangoHorario } from '@/lib/domain/horario'
-import { sedeLabel } from '@/lib/domain/sedeGrupo'
+import { DIAS, diaLabel, rangoHorario } from '@/lib/domain/horario'
+import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import {
   calcularReporteMes, diaDe, horas, porDia, semanasDelMes,
@@ -31,6 +31,11 @@ const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 function nDia(fecha: string) { return Number(fecha.slice(8, 10)) }
 /** Para fechas sueltas, donde el día de la semana sí aporta. */
 function diaYN(fecha: string) { return `${diaLabel(diaDe(fecha)).toLowerCase()} ${nDia(fecha)}` }
+
+function ordenDia(dia: string): number {
+  const i = DIAS.findIndex(d => d.value === dia)
+  return i === -1 ? 99 : i
+}
 
 /** Una fila que se abre. El título es el resumen; adentro va de dónde salió. */
 function Desplegable({ abierto, onToggle, cabecera, children }: {
@@ -75,6 +80,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   const [abierto, setAbierto] = useState<Set<string>>(new Set())
   const [cargando, setCargando] = useState(true)
   const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null)
+  const [sedeGrupos, setSedeGrupos] = useState('buin')
 
   const [bloques, setBloques]           = useState<BloqueMes[]>([])
   const [asignaciones, setAsignaciones] = useState<AsignacionProfesor[]>([])
@@ -191,6 +197,13 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   // dicen nada. Se cuentan aparte.
   const gruposDelMes = r.grupos.filter(g => g.dictadas.length + g.suspendidas.length > 0)
   const gruposFuera  = r.grupos.length - gruposDelMes.length
+
+  // La sección "Grupos" se mira de a una sede a la vez, agrupada por día:
+  // las dos sedes mezcladas en una sola lista larga no se entendían de un
+  // vistazo. Igual que el filtro de sede de Cupos.
+  const gruposSede = gruposDelMes
+    .filter(g => g.bloque.sede === sedeGrupos)
+    .sort((a, b) => ordenDia(a.bloque.dia_semana) - ordenDia(b.bloque.dia_semana) || a.bloque.hora_inicio.localeCompare(b.bloque.hora_inicio))
 
   // Un grupo con dos profesores le suma horas a los dos, pero se dicta una sola
   // vez. Por eso la suma por profesor puede pasar el total del club, y hay que
@@ -424,64 +437,85 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
             Cuántas veces se dictó cada grupo este mes y cuánta gente tiene hoy.
             Tocá uno para ver las fechas, lo que no se dictó y quiénes están inscritos.
           </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            {SEDES.filter(s => s.value !== 'ambos').map(s => {
+              const activa = sedeGrupos === s.value
+              return (
+                <button key={s.value} onClick={() => setSedeGrupos(s.value)}
+                  style={{ background: activa ? '#4f46e5' : '#f4f7fa', color: activa ? '#fff' : muted,
+                    border: `1px solid ${activa ? '#4f46e5' : '#e2e8f0'}`, borderRadius: 8, padding: '6px 12px',
+                    fontSize: 12, fontWeight: activa ? 600 : 400, cursor: 'pointer' }}>
+                  {sedeLabel(s.value).split(' ')[0]}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        {gruposDelMes.map(g => {
-          const clave = 'grupo-' + g.bloque.id
-          const tocaban = g.dictadas.length + g.suspendidas.length
-          const libres = g.bloque.cupo_maximo - g.inscritos
-          const suyos = inscripciones
-            .filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
-            .sort((a, b) => nombreJug(a.jugador_id).localeCompare(nombreJug(b.jugador_id), 'es'))
-          const profes = [...new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id))]
-          return (
-            <Desplegable key={g.bloque.id} abierto={abierto.has(clave)} onToggle={() => toggle(clave)}
-              cabecera={
-                <>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: text }}>{g.bloque.nombre}</span>
-                    <span style={{ fontSize: 11, color: hint }}>
-                      {diaLabel(g.bloque.dia_semana)} {rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)} · {sedeLabel(g.bloque.sede)}
-                      {profes.length > 0 && ' · ' + profes.map(nombreProf).join(', ')}
-                    </span>
+        {DIAS.filter(d => gruposSede.some(g => g.bloque.dia_semana === d.value)).map(d => (
+          <div key={d.value}>
+            <div style={{ padding: '8px 16px', background: '#f8fafc', fontSize: 11, fontWeight: 700, color: muted,
+              textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              {d.label}
+            </div>
+            {gruposSede.filter(g => g.bloque.dia_semana === d.value).map(g => {
+              const clave = 'grupo-' + g.bloque.id
+              const tocaban = g.dictadas.length + g.suspendidas.length
+              const libres = g.bloque.cupo_maximo - g.inscritos
+              const suyos = inscripciones
+                .filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
+                .sort((a, b) => nombreJug(a.jugador_id).localeCompare(nombreJug(b.jugador_id), 'es'))
+              const profes = [...new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id))]
+              return (
+                <Desplegable key={g.bloque.id} abierto={abierto.has(clave)} onToggle={() => toggle(clave)}
+                  cabecera={
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: text }}>{g.bloque.nombre}</span>
+                        <span style={{ fontSize: 11, color: hint }}>
+                          {rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)}
+                          {profes.length > 0 && ' · ' + profes.map(nombreProf).join(', ')}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, marginTop: 4 }}>
+                        <span style={{ color: g.suspendidas.length > 0 ? aviso : muted }}>
+                          {g.dictadas.length} de {tocaban} clase{tocaban === 1 ? '' : 's'}
+                          {g.suspendidas.length > 0 && ` · ${g.suspendidas.length} sin clase`}
+                        </span>
+                        <span style={{ color: muted }}>{horas(g.minutos)} h</span>
+                        <span style={{ color: muted }}>
+                          {g.inscritos} de {g.bloque.cupo_maximo}
+                          {libres > 0 ? ` · ${libres} libre${libres === 1 ? '' : 's'}` : libres === 0 ? ' · lleno' : ` · ${-libres} de más`}
+                        </span>
+                      </div>
+                    </>
+                  }>
+                  <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>
+                    {g.dictadas.length > 0
+                      ? <>Se dictó {diaLabel(g.bloque.dia_semana).toLowerCase()} {g.dictadas.map(d2 => nDia(d2.fecha)).join(', ')} — {g.dictadas.length} × {horas(g.dictadas[0].minutos)} h = {horas(g.minutos)} h.</>
+                      : <>No se dictó ninguna vez este mes.</>}
                   </div>
-                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, marginTop: 4 }}>
-                    <span style={{ color: g.suspendidas.length > 0 ? aviso : muted }}>
-                      {g.dictadas.length} de {tocaban} clase{tocaban === 1 ? '' : 's'}
-                      {g.suspendidas.length > 0 && ` · ${g.suspendidas.length} sin clase`}
-                    </span>
-                    <span style={{ color: muted }}>{horas(g.minutos)} h</span>
-                    <span style={{ color: muted }}>
-                      {g.inscritos} de {g.bloque.cupo_maximo}
-                      {libres > 0 ? ` · ${libres} libre${libres === 1 ? '' : 's'}` : libres === 0 ? ' · lleno' : ` · ${-libres} de más`}
-                    </span>
+                  <Omitidas items={g.suspendidas} color={aviso} />
+                  <Omitidas items={g.fueraDeVigencia} color={hint} />
+
+                  <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
+                    <div style={{ fontSize: 12, color: muted, marginBottom: 6 }}>
+                      Inscritos hoy: {g.inscritos} de {g.bloque.cupo_maximo} cupos.
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {suyos.map(i => <span key={i.jugador_id} style={chip}>{nombreJug(i.jugador_id)}</span>)}
+                      {suyos.length === 0 && <span style={{ fontSize: 12, color: hint }}>Sin nadie inscrito.</span>}
+                    </div>
                   </div>
-                </>
-              }>
-              <div style={{ fontSize: 12, color: muted, marginBottom: 8 }}>
-                {g.dictadas.length > 0
-                  ? <>Se dictó {diaLabel(g.bloque.dia_semana).toLowerCase()} {g.dictadas.map(d => nDia(d.fecha)).join(', ')} — {g.dictadas.length} × {horas(g.dictadas[0].minutos)} h = {horas(g.minutos)} h.</>
-                  : <>No se dictó ninguna vez este mes.</>}
-              </div>
-              <Omitidas items={g.suspendidas} color={aviso} />
-              <Omitidas items={g.fueraDeVigencia} color={hint} />
+                </Desplegable>
+              )
+            })}
+          </div>
+        ))}
 
-              <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
-                <div style={{ fontSize: 12, color: muted, marginBottom: 6 }}>
-                  Inscritos hoy: {g.inscritos} de {g.bloque.cupo_maximo} cupos.
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {suyos.map(i => <span key={i.jugador_id} style={chip}>{nombreJug(i.jugador_id)}</span>)}
-                  {suyos.length === 0 && <span style={{ fontSize: 12, color: hint }}>Sin nadie inscrito.</span>}
-                </div>
-              </div>
-            </Desplegable>
-          )
-        })}
-
-        {gruposDelMes.length === 0 && (
+        {gruposSede.length === 0 && (
           <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>
-            Ningún grupo del horario funcionaba en {MESES[mes - 1]} {anio}.
+            Ningún grupo en {sedeLabel(sedeGrupos).split(' ')[0]} funcionaba en {MESES[mes - 1]} {anio}.
           </div>
         )}
       </div>
