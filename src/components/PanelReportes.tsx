@@ -128,7 +128,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   async function exportar(formato: 'excel' | 'pdf') {
     setExportando(formato)
     try {
-      const args = { clubNombre: 'CmSports', tituloMes, r, dias, asignaciones, nombreProf }
+      const args = { clubNombre: 'CmSports', tituloMes, r, dias, asignaciones, nombreProf, inscripciones, nombreJug }
       if (formato === 'excel') await descargarExcelReporteMes(args)
       else await descargarPdfReporteMes(args)
     } finally {
@@ -385,7 +385,9 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
           const clave = 'grupo-' + g.bloque.id
           const tocaban = g.dictadas.length + g.suspendidas.length
           const libres = g.bloque.cupo_maximo - g.inscritos
-          const suyos = inscripciones.filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
+          const suyos = inscripciones
+            .filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
+            .sort((a, b) => nombreJug(a.jugador_id).localeCompare(nombreJug(b.jugador_id), 'es'))
           const profes = [...new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id))]
           return (
             <Desplegable key={g.bloque.id} abierto={abierto.has(clave)} onToggle={() => toggle(clave)}

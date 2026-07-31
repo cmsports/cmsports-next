@@ -2,9 +2,9 @@
 // (por sede) y una por profesor/grupo. Usa `xlsx-js-style` (ya instalado en
 // el proyecto, mismo patrón que torneo-excel.ts).
 
-import { diaLabel, rangoHorario } from '@/lib/domain/horario'
+import { DIAS, diaLabel, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
-import { diaDe, horas, type AsignacionProfesor, type DiaMes, type ReporteMes } from '@/lib/domain/reportesMes'
+import { diaDe, horas, type AsignacionProfesor, type DiaMes, type InscripcionMes, type ReporteMes } from '@/lib/domain/reportesMes'
 
 const MORADO = '4F46E5'
 const LILA = 'EDE9FE'
@@ -24,7 +24,20 @@ const S = {
   celda: { border: bordes, alignment: { vertical: 'center' } },
   celdaCentro: { border: bordes, alignment: { horizontal: 'center', vertical: 'center' } },
   suspendida: { font: { italic: true, color: { rgb: NARANJA_TXT } }, fill: { fgColor: { rgb: NARANJA_BG } }, border: bordes },
+  sede: { font: { bold: true, sz: 12, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '312E81' } }, alignment: { horizontal: 'left', vertical: 'center' } },
+  grupo: { font: { bold: true, sz: 11, color: { rgb: LILA_TXT } }, fill: { fgColor: { rgb: LILA } }, alignment: { horizontal: 'left', vertical: 'center' } },
 } as const
+
+// Mismo orden que se ve en pantalla: Buin primero, Fátima después.
+const ORDEN_SEDES = ['buin', 'paine']
+function ordenSede(sede: string): number {
+  const i = ORDEN_SEDES.indexOf(sede)
+  return i === -1 ? 99 : i
+}
+function ordenDia(dia: string): number {
+  const i = DIAS.findIndex(d => d.value === dia)
+  return i === -1 ? 99 : i
+}
 
 type Args = {
   clubNombre: string
@@ -33,9 +46,11 @@ type Args = {
   dias: DiaMes[]
   asignaciones: AsignacionProfesor[]
   nombreProf: (id: string) => string
+  inscripciones: InscripcionMes[]
+  nombreJug: (id: string) => string
 }
 
-export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, dias, asignaciones, nombreProf }: Args) {
+export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, dias, asignaciones, nombreProf, inscripciones, nombreJug }: Args) {
   const XLSX = await import('xlsx-js-style')
   const { utils, writeFile } = XLSX
   const wb = utils.book_new()
@@ -114,6 +129,58 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, dias,
   setFila(wsGrupos, 0, 9, S.header)
   for (let row = 1; row < gRows.length; row++) setFila(wsGrupos, row, 9, S.celdaCentro)
   utils.book_append_sheet(wb, wsGrupos, 'Grupos')
+
+  // — Inscritos por grupo — el roster que separa la hoja "Grupos" (que solo
+  // trae el número): un bloque por grupo, con su gente ordenada por nombre.
+  // Agrupado por sede y día, igual que se ve en pantalla.
+  const gruposOrdenados = [...gruposDelMes].sort((a, b) =>
+    ordenSede(a.bloque.sede) - ordenSede(b.bloque.sede)
+    || ordenDia(a.bloque.dia_semana) - ordenDia(b.bloque.dia_semana)
+    || a.bloque.hora_inicio.localeCompare(b.bloque.hora_inicio))
+
+  const filasInsc: any[][] = []
+  const estilosInsc: { row: number; fn: (ws: any) => void }[] = []
+  let sedeActual: string | null = null
+
+  for (const g of gruposOrdenados) {
+    if (g.bloque.sede !== sedeActual) {
+      sedeActual = g.bloque.sede
+      const filaSede = filasInsc.length
+      filasInsc.push([sedeLabel(sedeActual)])
+      estilosInsc.push({ row: filaSede, fn: ws => setFila(ws, filaSede, 6, S.sede) })
+    }
+
+    const profes = [...new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id))]
+    const filaGrupo = filasInsc.length
+    filasInsc.push([
+      `${g.bloque.nombre} — ${diaLabel(g.bloque.dia_semana)} ${rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)}`,
+      profes.map(nombreProf).filter(Boolean).join(' + ') || '—', '', '', '', `${g.inscritos} de ${g.bloque.cupo_maximo}`,
+    ])
+    estilosInsc.push({ row: filaGrupo, fn: ws => setFila(ws, filaGrupo, 6, S.grupo) })
+
+    const suyos = inscripciones
+      .filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
+      .map(i => nombreJug(i.jugador_id))
+      .sort((a, b) => a.localeCompare(b, 'es'))
+
+    if (suyos.length === 0) {
+      const filaVacia = filasInsc.length
+      filasInsc.push(['Sin nadie inscrito.'])
+      estilosInsc.push({ row: filaVacia, fn: ws => set(ws, filaVacia, 0, { font: { italic: true, color: { rgb: '94A3B8' } } }) })
+    } else {
+      for (const nombre of suyos) {
+        const filaJug = filasInsc.length
+        filasInsc.push([nombre])
+        estilosInsc.push({ row: filaJug, fn: ws => setFila(ws, filaJug, 1, S.celda) })
+      }
+    }
+    filasInsc.push([]) // separador entre grupos
+  }
+
+  const wsInsc = utils.aoa_to_sheet(filasInsc)
+  wsInsc['!cols'] = [{ wch: 32 }, { wch: 26 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 14 }]
+  for (const e of estilosInsc) e.fn(wsInsc)
+  utils.book_append_sheet(wb, wsInsc, 'Inscritos por grupo')
 
   const nombreArchivo = `reporte_horario_${tituloMes.replace(/ /g, '_')}.xlsx`
   writeFile(wb, nombreArchivo)
