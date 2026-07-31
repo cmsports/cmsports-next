@@ -51,32 +51,49 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
     if (!ws[ref]) ws[ref] = { v: '', t: 's' }
     ws[ref].s = style
   }
-  const setFila = (ws: any, row: number, cols: number, style: any) => {
-    for (let c = 0; c < cols; c++) set(ws, row, c, style)
+  const setRango = (ws: any, row: number, colInicio: number, cols: number, style: any) => {
+    for (let c = 0; c < cols; c++) set(ws, row, colInicio + c, style)
   }
 
   const gruposDelMes = r.grupos.filter(g => g.dictadas.length + g.suspendidas.length > 0)
   const sedesDelMes = [...new Set(gruposDelMes.map(g => g.bloque.sede))].sort()
+
+  // Los grupos van en columnas lado a lado en vez de uno debajo del otro:
+  // con 15 grupos por sede, una sola columna daba 160+ filas de scroll.
+  // Cada grupo nuevo se ubica en la columna que va más corta, para que las
+  // tres queden parejas — no en orden fijo, así ninguna se estira de más.
+  const NUM_COLUMNAS = 3
+  const ANCHO_BLOQUE = 3 // nombre+horario, profesor(es), cupos
+  const HOLGURA = 1 // columna en blanco entre bloques
+  const colInicioDe = (col: number) => col * (ANCHO_BLOQUE + HOLGURA)
+  const anchoTotal = NUM_COLUMNAS * (ANCHO_BLOQUE + HOLGURA) - HOLGURA
 
   for (const sede of sedesDelMes) {
     const gruposSede = gruposDelMes
       .filter(g => g.bloque.sede === sede)
       .sort((a, b) => ordenDia(a.bloque.dia_semana) - ordenDia(b.bloque.dia_semana) || a.bloque.hora_inicio.localeCompare(b.bloque.hora_inicio))
 
-    const filas: any[][] = [[clubNombre || 'CmSports', `${sedeCorta(sede)} — ${tituloMes}`]]
-    const estilos: { row: number; fn: (ws: any) => void }[] = [{ row: 0, fn: ws => setFila(ws, 0, 3, S.titulo) }]
-    filas.push([])
+    const grid: any[][] = [[clubNombre || 'CmSports', `${sedeCorta(sede)} — ${tituloMes}`]]
+    const estilos: { row: number; fn: (ws: any) => void }[] = [{ row: 0, fn: ws => setRango(ws, 0, 0, anchoTotal, S.titulo) }]
+    const escribir = (row: number, col: number, valor: any) => {
+      while (grid.length <= row) grid.push([])
+      grid[row][col] = valor
+    }
 
+    const cursores = Array(NUM_COLUMNAS).fill(2) // fila 0 = título, fila 1 = blanco
     for (const g of gruposSede) {
+      const colIdx = cursores.indexOf(Math.min(...cursores))
+      const c0 = colInicioDe(colIdx)
+      let row = cursores[colIdx]
+
       const profes = [...new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id))]
         .map(nombreProf).filter(Boolean).join(' + ') || '—'
 
-      const filaGrupo = filas.length
-      filas.push([
-        `${g.bloque.nombre} — ${diaLabel(g.bloque.dia_semana)} ${rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)}`,
-        profes, `Inscritos: ${g.inscritos} de ${g.bloque.cupo_maximo} cupos`,
-      ])
-      estilos.push({ row: filaGrupo, fn: ws => setFila(ws, filaGrupo, 3, S.grupo) })
+      escribir(row, c0, `${g.bloque.nombre} — ${diaLabel(g.bloque.dia_semana)} ${rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)}`)
+      escribir(row, c0 + 1, profes)
+      escribir(row, c0 + 2, `Inscritos: ${g.inscritos} de ${g.bloque.cupo_maximo} cupos`)
+      estilos.push({ row, fn: ws => setRango(ws, row, c0, ANCHO_BLOQUE, S.grupo) })
+      row++
 
       const suyos = inscripciones
         .filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
@@ -84,22 +101,25 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
         .sort((a, b) => a.localeCompare(b, 'es'))
 
       if (suyos.length === 0) {
-        const filaVacia = filas.length
-        filas.push(['Sin nadie inscrito.'])
-        estilos.push({ row: filaVacia, fn: ws => set(ws, filaVacia, 0, S.vacio) })
+        escribir(row, c0, 'Sin nadie inscrito.')
+        estilos.push({ row, fn: ws => set(ws, row, c0, S.vacio) })
+        row++
       } else {
         for (const nombre of suyos) {
-          const filaJug = filas.length
-          filas.push([nombre])
-          estilos.push({ row: filaJug, fn: ws => set(ws, filaJug, 0, S.celda) })
+          escribir(row, c0, nombre)
+          estilos.push({ row, fn: ws => set(ws, row, c0, S.celda) })
+          row++
         }
       }
-      filas.push([]) // separador entre grupos
+      cursores[colIdx] = row + 1 // deja una fila en blanco antes del próximo grupo de esa columna
     }
 
-    const ws = utils.aoa_to_sheet(filas)
-    ws['!cols'] = [{ wch: 34 }, { wch: 26 }, { wch: 24 }]
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }]
+    const ws = utils.aoa_to_sheet(grid)
+    ws['!cols'] = Array.from({ length: anchoTotal }, (_, c) => {
+      const posEnBloque = c % (ANCHO_BLOQUE + HOLGURA)
+      return { wch: [30, 24, 22, 3][posEnBloque] ?? 3 }
+    })
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: anchoTotal - 1 } }]
     for (const e of estilos) e.fn(ws)
     utils.book_append_sheet(wb, ws, sedeCorta(sede).slice(0, 31))
   }
