@@ -1,12 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Download } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { calendarioJugador, indexar, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
 import { vigenteEn } from '@/lib/domain/vigencia'
+import { descargarExcelAsistenciaPorBloque } from '@/lib/asistencia-bloque-excel'
 
 const supabase = createClient()
 
@@ -93,6 +95,8 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [datos, setDatos]         = useState<DatosHistorial | null>(null)
   const [meses, setMeses]         = useState(3)
   const [cargando, setCargando]   = useState(true)
+  const [selectorAbierto, setSelectorAbierto] = useState(false)
+  const [descargando, setDescargando]         = useState(false)
 
   const hoy = fechaChile()
   const desde = restarMeses(hoy, meses)
@@ -113,6 +117,33 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
 
   useEffect(() => { void cargar() }, [cargar])
   useEnVivo(['asistencia', 'bloque_jugadores'], clubId, cargar, { conClub: ['asistencia'] })
+
+  // El Excel se descarga con su propio período, elegido al momento de bajarlo:
+  // no depende de qué rango esté mirando la pantalla ahora mismo.
+  async function descargarExcel(mesesElegidos: number) {
+    setSelectorAbierto(false)
+    setDescargando(true)
+    try {
+      const hastaD = fechaChile()
+      const desdeD = restarMeses(hastaD, mesesElegidos)
+      const [{ data: club }, { data: jugs }, datosClub] = await Promise.all([
+        supabase.from('clubes').select('nombre').eq('id', clubId).single(),
+        supabase.from('jugadores')
+          .select('id,nombre,categoria,grupo,sede')
+          .eq('club_id', clubId).eq('estado', 'activo')
+          .or('es_externo.is.null,es_externo.eq.false')
+          .order('nombre'),
+        cargarHistorialClub(clubId, desdeD, hastaD),
+      ])
+      await descargarExcelAsistenciaPorBloque({
+        clubNombre: club?.nombre ?? '',
+        desde: desdeD, hasta: hastaD, meses: mesesElegidos,
+        datos: datosClub, jugadores: (jugs ?? []) as Jugador[],
+      })
+    } finally {
+      setDescargando(false)
+    }
+  }
 
   if (cargando || !datos) {
     return <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Calculando...</div>
@@ -204,6 +235,29 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
           </button>
         ))}
         <span style={{ fontSize: 11, color: hint }}>{desde} al {hoy}</span>
+
+        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+          <button onClick={() => setSelectorAbierto(v => !v)} disabled={descargando}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 20,
+              cursor: descargando ? 'not-allowed' : 'pointer', border: '1px solid #4f46e5', background: '#4f46e5', color: '#fff' }}>
+            <Download size={13} />
+            {descargando ? 'Generando...' : 'Descargar asistencia por bloque'}
+          </button>
+          {selectorAbierto && (
+            <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 10, background: '#fff', border: '1px solid #e2e8f0',
+              borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,0.18)', padding: 10, minWidth: 190 }}>
+              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 6, padding: '0 4px' }}>¿De cuánto tiempo?</div>
+              {[1, 2, 3, 6, 12].map(n => (
+                <div key={n} onClick={() => void descargarExcel(n)}
+                  style={{ padding: '7px 8px', fontSize: 13, color: text, borderRadius: 8, cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  {n === 1 ? 'Último mes' : `Últimos ${n} meses`}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Administración: el club de un vistazo */}
