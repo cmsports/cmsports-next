@@ -21,6 +21,7 @@ const BORDE_EXT = { style: 'medium', color: { rgb: MORADO } } as const
 
 const S = {
   titulo: { font: { bold: true, sz: 15, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: MORADO } }, alignment: { horizontal: 'center', vertical: 'center' } },
+  subtitulo: { font: { sz: 11, color: { rgb: LILA_TXT } }, fill: { fgColor: { rgb: LILA } }, alignment: { horizontal: 'left', vertical: 'center', wrapText: true } },
   grupo: { font: { bold: true, sz: 11, color: { rgb: LILA_TXT } }, fill: { fgColor: { rgb: LILA } }, alignment: { horizontal: 'left', vertical: 'center', wrapText: true } },
   celda: { alignment: { vertical: 'center' } },
   vacio: { font: { italic: true, color: { rgb: HINT } } },
@@ -99,14 +100,29 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
       .filter(g => g.bloque.sede === sede)
       .sort((a, b) => ordenDia(a.bloque.dia_semana) - ordenDia(b.bloque.dia_semana) || a.bloque.hora_inicio.localeCompare(b.bloque.hora_inicio))
 
-    const grid: any[][] = [[clubNombre || 'CmSports', `${sedeCorta(sede)} — ${tituloMes}`]]
+    const grid: any[][] = [[clubNombre || 'CmSports', `Reporte de grupos — ${sedeCorta(sede)}`]]
     const estilos: { row: number; fn: (ws: any) => void }[] = [{ row: 0, fn: ws => setRango(ws, 0, 0, anchoTotal, S.titulo) }]
     const escribir = (row: number, col: number, valor: any) => {
       while (grid.length <= row) grid.push([])
       grid[row][col] = valor
     }
 
-    const cursores = Array(NUM_COLUMNAS).fill(2) // fila 0 = título, fila 1 = blanco
+    // — Cabecera: qué es este reporte, de qué mes, y qué significan los colores. —
+    escribir(1, 0, `Quién está inscrito en cada grupo de ${sedeCorta(sede)} y su % de asistencia — ${tituloMes}.`)
+    estilos.push({ row: 1, fn: ws => setRango(ws, 1, 0, anchoTotal, S.subtitulo) })
+
+    const leyenda: [string, keyof typeof S][] = [
+      ['% asistencia: 75% o más', 'pctBuena'],
+      ['50% – 74%', 'pctMedia'],
+      ['Menos de 50%', 'pctMala'],
+      ['— sin clases registradas aún', 'pctSinDatos'],
+    ]
+    leyenda.forEach(([texto, estiloKey], i) => {
+      escribir(2, i, texto)
+      estilos.push({ row: 2, fn: ws => set(ws, 2, i, S[estiloKey]) })
+    })
+
+    const cursores = Array(NUM_COLUMNAS).fill(4) // 0 título, 1 subtítulo, 2 leyenda, 3 blanco
     for (const g of gruposSede) {
       const colIdx = cursores.indexOf(Math.min(...cursores))
       const c0 = colInicioDe(colIdx)
@@ -162,7 +178,11 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
       const posEnBloque = c % (ANCHO_BLOQUE + HOLGURA)
       return { wch: [30, 24, 22, 3][posEnBloque] ?? 3 }
     })
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: anchoTotal - 1 } }]
+    ws['!rows'] = [{ hpt: 26 }, { hpt: 30 }]
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: anchoTotal - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: anchoTotal - 1 } },
+    ]
     for (const e of estilos) e.fn(ws)
     utils.book_append_sheet(wb, ws, sedeCorta(sede).slice(0, 31))
   }
