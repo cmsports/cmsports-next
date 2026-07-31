@@ -13,6 +13,8 @@ import {
 } from '@/lib/domain/reportesMes'
 import { descargarExcelReporteMes } from '@/lib/reportesMes-excel'
 import { descargarPdfReporteMes } from '@/lib/reportesMes-pdf'
+import { cargarHistorialClub } from '@/lib/supabase/historial'
+import { calendarioJugador, indexar } from '@/lib/domain/historialAsistencia'
 
 const supabase = createClient()
 
@@ -125,12 +127,55 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   const dias = porDia(r, asignaciones)
   const tituloMes = `${MESES[mes - 1]} ${anio}`
 
+  // Cuánto le llevó asistir a cada jugador a cada grupo, dentro del mismo mes
+  // del reporte. Mismo motor que Asistencia → Ranking (cargarHistorialClub +
+  // calendarioJugador): se recalcula al momento de exportar, no en cada
+  // render, porque solo se necesita para el Excel.
+  async function calcularAsistenciaPorGrupo(desde: string, hasta: string) {
+    const datosClub = await cargarHistorialClub(clubId, desde, hasta)
+    const indice = indexar(datosClub)
+    const bloquePorNombre = new Map(datosClub.bloques.map(b => [b.nombre, b]))
+    const idsInscritos = new Set(inscripciones.filter(i => !i.vigente_hasta).map(i => i.jugador_id))
+
+    const conteo = new Map<string, Map<string, { presentes: number; ausentes: number }>>()
+    for (const jugadorId of idsInscritos) {
+      for (const dia of calendarioJugador(jugadorId, desde, hasta, datosClub, indice)) {
+        if (dia.estado === 'extraordinaria' || dia.estado === 'pendiente') continue
+        for (const nombreBloque of dia.bloques) {
+          const bloque = bloquePorNombre.get(nombreBloque)
+          if (!bloque) continue
+          let porJugador = conteo.get(bloque.id)
+          if (!porJugador) { porJugador = new Map(); conteo.set(bloque.id, porJugador) }
+          const c = porJugador.get(jugadorId) ?? { presentes: 0, ausentes: 0 }
+          if (dia.estado === 'presente') c.presentes++; else c.ausentes++
+          porJugador.set(jugadorId, c)
+        }
+      }
+    }
+
+    const pct = new Map<string, Map<string, number | null>>()
+    for (const [bloqueId, porJugador] of conteo) {
+      const m = new Map<string, number | null>()
+      for (const [jugadorId, c] of porJugador) {
+        const total = c.presentes + c.ausentes
+        m.set(jugadorId, total > 0 ? Math.round((c.presentes / total) * 100) : null)
+      }
+      pct.set(bloqueId, m)
+    }
+    return pct
+  }
+
   async function exportar(formato: 'excel' | 'pdf') {
     setExportando(formato)
     try {
-      const args = { clubNombre: 'CmSports', tituloMes, r, dias, asignaciones, nombreProf, inscripciones, nombreJug }
-      if (formato === 'excel') await descargarExcelReporteMes(args)
-      else await descargarPdfReporteMes(args)
+      if (formato === 'excel') {
+        const desde = r.fechas[0] ?? hoy
+        const hasta = r.fechas[r.fechas.length - 1] ?? hoy
+        const pctAsistencia = await calcularAsistenciaPorGrupo(desde, hasta)
+        await descargarExcelReporteMes({ clubNombre: 'CmSports', tituloMes, r, asignaciones, nombreProf, inscripciones, nombreJug, pctAsistencia })
+      } else {
+        await descargarPdfReporteMes({ clubNombre: 'CmSports', tituloMes, r, dias, asignaciones, nombreProf })
+      }
     } finally {
       setExportando(null)
     }

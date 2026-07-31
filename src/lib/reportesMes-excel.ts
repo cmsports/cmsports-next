@@ -10,6 +10,9 @@ const LILA_TXT = '3730A3'
 const MORADO = '4F46E5'
 const BORDE = 'E2E8F0'
 const HINT = '94A3B8'
+const VERDE_BG = 'F0FDF4'; const VERDE_TXT = '166534'
+const AMBAR_BG = 'FFFBEB'; const AMBAR_TXT = 'B45309'
+const ROJO_BG = 'FEF2F2'; const ROJO_TXT = 'B91C1C'
 
 const borde = { style: 'thin', color: { rgb: BORDE } } as const
 const bordes = { top: borde, bottom: borde, left: borde, right: borde }
@@ -19,7 +22,16 @@ const S = {
   grupo: { font: { bold: true, sz: 11, color: { rgb: LILA_TXT } }, fill: { fgColor: { rgb: LILA } }, alignment: { horizontal: 'left', vertical: 'center' } },
   celda: { border: bordes, alignment: { vertical: 'center' } },
   vacio: { font: { italic: true, color: { rgb: HINT } } },
+  pctBuena: { font: { bold: true, color: { rgb: VERDE_TXT } }, fill: { fgColor: { rgb: VERDE_BG } }, alignment: { horizontal: 'center' } },
+  pctMedia: { font: { bold: true, color: { rgb: AMBAR_TXT } }, fill: { fgColor: { rgb: AMBAR_BG } }, alignment: { horizontal: 'center' } },
+  pctMala: { font: { bold: true, color: { rgb: ROJO_TXT } }, fill: { fgColor: { rgb: ROJO_BG } }, alignment: { horizontal: 'center' } },
+  pctSinDatos: { font: { color: { rgb: HINT } }, alignment: { horizontal: 'center' } },
 } as const
+
+function estiloPct(pct: number | null) {
+  if (pct === null) return S.pctSinDatos
+  return pct >= 75 ? S.pctBuena : pct >= 50 ? S.pctMedia : S.pctMala
+}
 
 // Nombre corto de sede para el título de la hoja: no admite paréntesis largos
 // ni pasar 31 caracteres.
@@ -39,9 +51,11 @@ type Args = {
   nombreProf: (id: string) => string
   inscripciones: InscripcionMes[]
   nombreJug: (id: string) => string
+  /** % de asistencia de cada jugador en ese grupo, ese mismo mes. bloque_id -> jugador_id -> %. */
+  pctAsistencia: Map<string, Map<string, number | null>>
 }
 
-export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asignaciones, nombreProf, inscripciones, nombreJug }: Args) {
+export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asignaciones, nombreProf, inscripciones, nombreJug, pctAsistencia }: Args) {
   const XLSX = await import('xlsx-js-style')
   const { utils, writeFile } = XLSX
   const wb = utils.book_new()
@@ -95,19 +109,21 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
       estilos.push({ row, fn: ws => setRango(ws, row, c0, ANCHO_BLOQUE, S.grupo) })
       row++
 
+      const pctDelGrupo = pctAsistencia.get(g.bloque.id)
       const suyos = inscripciones
         .filter(i => i.bloque_id === g.bloque.id && !i.vigente_hasta)
-        .map(i => nombreJug(i.jugador_id))
-        .sort((a, b) => a.localeCompare(b, 'es'))
+        .map(i => ({ nombre: nombreJug(i.jugador_id), pct: pctDelGrupo?.get(i.jugador_id) ?? null }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
 
       if (suyos.length === 0) {
         escribir(row, c0, 'Sin nadie inscrito.')
         estilos.push({ row, fn: ws => set(ws, row, c0, S.vacio) })
         row++
       } else {
-        for (const nombre of suyos) {
+        for (const { nombre, pct } of suyos) {
           escribir(row, c0, nombre)
-          estilos.push({ row, fn: ws => set(ws, row, c0, S.celda) })
+          escribir(row, c0 + 1, pct === null ? '—' : `${pct}%`)
+          estilos.push({ row, fn: ws => { set(ws, row, c0, S.celda); set(ws, row, c0 + 1, estiloPct(pct)) } })
           row++
         }
       }
