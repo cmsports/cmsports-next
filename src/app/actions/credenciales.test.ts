@@ -64,6 +64,44 @@ describe('listarCredenciales', () => {
     expect(espejos.upsert).toHaveBeenCalled()
   })
 
+  // El caso real: un reset (individual o masivo) cambió el email en auth y en
+  // `perfiles`, pero el espejo se quedó con el login viejo —pasa cuando el
+  // upsert del espejo falla y el reset no reintenta—. El reporte tiene que
+  // notar que el login ya no sirve y regenerarlo, no repetir el dato viejo
+  // para siempre.
+  it('si el espejo quedó con un login que ya no coincide con perfiles.email, lo regenera', async () => {
+    const perfiles = {
+      select: () => ({ eq: () => ({ order: () => ({ order: () => Promise.resolve({ data: [
+        { id: 'u-j1', nombre: 'Agustin', email: 'agustin@cmsports.cl', rol: 'jugador', jugador_id: 'j1' },
+      ] }) }) }) }),
+    }
+    const espejos = {
+      select: () => ({ eq: () => Promise.resolve({ data: [
+        // Login viejo, de antes del reset: ya no coincide con perfiles.email.
+        { usuario_id: 'u-j1', password_plano: 'agustin1234', usuario_login: 'franciscoqhuelquen@gmail.com', tipo_login: 'email', actualizado_en: '2026-07-30' },
+      ] }) }),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
+    }
+    const jugadores = {
+      select: () => ({ eq: () => Promise.resolve({ data: [{ id: 'j1', telefono: null, rut: null }] }) }),
+    }
+    const updateUserById = vi.fn().mockResolvedValue({ error: null })
+    mocks.createAdminClient.mockReturnValue(adminConTablas(
+      { perfiles, credencial_visible: espejos, jugadores },
+      { auth: { admin: { updateUserById } } },
+    ))
+
+    const r = await listarCredenciales()
+
+    // El login se regenera a partir de perfiles.email (la fuente de verdad de
+    // auth), no del que quedó guardado en el espejo.
+    expect(r.filas![0]).toMatchObject({ usuarioLogin: 'agustin@cmsports.cl', passwordPlano: 'agustin123' })
+    expect(updateUserById).toHaveBeenCalledWith('u-j1', { password: 'agustin123' })
+    expect(espejos.upsert).toHaveBeenCalledWith([expect.objectContaining({
+      usuario_id: 'u-j1', usuario_login: 'agustin@cmsports.cl', tipo_login: 'email',
+    })])
+  })
+
   it('sin admin no lista nada', async () => {
     mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado' })
 
@@ -91,7 +129,7 @@ describe('resetearCredencial', () => {
     mocks.createAdminClient.mockReturnValue({
       auth: { admin: { updateUserById } },
       from: vi.fn((tabla: string) => {
-        if (tabla === 'perfiles') return perfilFrom()
+        if (tabla === 'perfiles') return { ...perfilFrom(), update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }
         if (tabla === 'jugadores') return {
           select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { email: null, telefono: '958730364', rut: null } }) }) }),
         }
@@ -109,6 +147,43 @@ describe('resetearCredencial', () => {
     expect(espejoUpsert).toHaveBeenCalledWith(expect.objectContaining({
       usuario_id: 'u-1', club_id: CLUB, password_plano: 'colombagonzalez123',
       usuario_login: '958730364', tipo_login: 'celular',
+    }))
+  })
+
+  // El caso real que motivó el fix: el jugador se creó con celular y luego se
+  // le agregó un email real en su ficha. auth.users se queda con el celular
+  // viejo hasta que algo lo sincroniza; sin este fix, resetear la clave la
+  // aplicaba sobre la cuenta vieja y el jugador seguía sin poder entrar con
+  // el email que el reporte ya le mostraba.
+  it('si el email del jugador cambió desde que se creó la cuenta, sincroniza auth antes de espejar', async () => {
+    perfilFrom.mockReturnValue({
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: {
+        id: 'u-1', nombre: 'Agustin Quinteros', email: '958730364@cel.cmsports.cl', rol: 'jugador', jugador_id: 'j1', club_id: CLUB,
+      } }) }) }),
+    })
+    const perfilesUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) })
+    mocks.createAdminClient.mockReturnValue({
+      auth: { admin: { updateUserById } },
+      from: vi.fn((tabla: string) => {
+        if (tabla === 'perfiles') return { ...perfilFrom(), update: perfilesUpdate }
+        if (tabla === 'jugadores') return {
+          select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { email: 'franciscoqhuelquen@gmail.com', telefono: '958730364', rut: null } }) }) }),
+        }
+        if (tabla === 'credencial_visible') return { upsert: espejoUpsert }
+        return {}
+      }),
+    })
+
+    const r = await resetearCredencial({ usuarioId: 'u-1' })
+
+    expect(r).toEqual({ password: 'agustinquinteros123' })
+    // Se aplica el email real en auth, aparte del cambio de clave.
+    expect(updateUserById).toHaveBeenCalledWith('u-1', { email: 'franciscoqhuelquen@gmail.com' })
+    expect(updateUserById).toHaveBeenCalledWith('u-1', { password: 'agustinquinteros123' })
+    expect(perfilesUpdate).toHaveBeenCalledWith({ email: 'franciscoqhuelquen@gmail.com' })
+    // El reporte muestra el email nuevo, que ahora sí coincide con auth.
+    expect(espejoUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      usuario_login: 'franciscoqhuelquen@gmail.com', tipo_login: 'email',
     }))
   })
 

@@ -4,28 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
-import { generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
-
-/**
- * El correo con el que se registra el jugador en auth.
- *
- * Si tiene email real, se usa ese. Si solo tiene celular o RUT, se arma un
- * email sintético que le permite loguearse desde la pantalla de ingreso con
- * cualquiera de los tres (la pantalla ya sabe transformar el celular en
- * `<celular>@cel.cmsports.cl` y el RUT en `<rut-sin-guion>@rut.cmsports.cl`).
- *
- * Devuelve null cuando no hay ninguno: sin uno de los tres no hay forma de
- * darle acceso ni de saber cuál es su usuario en el reporte.
- */
-function emailParaAuth(datos: { email?: string | null; telefono?: string | null; rut?: string | null }): string | null {
-  const email = datos.email?.trim().toLowerCase()
-  if (email) return email
-  const tel = datos.telefono?.trim()
-  if (tel && /^\d{9}$/.test(tel)) return `${tel}@cel.cmsports.cl`
-  const rut = datos.rut?.trim().replace('-', '')
-  if (rut && /^\d{7,8}[\dkK]$/.test(rut)) return `${rut}@rut.cmsports.cl`
-  return null
-}
+import { authEmailDe as emailParaAuth, generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
+import { sincronizarEmailAuth } from '@/lib/credencialesAuth'
 import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
 
 type PlanFields = {
@@ -171,6 +151,14 @@ export async function editarJugador(params: {
     nombre: nombre.trim(), rut: rut || null, email: email || null, telefono: telefono || null, ...planFields,
   }).eq('id', jugadorId)
   if (error) return { error: 'Error al editar: ' + error.message }
+
+  // Si el jugador tiene cuenta de acceso, su email/celular/rut nuevo tiene que
+  // quedar reflejado en auth.users; si no, queda logueando con el dato viejo
+  // aunque la ficha y el reporte de credenciales ya muestren el nuevo.
+  const admin = createAdminClient()
+  const { data: perfil } = await admin.from('perfiles').select('id,email').eq('jugador_id', jugadorId).maybeSingle()
+  if (perfil) await sincronizarEmailAuth(admin, perfil.id, perfil.email, { email, telefono, rut })
+
   return { success: true }
 }
 
@@ -382,6 +370,10 @@ export async function resetearPasswordJugador(params: { jugadorId: string; nueva
   // próximo reset masivo o hasta que alguien la volviera a cambiar. El admin
   // acaba de tipearla, saberla es el motivo del reporte.
   const { data: jug } = await admin.from('jugadores').select('email,telefono,rut').eq('id', params.jugadorId).single()
+  // Mismo motivo que en editarJugador: si el dato del jugador cambió después
+  // de creada la cuenta, auth.users se queda con el email viejo y la clave
+  // nueva no sirve de nada porque el login se intenta con el email actual.
+  await sincronizarEmailAuth(admin, perfilData.id, perfilData.email, { email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
   const { login, tipo } = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
   await admin.from('credencial_visible').upsert({
     usuario_id: perfilData.id, club_id: clubId, password_plano: params.nuevaPassword,

@@ -3,6 +3,7 @@
 import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generarEmailInicial, generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
+import { sincronizarEmailAuth } from '@/lib/credencialesAuth'
 
 export type FilaCredencial = {
   usuarioId: string
@@ -38,15 +39,30 @@ export async function listarCredenciales(): Promise<{ error?: string; filas?: Fi
     admin.from('jugadores').select('id,nombre,telefono,rut').eq('club_id', clubId),
   ])
 
-  // Cualquier usuario sin espejo se sincroniza en el acto: se le arma
-  // `nombreapellido123` y se aplica en auth. Sin esto el admin veía "sin
-  // registro" para todo el que se hubiera creado antes de que existiera la
-  // tabla, o desde flujos que no la escriben, y tenía que apretar el botón
-  // fila por fila. El reporte tiene que responder "acá está la clave", no
-  // "pediménos que la generemos".
-  const espejoIds = new Set((espejos ?? []).map((e: { usuario_id: string }) => e.usuario_id))
+  // Cualquier usuario sin espejo, o con un espejo cuyo login de tipo email ya
+  // no coincide con `perfiles.email` (la fuente de verdad de auth), se
+  // sincroniza en el acto: se le arma `nombreapellido123` y se aplica en auth.
+  //
+  // El segundo caso es el real: un reset —individual o masivo— cambia el
+  // email/clave en auth y en `perfiles`, pero si el upsert del espejo falla
+  // (se cuenta como "fallida" y sigue, no reintenta), el reporte queda
+  // mostrando el login viejo para siempre —el admin ve datos que nunca más
+  // van a servir para entrar, sin ninguna forma de notarlo salvo que alguien
+  // se queje de que no puede loguearse.
+  //
+  // No se compara para tipo celular/rut: ahí el login que se muestra es el
+  // número o RUT crudo, no el email sintético que vive en `perfiles.email`
+  // (`<tel>@cel.cmsports.cl`), así que comparados tal cual siempre "difieren"
+  // sin que eso sea un problema.
+  const espejoPorId = new Map((espejos ?? []).map((e: { usuario_id: string; usuario_login: string; tipo_login: string }) => [e.usuario_id, e]))
   const jugPorIdSync = new Map((jugadores ?? []).map((j: { id: string; telefono: string | null; rut: string | null }) => [j.id, j]))
-  const faltantes = (perfiles ?? []).filter((p: { id: string }) => !espejoIds.has(p.id))
+  const desalineado = (p: { id: string; email: string | null }) => {
+    const esp = espejoPorId.get(p.id)
+    if (!esp) return true
+    if (esp.tipo_login !== 'email' || !p.email) return false
+    return esp.usuario_login.trim().toLowerCase() !== p.email.trim().toLowerCase()
+  }
+  const faltantes = (perfiles ?? []).filter(desalineado)
   const nuevosEspejos: Array<{ usuario_id: string; club_id: string; password_plano: string; usuario_login: string; tipo_login: string; actualizado_en: string }> = []
   for (const p of faltantes as { id: string; nombre: string; email: string | null; jugador_id: string | null }[]) {
     const password = generarPasswordInicial(p.nombre)
@@ -125,6 +141,11 @@ export async function resetearCredencial(params: { usuarioId: string }): Promise
     const { data: jug } = await admin.from('jugadores').select('email,telefono,rut').eq('id', perfil.jugador_id).single()
     const r = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
     if (r.login) { login = r.login; tipo = r.tipo }
+    // El dato del jugador pudo cambiar después de creada la cuenta (ficha
+    // editada, celular corregido). Sin esto, la clave nueva queda en la cuenta
+    // vieja mientras el reporte ya muestra el login nuevo, y el reset "no
+    // sirve" a ojos del admin.
+    await sincronizarEmailAuth(admin, perfil.id, perfil.email, { email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
   }
 
   const { error: espejoErr } = await admin.from('credencial_visible').upsert({
@@ -263,8 +284,13 @@ export async function credencialDelJugador(jugadorId: string): Promise<{ error?:
   if (authErr) return { error: authErr }
 
   const admin = createAdminClient()
-  const { data: perfil } = await admin.from("perfiles").select("id,nombre,club_id").eq("jugador_id", jugadorId).maybeSingle()
+  const { data: perfil } = await admin.from("perfiles").select("id,nombre,email,club_id").eq("jugador_id", jugadorId).maybeSingle()
   if (!perfil || perfil.club_id !== clubId) return { error: "Este jugador no tiene cuenta de acceso en tu club" }
+
+  const { data: jug } = await admin.from("jugadores").select("email,telefono,rut").eq("id", jugadorId).single()
+  // Aunque ya tenga espejo, el dato del jugador pudo cambiar desde entonces:
+  // sin esto se le manda por WhatsApp un login que en auth.users ya no existe.
+  await sincronizarEmailAuth(admin, perfil.id, perfil.email, { email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
 
   const { data: esp } = await admin.from("credencial_visible").select("password_plano,usuario_login").eq("usuario_id", perfil.id).maybeSingle()
   if (esp?.password_plano) return { login: esp.usuario_login, password: esp.password_plano, nombre: perfil.nombre }
@@ -275,7 +301,6 @@ export async function credencialDelJugador(jugadorId: string): Promise<{ error?:
   const { error: upErr } = await admin.auth.admin.updateUserById(perfil.id, { password })
   if (upErr) return { error: "No se pudo generar la contraseña: " + upErr.message }
 
-  const { data: jug } = await admin.from("jugadores").select("email,telefono,rut").eq("id", jugadorId).single()
   const { login, tipo } = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
   await admin.from("credencial_visible").upsert({
     usuario_id: perfil.id, club_id: clubId, password_plano: password,

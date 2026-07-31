@@ -70,3 +70,28 @@ export function usuarioLoginDe(datos: {
   if (datos.rut?.trim()) return { login: datos.rut.trim(), tipo: 'rut' }
   return { login: '', tipo: 'email' }
 }
+
+/**
+ * El email real que debe tener en `auth.users`, a partir de los mismos datos
+ * que decide `usuarioLoginDe`.
+ *
+ * El celular y el RUT no sirven tal cual como email de auth, así que se les
+ * arma uno sintético (`<celular>@cel.cmsports.cl`, `<rut-sin-guion>@rut.cmsports.cl`)
+ * que la pantalla de login ya sabe reconstruir a partir de lo que el jugador
+ * escribe. Mantener esta función como la única fuente de ese patrón evita que
+ * `auth.users.email` quede desalineado con lo que el reporte de credenciales
+ * le muestra al admin como "usuario".
+ */
+export function authEmailDe(datos: {
+  email?: string | null
+  telefono?: string | null
+  rut?: string | null
+}): string | null {
+  const email = datos.email?.trim().toLowerCase()
+  if (email) return email
+  const tel = datos.telefono?.trim()
+  if (tel && /^\d{9}$/.test(tel)) return `${tel}@cel.cmsports.cl`
+  const rut = datos.rut?.trim().replace('-', '')
+  if (rut && /^\d{7,8}[\dkK]$/.test(rut)) return `${rut}@rut.cmsports.cl`
+  return null
+}
