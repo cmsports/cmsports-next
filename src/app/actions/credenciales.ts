@@ -14,6 +14,7 @@ export type FilaCredencial = {
   tipoLogin: 'email' | 'celular' | 'rut'
   passwordPlano: string | null    // null si el jugador ya la cambió y nunca se reseteó desde acá
   actualizadoEn: string | null
+  telefono: string | null         // para armar el link de WhatsApp; null si no es jugador o no tiene celular cargado
 }
 
 /**
@@ -107,6 +108,7 @@ export async function listarCredenciales(): Promise<{ error?: string; filas?: Fi
       tipoLogin: tipo,
       passwordPlano: esp?.password_plano ?? null,
       actualizadoEn: esp?.actualizado_en ?? null,
+      telefono: jug?.telefono ?? null,
     }
   })
 

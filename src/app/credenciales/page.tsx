@@ -7,7 +7,120 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { copiarTexto } from '@/lib/clipboard'
 import { listarCredenciales, resetearCredencial, resetearTodasLasCredenciales, type FilaCredencial } from '@/app/actions/credenciales'
-import { ArrowLeft, Check, Copy, Download, KeyRound, Loader2, RefreshCw, Eye, EyeOff } from 'lucide-react'
+import { linkWhatsApp } from '@/lib/whatsapp'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
+import { ArrowLeft, Check, Copy, Download, KeyRound, Loader2, RefreshCw, Eye, EyeOff, MessageCircle } from 'lucide-react'
+
+const modalOverlay = { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }
+const modalCard = { background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 460, maxHeight: '86vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(15,23,42,0.25)' } as const
+
+function mensajeCredencial(f: FilaCredencial, appUrl: string): string {
+  return `Hola ${f.nombre}! Estas son tus credenciales para entrar a CmSports:\n\nUsuario: ${f.usuarioLogin}\nContraseña: ${f.passwordPlano}\n\nIngresá en: ${appUrl}/login\n\nTe recomendamos cambiar la contraseña después del primer ingreso.`
+}
+
+/** Selección de jugadores + envío guiado uno por uno: WhatsApp no deja
+ * automatizar el envío real, así que esto arma el mensaje y hace de guía
+ * ("siguiente") para no tener que ir a buscar a cada jugador a mano. */
+function ModalEnviarWhatsApp({ filas, onClose }: { filas: FilaCredencial[]; onClose: () => void }) {
+  const appUrl = typeof window !== 'undefined' ? window.location.origin : ''
+  const candidatos = filas
+    .filter(f => f.rol === 'jugador')
+    .map(f => ({ ...f, wa: f.passwordPlano ? linkWhatsApp(f.telefono, mensajeCredencial(f, appUrl)) : null }))
+  const enviables = candidatos.filter(c => c.wa)
+  const noEnviables = candidatos.filter(c => !c.wa)
+
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set(enviables.map(c => c.usuarioId)))
+  const [enviando, setEnviando] = useState(false)
+  const [indice, setIndice] = useState(0)
+
+  function toggle(id: string) {
+    setSeleccion(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+
+  const cola = enviables.filter(c => seleccion.has(c.usuarioId))
+  const actual = cola[indice]
+
+  if (!enviando) {
+    return (
+      <div style={modalOverlay} onClick={onClose}>
+        <div style={modalCard} onClick={e => e.stopPropagation()}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <MessageCircle size={18} color="#16a34a" /> Enviar credenciales por WhatsApp
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+            Elegí a quién. Cada uno se abre en WhatsApp con el mensaje listo — solo falta apretar enviar.
+          </div>
+
+          <button onClick={() => setSeleccion(s => s.size === enviables.length ? new Set() : new Set(enviables.map(c => c.usuarioId)))}
+            style={{ fontSize: 12, color: C.sky, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 10, fontWeight: 600 }}>
+            {seleccion.size === enviables.length ? 'Deseleccionar todos' : `Seleccionar todos (${enviables.length})`}
+          </button>
+
+          <div style={{ maxHeight: 300, overflowY: 'auto', border: `1px solid ${C.border}`, borderRadius: 10 }}>
+            {enviables.map(c => (
+              <label key={c.usuarioId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: `1px solid ${C.border}`, cursor: 'pointer' }}>
+                <input type="checkbox" checked={seleccion.has(c.usuarioId)} onChange={() => toggle(c.usuarioId)} />
+                <span style={{ fontSize: 13, color: C.text }}>{c.nombre}</span>
+              </label>
+            ))}
+            {noEnviables.map(c => (
+              <div key={c.usuarioId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: `1px solid ${C.border}`, opacity: 0.55 }}>
+                <input type="checkbox" disabled />
+                <span style={{ fontSize: 13, color: C.muted }}>{c.nombre}</span>
+                <span style={{ fontSize: 11, color: C.orangeD, marginLeft: 'auto' }}>
+                  {!c.passwordPlano ? 'clave no visible' : 'sin celular válido'}
+                </span>
+              </div>
+            ))}
+            {candidatos.length === 0 && (
+              <div style={{ padding: 20, textAlign: 'center', color: C.hint, fontSize: 13 }}>No hay jugadores.</div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+            <button onClick={onClose}
+              style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '8px 14px', fontSize: 12, cursor: 'pointer' }}>
+              Cancelar
+            </button>
+            <button onClick={() => { setIndice(0); setEnviando(true) }} disabled={cola.length === 0}
+              style={{ background: '#25D366', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: cola.length === 0 ? 'not-allowed' : 'pointer', opacity: cola.length === 0 ? 0.5 : 1 }}>
+              Empezar envío ({cola.length})
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={modalOverlay}>
+      <div style={modalCard}>
+        <div style={{ fontSize: 12, color: C.hint, marginBottom: 4 }}>{indice + 1} de {cola.length}</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 16 }}>{actual?.nombre}</div>
+
+        {actual?.wa && <WhatsAppBtn href={actual.wa} style={{ marginBottom: 16 }}>Abrir WhatsApp y enviar</WhatsAppBtn>}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+          <button onClick={onClose}
+            style={{ background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: '8px 14px', fontSize: 12, cursor: 'pointer' }}>
+            Terminar acá
+          </button>
+          {indice + 1 < cola.length ? (
+            <button onClick={() => setIndice(i => i + 1)}
+              style={{ background: C.sky, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              Siguiente →
+            </button>
+          ) : (
+            <button onClick={onClose}
+              style={{ background: C.green, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              Listo ✓
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const C = {
   bg: '#f1f5f9', card: '#ffffff', border: '#e2e8f0', text: '#0f172a',
@@ -27,6 +140,7 @@ export default function CredencialesPage() {
   const [copiado, setCopiado] = useState<string | null>(null)
   const [reseteando, setReseteando] = useState<string | null>(null)
   const [mostrando, setMostrando] = useState(true)
+  const [waAbierto, setWaAbierto] = useState(false)
   const [bulkAbierto, setBulkAbierto] = useState(false)
   const [bulkCorriendo, setBulkCorriendo] = useState(false)
   const [bulkResultado, setBulkResultado] = useState('')
@@ -223,8 +337,14 @@ export default function CredencialesPage() {
             style={{ background: C.sky, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Download size={13} /> Descargar PDF
           </button>
+          <button onClick={() => setWaAbierto(true)}
+            style={{ background: '#25D366', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <MessageCircle size={13} /> Enviar por WhatsApp
+          </button>
         </div>
       </div>
+
+      {waAbierto && <ModalEnviarWhatsApp filas={filas} onClose={() => setWaAbierto(false)} />}
 
       {error && (
         <div style={{ background: C.redL, border: `1px solid ${C.red}`, color: C.red, padding: 12, borderRadius: 8, fontSize: 13, marginBottom: 12 }}>
