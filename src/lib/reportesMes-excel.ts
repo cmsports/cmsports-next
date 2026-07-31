@@ -14,13 +14,15 @@ const VERDE_BG = 'F0FDF4'; const VERDE_TXT = '166534'
 const AMBAR_BG = 'FFFBEB'; const AMBAR_TXT = 'B45309'
 const ROJO_BG = 'FEF2F2'; const ROJO_TXT = 'B91C1C'
 
-const borde = { style: 'thin', color: { rgb: BORDE } } as const
-const bordes = { top: borde, bottom: borde, left: borde, right: borde }
+// Borde fino para las líneas internas de la tabla; uno más grueso y morado
+// para el contorno de cada tarjeta de grupo, así se distingue de la de al lado.
+const BORDE_INT = { style: 'thin', color: { rgb: BORDE } } as const
+const BORDE_EXT = { style: 'medium', color: { rgb: MORADO } } as const
 
 const S = {
   titulo: { font: { bold: true, sz: 15, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: MORADO } }, alignment: { horizontal: 'center', vertical: 'center' } },
-  grupo: { font: { bold: true, sz: 11, color: { rgb: LILA_TXT } }, fill: { fgColor: { rgb: LILA } }, alignment: { horizontal: 'left', vertical: 'center' } },
-  celda: { border: bordes, alignment: { vertical: 'center' } },
+  grupo: { font: { bold: true, sz: 11, color: { rgb: LILA_TXT } }, fill: { fgColor: { rgb: LILA } }, alignment: { horizontal: 'left', vertical: 'center', wrapText: true } },
+  celda: { alignment: { vertical: 'center' } },
   vacio: { font: { italic: true, color: { rgb: HINT } } },
   pctBuena: { font: { bold: true, color: { rgb: VERDE_TXT } }, fill: { fgColor: { rgb: VERDE_BG } }, alignment: { horizontal: 'center' } },
   pctMedia: { font: { bold: true, color: { rgb: AMBAR_TXT } }, fill: { fgColor: { rgb: AMBAR_BG } }, alignment: { horizontal: 'center' } },
@@ -31,6 +33,16 @@ const S = {
 function estiloPct(pct: number | null) {
   if (pct === null) return S.pctSinDatos
   return pct >= 75 ? S.pctBuena : pct >= 50 ? S.pctMedia : S.pctMala
+}
+
+/** Contorno de tarjeta: grueso en el borde exterior del bloque, fino adentro. */
+function bordeCaja(top: boolean, bottom: boolean, left: boolean, right: boolean) {
+  return {
+    top: top ? BORDE_EXT : BORDE_INT,
+    bottom: bottom ? BORDE_EXT : BORDE_INT,
+    left: left ? BORDE_EXT : BORDE_INT,
+    right: right ? BORDE_EXT : BORDE_INT,
+  }
 }
 
 // Nombre corto de sede para el título de la hoja: no admite paréntesis largos
@@ -98,7 +110,12 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
     for (const g of gruposSede) {
       const colIdx = cursores.indexOf(Math.min(...cursores))
       const c0 = colInicioDe(colIdx)
-      let row = cursores[colIdx]
+      const filaInicio = cursores[colIdx]
+      let row = filaInicio
+
+      // Cada celda del bloque se guarda con su estilo de contenido; el borde
+      // de caja se calcula al final, cuando ya se sabe dónde termina el bloque.
+      const celdas: { row: number; col: number; base: any }[] = []
 
       const profes = [...new Set(asignaciones.filter(a => a.bloque_id === g.bloque.id).map(a => a.profesor_id))]
         .map(nombreProf).filter(Boolean).join(' + ') || '—'
@@ -106,7 +123,7 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
       escribir(row, c0, `${g.bloque.nombre} — ${diaLabel(g.bloque.dia_semana)} ${rangoHorario(g.bloque.hora_inicio, g.bloque.hora_fin)}`)
       escribir(row, c0 + 1, profes)
       escribir(row, c0 + 2, `Inscritos: ${g.inscritos} de ${g.bloque.cupo_maximo} cupos`)
-      estilos.push({ row, fn: ws => setRango(ws, row, c0, ANCHO_BLOQUE, S.grupo) })
+      celdas.push({ row, col: c0, base: S.grupo }, { row, col: c0 + 1, base: S.grupo }, { row, col: c0 + 2, base: S.grupo })
       row++
 
       const pctDelGrupo = pctAsistencia.get(g.bloque.id)
@@ -117,16 +134,26 @@ export async function descargarExcelReporteMes({ clubNombre, tituloMes, r, asign
 
       if (suyos.length === 0) {
         escribir(row, c0, 'Sin nadie inscrito.')
-        estilos.push({ row, fn: ws => set(ws, row, c0, S.vacio) })
+        celdas.push({ row, col: c0, base: S.vacio }, { row, col: c0 + 1, base: {} }, { row, col: c0 + 2, base: {} })
         row++
       } else {
         for (const { nombre, pct } of suyos) {
           escribir(row, c0, nombre)
           escribir(row, c0 + 1, pct === null ? '—' : `${pct}%`)
-          estilos.push({ row, fn: ws => { set(ws, row, c0, S.celda); set(ws, row, c0 + 1, estiloPct(pct)) } })
+          celdas.push({ row, col: c0, base: S.celda }, { row, col: c0 + 1, base: estiloPct(pct) }, { row, col: c0 + 2, base: {} })
           row++
         }
       }
+
+      const filaFin = row - 1
+      for (const { row: rr, col: cc, base } of celdas) {
+        const estiloFinal = {
+          ...base,
+          border: bordeCaja(rr === filaInicio, rr === filaFin, cc === c0, cc === c0 + ANCHO_BLOQUE - 1),
+        }
+        estilos.push({ row: rr, fn: ws => set(ws, rr, cc, estiloFinal) })
+      }
+
       cursores[colIdx] = row + 1 // deja una fila en blanco antes del próximo grupo de esa columna
     }
 
