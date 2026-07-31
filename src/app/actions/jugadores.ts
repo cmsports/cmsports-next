@@ -180,25 +180,37 @@ export async function toggleEstadoJugador(params: { jugadorId: string; nuevoEsta
 }
 
 export async function eliminarJugador(params: { jugadorId: string }) {
-  const { error: authErr, supabase } = await requireAdminClub()
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
+
+  const { data: jugador } = await supabase.from('jugadores')
+    .select('id').eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
+  if (!jugador) return { error: 'Jugador no encontrado' }
 
   const admin = createAdminClient()
 
-  // Buscar el perfil ANTES de borrar para obtener el user_id de Auth
+  // Perfil y documentos ANTES de borrar: después ya no hay de dónde sacar
+  // el user_id de Auth ni las rutas de archivos que hay que limpiar del bucket.
   const { data: perfilJugador } = await admin.from('perfiles')
-    .select('id')
-    .eq('jugador_id', params.jugadorId)
-    .maybeSingle()
+    .select('id').eq('jugador_id', params.jugadorId).maybeSingle()
+  const { data: documentos } = await admin.from('jugador_documentos')
+    .select('archivo_path').eq('jugador_id', params.jugadorId)
 
-  const { error } = await supabase.from('jugadores').delete().eq('id', params.jugadorId)
-  if (error) return { error: 'Error al eliminar jugador' }
-
-  // Si tenía cuenta de acceso, limpiar perfil y usuario de Auth para no dejar fantasmas
-  if (perfilJugador?.id) {
-    await admin.from('perfiles').delete().eq('id', perfilJugador.id)
-    await admin.auth.admin.deleteUser(perfilJugador.id)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('eliminar_jugador_atomico', { p_jugador_id: params.jugadorId })
+  if (error) {
+    console.error('eliminarJugador RPC falló', params.jugadorId, error)
+    return { error: 'Error al eliminar jugador: ' + error.message }
   }
+
+  // Si tenía cuenta de acceso, borrarla de Auth para no dejar fantasmas
+  // (credencial_visible cae sola por ON DELETE CASCADE hacia auth.users)
+  if (perfilJugador?.id) await admin.auth.admin.deleteUser(perfilJugador.id)
+
+  const rutasStorage = (documentos ?? []).map(d => d.archivo_path).filter(Boolean) as string[]
+  rutasStorage.push(rutaFotoJugador(clubId!, params.jugadorId))
+  await admin.storage.from(BUCKET_PRIVADO).remove(rutasStorage)
+  await admin.storage.from('galeria-fotos').remove([`avatares/${params.jugadorId}.jpg`])
 
   return { success: true }
 }

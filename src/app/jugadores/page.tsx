@@ -331,10 +331,15 @@ export default function JugadoresPage() {
 
   async function eliminar(id: string) {
     if (!confirm('¿Eliminar este jugador? Esta acción no se puede deshacer.')) return
-    const resultado = await eliminarJugador({ jugadorId: id })
-    if (resultado.error) { mostrarToast(resultado.error); return }
-    mostrarToast('Jugador eliminado')
-    void cargarJugadores()
+    try {
+      const resultado = await eliminarJugador({ jugadorId: id })
+      if (resultado.error) { mostrarToast(resultado.error); return }
+      mostrarToast('Jugador eliminado')
+      void cargarJugadores()
+    } catch (e) {
+      console.error('eliminar() falló', e)
+      mostrarToast('Error al eliminar jugador')
+    }
   }
 
   async function guardarMensualidad(j: any) {
