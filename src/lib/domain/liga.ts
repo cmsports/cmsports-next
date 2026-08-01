@@ -252,80 +252,59 @@ function circleMethodRounds(n: number): Array<Array<[number, number]>> {
   return rounds
 }
 
-// Greedy de cadena: ordena los partidos de una fecha para minimizar permanencia.
+// Ordena partidos de una fecha para minimizar gaps de espera.
+// Estrategia: mantener partidos del MISMO jugador consecutivos.
 // Prioridades:
-//   1. Cadena directa (comparte jugador con el anterior)
-//   2. Cadena rota → elegir el candidato que cierre la mayor cantidad de ventanas abiertas
-//      (menos jugadores quedarán esperando sin partido)
-//   3. Desempate: mayor peso = jugadores con más partidos pendientes (posibilidad de cadena larga)
+//   1. Cadena directa (comparte jugador con el anterior bloque)
+//   2. Si no hay cadena, elegir jugador con MÁS partidos pendientes (para agruparlos)
 function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[] {
-  if (matchesFecha.length === 0) return []
+  if (matchesFecha.length <= 1) return matchesFecha
+
   const pendientes = [...matchesFecha]
   const secuencia: PartidoAProgramar[] = []
-  const ventanaAbierta = new Set<string>()
-
-  const contarPendientes = () => {
-    const m = new Map<string, number>()
-    for (const p of pendientes) {
-      m.set(p.jugadorAId, (m.get(p.jugadorAId) ?? 0) + 1)
-      m.set(p.jugadorBId, (m.get(p.jugadorBId) ?? 0) + 1)
-    }
-    return m
-  }
 
   while (pendientes.length > 0) {
-    const pxj = contarPendientes()
-    const peso = (p: PartidoAProgramar) => (pxj.get(p.jugadorAId) ?? 0) + (pxj.get(p.jugadorBId) ?? 0)
+    let mejor: PartidoAProgramar | null = null
 
-    let candidatos = pendientes
-    let usarCostoCierre = false
-
+    // Prioridad 1: Continuar cadena (comparte jugador con último partido)
     if (secuencia.length > 0) {
-      const ult = secuencia[secuencia.length - 1]
-      const jugUlt = new Set([ult.jugadorAId, ult.jugadorBId])
-      const cadena = pendientes.filter(p => jugUlt.has(p.jugadorAId) || jugUlt.has(p.jugadorBId))
-      if (cadena.length > 0) {
-        candidatos = cadena
-      } else {
-        // Cadena rota: usar costo de cierre para elegir el mejor reinicio
-        usarCostoCierre = true
-        const urgentes = pendientes.filter(
-          p => ventanaAbierta.has(p.jugadorAId) || ventanaAbierta.has(p.jugadorBId),
-        )
-        if (urgentes.length > 0) candidatos = urgentes
-      }
-    }
+      const ultPartido = secuencia[secuencia.length - 1]
+      const jugUlt = new Set([ultPartido.jugadorAId, ultPartido.jugadorBId])
 
-    let mejor = candidatos[0]
-    let mejorPeso = peso(mejor)
-    // Cuando la cadena se rompe, minimizar cuántas ventanas quedan abiertas tras elegir este partido
-    // (un jugador con ventana abierta que NO está en el partido elegido espera un bloque más)
-    let mejorCosto = usarCostoCierre
-      ? [...ventanaAbierta].filter(j => j !== mejor.jugadorAId && j !== mejor.jugadorBId).length
-      : 0
-
-    for (let i = 1; i < candidatos.length; i++) {
-      const c = candidatos[i]
-      const pw = peso(c)
-      if (usarCostoCierre) {
-        const costo = [...ventanaAbierta].filter(j => j !== c.jugadorAId && j !== c.jugadorBId).length
-        if (costo < mejorCosto || (costo === mejorCosto && pw > mejorPeso)) {
-          mejor = c; mejorPeso = pw; mejorCosto = costo
+      for (const p of pendientes) {
+        if (jugUlt.has(p.jugadorAId) || jugUlt.has(p.jugadorBId)) {
+          mejor = p
+          break
         }
-      } else {
-        if (pw > mejorPeso) { mejor = c; mejorPeso = pw }
       }
     }
+
+    // Prioridad 2: Elegir jugador con más partidos pendientes (para agruparlos consecutivos)
+    if (!mejor) {
+      const contarPorJugador = new Map<string, number>()
+      for (const p of pendientes) {
+        contarPorJugador.set(p.jugadorAId, (contarPorJugador.get(p.jugadorAId) ?? 0) + 1)
+        contarPorJugador.set(p.jugadorBId, (contarPorJugador.get(p.jugadorBId) ?? 0) + 1)
+      }
+
+      let maxCount = 0
+      for (const p of pendientes) {
+        const countA = contarPorJugador.get(p.jugadorAId) ?? 0
+        const countB = contarPorJugador.get(p.jugadorBId) ?? 0
+        const maxJugador = Math.max(countA, countB)
+
+        if (maxJugador > maxCount) {
+          maxCount = maxJugador
+          mejor = p
+        }
+      }
+    }
+
+    // Fallback (no debería ocurrir)
+    if (!mejor) mejor = pendientes[0]
 
     secuencia.push(mejor)
     pendientes.splice(pendientes.indexOf(mejor), 1)
-
-    for (const jid of [mejor.jugadorAId, mejor.jugadorBId]) {
-      ventanaAbierta.add(jid)
-      if (!pendientes.some(p => p.jugadorAId === jid || p.jugadorBId === jid)) {
-        ventanaAbierta.delete(jid)
-      }
-    }
   }
 
   return secuencia
