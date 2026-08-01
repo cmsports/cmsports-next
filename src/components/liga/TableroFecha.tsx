@@ -309,7 +309,11 @@ export function TableroFecha({
       // antes de cada grupo, para que de un vistazo se vea "qué se juega a
       // qué hora" — sin esto queda una tabla plana donde hay que leer la
       // columna Hora fila por fila para notar dónde cambia el bloque.
-      const NUM_COLS = 6
+      //
+      // Sin columna Mesa: cada división juega siempre en la misma mesa fija,
+      // así que "Mesa" y "División" son el mismo dato dos veces — mostrar las
+      // dos es ruido, no información. La división ya alcanza (y va coloreada).
+      const NUM_COLS = 5
       const body: any[] = []
       let bloqueActual: string | null = null
       for (const p of sorted) {
@@ -326,10 +330,9 @@ export function TableroFecha({
           }])
         }
         body.push([
-          `Mesa ${mesas.find(m => m.id === p.mesaId)?.numero ?? '—'}`,
           p.divisionNombre,
           nombres[p.jugadorAId] ?? '—',
-          'vs',
+          '', // el punto "VS" se dibuja a mano en didDrawCell, no como texto de celda
           nombres[p.jugadorBId] ?? '—',
           p.arbitroId ? (nombres[p.arbitroId] ?? '') : '—',
         ])
@@ -337,26 +340,37 @@ export function TableroFecha({
 
       autoTable(doc, {
         startY: y,
-        head: [['Mesa', 'División', 'Jugador A', '', 'Jugador B', 'Árbitro']],
+        head: [['División', 'Jugador A', '', 'Jugador B', 'Árbitro']],
         body,
         ...estiloTabla(),
         styles: { ...estiloTabla().styles, fontSize: 9.5, cellPadding: 3 },
         columnStyles: {
-          0: { cellWidth: 20, fontStyle: 'bold' },
-          1: { cellWidth: 28 },
-          2: { fontStyle: 'bold', font: 'times', fontSize: 10.5 },
+          0: { cellWidth: 34, fontStyle: 'bold' },
+          1: { fontStyle: 'bold', font: 'times', fontSize: 11 },
           // "vs": el padding por defecto de la tabla (2.8mm por lado) no deja
           // ancho para el texto y lo corta letra por letra ("v" / "s" apiladas).
-          // Acá se achica el padding en vez de solo agrandar la columna.
-          3: { cellWidth: 9, halign: 'center', valign: 'middle', textColor: COLOR.tenue, fontSize: 7.5, cellPadding: { top: 2.8, bottom: 2.8, left: 0, right: 0 } },
-          4: { fontStyle: 'bold', font: 'times', fontSize: 10.5 },
-          5: { cellWidth: 34 },
+          // Acá se dibuja a mano un punto de color en vez de solo texto —
+          // ordena la fila y marca de un vistazo el color de la división.
+          2: { cellWidth: 11, halign: 'center', valign: 'middle', textColor: COLOR.blanco, fontSize: 6.5, cellPadding: { top: 2.8, bottom: 2.8, left: 0, right: 0 } },
+          3: { fontStyle: 'bold', font: 'times', fontSize: 11 },
+          4: { cellWidth: 36 },
         },
         didParseCell: hookData => {
-          if (hookData.section === 'body' && hookData.column.index === 1 && typeof hookData.cell.raw === 'string') {
+          if (hookData.section === 'body' && hookData.column.index === 0 && typeof hookData.cell.raw === 'string') {
             hookData.cell.styles.textColor = colorPorNombre(hookData.cell.raw)
             hookData.cell.styles.fontStyle = 'bold'
           }
+        },
+        didDrawCell: hookData => {
+          if (hookData.section !== 'body' || hookData.column.index !== 2) return
+          const divisionNombre = String((hookData.row.raw as any[])[0])
+          const dc = colorPorNombre(divisionNombre)
+          const cx = hookData.cell.x + hookData.cell.width / 2
+          const cy = hookData.cell.y + hookData.cell.height / 2
+          doc.setFillColor(...dc)
+          doc.circle(cx, cy, 3.4, 'F')
+          doc.setTextColor(...COLOR.blanco); doc.setFont('helvetica', 'bold'); doc.setFontSize(6)
+          doc.text('VS', cx, cy + 1, { align: 'center' })
         },
       })
     }
@@ -444,22 +458,31 @@ export function TableroFecha({
     for (const { mesa, matches } of mesaGrupos) {
       saltoDePaginaSiNoCabe(MH + RH)
 
-      doc.setFillColor(...VERDE)
+      // Cada mesa es fija de UNA división durante toda la fecha — mostrar los
+      // dos por separado en cada fila era el mismo dato repetido. Acá se funden
+      // en un solo encabezado, coloreado con el color de esa división: así el
+      // color de la barra ya dice qué división es, sin tener que leer nada más,
+      // y ese mismo color se repite en el resto del documento (Por horario,
+      // Ranking) — un color = una división, en todos lados.
+      const divisionDeMesa = matches[0]?.divisionNombre ?? '—'
+      const colorMesa = colorPorNombre(divisionDeMesa)
+      doc.setFillColor(...colorMesa)
       doc.rect(M, y, CW, MH, 'F')
       doc.setTextColor(...COLOR.blanco); doc.setFontSize(9.5); doc.setFont('helvetica', 'bold')
-      // Sin símbolo delante: "◉" no existe en las fuentes estándar de PDF y
-      // sale como caracteres rotos ("%É"), mismo problema que el emoji del reloj.
       doc.text(`Mesa ${mesa.numero}`, M + 4, y + MH / 2 + 1.2)
-      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal')
-      doc.setTextColor(...tinte(VERDE, 0.2))
+      const anchoMesaTxt = doc.getTextWidth(`Mesa ${mesa.numero}`)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
+      doc.text(`·  ${divisionDeMesa}`, M + 4 + anchoMesaTxt + 3, y + MH / 2 + 1.2)
+      doc.setFontSize(7.5)
+      doc.setTextColor(...tinte(colorMesa, 0.15))
       doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR - 3, y + MH / 2 + 1.2, { align: 'right' })
       y += MH
 
       for (const p of matches) {
         saltoDePaginaSiNoCabe(RH)
 
-        const dc = colorPorNombre(p.divisionNombre)
-        const lt = tinte(dc, 0.08)
+        const dc = colorMesa
+        const lt = tinte(dc, 0.07)
         const jA = nombres[p.jugadorAId] ?? '—'
         const jB = nombres[p.jugadorBId] ?? '—'
         const arb = p.arbitroId ? nombres[p.arbitroId] ?? '' : ''
@@ -473,15 +496,14 @@ export function TableroFecha({
         doc.setTextColor(28, 40, 78); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
         doc.text(p.bloqueHorario ?? '—', xHora + C_HORA / 2, rMid + 1, { align: 'center' })
 
-        doc.setTextColor(...dc); doc.setFontSize(6.5); doc.setFont('helvetica', 'bold')
-        doc.text(p.divisionNombre, xJug + 2, y + 4)
-
+        // Sin la división acá: ya está en el encabezado de la mesa, así que
+        // el nombre del jugador arranca más arriba y entra con letra más grande.
         doc.setFont('times', 'bold')
-        doc.setTextColor(8, 18, 42); doc.setFontSize(9.5)
-        doc.text(jA, xJug + 2, y + RH / 2 - 0.3, { maxWidth: C_JUG - 4 })
+        doc.setTextColor(8, 18, 42); doc.setFontSize(10.5)
+        doc.text(jA, xJug + 2, y + RH / 2 - 1.2, { maxWidth: C_JUG - 4 })
 
         doc.setFont('times', 'italic')
-        doc.setTextColor(45, 58, 95); doc.setFontSize(9)
+        doc.setTextColor(45, 58, 95); doc.setFontSize(9.5)
         doc.text(jB, xJug + 2, y + RH - 3, { maxWidth: C_JUG - 4 })
 
         doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.2)
