@@ -58,10 +58,13 @@ export async function eliminarVoucher(params: { id: string }) {
 }
 
 export async function toggleVoucher(params: { id: string; activo: boolean }) {
-  const { error: authErr } = await requireStaff()
+  const { error: authErr, clubId } = await requireStaff()
   if (authErr) return { error: authErr }
 
   const admin = createAdminClient()
-  await admin.from('vouchers').update({ activo: params.activo }).eq('id', params.id)
+  // Sin el filtro de club, cualquier staff podía activar o desactivar el
+  // voucher de otro club con solo saber su id — createAdminClient() salta el
+  // RLS, así que el filtro tiene que estar acá.
+  await admin.from('vouchers').update({ activo: params.activo }).eq('id', params.id).eq('club_id', clubId!)
   return { success: true }
 }
