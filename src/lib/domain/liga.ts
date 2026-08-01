@@ -332,8 +332,8 @@ function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[
 }
 
 // Programa una división completa en su mesa asignada.
-// Estrategia OPTIMIZADA: distribuir los partidos de cada jugador a lo largo de
-// TODAS las fechas (2-3 por fecha típicamente) para minimizar gaps de espera.
+// Estrategia OPTIMIZADA: greedy balanceado — distribuir partidos de cada jugador
+// a lo largo de TODAS las fechas (2-3 por fecha) para minimizar gaps de espera.
 // Dentro de cada fecha, ordena los partidos para que sean consecutivos (sin huecos).
 // Los partidos que no entran van a sinAsignar (ajuste manual).
 export function programarDivision(
@@ -347,62 +347,45 @@ export function programarDivision(
 
   const capacidad = bloques.length
 
-  // Contar partidos por jugador
-  const partidosPorJugador = new Map<string, number>()
-  for (const p of partidos) {
-    partidosPorJugador.set(p.jugadorAId, (partidosPorJugador.get(p.jugadorAId) ?? 0) + 1)
-    partidosPorJugador.set(p.jugadorBId, (partidosPorJugador.get(p.jugadorBId) ?? 0) + 1)
-  }
-
-  // Calcular distribución ideal: repartir partidos de cada jugador en fechas
-  // de forma equilibrada (máximo 2-3 por fecha)
-  const distribucion = new Map<string, number[]>() // jugador -> [fecha1, fecha2, ...]
-
-  for (const [jugador, numPartidos] of partidosPorJugador.entries()) {
-    // Distribuir este jugador lo más equilibrado posible en todas las fechas
-    // Objetivo: ~numPartidos/numFechas por fecha (cap 3)
-    const base = Math.floor(numPartidos / numFechas)
-    const extra = numPartidos % numFechas
-    const fechas: number[] = []
-
-    for (let f = 0; f < numFechas; f++) {
-      // Las primeras 'extra' fechas obtienen base+1, las demás obtienen base
-      const cant = (f < extra ? base + 1 : base)
-      for (let i = 0; i < cant; i++) fechas.push(f)
-    }
-
-    distribucion.set(jugador, fechas)
-  }
-
-  // Asignar partidos respetando la distribución de cada jugador
+  // Estrategia greedy: para cada partido, asignarlo a la fecha donde AMBOS
+  // jugadores tienen MENOS partidos asignados (balanceo automático).
+  // Esto garantiza distribución equilibrada sin pre-planificación.
   const porFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
   const conteoFechaJugador = new Map<string, number>() // "jugador::fecha" -> count
   const sinAsignar: PartidoAProgramar[] = []
 
   for (const p of partidos) {
-    const fechasA = distribucion.get(p.jugadorAId) ?? []
-    const fechasB = distribucion.get(p.jugadorBId) ?? []
-
-    let fechaAsignada = -1
-
-    // Buscar la primera fecha donde AMBOS jugadores aún tienen cupo
+    // Contar cuántos partidos tiene cada jugador en cada fecha
+    const cuentaA = new Map<number, number>()
+    const cuentaB = new Map<number, number>()
     for (let f = 0; f < numFechas; f++) {
-      const cuentaA = conteoFechaJugador.get(`${p.jugadorAId}::${f}`) ?? 0
-      const cuentaB = conteoFechaJugador.get(`${p.jugadorBId}::${f}`) ?? 0
-      const cupoA = fechasA.filter(x => x === f).length
-      const cupoB = fechasB.filter(x => x === f).length
+      cuentaA.set(f, conteoFechaJugador.get(`${p.jugadorAId}::${f}`) ?? 0)
+      cuentaB.set(f, conteoFechaJugador.get(`${p.jugadorBId}::${f}`) ?? 0)
+    }
 
-      // Ambos aún tienen "lugar" asignado en esta fecha y hay espacio en la mesa
-      if (cuentaA < cupoA && cuentaB < cupoB && porFecha[f].length < capacidad) {
-        fechaAsignada = f
-        break
+    // Encontrar la fecha donde AMBOS tienen menos partidos y hay capacidad
+    let fechaMejor = -1
+    let scoreMejor = Infinity
+
+    for (let f = 0; f < numFechas; f++) {
+      // Si no hay espacio en la mesa, saltar
+      if (porFecha[f].length >= capacidad) continue
+
+      // Restricción: ninguno debe tener más de 3 partidos en la misma fecha
+      if ((cuentaA.get(f) ?? 0) >= 3 || (cuentaB.get(f) ?? 0) >= 3) continue
+
+      // Score: suma de partidos de ambos en esta fecha (menor = mejor distribución)
+      const score = (cuentaA.get(f) ?? 0) + (cuentaB.get(f) ?? 0)
+      if (score < scoreMejor) {
+        scoreMejor = score
+        fechaMejor = f
       }
     }
 
-    if (fechaAsignada >= 0) {
-      porFecha[fechaAsignada].push(p)
-      conteoFechaJugador.set(`${p.jugadorAId}::${fechaAsignada}`, (conteoFechaJugador.get(`${p.jugadorAId}::${fechaAsignada}`) ?? 0) + 1)
-      conteoFechaJugador.set(`${p.jugadorBId}::${fechaAsignada}`, (conteoFechaJugador.get(`${p.jugadorBId}::${fechaAsignada}`) ?? 0) + 1)
+    if (fechaMejor >= 0) {
+      porFecha[fechaMejor].push(p)
+      conteoFechaJugador.set(`${p.jugadorAId}::${fechaMejor}`, (conteoFechaJugador.get(`${p.jugadorAId}::${fechaMejor}`) ?? 0) + 1)
+      conteoFechaJugador.set(`${p.jugadorBId}::${fechaMejor}`, (conteoFechaJugador.get(`${p.jugadorBId}::${fechaMejor}`) ?? 0) + 1)
     } else {
       sinAsignar.push(p)
     }
