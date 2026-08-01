@@ -252,62 +252,109 @@ function circleMethodRounds(n: number): Array<Array<[number, number]>> {
   return rounds
 }
 
-// Ordena partidos de una fecha para minimizar gaps de espera.
-// Estrategia: mantener partidos del MISMO jugador consecutivos.
-// Prioridades:
-//   1. Cadena directa (comparte jugador con el anterior bloque)
-//   2. Si no hay cadena, elegir jugador con MÁS partidos pendientes (para agruparlos)
+// Ordena partidos de una fecha para minimizar gaps de espera. Dos pasadas:
+//   1. Construcción por cadenas: tratar los partidos como un grafo (jugador =
+//      nodo, partido = conexión) y recorrer cada componente de punta a punta.
+//      Con 2 partidos/jugador (caso normal) cada nodo tiene grado ≤2 → el
+//      grafo se descompone en cadenas simples o anillos, y recorrerlos deja
+//      a cada jugador con sus partidos en bloques consecutivos (gap 0) salvo
+//      en el empalme de un anillo cerrado.
+//   2. Reparación: cualquier jugador que haya quedado con más de 1 partido de
+//      diferencia entre sus apariciones (p.ej. por ramificaciones cuando hay
+//      3 partidos/jugador en la fecha) se corrige moviendo su segunda
+//      aparición lo más cerca posible de la primera. Garantiza en la práctica
+//      hueco ≤1 partido para el caso normal de 2/fecha; en el caso raro de
+//      3/fecha reduce el hueco todo lo posible.
 function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[] {
   if (matchesFecha.length <= 1) return matchesFecha
 
-  const pendientes = [...matchesFecha]
-  const secuencia: PartidoAProgramar[] = []
-
-  while (pendientes.length > 0) {
-    let mejor: PartidoAProgramar | null = null
-
-    // Prioridad 1: Continuar cadena (comparte jugador con último partido)
-    if (secuencia.length > 0) {
-      const ultPartido = secuencia[secuencia.length - 1]
-      const jugUlt = new Set([ultPartido.jugadorAId, ultPartido.jugadorBId])
-
-      for (const p of pendientes) {
-        if (jugUlt.has(p.jugadorAId) || jugUlt.has(p.jugadorBId)) {
-          mejor = p
-          break
-        }
-      }
+  const partidosDeJugador = new Map<string, PartidoAProgramar[]>()
+  for (const p of matchesFecha) {
+    for (const j of [p.jugadorAId, p.jugadorBId]) {
+      if (!partidosDeJugador.has(j)) partidosDeJugador.set(j, [])
+      partidosDeJugador.get(j)!.push(p)
     }
-
-    // Prioridad 2: Elegir jugador con más partidos pendientes (para agruparlos consecutivos)
-    if (!mejor) {
-      const contarPorJugador = new Map<string, number>()
-      for (const p of pendientes) {
-        contarPorJugador.set(p.jugadorAId, (contarPorJugador.get(p.jugadorAId) ?? 0) + 1)
-        contarPorJugador.set(p.jugadorBId, (contarPorJugador.get(p.jugadorBId) ?? 0) + 1)
-      }
-
-      let maxCount = 0
-      for (const p of pendientes) {
-        const countA = contarPorJugador.get(p.jugadorAId) ?? 0
-        const countB = contarPorJugador.get(p.jugadorBId) ?? 0
-        const maxJugador = Math.max(countA, countB)
-
-        if (maxJugador > maxCount) {
-          maxCount = maxJugador
-          mejor = p
-        }
-      }
-    }
-
-    // Fallback (no debería ocurrir)
-    if (!mejor) mejor = pendientes[0]
-
-    secuencia.push(mejor)
-    pendientes.splice(pendientes.indexOf(mejor), 1)
   }
 
-  return secuencia
+  const visitados = new Set<string>()
+  const cadenas: PartidoAProgramar[] = []
+
+  const otroJugador = (p: PartidoAProgramar, j: string) => (p.jugadorAId === j ? p.jugadorBId : p.jugadorAId)
+  const siguienteNoVisitado = (j: string): PartidoAProgramar | null =>
+    (partidosDeJugador.get(j) ?? []).find(p => !visitados.has(p.id)) ?? null
+
+  for (const inicio of matchesFecha) {
+    if (visitados.has(inicio.id)) continue
+
+    // Cada cadena se arma como un deque: se extiende hacia adelante desde
+    // jugadorB y hacia atrás desde jugadorA, para capturar el camino completo
+    // sin importar en qué partido del medio se empezó a recorrer.
+    const cadena: PartidoAProgramar[] = [inicio]
+    visitados.add(inicio.id)
+
+    let actual = inicio.jugadorBId
+    let siguiente = siguienteNoVisitado(actual)
+    while (siguiente) {
+      visitados.add(siguiente.id)
+      cadena.push(siguiente)
+      actual = otroJugador(siguiente, actual)
+      siguiente = siguienteNoVisitado(actual)
+    }
+
+    actual = inicio.jugadorAId
+    siguiente = siguienteNoVisitado(actual)
+    while (siguiente) {
+      visitados.add(siguiente.id)
+      cadena.unshift(siguiente)
+      actual = otroJugador(siguiente, actual)
+      siguiente = siguienteNoVisitado(actual)
+    }
+
+    cadenas.push(...cadena)
+  }
+
+  return repararHuecos(cadenas)
+}
+
+// Encuentra jugadores cuyas apariciones consecutivas quedaron con más de un
+// partido de diferencia y las acerca lo más posible (reinserción). Itera
+// hasta que no queden violaciones o se agoten los intentos (evita loops en
+// casos límite irresolubles con una sola mesa).
+function repararHuecos(orden: PartidoAProgramar[], maxIter = 500): PartidoAProgramar[] {
+  const resultado = [...orden]
+
+  const calcularPeorViolacion = (): { i: number; j: number; gap: number } | null => {
+    const posiciones = new Map<string, number[]>()
+    resultado.forEach((p, idx) => {
+      for (const j of [p.jugadorAId, p.jugadorBId]) {
+        if (!posiciones.has(j)) posiciones.set(j, [])
+        posiciones.get(j)!.push(idx)
+      }
+    })
+    let peor: { i: number; j: number; gap: number } | null = null
+    for (const pos of posiciones.values()) {
+      for (let k = 1; k < pos.length; k++) {
+        const gap = pos[k] - pos[k - 1] - 1
+        if (gap > 1 && (!peor || pos[k - 1] < peor.i)) {
+          peor = { i: pos[k - 1], j: pos[k], gap }
+        }
+      }
+    }
+    return peor
+  }
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    const v = calcularPeorViolacion()
+    if (!v) break
+
+    const destino = Math.min(v.i + 2, resultado.length - 1)
+    if (destino === v.j) break // no se puede acercar más
+
+    const [partido] = resultado.splice(v.j, 1)
+    resultado.splice(destino, 0, partido)
+  }
+
+  return resultado
 }
 
 // Programa una división completa en su mesa asignada.
@@ -350,8 +397,8 @@ export function programarDivision(
       // Si no hay espacio en la mesa, saltar
       if (porFecha[f].length >= capacidad) continue
 
-      // Restricción: máximo 2 partidos por jugador por fecha (descanso entre fechas)
-      if ((cuentaA.get(f) ?? 0) >= 2 || (cuentaB.get(f) ?? 0) >= 2) continue
+      // Restricción: máximo 3 partidos por jugador por fecha
+      if ((cuentaA.get(f) ?? 0) >= 3 || (cuentaB.get(f) ?? 0) >= 3) continue
 
       // Score: suma de partidos de ambos en esta fecha (menor = mejor distribución)
       const score = (cuentaA.get(f) ?? 0) + (cuentaB.get(f) ?? 0)
