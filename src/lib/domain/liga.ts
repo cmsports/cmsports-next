@@ -332,10 +332,10 @@ function ordenarPorCadena(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[
 }
 
 // Programa una división completa en su mesa asignada.
-// Estrategia: agrupar rondas completas por fecha para concentrar los partidos de cada
-// jugador en la menor cantidad de fechas posible. Aplica `ordenarPorCadena` dentro de
-// cada fecha para que los partidos de cada jugador sean consecutivos (sin huecos largos).
-// Los partidos que no entran en ninguna fecha van a sinAsignar (ajuste manual).
+// Estrategia OPTIMIZADA: distribuir los partidos de cada jugador a lo largo de
+// TODAS las fechas (2-3 por fecha típicamente) para minimizar gaps de espera.
+// Dentro de cada fecha, ordena los partidos para que sean consecutivos (sin huecos).
+// Los partidos que no entran van a sinAsignar (ajuste manual).
 export function programarDivision(
   partidos: PartidoAProgramar[],
   jugadorIds: string[],
@@ -345,80 +345,73 @@ export function programarDivision(
 ): { programados: PartidoProgramado[]; sinAsignar: PartidoAProgramar[] } {
   if (partidos.length === 0) return { programados: [], sinAsignar: [] }
 
-  const porPar = new Map<string, PartidoAProgramar>()
-  for (const p of partidos) {
-    porPar.set([p.jugadorAId, p.jugadorBId].sort().join('~'), p)
-  }
-
-  // Construir lista de rondas según circle method
-  const rondas: PartidoAProgramar[][] = []
-  const vistos = new Set<string>()
-  for (const ronda of circleMethodRounds(jugadorIds.length)) {
-    const matchesRonda: PartidoAProgramar[] = []
-    for (const [iA, iB] of ronda) {
-      const key = [jugadorIds[iA], jugadorIds[iB]].sort().join('~')
-      const p = porPar.get(key)
-      if (p && !vistos.has(p.id)) { matchesRonda.push(p); vistos.add(p.id) }
-    }
-    if (matchesRonda.length > 0) rondas.push(matchesRonda)
-  }
-  // Partidos no cubiertos (jugadores extra sin ronda asignada)
-  const extra: PartidoAProgramar[] = []
-  for (const p of partidos) {
-    if (!vistos.has(p.id)) extra.push(p)
-  }
-  if (extra.length > 0) rondas.push(extra)
-
-  // Fase 1 — empacar rondas completas en fechas: una ronda entra completa o
-  // no entra, para concentrar los partidos de cada jugador en pocas fechas.
-  // Lo que no entra como ronda completa NO se manda de inmediato a la fecha
-  // de ajuste — queda "suelto" para la fase 2, que rellena los bloques
-  // libres que hayan quedado en cualquier fecha regular. Con una sola mesa
-  // por división esos bloques sobrantes son espacio real sin usar: mandar un
-  // partido suelto a la fecha de ajuste mientras quedan huecos en las fechas
-  // regulares desperdicia capacidad que ya está disponible.
   const capacidad = bloques.length
-  const porFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
-  const sueltos: PartidoAProgramar[] = []
 
-  let f = 0
-  for (const ronda of rondas) {
-    if (f >= numFechas) { sueltos.push(...ronda); continue }
-
-    if (porFecha[f].length + ronda.length <= capacidad) {
-      // La ronda entra completa en la fecha actual
-      porFecha[f].push(...ronda)
-      continue
-    }
-
-    // No entra completa: cerrar fecha actual (si tiene partidos) y abrir una nueva
-    if (porFecha[f].length > 0) f++
-    if (f >= numFechas) { sueltos.push(...ronda); continue }
-    if (ronda.length <= capacidad) {
-      porFecha[f].push(...ronda)
-    } else {
-      // Ronda más grande que la capacidad de una fecha: programar lo que
-      // quepa acá, el resto queda suelto para la fase 2.
-      porFecha[f].push(...ronda.slice(0, capacidad))
-      sueltos.push(...ronda.slice(capacidad))
-      f++
-    }
+  // Contar partidos por jugador
+  const partidosPorJugador = new Map<string, number>()
+  for (const p of partidos) {
+    partidosPorJugador.set(p.jugadorAId, (partidosPorJugador.get(p.jugadorAId) ?? 0) + 1)
+    partidosPorJugador.set(p.jugadorBId, (partidosPorJugador.get(p.jugadorBId) ?? 0) + 1)
   }
 
-  // Fase 2 — los partidos sueltos se reparten uno por uno en el primer hueco
-  // libre de cualquier fecha regular. Solo lo que de verdad no entra en
-  // ninguna fecha —la liga está al tope de capacidad— sigue yendo a
-  // sinAsignar (y de ahí a la fecha de ajuste).
+  // Calcular distribución ideal: repartir partidos de cada jugador en fechas
+  // de forma equilibrada (máximo 2-3 por fecha)
+  const distribucion = new Map<string, number[]>() // jugador -> [fecha1, fecha2, ...]
+
+  for (const [jugador, numPartidos] of partidosPorJugador.entries()) {
+    // Distribuir este jugador lo más equilibrado posible en todas las fechas
+    // Objetivo: ~numPartidos/numFechas por fecha (cap 3)
+    const base = Math.floor(numPartidos / numFechas)
+    const extra = numPartidos % numFechas
+    const fechas: number[] = []
+
+    for (let f = 0; f < numFechas; f++) {
+      // Las primeras 'extra' fechas obtienen base+1, las demás obtienen base
+      const cant = (f < extra ? base + 1 : base)
+      for (let i = 0; i < cant; i++) fechas.push(f)
+    }
+
+    distribucion.set(jugador, fechas)
+  }
+
+  // Asignar partidos respetando la distribución de cada jugador
+  const porFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
+  const conteoFechaJugador = new Map<string, number>() // "jugador::fecha" -> count
   const sinAsignar: PartidoAProgramar[] = []
-  for (const p of sueltos) {
-    const destino = porFecha.findIndex(dia => dia.length < capacidad)
-    if (destino === -1) sinAsignar.push(p)
-    else porFecha[destino].push(p)
+
+  for (const p of partidos) {
+    const fechasA = distribucion.get(p.jugadorAId) ?? []
+    const fechasB = distribucion.get(p.jugadorBId) ?? []
+
+    let fechaAsignada = -1
+
+    // Buscar la primera fecha donde AMBOS jugadores aún tienen cupo
+    for (let f = 0; f < numFechas; f++) {
+      const cuentaA = conteoFechaJugador.get(`${p.jugadorAId}::${f}`) ?? 0
+      const cuentaB = conteoFechaJugador.get(`${p.jugadorBId}::${f}`) ?? 0
+      const cupoA = fechasA.filter(x => x === f).length
+      const cupoB = fechasB.filter(x => x === f).length
+
+      // Ambos aún tienen "lugar" asignado en esta fecha y hay espacio en la mesa
+      if (cuentaA < cupoA && cuentaB < cupoB && porFecha[f].length < capacidad) {
+        fechaAsignada = f
+        break
+      }
+    }
+
+    if (fechaAsignada >= 0) {
+      porFecha[fechaAsignada].push(p)
+      conteoFechaJugador.set(`${p.jugadorAId}::${fechaAsignada}`, (conteoFechaJugador.get(`${p.jugadorAId}::${fechaAsignada}`) ?? 0) + 1)
+      conteoFechaJugador.set(`${p.jugadorBId}::${fechaAsignada}`, (conteoFechaJugador.get(`${p.jugadorBId}::${fechaAsignada}`) ?? 0) + 1)
+    } else {
+      sinAsignar.push(p)
+    }
   }
 
   const programados: PartidoProgramado[] = []
   porFecha.forEach((matchesFecha, i) => {
     if (matchesFecha.length === 0) return
+    // Ordenar por cadena: agrupa partidos consecutivos del mismo jugador
     const ordenados = ordenarPorCadena(matchesFecha)
     for (let b = 0; b < ordenados.length; b++) {
       programados.push({
