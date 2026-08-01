@@ -7,6 +7,8 @@ import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
+import { calcularRankingInterno, puntosPorFase, type ResultadoJugadorRanking } from '@/lib/domain/rankingInterno'
+import { CONFIG } from '@/lib/config'
 
 const supabase = createClient()
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
@@ -14,19 +16,10 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
-type FilaRanking = {
-  jugadorId: string
-  nombre: string
-  pts: number
-  victorias: number
-  derrotas: number
-  jugados: number
-}
-
 type CategoriaRanking = {
   categoria: string
   genero: string | null
-  filas: FilaRanking[]
+  filas: ResultadoJugadorRanking[]
 }
 
 const medallas = ['🥇', '🥈', '🥉']
@@ -86,35 +79,32 @@ export default function RankingPage() {
     }
     const torneoIds = Object.keys(torneoMeta)
 
-    // 4. Todos los partidos de esos torneos (1 sola query)
+    // 4. Todos los partidos de esos torneos (1 sola query). `fase` es lo que
+    // deja pesar distinto una victoria en semifinal que una en la primera
+    // ronda de un cuadro grande — ver calcularRankingInterno.
     const { data: partidos } = await supabase
       .from('torneo_partidos')
-      .select('torneo_id,jugador_a,jugador_b,ganador')
+      .select('torneo_id,jugador_a,jugador_b,ganador,fase')
       .in('torneo_id', torneoIds)
       .not('jugador_b', 'is', null)
       .not('ganador', 'is', null)
 
     if (!partidos?.length) { setRankingPorCategoria([]); setLoading(false); return }
 
-    // 5. Acumular estadísticas por categoria + genero
-    const statsPorClave: Record<string, Record<string, { victorias: number; derrotas: number }>> = {}
+    // 5. Agrupar los partidos por categoria + genero
+    const partidosPorClave: Record<string, { jugador_a: string; jugador_b: string; ganador: string; fase: string | null }[]> = {}
     const jugadoresIds = new Set<string>()
 
     for (const p of partidos) {
       const meta = torneoMeta[p.torneo_id as string]
       const clave = `${meta?.categoria ?? 'Sin categoría'}||${meta?.genero ?? ''}`
-      if (!statsPorClave[clave]) statsPorClave[clave] = {}
-      const stats = statsPorClave[clave]
-
-      const a = p.jugador_a as string
-      const b = p.jugador_b as string
-      const g = p.ganador as string
-      jugadoresIds.add(a)
-      jugadoresIds.add(b)
-      if (!stats[a]) stats[a] = { victorias: 0, derrotas: 0 }
-      if (!stats[b]) stats[b] = { victorias: 0, derrotas: 0 }
-      if (g === a) { stats[a].victorias++; stats[b].derrotas++ }
-      else if (g === b) { stats[b].victorias++; stats[a].derrotas++ }
+      if (!partidosPorClave[clave]) partidosPorClave[clave] = []
+      partidosPorClave[clave].push({
+        jugador_a: p.jugador_a as string, jugador_b: p.jugador_b as string,
+        ganador: p.ganador as string, fase: p.fase as string | null,
+      })
+      jugadoresIds.add(p.jugador_a as string)
+      jugadoresIds.add(p.jugador_b as string)
     }
 
     // 6. Cargar nombres de jugadores (1 sola query)
@@ -128,17 +118,9 @@ export default function RankingPage() {
 
     // 7. Construir ranking por categoria + genero
     const conDatos: Record<string, CategoriaRanking> = {}
-    for (const [clave, stats] of Object.entries(statsPorClave)) {
+    for (const [clave, partidosDeClave] of Object.entries(partidosPorClave)) {
       const [categoria, genero] = clave.split('||')
-      const filas: FilaRanking[] = Object.entries(stats).map(([id, s]) => ({
-        jugadorId: id,
-        nombre: nombreMap[id] || 'Desconocido',
-        victorias: s.victorias,
-        derrotas: s.derrotas,
-        jugados: s.victorias + s.derrotas,
-        pts: s.victorias * 3,
-      }))
-      filas.sort((a, b) => b.pts - a.pts || b.victorias - a.victorias || a.derrotas - b.derrotas)
+      const filas = calcularRankingInterno(partidosDeClave, id => nombreMap[id] || 'Desconocido')
       conDatos[clave] = { categoria, genero: genero || null, filas }
     }
 
@@ -191,7 +173,7 @@ export default function RankingPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: text }}>Ranking</h1>
-            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Por categoría y género · torneos internos · Victoria = 3 pts</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Por categoría y género · torneos internos · puntos duplican por ronda</div>
             {reiniciadoEn && (
               <div style={{ fontSize: 11, color: hint, marginTop: 3 }}>
                 Desde: {new Date(reiniciadoEn).toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -214,16 +196,15 @@ export default function RankingPage() {
           <div style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             ℹ️ ¿Cómo se calculan los puntos?
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
-            <div style={{ background: '#ede9fe', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#3730a3', fontWeight: 600 }}>
-              🏆 Victoria en partido = <strong>3 pts</strong>
-            </div>
-            <div style={{ background: '#ede9fe', borderRadius: 8, padding: '6px 12px', fontSize: 12, color: '#3730a3', fontWeight: 600 }}>
-              ❌ Derrota = <strong>0 pts</strong>
-            </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            {CONFIG.FASES_ORDEN.map(fase => (
+              <div key={fase} style={{ background: '#ede9fe', borderRadius: 8, padding: '5px 10px', fontSize: 11, color: '#3730a3', fontWeight: 600 }}>
+                {CONFIG.FASE_LABELS[fase]} = <strong>{puntosPorFase(fase)} pts</strong>
+              </div>
+            ))}
           </div>
           <div style={{ fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
-            Los puntos se acumulan de <strong>todos los torneos internos</strong>. En torneos largos (128, 64, 32 jugadores…) quien avanza más rondas acumula más puntos. Cada categoría tiene su propio ranking independiente, separado por Varones y Damas.
+            Ganar un partido suma los puntos de la ronda en la que se jugó — se <strong>duplican</strong> a cada ronda, así que avanzar profundo pesa mucho más que ganar un solo partido temprano. Perder no resta nada. Los puntos se acumulan de <strong>todos los torneos internos</strong>. Cada categoría tiene su propio ranking, separado por Varones y Damas. Dos jugadores con los mismos puntos comparten puesto.
           </div>
         </div>
 
@@ -289,11 +270,14 @@ export default function RankingPage() {
                       padding: '14px 16px',
                       borderBottom: idx < rankingActivo.filas.length - 1 ? '1px solid #f1f5f9' : 'none',
                       cursor: 'pointer',
-                      background: idx === 0 ? '#fffbeb' : idx === 1 ? '#f8fafc' : idx === 2 ? '#fdf4ff' : '#fff',
+                      // El color de podio sigue el puesto compartido (rank), no
+                      // la posición en la lista: si dos empatan en 1°, los dos
+                      // se ven dorados.
+                      background: fila.rank === 1 ? '#fffbeb' : fila.rank === 2 ? '#f8fafc' : fila.rank === 3 ? '#fdf4ff' : '#fff',
                     }}
                   >
                     <div style={{ fontSize: 16 }}>
-                      {medallas[idx] ?? <span style={{ fontSize: 13, color: muted, fontWeight: 600 }}>{idx + 1}</span>}
+                      {medallas[fila.rank - 1] ?? <span style={{ fontSize: 13, color: muted, fontWeight: 600 }}>{fila.rank}</span>}
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: text, alignSelf: 'center' }}>{fila.nombre}</div>
                     <div style={{ fontSize: 15, fontWeight: 800, color: '#7c3aed', alignSelf: 'center' }}>{fila.pts}</div>
