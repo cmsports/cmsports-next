@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -159,7 +160,7 @@ function CalendarioContent() {
 
   const primerDia = new Date(anio, mes, 1).getDay()
   const diasEnMes = new Date(anio, mes+1, 0).getDate()
-  const hoy = new Date().toISOString().slice(0,10)
+  const hoy = fechaChile()
   const esAdmin = perfil?.rol === 'admin'
   const esJugador = perfil?.rol === 'jugador'
   const puedeEditarEventos = esAdmin || perfil?.rol === 'profesor'

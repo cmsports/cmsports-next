@@ -7,6 +7,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { copiarTexto } from '@/lib/clipboard'
 import { listarCredenciales, resetearCredencial, resetearTodasLasCredenciales, type FilaCredencial } from '@/app/actions/credenciales'
+import { fechaChile } from '@/lib/domain/fechaChile'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { ArrowLeft, Check, Copy, Download, KeyRound, Loader2, RefreshCw, Eye, EyeOff, MessageCircle } from 'lucide-react'
@@ -260,7 +261,7 @@ export default function CredencialesPage() {
     // Nombre del archivo cuenta qué grupos vienen adentro, para que
     // credenciales-solo-jugadores.pdf no se confunda con el completo.
     const sufijo = partes.length === 3 ? '' : '-' + [verAdmins && 'admins', verProfes && 'profes', verJugadores && 'jugadores'].filter(Boolean).join('-')
-    doc.save(`credenciales${sufijo}-${new Date().toISOString().slice(0, 10)}.pdf`)
+    doc.save(`credenciales${sufijo}-${fechaChile()}.pdf`)
   }
 
   // Se dibuja como función y no como componente para no chocar con la regla de

@@ -13,6 +13,7 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { cachedFetch } from '@/lib/query-cache'
 import { useEnVivo } from '@/lib/useEnVivo'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -74,7 +75,7 @@ function FinanzasContent() {
   const [busquedaJugador, setBusquedaJugador] = useState('')
   const [form, setForm] = useState({
     tipo: 'ingreso', categoria: 'mensualidad', descripcion: '',
-    monto: '', fecha: new Date().toISOString().slice(0,10),
+    monto: '', fecha: fechaChile(),
     profesorId: '', nombreStaff: '', mesCorr: String(new Date().getMonth()+1), anioCorr: String(new Date().getFullYear())
   })
   const [guardando, setGuardando] = useState(false)
@@ -199,7 +200,7 @@ function FinanzasContent() {
 
   const formVacio = () => ({
     tipo:'ingreso', categoria:'mensualidad', descripcion:'', monto:'',
-    fecha:new Date().toISOString().slice(0,10), profesorId:'', nombreStaff:'',
+    fecha: fechaChile(), profesorId:'', nombreStaff:'',
     mesCorr:String(new Date().getMonth()+1), anioCorr:String(new Date().getFullYear()),
   })
 
@@ -219,7 +220,7 @@ function FinanzasContent() {
       categoria: m.categoria || (m.tipo === 'ingreso' ? 'otro_ingreso' : 'otro_gasto'),
       descripcion: m.descripcion || '',
       monto: String(m.monto ?? ''),
-      fecha: m.fecha || new Date().toISOString().slice(0,10),
+      fecha: m.fecha || fechaChile(),
       profesorId: m.profesor_id || '',
       nombreStaff: '',
       mesCorr: String(m.mes_correspondiente ?? new Date().getMonth()+1),

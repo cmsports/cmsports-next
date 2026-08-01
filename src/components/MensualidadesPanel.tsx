@@ -9,6 +9,7 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import FiltroMultiSelect from '@/components/FiltroMultiSelect'
 import { SEDES, GRUPOS, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 import { montoEsperado, montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -210,7 +211,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       const wsDeuda = utils.json_to_sheet(filas)
       wsDeuda['!cols'] = [{ wch:30 },{ wch:14 },{ wch:16 },{ wch:16 },{ wch:34 },{ wch:16 },{ wch:34 }]
       utils.book_append_sheet(wbDeuda, wsDeuda, 'Deuda acumulada')
-      writeFile(wbDeuda, `deuda_acumulada_${new Date().toISOString().slice(0,10)}.xlsx`)
+      writeFile(wbDeuda, `deuda_acumulada_${fechaChile()}.xlsx`)
       return
     }
 

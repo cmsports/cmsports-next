@@ -7,6 +7,7 @@ import { actualizarPlanClub, registrarPagoClub } from '@/app/actions/superadmin'
 import { useClubesSuperadmin } from '../layout'
 import { formatCLP } from '@/lib/domain/finanzas'
 import { planVencido, type EstadoPlan } from '@/lib/domain/suscripciones'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -185,7 +186,7 @@ export default function FinanzasSuperadminPage() {
       })
     }
 
-    doc.save(`CmSports_Finanzas_${new Date().toISOString().slice(0, 10)}.pdf`)
+    doc.save(`CmSports_Finanzas_${fechaChile()}.pdf`)
     setGenerandoPDF(false)
   }
 

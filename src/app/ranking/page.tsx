@@ -9,6 +9,7 @@ import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 import { calcularRankingInterno, puntosPorFase, type ResultadoJugadorRanking } from '@/lib/domain/rankingInterno'
 import { CONFIG } from '@/lib/config'
+import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
@@ -39,6 +40,18 @@ export default function RankingPage() {
     if (!perfil.club_id) { router.replace('/dashboard'); return }
     cargar()
   }, [authLoading, perfil])
+
+  // Sin esto la tabla quedaba fija desde que se abría: cargar un resultado de
+  // torneo o cambiar su categoría/género no se veía hasta recargar la página.
+  //
+  // `torneo_partidos` no tiene columna club_id propia (solo torneo_id, que
+  // hay que cruzar con `torneos` para saber de qué club es), así que acá va
+  // sin filtrar por club — con los ~4 clubes que hoy usan el sistema el costo
+  // es una recarga de más cuando OTRO club anota un resultado, y es preferible
+  // a no enterarse nunca de los propios. `torneos` sí tiene club_id y va
+  // filtrado. El reinicio del ranking ya refresca solo, con su propio cargar()
+  // en handleReiniciar, así que no hace falta escuchar clubes acá.
+  useEnVivo(['torneo_partidos', 'torneos'], perfil?.club_id ?? null, () => { void cargar() }, { conClub: ['torneos'] })
 
   async function cargar() {
     if (!perfil?.club_id) return

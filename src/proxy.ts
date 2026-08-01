@@ -12,13 +12,21 @@ const publicRoutes = ['/login', '/registro']
 const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
 const superadminRoutes = ['/superadmin']
-const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes']
+// '/credenciales' es admin-only: muestra contraseñas en texto plano. Se sumó
+// a la auditoría del 31 de julio — quedaba fuera de todas estas listas, así
+// que sin sesión el middleware la dejaba pasar en vez de mandarla a /login
+// (el propio componente igual redirige, pero un rato después y en el
+// navegador, no al toque en el servidor como el resto de las pantallas admin).
+const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/credenciales']
 // El profesor necesita abrir el listado y la ficha para evaluar. Las acciones
 // administrativas dentro de esas pantallas siguen reservadas al admin.
 const staffRoutes = ['/jugadores']
 const profesorRoutes = ['/dashboard-profesor']
 const jugadorRoutes = ['/perfil', '/estado-cuenta', '/mi-horario']
-const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada']
+// '/ranking' también quedaba fuera de todas las listas y por eso no
+// redirigía al login desde el servidor. Va acá y no en adminRoutes: el
+// jugador también entra a ver su propio ranking, filtrado por categoría.
+const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada', '/ranking']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'

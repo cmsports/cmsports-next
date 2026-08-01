@@ -20,6 +20,7 @@ import { MessageCircle } from 'lucide-react'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
 
@@ -726,7 +727,7 @@ export default function JugadorDetallePage() {
       doc.text(`${clubNombre || 'Club'} — CmSports`, 14, y + 5)
       doc.text(new Date().toLocaleString('es-CL', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }), W - 14, y + 5, { align: 'right' })
 
-      doc.save(`reporte_${jugador.nombre.replace(/ /g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`)
+      doc.save(`reporte_${jugador.nombre.replace(/ /g, '_')}_${fechaChile()}.pdf`)
     } finally {
       setGenerandoReporte(false)
     }
