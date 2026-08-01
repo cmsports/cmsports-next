@@ -591,45 +591,25 @@ export default function JugadorDetallePage() {
 
       const { default: jsPDF } = await import('jspdf')
       const { default: autoTable } = await import('jspdf-autotable')
+      const { COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion } = await import('@/lib/pdf/estilo')
 
       const doc = new jsPDF()
       const W = doc.internal.pageSize.getWidth()
       const halfW = (W - 32) / 2
 
-      // Header
-      doc.setFillColor(55, 48, 163)
-      doc.rect(0, 0, W, 40, 'F')
-      doc.setTextColor(255, 255, 255)
-      doc.setFontSize(18); doc.setFont('helvetica', 'bold')
-      doc.text(jugador.nombre, 14, 16)
-      doc.setFontSize(10); doc.setFont('helvetica', 'normal')
       const badges = [jugador.categoria, jugador.estado === 'activo' ? 'Activo' : 'Inactivo', jugador.es_externo ? 'Externo' : ''].filter(Boolean).join(' · ')
-      doc.text(badges, 14, 26)
-      doc.text('Período: últimos 3 meses', 14, 33)
-      doc.text(clubNombre || 'Club', W - 14, 16, { align: 'right' })
-      doc.text(`Generado: ${new Date().toLocaleDateString('es-CL')}`, W - 14, 26, { align: 'right' })
-
-      let y = 50
-
-      // KPIs (3 bloques)
-      const kpiW = (W - 34) / 3
-      const kpis = [
-        { label: 'Asistencias (90 días)', value: String(totalAsist), r: 79, g: 70, b: 229 },
-        { label: `Ranking ${jugador.categoria || ''}`, value: rankingPos ? `#${rankingPos} / ${rankingTotal}` : '—', r: 22, g: 163, b: 74 },
-        { label: 'Mensualidad', value: jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : 'Por asignar', r: 14, g: 165, b: 233 },
-      ]
-      kpis.forEach((k, i) => {
-        const x = 14 + i * (kpiW + 3)
-        doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240)
-        doc.roundedRect(x, y, kpiW, 20, 3, 3, 'FD')
-        doc.setFontSize(15); doc.setFont('helvetica', 'bold')
-        doc.setTextColor(k.r, k.g, k.b)
-        doc.text(k.value, x + kpiW / 2, y + 10, { align: 'center' })
-        doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-        doc.setTextColor(100, 116, 139)
-        doc.text(k.label, x + kpiW / 2, y + 16, { align: 'center' })
+      let y = encabezado(doc, {
+        club: jugador.nombre,
+        titulo: `${badges}  ·  Período: últimos 3 meses`,
+        subtitulo: `${clubNombre || 'Club'}  ·  ${new Date().toLocaleDateString('es-CL')}`,
       })
-      y += 28
+      y += 4
+
+      y = filaTarjetas(doc, y, [
+        { valor: String(totalAsist), etiqueta: 'Asistencias (90 días)', color: COLOR.primario },
+        { valor: rankingPos ? `#${rankingPos} / ${rankingTotal}` : '—', etiqueta: `Ranking ${jugador.categoria || ''}`, color: COLOR.verde },
+        { valor: jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : 'Por asignar', etiqueta: 'Mensualidad', color: COLOR.celeste },
+      ])
 
       // Info personal
       const infoRows: [string, string][] = []
@@ -654,79 +634,76 @@ export default function JugadorDetallePage() {
 
       const startY2cols = y
       autoTable(doc, {
-        startY: startY2cols, head: [['Informacion personal', '']], body: infoRows,
-        theme: 'striped', headStyles: { fillColor: [79, 70, 229] },
-        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: [100, 116, 139] as any } },
-        styles: { fontSize: 9 }, tableWidth: halfW, margin: { left: 14 },
+        startY: startY2cols, head: [['Información personal', '']], body: infoRows,
+        theme: 'striped', headStyles: { fillColor: COLOR.primario, textColor: COLOR.blanco, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: COLOR.mutado as any } },
+        styles: { fontSize: 9, lineColor: COLOR.borde, lineWidth: 0.1 }, alternateRowStyles: { fillColor: COLOR.fondoSuave },
+        tableWidth: halfW, margin: { left: 14 },
       })
       const yAfterInfo = (doc as any).lastAutoTable.finalY
 
       autoTable(doc, {
-        startY: startY2cols, head: [['Plan & Membresia', '']], body: planRows,
-        theme: 'striped', headStyles: { fillColor: [14, 165, 233] },
-        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: [100, 116, 139] as any } },
-        styles: { fontSize: 9 }, tableWidth: halfW, margin: { left: 14 + halfW + 4 },
+        startY: startY2cols, head: [['Plan & membresía', '']], body: planRows,
+        theme: 'striped', headStyles: { fillColor: COLOR.celeste, textColor: COLOR.blanco, fontStyle: 'bold' },
+        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: COLOR.mutado as any } },
+        styles: { fontSize: 9, lineColor: COLOR.borde, lineWidth: 0.1 }, alternateRowStyles: { fillColor: COLOR.fondoSuave },
+        tableWidth: halfW, margin: { left: 14 + halfW + 4 },
       })
       const yAfterPlan = (doc as any).lastAutoTable.finalY
 
-      y = Math.max(yAfterInfo, yAfterPlan) + 8
+      y = Math.max(yAfterInfo, yAfterPlan) + 10
 
       // Mensualidades
       if ((mens3 || []).length > 0) {
+        y = tituloSeccion(doc, y, 'Mensualidades recientes')
         autoTable(doc, {
-          startY: y, head: [['Periodo', 'Monto', 'Estado', 'Fecha pago']],
+          startY: y, head: [['Período', 'Monto', 'Estado', 'Fecha pago']],
           body: (mens3 || []).map((m: any) => [`${mesLabel(m.mes)} ${m.anio}`, m.monto ? `$${m.monto.toLocaleString('es-CL')}` : '—', estadoMens(m.estado), m.fecha_pago ? fmtFecha(m.fecha_pago) : '—']),
-          theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, styles: { fontSize: 9 }, margin: { left: 14, right: 14 },
+          theme: 'striped', headStyles: { fillColor: COLOR.verde, textColor: COLOR.blanco, fontStyle: 'bold' },
+          styles: { fontSize: 9, lineColor: COLOR.borde, lineWidth: 0.1 }, alternateRowStyles: { fillColor: COLOR.fondoSuave }, margin: { left: 14, right: 14 },
           didParseCell: (data: any) => {
             if (data.section === 'body' && data.column.index === 2) {
               const e = (mens3 || [])[data.row.index]?.estado
-              data.cell.styles.textColor = e === 'pagado' ? [22, 163, 74] : e === 'atrasado' ? [220, 38, 38] : [217, 119, 6]
+              data.cell.styles.textColor = e === 'pagado' ? COLOR.verde : e === 'atrasado' ? COLOR.rojo : COLOR.ambar
               data.cell.styles.fontStyle = 'bold'
             }
           },
         })
-        y = (doc as any).lastAutoTable.finalY + 8
+        y = (doc as any).lastAutoTable.finalY + 10
       }
 
       // Ranking
       if (rankingPos) {
+        y = tituloSeccion(doc, y, `Ranking interno — ${jugador.categoria || ''}`)
         autoTable(doc, {
-          startY: y, head: [[`Ranking interno — ${jugador.categoria || ''}`, '', '', '', '']],
-          body: [[`#${rankingPos} de ${rankingTotal}`, `${rankingVictorias} victorias`, `${rankingDerrotas} derrotas`, `${rankingJugados} jugados`, `${3 * rankingVictorias - rankingDerrotas} pts`]],
-          theme: 'striped', headStyles: { fillColor: [124, 58, 237] }, styles: { fontSize: 9, halign: 'center' }, margin: { left: 14, right: 14 },
+          startY: y, head: [['Posición', 'Victorias', 'Derrotas', 'Jugados', 'Puntos']],
+          body: [[`#${rankingPos} de ${rankingTotal}`, `${rankingVictorias}`, `${rankingDerrotas}`, `${rankingJugados}`, `${3 * rankingVictorias - rankingDerrotas}`]],
+          theme: 'striped', headStyles: { fillColor: COLOR.morado, textColor: COLOR.blanco, fontStyle: 'bold' },
+          styles: { fontSize: 9, halign: 'center', lineColor: COLOR.borde, lineWidth: 0.1 }, margin: { left: 14, right: 14 },
         })
-        y = (doc as any).lastAutoTable.finalY + 8
+        y = (doc as any).lastAutoTable.finalY + 10
       }
 
       // Asistencia: cuadrícula de puntos (13 semanas × 7 días)
+      y = tituloSeccion(doc, y, `Asistencia — últimos 90 días (${totalAsist} sesiones)`)
       const dotSize = 3.2, dotGap = 1.2, calX = 14
-      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(15, 23, 42)
-      doc.text(`Asistencia — ultimos 90 dias (${totalAsist} sesiones)`, calX, y)
-      y += 3
       semanas.forEach((semana, si) => {
         semana.forEach((d, di) => {
           const px = calX + si * (dotSize + dotGap)
           const py = y + di * (dotSize + dotGap)
-          if (d.asistio) doc.setFillColor(22, 163, 74)
-          else doc.setFillColor(226, 232, 240)
+          if (d.asistio) doc.setFillColor(...COLOR.verde)
+          else doc.setFillColor(...COLOR.borde)
           doc.rect(px, py, dotSize, dotSize, 'F')
         })
       })
       y += 7 * (dotSize + dotGap) + 4
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139)
-      doc.setFillColor(22, 163, 74); doc.rect(calX, y, 3, 3, 'F')
-      doc.text('Asistio', calX + 5, y + 2.5)
-      doc.setFillColor(226, 232, 240); doc.rect(calX + 24, y, 3, 3, 'F')
-      doc.text('No asistio', calX + 29, y + 2.5)
-      y += 10
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...COLOR.mutado)
+      doc.setFillColor(...COLOR.verde); doc.rect(calX, y, 3, 3, 'F')
+      doc.text('Asistió', calX + 5, y + 2.5)
+      doc.setFillColor(...COLOR.borde); doc.rect(calX + 24, y, 3, 3, 'F')
+      doc.text('No asistió', calX + 29, y + 2.5)
 
-      // Footer
-      doc.setDrawColor(226, 232, 240)
-      doc.line(14, y, W - 14, y)
-      doc.setFontSize(8); doc.setTextColor(148, 163, 184)
-      doc.text(`${clubNombre || 'Club'} — CmSports`, 14, y + 5)
-      doc.text(new Date().toLocaleString('es-CL', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }), W - 14, y + 5, { align: 'right' })
-
+      piePagina(doc, `${clubNombre || 'Club'} · Ficha de jugador · ${jugador.nombre}`)
       doc.save(`reporte_${jugador.nombre.replace(/ /g, '_')}_${fechaChile()}.pdf`)
     } finally {
       setGenerandoReporte(false)

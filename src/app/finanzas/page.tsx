@@ -905,128 +905,144 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     const catInfo = categoriasReporte.find(c => c.key === categoriaRep)!
     const { default: jsPDF } = await import('jspdf')
     const { default: autoTable } = await import('jspdf-autotable')
+    const { COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion, sinDatos, estiloTabla } = await import('@/lib/pdf/estilo')
     const doc = new jsPDF()
-    const W = doc.internal.pageSize.getWidth()
 
-    doc.setFillColor(79, 70, 229); doc.rect(0, 0, W, 32, 'F')
-    doc.setTextColor(255, 255, 255); doc.setFontSize(20); doc.setFont('helvetica', 'bold')
-    doc.text('CmSports', 14, 14); doc.setFontSize(11); doc.setFont('helvetica', 'normal')
-    doc.text(`Reporte ${catInfo.label} — ${titulo}`, 14, 24)
-    doc.text(`Generado el ${new Date().toLocaleDateString('es-CL')}`, W - 14, 24, { align: 'right' })
-    let y = 42
+    let y = encabezado(doc, {
+      club: 'CmSports',
+      titulo: `Reporte ${catInfo.label}`,
+      subtitulo: `${titulo}  ·  Generado el ${new Date().toLocaleDateString('es-CL')}`,
+    })
 
     if (categoriaRep === 'general') {
-      doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.text('Resumen Financiero', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Monto']], body: [['Ingresos totales', fmt(preview.ingresos)], ['Gastos totales', fmt(preview.gastos)], ['Balance neto', fmt(preview.ingresos - preview.gastos)], ['COA', preview.activos.length > 0 ? fmt(Math.round(preview.gastos / preview.activos.length)) : '$0']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      const balance = preview.ingresos - preview.gastos
+      y = filaTarjetas(doc, y, [
+        { valor: fmt(preview.ingresos), etiqueta: 'Ingresos totales', color: COLOR.verde },
+        { valor: fmt(preview.gastos), etiqueta: 'Gastos totales', color: COLOR.rojo },
+        { valor: fmt(balance), etiqueta: 'Balance neto', color: balance >= 0 ? COLOR.verde : COLOR.rojo },
+        { valor: String(preview.activos.length), etiqueta: 'Jugadores activos', color: COLOR.primario },
+      ])
+
+      y = tituloSeccion(doc, y, 'Ingresos por categoría')
+      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseIngresos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.verde), columnStyles: { 1: { halign: 'right' } } })
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Ingresos por Categoría', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseIngresos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
+
+      y = tituloSeccion(doc, y, 'Gastos por categoría')
+      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseGastos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.rojo), columnStyles: { 1: { halign: 'right' } } })
+
+      doc.addPage(); y = encabezado(doc, { club: 'CmSports', titulo: `Reporte ${catInfo.label} — Jugadores y asistencia`, subtitulo: titulo })
+
+      y = tituloSeccion(doc, y, 'Jugadores activos')
+      autoTable(doc, { startY: y, head: [['Nombre', 'Categoría', 'Sesiones', 'Estado']], body: preview.activos.sort((a: any, b: any) => a.nombre.localeCompare(b.nombre)).map((j: any) => [j.nombre, j.categoria, `${j.sesiones_usadas}/${j.sesiones_limite}`, j.estado]), ...estiloTabla() })
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Gastos por Categoría', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseGastos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), theme: 'striped', headStyles: { fillColor: [220, 38, 38] }, margin: { left: 14, right: 14 } })
-      y = (doc as any).lastAutoTable.finalY + 10
-      doc.addPage(); y = 20
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Jugadores Activos', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Nombre', 'Categoría', 'Sesiones', 'Estado']], body: preview.activos.sort((a: any, b: any) => a.nombre.localeCompare(b.nombre)).map((j: any) => [j.nombre, j.categoria, `${j.sesiones_usadas}/${j.sesiones_limite}`, j.estado]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
-      y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Asistencia y Morosos', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)], ['Promedio por día', String(preview.promedioAsist)], ['Morosos', String(preview.morosos.length)], ['Tasa morosidad', preview.activos.length > 0 ? `${Math.round((preview.morosos.length / preview.activos.length) * 100)}%` : '0%']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+
+      y = tituloSeccion(doc, y, 'Asistencia y morosos')
+      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)], ['Promedio por día', String(preview.promedioAsist)], ['Morosos', String(preview.morosos.length)], ['Tasa morosidad', preview.activos.length > 0 ? `${Math.round((preview.morosos.length / preview.activos.length) * 100)}%` : '0%']], ...estiloTabla() })
       if (preview.torneos.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Torneos', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Nombre', 'Fecha', 'Estado']], body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado]), theme: 'striped', headStyles: { fillColor: [249, 115, 22] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Torneos')
+        autoTable(doc, { startY: y, head: [['Nombre', 'Fecha', 'Estado']], body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado]), ...estiloTabla(COLOR.naranja) })
       }
     }
 
     if (categoriaRep === 'jugador' && preview.jugador) {
       const j = preview.jugador
-      doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.text(`Ficha — ${j.nombre}`, 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Sesiones', `${j.sesiones_usadas || 0}/${j.sesiones_limite || 0}`], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      y = tituloSeccion(doc, y, `Ficha — ${j.nombre}`)
+      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Sesiones', `${j.sesiones_usadas || 0}/${j.sesiones_limite || 0}`], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], ...estiloTabla() })
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Mensualidades (período)', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total pagado', fmt(preview.totalPagado)], ['Total pendiente', fmt(preview.totalPendiente)], ['Pagados', String(preview.pagadas.length)], ['Pendientes', String(preview.pendientes.length)]], theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
+
+      y = tituloSeccion(doc, y, 'Mensualidades (período)')
+      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total pagado', fmt(preview.totalPagado)], ['Total pendiente', fmt(preview.totalPendiente)], ['Pagados', String(preview.pagadas.length)], ['Pendientes', String(preview.pendientes.length)]], ...estiloTabla(COLOR.verde) })
       if (preview.mensualidades.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Historial Completo', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Fecha', 'Monto', 'Estado']], body: preview.mensualidades.map((m: any) => [m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Historial completo')
+        autoTable(doc, { startY: y, head: [['Fecha', 'Monto', 'Estado']], body: preview.mensualidades.map((m: any) => [m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), ...estiloTabla() })
       }
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Asistencia (período)', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)]], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      y = tituloSeccion(doc, y, 'Asistencia (período)')
+      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)]], ...estiloTabla() })
       if (preview.torneos.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Torneos', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Torneo', 'Posición', 'Puntos']], body: preview.torneos.map((t: any) => [(t as any).torneos?.nombre || '—', t.posicion ?? '—', t.puntos ?? '—']), theme: 'striped', headStyles: { fillColor: [249, 115, 22] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Torneos')
+        autoTable(doc, { startY: y, head: [['Torneo', 'Posición', 'Puntos']], body: preview.torneos.map((t: any) => [(t as any).torneos?.nombre || '—', t.posicion ?? '—', t.puntos ?? '—']), ...estiloTabla(COLOR.naranja) })
       }
       if (preview.ligas.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Ligas', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Liga', 'División']], body: preview.ligas.map((l: any) => [(l as any).liga_divisiones?.ligas?.nombre || '—', (l as any).liga_divisiones?.nombre || '—']), theme: 'striped', headStyles: { fillColor: [168, 85, 247] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Ligas')
+        autoTable(doc, { startY: y, head: [['Liga', 'División']], body: preview.ligas.map((l: any) => [(l as any).liga_divisiones?.ligas?.nombre || '—', (l as any).liga_divisiones?.nombre || '—']), ...estiloTabla(COLOR.morado) })
       }
     }
 
     if (categoriaRep === 'finanzas') {
-      doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.text('Resumen Financiero', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Monto']], body: [['Ingresos totales', fmt(preview.ingresos)], ['Gastos totales', fmt(preview.gastos)], ['Balance neto', fmt(preview.ingresos - preview.gastos)], ['COA', preview.activos.length > 0 ? fmt(Math.round(preview.gastos / preview.activos.length)) : '$0']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      const balance = preview.ingresos - preview.gastos
+      y = filaTarjetas(doc, y, [
+        { valor: fmt(preview.ingresos), etiqueta: 'Ingresos totales', color: COLOR.verde },
+        { valor: fmt(preview.gastos), etiqueta: 'Gastos totales', color: COLOR.rojo },
+        { valor: fmt(balance), etiqueta: 'Balance neto', color: balance >= 0 ? COLOR.verde : COLOR.rojo },
+        { valor: preview.activos.length > 0 ? fmt(Math.round(preview.gastos / preview.activos.length)) : '$0', etiqueta: 'Costo por alumno', color: COLOR.primario },
+      ])
+
+      y = tituloSeccion(doc, y, 'Ingresos por categoría')
+      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseIngresos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.verde), columnStyles: { 1: { halign: 'right' } } })
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Ingresos por Categoría', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseIngresos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
+
+      y = tituloSeccion(doc, y, 'Gastos por categoría')
+      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseGastos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.rojo), columnStyles: { 1: { halign: 'right' } } })
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Gastos por Categoría', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseGastos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), theme: 'striped', headStyles: { fillColor: [220, 38, 38] }, margin: { left: 14, right: 14 } })
-      y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Mensualidades', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Recaudado', fmt(preview.totalMensPagado)], ['Pendiente', fmt(preview.totalMensPendiente)], ['Pagadas', String(preview.pagadas.length)], ['Pendientes', String(preview.pendientes.length)]], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+
+      y = tituloSeccion(doc, y, 'Mensualidades')
+      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Recaudado', fmt(preview.totalMensPagado)], ['Pendiente', fmt(preview.totalMensPendiente)], ['Pagadas', String(preview.pagadas.length)], ['Pendientes', String(preview.pendientes.length)]], ...estiloTabla() })
       if (Object.keys(preview.porMes).length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Desglose por Mes', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Mes', 'Ingresos', 'Gastos', 'Balance']], body: Object.entries(preview.porMes).sort().map(([mk, v]: any) => [mesesN[parseInt(mk.slice(5, 7)) - 1] + ' ' + mk.slice(0, 4), fmt(v.ingresos), fmt(v.gastos), fmt(v.ingresos - v.gastos)]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Desglose por mes')
+        autoTable(doc, { startY: y, head: [['Mes', 'Ingresos', 'Gastos', 'Balance']], body: Object.entries(preview.porMes).sort().map(([mk, v]: any) => [mesesN[parseInt(mk.slice(5, 7)) - 1] + ' ' + mk.slice(0, 4), fmt(v.ingresos), fmt(v.gastos), fmt(v.ingresos - v.gastos)]), ...estiloTabla() })
       }
       if (preview.pendientes.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Detalle Pendientes', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Jugador', 'Fecha', 'Monto', 'Estado']], body: preview.pendientes.map((m: any) => [(m as any).jugadores?.nombre || '—', m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), theme: 'striped', headStyles: { fillColor: [220, 38, 38] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Detalle pendientes')
+        autoTable(doc, { startY: y, head: [['Jugador', 'Fecha', 'Monto', 'Estado']], body: preview.pendientes.map((m: any) => [(m as any).jugadores?.nombre || '—', m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), ...estiloTabla(COLOR.rojo) })
       }
     }
 
     if (categoriaRep === 'asistencia') {
-      doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.text('Resumen de Asistencia', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.totalAsist)], ['Días con registro', String(preview.diasUnicos)], ['Promedio diario', String(preview.promedioDiario)], ['Jugadores activos', String(preview.activos.length)], ...(preview.diaMasAsistido ? [['Día más asistido', `${preview.diaMasAsistido[0]} (${preview.diaMasAsistido[1]})`]] : []), ...(preview.diaSemanaMax ? [['Día favorito', `${preview.diaSemanaMax.dia} (${preview.diaSemanaMax.count})`]] : [])], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      y = filaTarjetas(doc, y, [
+        { valor: String(preview.totalAsist), etiqueta: 'Total asistencias', color: COLOR.primario },
+        { valor: String(preview.diasUnicos), etiqueta: 'Días con registro', color: COLOR.primario },
+        { valor: String(preview.promedioDiario), etiqueta: 'Promedio diario', color: COLOR.verde },
+        { valor: String(preview.activos.length), etiqueta: 'Jugadores activos', color: COLOR.primario },
+      ])
+      y = tituloSeccion(doc, y, 'Resumen')
+      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [...(preview.diaMasAsistido ? [['Día más asistido', `${preview.diaMasAsistido[0]} (${preview.diaMasAsistido[1]})`]] : []), ...(preview.diaSemanaMax ? [['Día favorito', `${preview.diaSemanaMax.dia} (${preview.diaSemanaMax.count})`]] : [])], ...estiloTabla() })
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Por Día de Semana', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Día', 'Asistencias']], body: preview.diasSemana.map((d: string, i: number) => [d, String(preview.porDiaSemana[i])]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      y = tituloSeccion(doc, y, 'Por día de semana')
+      autoTable(doc, { startY: y, head: [['Día', 'Asistencias']], body: preview.diasSemana.map((d: string, i: number) => [d, String(preview.porDiaSemana[i])]), ...estiloTabla() })
       y = (doc as any).lastAutoTable.finalY + 10
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Top 10 Asistentes', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Jugador', 'Asistencias']], body: preview.topJugadores.map((j: any) => [j.nombre, String(j.count)]), theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
+      y = tituloSeccion(doc, y, 'Top 10 asistentes')
+      autoTable(doc, { startY: y, head: [['Jugador', 'Asistencias']], body: preview.topJugadores.map((j: any) => [j.nombre, String(j.count)]), ...estiloTabla(COLOR.verde) })
       if (preview.sinAsistencia.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Sin Asistencia', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Jugador', 'Categoría']], body: preview.sinAsistencia.map((j: any) => [j.nombre, j.categoria || '—']), theme: 'striped', headStyles: { fillColor: [220, 38, 38] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Sin asistencia')
+        autoTable(doc, { startY: y, head: [['Jugador', 'Categoría']], body: preview.sinAsistencia.map((j: any) => [j.nombre, j.categoria || '—']), ...estiloTabla(COLOR.rojo) })
       }
     }
 
     if (categoriaRep === 'torneos') {
-      doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.text('Resumen de Torneos', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total torneos', String(preview.torneos.length)], ['Ingresos inscripción', fmt(preview.ingresosInscripcion)], ...Object.entries(preview.torneosPorEstado).map(([e, c]) => [`Estado: ${e}`, String(c)])], theme: 'striped', headStyles: { fillColor: [249, 115, 22] }, margin: { left: 14, right: 14 } })
+      y = tituloSeccion(doc, y, 'Resumen de torneos')
+      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total torneos', String(preview.torneos.length)], ['Ingresos inscripción', fmt(preview.ingresosInscripcion)], ...Object.entries(preview.torneosPorEstado).map(([e, c]) => [`Estado: ${e}`, String(c)])], ...estiloTabla(COLOR.naranja) })
       if (preview.torneos.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Detalle', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Nombre', 'Fecha', 'Estado', 'Fase']], body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado, t.fase || '—']), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Detalle')
+        autoTable(doc, { startY: y, head: [['Nombre', 'Fecha', 'Estado', 'Fase']], body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado, t.fase || '—']), ...estiloTabla() })
       }
       if (preview.ligas.length > 0) {
         y = (doc as any).lastAutoTable.finalY + 10
-        doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Ligas', 14, y); y += 8
-        autoTable(doc, { startY: y, head: [['Liga', 'Estado', 'Divisiones', 'Fechas', 'Partidos']], body: preview.ligas.map((l: any) => [l.nombre, l.estado, (l.liga_divisiones || []).length, (l.liga_fechas || [{ count: 0 }])[0]?.count || 0, (l.liga_partidos || [{ count: 0 }])[0]?.count || 0]), theme: 'striped', headStyles: { fillColor: [168, 85, 247] }, margin: { left: 14, right: 14 } })
+        y = tituloSeccion(doc, y, 'Ligas')
+        autoTable(doc, { startY: y, head: [['Liga', 'Estado', 'Divisiones', 'Fechas', 'Partidos']], body: preview.ligas.map((l: any) => [l.nombre, l.estado, (l.liga_divisiones || []).length, (l.liga_fechas || [{ count: 0 }])[0]?.count || 0, (l.liga_partidos || [{ count: 0 }])[0]?.count || 0]), ...estiloTabla(COLOR.morado) })
       }
+      if (preview.torneos.length === 0 && preview.ligas.length === 0) sinDatos(doc, y)
     }
 
-    const pc = doc.getNumberOfPages()
-    for (let i = 1; i <= pc; i++) { doc.setPage(i); doc.setFontSize(9); doc.setTextColor(150); doc.text(`CmSports — Reporte ${catInfo.label} — ${titulo} — Pág ${i} de ${pc}`, W / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' }) }
+    piePagina(doc, `CmSports · Reporte ${catInfo.label} · ${titulo}`)
     const jn = categoriaRep === 'jugador' && preview.jugador ? `_${preview.jugador.nombre.replace(/ /g, '_')}` : ''
     doc.save(`reporte_${categoriaRep}${jn}_${titulo.replace(/ /g, '_')}.pdf`)
     setGenerando(false)

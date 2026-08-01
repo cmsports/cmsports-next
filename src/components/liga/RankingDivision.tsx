@@ -161,25 +161,19 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
   async function exportarPDF() {
     const { default: jsPDF } = await import('jspdf')
     const { default: autoTable } = await import('jspdf-autotable')
+    const { COLOR, hexARgb, encabezado, piePagina, estiloTabla } = await import('@/lib/pdf/estilo')
     const doc = new jsPDF()
-    const W = doc.internal.pageSize.getWidth()
+    const dc = hexARgb(accent)
 
-    // Header con color de división
-    const r = parseInt(accent.slice(1, 3), 16)
-    const g = parseInt(accent.slice(3, 5), 16)
-    const b = parseInt(accent.slice(5, 7), 16)
-    doc.setFillColor(r, g, b)
-    doc.rect(0, 0, W, 32, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(20)
-    doc.setFont('helvetica', 'bold')
-    doc.text('CmSports', 14, 14)
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Ranking — ${nombreDivision}`, 14, 24)
+    let y = encabezado(doc, {
+      club: 'CmSports',
+      titulo: `Tabla de posiciones — ${nombreDivision}`,
+      subtitulo: new Date().toLocaleDateString('es-CL'),
+      color: dc,
+    })
 
     autoTable(doc, {
-      startY: 42,
+      startY: y,
       head: [['#', 'Jugador', 'PJ', 'PG', 'PP', 'PTS', 'SF', 'SC', 'DS']],
       body: ranking.map((row, i) => [
         i + 1,
@@ -187,11 +181,15 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
         row.pj, row.pg, row.pp, row.pts, row.sf, row.sc,
         row.ds > 0 ? `+${row.ds}` : row.ds,
       ]),
-      theme: 'striped',
-      headStyles: { fillColor: [r, g, b] },
-      margin: { left: 14, right: 14 },
+      ...estiloTabla(dc),
+      columnStyles: { 0: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center', fontStyle: 'bold' }, 6: { halign: 'center' }, 7: { halign: 'center' }, 8: { halign: 'center' } },
     })
+    y = (doc as any).lastAutoTable.finalY + 6
 
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'italic'); doc.setTextColor(...COLOR.tenue)
+    doc.text('PJ Jugados · PG Ganados · PP Perdidos · PTS Puntos · SF Sets a favor · SC Sets en contra · DS Diferencia de sets', 14, y)
+
+    piePagina(doc, `CmSports · Ranking · ${nombreDivision}`)
     doc.save(`ranking_${nombreDivision.replace(/\s+/g, '_')}.pdf`)
   }
 

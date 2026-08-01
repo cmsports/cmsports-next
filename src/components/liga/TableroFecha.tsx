@@ -282,48 +282,19 @@ export function TableroFecha({
 
   async function exportarPDFHorarios() {
     const { default: jsPDF } = await import('jspdf')
+    const { default: autoTable } = await import('jspdf-autotable')
+    const { encabezado, piePagina, colorPorNombre, estiloTabla, sinDatos, COLOR } = await import('@/lib/pdf/estilo')
     if (!fecha) return
     const f = fecha
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const W = doc.internal.pageSize.getWidth()
-    const H = doc.internal.pageSize.getHeight()
-    const M = 12
-    const CW = W - 2 * M
-    const hoy = new Date().toLocaleDateString('es-CL', { day:'numeric', month:'long', year:'numeric' })
+    const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
 
-    function rgb(hex: string): [number,number,number] {
-      return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]
-    }
-    function tint(dc: [number,number,number], op: number): [number,number,number] {
-      return [
-        Math.round(255*(1-op)+dc[0]*op),
-        Math.round(255*(1-op)+dc[1]*op),
-        Math.round(255*(1-op)+dc[2]*op),
-      ]
-    }
+    const y = encabezado(doc, {
+      club: f.ligaNombre,
+      titulo: `Fecha ${f.numero} · Programación por horario`,
+      subtitulo: hoy,
+    })
 
-    // ── Header ──────────────────────────────────────────────
-    doc.setFillColor(22, 20, 60)
-    doc.rect(0, 0, W, 29, 'F')
-    doc.setFillColor(99, 102, 241)
-    doc.rect(0, 26, W, 3, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-    doc.text(f.ligaNombre, M, 12)
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-    doc.setTextColor(170, 175, 220)
-    doc.text(`Fecha ${f.numero}  ·  Programación por horario`, M, 21)
-    doc.text(hoy, W - M, 21, { align: 'right' })
-
-    // ── Footer (una sola hoja) ──────────────────────────────
-    doc.setFillColor(248, 250, 252)
-    doc.rect(0, H - 10, W, 10, 'F')
-    doc.setDrawColor(220, 228, 240); doc.setLineWidth(0.2)
-    doc.line(M, H - 10, W - M, H - 10)
-    doc.setTextColor(148, 163, 184); doc.setFontSize(7)
-    doc.text(`${f.ligaNombre} · Fecha ${f.numero}`, W / 2, H - 4, { align: 'center' })
-
-    // ── Datos ──────────────────────────────────────────────
     const sorted = [...partidosVisibles]
       .filter(p => p.bloqueHorario && p.mesaId)
       .sort((a, b) => {
@@ -331,99 +302,47 @@ export function TableroFecha({
         return bc !== 0 ? bc : (mesas.find(m => m.id === a.mesaId)?.numero ?? 0) - (mesas.find(m => m.id === b.mesaId)?.numero ?? 0)
       })
 
-    const grupos: { bloque: string; items: typeof sorted }[] = []
-    for (const p of sorted) {
-      const b = p.bloqueHorario!
-      const last = grupos[grupos.length - 1]
-      if (last?.bloque === b) last.items.push(p)
-      else grupos.push({ bloque: b, items: [p] })
+    if (sorted.length === 0) {
+      sinDatos(doc, y, 'Todavía no hay partidos programados en esta fecha.')
+    } else {
+      autoTable(doc, {
+        startY: y,
+        head: [['Hora', 'Mesa', 'División', 'Jugador A', '', 'Jugador B', 'Árbitro']],
+        body: sorted.map(p => [
+          p.bloqueHorario ?? '—',
+          `Mesa ${mesas.find(m => m.id === p.mesaId)?.numero ?? '—'}`,
+          p.divisionNombre,
+          nombres[p.jugadorAId] ?? '—',
+          'vs',
+          nombres[p.jugadorBId] ?? '—',
+          p.arbitroId ? (nombres[p.arbitroId] ?? '') : '—',
+        ]),
+        ...estiloTabla(),
+        columnStyles: {
+          0: { cellWidth: 16, fontStyle: 'bold' },
+          1: { cellWidth: 18 },
+          2: { cellWidth: 26 },
+          3: { fontStyle: 'bold', font: 'times' },
+          4: { cellWidth: 8, halign: 'center', textColor: COLOR.tenue },
+          5: { fontStyle: 'bold', font: 'times' },
+          6: { cellWidth: 32 },
+        },
+        didParseCell: hookData => {
+          if (hookData.section === 'body' && hookData.column.index === 2) {
+            hookData.cell.styles.textColor = colorPorNombre(String(hookData.cell.raw))
+            hookData.cell.styles.fontStyle = 'bold'
+          }
+        },
+      })
     }
 
-    const BH = 6.5   // bloque header height
-    const RH = 7.5   // row height
-    const GAP = 2    // gap between groups
-    let y = 33
-
-    for (const grupo of grupos) {
-      if (y > 33) y += GAP
-
-      // Fila de horario
-      doc.setFillColor(238, 242, 255)
-      doc.rect(M, y, CW, BH, 'F')
-      doc.setFillColor(99, 102, 241)
-      doc.rect(M, y, 3, BH, 'F')
-      doc.setTextColor(49, 46, 129); doc.setFontSize(8.5); doc.setFont('helvetica', 'bold')
-      doc.text(grupo.bloque, M + 6, y + 4.5)
-      doc.setFontSize(7); doc.setFont('helvetica', 'normal')
-      doc.setTextColor(99, 102, 241)
-      doc.text(`${grupo.items.length} partido${grupo.items.length !== 1 ? 's' : ''}`, W - M, y + 4.5, { align: 'right' })
-      y += BH
-
-      for (let i = 0; i < grupo.items.length; i++) {
-        const p = grupo.items[i]
-        const dc = rgb(divColor(p.divisionNombre))
-        const mesaNum = mesas.find(m => m.id === p.mesaId)?.numero ?? '—'
-        const jA = nombres[p.jugadorAId] ?? '—'
-        const jB = nombres[p.jugadorBId] ?? '—'
-        const arb = p.arbitroId ? nombres[p.arbitroId] ?? '' : ''
-        const cy = y + RH / 2 + 1
-
-        // Fondo tintado por división
-        const lt = tint(dc, 0.08)
-        doc.setFillColor(lt[0], lt[1], lt[2])
-        doc.rect(M, y, CW, RH, 'F')
-
-        // Stripe de división
-        doc.setFillColor(dc[0], dc[1], dc[2])
-        doc.rect(M, y, 2.5, RH, 'F')
-
-        // Mesa pill
-        doc.setFillColor(241, 245, 249)
-        doc.rect(M + 4, y + 1, 17, RH - 2, 'F')
-        doc.setTextColor(60, 75, 100); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
-        doc.text(`M ${mesaNum}`, M + 12.5, cy, { align: 'center' })
-
-        // División
-        doc.setTextColor(dc[0], dc[1], dc[2]); doc.setFontSize(7); doc.setFont('helvetica', 'normal')
-        doc.text(p.divisionNombre, M + 23, cy)
-
-        // Jugador A
-        doc.setTextColor(10, 18, 38); doc.setFontSize(8.5); doc.setFont('times', 'bold')
-        doc.text(jA, M + 55, cy)
-
-        // vs
-        doc.setFontSize(7); doc.setFont('helvetica', 'normal')
-        doc.setTextColor(175, 185, 205)
-        doc.text('vs', W / 2 + 3, cy, { align: 'center' })
-
-        // Jugador B
-        doc.setTextColor(10, 18, 38); doc.setFontSize(8.5); doc.setFont('times', 'bold')
-        doc.text(jB, W / 2 + 9, cy)
-
-        // Árbitro — negro, claro, tamaño visible
-        doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-        doc.setTextColor(25, 35, 55)
-        doc.text(arb || '—', W - M, cy, { align: 'right' })
-
-        // Separador
-        doc.setDrawColor(218, 226, 238); doc.setLineWidth(0.2)
-        doc.line(M, y + RH, W - M, y + RH)
-        y += RH
-      }
-    }
-
-    // ── Watermark diagonal ──────────────────────────────────
-    doc.setGState(doc.GState({ opacity: 0.04 }))
-    doc.setFontSize(52); doc.setFont('helvetica', 'bold')
-    doc.setTextColor(99, 102, 241)
-    doc.text('CmSports', W / 2, H / 2, { align: 'center', angle: 45 })
-    doc.setGState(doc.GState({ opacity: 1 }))
-
+    piePagina(doc, `${f.ligaNombre} · Fecha ${f.numero} · Programación por horario`)
     doc.save(`fecha${f.numero}_horarios.pdf`)
   }
 
   async function exportarPDFMesa() {
     const { default: jsPDF } = await import('jspdf')
+    const { encabezado, piePagina, colorPorNombre, tinte, sinDatos, COLOR } = await import('@/lib/pdf/estilo')
     if (!fecha) return
     const f = fecha
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
@@ -431,39 +350,28 @@ export function TableroFecha({
     const H = doc.internal.pageSize.getHeight()
     const M = 10
     const CW = W - 2 * M
-    const hoy = new Date().toLocaleDateString('es-CL', { day:'numeric', month:'long', year:'numeric' })
+    const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
+    const VERDE: [number, number, number] = [5, 150, 105]
 
-    function rgb(hex: string): [number,number,number] {
-      return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]
-    }
-    function tint(dc: [number,number,number], op: number): [number,number,number] {
-      return [
-        Math.round(255*(1-op)+dc[0]*op),
-        Math.round(255*(1-op)+dc[1]*op),
-        Math.round(255*(1-op)+dc[2]*op),
-      ]
-    }
-
-    // Column geometry
+    // Geometría de columnas
     const STRIPE = 3
     const C_HORA = 18
     const C_JUG  = 60
     const C_SET  = 10
     const C_RES  = 14
-    const C_ARB  = CW - STRIPE - C_HORA - C_JUG - 5*C_SET - C_RES  // 45mm
-    const RH = 12   // row height per match
-    const TH = 7    // table column header row
-    const MH = 7    // mesa sub-header row
+    const C_ARB  = CW - STRIPE - C_HORA - C_JUG - 5 * C_SET - C_RES
+    const RH = 12   // alto de fila por partido
+    const TH = 7    // alto de encabezado de columnas
+    const MH = 7    // alto de sub-encabezado de mesa
+    const PIE_RESERVA = 16 // espacio que deja libre el pie de página compartido
 
-    const xStripe = M
-    const xHora   = M + STRIPE
-    const xJug    = xHora + C_HORA
-    const xS      = (i: number) => xJug + C_JUG + i * C_SET
-    const xRes    = xJug + C_JUG + 5*C_SET
-    const xArb    = xRes + C_RES
-    const xR      = W - M
+    const xHora = M + STRIPE
+    const xJug  = xHora + C_HORA
+    const xS    = (i: number) => xJug + C_JUG + i * C_SET
+    const xRes  = xJug + C_JUG + 5 * C_SET
+    const xArb  = xRes + C_RES
+    const xR    = W - M
 
-    // Sort all matches: by mesa number, then by horario
     const allMatches = [...partidosVisibles]
       .filter(p => p.bloqueHorario && p.mesaId)
       .sort((a, b) => {
@@ -472,9 +380,6 @@ export function TableroFecha({
         return diff !== 0 ? diff : (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? '')
       })
 
-    if (allMatches.length === 0) return
-
-    // Group by mesa
     const mesaGrupos: { mesa: Mesa; matches: PartidoBoard[] }[] = []
     for (const p of allMatches) {
       const mesa = mesas.find(m => m.id === p.mesaId)
@@ -484,123 +389,100 @@ export function TableroFecha({
       else mesaGrupos.push({ mesa, matches: [p] })
     }
 
-    // ── Página: header fijo ───────────────────────────────────────────
-    const HEADER_H = 26
-    doc.setFillColor(18, 16, 55)
-    doc.rect(0, 0, W, HEADER_H, 'F')
-    doc.setFillColor(16, 185, 129)
-    doc.rect(0, HEADER_H - 3, W, 3, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(14); doc.setFont('helvetica', 'bold')
-    doc.text(f.ligaNombre, M, 11)
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-    doc.setTextColor(160, 220, 200)
-    doc.text(`Fecha ${f.numero}  ·  Programación por mesa  ·  ${hoy}`, M, 20)
+    let y = 0
+    function dibujarEncabezadoColumnas() {
+      doc.setFillColor(...COLOR.primarioOs)
+      doc.rect(M, y, CW, TH, 'F')
+      doc.setTextColor(210, 214, 255); doc.setFontSize(6); doc.setFont('helvetica', 'bold')
+      const chY = y + TH / 2 + 0.8
+      doc.text('HORA', xHora + C_HORA / 2, chY, { align: 'center' })
+      doc.text('JUGADORES', xJug + C_JUG / 2, chY, { align: 'center' })
+      for (let s = 1; s <= 5; s++) doc.text(`S${s}`, xS(s - 1) + C_SET / 2, chY, { align: 'center' })
+      doc.text('RES', xRes + C_RES / 2, chY, { align: 'center' })
+      doc.text('ÁRBITRO', xArb + C_ARB / 2, chY, { align: 'center' })
+      y += TH
+    }
+    function nuevaPagina() {
+      y = encabezado(doc, { club: f.ligaNombre, titulo: `Fecha ${f.numero} · Programación por mesa`, subtitulo: hoy, color: VERDE })
+      dibujarEncabezadoColumnas()
+    }
+    function saltoDePaginaSiNoCabe(alto: number) {
+      if (y + alto > H - PIE_RESERVA) { doc.addPage(); nuevaPagina() }
+    }
 
-    // ── Footer fijo ───────────────────────────────────────────────────
-    const FOOTER_H = 8
-    doc.setFillColor(248, 250, 252)
-    doc.rect(0, H - FOOTER_H, W, FOOTER_H, 'F')
-    doc.setDrawColor(215, 225, 240); doc.setLineWidth(0.2)
-    doc.line(M, H - FOOTER_H, xR, H - FOOTER_H)
-    doc.setTextColor(148, 163, 184); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
-    doc.text(`${f.ligaNombre} · Fecha ${f.numero}`, W/2, H - 2.5, { align: 'center' })
+    nuevaPagina()
 
-    // ── Tabla header (columnas) ────────────────────────────────────────
-    let y = HEADER_H
-    doc.setFillColor(49, 46, 129)
-    doc.rect(M, y, CW, TH, 'F')
-    doc.setTextColor(190, 198, 255); doc.setFontSize(6); doc.setFont('helvetica', 'bold')
-    const chY = y + TH/2 + 0.8
-    doc.text('HORA', xHora + C_HORA/2, chY, { align: 'center' })
-    doc.text('JUGADORES', xJug + C_JUG/2, chY, { align: 'center' })
-    for (let s = 1; s <= 5; s++) doc.text(`S${s}`, xS(s-1) + C_SET/2, chY, { align: 'center' })
-    doc.text('RES', xRes + C_RES/2, chY, { align: 'center' })
-    doc.text('ÁRBITRO', xArb + C_ARB/2, chY, { align: 'center' })
-    y += TH
+    if (allMatches.length === 0) {
+      sinDatos(doc, y, 'Todavía no hay partidos programados en esta fecha.')
+    }
 
-    // ── Sección de datos por mesa ──────────────────────────────────────
     for (const { mesa, matches } of mesaGrupos) {
-      // Mesa sub-header
-      doc.setFillColor(10, 155, 108)
+      saltoDePaginaSiNoCabe(MH + RH)
+
+      doc.setFillColor(...VERDE)
       doc.rect(M, y, CW, MH, 'F')
-      doc.setTextColor(255, 255, 255); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-      doc.text(`◉  Mesa ${mesa.numero}`, M + 4, y + MH/2 + 1)
+      doc.setTextColor(...COLOR.blanco); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
+      doc.text(`◉  Mesa ${mesa.numero}`, M + 4, y + MH / 2 + 1)
       doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
-      doc.setTextColor(200, 240, 224)
-      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR, y + MH/2 + 1, { align: 'right' })
+      doc.setTextColor(...tinte(VERDE, 0.2))
+      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR, y + MH / 2 + 1, { align: 'right' })
       y += MH
 
-      for (let i = 0; i < matches.length; i++) {
-        const p = matches[i]
-        const dc = rgb(divColor(p.divisionNombre))
-        const lt = tint(dc, 0.08)
+      for (const p of matches) {
+        saltoDePaginaSiNoCabe(RH)
+
+        const dc = colorPorNombre(p.divisionNombre)
+        const lt = tinte(dc, 0.08)
         const jA = nombres[p.jugadorAId] ?? '—'
         const jB = nombres[p.jugadorBId] ?? '—'
         const arb = p.arbitroId ? nombres[p.arbitroId] ?? '' : ''
-        const rMid = y + RH/2
+        const rMid = y + RH / 2
 
-        // Fondo tintado por división
-        doc.setFillColor(lt[0], lt[1], lt[2])
+        doc.setFillColor(...lt)
         doc.rect(M, y, CW, RH, 'F')
+        doc.setFillColor(...dc)
+        doc.rect(M, y, STRIPE, RH, 'F')
 
-        // Division stripe
-        doc.setFillColor(dc[0], dc[1], dc[2])
-        doc.rect(xStripe, y, STRIPE, RH, 'F')
-
-        // Hora (centrado verticalmente)
         doc.setTextColor(28, 40, 78); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
-        doc.text(p.bloqueHorario ?? '—', xHora + C_HORA/2, rMid + 1, { align: 'center' })
+        doc.text(p.bloqueHorario ?? '—', xHora + C_HORA / 2, rMid + 1, { align: 'center' })
 
-        // División (pequeño, arriba del jugador A)
-        doc.setTextColor(dc[0], dc[1], dc[2]); doc.setFontSize(5.5); doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...dc); doc.setFontSize(5.5); doc.setFont('helvetica', 'bold')
         doc.text(p.divisionNombre, xJug + 2, y + 3)
 
-        // Jugador A — times bold
         doc.setFont('times', 'bold')
         doc.setTextColor(8, 18, 42); doc.setFontSize(8)
-        doc.text(jA, xJug + 2, y + RH/2 - 0.5, { maxWidth: C_JUG - 4 })
+        doc.text(jA, xJug + 2, y + RH / 2 - 0.5, { maxWidth: C_JUG - 4 })
 
-        // Jugador B — times italic
         doc.setFont('times', 'italic')
         doc.setTextColor(45, 58, 95); doc.setFontSize(7.5)
         doc.text(jB, xJug + 2, y + RH - 2.5, { maxWidth: C_JUG - 4 })
 
-        // Mid-row divider
-        doc.setDrawColor(185, 200, 220); doc.setLineWidth(0.2)
+        doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.2)
         doc.line(xJug, rMid, xR, rMid)
 
-        // Set boxes (5 columnas)
         for (let s = 0; s < 5; s++) {
           const xsCol = xS(s)
-          doc.setFillColor(255, 255, 255)
+          doc.setFillColor(...COLOR.blanco)
           doc.setDrawColor(168, 188, 212); doc.setLineWidth(0.35)
-          // Caja A (top half)
-          doc.rect(xsCol + 0.8, y + 0.8, C_SET - 1.6, RH/2 - 1, 'FD')
-          // Caja B (bottom half)
-          doc.rect(xsCol + 0.8, rMid + 0.5, C_SET - 1.6, RH/2 - 1.3, 'FD')
+          doc.rect(xsCol + 0.8, y + 0.8, C_SET - 1.6, RH / 2 - 1, 'FD')
+          doc.rect(xsCol + 0.8, rMid + 0.5, C_SET - 1.6, RH / 2 - 1.3, 'FD')
         }
 
-        // Resultado boxes (resaltados)
         doc.setFillColor(238, 242, 255)
-        doc.setDrawColor(dc[0], dc[1], dc[2]); doc.setLineWidth(0.5)
-        doc.rect(xRes + 0.5, y + 0.8, C_RES - 1, RH/2 - 1, 'FD')
-        doc.rect(xRes + 0.5, rMid + 0.5, C_RES - 1, RH/2 - 1.3, 'FD')
+        doc.setDrawColor(...dc); doc.setLineWidth(0.5)
+        doc.rect(xRes + 0.5, y + 0.8, C_RES - 1, RH / 2 - 1, 'FD')
+        doc.rect(xRes + 0.5, rMid + 0.5, C_RES - 1, RH / 2 - 1.3, 'FD')
 
-        // Árbitro
         if (arb) {
           doc.setFont('helvetica', 'normal')
           doc.setTextColor(30, 45, 75); doc.setFontSize(6.5)
           doc.text(arb, xArb + 2, rMid + 1, { maxWidth: C_ARB - 4 })
         }
 
-        // Vertical column lines
         doc.setDrawColor(172, 190, 212); doc.setLineWidth(0.25)
         for (const x of [xHora, xJug, xS(0), xS(1), xS(2), xS(3), xS(4), xRes, xArb]) {
           doc.line(x, y, x, y + RH)
         }
-
-        // Row bottom border
         doc.setDrawColor(165, 185, 210); doc.setLineWidth(0.4)
         doc.line(M, y + RH, xR, y + RH)
 
@@ -609,179 +491,28 @@ export function TableroFecha({
     }
 
     // ── Observaciones ─────────────────────────────────────────────────
-    y += 4
-    const OBS_H = 22
-    doc.setFillColor(252, 253, 255)
-    doc.rect(M, y, CW, OBS_H, 'F')
-    doc.setDrawColor(198, 212, 230); doc.setLineWidth(0.35)
-    doc.rect(M, y, CW, OBS_H, 'S')
-    doc.setTextColor(92, 112, 142); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-    doc.text('Observaciones:', M + 3, y + 6)
-    doc.setDrawColor(198, 212, 230); doc.setLineWidth(0.3)
-    doc.line(M + 3, y + 11, xR - 3, y + 11)
-    doc.line(M + 3, y + 17, xR - 3, y + 17)
-    doc.setTextColor(135, 155, 185); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
-    doc.text('Firma árbitro:', M + 3, y + OBS_H - 2)
-    doc.line(M + 28, y + OBS_H - 1.5, M + 90, y + OBS_H - 1.5)
+    if (allMatches.length > 0) {
+      const OBS_H = 22
+      saltoDePaginaSiNoCabe(OBS_H + 4)
+      y += 4
+      doc.setFillColor(...COLOR.fondoSuave)
+      doc.rect(M, y, CW, OBS_H, 'F')
+      doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.35)
+      doc.rect(M, y, CW, OBS_H, 'S')
+      doc.setTextColor(...COLOR.mutado); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+      doc.text('Observaciones:', M + 3, y + 6)
+      doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.3)
+      doc.line(M + 3, y + 11, xR - 3, y + 11)
+      doc.line(M + 3, y + 17, xR - 3, y + 17)
+      doc.setTextColor(...COLOR.tenue); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
+      doc.text('Firma árbitro:', M + 3, y + OBS_H - 2)
+      doc.line(M + 28, y + OBS_H - 1.5, M + 90, y + OBS_H - 1.5)
+    }
 
-    // ── Watermark diagonal ──────────────────────────────────
-    doc.setGState(doc.GState({ opacity: 0.04 }))
-    doc.setFontSize(48); doc.setFont('helvetica', 'bold')
-    doc.setTextColor(10, 155, 108)
-    doc.text('CmSports', W / 2, H / 2, { align: 'center', angle: 45 })
-    doc.setGState(doc.GState({ opacity: 1 }))
-
+    piePagina(doc, `${f.ligaNombre} · Fecha ${f.numero} · Programación por mesa`)
     doc.save(`fecha${f.numero}_por_mesa.pdf`)
   }
 
-  async function exportarPDFHojasPartido() {
-    const { default: jsPDF } = await import('jspdf')
-    if (!fecha) return
-    const f = fecha
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const W = doc.internal.pageSize.getWidth()
-    const H = doc.internal.pageSize.getHeight()
-    const HALF = H / 2
-    const M = 10
-    const CW = W - 2 * M
-
-    function rgb(hex: string): [number, number, number] {
-      return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
-    }
-
-    const sorted = [...partidosVisibles]
-      .filter(p => p.mesaId && p.bloqueHorario)
-      .sort((a, b) => {
-        const bc = (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? '')
-        return bc !== 0 ? bc : (mesas.find(m => m.id === a.mesaId)?.numero ?? 0) - (mesas.find(m => m.id === b.mesaId)?.numero ?? 0)
-      })
-
-    if (!sorted.length) return
-
-    function drawHoja(p: PartidoBoard, y0: number) {
-      const dc = rgb(divColor(p.divisionNombre))
-      const mesaNum = mesas.find(m => m.id === p.mesaId)?.numero ?? '—'
-      const jA = nombres[p.jugadorAId] ?? '—'
-      const jB = nombres[p.jugadorBId] ?? '—'
-      const arb = p.arbitroId ? (nombres[p.arbitroId] ?? '') : ''
-      let y = y0 + 6
-
-      // ── Header ──────────────────────────────────────────────────
-      doc.setFillColor(dc[0], dc[1], dc[2])
-      doc.rect(M, y, CW, 12, 'F')
-      doc.setTextColor(255, 255, 255)
-      doc.setFontSize(9.5); doc.setFont('helvetica', 'bold')
-      doc.text(f.ligaNombre, M + 4, y + 5)
-      doc.setFontSize(7); doc.setFont('helvetica', 'normal')
-      doc.text(`Fecha ${f.numero}  ·  ${p.divisionNombre}`, M + 4, y + 10.5)
-      doc.setFontSize(9.5); doc.setFont('helvetica', 'bold')
-      doc.text(`Mesa ${mesaNum}`, W - M - 4, y + 5, { align: 'right' })
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal')
-      doc.text(p.bloqueHorario ?? '', W - M - 4, y + 10.5, { align: 'right' })
-      y += 15
-
-      // ── Jugadores ────────────────────────────────────────────────
-      const PH = 11
-      doc.setFillColor(243, 246, 254)
-      doc.rect(M, y, CW, PH, 'F')
-      doc.setFillColor(dc[0], dc[1], dc[2]); doc.rect(M, y, 3.5, PH, 'F')
-      doc.setTextColor(8, 18, 50); doc.setFontSize(10.5); doc.setFont('times', 'bold')
-      doc.text(jA, M + 7, y + 7.5, { maxWidth: CW - 15 })
-      doc.setTextColor(dc[0], dc[1], dc[2]); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-      doc.text('A', W - M - 4, y + 7)
-      y += PH
-
-      doc.setFillColor(250, 250, 255)
-      doc.rect(M, y, CW, PH, 'F')
-      doc.setFillColor(195, 208, 228); doc.rect(M, y, 3.5, PH, 'F')
-      doc.setTextColor(35, 50, 85); doc.setFontSize(10.5); doc.setFont('times', 'italic')
-      doc.text(jB, M + 7, y + 7.5, { maxWidth: CW - 15 })
-      doc.setTextColor(100, 120, 155); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-      doc.text('B', W - M - 4, y + 7)
-      y += PH + 5
-
-      // ── Grilla de sets ───────────────────────────────────────────
-      // | JUGADOR (16mm) | S1..S5 (~28.6mm c/u) | SETS (22mm) |
-      const LW = 16
-      const SW = (CW - LW - 22) / 5
-      const TW = 22
-      const GH = 6
-      const GR = 11
-      const xS = (s: number) => M + LW + s * SW
-      const xT = M + LW + 5 * SW
-
-      // Encabezado
-      doc.setFillColor(22, 19, 68)
-      doc.rect(M, y, CW, GH, 'F')
-      doc.setTextColor(155, 160, 210); doc.setFontSize(5.5); doc.setFont('helvetica', 'bold')
-      doc.text('JUGADOR', M + LW / 2, y + GH / 2 + 0.8, { align: 'center' })
-      for (let s = 0; s < 5; s++) doc.text(`S${s + 1}`, xS(s) + SW / 2, y + GH / 2 + 0.8, { align: 'center' })
-      doc.text('SETS', xT + TW / 2, y + GH / 2 + 0.8, { align: 'center' })
-      y += GH
-
-      // Fila A
-      doc.setFillColor(242, 245, 255); doc.rect(M, y, CW, GR, 'F')
-      doc.setFillColor(dc[0], dc[1], dc[2]); doc.rect(M, y, 2, GR, 'F')
-      doc.setTextColor(10, 22, 55); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-      doc.text(jA.split(/\s+/)[0], M + 4, y + GR / 2 + 1, { maxWidth: LW - 6 })
-      for (let s = 0; s < 5; s++) {
-        doc.setFillColor(255, 255, 255); doc.setDrawColor(170, 188, 212); doc.setLineWidth(0.35)
-        doc.rect(xS(s) + 2, y + 1.5, SW - 4, GR - 3, 'FD')
-      }
-      doc.setFillColor(230, 237, 255); doc.setDrawColor(dc[0], dc[1], dc[2]); doc.setLineWidth(0.5)
-      doc.rect(xT + 2, y + 1.5, TW - 4, GR - 3, 'FD')
-      y += GR
-
-      // Fila B
-      doc.setFillColor(249, 250, 255); doc.rect(M, y, CW, GR, 'F')
-      doc.setFillColor(188, 200, 222); doc.rect(M, y, 2, GR, 'F')
-      doc.setTextColor(42, 58, 95); doc.setFontSize(7); doc.setFont('helvetica', 'italic')
-      doc.text(jB.split(/\s+/)[0], M + 4, y + GR / 2 + 1, { maxWidth: LW - 6 })
-      for (let s = 0; s < 5; s++) {
-        doc.setFillColor(255, 255, 255); doc.setDrawColor(170, 188, 212); doc.setLineWidth(0.35)
-        doc.rect(xS(s) + 2, y + 1.5, SW - 4, GR - 3, 'FD')
-      }
-      doc.setFillColor(230, 237, 255); doc.setDrawColor(dc[0], dc[1], dc[2]); doc.setLineWidth(0.5)
-      doc.rect(xT + 2, y + 1.5, TW - 4, GR - 3, 'FD')
-      y += GR + 5
-
-      // ── Firmas ──────────────────────────────────────────────────
-      const sigW = (CW - 8) / 3
-      const sigData = [
-        { role: 'Arbitro', name: arb },
-        { role: jA.split(/\s+/)[0], name: '' },
-        { role: jB.split(/\s+/)[0], name: '' },
-      ]
-      sigData.forEach(({ role, name }, i) => {
-        const sx = M + i * (sigW + 4)
-        doc.setFontSize(6); doc.setFont('helvetica', 'bold'); doc.setTextColor(65, 80, 110)
-        doc.text(name ? `${role}: ${name}` : role, sx, y + 4, { maxWidth: sigW })
-        doc.setDrawColor(155, 170, 195); doc.setLineWidth(0.28)
-        doc.line(sx, y + 9.5, sx + sigW, y + 9.5)
-        doc.setFontSize(5); doc.setFont('helvetica', 'normal'); doc.setTextColor(170, 185, 205)
-        doc.text('firma', sx + sigW / 2, y + 13, { align: 'center' })
-      })
-
-      // Borde exterior
-      doc.setDrawColor(dc[0], dc[1], dc[2]); doc.setLineWidth(0.6)
-      doc.rect(M, y0 + 6, CW, y + 14 - (y0 + 6), 'S')
-    }
-
-    for (let i = 0; i < sorted.length; i++) {
-      if (i > 0 && i % 2 === 0) doc.addPage()
-      drawHoja(sorted[i], i % 2 === 0 ? 0 : HALF)
-
-      // Línea de corte entre las dos hojas
-      if (i % 2 === 0 && i + 1 < sorted.length) {
-        doc.setDrawColor(188, 200, 218); doc.setLineWidth(0.22)
-        doc.line(M + 15, HALF, W - M - 15, HALF)
-        doc.setFontSize(5.5); doc.setTextColor(178, 190, 210); doc.setFont('helvetica', 'normal')
-        doc.text('doblar / cortar', W / 2, HALF + 3, { align: 'center' })
-      }
-    }
-
-    doc.save(`fecha${f.numero}_hojas_partido.pdf`)
-  }
 
   if (loading) return (
     <div style={{ padding: 48, textAlign: 'center', color: hint, fontSize: 13 }}>Cargando...</div>
@@ -839,9 +570,6 @@ export function TableroFecha({
             </button>
             <button onClick={exportarPDFMesa} style={{ background: 'rgba(16,185,129,0.18)', color: '#6ee7b7', border: '1px solid rgba(16,185,129,0.35)', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
               📋 Por mesa
-            </button>
-            <button onClick={exportarPDFHojasPartido} style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.35)', borderRadius: 8, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
-              📄 Hojas partido
             </button>
             {fecha.estado === 'programada' && (
               <button

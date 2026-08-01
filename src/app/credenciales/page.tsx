@@ -220,26 +220,25 @@ export default function CredencialesPage() {
   async function exportarPdf() {
     const { default: jsPDF } = await import('jspdf')
     const { default: autoTable } = await import('jspdf-autotable')
+    const { COLOR, encabezado, piePagina, tituloSeccion, estiloTabla } = await import('@/lib/pdf/estilo')
     const doc = new jsPDF()
-    const W = doc.internal.pageSize.getWidth()
 
-    doc.setFillColor(79, 70, 229)
-    doc.rect(0, 0, W, 32, 'F')
-    doc.setTextColor(255, 255, 255)
-    doc.setFontSize(20); doc.setFont('helvetica', 'bold')
-    doc.text('Credenciales del club', 14, 14)
-    doc.setFontSize(11); doc.setFont('helvetica', 'normal')
-    doc.text(`Generado el ${new Date().toLocaleDateString('es-CL')}`, 14, 24)
     const partes: string[] = []
     if (verAdmins) partes.push(`Admins: ${admins.length}`)
     if (verProfes) partes.push(`Profes: ${profes.length}`)
     if (verJugadores) partes.push(`Jugadores: ${jugadores.length}`)
-    doc.text(partes.join(' · '), W - 14, 24, { align: 'right' })
 
-    let y = 42
-    doc.setTextColor(15, 23, 42)
-    doc.setFontSize(9); doc.setFont('helvetica', 'italic')
-    doc.text('Documento confidencial. Contiene contraseñas de acceso. No compartir públicamente.', 14, y); y += 8
+    let y = encabezado(doc, {
+      club: 'Credenciales del club',
+      titulo: partes.join(' · '),
+      subtitulo: `Generado el ${new Date().toLocaleDateString('es-CL')}`,
+    })
+
+    doc.setFillColor(...COLOR.ambarSuave)
+    doc.roundedRect(14, y - 4, doc.internal.pageSize.getWidth() - 28, 9, 1.5, 1.5, 'F')
+    doc.setTextColor(...COLOR.ambar); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5)
+    doc.text('⚠ Documento confidencial — contiene contraseñas de acceso. No compartir públicamente.', 18, y + 2)
+    y += 12
 
     const bloques: Array<{ titulo: string; filas: FilaCredencial[] }> = []
     if (verAdmins && admins.length > 0) bloques.push({ titulo: 'Administradores', filas: admins })
@@ -247,16 +246,18 @@ export default function CredencialesPage() {
     if (verJugadores && jugadores.length > 0) bloques.push({ titulo: 'Jugadores', filas: jugadores })
 
     for (const b of bloques) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(b.titulo, 14, y); y += 6
+      y = tituloSeccion(doc, y, b.titulo)
       autoTable(doc, {
         startY: y,
         head: [['#', 'Nombre', 'Usuario', 'Contraseña', 'Tipo']],
         body: b.filas.map((f, i) => [i + 1, f.nombre, f.usuarioLogin || '—', f.passwordPlano || '(sin registro)', tipoLabel[f.tipoLogin]]),
-        theme: 'striped', headStyles: { fillColor: [79, 70, 229] }, margin: { left: 14, right: 14 },
+        ...estiloTabla(),
       })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      y = (doc as any).lastAutoTable.finalY + 8
+      y = (doc as any).lastAutoTable.finalY + 10
     }
+
+    piePagina(doc, 'CmSports · Credenciales del club — Confidencial')
 
     // Nombre del archivo cuenta qué grupos vienen adentro, para que
     // credenciales-solo-jugadores.pdf no se confunda con el completo.

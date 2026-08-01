@@ -1,5 +1,7 @@
-// Informe financiero del torneo en PDF (1-2 hojas), con jugadores, pagos,
-// premios y gastos de gestión. Usa jspdf + jspdf-autotable (ya instalados).
+// Informe financiero del torneo en PDF, con jugadores, pagos, premios y
+// gastos de gestión. Usa jspdf + jspdf-autotable (ya instalados).
+
+import { COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion, estiloTabla } from '@/lib/pdf/estilo'
 
 type Jugador = { nombre: string; pagado: boolean; metodoPago?: string | null }
 type Premio = { lugar: string; nombre?: string | null; monto?: number | null }
@@ -22,54 +24,58 @@ export type InformeFinanciero = {
   metodoPremio?: 'efectivo' | 'transferencia'
 }
 
-const MORADO: [number, number, number] = [79, 70, 229]
-const VERDE: [number, number, number] = [22, 163, 74]
-const ROJO: [number, number, number] = [220, 38, 38]
-const GRIS: [number, number, number] = [100, 116, 139]
-
 const fmt = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-CL')
 
 export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
   const { default: jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
   const doc = new jsPDF()
-  const W = doc.internal.pageSize.getWidth()
 
-  // — Encabezado —
-  doc.setFillColor(...MORADO); doc.rect(0, 0, W, 30, 'F')
-  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(18)
-  doc.text('Informe financiero', 14, 13)
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11)
-  doc.text(d.torneoNombre, 14, 22)
-  doc.setFontSize(9)
-  doc.text(`Generado el ${new Date().toLocaleDateString('es-CL')}`, W - 14, 22, { align: 'right' })
-
-  // — Resumen de recaudación —
   const totalPremios = d.premios.reduce((s, p) => s + (p.monto || 0), 0)
   const totalGastos = d.gastos.reduce((s, g) => s + (g.monto || 0), 0)
   const neto = d.recaudado - totalPremios - totalGastos
   const pendienteCobro = d.proyectado - d.recaudado
 
+  let y = encabezado(doc, {
+    club: d.torneoNombre,
+    titulo: 'Informe financiero',
+    subtitulo: `Generado el ${new Date().toLocaleDateString('es-CL')}`,
+  })
+
+  // ── Vistazo rápido ────────────────────────────────────────────────────
+  y = filaTarjetas(doc, y, [
+    { valor: fmt(d.recaudado), etiqueta: `Recaudado (${d.pagados}/${d.totalInscritos})`, color: COLOR.primario },
+    { valor: fmt(pendienteCobro), etiqueta: 'Pendiente por cobrar', color: pendienteCobro > 0 ? COLOR.ambar : COLOR.verde },
+    { valor: fmt(totalPremios + totalGastos), etiqueta: 'Premios + gastos', color: COLOR.rojo },
+    { valor: fmt(neto), etiqueta: 'Queda para el club', color: neto >= 0 ? COLOR.verde : COLOR.rojo },
+  ])
+
+  if (d.recaudadoPendienteSubir > 0) {
+    doc.setFillColor(...COLOR.ambarSuave)
+    doc.roundedRect(14, y - 4, doc.internal.pageSize.getWidth() - 28, 9, 1.5, 1.5, 'F')
+    doc.setTextColor(...COLOR.ambar); doc.setFont('helvetica', 'bold'); doc.setFontSize(8)
+    doc.text(`⚠ Todavía hay ${fmt(d.recaudadoPendienteSubir)} recaudados sin subir a Finanzas`, 18, y + 2)
+    y += 11
+  }
+
+  // ── Recaudación ───────────────────────────────────────────────────────
+  y = tituloSeccion(doc, y, 'Recaudación')
   autoTable(doc, {
-    startY: 38,
-    head: [['Recaudación', 'Detalle']],
+    startY: y,
+    head: [['Concepto', 'Detalle']],
     body: [
-      ['Inscritos', String(d.totalInscritos)],
       ['Cuota por jugador', fmt(d.cuota)],
-      [`Pagaron (${d.pagados}/${d.totalInscritos})`, fmt(d.recaudado)],
       ['Recaudado en efectivo', fmt(d.recaudadoEfectivo)],
       ['Recaudado por transferencia', fmt(d.recaudadoTransferencia)],
       ['Pendiente por cobrar', fmt(pendienteCobro)],
-      ...(d.recaudadoPendienteSubir > 0 ? [['⚠ Recaudado aún sin subir a Finanzas', fmt(d.recaudadoPendienteSubir)]] : []),
     ],
-    theme: 'striped',
-    headStyles: { fillColor: MORADO },
-    margin: { left: 14, right: 14 },
+    ...estiloTabla(),
     columnStyles: { 1: { halign: 'right' } },
   })
+  y = (doc as any).lastAutoTable.finalY + 10
 
-  // — Jugadores y estado de pago —
-  let y = (doc as any).lastAutoTable.finalY + 8
+  // ── Jugadores y estado de pago ────────────────────────────────────────
+  y = tituloSeccion(doc, y, 'Jugadores')
   autoTable(doc, {
     startY: y,
     head: [['Jugador', 'Estado', 'Método', 'Monto']],
@@ -79,51 +85,47 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
       j.pagado ? (j.metodoPago === 'transferencia' ? 'Transferencia' : 'Efectivo') : '—',
       j.pagado ? fmt(d.cuota) : '—',
     ]),
-    theme: 'striped',
-    headStyles: { fillColor: MORADO },
-    margin: { left: 14, right: 14 },
+    ...estiloTabla(),
     columnStyles: { 3: { halign: 'right' } },
     didParseCell: (data: any) => {
       if (data.section === 'body' && data.column.index === 1) {
-        data.cell.styles.textColor = data.cell.raw === 'Pagado' ? VERDE : ROJO
+        data.cell.styles.textColor = data.cell.raw === 'Pagado' ? COLOR.verde : COLOR.rojo
         data.cell.styles.fontStyle = 'bold'
       }
     },
   })
+  y = (doc as any).lastAutoTable.finalY + 10
 
-  // — Premios —
-  y = (doc as any).lastAutoTable.finalY + 8
+  // ── Premios ───────────────────────────────────────────────────────────
   const metodoLabel = d.metodoPremio === 'transferencia' ? 'Transferencia' : 'Efectivo'
   const premiosBody = d.premios
     .filter(p => (p.monto || 0) > 0)
     .map(p => [p.lugar, p.nombre || '—', fmt(p.monto || 0), metodoLabel])
   if (premiosBody.length) {
+    y = tituloSeccion(doc, y, 'Premios entregados')
     autoTable(doc, {
       startY: y,
       head: [['Premio', 'Jugador', 'Monto', 'Pago']],
       body: premiosBody,
-      theme: 'striped',
-      headStyles: { fillColor: VERDE },
-      margin: { left: 14, right: 14 },
+      ...estiloTabla(COLOR.verde),
       columnStyles: { 2: { halign: 'right' }, 3: { halign: 'center' } },
     })
-    y = (doc as any).lastAutoTable.finalY + 8
+    y = (doc as any).lastAutoTable.finalY + 10
   }
 
-  // — Gastos de gestión —
+  // ── Gastos de gestión ─────────────────────────────────────────────────
   if (d.gastos.length) {
+    y = tituloSeccion(doc, y, 'Gastos de gestión')
     autoTable(doc, {
       startY: y,
-      head: [['Gasto de gestión', 'Monto']],
+      head: [['Gasto', 'Monto']],
       body: d.gastos.map(g => [g.tipo, fmt(g.monto)]),
-      theme: 'striped',
-      headStyles: { fillColor: ROJO },
-      margin: { left: 14, right: 14 },
+      ...estiloTabla(COLOR.rojo),
       columnStyles: { 1: { halign: 'right' } },
     })
     y = (doc as any).lastAutoTable.finalY + 6
     if (!d.gastosRegistradosEnFinanzas) {
-      doc.setFontSize(8); doc.setTextColor(...ROJO)
+      doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...COLOR.rojo)
       doc.text('⚠ Estos gastos aún no se han registrado en Finanzas — usa "Guardar premios" para subirlos.', 14, y)
       y += 8
     } else {
@@ -131,10 +133,11 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
     }
   }
 
-  // — Balance final —
+  // ── Balance final ─────────────────────────────────────────────────────
+  y = tituloSeccion(doc, y, 'Balance final')
   autoTable(doc, {
     startY: y,
-    head: [['Balance final', 'Monto']],
+    head: [['Concepto', 'Monto']],
     body: [
       ['Recaudado', fmt(d.recaudado)],
       ['− Premios', fmt(totalPremios)],
@@ -142,25 +145,19 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
       ['Queda para el club', fmt(neto)],
     ],
     theme: 'grid',
-    headStyles: { fillColor: MORADO },
     margin: { left: 14, right: 14 },
+    headStyles: { fillColor: COLOR.primario, textColor: COLOR.blanco, fontStyle: 'bold' },
     columnStyles: { 1: { halign: 'right' } },
     didParseCell: (data: any) => {
       if (data.section === 'body' && data.row.index === 3) {
         data.cell.styles.fontStyle = 'bold'
-        data.cell.styles.textColor = neto >= 0 ? VERDE : ROJO
-        data.cell.styles.fillColor = [244, 247, 250]
+        data.cell.styles.textColor = neto >= 0 ? COLOR.verde : COLOR.rojo
+        data.cell.styles.fillColor = COLOR.fondoSuave
       }
     },
   })
 
-  // — Pie —
-  const pc = doc.getNumberOfPages()
-  for (let i = 1; i <= pc; i++) {
-    doc.setPage(i)
-    doc.setFontSize(8); doc.setTextColor(...GRIS)
-    doc.text(`CmSports — ${d.torneoNombre} — Pág ${i} de ${pc}`, W / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' })
-  }
+  piePagina(doc, `${d.torneoNombre} · Informe financiero`)
 
   const nombre = d.torneoNombre.replace(/[^\w\sáéíóúñÁÉÍÓÚÑ-]/g, '').trim() || 'torneo'
   doc.save(`informe_financiero_${nombre.replace(/ /g, '_')}.pdf`)
