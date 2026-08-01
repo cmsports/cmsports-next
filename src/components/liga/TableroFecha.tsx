@@ -318,9 +318,11 @@ export function TableroFecha({
           bloqueActual = b
           const cuantos = sorted.filter(x => (x.bloqueHorario ?? '—') === b).length
           body.push([{
-            content: `🕐  ${b}   ·   ${cuantos} partido${cuantos !== 1 ? 's' : ''}`,
+            // Nada de emojis: las fuentes estándar de PDF (helvetica/times) no
+            // los soportan y salen como caracteres rotos ("Ø=ÝP" en vez de 🕐).
+            content: `${b}   ·   ${cuantos} partido${cuantos !== 1 ? 's' : ''}`,
             colSpan: NUM_COLS,
-            styles: { fillColor: COLOR.primarioOs, textColor: COLOR.blanco, fontStyle: 'bold', fontSize: 9.5, cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 } },
+            styles: { fillColor: COLOR.primarioOs, textColor: COLOR.blanco, fontStyle: 'bold', fontSize: 10.5, cellPadding: { top: 3, bottom: 3, left: 3, right: 3 } },
           }])
         }
         body.push([
@@ -341,9 +343,12 @@ export function TableroFecha({
         styles: { ...estiloTabla().styles, fontSize: 9.5, cellPadding: 3 },
         columnStyles: {
           0: { cellWidth: 20, fontStyle: 'bold' },
-          1: { cellWidth: 30 },
+          1: { cellWidth: 28 },
           2: { fontStyle: 'bold', font: 'times', fontSize: 10.5 },
-          3: { cellWidth: 8, halign: 'center', textColor: COLOR.tenue },
+          // "vs": el padding por defecto de la tabla (2.8mm por lado) no deja
+          // ancho para el texto y lo corta letra por letra ("v" / "s" apiladas).
+          // Acá se achica el padding en vez de solo agrandar la columna.
+          3: { cellWidth: 9, halign: 'center', valign: 'middle', textColor: COLOR.tenue, fontSize: 7.5, cellPadding: { top: 2.8, bottom: 2.8, left: 0, right: 0 } },
           4: { fontStyle: 'bold', font: 'times', fontSize: 10.5 },
           5: { cellWidth: 34 },
         },
@@ -442,10 +447,12 @@ export function TableroFecha({
       doc.setFillColor(...VERDE)
       doc.rect(M, y, CW, MH, 'F')
       doc.setTextColor(...COLOR.blanco); doc.setFontSize(9.5); doc.setFont('helvetica', 'bold')
-      doc.text(`◉  Mesa ${mesa.numero}`, M + 4, y + MH / 2 + 1.2)
+      // Sin símbolo delante: "◉" no existe en las fuentes estándar de PDF y
+      // sale como caracteres rotos ("%É"), mismo problema que el emoji del reloj.
+      doc.text(`Mesa ${mesa.numero}`, M + 4, y + MH / 2 + 1.2)
       doc.setFontSize(7.5); doc.setFont('helvetica', 'normal')
       doc.setTextColor(...tinte(VERDE, 0.2))
-      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR, y + MH / 2 + 1.2, { align: 'right' })
+      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR - 3, y + MH / 2 + 1.2, { align: 'right' })
       y += MH
 
       for (const p of matches) {
