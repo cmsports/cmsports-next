@@ -305,31 +305,51 @@ export function TableroFecha({
     if (sorted.length === 0) {
       sinDatos(doc, y, 'Todavía no hay partidos programados en esta fecha.')
     } else {
-      autoTable(doc, {
-        startY: y,
-        head: [['Hora', 'Mesa', 'División', 'Jugador A', '', 'Jugador B', 'Árbitro']],
-        body: sorted.map(p => [
-          p.bloqueHorario ?? '—',
+      // Agrupado por bloque de hora: una fila-título que ocupa todo el ancho
+      // antes de cada grupo, para que de un vistazo se vea "qué se juega a
+      // qué hora" — sin esto queda una tabla plana donde hay que leer la
+      // columna Hora fila por fila para notar dónde cambia el bloque.
+      const NUM_COLS = 6
+      const body: any[] = []
+      let bloqueActual: string | null = null
+      for (const p of sorted) {
+        const b = p.bloqueHorario ?? '—'
+        if (b !== bloqueActual) {
+          bloqueActual = b
+          const cuantos = sorted.filter(x => (x.bloqueHorario ?? '—') === b).length
+          body.push([{
+            content: `🕐  ${b}   ·   ${cuantos} partido${cuantos !== 1 ? 's' : ''}`,
+            colSpan: NUM_COLS,
+            styles: { fillColor: COLOR.primarioOs, textColor: COLOR.blanco, fontStyle: 'bold', fontSize: 9.5, cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 } },
+          }])
+        }
+        body.push([
           `Mesa ${mesas.find(m => m.id === p.mesaId)?.numero ?? '—'}`,
           p.divisionNombre,
           nombres[p.jugadorAId] ?? '—',
           'vs',
           nombres[p.jugadorBId] ?? '—',
           p.arbitroId ? (nombres[p.arbitroId] ?? '') : '—',
-        ]),
+        ])
+      }
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Mesa', 'División', 'Jugador A', '', 'Jugador B', 'Árbitro']],
+        body,
         ...estiloTabla(),
+        styles: { ...estiloTabla().styles, fontSize: 9.5, cellPadding: 3 },
         columnStyles: {
-          0: { cellWidth: 16, fontStyle: 'bold' },
-          1: { cellWidth: 18 },
-          2: { cellWidth: 26 },
-          3: { fontStyle: 'bold', font: 'times' },
-          4: { cellWidth: 8, halign: 'center', textColor: COLOR.tenue },
-          5: { fontStyle: 'bold', font: 'times' },
-          6: { cellWidth: 32 },
+          0: { cellWidth: 20, fontStyle: 'bold' },
+          1: { cellWidth: 30 },
+          2: { fontStyle: 'bold', font: 'times', fontSize: 10.5 },
+          3: { cellWidth: 8, halign: 'center', textColor: COLOR.tenue },
+          4: { fontStyle: 'bold', font: 'times', fontSize: 10.5 },
+          5: { cellWidth: 34 },
         },
         didParseCell: hookData => {
-          if (hookData.section === 'body' && hookData.column.index === 2) {
-            hookData.cell.styles.textColor = colorPorNombre(String(hookData.cell.raw))
+          if (hookData.section === 'body' && hookData.column.index === 1 && typeof hookData.cell.raw === 'string') {
+            hookData.cell.styles.textColor = colorPorNombre(hookData.cell.raw)
             hookData.cell.styles.fontStyle = 'bold'
           }
         },
@@ -356,13 +376,13 @@ export function TableroFecha({
     // Geometría de columnas
     const STRIPE = 3
     const C_HORA = 18
-    const C_JUG  = 60
-    const C_SET  = 10
-    const C_RES  = 14
+    const C_JUG  = 58
+    const C_SET  = 10.4
+    const C_RES  = 15
     const C_ARB  = CW - STRIPE - C_HORA - C_JUG - 5 * C_SET - C_RES
-    const RH = 12   // alto de fila por partido
-    const TH = 7    // alto de encabezado de columnas
-    const MH = 7    // alto de sub-encabezado de mesa
+    const RH = 15   // alto de fila por partido — más aire para letra más grande
+    const TH = 8    // alto de encabezado de columnas
+    const MH = 9    // alto de sub-encabezado de mesa
     const PIE_RESERVA = 16 // espacio que deja libre el pie de página compartido
 
     const xHora = M + STRIPE
@@ -393,8 +413,8 @@ export function TableroFecha({
     function dibujarEncabezadoColumnas() {
       doc.setFillColor(...COLOR.primarioOs)
       doc.rect(M, y, CW, TH, 'F')
-      doc.setTextColor(210, 214, 255); doc.setFontSize(6); doc.setFont('helvetica', 'bold')
-      const chY = y + TH / 2 + 0.8
+      doc.setTextColor(210, 214, 255); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+      const chY = y + TH / 2 + 1
       doc.text('HORA', xHora + C_HORA / 2, chY, { align: 'center' })
       doc.text('JUGADORES', xJug + C_JUG / 2, chY, { align: 'center' })
       for (let s = 1; s <= 5; s++) doc.text(`S${s}`, xS(s - 1) + C_SET / 2, chY, { align: 'center' })
@@ -421,11 +441,11 @@ export function TableroFecha({
 
       doc.setFillColor(...VERDE)
       doc.rect(M, y, CW, MH, 'F')
-      doc.setTextColor(...COLOR.blanco); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-      doc.text(`◉  Mesa ${mesa.numero}`, M + 4, y + MH / 2 + 1)
-      doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
+      doc.setTextColor(...COLOR.blanco); doc.setFontSize(9.5); doc.setFont('helvetica', 'bold')
+      doc.text(`◉  Mesa ${mesa.numero}`, M + 4, y + MH / 2 + 1.2)
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal')
       doc.setTextColor(...tinte(VERDE, 0.2))
-      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR, y + MH / 2 + 1, { align: 'right' })
+      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR, y + MH / 2 + 1.2, { align: 'right' })
       y += MH
 
       for (const p of matches) {
@@ -443,19 +463,19 @@ export function TableroFecha({
         doc.setFillColor(...dc)
         doc.rect(M, y, STRIPE, RH, 'F')
 
-        doc.setTextColor(28, 40, 78); doc.setFontSize(7.5); doc.setFont('helvetica', 'bold')
+        doc.setTextColor(28, 40, 78); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
         doc.text(p.bloqueHorario ?? '—', xHora + C_HORA / 2, rMid + 1, { align: 'center' })
 
-        doc.setTextColor(...dc); doc.setFontSize(5.5); doc.setFont('helvetica', 'bold')
-        doc.text(p.divisionNombre, xJug + 2, y + 3)
+        doc.setTextColor(...dc); doc.setFontSize(6.5); doc.setFont('helvetica', 'bold')
+        doc.text(p.divisionNombre, xJug + 2, y + 4)
 
         doc.setFont('times', 'bold')
-        doc.setTextColor(8, 18, 42); doc.setFontSize(8)
-        doc.text(jA, xJug + 2, y + RH / 2 - 0.5, { maxWidth: C_JUG - 4 })
+        doc.setTextColor(8, 18, 42); doc.setFontSize(9.5)
+        doc.text(jA, xJug + 2, y + RH / 2 - 0.3, { maxWidth: C_JUG - 4 })
 
         doc.setFont('times', 'italic')
-        doc.setTextColor(45, 58, 95); doc.setFontSize(7.5)
-        doc.text(jB, xJug + 2, y + RH - 2.5, { maxWidth: C_JUG - 4 })
+        doc.setTextColor(45, 58, 95); doc.setFontSize(9)
+        doc.text(jB, xJug + 2, y + RH - 3, { maxWidth: C_JUG - 4 })
 
         doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.2)
         doc.line(xJug, rMid, xR, rMid)
@@ -474,9 +494,13 @@ export function TableroFecha({
         doc.rect(xRes + 0.5, rMid + 0.5, C_RES - 1, RH / 2 - 1.3, 'FD')
 
         if (arb) {
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(30, 45, 75); doc.setFontSize(6.5)
+          doc.setFont('helvetica', 'bold')
+          doc.setTextColor(30, 45, 75); doc.setFontSize(8)
           doc.text(arb, xArb + 2, rMid + 1, { maxWidth: C_ARB - 4 })
+        } else {
+          doc.setFont('helvetica', 'italic')
+          doc.setTextColor(...COLOR.tenue); doc.setFontSize(7)
+          doc.text('sin asignar', xArb + 2, rMid + 1, { maxWidth: C_ARB - 4 })
         }
 
         doc.setDrawColor(172, 190, 212); doc.setLineWidth(0.25)
@@ -499,12 +523,12 @@ export function TableroFecha({
       doc.rect(M, y, CW, OBS_H, 'F')
       doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.35)
       doc.rect(M, y, CW, OBS_H, 'S')
-      doc.setTextColor(...COLOR.mutado); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...COLOR.mutado); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
       doc.text('Observaciones:', M + 3, y + 6)
       doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.3)
       doc.line(M + 3, y + 11, xR - 3, y + 11)
       doc.line(M + 3, y + 17, xR - 3, y + 17)
-      doc.setTextColor(...COLOR.tenue); doc.setFontSize(6.5); doc.setFont('helvetica', 'normal')
+      doc.setTextColor(...COLOR.tenue); doc.setFontSize(7.5); doc.setFont('helvetica', 'normal')
       doc.text('Firma árbitro:', M + 3, y + OBS_H - 2)
       doc.line(M + 28, y + OBS_H - 1.5, M + 90, y + OBS_H - 1.5)
     }
