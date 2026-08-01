@@ -369,58 +369,67 @@ export function programarDivision(
   }
   if (extra.length > 0) rondas.push(extra)
 
-  // Empacar rondas completas en fechas: una ronda entra completa o no entra.
-  // Esto garantiza que cada jugador tenga sus partidos concentrados en pocas fechas.
+  // Fase 1 — empacar rondas completas en fechas: una ronda entra completa o
+  // no entra, para concentrar los partidos de cada jugador en pocas fechas.
+  // Lo que no entra como ronda completa NO se manda de inmediato a la fecha
+  // de ajuste — queda "suelto" para la fase 2, que rellena los bloques
+  // libres que hayan quedado en cualquier fecha regular. Con una sola mesa
+  // por división esos bloques sobrantes son espacio real sin usar: mandar un
+  // partido suelto a la fecha de ajuste mientras quedan huecos en las fechas
+  // regulares desperdicia capacidad que ya está disponible.
   const capacidad = bloques.length
-  const programados: PartidoProgramado[] = []
-  const sinAsignar: PartidoAProgramar[] = []
+  const porFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
+  const sueltos: PartidoAProgramar[] = []
 
   let f = 0
-  let matchesFecha: PartidoAProgramar[] = []
+  for (const ronda of rondas) {
+    if (f >= numFechas) { sueltos.push(...ronda); continue }
 
-  const cerrarFecha = () => {
+    if (porFecha[f].length + ronda.length <= capacidad) {
+      // La ronda entra completa en la fecha actual
+      porFecha[f].push(...ronda)
+      continue
+    }
+
+    // No entra completa: cerrar fecha actual (si tiene partidos) y abrir una nueva
+    if (porFecha[f].length > 0) f++
+    if (f >= numFechas) { sueltos.push(...ronda); continue }
+    if (ronda.length <= capacidad) {
+      porFecha[f].push(...ronda)
+    } else {
+      // Ronda más grande que la capacidad de una fecha: programar lo que
+      // quepa acá, el resto queda suelto para la fase 2.
+      porFecha[f].push(...ronda.slice(0, capacidad))
+      sueltos.push(...ronda.slice(capacidad))
+      f++
+    }
+  }
+
+  // Fase 2 — los partidos sueltos se reparten uno por uno en el primer hueco
+  // libre de cualquier fecha regular. Solo lo que de verdad no entra en
+  // ninguna fecha —la liga está al tope de capacidad— sigue yendo a
+  // sinAsignar (y de ahí a la fecha de ajuste).
+  const sinAsignar: PartidoAProgramar[] = []
+  for (const p of sueltos) {
+    const destino = porFecha.findIndex(dia => dia.length < capacidad)
+    if (destino === -1) sinAsignar.push(p)
+    else porFecha[destino].push(p)
+  }
+
+  const programados: PartidoProgramado[] = []
+  porFecha.forEach((matchesFecha, i) => {
     if (matchesFecha.length === 0) return
     const ordenados = ordenarPorCadena(matchesFecha)
     for (let b = 0; b < ordenados.length; b++) {
       programados.push({
         ...ordenados[b],
-        fechaNumero: f + 1,
+        fechaNumero: i + 1,
         mesaNumero,
         bloqueHorario: bloques[b],
         arbitroId: null,
       })
     }
-    f++
-    matchesFecha = []
-  }
-
-  for (const ronda of rondas) {
-    if (f >= numFechas) {
-      // Sin fechas disponibles: esta ronda queda sin programar
-      sinAsignar.push(...ronda)
-      continue
-    }
-
-    if (matchesFecha.length + ronda.length <= capacidad) {
-      // La ronda entra completa en la fecha actual
-      matchesFecha.push(...ronda)
-    } else {
-      // No entra: cerrar fecha actual (si tiene partidos) y abrir una nueva
-      cerrarFecha()
-      if (f >= numFechas) {
-        sinAsignar.push(...ronda)
-      } else if (ronda.length <= capacidad) {
-        matchesFecha.push(...ronda)
-      } else {
-        // Ronda más grande que la capacidad: programar lo que quepa, resto a sinAsignar
-        matchesFecha.push(...ronda.slice(0, capacidad))
-        sinAsignar.push(...ronda.slice(capacidad))
-      }
-    }
-  }
-  // Cerrar la última fecha si tiene partidos
-  if (matchesFecha.length > 0 && f < numFechas) cerrarFecha()
-  else sinAsignar.push(...matchesFecha)
+  })
 
   return { programados, sinAsignar }
 }
@@ -469,6 +478,15 @@ export function asignarArbitrosEficiente(
     const tienePartidoMasTarde = (j: string, desdeIdx: number) =>
       (bloquesJugador.get(j) ?? []).some(bi => bi > desdeIdx)
 
+    // Último bloque en que jugó (antes de hastaIdx), o -1 si no jugó todavía.
+    // Sirve para el fallback: entre quienes ya no tienen más partidos, hay que
+    // preferir a quien jugó hace menos rato, no a cualquiera al azar — a quien
+    // ya se fue hace horas no se lo hace volver solo porque nunca arbitró.
+    const ultimoBloqueJugado = (j: string, hastaIdx: number) => {
+      const anteriores = (bloquesJugador.get(j) ?? []).filter(bi => bi < hastaIdx)
+      return anteriores.length > 0 ? Math.max(...anteriores) : -1
+    }
+
     const menosArbitrado = (candidatos: string[]) =>
       candidatos.reduce((best, c) =>
         (vecesArb.get(c) ?? 0) < (vecesArb.get(best) ?? 0) ? c : best,
@@ -503,8 +521,17 @@ export function asignarArbitrosEficiente(
         // priorizando a quienes aún tienen partidos pendientes (ya van a estar ahí).
         const disponibles = roster.filter(j => !jugando.has(j))
         const conPendientes = disponibles.filter(j => tienePartidoMasTarde(j, i - 1))
-        const candidatos = conPendientes.length > 0 ? conPendientes : disponibles
-        if (candidatos.length > 0) arbitro = menosArbitrado(candidatos)
+        if (conPendientes.length > 0) {
+          arbitro = menosArbitrado(conPendientes)
+        } else if (disponibles.length > 0) {
+          // Nadie tiene partidos pendientes: preferir a quien jugó hace menos
+          // rato, no a cualquiera. Sin esto alguien que ya terminó y se iba a
+          // ir hace horas queda arbitrando el último partido del día.
+          const ultimoJugado = new Map(disponibles.map(j => [j, ultimoBloqueJugado(j, i)]))
+          const maxUltimo = Math.max(...ultimoJugado.values())
+          const masRecientes = disponibles.filter(j => ultimoJugado.get(j) === maxUltimo)
+          arbitro = menosArbitrado(masRecientes)
+        }
       }
 
       if (arbitro) vecesArb.set(arbitro, (vecesArb.get(arbitro) ?? 0) + 1)
