@@ -12,7 +12,8 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import {
   enviarClasesExtraACobro, pagarClasesExtra, revertirPagoClasesExtra,
 } from '@/app/actions/clasesExtra'
-import { SIN_CUOTA } from '@/lib/domain/mensualidades'
+import { asignarMontoClaseExtraordinaria } from '@/app/actions/asistencia'
+import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 import { rangoHorario } from '@/lib/domain/horario'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
@@ -51,6 +52,12 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
   const [cobrando, setCobrando]   = useState<{ jugadorId: string; ids: string[]; total: number } | null>(null)
   const [metodo, setMetodo]       = useState<'efectivo' | 'transferencia'>('efectivo')
   const claveCobro = useRef<string | null>(null)
+  // Poner el monto sin salir de Finanzas: antes había que ir a Asistencia
+  // para esto, y el admin lo pedía desde acá mismo, que es donde cobra.
+  const [modalMonto, setModalMonto]     = useState<Extra | null>(null)
+  const [montoTexto, setMontoTexto]     = useState('')
+  const [errorMonto, setErrorMonto]     = useState('')
+  const [guardandoMonto, setGuardandoMonto] = useState(false)
 
   const cargar = useCallback(async () => {
     if (!clubId) return
@@ -89,6 +96,18 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
     if (res.error) { setMensaje(res.error); return }
     claveCobro.current = null
     setCobrando(null)
+    await cargar()
+  }
+
+  async function guardarMonto() {
+    if (!modalMonto) return
+    const monto = montoIngresado(montoTexto)
+    if (monto != null && monto < 0) { setErrorMonto('El monto no puede ser negativo.'); return }
+    setGuardandoMonto(true); setErrorMonto('')
+    const res = await asignarMontoClaseExtraordinaria({ id: modalMonto.id, monto })
+    setGuardandoMonto(false)
+    if (res.error) { setErrorMonto(res.error); return }
+    setModalMonto(null)
     await cargar()
   }
 
@@ -199,9 +218,16 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
                   </div>
                 )}
                 {g.sinMonto.length > 0 && (
-                  <div style={{ fontSize: 11, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa',
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    fontSize: 11, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa',
                     borderRadius: 8, padding: '7px 10px', marginBottom: 8 }}>
-                    {g.sinMonto.length} sin monto. Se les pone precio desde Asistencia, y recién ahí se pueden cobrar.
+                    <span>{g.sinMonto.length} sin monto. Recién con precio se pueden cobrar.</span>
+                    <button
+                      onClick={() => { setModalMonto(g.sinMonto[0]); setMontoTexto(''); setErrorMonto('') }}
+                      style={{ background: '#c2410c', color: '#fff', border: 'none', borderRadius: 6,
+                        padding: '4px 10px', fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      Poner precio
+                    </button>
                   </div>
                 )}
 
@@ -310,6 +336,51 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
                 style={{ flex: 1, padding: 11, background: '#16a34a', border: 'none', borderRadius: 8,
                   color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                 {ocupado ? 'Registrando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cuánto se le cobra por la clase extra. Mismo patrón que en
+          Asistencia — es la misma acción del servidor, solo que ahora
+          también se puede abrir desde acá sin cambiar de pantalla. */}
+      {modalMonto && (
+        <div className="anim-fondo" onClick={e => { if (e.target === e.currentTarget) setModalMonto(null) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 100 }}>
+          <div className="anim-modal" style={{ ...card, padding: 22, width: '100%', maxWidth: 340 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: text }}>Clase extra</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2, marginBottom: 16 }}>
+              {jugadores[modalMonto.jugador_id]?.nombre ?? '—'} · {detalle(modalMonto)}
+            </div>
+
+            <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Monto a cobrar (CLP)</label>
+            <input type="number" autoFocus
+              style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0',
+                borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none' }}
+              value={montoTexto} onChange={e => setMontoTexto(e.target.value)} />
+            <div style={{ fontSize: 11, color: hint, marginTop: 6, marginBottom: 16 }}>
+              Vacío = pendiente ({SIN_CUOTA}). Poné <strong>0</strong> si el profe debe esta clase y no se cobra.
+            </div>
+
+            {errorMonto && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
+                padding: '9px 12px', marginBottom: 12, fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                {errorMonto}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModalMonto(null)}
+                style={{ flex: 1, padding: 11, background: 'transparent', border: '1px solid #e2e8f0',
+                  borderRadius: 8, color: muted, fontSize: 13, cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={guardarMonto} disabled={guardandoMonto}
+                style={{ flex: 1, padding: 11, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {guardandoMonto ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>
