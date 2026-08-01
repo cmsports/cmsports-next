@@ -371,8 +371,8 @@ export function programarDivision(
       // Si no hay espacio en la mesa, saltar
       if (porFecha[f].length >= capacidad) continue
 
-      // Restricción: ninguno debe tener más de 3 partidos en la misma fecha
-      if ((cuentaA.get(f) ?? 0) >= 3 || (cuentaB.get(f) ?? 0) >= 3) continue
+      // Restricción: máximo 2 partidos por jugador por fecha (descanso entre fechas)
+      if ((cuentaA.get(f) ?? 0) >= 2 || (cuentaB.get(f) ?? 0) >= 2) continue
 
       // Score: suma de partidos de ambos en esta fecha (menor = mejor distribución)
       const score = (cuentaA.get(f) ?? 0) + (cuentaB.get(f) ?? 0)
