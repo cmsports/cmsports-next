@@ -10,6 +10,8 @@ import DocumentosJugador from '@/components/DocumentosJugador'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import { firmarUrl } from '@/lib/supabase/privado'
+import { cargarHistorialJugador } from '@/lib/supabase/historial'
+import { sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
@@ -29,6 +31,10 @@ export default function PerfilPage() {
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [yaRegistroHoy, setYaRegistroHoy] = useState(false)
+  // Se derivan de los bloques, no de las columnas de `jugadores`: esas son un
+  // caché que arrastraba el total del mes anterior hasta que alguien volviera
+  // a pasar lista. Ver sesionesDelMes().
+  const [sesiones, setSesiones] = useState<SesionesMes | null>(null)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const [supabase] = useState(() => createClient())
   const router = useRouter()
@@ -74,6 +80,18 @@ export default function PerfilPage() {
         setAsistencias(a || [])
         setMensualidadActual(mens)
         setYaRegistroHoy((asistHoy || []).length > 0)
+
+        // Las sesiones del mes salen del calendario de sus bloques, igual que
+        // en Asistencia Histórica, para que las dos pantallas no puedan decir
+        // números distintos.
+        if (perfil.club_id) {
+          // El mes entero, no hasta hoy: el límite incluye los días que faltan,
+          // y un feriado ya cargado para el 20 tiene que descontarse desde ya.
+          const desde = `${hoy.slice(0, 7)}-01`
+          const hasta = `${hoy.slice(0, 7)}-${new Date(anioActual, mesActual, 0).getDate()}`
+          const historial = await cargarHistorialJugador(perfil.club_id, perfil.jugador_id, desde, hasta)
+          setSesiones(sesionesDelMes(perfil.jugador_id, { ...historial, hoy }, hoy))
+        }
       }
       setLoading(false)
     }
@@ -133,15 +151,15 @@ export default function PerfilPage() {
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Mensualidad</div>
         </div>
 
-        {/* Sesiones */}
-        {jugador.tipo_plan !== 'libre' && (
+        {/* Sesiones del mes — salen de los días que le tocan según sus bloques. */}
+        {jugador.tipo_plan !== 'libre' && sesiones && sesiones.limite > 0 && (
           <div style={{ marginTop: 12, background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>Sesiones del mes</span>
-              <span style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{jugador.sesiones_usadas}/{jugador.sesiones_limite}</span>
+              <span style={{ fontSize: 12, color: '#fff', fontWeight: 700 }}>{sesiones.usadas}/{sesiones.limite}</span>
             </div>
             <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 4, height: 6 }}>
-              <div style={{ width: `${Math.min(((jugador.sesiones_usadas || 0) / (jugador.sesiones_limite || 1)) * 100, 100)}%`, background: (jugador.sesiones_usadas || 0) >= (jugador.sesiones_limite || 1) ? '#fca5a5' : '#fff', borderRadius: 4, height: '100%', transition: 'width 0.3s' }} />
+              <div style={{ width: `${Math.min((sesiones.usadas / sesiones.limite) * 100, 100)}%`, background: sesiones.usadas >= sesiones.limite ? '#fca5a5' : '#fff', borderRadius: 4, height: '100%', transition: 'width 0.3s' }} />
             </div>
           </div>
         )}

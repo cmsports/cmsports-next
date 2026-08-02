@@ -17,6 +17,8 @@ import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { diaDesdeFecha, hhmm, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
 import { entrenaEnSede, sedeLabel } from '@/lib/domain/sedeGrupo'
+import { cargarHistorialClub } from '@/lib/supabase/historial'
+import { indexar, sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
 import {
   guardarJugadoresCache,
   obtenerJugadoresCache,
@@ -71,6 +73,10 @@ function diaDeHoy(): string {
 
 export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [jugadores, setJugadores] = useState<any[]>([])
+  // Sesiones del mes por jugador, derivadas de sus bloques. Las columnas
+  // `sesiones_usadas`/`sesiones_limite` no sirven: arrastran el mes anterior y
+  // el límite sale de un campo manual que inscribir en un grupo no actualiza.
+  const [sesionesPorJug, setSesionesPorJug] = useState<Record<string, SesionesMes>>({})
   const [asistencias, setAsistencias] = useState<any[]>([])
   const [busqueda, setBusqueda] = useState('')
   const [loading, setLoading] = useState(true)
@@ -167,7 +173,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     try {
       j = await cachedFetch(jugKey, async () => {
         let q = supabase.from('jugadores')
-          .select('id,nombre,categoria,sesiones_usadas,sesiones_limite,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
+          .select('id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
           .eq('club_id', id).eq('estado', 'activo').order('nombre')
         if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
         const { data, error } = await q
@@ -199,6 +205,20 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (perfil?.jugador_id) {
       setYaRegistroHoy((a || []).some((as: any) => as.jugador_id === perfil.jugador_id) || pendientesHoy.some(p => p.jugadorId === perfil.jugador_id))
     }
+
+    // Una sola consulta para todo el club y después se reparte en memoria: una
+    // por jugador serían decenas de viajes para pintar la misma lista.
+    const [anioMes, mesNum] = hoy.split('-').map(Number)
+    const historialMes = await cargarHistorialClub(
+      id,
+      `${hoy.slice(0, 7)}-01`,
+      `${hoy.slice(0, 7)}-${new Date(anioMes, mesNum, 0).getDate()}`,
+    )
+    const datosMes = { ...historialMes, hoy }
+    const indice = indexar(datosMes)
+    setSesionesPorJug(Object.fromEntries(
+      (j || []).map((x: any) => [x.id, sesionesDelMes(x.id, datosMes, hoy, indice)]),
+    ))
   }, [clubId, hoy, perfil])
 
   // Las clases extra del día que se está mirando. Si la migración 098 todavía
@@ -250,7 +270,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       if (!perfil) { router.push('/login'); return }
       if (perfil.rol === 'jugador' && perfil.jugador_id) {
         const cliente = createClient()
-        const { data: j } = await cliente.from('jugadores').select('id,nombre,sesiones_usadas,sesiones_limite').eq('id', perfil.jugador_id).single()
+        const { data: j } = await cliente.from('jugadores').select('id,nombre').eq('id', perfil.jugador_id).single()
         setJugadorPropio(j)
       }
       if (perfil.club_id) {
@@ -971,7 +991,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
                       <div style={{ fontSize: 11, color: muted }}>
-                        {j.sesiones_usadas}/{j.sesiones_limite} sesiones · {j.categoria}
+                        {sesionesPorJug[j.id]?.limite
+                          ? `${sesionesPorJug[j.id].usadas}/${sesionesPorJug[j.id].limite} sesiones · `
+                          : ''}{j.categoria}
                         {esExtra && <span style={{ color: '#a16207', fontWeight: 600 }}> · ese día no entrena</span>}
                       </div>
                     </div>

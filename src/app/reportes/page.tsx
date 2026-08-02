@@ -114,7 +114,7 @@ export default function ReportesPage() {
     const { inicio, fin } = getRango()
     const iniAnio = parseInt(inicio.slice(0, 4)), iniMes = parseInt(inicio.slice(5, 7)), finMes = parseInt(fin.slice(5, 7))
     const [{ data: jugador }, { data: mens }, { data: asist }, { data: torneoJug }, { data: ligaJug }] = await Promise.all([
-      supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,fecha_nacimiento,estado').eq('id', jugadorId).single(),
+      supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,tipo_plan,mensualidad,horario,fecha_nacimiento,estado').eq('id', jugadorId).single(),
       supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }),
       supabase.from('asistencia').select('id,jugador_id,fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
       supabase.from('torneo_jugadores').select('id,torneo_id,torneos(id,nombre,fecha_inicio,estado)').eq('jugador_id', jugadorId),
@@ -253,7 +253,15 @@ export default function ReportesPage() {
       y = (doc as any).lastAutoTable.finalY + 10
       doc.addPage(); y = 20
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Jugadores Activos', 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Nombre', 'Categoría', 'Sesiones', 'Estado']], body: preview.activos.sort((a: any, b: any) => a.nombre.localeCompare(b.nombre)).map((j: any) => [j.nombre, j.categoria, `${j.sesiones_usadas}/${j.sesiones_limite}`, j.estado]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      // Asistencias del período, no "sesiones del mes": este reporte cubre el
+      // rango que eligió el usuario, y el contador mensual del jugador no
+      // significa nada acá. Antes salía "undefined/undefined", porque la
+      // consulta de activos ni siquiera trae esas columnas.
+      const asistPorJug = new Map<string, number>()
+      for (const a of (preview.asistencias || [])) {
+        asistPorJug.set(a.jugador_id, (asistPorJug.get(a.jugador_id) ?? 0) + 1)
+      }
+      autoTable(doc, { startY: y, head: [['Nombre', 'Categoría', 'Asistencias', 'Estado']], body: preview.activos.sort((a: any, b: any) => a.nombre.localeCompare(b.nombre)).map((j: any) => [j.nombre, j.categoria, String(asistPorJug.get(j.id) ?? 0), j.estado]), theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
       y = (doc as any).lastAutoTable.finalY + 10
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Asistencia', 14, y); y += 8
       autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)], ['Promedio por día', String(preview.promedioAsist)], ['Jugadores activos', String(preview.activos.length)], ['Morosos', String(preview.morosos.length)], ['Tasa morosidad', preview.activos.length > 0 ? `${Math.round((preview.morosos.length / preview.activos.length) * 100)}%` : '0%']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
@@ -268,7 +276,7 @@ export default function ReportesPage() {
       const j = preview.jugador
       doc.setTextColor(40, 40, 40)
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text(`Ficha — ${j.nombre}`, 14, y); y += 8
-      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Sesiones', `${j.sesiones_usadas || 0}/${j.sesiones_limite || 0}`], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
+      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Asistencias (periodo)', String((preview.asistencias || []).length)], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], theme: 'striped', headStyles: { fillColor: [14, 165, 233] }, margin: { left: 14, right: 14 } })
       y = (doc as any).lastAutoTable.finalY + 10
       doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.text('Mensualidades (período)', 14, y); y += 8
       autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total pagado', fmt(preview.totalPagado)], ['Total pendiente', fmt(preview.totalPendiente)], ['Meses pagados', String(preview.pagadas.length)], ['Meses pendientes/atrasados', String(preview.pendientes.length)]], theme: 'striped', headStyles: { fillColor: [22, 163, 74] }, margin: { left: 14, right: 14 } })
@@ -550,7 +558,7 @@ export default function ReportesPage() {
                 ['Categoría', preview.jugador.categoria || '—'],
                 ['Estado', preview.jugador.estado || '—'],
                 ['Plan', preview.jugador.tipo_plan || '—'],
-                ['Sesiones', `${preview.jugador.sesiones_usadas || 0}/${preview.jugador.sesiones_limite || 0}`],
+                ['Asistencias (período)', String((preview.asistencias || []).length)],
                 ['Mensualidad', preview.jugador.mensualidad ? fmt(preview.jugador.mensualidad) : '—'],
                 ['RUT', preview.jugador.rut || '—'],
                 ['Email', preview.jugador.email || '—'],

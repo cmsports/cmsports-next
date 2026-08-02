@@ -14,6 +14,14 @@ type PlanFields = {
   entrenamientos_por_semana: number | null
   /** null cuando todavía nadie le asignó cuota. Nunca un monto de relleno. */
   mensualidad: number | null
+  /**
+   * Se sigue guardando, pero NINGUNA pantalla lo muestra: era
+   * `entrenamientos_por_semana × 4`, un campo que se escribe a mano al dar de
+   * alta y que inscribir en un bloque no actualiza, así que un jugador de cinco
+   * días semanales aparecía con doce sesiones. Lo que se muestra sale de
+   * `sesionesDelMes()`, derivado de los bloques. Lo mismo vale para
+   * `sesiones_usadas`, que arrastraba el total del mes anterior.
+   */
   sesiones_limite: number
 }
 

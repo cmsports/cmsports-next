@@ -22,6 +22,8 @@ import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/h
 import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
+import { cargarHistorialJugador } from '@/lib/supabase/historial'
+import { sesionesDelMes } from '@/lib/domain/historialAsistencia'
 
 const supabase = createClient()
 
@@ -533,6 +535,18 @@ export default function JugadorDetallePage() {
         supabase.from('torneos').select('id,categoria').eq('club_id', jugador.club_id).eq('tipo', 'interno').eq('estado', 'finalizado'),
       ])
 
+      // Las sesiones del mes salen del calendario de sus bloques, no de las
+      // columnas de `jugadores`: esas arrastran el total del mes anterior.
+      const hoyISO = fechaChile()
+      const [anioMes, mesNum] = hoyISO.split('-').map(Number)
+      const historialMes = await cargarHistorialJugador(
+        jugador.club_id,
+        jugadorId,
+        `${hoyISO.slice(0, 7)}-01`,
+        `${hoyISO.slice(0, 7)}-${new Date(anioMes, mesNum, 0).getDate()}`,
+      )
+      const sesiones = sesionesDelMes(jugadorId, { ...historialMes, hoy: hoyISO }, hoyISO)
+
       // Calcular ranking del jugador en su categoría
       let rankingPos: number | null = null
       let rankingVictorias = 0
@@ -630,7 +644,9 @@ export default function JugadorDetallePage() {
       const planRows: [string, string][] = []
       planRows.push(['Plan', jugador.tipo_plan || 'Mensual'])
       if (jugador.entrenamientos_por_semana) planRows.push(['Ent./semana', String(jugador.entrenamientos_por_semana)])
-      if (jugador.tipo_plan !== 'libre') planRows.push(['Sesiones', `${jugador.sesiones_usadas || 0} / ${jugador.sesiones_limite || 0}`])
+      if (jugador.tipo_plan !== 'libre' && sesiones && sesiones.limite > 0) {
+        planRows.push(['Sesiones', `${sesiones.usadas} / ${sesiones.limite}`])
+      }
       if (jugador.horario) planRows.push(['Horario', jugador.horario])
       if (jugador.grupo) planRows.push(['Grupo', grupoLabel(jugador.grupo)])
       if (jugador.sede) planRows.push(['Sede', sedeLabel(jugador.sede)])

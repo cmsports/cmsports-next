@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   bloquesSinInscripcion, calendarioJugador, diasHabiles, indexar, indicadores,
+  sesionesDelMes,
   type DatosHistorial, type EstadoDia,
 } from './historialAsistencia'
 
@@ -430,3 +431,86 @@ function indicadoresDe(dias: { fecha: string; estado: EstadoDia }[]) {
     extra: d.estado === 'extraordinaria',
   }))
 }
+
+// Agosto 2026 arranca sábado: tiene 4 martes (4, 11, 18, 25), 4 jueves
+// (6, 13, 20, 27) y 5 lunes (3, 10, 17, 24, 31).
+describe('sesionesDelMes', () => {
+  const enMarJue = [
+    { bloque_id: 'b-mar', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null },
+    { bloque_id: 'b-jue', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null },
+  ]
+
+  // El bug que originó todo esto: el 2 de agosto, sin lista pasada todavía, el
+  // perfil mostraba las sesiones de julio en vez de arrancar de cero.
+  it('un mes recién empezado arranca en cero, sin arrastrar el anterior', () => {
+    const conJulio = datos({
+      hoy: '2026-08-02',
+      inscripciones: [
+        { bloque_id: 'b-mar', jugador_id: JUG, vigente_desde: '2026-07-01', vigente_hasta: null },
+        { bloque_id: 'b-jue', jugador_id: JUG, vigente_desde: '2026-07-01', vigente_hasta: null },
+      ],
+      asistencias: [
+        { jugador_id: JUG, fecha: '2026-07-28', estado: 'presente' },
+        { jugador_id: JUG, fecha: '2026-07-30', estado: 'presente' },
+      ],
+      bloques: [
+        { ...bloqueMar, vigente_desde: '2026-07-01' },
+        { ...bloqueJue, vigente_desde: '2026-07-01' },
+      ],
+    })
+    expect(sesionesDelMes(JUG, conJulio, '2026-08-02')).toEqual({ usadas: 0, limite: 8 })
+  })
+
+  // El otro lado del bug: el límite salía de un campo escrito a mano que
+  // inscribir en un bloque no actualizaba, así que alguien de cinco días
+  // semanales aparecía con doce sesiones.
+  it('el límite sale de los bloques, así que crece al sumar días', () => {
+    const dos  = datos({ inscripciones: enMarJue })
+    const tres = datos({ inscripciones: [
+      ...enMarJue,
+      { bloque_id: 'b-lun', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null },
+    ] })
+    expect(sesionesDelMes(JUG, dos,  '2026-08-01').limite).toBe(8)
+    expect(sesionesDelMes(JUG, tres, '2026-08-01').limite).toBe(13)
+  })
+
+  it('una falta gasta sesión igual que una presencia', () => {
+    const d = datos({
+      hoy: '2026-08-12',
+      inscripciones: enMarJue,
+      asistencias: [
+        { jugador_id: JUG, fecha: '2026-08-04', estado: 'presente' },
+        { jugador_id: JUG, fecha: '2026-08-06', estado: 'ausente' },
+      ],
+    })
+    // Más el martes 11, que ya venció sin que nadie pasara lista.
+    expect(sesionesDelMes(JUG, d, '2026-08-12')).toEqual({ usadas: 3, limite: 8 })
+  })
+
+  it('un día suspendido no ocupa cupo', () => {
+    const d = datos({
+      inscripciones: enMarJue,
+      excepciones: [{ bloque_id: 'b-mar', fecha: '2026-08-04' }],
+    })
+    expect(sesionesDelMes(JUG, d, '2026-08-01').limite).toBe(7)
+  })
+
+  it('sin bloques no hay sesiones que contar', () => {
+    expect(sesionesDelMes(JUG, datos(), '2026-08-01')).toEqual({ usadas: 0, limite: 0 })
+  })
+
+  it('cierra bien un mes de 31 y uno de 28', () => {
+    const todoElAnio = [
+      { bloque_id: 'b-lun', jugador_id: JUG, vigente_desde: '2026-01-01', vigente_hasta: null },
+    ]
+    const d = datos({
+      hoy: '2026-02-01',
+      bloques: [{ ...bloqueLun, vigente_desde: '2026-01-01' }],
+      inscripciones: todoElAnio,
+    })
+    // Febrero 2026: lunes 2, 9, 16 y 23.
+    expect(sesionesDelMes(JUG, d, '2026-02-01').limite).toBe(4)
+    // Diciembre 2026: lunes 7, 14, 21 y 28.
+    expect(sesionesDelMes(JUG, { ...d, hoy: '2026-12-01' }, '2026-12-01').limite).toBe(4)
+  })
+})

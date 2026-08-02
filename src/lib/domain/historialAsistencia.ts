@@ -348,3 +348,45 @@ export function indicadores(dias: DiaCalendario[]): Indicadores {
       })),
   }
 }
+
+export type SesionesMes = {
+  /** Días del mes que ya ocuparon cupo: vino o faltó. */
+  usadas: number
+  /** Días que le tocan entrenar en el mes, incluidos los que todavía no llegan. */
+  limite: number
+}
+
+/**
+ * Las sesiones del mes de una fecha, derivadas de los bloques del jugador.
+ *
+ * Reemplaza a las columnas `jugadores.sesiones_usadas` y `sesiones_limite`, que
+ * son cachés cuyo valor correcto depende del calendario pero que solo se
+ * refrescan al escribir asistencia. El día 1 el contador seguía mostrando el
+ * total del mes anterior hasta que alguien volviera a entrenar, y el límite
+ * salía de `entrenamientos_por_semana × 4` —un campo que se escribe a mano al
+ * dar de alta y que inscribir en un bloque no actualiza—, así que un jugador de
+ * cinco días semanales aparecía con doce sesiones.
+ *
+ * Acá los dos números salen de los mismos bloques que ya mandan en el resto del
+ * sistema, así que respetan vigencias, feriados y cambios de grupo sin que nadie
+ * tenga que acordarse de sincronizar nada.
+ *
+ * Una ausencia gasta sesión igual que una presencia: el cupo se ocupó. Es la
+ * misma regla de `indicadores`, de la que esto es un envoltorio.
+ */
+export function sesionesDelMes(
+  jugadorId: string,
+  datos: DatosHistorial,
+  hoy: string,
+  indice?: IndiceHistorial,
+): SesionesMes {
+  const [anio, mes] = hoy.split('-').map(Number)
+  const desde = `${hoy.slice(0, 7)}-01`
+  // Día 0 del mes siguiente es el último del actual, y con esto febrero y los
+  // bisiestos no son un caso aparte.
+  const ultimo = new Date(anio, mes, 0).getDate()
+  const hasta = `${hoy.slice(0, 7)}-${String(ultimo).padStart(2, '0')}`
+
+  const ind = indicadores(calendarioJugador(jugadorId, desde, hasta, datos, indice))
+  return { usadas: ind.presentes + ind.ausentes, limite: ind.programados }
+}
