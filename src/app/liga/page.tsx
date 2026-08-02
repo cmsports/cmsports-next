@@ -262,7 +262,7 @@ export default function LigaPage() {
                   <input type="number" min={2} style={inp} placeholder="5" value={totalFechas} onChange={e => setTotalFechas(e.target.value)} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Inscripción ($)</label>
+                  <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Inscripción sugerida ($)</label>
                   <input type="number" min={0} style={inp} placeholder="Ej: 10000" value={montoInscripcion} onChange={e => setMontoInscripcion(e.target.value)} />
                 </div>
               </div>
@@ -279,7 +279,7 @@ export default function LigaPage() {
               </div>
 
               <div style={{ fontSize: 11, color: hint, marginBottom: 20 }}>
-                💡 La última fecha es siempre de ajuste · Divisiones y jugadores son opcionales
+                💡 La última fecha es siempre de ajuste · Divisiones y jugadores son opcionales · La inscripción se precarga con este valor pero se puede cambiar para cada jugador al registrar su pago
               </div>
 
               {error && (
