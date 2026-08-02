@@ -111,6 +111,45 @@ describe('validarMovimientoPartido', () => {
     expect(r.valido).toBe(false)
     expect(r.motivo).toMatch(/árbitro/i)
   })
+
+  // El drag & drop manual (moverPartidoLiga) es la única vía que podía violar
+  // el hueco máximo: HC-01/03/04 estaban cubiertos, pero nada impedía que un
+  // admin moviera un partido y dejara a un jugador esperando 2+ partidos.
+  describe('hueco máximo al pasar `bloques`', () => {
+    const bloques = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30']
+
+    it('sin `bloques` no valida el hueco (compatibilidad con cambiarArbitroPartido)', () => {
+      // A ya jugó en 09:00 y en 11:00 (hueco de 3). Sin la lista de bloques,
+      // el chequeo se omite — así lo usa cambiarArbitroPartido, que no mueve nada.
+      const yaJugado: PartidoExistente = { ...base, id: 'p2', bloqueHorario: '09:00', jugadorAId: 'A', jugadorBId: 'X' }
+      const destinoTarde = { ...destino, bloqueHorario: '11:00' }
+      const r = validarMovimientoPartido(base, destinoTarde, [base, yaJugado])
+      expect(r.valido).toBe(true)
+    })
+
+    it('con `bloques` rechaza un movimiento que deja a un jugador esperando más de 1 partido', () => {
+      const yaJugado: PartidoExistente = { ...base, id: 'p2', bloqueHorario: '09:00', jugadorAId: 'A', jugadorBId: 'X' }
+      const destinoTarde = { ...destino, bloqueHorario: '11:00' } // hueco de 3 bloques (09:30,10:00,10:30)
+      const r = validarMovimientoPartido(base, destinoTarde, [base, yaJugado], bloques)
+      expect(r.valido).toBe(false)
+      expect(r.motivo).toMatch(/esperando/i)
+    })
+
+    it('con `bloques` permite un movimiento que deja hueco de a lo sumo 1 partido', () => {
+      const yaJugado: PartidoExistente = { ...base, id: 'p2', bloqueHorario: '09:00', jugadorAId: 'A', jugadorBId: 'X' }
+      const destinoCercano = { ...destino, bloqueHorario: '10:00' } // hueco de 1 bloque (09:30)
+      const r = validarMovimientoPartido(base, destinoCercano, [base, yaJugado], bloques)
+      expect(r.valido).toBe(true)
+    })
+
+    it('no cuenta partidos de otra fecha para el hueco', () => {
+      // El mismo jugador A tiene un partido en OTRA fecha a las 09:00 — no debe importar.
+      const otraFecha: PartidoExistente = { ...base, id: 'p2', fechaId: 'f-otra', bloqueHorario: '09:00', jugadorAId: 'A', jugadorBId: 'X' }
+      const destinoTarde = { ...destino, bloqueHorario: '11:00' }
+      const r = validarMovimientoPartido(base, destinoTarde, [base, otraFecha], bloques)
+      expect(r.valido).toBe(true)
+    })
+  })
 })
 
 // La razón de ser de estos tests: en producción salieron horarios donde un

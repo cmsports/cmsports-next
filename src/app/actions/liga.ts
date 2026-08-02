@@ -76,7 +76,6 @@ export async function calcularDiffFixtureDivision(params: {
 export async function asignarJugadoresDivision(params: {
   divisionId: string
   jugadorIds: string[]
-  regenerarFixture?: boolean  // mantenido por compatibilidad, ya no se usa destructivamente
 }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
@@ -300,9 +299,24 @@ export async function guardarRestriccionesLiga(params: {
   const { ligaId, restricciones } = params
   const db = supabase as any
 
+  const horaValida = (h: string): boolean => {
+    const m = /^(\d{2}):(\d{2})$/.exec(h)
+    if (!m) return false
+    const hh = Number(m[1]); const mm = Number(m[2])
+    return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59
+  }
   for (const r of restricciones) {
+    if (r.horaDesde !== null && !horaValida(r.horaDesde)) {
+      return { error: `Hora inválida: "${r.horaDesde}".` }
+    }
+    if (r.horaHasta !== null && !horaValida(r.horaHasta)) {
+      return { error: `Hora inválida: "${r.horaHasta}".` }
+    }
     if (r.horaDesde && r.horaHasta && r.horaDesde > r.horaHasta) {
       return { error: `El horario de un jugador está al revés (${r.horaDesde} a ${r.horaHasta}).` }
+    }
+    if (r.fechaNumero !== null && (!Number.isInteger(r.fechaNumero) || r.fechaNumero < 1)) {
+      return { error: `Número de fecha inválido para un jugador: ${r.fechaNumero}.` }
     }
   }
 
@@ -770,12 +784,14 @@ export async function moverPartidoLiga(params: {
     .from('liga_partidos')
     .select('id, liga_id, jugador_a_id, jugador_b_id, arbitro_id')
     .eq('id', partidoId)
+    .is('deleted_at', null)
     .single()
   if (!partido) return { error: 'Partido no encontrado' }
 
-  const [{ data: mesa }, { data: fecha }] = await Promise.all([
+  const [{ data: mesa }, { data: fecha }, { data: ligaConfig }] = await Promise.all([
     supabase.from('liga_mesas').select('id, liga_id').eq('id', mesaId).single(),
     supabase.from('liga_fechas').select('id, liga_id, estado').eq('id', fechaId).single(),
+    (supabase as any).from('ligas').select('bloque_minutos').eq('id', partido.liga_id).single(),
   ])
   if (!mesa || mesa.liga_id !== partido.liga_id) return { error: 'La mesa no pertenece a esta liga' }
   if (!fecha || fecha.liga_id !== partido.liga_id) return { error: 'La fecha no pertenece a esta liga' }
@@ -807,10 +823,12 @@ export async function moverPartidoLiga(params: {
     arbitro_id: partido.arbitro_id,
   })
 
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, ligaConfig?.bloque_minutos ?? 30)
   const { valido, motivo } = validarMovimientoPartido(
     partidoActual,
     { fechaId, mesaId, bloqueHorario },
     (partidosFecha || []).map(aPartidoExistente),
+    bloques,
   )
   if (!valido) return { error: motivo }
 
@@ -1368,6 +1386,7 @@ export async function asignarPartidoManual(params: {
     .from('liga_partidos')
     .select('id, liga_id, division_id, estado')
     .eq('id', partidoId)
+    .is('deleted_at', null)
     .single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (['finalizado', 'walkover'].includes(partido.estado)) {

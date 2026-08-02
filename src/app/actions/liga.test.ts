@@ -12,6 +12,8 @@ import {
   retirarJugadorDeLiga,
   guardarRestriccionesLiga,
   reprogramarFechasPendientes,
+  asignarPartidoManual,
+  moverPartidoLiga,
 } from './liga'
 
 describe('acciones críticas de liga', () => {
@@ -183,6 +185,28 @@ describe('guardarRestriccionesLiga', () => {
     expect(res.error).toMatch(/al rev/i)
   })
 
+  it('rechaza una hora con formato inválido en vez de guardarla y romper el motor', async () => {
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: {}, clubId: 'club-1', userId: 'u1' })
+
+    const res = await guardarRestriccionesLiga({
+      ligaId: 'liga-1',
+      restricciones: [{ jugadorId: 'j1', fechaNumero: null, horaDesde: '25:90', horaHasta: null }],
+    })
+
+    expect(res.error).toMatch(/hora inválida/i)
+  })
+
+  it('rechaza un número de fecha que no es un entero positivo', async () => {
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: {}, clubId: 'club-1', userId: 'u1' })
+
+    const res = await guardarRestriccionesLiga({
+      ligaId: 'liga-1',
+      restricciones: [{ jugadorId: 'j1', fechaNumero: -3, horaDesde: null, horaHasta: null }],
+    })
+
+    expect(res.error).toMatch(/número de fecha/i)
+  })
+
   it('corta sin autorización', async () => {
     mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
     await expect(guardarRestriccionesLiga({ ligaId: 'l', restricciones: [] }))
@@ -252,5 +276,73 @@ describe('reprogramarFechasPendientes', () => {
     mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
     const res = await reprogramarFechasPendientes({ ligaId: 'l' })
     expect(res.error).toBe('Acceso denegado')
+  })
+})
+
+// El drag & drop manual era el único hueco: HC-01/03/04 se validaban, pero
+// nada impedía dejar a un jugador esperando 2+ partidos al arrastrar.
+describe('moverPartidoLiga — respeta el hueco máximo', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  function armar() {
+    return fakeSupabase({
+      liga_partidos: [
+        // El partido que se mueve. `single()` toma el primer elemento.
+        { id: 'p1', liga_id: 'liga-1', jugador_a_id: 'A', jugador_b_id: 'B', arbitro_id: null,
+          fecha_id: 'f1', mesa_id: 'm1', bloque_horario: '09:00' },
+        // Otro partido de la misma fecha: A ya jugó a las 09:00.
+        { id: 'p2', fecha_id: 'f1', mesa_id: 'm1', bloque_horario: '09:00', jugador_a_id: 'A', jugador_b_id: 'X', arbitro_id: null },
+      ],
+      liga_mesas: { id: 'm1', liga_id: 'liga-1' },
+      liga_fechas: { id: 'f1', liga_id: 'liga-1', estado: 'programada' },
+      ligas: { bloque_minutos: 30 },
+    })
+  }
+
+  it('rechaza moverlo a un bloque que deja a A esperando más de un partido', async () => {
+    const fake = armar()
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: fake.cliente, clubId: 'club-1' })
+
+    // 09:00 -> 11:00 son 4 bloques de 30 min: quedan 3 vacíos en el medio.
+    const res = await moverPartidoLiga({ partidoId: 'p1', fechaId: 'f1', mesaId: 'm1', bloqueHorario: '11:00' })
+
+    expect(res.error).toMatch(/esperando/i)
+  })
+
+  it('permite moverlo a un bloque con hueco de a lo sumo un partido', async () => {
+    const fake = armar()
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: fake.cliente, clubId: 'club-1' })
+
+    // 09:00 -> 10:00: un solo bloque vacío (09:30) en el medio.
+    const res = await moverPartidoLiga({ partidoId: 'p1', fechaId: 'f1', mesaId: 'm1', bloqueHorario: '10:00' })
+
+    expect(res).toEqual({ success: true })
+  })
+})
+
+describe('asignarPartidoManual', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('no reasigna un partido que fue borrado (soft delete)', async () => {
+    // El select del partido debe filtrar deleted_at IS NULL: sin ese filtro,
+    // un partido eliminado podía "resucitar" al asignarlo a mano.
+    const selectChain: any = {
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }
+    const supabase = { from: vi.fn(() => ({ select: vi.fn(() => selectChain) })) }
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase, clubId: 'club-1' })
+
+    const res = await asignarPartidoManual({ partidoId: 'p1', fechaId: 'f1', bloqueHorario: '09:00' })
+
+    expect(selectChain.is).toHaveBeenCalledWith('deleted_at', null)
+    expect(res).toEqual({ error: 'Partido no encontrado' })
+  })
+
+  it('corta sin autorización', async () => {
+    mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
+    await expect(asignarPartidoManual({ partidoId: 'p', fechaId: 'f', bloqueHorario: '09:00' }))
+      .resolves.toEqual({ error: 'Acceso denegado' })
   })
 })

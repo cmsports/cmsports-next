@@ -889,14 +889,43 @@ export interface ResultadoValidacionMovimiento {
   motivo?: string
 }
 
+/**
+ * Cuántas apariciones tiene `jugadorId` en otros partidos de la fecha, más la
+ * que tendría en `bloqueDestinoIdx` si se concreta el movimiento. Si el hueco
+ * entre dos consecutivas supera HUECO_MAX, el movimiento rompe la garantía
+ * que el programador automático siempre respeta.
+ */
+function violaHuecoMaximo(
+  jugadorId: string,
+  bloqueDestinoIdx: number,
+  otros: PartidoExistente[],
+  idxBloque: Map<string, number>,
+): boolean {
+  const posiciones = otros
+    .filter(p => p.jugadorAId === jugadorId || p.jugadorBId === jugadorId)
+    .map(p => (p.bloqueHorario ? idxBloque.get(p.bloqueHorario) : undefined))
+    .filter((i): i is number => i !== undefined)
+  posiciones.push(bloqueDestinoIdx)
+  posiciones.sort((a, b) => a - b)
+  for (let k = 1; k < posiciones.length; k++) {
+    if (posiciones[k] - posiciones[k - 1] - 1 > HUECO_MAX) return true
+  }
+  return false
+}
+
 // Valida que mover `partido` al `destino` no rompa HC-01 (jugador en dos
-// partidos a la vez), HC-03/HC-06 (mesa ocupada) ni HC-04 (conflicto de
-// árbitro). `partidosDeLaFecha` debe incluir todos los partidos ya
-// asignados a la fecha destino (puede incluir o no el propio partido).
+// partidos a la vez), HC-03/HC-06 (mesa ocupada), HC-04 (conflicto de
+// árbitro) ni el hueco máximo entre apariciones del mismo jugador.
+// `partidosDeLaFecha` debe incluir todos los partidos ya asignados a la fecha
+// destino (puede incluir o no el propio partido). `bloques` es el horario
+// completo de la fecha, en orden — sin él no se puede calcular la posición
+// de cada bloque y se omite el chequeo de hueco (así lo usa
+// cambiarArbitroPartido, que no mueve nada de sitio).
 export function validarMovimientoPartido(
   partido: PartidoExistente,
   destino: DestinoMovimiento,
   partidosDeLaFecha: PartidoExistente[],
+  bloques?: string[],
 ): ResultadoValidacionMovimiento {
   const otros = partidosDeLaFecha.filter(p => p.id !== partido.id)
   const enMismoBloque = otros.filter(p => p.bloqueHorario === destino.bloqueHorario)
@@ -924,6 +953,22 @@ export function validarMovimientoPartido(
     const arbitrosOcupados = new Set(enMismoBloque.filter(p => p.arbitroId).map(p => p.arbitroId))
     if (arbitrosOcupados.has(partido.arbitroId)) {
       return { valido: false, motivo: 'El árbitro asignado ya está arbitrando otro partido en ese horario' }
+    }
+  }
+
+  if (bloques) {
+    const idxBloque = new Map(bloques.map((b, i) => [b, i]))
+    const destinoIdx = idxBloque.get(destino.bloqueHorario)
+    if (destinoIdx !== undefined) {
+      // Sólo importan los partidos de la MISMA fecha destino: si el partido
+      // se mueve de fecha, lo que quedó en la fecha de origen no cuenta.
+      const otrosEnFechaDestino = otros.filter(p => p.fechaId === destino.fechaId)
+      if (
+        violaHuecoMaximo(partido.jugadorAId, destinoIdx, otrosEnFechaDestino, idxBloque) ||
+        violaHuecoMaximo(partido.jugadorBId, destinoIdx, otrosEnFechaDestino, idxBloque)
+      ) {
+        return { valido: false, motivo: 'Ese horario deja a uno de los jugadores esperando más de un partido' }
+      }
     }
   }
 
