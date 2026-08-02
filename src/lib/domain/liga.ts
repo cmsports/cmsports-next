@@ -282,6 +282,21 @@ export function normalizarBloque(s: string | null | undefined): string | null {
 // (30 min con bloques de media hora).
 const HUECO_MAX = 1
 
+// Techo de nodos por llamada al solver. Con la poda por deadline una solución
+// aparece en cientos de nodos, y demostrar que NO hay solución en un conjunto
+// realista costó 420. 20.000 deja 40x de margen sobre eso y acota el peor caso
+// cuando hay muchas restricciones: sin techo, una división donde media tabla
+// sólo puede en la mañana tardaba 94 segundos en resolverse.
+//
+// Agotar el presupuesto se interpreta como "no entra", nunca como "programalo
+// igual": el partido cae en sin-asignar y se avisa. Falla hacia lo seguro.
+const PRESUPUESTO_NODOS = 20_000
+
+// Techo de desalojos probados en la fase de reparación. Cada intento corre el
+// solver dos veces, así que sin tope una división muy restringida se va a
+// minutos buscando huecos que no existen.
+const PRESUPUESTO_REPARACION = 400
+
 /**
  * Solver exacto del orden de UNA fecha. Devuelve una secuencia donde ningún
  * jugador espera más de `huecoMax` partidos entre dos apariciones suyas, o
@@ -303,13 +318,115 @@ const HUECO_MAX = 1
  * null. Un null siempre se interpreta como "esta fecha no admite el partido",
  * nunca como "programalo igual" — así el horario emitido jamás viola la regla.
  */
+/**
+ * Una cosa que el jugador avisó que no puede: una fecha entera, o un tramo
+ * horario. `fechaNumero: null` significa "en todas las fechas" (el caso del
+ * que sólo puede en la mañana durante toda la liga).
+ *
+ * Sin horas → no puede esa fecha, punto.
+ * Con horas → sólo puede jugar dentro de ese rango, el resto queda vedado.
+ */
+export interface RestriccionDisponibilidad {
+  jugadorId: string
+  fechaNumero: number | null
+  horaDesde: string | null
+  horaHasta: string | null
+}
+
+/** ¿Este jugador puede jugar en ese bloque de esa fecha? */
+export function puedeJugarEnBloque(
+  restricciones: RestriccionDisponibilidad[],
+  jugadorId: string,
+  fechaNumero: number,
+  bloque: string,
+): boolean {
+  const minutos = horaAMinutos(bloque)
+  for (const r of restricciones) {
+    if (r.jugadorId !== jugadorId) continue
+    if (r.fechaNumero !== null && r.fechaNumero !== fechaNumero) continue
+    // Fecha bloqueada entera.
+    if (!r.horaDesde && !r.horaHasta) return false
+    // Franja: el bloque tiene que caer adentro.
+    if (r.horaDesde && minutos < horaAMinutos(r.horaDesde)) return false
+    if (r.horaHasta && minutos > horaAMinutos(r.horaHasta)) return false
+  }
+  return true
+}
+
+/** Ni siquiera tiene sentido probar esta fecha para este jugador. */
+function fechaVedadaPara(restricciones: RestriccionDisponibilidad[], jugadorId: string, fechaNumero: number): boolean {
+  return restricciones.some(r =>
+    r.jugadorId === jugadorId &&
+    (r.fechaNumero === null || r.fechaNumero === fechaNumero) &&
+    !r.horaDesde && !r.horaHasta,
+  )
+}
+
+/** Un bloque de la fecha: el partido que va ahí, o null si queda vacío. */
+type SlotsDeFecha = Array<PartidoAProgramar | null>
+
+/** Partido que no se pudo programar, con la razón para poder avisarla. */
+export interface PartidoSinAsignar extends PartidoAProgramar {
+  motivo: 'sin_espacio' | 'restriccion'
+  jugadoresConRestriccion: string[]
+}
+
+/**
+ * Solver exacto del orden de UNA fecha. Asigna cada partido a un bloque
+ * horario concreto de modo que ningún jugador espere más de `huecoMax`
+ * bloques entre dos apariciones suyas, y que nadie juegue en un bloque que
+ * tiene vedado. Devuelve los slots, o `null` si no existe tal asignación.
+ *
+ * Es una búsqueda en profundidad con una poda muy fuerte: si un jugador jugó
+ * en el bloque L y le quedan partidos, su próxima aparición tiene que caer
+ * en L+1 … L+huecoMax+1. Entonces al elegir qué va en el bloque b, todo
+ * jugador cuya última aparición fue exactamente b−(huecoMax+1) está OBLIGADO
+ * a jugar ahora. Si hay más de dos obligados, o si los dos obligados no tienen
+ * un partido pendiente entre ellos, la rama es imposible y se corta de una.
+ *
+ * Los bloques pueden quedar vacíos: hace falta para las restricciones
+ * horarias (si alguien sólo juega después de las 12, los bloques de la mañana
+ * pueden tener que quedar libres). Se explora primero "colocar algo" y sólo
+ * después "dejar vacío", así que sin restricciones el resultado es el mismo
+ * de siempre: los partidos arrancan en el primer bloque y van seguidos.
+ *
+ * `presupuestoNodos` es un cinturón de seguridad para configuraciones
+ * patológicas: si se agota, devuelve null. Un null siempre se interpreta como
+ * "esta fecha no admite el partido", nunca como "programalo igual" — así el
+ * horario emitido jamás viola la regla.
+ */
 function resolverOrdenFecha(
   partidos: PartidoAProgramar[],
+  bloques: string[],
+  disponible: (jugadorId: string, bloque: string) => boolean,
   huecoMax = HUECO_MAX,
-  presupuestoNodos = 300_000,
-): PartidoAProgramar[] | null {
+  presupuestoNodos = PRESUPUESTO_NODOS,
+): SlotsDeFecha | null {
   const n = partidos.length
-  if (n <= 1) return [...partidos]
+  const capacidad = bloques.length
+  if (n > capacidad) return null
+  if (n === 0) return new Array(capacidad).fill(null)
+
+  // Descarte previo por conteo (condición de Hall). Cada partido sólo puede ir
+  // en los bloques donde sus DOS jugadores están disponibles; si ordenamos los
+  // partidos por cuántos bloques les sirven, el i-ésimo más restringido
+  // necesita al menos i+1 opciones — si no, hay más partidos que bloques donde
+  // ubicarlos y no existe asignación posible. Es exacto (nunca descarta algo
+  // resoluble) y cuesta nada comparado con explorar el árbol: sin este chequeo,
+  // una división con media tabla restringida a la mañana tardaba 44 segundos.
+  const opcionesPorPartido: number[] = []
+  for (const p of partidos) {
+    let opciones = 0
+    for (const bloque of bloques) {
+      if (disponible(p.jugadorAId, bloque) && disponible(p.jugadorBId, bloque)) opciones++
+    }
+    if (opciones === 0) return null
+    opcionesPorPartido.push(opciones)
+  }
+  opcionesPorPartido.sort((a, b) => a - b)
+  for (let i = 0; i < n; i++) {
+    if (opcionesPorPartido[i] < i + 1) return null
+  }
 
   const usado = new Array<boolean>(n).fill(false)
   const ultimaAparicion = new Map<string, number>()
@@ -319,20 +436,25 @@ function resolverOrdenFecha(
     pendientes.set(p.jugadorBId, (pendientes.get(p.jugadorBId) ?? 0) + 1)
   }
 
-  const secuencia: number[] = []
+  const slots: SlotsDeFecha = new Array(capacidad).fill(null)
+  let colocados = 0
+  let ultimoColocado: PartidoAProgramar | null = null
   let nodos = 0
 
   const comparte = (x: PartidoAProgramar, y: PartidoAProgramar) =>
     x.jugadorAId === y.jugadorAId || x.jugadorAId === y.jugadorBId ||
     x.jugadorBId === y.jugadorAId || x.jugadorBId === y.jugadorBId
 
-  function dfs(t: number): boolean {
-    if (t === n) return true
+  function dfs(b: number): boolean {
+    if (colocados === n) return true
+    if (b >= capacidad) return false
+    // No alcanzan los bloques que quedan para los partidos que faltan.
+    if (n - colocados > capacidad - b) return false
     if (++nodos > presupuestoNodos) return false
 
     const obligados: string[] = []
     for (const [j, ultima] of ultimaAparicion) {
-      if ((pendientes.get(j) ?? 0) > 0 && ultima === t - (huecoMax + 1)) obligados.push(j)
+      if ((pendientes.get(j) ?? 0) > 0 && ultima === b - (huecoMax + 1)) obligados.push(j)
     }
     if (obligados.length > 2) return false
 
@@ -348,14 +470,15 @@ function resolverOrdenFecha(
       } else if (obligados.length === 1) {
         if (p.jugadorAId !== obligados[0] && p.jugadorBId !== obligados[0]) continue
       }
+      // Ninguno de los dos puede tener vedado este horario.
+      if (!disponible(p.jugadorAId, bloques[b]) || !disponible(p.jugadorBId, bloques[b])) continue
       candidatos.push(i)
     }
-    if (candidatos.length === 0) return false
 
     // Orden de exploración: primero los que encadenan con el partido anterior
     // (el jugador sigue en la mesa, hueco 0), después los de jugadores con más
     // partidos pendientes (los más difíciles de acomodar más tarde).
-    const anterior = t > 0 ? partidos[secuencia[t - 1]] : null
+    const anterior = ultimoColocado
     const pendientesDe = (i: number) =>
       (pendientes.get(partidos[i].jugadorAId) ?? 0) + (pendientes.get(partidos[i].jugadorBId) ?? 0)
     candidatos.sort((x, y) => {
@@ -370,18 +493,23 @@ function resolverOrdenFecha(
       const p = partidos[i]
       const previaA = ultimaAparicion.get(p.jugadorAId)
       const previaB = ultimaAparicion.get(p.jugadorBId)
+      const previoUltimo = ultimoColocado
 
       usado[i] = true
-      secuencia.push(i)
-      ultimaAparicion.set(p.jugadorAId, t)
-      ultimaAparicion.set(p.jugadorBId, t)
+      slots[b] = p
+      colocados++
+      ultimoColocado = p
+      ultimaAparicion.set(p.jugadorAId, b)
+      ultimaAparicion.set(p.jugadorBId, b)
       pendientes.set(p.jugadorAId, pendientes.get(p.jugadorAId)! - 1)
       pendientes.set(p.jugadorBId, pendientes.get(p.jugadorBId)! - 1)
 
-      if (dfs(t + 1)) return true
+      if (dfs(b + 1)) return true
 
       usado[i] = false
-      secuencia.pop()
+      slots[b] = null
+      colocados--
+      ultimoColocado = previoUltimo
       if (previaA === undefined) ultimaAparicion.delete(p.jugadorAId)
       else ultimaAparicion.set(p.jugadorAId, previaA)
       if (previaB === undefined) ultimaAparicion.delete(p.jugadorBId)
@@ -389,10 +517,14 @@ function resolverOrdenFecha(
       pendientes.set(p.jugadorAId, pendientes.get(p.jugadorAId)! + 1)
       pendientes.set(p.jugadorBId, pendientes.get(p.jugadorBId)! + 1)
     }
+
+    // Dejar el bloque vacío. Sólo se puede si nadie estaba obligado a jugar
+    // ahora: si había un obligado y no juega, su hueco se pasa del máximo.
+    if (obligados.length === 0) return dfs(b + 1)
     return false
   }
 
-  return dfs(0) ? secuencia.map(i => partidos[i]) : null
+  return dfs(0) ? slots : null
 }
 
 function partidosDeJugadorEnFecha(fecha: PartidoAProgramar[], jugadorId: string): number {
@@ -402,19 +534,26 @@ function partidosDeJugadorEnFecha(fecha: PartidoAProgramar[], jugadorId: string)
 }
 
 /**
- * ¿Puede esta fecha recibir el partido? Devuelve el orden completo ya
- * verificado si sí, o null si no (por cupo de mesa, por tope del jugador, o
- * porque el conjunto resultante no admitiría ningún orden válido).
+ * ¿Puede esta fecha recibir el partido? Devuelve los slots ya verificados si
+ * sí, o null si no (por cupo de mesa, por tope del jugador, porque alguno
+ * tiene la fecha vedada, o porque el conjunto resultante no admitiría ninguna
+ * asignación de bloques válida).
  */
 function admiteEnFecha(
   fecha: PartidoAProgramar[],
   p: PartidoAProgramar,
-  capacidad: number,
-): PartidoAProgramar[] | null {
-  if (fecha.length >= capacidad) return null
+  bloques: string[],
+  fechaNumero: number,
+  restricciones: RestriccionDisponibilidad[],
+): SlotsDeFecha | null {
+  if (fecha.length >= bloques.length) return null
   if (partidosDeJugadorEnFecha(fecha, p.jugadorAId) >= MAX_PARTIDOS_POR_JUGADOR_POR_FECHA) return null
   if (partidosDeJugadorEnFecha(fecha, p.jugadorBId) >= MAX_PARTIDOS_POR_JUGADOR_POR_FECHA) return null
-  return resolverOrdenFecha([...fecha, p])
+  if (fechaVedadaPara(restricciones, p.jugadorAId, fechaNumero)) return null
+  if (fechaVedadaPara(restricciones, p.jugadorBId, fechaNumero)) return null
+  const disponible = (jugadorId: string, bloque: string) =>
+    puedeJugarEnBloque(restricciones, jugadorId, fechaNumero, bloque)
+  return resolverOrdenFecha([...fecha, p], bloques, disponible)
 }
 
 /**
@@ -445,14 +584,15 @@ export function programarDivision(
   numFechas: number,
   bloques: string[],
   mesaNumero: number,
-): { programados: PartidoProgramado[]; sinAsignar: PartidoAProgramar[] } {
+  restricciones: RestriccionDisponibilidad[] = [],
+): { programados: PartidoProgramado[]; sinAsignar: PartidoSinAsignar[] } {
   if (partidos.length === 0) return { programados: [], sinAsignar: [] }
 
   const capacidad = bloques.length
   const porFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
-  // Orden ya verificado de cada fecha — se reusa tal cual al emitir, para que
-  // el horario final sea exactamente el que el solver validó.
-  const ordenDeFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
+  // Slots ya verificados de cada fecha — se reusan tal cual al emitir, para
+  // que el horario final sea exactamente el que el solver validó.
+  const slotsDeFecha: SlotsDeFecha[] = Array.from({ length: numFechas }, () => [])
   const pendientes: PartidoAProgramar[] = []
 
   // ── Fase 1: colocación ──────────────────────────────────────────────────
@@ -472,10 +612,10 @@ export function programarDivision(
 
     let colocado = false
     for (const { fecha } of candidatas) {
-      const orden = admiteEnFecha(porFecha[fecha], p, capacidad)
-      if (!orden) continue
+      const slots = admiteEnFecha(porFecha[fecha], p, bloques, fecha + 1, restricciones)
+      if (!slots) continue
       porFecha[fecha] = [...porFecha[fecha], p]
-      ordenDeFecha[fecha] = orden
+      slotsDeFecha[fecha] = slots
       colocado = true
       break
     }
@@ -489,24 +629,27 @@ export function programarDivision(
   // arregla — no vale la pena ni intentarlo.
   const hayEspacioLibre = () => porFecha.some(f => f.length < capacidad)
 
-  const sinAsignar: PartidoAProgramar[] = []
+  let intentosReparacion = 0
+
+  const sinAsignar: PartidoSinAsignar[] = []
   for (const p of pendientes) {
     let resuelto = false
     if (hayEspacioLibre()) {
       for (let f = 0; f < numFechas && !resuelto; f++) {
         for (const q of porFecha[f]) {
+          if (++intentosReparacion > PRESUPUESTO_REPARACION) break
           const fechaSinQ = porFecha[f].filter(x => x.id !== q.id)
-          const ordenF = admiteEnFecha(fechaSinQ, p, capacidad)
-          if (!ordenF) continue
+          const slotsF = admiteEnFecha(fechaSinQ, p, bloques, f + 1, restricciones)
+          if (!slotsF) continue
           // p entra en f si sacamos q; ahora hay que reubicar q en otra fecha.
           for (let g = 0; g < numFechas; g++) {
             if (g === f || porFecha[g].length >= capacidad) continue
-            const ordenG = admiteEnFecha(porFecha[g], q, capacidad)
-            if (!ordenG) continue
+            const slotsG = admiteEnFecha(porFecha[g], q, bloques, g + 1, restricciones)
+            if (!slotsG) continue
             porFecha[f] = [...fechaSinQ, p]
-            ordenDeFecha[f] = ordenF
+            slotsDeFecha[f] = slotsF
             porFecha[g] = [...porFecha[g], q]
-            ordenDeFecha[g] = ordenG
+            slotsDeFecha[g] = slotsG
             resuelto = true
             break
           }
@@ -514,14 +657,27 @@ export function programarDivision(
         }
       }
     }
-    if (!resuelto) sinAsignar.push(p)
+    if (!resuelto) {
+      // Para el aviso al admin: si alguno de los dos avisó que no podía, la
+      // causa más probable es esa; si no, sencillamente no hay bloques.
+      const conRestriccion = [p.jugadorAId, p.jugadorBId].filter(j =>
+        restricciones.some(r => r.jugadorId === j),
+      )
+      sinAsignar.push({
+        ...p,
+        motivo: conRestriccion.length > 0 ? 'restriccion' : 'sin_espacio',
+        jugadoresConRestriccion: conRestriccion,
+      })
+    }
   }
 
   const programados: PartidoProgramado[] = []
-  ordenDeFecha.forEach((ordenados, i) => {
-    for (let b = 0; b < ordenados.length; b++) {
+  slotsDeFecha.forEach((slots, i) => {
+    for (let b = 0; b < slots.length; b++) {
+      const p = slots[b]
+      if (!p) continue // bloque libre (puede pasar por restricciones horarias)
       programados.push({
-        ...ordenados[b],
+        ...p,
         fechaNumero: i + 1,
         mesaNumero,
         bloqueHorario: bloques[b],

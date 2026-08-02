@@ -16,6 +16,7 @@ import {
   type PartidoAProgramar,
   type PartidoProgramado,
   type PartidoExistente,
+  type RestriccionDisponibilidad,
 } from '@/lib/domain/liga'
 import { requireAdminClub } from '@/lib/auth/require'
 
@@ -257,13 +258,28 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
         .order('orden_fixture', { ascending: true })
     : Promise.resolve({ data: [] })
 
-  const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawDesdefNull }, { data: rawDesdeAjuste }] = await Promise.all([
+  const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawDesdefNull }, { data: rawDesdeAjuste }, { data: rawRestricciones }] = await Promise.all([
     db.from('ligas').select('total_fechas, bloque_minutos, mesas_count').eq('id', ligaId).single(),
     supabase.from('liga_fechas').select('id, numero').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero', { ascending: true }),
     supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
     db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture').eq('liga_id', ligaId).is('fecha_id', null).not('estado', 'in', '("finalizado","walkover")').is('deleted_at', null).order('orden_fixture', { ascending: true }),
     sinAsignarQuery,
+    // Lo que los jugadores avisaron que no pueden. El motor las respeta como
+    // regla dura: antes de poner un partido en un bloque, comprueba que los
+    // dos jugadores puedan a esa hora de esa fecha.
+    db.from('liga_restricciones')
+      .select('jugador_id, fecha_numero, hora_desde, hora_hasta')
+      .eq('liga_id', ligaId).is('deleted_at', null),
   ])
+
+  // 'HH:MM:SS' de Postgres → 'HH:MM', que es como vienen los bloques.
+  const aHoraCorta = (h: string | null) => (h ? h.slice(0, 5) : null)
+  const restricciones: RestriccionDisponibilidad[] = (rawRestricciones || []).map((r: any) => ({
+    jugadorId: r.jugador_id,
+    fechaNumero: r.fecha_numero,
+    horaDesde: aHoraCorta(r.hora_desde),
+    horaHasta: aHoraCorta(r.hora_hasta),
+  }))
 
   // Combinar y deduplicar (un partido no puede estar en ambas fuentes, pero por seguridad)
   const seen = new Set<string>()
@@ -335,15 +351,19 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
 
   const todosProgramados: PartidoProgramado[] = []
   const sinAsignarIds: string[] = []
+  const sinAsignarDetalle: Array<{ id: string; motivo: string; jugadores: string[] }> = []
 
   for (const [divId, partidosDiv] of porDivision) {
     const mesaNumero = mesaPorDivision.get(divId) ?? mesasActivas[0].numero
     const jugadoresDiv = jugadoresPorDivision.get(divId) ?? []
     const { programados: progDiv, sinAsignar: sinDiv } = programarDivision(
-      partidosDiv, jugadoresDiv, fechas.length, bloques, mesaNumero,
+      partidosDiv, jugadoresDiv, fechas.length, bloques, mesaNumero, restricciones,
     )
     todosProgramados.push(...progDiv)
     sinAsignarIds.push(...sinDiv.map(p => p.id))
+    sinAsignarDetalle.push(...sinDiv.map(p => ({
+      id: p.id, motivo: p.motivo, jugadores: p.jugadoresConRestriccion,
+    })))
   }
 
   const conArbitros = asignarArbitrosEficiente(todosProgramados, jugadoresPorDivision, bloques)
@@ -393,11 +413,26 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     }
   }
 
+  // Para el aviso: si algo quedó afuera, el admin necesita saber por qué y de
+  // quién — "faltan bloques" y "Hugo sólo puede en la mañana" se arreglan de
+  // maneras muy distintas.
+  const porRestriccion = sinAsignarDetalle.filter(d => d.motivo === 'restriccion')
+  const idsCulpables = Array.from(new Set(porRestriccion.flatMap(d => d.jugadores)))
+  let nombresCulpables: string[] = []
+  if (idsCulpables.length > 0) {
+    const { data: jugs } = await supabase
+      .from('jugadores').select('nombre').in('id', idsCulpables)
+    nombresCulpables = (jugs || []).map((j: { nombre: string }) => j.nombre)
+  }
+
   return {
     success: true,
     totalProgramados: programadosExitosos,
     totalSinProgramar: sinAsignarIds.length,
     sinProgramarIds: sinAsignarIds,
+    sinProgramarPorRestriccion: porRestriccion.length,
+    sinProgramarPorEspacio: sinAsignarDetalle.length - porRestriccion.length,
+    jugadoresQueNoEntraron: nombresCulpables,
   }
 }
 

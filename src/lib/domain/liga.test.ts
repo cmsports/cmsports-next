@@ -7,11 +7,13 @@ import {
   validarMovimientoPartido,
   programarDivision,
   fechasRecomendadas,
+  puedeJugarEnBloque,
   generarBloquesHorario,
   BLOQUE_INICIO,
   BLOQUE_FIN,
   type PartidoFinalizado,
   type PartidoExistente,
+  type RestriccionDisponibilidad,
 } from './liga'
 
 describe('fixture round-robin', () => {
@@ -266,5 +268,191 @@ describe('fechasRecomendadas', () => {
     expect(fechasRecomendadas(0, 16)).toBe(2)
     expect(fechasRecomendadas(1, 16)).toBe(2)
     expect(fechasRecomendadas(12, 0)).toBe(2)
+  })
+})
+
+// Las restricciones son un constraint duro, igual que el hueco máximo: si un
+// jugador avisó que no puede, el horario NO lo pone ahí. Si eso deja partidos
+// afuera, se avisan — nunca se programa igual.
+describe('programarDivision — restricciones de disponibilidad', () => {
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, 30)
+
+  function programarCon(n: number, numFechas: number, restricciones: RestriccionDisponibilidad[]) {
+    const jugadorIds = Array.from({ length: n }, (_, i) => `J${i}`)
+    const partidos = generarFixtureDivision(jugadorIds).map(f => ({
+      id: `${f.jugadorA}-${f.jugadorB}`,
+      divisionId: 'D1',
+      jugadorAId: f.jugadorA,
+      jugadorBId: f.jugadorB,
+      ordenFixture: f.orden,
+    }))
+    const r = programarDivision(partidos, jugadorIds, numFechas, bloques, 1, restricciones)
+    return { ...r, totalPartidos: partidos.length }
+  }
+
+  /** Ningún partido programado puede caer en un bloque vedado para sus jugadores. */
+  function violaciones(
+    programados: ReturnType<typeof programarCon>['programados'],
+    restricciones: RestriccionDisponibilidad[],
+  ) {
+    const malas: string[] = []
+    for (const p of programados) {
+      for (const j of [p.jugadorAId, p.jugadorBId]) {
+        if (!puedeJugarEnBloque(restricciones, j, p.fechaNumero, p.bloqueHorario)) {
+          malas.push(`${j} en fecha ${p.fechaNumero} bloque ${p.bloqueHorario}`)
+        }
+      }
+    }
+    return malas
+  }
+
+  const soloManana = (jugadores: string[]): RestriccionDisponibilidad[] =>
+    jugadores.map(j => ({ jugadorId: j, fechaNumero: null, horaDesde: null, horaHasta: '12:00' }))
+
+  it('respeta que un jugador no pueda ir a una fecha entera', () => {
+    const restr: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: 3, horaDesde: null, horaHasta: null },
+    ]
+    const { programados } = programarCon(12, 5, restr)
+    expect(violaciones(programados, restr)).toEqual([])
+    const enFecha3 = programados.filter(
+      p => p.fechaNumero === 3 && (p.jugadorAId === 'J0' || p.jugadorBId === 'J0'),
+    )
+    expect(enFecha3).toHaveLength(0)
+  })
+
+  it('respeta que un jugador sólo pueda en la mañana, en todas las fechas', () => {
+    const restr = soloManana(['J0'])
+    const { programados } = programarCon(12, 5, restr)
+    expect(violaciones(programados, restr)).toEqual([])
+    for (const p of programados) {
+      if (p.jugadorAId === 'J0' || p.jugadorBId === 'J0') {
+        expect(p.bloqueHorario <= '12:00', `J0 quedó a las ${p.bloqueHorario}`).toBe(true)
+      }
+    }
+  })
+
+  it('respeta que un jugador sólo pueda por la tarde', () => {
+    const restr: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: null, horaDesde: '12:00', horaHasta: null },
+    ]
+    const { programados } = programarCon(12, 5, restr)
+    expect(violaciones(programados, restr)).toEqual([])
+    for (const p of programados) {
+      if (p.jugadorAId === 'J0' || p.jugadorBId === 'J0') {
+        expect(p.bloqueHorario >= '12:00', `J0 quedó a las ${p.bloqueHorario}`).toBe(true)
+      }
+    }
+  })
+
+  it('aguanta varios jugadores con restricciones mezcladas sin romper ninguna', () => {
+    const restr: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: 3, horaDesde: null, horaHasta: null },
+      { jugadorId: 'J1', fechaNumero: 5, horaDesde: null, horaHasta: null },
+      { jugadorId: 'J2', fechaNumero: null, horaDesde: '12:00', horaHasta: null },
+      { jugadorId: 'J3', fechaNumero: null, horaDesde: null, horaHasta: '13:00' },
+      { jugadorId: 'J4', fechaNumero: 2, horaDesde: null, horaHasta: null },
+      { jugadorId: 'J4', fechaNumero: 4, horaDesde: null, horaHasta: null },
+    ]
+    const { programados } = programarCon(12, 5, restr)
+    expect(violaciones(programados, restr)).toEqual([])
+  })
+
+  it('sigue cumpliendo el hueco máximo con restricciones puestas', () => {
+    const restr: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: null, horaDesde: '12:00', horaHasta: null },
+      { jugadorId: 'J1', fechaNumero: null, horaDesde: null, horaHasta: '13:00' },
+      { jugadorId: 'J2', fechaNumero: 3, horaDesde: null, horaHasta: null },
+    ]
+    const { programados } = programarCon(12, 5, restr)
+    const idxBloque = new Map(bloques.map((b, i) => [b, i]))
+    const porFecha = new Map<number, Map<string, number[]>>()
+    for (const p of programados) {
+      if (!porFecha.has(p.fechaNumero)) porFecha.set(p.fechaNumero, new Map())
+      const mapa = porFecha.get(p.fechaNumero)!
+      for (const j of [p.jugadorAId, p.jugadorBId]) {
+        if (!mapa.has(j)) mapa.set(j, [])
+        mapa.get(j)!.push(idxBloque.get(p.bloqueHorario)!)
+      }
+    }
+    for (const [fechaNumero, porJugador] of porFecha) {
+      for (const [jugador, pos] of porJugador) {
+        pos.sort((a, b) => a - b)
+        for (let k = 1; k < pos.length; k++) {
+          expect(pos[k] - pos[k - 1] - 1, `fecha ${fechaNumero}, ${jugador}: ${pos.join(',')}`).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+  })
+
+  it('cuando una restricción deja partidos afuera, dice cuál y por culpa de quién', () => {
+    // Media división sólo por la mañana: los partidos entre ellos no caben todos.
+    const restr = soloManana(['J0', 'J1', 'J2', 'J3', 'J4', 'J5'])
+    const { programados, sinAsignar, totalPartidos } = programarCon(12, 5, restr)
+    expect(violaciones(programados, restr)).toEqual([])
+    expect(sinAsignar.length).toBeGreaterThan(0)
+    expect(programados.length + sinAsignar.length).toBe(totalPartidos)
+    for (const s of sinAsignar) {
+      expect(s.motivo).toBe('restriccion')
+      expect(s.jugadoresConRestriccion.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('sin restricciones programa exactamente igual que antes', () => {
+    const sin = programarCon(12, 5, [])
+    expect(sin.sinAsignar).toHaveLength(0)
+    expect(sin.programados).toHaveLength(66)
+  })
+
+  it('no se cuelga con restricciones muy duras', () => {
+    const restr = soloManana(['J0', 'J1', 'J2', 'J3', 'J4', 'J5'])
+    const t0 = Date.now()
+    programarCon(12, 5, restr)
+    expect(Date.now() - t0).toBeLessThan(15_000)
+  })
+})
+
+describe('puedeJugarEnBloque', () => {
+  it('sin restricciones puede siempre', () => {
+    expect(puedeJugarEnBloque([], 'J0', 1, '09:00')).toBe(true)
+  })
+
+  it('fecha bloqueada entera: no puede en ningún bloque de esa fecha', () => {
+    const r: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: 3, horaDesde: null, horaHasta: null },
+    ]
+    expect(puedeJugarEnBloque(r, 'J0', 3, '09:00')).toBe(false)
+    expect(puedeJugarEnBloque(r, 'J0', 3, '16:00')).toBe(false)
+    expect(puedeJugarEnBloque(r, 'J0', 2, '09:00')).toBe(true) // otra fecha sí
+    expect(puedeJugarEnBloque(r, 'J1', 3, '09:00')).toBe(true) // otro jugador sí
+  })
+
+  it('fechaNumero null aplica a todas las fechas', () => {
+    const r: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: null, horaDesde: '12:00', horaHasta: null },
+    ]
+    expect(puedeJugarEnBloque(r, 'J0', 1, '11:30')).toBe(false)
+    expect(puedeJugarEnBloque(r, 'J0', 5, '11:30')).toBe(false)
+    expect(puedeJugarEnBloque(r, 'J0', 5, '12:00')).toBe(true)
+  })
+
+  it('el borde del rango es inclusivo', () => {
+    const r: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: null, horaDesde: '12:00', horaHasta: '14:00' },
+    ]
+    expect(puedeJugarEnBloque(r, 'J0', 1, '12:00')).toBe(true)
+    expect(puedeJugarEnBloque(r, 'J0', 1, '14:00')).toBe(true)
+    expect(puedeJugarEnBloque(r, 'J0', 1, '11:30')).toBe(false)
+    expect(puedeJugarEnBloque(r, 'J0', 1, '14:30')).toBe(false)
+  })
+
+  it('varias restricciones del mismo jugador se acumulan', () => {
+    const r: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: 2, horaDesde: null, horaHasta: null },
+      { jugadorId: 'J0', fechaNumero: null, horaDesde: '12:00', horaHasta: null },
+    ]
+    expect(puedeJugarEnBloque(r, 'J0', 2, '13:00')).toBe(false) // fecha 2 vedada
+    expect(puedeJugarEnBloque(r, 'J0', 1, '11:00')).toBe(false) // antes de las 12
+    expect(puedeJugarEnBloque(r, 'J0', 1, '13:00')).toBe(true)
   })
 })
