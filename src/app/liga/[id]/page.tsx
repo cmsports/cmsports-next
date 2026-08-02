@@ -9,6 +9,7 @@ import {
   crearDivision, actualizarCapacidadDivision,
   asignarJugadoresDivision, calcularDiffFixtureDivision,
   generarFixtureDivisionAction, generarProgramacionLiga,
+  listarRestriccionesLiga, guardarRestriccionesLiga,
   crearJugadorExternoLiga,
   terminarFechaAction, programarEnReajuste, programarNuevosPartidosDivision,
 } from '@/app/actions/liga'
@@ -16,8 +17,10 @@ import { registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
-import { calcularRankingDivision } from '@/lib/domain/liga'
+import { calcularRankingDivision, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
 import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/liga'
+import ModalRestricciones from '@/components/liga/ModalRestricciones'
+import type { RestriccionEditable } from '@/components/liga/ModalRestricciones'
 
 const supabase = createClient()
 
@@ -182,6 +185,9 @@ export default function LigaDetallePage() {
   const [creandoExterno, setCreandoExterno] = useState(false)
 
   const [programando, setProgramando] = useState(false)
+  const [modalRestriccionesAbierto, setModalRestriccionesAbierto] = useState(false)
+  // null mientras se cargan las que ya estaban guardadas.
+  const [restriccionesModal, setRestriccionesModal] = useState<RestriccionEditable[] | null>(null)
   const [programacionKey, setProgramacionKey] = useState(0)
   const [fixtureKey, setFixtureKey] = useState(0)
   const [diffAbierto, setDiffAbierto] = useState(false)
@@ -487,10 +493,33 @@ export default function LigaDetallePage() {
     toggleJugadorDivision(division, res.jugadorId)
   }
 
-  async function handleGenerarProgramacion() {
+  // Todos los que están anotados en alguna división, sin repetir: son los que
+  // pueden tener restricciones.
+  const jugadoresDeLaLiga = (() => {
+    const ids = new Set(Object.values(divisionJugadores).flat())
+    return jugadoresClub
+      .filter(j => ids.has(j.id))
+      .map(j => ({ id: j.id, nombre: j.nombre }))
+  })()
+
+  // Antes de programar se pregunta si alguien avisó que no puede. Se abre con
+  // lo que ya estaba guardado, así que reprogramar es: agregar lo nuevo que
+  // pasó y volver a apretar.
+  async function abrirModalRestricciones() {
+    setRestriccionesModal(null)
+    setModalRestriccionesAbierto(true)
+    const res = await listarRestriccionesLiga({ ligaId })
+    setRestriccionesModal(res.restricciones ?? [])
+  }
+
+  async function handleGenerarProgramacion(restricciones: RestriccionEditable[]) {
     setProgramando(true)
+    const guardado = await guardarRestriccionesLiga({ ligaId, restricciones })
+    if (guardado.error) { setProgramando(false); setMensaje(guardado.error); return }
+
     const res = await generarProgramacionLiga({ ligaId })
     setProgramando(false)
+    setModalRestriccionesAbierto(false)
     if (res.error) { setMensaje(res.error); return }
     // Si sobran partidos NO es que el algoritmo los mandó al reajuste. O no
     // alcanzan los bloques, o alguien avisó que no podía. Se arreglan de
@@ -1240,7 +1269,7 @@ export default function LigaDetallePage() {
                 ) : (
                   <>
                     <button
-                      onClick={e => { ripple(e); handleGenerarProgramacion() }}
+                      onClick={e => { ripple(e); abrirModalRestricciones() }}
                       disabled={programando}
                       className={!programando ? 'btn-pulse' : ''}
                       style={{
@@ -1302,6 +1331,19 @@ export default function LigaDetallePage() {
       )}
 
       {/* ── Modal confirmación de diff ─────────────────────────────────────── */}
+      {modalRestriccionesAbierto && restriccionesModal !== null && (
+        <ModalRestricciones
+          jugadores={jugadoresDeLaLiga}
+          numFechasRegulares={fechas.filter(f => !f.es_ajuste).length}
+          bloqueInicio={BLOQUE_INICIO}
+          bloqueFin={BLOQUE_FIN}
+          restriccionesIniciales={restriccionesModal}
+          guardando={programando}
+          onCancelar={() => setModalRestriccionesAbierto(false)}
+          onProgramar={handleGenerarProgramacion}
+        />
+      )}
+
       {diffAbierto && diffData && pendingDivision && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>

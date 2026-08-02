@@ -231,6 +231,90 @@ export async function generarFixtureDivisionAction(params: { divisionId: string 
   return { success: true, totalPartidos: inserts.length }
 }
 
+// ── Restricciones de disponibilidad ────────────────────────────────────────
+// Lo que cada jugador avisó que no puede: una fecha entera, o un tramo
+// horario. El motor de programación las respeta como regla dura.
+
+export async function listarRestriccionesLiga(params: { ligaId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { data, error } = await (supabase as any)
+    .from('liga_restricciones')
+    .select('id, jugador_id, fecha_numero, hora_desde, hora_hasta, motivo')
+    .eq('liga_id', params.ligaId)
+    .is('deleted_at', null)
+    .order('creado_en', { ascending: true })
+
+  // Si la migración todavía no corrió, la liga simplemente no tiene
+  // restricciones — no es un error que deba frenar la pantalla.
+  if (error) return { restricciones: [] }
+
+  return {
+    restricciones: (data || []).map((r: any) => ({
+      id: r.id as string,
+      jugadorId: r.jugador_id as string,
+      fechaNumero: r.fecha_numero as number | null,
+      horaDesde: r.hora_desde ? String(r.hora_desde).slice(0, 5) : null,
+      horaHasta: r.hora_hasta ? String(r.hora_hasta).slice(0, 5) : null,
+      motivo: (r.motivo ?? null) as string | null,
+    })),
+  }
+}
+
+/**
+ * Reemplaza TODAS las restricciones de la liga por las que se mandan. El modal
+ * muestra el estado completo y lo guarda entero, así que borrar una fila en la
+ * pantalla tiene que borrarla de verdad. Se hace por borrado lógico para no
+ * perder el rastro de lo que hubo.
+ */
+export async function guardarRestriccionesLiga(params: {
+  ligaId: string
+  restricciones: Array<{
+    jugadorId: string
+    fechaNumero: number | null
+    horaDesde: string | null
+    horaHasta: string | null
+    motivo?: string | null
+  }>
+}) {
+  const { error: authErr, supabase, userId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { ligaId, restricciones } = params
+  const db = supabase as any
+
+  for (const r of restricciones) {
+    if (r.horaDesde && r.horaHasta && r.horaDesde > r.horaHasta) {
+      return { error: `El horario de un jugador está al revés (${r.horaDesde} a ${r.horaHasta}).` }
+    }
+  }
+
+  const { error: bajaErr } = await db
+    .from('liga_restricciones')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('liga_id', ligaId)
+    .is('deleted_at', null)
+  if (bajaErr) return { error: 'No se pudieron actualizar las restricciones. ¿Corriste la migración 118?' }
+
+  if (restricciones.length > 0) {
+    const { error: altaErr } = await db.from('liga_restricciones').insert(
+      restricciones.map(r => ({
+        liga_id: ligaId,
+        jugador_id: r.jugadorId,
+        fecha_numero: r.fechaNumero,
+        hora_desde: r.horaDesde,
+        hora_hasta: r.horaHasta,
+        motivo: r.motivo ?? null,
+        creado_por: userId,
+      })),
+    )
+    if (altaErr) return { error: 'No se pudieron guardar las restricciones.' }
+  }
+
+  return { success: true, total: restricciones.length }
+}
+
 // Motor de programación (F3): toma todos los partidos sin fecha asignada de la
 // liga y les asigna fecha (1 a N-1), mesa y bloque horario + árbitro.
 // La última fecha (es_ajuste=true) se reserva para incidencias.
