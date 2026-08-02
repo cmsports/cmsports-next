@@ -231,13 +231,30 @@ export async function generarFixtureDivisionAction(params: { divisionId: string 
   return { success: true, totalPartidos: inserts.length }
 }
 
+// Marca de retiro: se guarda como una restricción total (no puede en ninguna
+// fecha, a ninguna hora), así el motor de programación deja de considerarlo
+// sin necesidad de otra tabla. El motivo distingue el retiro de una
+// indisponibilidad común, que sí se puede editar desde el modal.
+const MOTIVO_RETIRO = 'retiro'
+
 // ── Restricciones de disponibilidad ────────────────────────────────────────
 // Lo que cada jugador avisó que no puede: una fecha entera, o un tramo
 // horario. El motor de programación las respeta como regla dura.
 
-export async function listarRestriccionesLiga(params: { ligaId: string }) {
+export interface RestriccionGuardada {
+  id: string
+  jugadorId: string
+  fechaNumero: number | null
+  horaDesde: string | null
+  horaHasta: string | null
+  motivo: string | null
+}
+
+export async function listarRestriccionesLiga(
+  params: { ligaId: string },
+): Promise<{ restricciones: RestriccionGuardada[]; error?: string }> {
   const { error: authErr, supabase } = await requireAdminClub()
-  if (authErr) return { error: authErr }
+  if (authErr) return { restricciones: [], error: authErr }
 
   const { data, error } = await (supabase as any)
     .from('liga_restricciones')
@@ -250,16 +267,15 @@ export async function listarRestriccionesLiga(params: { ligaId: string }) {
   // restricciones — no es un error que deba frenar la pantalla.
   if (error) return { restricciones: [] }
 
-  return {
-    restricciones: (data || []).map((r: any) => ({
-      id: r.id as string,
-      jugadorId: r.jugador_id as string,
-      fechaNumero: r.fecha_numero as number | null,
-      horaDesde: r.hora_desde ? String(r.hora_desde).slice(0, 5) : null,
-      horaHasta: r.hora_hasta ? String(r.hora_hasta).slice(0, 5) : null,
-      motivo: (r.motivo ?? null) as string | null,
-    })),
-  }
+  const restricciones: RestriccionGuardada[] = (data || []).map((r: any) => ({
+    id: r.id as string,
+    jugadorId: r.jugador_id as string,
+    fechaNumero: r.fecha_numero as number | null,
+    horaDesde: r.hora_desde ? String(r.hora_desde).slice(0, 5) : null,
+    horaHasta: r.hora_hasta ? String(r.hora_hasta).slice(0, 5) : null,
+    motivo: (r.motivo ?? null) as string | null,
+  }))
+  return { restricciones }
 }
 
 /**
@@ -290,11 +306,15 @@ export async function guardarRestriccionesLiga(params: {
     }
   }
 
+  // Los retiros quedan afuera del reemplazo: retirar a alguien es una decisión
+  // aparte, con efectos sobre sus partidos, y no puede deshacerse de rebote
+  // por abrir el modal y apretar Programar.
   const { error: bajaErr } = await db
     .from('liga_restricciones')
     .update({ deleted_at: new Date().toISOString() })
     .eq('liga_id', ligaId)
     .is('deleted_at', null)
+    .or(`motivo.is.null,motivo.neq.${MOTIVO_RETIRO}`)
   if (bajaErr) return { error: 'No se pudieron actualizar las restricciones. ¿Corriste la migración 118?' }
 
   if (restricciones.length > 0) {
@@ -313,6 +333,118 @@ export async function guardarRestriccionesLiga(params: {
   }
 
   return { success: true, total: restricciones.length }
+}
+
+/**
+ * Retira a un jugador de la liga. Lo ya jugado NUNCA se toca: sus resultados
+ * y los puntos que sus rivales le sacaron quedan como están. Lo que cambia es
+ * qué pasa con los partidos que le quedaban pendientes, y eso lo decide el
+ * admin en el momento:
+ *
+ *   'walkover' → sus rivales ganan esos partidos por no presentación. Es lo
+ *                que hacen las federaciones. Ojo que el que le tocaba jugar
+ *                contra él en la fecha 6 gana gratis, y el que ya jugó en la
+ *                1 tuvo que ganárselo.
+ *   'eliminar' → esos partidos desaparecen. Nadie suma puntos, pero cada uno
+ *                termina la liga con distinta cantidad de partidos jugados.
+ *
+ * En los dos casos queda registrado el retiro, así que si se vuelve a
+ * programar, el jugador ya no entra en el horario.
+ */
+export async function retirarJugadorDeLiga(params: {
+  ligaId: string
+  jugadorId: string
+  modo: 'walkover' | 'eliminar'
+}) {
+  const { error: authErr, supabase, userId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { ligaId, jugadorId, modo } = params
+  const db = supabase as any
+
+  // Sólo lo pendiente. Un partido finalizado o ya resuelto por walkover es
+  // historia y no se reescribe.
+  const { data: pendientes, error: leerErr } = await db
+    .from('liga_partidos')
+    .select('id, jugador_a_id, jugador_b_id')
+    .eq('liga_id', ligaId)
+    .or(`jugador_a_id.eq.${jugadorId},jugador_b_id.eq.${jugadorId}`)
+    .not('estado', 'in', '("finalizado","walkover")')
+    .is('deleted_at', null)
+  if (leerErr) return { error: 'No se pudieron leer los partidos del jugador.' }
+
+  const aResolver = (pendientes || []) as Array<{ id: string; jugador_a_id: string; jugador_b_id: string }>
+
+  if (modo === 'walkover') {
+    // Un update por partido: cada uno tiene un ganador distinto (el rival).
+    for (const p of aResolver) {
+      const rivalId = p.jugador_a_id === jugadorId ? p.jugador_b_id : p.jugador_a_id
+      const { error } = await db
+        .from('liga_partidos')
+        .update({ ganador_id: rivalId, estado: 'walkover', es_walkover: true, sets_a: null, sets_b: null })
+        .eq('id', p.id)
+        .not('estado', 'in', '("finalizado","walkover")')
+      if (error) return { error: 'No se pudieron registrar los walkovers: ' + error.message }
+    }
+  } else if (aResolver.length > 0) {
+    const { error } = await db
+      .from('liga_partidos')
+      .update({ deleted_at: new Date().toISOString() })
+      .in('id', aResolver.map(p => p.id))
+    if (error) return { error: 'No se pudieron eliminar los partidos: ' + error.message }
+  }
+
+  // Que no vuelva a entrar en el horario si se reprograma.
+  const { error: marcaErr } = await db.from('liga_restricciones').insert({
+    liga_id: ligaId,
+    jugador_id: jugadorId,
+    fecha_numero: null,
+    hora_desde: null,
+    hora_hasta: null,
+    motivo: MOTIVO_RETIRO,
+    creado_por: userId,
+  })
+  if (marcaErr) {
+    return { error: 'Los partidos se resolvieron, pero no se pudo marcar el retiro. ¿Corriste la migración 118?' }
+  }
+
+  return { success: true, partidosAfectados: aResolver.length, modo }
+}
+
+/** Cuántos partidos le quedan sin jugar — para mostrarlo antes de confirmar. */
+export async function contarPartidosPendientesJugador(params: { ligaId: string; jugadorId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { count, error } = await (supabase as any)
+    .from('liga_partidos')
+    .select('id', { count: 'exact', head: true })
+    .eq('liga_id', params.ligaId)
+    .or(`jugador_a_id.eq.${params.jugadorId},jugador_b_id.eq.${params.jugadorId}`)
+    .not('estado', 'in', '("finalizado","walkover")')
+    .is('deleted_at', null)
+  if (error) return { error: 'No se pudieron contar los partidos pendientes.' }
+
+  return { pendientes: count ?? 0 }
+}
+
+/** Deshace un retiro: el jugador vuelve a entrar en las próximas programaciones. */
+export async function reincorporarJugadorALiga(params: { ligaId: string; jugadorId: string }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { error } = await (supabase as any)
+    .from('liga_restricciones')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('liga_id', params.ligaId)
+    .eq('jugador_id', params.jugadorId)
+    .eq('motivo', MOTIVO_RETIRO)
+    .is('deleted_at', null)
+  if (error) return { error: 'No se pudo reincorporar al jugador.' }
+
+  // Los partidos que se resolvieron al retirarlo no se deshacen solos: si
+  // hacen falta, se reprograma o se editan a mano.
+  return { success: true }
 }
 
 // Motor de programación (F3): toma todos los partidos sin fecha asignada de la

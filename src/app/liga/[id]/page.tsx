@@ -10,6 +10,7 @@ import {
   asignarJugadoresDivision, calcularDiffFixtureDivision,
   generarFixtureDivisionAction, generarProgramacionLiga,
   listarRestriccionesLiga, guardarRestriccionesLiga,
+  retirarJugadorDeLiga, reincorporarJugadorALiga, contarPartidosPendientesJugador,
   crearJugadorExternoLiga,
   terminarFechaAction, programarEnReajuste, programarNuevosPartidosDivision,
 } from '@/app/actions/liga'
@@ -21,6 +22,7 @@ import { calcularRankingDivision, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain
 import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/liga'
 import ModalRestricciones from '@/components/liga/ModalRestricciones'
 import type { RestriccionEditable } from '@/components/liga/ModalRestricciones'
+import ModalRetiro from '@/components/liga/ModalRetiro'
 
 const supabase = createClient()
 
@@ -188,6 +190,9 @@ export default function LigaDetallePage() {
   const [modalRestriccionesAbierto, setModalRestriccionesAbierto] = useState(false)
   // null mientras se cargan las que ya estaban guardadas.
   const [restriccionesModal, setRestriccionesModal] = useState<RestriccionEditable[] | null>(null)
+  const [retiradosIds, setRetiradosIds] = useState<Set<string>>(new Set())
+  const [retiroModal, setRetiroModal] = useState<{ jugadorId: string; nombre: string; pendientes: number | null } | null>(null)
+  const [retirando, setRetirando] = useState(false)
   const [programacionKey, setProgramacionKey] = useState(0)
   const [fixtureKey, setFixtureKey] = useState(0)
   const [diffAbierto, setDiffAbierto] = useState(false)
@@ -256,6 +261,15 @@ export default function LigaDetallePage() {
   }, [ligaId])
 
   useEffect(() => { cargar() }, [cargar])
+
+  // Quién está retirado: cambia el botón de la fila y lo saca del modal de
+  // restricciones (ya no juega, no tiene sentido preguntarle horarios).
+  const cargarRetirados = useCallback(async () => {
+    const res = await listarRestriccionesLiga({ ligaId })
+    const ids = (res.restricciones ?? []).filter(r => r.motivo === 'retiro').map(r => r.jugadorId)
+    setRetiradosIds(new Set(ids))
+  }, [ligaId])
+  useEffect(() => { cargarRetirados() }, [cargarRetirados])
 
   // Lectura directa (RLS liga_jugador_pagos_select ya restringe al club) —
   // evita el hop del Server Action y su re-autenticación en cada cambio de división.
@@ -493,23 +507,59 @@ export default function LigaDetallePage() {
     toggleJugadorDivision(division, res.jugadorId)
   }
 
-  // Todos los que están anotados en alguna división, sin repetir: son los que
-  // pueden tener restricciones.
+  // Los que están anotados en alguna división y siguen en carrera: son los
+  // que pueden tener restricciones de horario. A los retirados no se les
+  // pregunta nada.
   const jugadoresDeLaLiga = (() => {
     const ids = new Set(Object.values(divisionJugadores).flat())
     return jugadoresClub
-      .filter(j => ids.has(j.id))
+      .filter(j => ids.has(j.id) && !retiradosIds.has(j.id))
       .map(j => ({ id: j.id, nombre: j.nombre }))
   })()
 
   // Antes de programar se pregunta si alguien avisó que no puede. Se abre con
   // lo que ya estaba guardado, así que reprogramar es: agregar lo nuevo que
-  // pasó y volver a apretar.
+  // pasó y volver a apretar. Los retiros no se editan acá: tienen su propio
+  // botón porque además resuelven partidos.
   async function abrirModalRestricciones() {
     setRestriccionesModal(null)
     setModalRestriccionesAbierto(true)
     const res = await listarRestriccionesLiga({ ligaId })
-    setRestriccionesModal(res.restricciones ?? [])
+    const todas = res.restricciones ?? []
+    setRestriccionesModal(todas.filter(r => r.motivo !== 'retiro'))
+  }
+
+  async function abrirModalRetiro(jugadorId: string, nombre: string) {
+    setRetiroModal({ jugadorId, nombre, pendientes: null })
+    const res = await contarPartidosPendientesJugador({ ligaId, jugadorId })
+    setRetiroModal(prev => (prev && prev.jugadorId === jugadorId ? { ...prev, pendientes: res.pendientes ?? 0 } : prev))
+  }
+
+  async function handleRetirar(modo: 'walkover' | 'eliminar') {
+    if (!retiroModal) return
+    setRetirando(true)
+    const res = await retirarJugadorDeLiga({ ligaId, jugadorId: retiroModal.jugadorId, modo })
+    setRetirando(false)
+    if (res.error) { setMensaje(res.error); return }
+
+    const n = res.partidosAfectados ?? 0
+    const queSeHizo = n === 0
+      ? 'No tenía partidos pendientes.'
+      : modo === 'walkover'
+        ? `${n} partido${n > 1 ? 's' : ''} quedaron ganados por sus rivales.`
+        : `Se borraron ${n} partido${n > 1 ? 's' : ''} pendientes.`
+    setMensaje(`${retiroModal.nombre} quedó retirado de la liga. ${queSeHizo}`)
+    setRetiroModal(null)
+    setRetiradosIds(prev => new Set(prev).add(retiroModal.jugadorId))
+    setProgramacionKey(k => k + 1)
+    cargar()
+  }
+
+  async function handleReincorporar(jugadorId: string, nombre: string) {
+    const res = await reincorporarJugadorALiga({ ligaId, jugadorId })
+    if (res.error) { setMensaje(res.error); return }
+    setRetiradosIds(prev => { const s = new Set(prev); s.delete(jugadorId); return s })
+    setMensaje(`${nombre} vuelve a entrar en las próximas programaciones. Los partidos que se resolvieron al retirarlo no se deshacen solos.`)
   }
 
   async function handleGenerarProgramacion(restricciones: RestriccionEditable[]) {
@@ -1072,11 +1122,28 @@ export default function LigaDetallePage() {
                             </span>
                           )}
                           <span style={{ background: `${color}20`, color, padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:700, whiteSpace:'nowrap', border:`1px solid ${color}40` }}>{label}</span>
-                          <button
-                            onClick={() => { const j = jugadoresClub.find(x => x.id === jid); if (j) abrirPagoModal(j) }}
-                            style={{ background:'transparent', border:'1px solid #c7d2fe', borderRadius:8, padding:'4px 10px', fontSize:11, fontWeight:700, color:'#6366f1', cursor:'pointer', whiteSpace:'nowrap' }}>
-                            💰 Pago
-                          </button>
+                          {retiradosIds.has(jid) ? (
+                            <button
+                              onClick={() => handleReincorporar(jid, nombre)}
+                              title="Volver a incluirlo en las próximas programaciones"
+                              style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'4px 10px', fontSize:11, fontWeight:700, color:'#dc2626', cursor:'pointer', whiteSpace:'nowrap' }}>
+                              Retirado · Reincorporar
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => { const j = jugadoresClub.find(x => x.id === jid); if (j) abrirPagoModal(j) }}
+                                style={{ background:'transparent', border:'1px solid #c7d2fe', borderRadius:8, padding:'4px 10px', fontSize:11, fontWeight:700, color:'#6366f1', cursor:'pointer', whiteSpace:'nowrap' }}>
+                                💰 Pago
+                              </button>
+                              <button
+                                onClick={() => abrirModalRetiro(jid, nombre)}
+                                title="Se retiró de la liga"
+                                style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'4px 9px', fontSize:11, fontWeight:700, color:'#dc2626', cursor:'pointer', whiteSpace:'nowrap' }}>
+                                Retirar
+                              </button>
+                            </>
+                          )}
                           {/* Tooltip hover (punto 4) */}
                           {isHovered && (
                             <div style={{
@@ -1331,6 +1398,16 @@ export default function LigaDetallePage() {
       )}
 
       {/* ── Modal confirmación de diff ─────────────────────────────────────── */}
+      {retiroModal && (
+        <ModalRetiro
+          nombreJugador={retiroModal.nombre}
+          partidosPendientes={retiroModal.pendientes}
+          procesando={retirando}
+          onCancelar={() => setRetiroModal(null)}
+          onConfirmar={handleRetirar}
+        />
+      )}
+
       {modalRestriccionesAbierto && restriccionesModal !== null && (
         <ModalRestricciones
           jugadores={jugadoresDeLaLiga}
