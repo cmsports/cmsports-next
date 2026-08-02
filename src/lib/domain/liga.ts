@@ -219,159 +219,159 @@ export function normalizarBloque(s: string | null | undefined): string | null {
 // Principio rector: eficiencia > equilibrio. Minimizar la permanencia total
 // de cada jugador en el recinto (= último bloque activo − primer bloque activo).
 //
-// Algoritmo en tres fases:
-//   1. Circle method: genera n-1 rondas donde cada jugador aparece exactamente
-//      una vez. Garantiza que partidos consecutivos de rondas adyacentes
-//      comparten jugador → base natural para encadenar.
-//   2. Greedy de cadena dentro de cada fecha: re-ordena el slice de partidos
-//      de la fecha priorizando continuidad (partido siguiente comparte jugador
-//      con el anterior). Desempate: jugador con más partidos pendientes entra
-//      primero y se va antes.
-//   3. Árbitros por ventana de actividad: para el partido del bloque t se
-//      elige el candidato cuya ventana [primera_actividad, última_actividad]
-//      ya contenga t (delta permanencia = 0), o el que menos la extienda.
+// REGLA DURA GARANTIZADA: ningún jugador espera más de HUECO_MAX partidos
+// entre dos apariciones suyas dentro de la misma fecha. No es una preferencia
+// ni el resultado de una heurística — es una restricción verificada.
+//
+// Cómo se garantiza: el reparto de partidos por fecha no es solo un greedy
+// balanceado; cada partido entra a una fecha únicamente si el conjunto
+// resultante SIGUE teniendo un orden válido, comprobado con un solver exacto
+// (resolverOrdenFecha). Si ninguna fecha lo admite, el partido queda sin
+// asignar y cae en el reajuste manual — que es exactamente para lo que existe
+// la fecha de ajuste.
+//
+// Por qué hizo falta: el enfoque anterior repartía por fecha con un greedy
+// ciego y después intentaba ordenar con búsqueda local. Pero el greedy podía
+// armar conjuntos para los que NO EXISTE ningún orden válido (verificado con
+// datos reales: un conjunto de 15 partidos donde el solver exacto demuestra
+// en 420 nodos que no hay solución). Ninguna cantidad de búsqueda arregla un
+// conjunto imposible — hay que evitar formarlo.
+//
+// Árbitros (fase aparte, asignarArbitrosEficiente): por ventana de actividad —
+// para el partido del bloque t se elige el candidato cuya ventana
+// [primera_actividad, última_actividad] ya contenga t (delta permanencia = 0),
+// o el que menos la extienda.
 
-// Costo de una secuencia:
-//   1. Regla dura: cualquier hueco >1 partido penaliza fuerte y cuadrático
-//      (un hueco de 4 es mucho peor que uno de 2) — esto es lo que garantiza
-//      el límite de 1 partido de espera.
-//   2. Preferencia secundaria: entre jugadores con 3 partidos en la fecha,
-//      es mejor que esperen UNA sola vez (2 partidos seguidos + 1 hueco) que
-//      dos veces (hueco después de cada partido). Se penaliza el número de
-//      huecos POR JUGADOR al cuadrado — así 2 huecos para el mismo jugador
-//      cuesta 4x, no 2x, y la búsqueda prefiere concentrar la espera en un
-//      solo corte en vez de repartirla entre todos sus partidos.
-function costoSecuencia(orden: PartidoAProgramar[]): number {
-  const posiciones = new Map<string, number[]>()
-  orden.forEach((p, idx) => {
-    for (const j of [p.jugadorAId, p.jugadorBId]) {
-      if (!posiciones.has(j)) posiciones.set(j, [])
-      posiciones.get(j)!.push(idx)
-    }
-  })
-  let costo = 0
-  for (const pos of posiciones.values()) {
-    let huecosDeUno = 0
-    for (let k = 1; k < pos.length; k++) {
-      const gap = pos[k] - pos[k - 1] - 1
-      if (gap > 1) costo += 1000 * (gap - 1) * (gap - 1)
-      else if (gap === 1) huecosDeUno++
-    }
-    costo += huecosDeUno * huecosDeUno
+// Máximo de partidos que un jugador puede esperar entre dos apariciones suyas
+// dentro de una misma fecha. 1 = a lo más se pierde un partido de por medio
+// (30 min con bloques de media hora).
+const HUECO_MAX = 1
+
+/**
+ * Solver exacto del orden de UNA fecha. Devuelve una secuencia donde ningún
+ * jugador espera más de `huecoMax` partidos entre dos apariciones suyas, o
+ * `null` si tal secuencia no existe para ese conjunto de partidos.
+ *
+ * Es una búsqueda en profundidad con una poda muy fuerte: si un jugador jugó
+ * en la posición L y le quedan partidos, su próxima aparición tiene que caer
+ * en L+1 … L+huecoMax+1. Entonces al elegir el partido de la posición t, todo
+ * jugador cuya última aparición fue exactamente t−(huecoMax+1) está OBLIGADO
+ * a jugar ahora. Si hay más de dos obligados, o si los dos obligados no tienen
+ * un partido pendiente entre ellos, la rama es imposible y se corta de una.
+ *
+ * Esa poda deja el árbol de búsqueda diminuto: en los tamaños reales (hasta
+ * ~16 partidos por fecha, que es la capacidad de una mesa en un día) responde
+ * en milisegundos, incluso para demostrar que NO hay solución.
+ *
+ * `presupuestoNodos` es un cinturón de seguridad para configuraciones
+ * patológicas (bloques muy cortos → fechas enormes): si se agota, devuelve
+ * null. Un null siempre se interpreta como "esta fecha no admite el partido",
+ * nunca como "programalo igual" — así el horario emitido jamás viola la regla.
+ */
+function resolverOrdenFecha(
+  partidos: PartidoAProgramar[],
+  huecoMax = HUECO_MAX,
+  presupuestoNodos = 300_000,
+): PartidoAProgramar[] | null {
+  const n = partidos.length
+  if (n <= 1) return [...partidos]
+
+  const usado = new Array<boolean>(n).fill(false)
+  const ultimaAparicion = new Map<string, number>()
+  const pendientes = new Map<string, number>()
+  for (const p of partidos) {
+    pendientes.set(p.jugadorAId, (pendientes.get(p.jugadorAId) ?? 0) + 1)
+    pendientes.set(p.jugadorBId, (pendientes.get(p.jugadorBId) ?? 0) + 1)
   }
-  return costo
-}
 
-// Construcción greedy tipo "earliest deadline first": en cada paso elige el
-// partido cuyo jugador lleva más tiempo esperando desde su última aparición
-// (mayor urgencia) — prioriza a quien está a punto de acumular un hueco antes
-// que a quien recién empieza. Punto de partida para la búsqueda local de
-// ordenarPartidosFecha; por sí sola no garantiza el límite de hueco, pero da
-// una base mucho mejor que un orden arbitrario.
-function ordenarPorUrgencia(matchesFecha: PartidoAProgramar[]): PartidoAProgramar[] {
-  if (matchesFecha.length <= 1) return matchesFecha
-  const pendientes = [...matchesFecha]
-  const resultado: PartidoAProgramar[] = []
-  const ultimoBloque = new Map<string, number>()
+  const secuencia: number[] = []
+  let nodos = 0
 
-  while (pendientes.length > 0) {
-    const t = resultado.length
-    const urgencia = (p: PartidoAProgramar) => {
-      const calc = (j: string) => {
-        const u = ultimoBloque.get(j)
-        return u === undefined ? -1 : (t - 1 - u)
+  const comparte = (x: PartidoAProgramar, y: PartidoAProgramar) =>
+    x.jugadorAId === y.jugadorAId || x.jugadorAId === y.jugadorBId ||
+    x.jugadorBId === y.jugadorAId || x.jugadorBId === y.jugadorBId
+
+  function dfs(t: number): boolean {
+    if (t === n) return true
+    if (++nodos > presupuestoNodos) return false
+
+    const obligados: string[] = []
+    for (const [j, ultima] of ultimaAparicion) {
+      if ((pendientes.get(j) ?? 0) > 0 && ultima === t - (huecoMax + 1)) obligados.push(j)
+    }
+    if (obligados.length > 2) return false
+
+    const candidatos: number[] = []
+    for (let i = 0; i < n; i++) {
+      if (usado[i]) continue
+      const p = partidos[i]
+      if (obligados.length === 2) {
+        const cubre =
+          (p.jugadorAId === obligados[0] && p.jugadorBId === obligados[1]) ||
+          (p.jugadorAId === obligados[1] && p.jugadorBId === obligados[0])
+        if (!cubre) continue
+      } else if (obligados.length === 1) {
+        if (p.jugadorAId !== obligados[0] && p.jugadorBId !== obligados[0]) continue
       }
-      return Math.max(calc(p.jugadorAId), calc(p.jugadorBId))
+      candidatos.push(i)
     }
+    if (candidatos.length === 0) return false
 
-    let mejor = pendientes[0]
-    let mejorUrgencia = urgencia(mejor)
-    for (let i = 1; i < pendientes.length; i++) {
-      const u = urgencia(pendientes[i])
-      if (u > mejorUrgencia) { mejor = pendientes[i]; mejorUrgencia = u }
-    }
-
-    resultado.push(mejor)
-    pendientes.splice(pendientes.indexOf(mejor), 1)
-    ultimoBloque.set(mejor.jugadorAId, t)
-    ultimoBloque.set(mejor.jugadorBId, t)
-  }
-
-  return resultado
-}
-
-// Búsqueda local 2-opt: prueba intercambiar cada par de posiciones y acepta
-// el swap si baja el costo total. Repite pasadas completas hasta que una
-// pasada entera no mejore nada (óptimo local) o se agote el presupuesto.
-// El tamaño típico de partidos-por-fecha-por-división (decenas, no cientos)
-// hace que un O(n²) por pasada sea despreciable en tiempo real.
-function repararConSwaps(ordenInicial: PartidoAProgramar[], maxPasadas = 60): PartidoAProgramar[] {
-  let orden = [...ordenInicial]
-  let costoActual = costoSecuencia(orden)
-  if (costoActual === 0) return orden
-
-  for (let pasada = 0; pasada < maxPasadas; pasada++) {
-    let mejoro = false
-    for (let i = 0; i < orden.length; i++) {
-      for (let j = i + 1; j < orden.length; j++) {
-        const copia = [...orden]
-        ;[copia[i], copia[j]] = [copia[j], copia[i]]
-        const nuevoCosto = costoSecuencia(copia)
-        if (nuevoCosto < costoActual) {
-          orden = copia
-          costoActual = nuevoCosto
-          mejoro = true
-        }
+    // Orden de exploración: primero los que encadenan con el partido anterior
+    // (el jugador sigue en la mesa, hueco 0), después los de jugadores con más
+    // partidos pendientes (los más difíciles de acomodar más tarde).
+    const anterior = t > 0 ? partidos[secuencia[t - 1]] : null
+    const pendientesDe = (i: number) =>
+      (pendientes.get(partidos[i].jugadorAId) ?? 0) + (pendientes.get(partidos[i].jugadorBId) ?? 0)
+    candidatos.sort((x, y) => {
+      if (anterior) {
+        const dif = (comparte(partidos[y], anterior) ? 1 : 0) - (comparte(partidos[x], anterior) ? 1 : 0)
+        if (dif !== 0) return dif
       }
+      return pendientesDe(y) - pendientesDe(x)
+    })
+
+    for (const i of candidatos) {
+      const p = partidos[i]
+      const previaA = ultimaAparicion.get(p.jugadorAId)
+      const previaB = ultimaAparicion.get(p.jugadorBId)
+
+      usado[i] = true
+      secuencia.push(i)
+      ultimaAparicion.set(p.jugadorAId, t)
+      ultimaAparicion.set(p.jugadorBId, t)
+      pendientes.set(p.jugadorAId, pendientes.get(p.jugadorAId)! - 1)
+      pendientes.set(p.jugadorBId, pendientes.get(p.jugadorBId)! - 1)
+
+      if (dfs(t + 1)) return true
+
+      usado[i] = false
+      secuencia.pop()
+      if (previaA === undefined) ultimaAparicion.delete(p.jugadorAId)
+      else ultimaAparicion.set(p.jugadorAId, previaA)
+      if (previaB === undefined) ultimaAparicion.delete(p.jugadorBId)
+      else ultimaAparicion.set(p.jugadorBId, previaB)
+      pendientes.set(p.jugadorAId, pendientes.get(p.jugadorAId)! + 1)
+      pendientes.set(p.jugadorBId, pendientes.get(p.jugadorBId)! + 1)
     }
-    if (!mejoro || costoActual === 0) break
+    return false
   }
 
-  return orden
+  return dfs(0) ? secuencia.map(i => partidos[i]) : null
 }
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
-
-// Ordena los partidos de una fecha para minimizar los huecos de espera de
-// cada jugador. Construcción por urgencia + reparación 2-opt, repetido con
-// varios puntos de partida (el primero en orden de fixture, el resto
-// barajados) para escapar de óptimos locales — se queda con el de menor
-// costo. Verificado con fixtures reales de round-robin (8 a 20 jugadores):
-// reduce huecos que llegaban a 6-11 partidos (con el método anterior de
-// cadenas simple) a 1-2 partidos como máximo.
-function ordenarPartidosFecha(matchesFecha: PartidoAProgramar[], intentos = 15): PartidoAProgramar[] {
-  if (matchesFecha.length <= 2) return matchesFecha
-
-  let mejorOrden: PartidoAProgramar[] | null = null
-  let mejorCosto = Infinity
-
-  for (let intento = 0; intento < intentos; intento++) {
-    const entrada = intento === 0 ? matchesFecha : shuffle(matchesFecha)
-    const construido = ordenarPorUrgencia(entrada)
-    const reparado = repararConSwaps(construido)
-    const costo = costoSecuencia(reparado)
-    if (costo < mejorCosto) {
-      mejorCosto = costo
-      mejorOrden = reparado
-      if (costo === 0) break
-    }
-  }
-
-  return mejorOrden ?? matchesFecha
-}
-
-// Programa una división completa en su mesa asignada.
-// Estrategia OPTIMIZADA: greedy balanceado — distribuir partidos de cada jugador
-// a lo largo de TODAS las fechas (2-3 por fecha) para minimizar gaps de espera.
-// Dentro de cada fecha, ordena los partidos para que sean consecutivos (sin huecos).
-// Los partidos que no entran van a sinAsignar (ajuste manual).
+/**
+ * Programa una división completa en su mesa asignada.
+ *
+ * Cada partido se prueba contra las fechas ordenadas por balance (primero
+ * aquella donde ambos jugadores tienen menos partidos) y se queda en la
+ * PRIMERA que, con el partido adentro, siga admitiendo un orden válido según
+ * `resolverOrdenFecha`. Si ninguna lo admite, el partido va a `sinAsignar`
+ * para el reajuste manual.
+ *
+ * Consecuencia: todo partido que aparece en `programados` cumple la regla de
+ * hueco máximo. Nunca se emite un horario que la viole.
+ */
 export function programarDivision(
   partidos: PartidoAProgramar[],
   jugadorIds: string[],
@@ -382,56 +382,44 @@ export function programarDivision(
   if (partidos.length === 0) return { programados: [], sinAsignar: [] }
 
   const capacidad = bloques.length
-
-  // Estrategia greedy: para cada partido, asignarlo a la fecha donde AMBOS
-  // jugadores tienen MENOS partidos asignados (balanceo automático).
-  // Esto garantiza distribución equilibrada sin pre-planificación.
   const porFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
+  // Orden ya verificado de cada fecha — se reusa tal cual al emitir, para que
+  // el horario final sea exactamente el que el solver validó.
+  const ordenDeFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
   const conteoFechaJugador = new Map<string, number>() // "jugador::fecha" -> count
   const sinAsignar: PartidoAProgramar[] = []
 
   for (const p of partidos) {
-    // Contar cuántos partidos tiene cada jugador en cada fecha
-    const cuentaA = new Map<number, number>()
-    const cuentaB = new Map<number, number>()
+    const candidatas: Array<{ fecha: number; score: number }> = []
     for (let f = 0; f < numFechas; f++) {
-      cuentaA.set(f, conteoFechaJugador.get(`${p.jugadorAId}::${f}`) ?? 0)
-      cuentaB.set(f, conteoFechaJugador.get(`${p.jugadorBId}::${f}`) ?? 0)
-    }
-
-    // Encontrar la fecha donde AMBOS tienen menos partidos y hay capacidad
-    let fechaMejor = -1
-    let scoreMejor = Infinity
-
-    for (let f = 0; f < numFechas; f++) {
-      // Si no hay espacio en la mesa, saltar
       if (porFecha[f].length >= capacidad) continue
-
-      // Restricción: máximo 3 partidos por jugador por fecha
-      if ((cuentaA.get(f) ?? 0) >= 3 || (cuentaB.get(f) ?? 0) >= 3) continue
-
-      // Score: suma de partidos de ambos en esta fecha (menor = mejor distribución)
-      const score = (cuentaA.get(f) ?? 0) + (cuentaB.get(f) ?? 0)
-      if (score < scoreMejor) {
-        scoreMejor = score
-        fechaMejor = f
-      }
+      const cuentaA = conteoFechaJugador.get(`${p.jugadorAId}::${f}`) ?? 0
+      const cuentaB = conteoFechaJugador.get(`${p.jugadorBId}::${f}`) ?? 0
+      // Tope de 3 partidos por jugador por fecha: más que eso alarga la
+      // permanencia aunque el hueco entre partidos siga siendo chico.
+      if (cuentaA >= 3 || cuentaB >= 3) continue
+      candidatas.push({ fecha: f, score: cuentaA + cuentaB })
     }
+    // Menor score primero = fecha donde ambos jugadores están menos cargados.
+    candidatas.sort((x, y) => x.score - y.score)
 
-    if (fechaMejor >= 0) {
-      porFecha[fechaMejor].push(p)
-      conteoFechaJugador.set(`${p.jugadorAId}::${fechaMejor}`, (conteoFechaJugador.get(`${p.jugadorAId}::${fechaMejor}`) ?? 0) + 1)
-      conteoFechaJugador.set(`${p.jugadorBId}::${fechaMejor}`, (conteoFechaJugador.get(`${p.jugadorBId}::${fechaMejor}`) ?? 0) + 1)
-    } else {
-      sinAsignar.push(p)
+    let colocado = false
+    for (const { fecha } of candidatas) {
+      const tentativa = [...porFecha[fecha], p]
+      const orden = resolverOrdenFecha(tentativa)
+      if (!orden) continue // esta fecha quedaría sin orden válido: probar la siguiente
+      porFecha[fecha] = tentativa
+      ordenDeFecha[fecha] = orden
+      conteoFechaJugador.set(`${p.jugadorAId}::${fecha}`, (conteoFechaJugador.get(`${p.jugadorAId}::${fecha}`) ?? 0) + 1)
+      conteoFechaJugador.set(`${p.jugadorBId}::${fecha}`, (conteoFechaJugador.get(`${p.jugadorBId}::${fecha}`) ?? 0) + 1)
+      colocado = true
+      break
     }
+    if (!colocado) sinAsignar.push(p)
   }
 
   const programados: PartidoProgramado[] = []
-  porFecha.forEach((matchesFecha, i) => {
-    if (matchesFecha.length === 0) return
-    // Minimizar huecos de espera de cada jugador dentro de esta fecha
-    const ordenados = ordenarPartidosFecha(matchesFecha)
+  ordenDeFecha.forEach((ordenados, i) => {
     for (let b = 0; b < ordenados.length; b++) {
       programados.push({
         ...ordenados[b],

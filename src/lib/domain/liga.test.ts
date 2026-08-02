@@ -5,6 +5,10 @@ import {
   determinarGanadorBo5,
   calcularRankingDivision,
   validarMovimientoPartido,
+  programarDivision,
+  generarBloquesHorario,
+  BLOQUE_INICIO,
+  BLOQUE_FIN,
   type PartidoFinalizado,
   type PartidoExistente,
 } from './liga'
@@ -103,5 +107,101 @@ describe('validarMovimientoPartido', () => {
     const r = validarMovimientoPartido(conArbitro, destino, [conArbitro])
     expect(r.valido).toBe(false)
     expect(r.motivo).toMatch(/árbitro/i)
+  })
+})
+
+// La razón de ser de estos tests: en producción salieron horarios donde un
+// jugador jugaba 10:00 y después 14:30. El reparto por fecha armaba conjuntos
+// de partidos que NO admiten ningún orden válido, y el ordenador heurístico
+// emitía igual el "menos malo". Ahora el reparto verifica factibilidad antes
+// de aceptar cada partido, así que la regla es una garantía, no un objetivo.
+describe('programarDivision — garantía de hueco máximo', () => {
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, 30)
+
+  function programar(nJugadores: number, numFechas: number) {
+    const jugadorIds = Array.from({ length: nJugadores }, (_, i) => `J${i}`)
+    const partidos = generarFixtureDivision(jugadorIds).map(f => ({
+      id: `${f.jugadorA}-${f.jugadorB}`,
+      divisionId: 'D1',
+      jugadorAId: f.jugadorA,
+      jugadorBId: f.jugadorB,
+      ordenFixture: f.orden,
+    }))
+    const r = programarDivision(partidos, jugadorIds, numFechas, bloques, 1)
+    return { ...r, totalPartidos: partidos.length }
+  }
+
+  // Posiciones (índice de bloque) de cada jugador dentro de cada fecha.
+  function posicionesPorFecha(programados: ReturnType<typeof programar>['programados']) {
+    const idxBloque = new Map(bloques.map((b, i) => [b, i]))
+    const porFecha = new Map<number, Map<string, number[]>>()
+    for (const p of programados) {
+      if (!porFecha.has(p.fechaNumero)) porFecha.set(p.fechaNumero, new Map())
+      const mapa = porFecha.get(p.fechaNumero)!
+      for (const j of [p.jugadorAId, p.jugadorBId]) {
+        if (!mapa.has(j)) mapa.set(j, [])
+        mapa.get(j)!.push(idxBloque.get(p.bloqueHorario)!)
+      }
+    }
+    for (const mapa of porFecha.values()) for (const arr of mapa.values()) arr.sort((a, b) => a - b)
+    return porFecha
+  }
+
+  const casos: Array<[number, number]> = [
+    [6, 5], [8, 5], [10, 5], [11, 5], [12, 5], [13, 5], [15, 5], [16, 5], [20, 5],
+    [8, 3], [12, 3], [12, 4], [15, 6], [12, 8],
+  ]
+
+  it.each(casos)('con %i jugadores y %i fechas ningún jugador espera más de 1 partido', (n, fechas) => {
+    const { programados } = programar(n, fechas)
+    for (const [fechaNumero, porJugador] of posicionesPorFecha(programados)) {
+      for (const [jugador, pos] of porJugador) {
+        for (let k = 1; k < pos.length; k++) {
+          const hueco = pos[k] - pos[k - 1] - 1
+          expect(hueco, `fecha ${fechaNumero}, jugador ${jugador}, posiciones ${pos.join(',')}`).toBeLessThanOrEqual(1)
+        }
+      }
+    }
+  })
+
+  it.each(casos)('con %i jugadores y %i fechas nadie juega dos partidos a la misma hora', (n, fechas) => {
+    const { programados } = programar(n, fechas)
+    for (const [fechaNumero, porJugador] of posicionesPorFecha(programados)) {
+      for (const [jugador, pos] of porJugador) {
+        expect(new Set(pos).size, `fecha ${fechaNumero}, jugador ${jugador}`).toBe(pos.length)
+      }
+    }
+  })
+
+  it.each(casos)('con %i jugadores y %i fechas no se pierde ni se duplica ningún partido', (n, fechas) => {
+    const { programados, sinAsignar, totalPartidos } = programar(n, fechas)
+    expect(programados.length + sinAsignar.length).toBe(totalPartidos)
+    const ids = [...programados.map(p => p.id), ...sinAsignar.map(p => p.id)]
+    expect(new Set(ids).size).toBe(totalPartidos)
+  })
+
+  it('un mismo bloque de una fecha no se asigna a dos partidos', () => {
+    const { programados } = programar(12, 5)
+    const ocupados = new Set<string>()
+    for (const p of programados) {
+      const clave = `${p.fechaNumero}::${p.bloqueHorario}`
+      expect(ocupados.has(clave), `bloque repetido: ${clave}`).toBe(false)
+      ocupados.add(clave)
+    }
+  })
+
+  it('es determinista: dos corridas con la misma entrada dan el mismo horario', () => {
+    const serializar = (r: ReturnType<typeof programar>) =>
+      r.programados.map(p => `${p.fechaNumero}|${p.bloqueHorario}|${p.id}`).join('\n')
+    expect(serializar(programar(12, 5))).toBe(serializar(programar(12, 5)))
+  })
+
+  it('ningún jugador supera los 3 partidos en una misma fecha', () => {
+    const { programados } = programar(12, 5)
+    for (const [fechaNumero, porJugador] of posicionesPorFecha(programados)) {
+      for (const [jugador, pos] of porJugador) {
+        expect(pos.length, `fecha ${fechaNumero}, jugador ${jugador}`).toBeLessThanOrEqual(3)
+      }
+    }
   })
 })
