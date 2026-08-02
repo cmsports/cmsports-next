@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, X } from 'lucide-react'
 import { subirVoucher, eliminarVoucher } from '@/app/actions/vouchers'
@@ -25,7 +26,16 @@ export default function MarcasAuspiciadores({ clubId, esStaff, borderColor }: {
   const [abierta, setAbierta]   = useState<Marca | null>(null)
   const [zoom, setZoom]         = useState<Voucher | null>(null)
   const [subiendo, setSubiendo] = useState(false)
+  const [montado, setMontado]   = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Los modales salen por un portal a <body>. Este componente vive dentro de una
+  // tarjeta con `animation: entraTarjeta ... both`, y una animación de opacity
+  // en estado de fill crea un stacking context: el overlay se posiciona bien
+  // contra la pantalla, pero su z-index solo compite dentro de esa tarjeta, así
+  // que las tarjetas que siguen en el DOM le quedan encima. Mismo arreglo que
+  // ya se hizo en el tablero de la liga.
+  useEffect(() => { setMontado(true) }, [])
 
   useEffect(() => {
     if (!clubId) return
@@ -109,7 +119,7 @@ export default function MarcasAuspiciadores({ clubId, esStaff, borderColor }: {
       </div>
 
       {/* Descuentos de la marca */}
-      {abierta && (
+      {montado && abierta && createPortal(
         <div
           onClick={e => { if (e.target === e.currentTarget) setAbierta(null) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16 }}
@@ -175,11 +185,12 @@ export default function MarcasAuspiciadores({ clubId, esStaff, borderColor }: {
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Imagen del descuento en grande */}
-      {zoom && (
+      {montado && zoom && createPortal(
         <div
           onClick={() => setZoom(null)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16 }}
@@ -193,7 +204,8 @@ export default function MarcasAuspiciadores({ clubId, esStaff, borderColor }: {
             </button>
             <img src={zoom.imagen_url} alt={zoom.nombre} style={{ width: '100%', borderRadius: 16 }} />
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )
