@@ -204,6 +204,10 @@ export default function LigaDetallePage() {
 
   const [pagoModalAbierto, setPagoModalAbierto] = useState(false)
   const [jugadorPagando, setJugadorPagando] = useState<Jugador | null>(null)
+  // División a la que corresponde el pago que se está registrando — no
+  // siempre es divisionActiva: el reporte de pagos permite registrar desde
+  // cualquier división de la liga, sin cambiar la pestaña activa.
+  const [pagoDivisionId, setPagoDivisionId] = useState<string | null>(null)
   const [montoTotal, setMontoTotal] = useState('')
   const [montoAbono, setMontoAbono] = useState('')
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0])
@@ -332,37 +336,42 @@ export default function LigaDetallePage() {
   // juntado, sin depender de en qué división esté parado el admin.
   // Un jugador sin fila en liga_jugador_pagos no ha registrado ningún abono
   // todavía — cuenta como "pendiente" con el monto por defecto de la liga.
-  useEffect(() => {
-    if (!pagosReporteAbierto) return
+  const cargarPagosReporte = useCallback(async () => {
     setLoadingPagosReporte(true)
     const divIds = divisiones.map(d => d.id)
     if (divIds.length === 0) { setPagosReporteFilas([]); setLoadingPagosReporte(false); return }
-    ;(supabase as any)
+    const { data } = await (supabase as any)
       .from('liga_jugador_pagos')
       .select('division_id, jugador_id, monto_total, monto_pagado, estado')
       .in('division_id', divIds)
-      .then(({ data }: { data: Array<{ division_id: string; jugador_id: string; monto_total: number; monto_pagado: number; estado: string }> | null }) => {
-        const pagoPorClave = new Map<string, { monto_total: number; monto_pagado: number; estado: string }>()
-        for (const p of data || []) pagoPorClave.set(`${p.division_id}::${p.jugador_id}`, p)
+    const pagoPorClave = new Map<string, { monto_total: number; monto_pagado: number; estado: string }>()
+    for (const p of (data || []) as Array<{ division_id: string; jugador_id: string; monto_total: number; monto_pagado: number; estado: string }>) {
+      pagoPorClave.set(`${p.division_id}::${p.jugador_id}`, p)
+    }
 
-        const filas: PagoReporteFila[] = []
-        for (const div of divisiones) {
-          const jugadorIds = divisionJugadores[div.id] || []
-          for (const jugadorId of jugadorIds) {
-            const registro = pagoPorClave.get(`${div.id}::${jugadorId}`)
-            filas.push({
-              jugadorId,
-              divisionId: div.id,
-              divisionNombre: div.nombre,
-              montoTotal: registro?.monto_total ?? (liga?.montoInscripcionDefault ?? 0),
-              montoPagado: registro?.monto_pagado ?? 0,
-              estado: (registro?.estado as 'pagado' | 'parcial' | 'pendiente' | undefined) ?? 'pendiente',
-            })
-          }
-        }
-        setPagosReporteFilas(filas)
-        setLoadingPagosReporte(false)
-      })
+    const filas: PagoReporteFila[] = []
+    for (const div of divisiones) {
+      const jugadorIds = divisionJugadores[div.id] || []
+      for (const jugadorId of jugadorIds) {
+        const registro = pagoPorClave.get(`${div.id}::${jugadorId}`)
+        filas.push({
+          jugadorId,
+          divisionId: div.id,
+          divisionNombre: div.nombre,
+          montoTotal: registro?.monto_total ?? (liga?.montoInscripcionDefault ?? 0),
+          montoPagado: registro?.monto_pagado ?? 0,
+          estado: (registro?.estado as 'pagado' | 'parcial' | 'pendiente' | undefined) ?? 'pendiente',
+        })
+      }
+    }
+    setPagosReporteFilas(filas)
+    setLoadingPagosReporte(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [divisiones, divisionJugadores, liga])
+
+  useEffect(() => {
+    if (!pagosReporteAbierto) return
+    cargarPagosReporte()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagosReporteAbierto])
 
@@ -531,25 +540,28 @@ export default function LigaDetallePage() {
     cargar()
   }
 
-  function abrirPagoModal(jugador: Jugador) {
+  // divisionId es opcional: por defecto usa la división activa (flujo desde
+  // la pestaña Jugadores). El reporte de pagos pasa la división de la fila
+  // clickeada explícitamente, porque puede no ser la división activa.
+  function abrirPagoModal(jugador: Jugador, divisionId?: string) {
+    const divId = divisionId ?? divisionActiva
+    if (!divId) return
     pagoOperacionId.current = crypto.randomUUID()
     setJugadorPagando(jugador)
+    setPagoDivisionId(divId)
     setPagoError('')
-    const pagoExistente = pagos[jugador.id]
-    if (pagoExistente) {
-      setMontoTotal(String(pagoExistente.monto_total))
-      setMontoAbono('')
-    } else {
-      setMontoTotal(liga?.montoInscripcionDefault ? String(liga.montoInscripcionDefault) : '')
-      setMontoAbono('')
-    }
+    const montoExistente = divId === divisionActiva
+      ? pagos[jugador.id]?.monto_total
+      : pagosReporteFilas.find(f => f.divisionId === divId && f.jugadorId === jugador.id)?.montoTotal
+    setMontoTotal(montoExistente ? String(montoExistente) : (liga?.montoInscripcionDefault ? String(liga.montoInscripcionDefault) : ''))
+    setMontoAbono('')
     setFechaPago(new Date().toISOString().split('T')[0])
     setMetodoPago('')
     setPagoModalAbierto(true)
   }
 
   async function handleRegistrarPago() {
-    if (!jugadorPagando || !divisionActiva || !liga) return
+    if (!jugadorPagando || !pagoDivisionId || !liga) return
     const mt = parseInt(montoTotal)
     const ma = parseInt(montoAbono)
     if (!mt || mt <= 0) { setPagoError('El monto total debe ser mayor a cero'); return }
@@ -557,7 +569,7 @@ export default function LigaDetallePage() {
     setPagoError('')
     setRegistrandoPago(true)
     const res = await registrarPagoLiga({
-      divisionId: divisionActiva,
+      divisionId: pagoDivisionId,
       jugadorId: jugadorPagando.id,
       montoTotal: mt,
       montoAbono: ma,
@@ -571,7 +583,8 @@ export default function LigaDetallePage() {
     if (res.error) { setPagoError(res.error); return }
     pagoOperacionId.current = null
     setPagoModalAbierto(false)
-    await cargarPagos(divisionActiva)
+    if (pagoDivisionId === divisionActiva) await cargarPagos(pagoDivisionId)
+    if (pagosReporteAbierto) await cargarPagosReporte()
     setMensaje(`Pago registrado — ${jugadorPagando.nombre}: $${ma.toLocaleString('es-CL')}`)
   }
 
@@ -650,6 +663,10 @@ export default function LigaDetallePage() {
   const jugadoresDeDivision = division ? (divisionJugadores[division.id] || []) : []
   const nombrePorId = Object.fromEntries(jugadoresClub.map(j => [j.id, j.nombre]))
   const fechaActual = fechas.find(f => f.id === fechaSeleccionada) || null
+
+  const totalRecaudado = pagosReporteFilas.reduce((s, f) => s + f.montoPagado, 0)
+  const totalEsperado = pagosReporteFilas.reduce((s, f) => s + f.montoTotal, 0)
+  const cantPagosPendientes = pagosReporteFilas.filter(f => f.estado !== 'pagado').length
 
   const dm = darkMode
   const pageBg = dm ? '#0f172a' : undefined
@@ -1406,12 +1423,7 @@ export default function LigaDetallePage() {
       )}
 
       {/* ── Modal reporte de pagos ──────────────────────────────────────────── */}
-      {pagosReporteAbierto && (() => {
-        const totalRecaudado = pagosReporteFilas.reduce((s, f) => s + f.montoPagado, 0)
-        const totalEsperado = pagosReporteFilas.reduce((s, f) => s + f.montoTotal, 0)
-        const cantPendientes = pagosReporteFilas.filter(f => f.estado !== 'pagado').length
-        const nombrePorIdReporte = Object.fromEntries(jugadoresClub.map(j => [j.id, j.nombre]))
-        return (
+      {pagosReporteAbierto && (
           <div
             style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.65)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:300 }}
             onClick={e => { if (e.target === e.currentTarget) setPagosReporteAbierto(false) }}>
@@ -1436,7 +1448,7 @@ export default function LigaDetallePage() {
                       <div style={{ fontSize:11, color:'#4338ca', fontWeight:600 }}>ESPERADO</div>
                     </div>
                     <div style={{ flex:'1 1 100px', background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:12, padding:'12px 14px' }}>
-                      <div style={{ fontSize:18, fontWeight:800, color:'#ea580c', fontVariantNumeric:'tabular-nums' }}>{cantPendientes}</div>
+                      <div style={{ fontSize:18, fontWeight:800, color:'#ea580c', fontVariantNumeric:'tabular-nums' }}>{cantPagosPendientes}</div>
                       <div style={{ fontSize:11, color:'#9a3412', fontWeight:600 }}>CON SALDO</div>
                     </div>
                   </div>
@@ -1450,9 +1462,17 @@ export default function LigaDetallePage() {
                           <div style={{ fontSize:11, fontWeight:600, color: muted, textTransform:'uppercase', letterSpacing:1, marginBottom:8 }}>{div.nombre}</div>
                           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
                             {filasDiv.map(f => (
-                              <div key={f.jugadorId} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8 }}>
+                              <div
+                                key={f.jugadorId}
+                                className="lig-jug-row"
+                                onClick={() => {
+                                  const j = jugadoresClub.find(x => x.id === f.jugadorId)
+                                  if (j) abrirPagoModal(j, f.divisionId)
+                                }}
+                                title="Click para registrar un abono"
+                                style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer' }}>
                                 <span style={{ width:8, height:8, borderRadius:'50%', background: SEMAFORO[f.estado], flexShrink:0 }} />
-                                <span style={{ flex:1, fontWeight:600, color: text, fontSize:13 }}>{nombrePorIdReporte[f.jugadorId] ?? '—'}</span>
+                                <span style={{ flex:1, fontWeight:600, color: text, fontSize:13 }}>{nombrePorId[f.jugadorId] ?? '—'}</span>
                                 <span style={{ fontSize:12, color: muted, fontVariantNumeric:'tabular-nums' }}>
                                   ${f.montoPagado.toLocaleString('es-CL')} / ${f.montoTotal.toLocaleString('es-CL')}
                                 </span>
@@ -1488,28 +1508,38 @@ export default function LigaDetallePage() {
               </div>
             </div>
           </div>
-        )
-      })()}
+      )}
 
       {/* ── Modal registrar pago ───────────────────────────────────────────── */}
+      {/* zIndex 400: por encima del reporte de pagos (300), que puede seguir
+          abierto detrás — se puede registrar el abono sin perder el reporte. */}
       {pagoModalAbierto && jugadorPagando && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:200 }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:400 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:400, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:4 }}>Registrar pago</div>
             <div style={{ fontSize:13, color: muted, marginBottom:18 }}>{jugadorPagando.nombre}</div>
 
-            {pagos[jugadorPagando.id] && (
-              <div style={{ background:'#f4f7fa', borderRadius:10, padding:'10px 14px', fontSize:12, color: muted, marginBottom:16 }}>
-                Pagado hasta ahora:{' '}
-                <strong style={{ color: text, fontVariantNumeric:'tabular-nums' }}>
-                  ${pagos[jugadorPagando.id].monto_pagado.toLocaleString('es-CL')}
-                </strong>
-                {' '}de{' '}
-                <strong style={{ color: text, fontVariantNumeric:'tabular-nums' }}>
-                  ${pagos[jugadorPagando.id].monto_total.toLocaleString('es-CL')}
-                </strong>
-              </div>
-            )}
+            {(() => {
+              const registro = pagoDivisionId === divisionActiva
+                ? pagos[jugadorPagando.id]
+                : pagosReporteFilas.find(f => f.divisionId === pagoDivisionId && f.jugadorId === jugadorPagando.id)
+              if (!registro) return null
+              const montoPagado = 'monto_pagado' in registro ? registro.monto_pagado : registro.montoPagado
+              const montoTotalReg = 'monto_total' in registro ? registro.monto_total : registro.montoTotal
+              if (!montoPagado) return null
+              return (
+                <div style={{ background:'#f4f7fa', borderRadius:10, padding:'10px 14px', fontSize:12, color: muted, marginBottom:16 }}>
+                  Pagado hasta ahora:{' '}
+                  <strong style={{ color: text, fontVariantNumeric:'tabular-nums' }}>
+                    ${montoPagado.toLocaleString('es-CL')}
+                  </strong>
+                  {' '}de{' '}
+                  <strong style={{ color: text, fontVariantNumeric:'tabular-nums' }}>
+                    ${montoTotalReg.toLocaleString('es-CL')}
+                  </strong>
+                </div>
+              )
+            })()}
 
             <div style={{ display:'flex', gap:10, marginBottom:12 }}>
               <div style={{ flex:1 }}>
