@@ -20,6 +20,8 @@ export async function registrarSolicitud(input: {
   contacto_emergencia_nombre?: string
   contacto_emergencia_telefono?: string
   indicaciones_medicas?: string
+  talla_polera?: string
+  talla_short?: string
 }) {
   const parsed = solicitudSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
@@ -42,6 +44,8 @@ export async function registrarSolicitud(input: {
     p_apellido1: parsed.data.apellido1,
     p_apellido2: parsed.data.apellido2,
     p_apellido3: parsed.data.apellido3,
+    p_talla_polera: input.talla_polera || null,
+    p_talla_short: input.talla_short || null,
   })
 
   if (error) return { error: 'Error al enviar solicitud. Intenta de nuevo.' }

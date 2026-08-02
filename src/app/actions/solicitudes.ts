@@ -17,6 +17,8 @@ export async function aprobarSolicitud(params: {
   contacto_emergencia_nombre: string
   contacto_emergencia_telefono: string
   indicaciones_medicas: string
+  talla_polera: string
+  talla_short: string
   password: string
   categoria: string
   tipo_plan: string
@@ -35,6 +37,7 @@ export async function aprobarSolicitud(params: {
     solicitudId, nombre, rut, email, telefono,
     fecha_nacimiento, direccion, comuna,
     contacto_emergencia_nombre, contacto_emergencia_telefono, indicaciones_medicas,
+    talla_polera, talla_short,
     password, bloqueIds,
     ...planFields
   } = params
@@ -64,6 +67,8 @@ export async function aprobarSolicitud(params: {
     contacto_emergencia_nombre: contacto_emergencia_nombre || null,
     contacto_emergencia_telefono: contacto_emergencia_telefono || null,
     indicaciones_medicas: indicaciones_medicas || null,
+    talla_polera: talla_polera || null,
+    talla_short: talla_short || null,
     ...planFields,
     sesiones_usadas: 0,
     estado: 'activo',

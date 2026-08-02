@@ -21,6 +21,7 @@ import { asignarBloquesJugador } from '@/app/actions/horario'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 
 const supabase = createClient()
 
@@ -99,7 +100,7 @@ export default function JugadorDetallePage() {
   const [errorCarga, setErrorCarga] = useState('')
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
-  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null })
+  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null, talla_polera:'', talla_short:'' })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'' })
   const [editDias, setEditDias] = useState(false)
   // Los días salen de los bloques a los que está inscrito, no de casillas
@@ -158,7 +159,7 @@ export default function JugadorDetallePage() {
 
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado').eq('id', jugadorId).single(),
+          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           perfil.rol === 'admin'
@@ -268,6 +269,8 @@ export default function JugadorDetallePage() {
       contacto_emergencia_telefono: jugador?.contacto_emergencia_telefono || '',
       indicaciones_medicas: jugador?.indicaciones_medicas || '',
       federado: jugador?.federado ?? null,
+      talla_polera: jugador?.talla_polera || '',
+      talla_short: jugador?.talla_short || '',
     })
     setDatosError('')
     setEditContacto(true)
@@ -300,6 +303,8 @@ export default function JugadorDetallePage() {
       contacto_emergencia_telefono: contactoForm.contacto_emergencia_telefono?.trim() || null,
       indicaciones_medicas: contactoForm.indicaciones_medicas?.trim() || null,
       federado: contactoForm.federado,
+      talla_polera: contactoForm.talla_polera || null,
+      talla_short: contactoForm.talla_short || null,
     }
     const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
     if (error) {
@@ -911,6 +916,9 @@ export default function JugadorDetallePage() {
             <InfoRow label="Sede" value={sedeLabel(jugador.sede)} />
             {jugador.horario && <InfoRow label="Horario" value={jugador.horario} />}
             {esClubBuin && <InfoRow label="Federado" value={jugador.federado ? 'Sí' : jugador.federado === false ? 'No' : '—'} />}
+            {(jugador.talla_polera || jugador.talla_short) && (
+              <InfoRow label="Tallas" value={[jugador.talla_polera && `Polera ${jugador.talla_polera}`, jugador.talla_short && `Short ${jugador.talla_short}`].filter(Boolean).join(' · ')} />
+            )}
             {(() => {
               // Si el número no es un celular chileno válido no se muestra el
               // botón: abría WhatsApp diciendo que el número no existe.
@@ -1188,6 +1196,21 @@ export default function JugadorDetallePage() {
                   </FormField>
                   <FormField label="Comuna">
                     <input style={inputStyle} value={contactoForm.comuna} onChange={e => setContactoForm(f => ({ ...f, comuna: e.target.value }))} />
+                  </FormField>
+                </div>
+
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <FormField label="Talla polera">
+                    <select style={inputStyle} value={contactoForm.talla_polera} onChange={e => setContactoForm(f => ({ ...f, talla_polera: e.target.value }))}>
+                      <option value="">No especificada</option>
+                      {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </FormField>
+                  <FormField label="Talla short">
+                    <select style={inputStyle} value={contactoForm.talla_short} onChange={e => setContactoForm(f => ({ ...f, talla_short: e.target.value }))}>
+                      <option value="">No especificada</option>
+                      {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </FormField>
                 </div>
 

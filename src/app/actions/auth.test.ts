@@ -40,6 +40,8 @@ describe('registrarSolicitud', () => {
       p_apellido1: 'Seguro',
       p_apellido2: 'Test',
       p_apellido3: 'no',
+      p_talla_polera: null,
+      p_talla_short: null,
     })
   })
 })

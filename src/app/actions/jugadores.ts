@@ -31,6 +31,8 @@ type DatosExtendidos = {
   apellido1?: string | null
   apellido2?: string | null
   apellido3?: string | null
+  talla_polera?: string | null
+  talla_short?: string | null
 }
 
 export async function crearJugador(params: {

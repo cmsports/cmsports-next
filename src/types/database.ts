@@ -197,6 +197,8 @@ export interface Database {
           apellido2: string | null
           apellido3: string | null
           sede: string | null
+          talla_polera: string | null
+          talla_short: string | null
         }
         Insert: {
           id?: string
@@ -231,6 +233,8 @@ export interface Database {
           apellido2?: string | null
           apellido3?: string | null
           sede?: string | null
+          talla_polera?: string | null
+          talla_short?: string | null
         }
         Update: {
           id?: string
@@ -265,6 +269,8 @@ export interface Database {
           apellido2?: string | null
           apellido3?: string | null
           sede?: string | null
+          talla_polera?: string | null
+          talla_short?: string | null
         }
         Relationships: [
           { foreignKeyName: 'jugadores_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
@@ -963,6 +969,8 @@ export interface Database {
           observaciones: string | null
           corregida_en: string | null
           veces_corregida: number
+          talla_polera: string | null
+          talla_short: string | null
         }
         Insert: {
           id?: string
@@ -991,6 +999,8 @@ export interface Database {
           apellido1?: string | null
           apellido2?: string | null
           apellido3?: string | null
+          talla_polera?: string | null
+          talla_short?: string | null
         }
         Update: {
           id?: string
@@ -1019,6 +1029,8 @@ export interface Database {
           observaciones?: string | null
           corregida_en?: string | null
           veces_corregida?: number
+          talla_polera?: string | null
+          talla_short?: string | null
         }
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },

@@ -17,6 +17,7 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import { montoIngresado } from '@/lib/domain/mensualidades'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
+import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 
 const CLUB_BUIN_ID = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
 
@@ -36,7 +37,7 @@ async function obtenerSolicitudes(clubId: string) {
   }
   const codigo = invitaciones?.[0]?.codigo || ''
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,nombres,apellido1,apellido2,apellido3').eq('club_id', clubId).order('creado_en', { ascending: false })
+  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,nombres,apellido1,apellido2,apellido3,talla_polera,talla_short').eq('club_id', clubId).order('creado_en', { ascending: false })
   return { link: `${origin}/registro?club=${clubId}&code=${codigo}`, solicitudes: solicitudes || [] }
 }
 
@@ -72,6 +73,7 @@ export default function SolicitudesPage() {
     fecha_nacimiento: '', direccion: '', comuna: '',
     contacto_emergencia_nombre: '', contacto_emergencia_telefono: '',
     indicaciones_medicas: '', password: '', passwordConfirm: '',
+    talla_polera: '', talla_short: '',
   })
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '' })
   // Los grupos se eligen al aprobar: si entra sin bloque queda invisible para
@@ -148,6 +150,8 @@ export default function SolicitudesPage() {
       contacto_emergencia_nombre: infoForm.contacto_emergencia_nombre,
       contacto_emergencia_telefono: infoForm.contacto_emergencia_telefono,
       indicaciones_medicas: infoForm.indicaciones_medicas,
+      talla_polera: infoForm.talla_polera,
+      talla_short: infoForm.talla_short,
       password: infoForm.password,
       categoria: planForm.categoria,
       tipo_plan: planForm.tipo_plan,
@@ -294,6 +298,8 @@ export default function SolicitudesPage() {
                               contacto_emergencia_nombre: s.contacto_emergencia_nombre || '',
                               contacto_emergencia_telefono: s.contacto_emergencia_telefono || '',
                               indicaciones_medicas: s.indicaciones_medicas || '',
+                              talla_polera: s.talla_polera || '',
+                              talla_short: s.talla_short || '',
                               password: '',
                               passwordConfirm: '',
                             })
@@ -386,6 +392,24 @@ export default function SolicitudesPage() {
               <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Dirección</label>
               <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
                 value={infoForm.direccion} onChange={e => setInfoForm(f => ({ ...f, direccion: e.target.value }))} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Talla polera</label>
+                <select style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.talla_polera} onChange={e => setInfoForm(f => ({ ...f, talla_polera: e.target.value }))}>
+                  <option value="">No especificada</option>
+                  {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Talla short</label>
+                <select style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  value={infoForm.talla_short} onChange={e => setInfoForm(f => ({ ...f, talla_short: e.target.value }))}>
+                  <option value="">No especificada</option>
+                  {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
             </div>
 
             {/* SECCIÓN: Emergencia */}

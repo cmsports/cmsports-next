@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { formatRut, rutValido } from '@/lib/rut'
 import { Suspense } from 'react'
 import { registrarSolicitud } from '@/app/actions/auth'
+import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 
 const text = '#0f172a'
 const muted = '#64748b'
@@ -78,6 +79,7 @@ function RegistroForm() {
     fecha_nacimiento: '', direccion: '', comuna: '',
     contacto_emergencia_nombre: '', contacto_emergencia_telefono: '',
     indicaciones_medicas: '',
+    talla_polera: '', talla_short: '',
   })
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState('')
@@ -165,6 +167,8 @@ function RegistroForm() {
       contacto_emergencia_nombre: form.contacto_emergencia_nombre || undefined,
       contacto_emergencia_telefono: form.contacto_emergencia_telefono || undefined,
       indicaciones_medicas: form.indicaciones_medicas || undefined,
+      talla_polera: form.talla_polera || undefined,
+      talla_short: form.talla_short || undefined,
     })
     if (result.error) { setError(result.error); setEnviando(false); return }
     setEnviado(true)
@@ -290,6 +294,23 @@ function RegistroForm() {
               <label style={labelStyle}>Comuna *</label>
               <input style={inputStyle} type="text" placeholder="Buín"
                 value={form.comuna} onChange={e => set('comuna', e.target.value)} />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+            <div>
+              <label style={labelStyle}>Talla polera</label>
+              <select style={inputStyle} value={form.talla_polera} onChange={e => set('talla_polera', e.target.value)}>
+                <option value="">No especificada</option>
+                {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Talla short</label>
+              <select style={inputStyle} value={form.talla_short} onChange={e => set('talla_short', e.target.value)}>
+                <option value="">No especificada</option>
+                {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
             </div>
           </div>
 

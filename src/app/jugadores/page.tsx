@@ -15,6 +15,7 @@ import { firmarUrls } from '@/lib/supabase/privado'
 import FiltroMultiSelect, { setToggle, setDesdeParam } from '@/components/FiltroMultiSelect'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
+import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 
 const supabase = createClient()
 
@@ -59,6 +60,7 @@ export default function JugadoresPage() {
     mensualidad:'',
     fecha_nacimiento:'', direccion:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'',
     indicaciones_medicas:'', federado:false, comuna:'',
+    talla_polera:'', talla_short:'',
   }
   const [form, setForm] = useState(formVacio)
   const [clubNombre, setClubNombre] = useState('')
@@ -111,7 +113,7 @@ export default function JugadoresPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase as any)
         .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,talla_polera,talla_short')
         .eq('club_id', id)
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre')
@@ -161,7 +163,7 @@ export default function JugadoresPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
       .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,talla_polera,talla_short')
       .eq('club_id', id)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre')
@@ -268,6 +270,7 @@ export default function JugadoresPage() {
       fecha_nacimiento:j.fecha_nacimiento||'', direccion:j.direccion||'',
       contacto_emergencia_nombre:j.contacto_emergencia_nombre||'', contacto_emergencia_telefono:j.contacto_emergencia_telefono||'',
       indicaciones_medicas:j.indicaciones_medicas||'', federado:!!j.federado, comuna:j.comuna||'',
+      talla_polera:j.talla_polera||'', talla_short:j.talla_short||'',
     })
     setModalOpen(true)
   }
@@ -303,6 +306,8 @@ export default function JugadoresPage() {
       indicaciones_medicas: form.indicaciones_medicas.trim() || null,
       federado: form.federado,
       comuna: form.comuna.trim() || null,
+      talla_polera: form.talla_polera || null,
+      talla_short: form.talla_short || null,
     }
 
     if (editando) {
@@ -766,6 +771,28 @@ export default function JugadoresPage() {
                   type="text" placeholder="Alergias, lesiones, tratamientos..."
                   value={form.indicaciones_medicas} onChange={e => setForm(prev => ({ ...prev, indicaciones_medicas: e.target.value }))}
                 />
+              </div>
+              <div style={{ display:'flex', gap:10, marginBottom:14 }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Talla polera</label>
+                  <select
+                    style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                    value={form.talla_polera} onChange={e => setForm(prev => ({ ...prev, talla_polera: e.target.value }))}
+                  >
+                    <option value="">No especificada</option>
+                    {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Talla short</label>
+                  <select
+                    style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                    value={form.talla_short} onChange={e => setForm(prev => ({ ...prev, talla_short: e.target.value }))}
+                  >
+                    <option value="">No especificada</option>
+                    {TALLAS_UNIFORME.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
               </div>
               <label style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14, fontSize:13, color: text, cursor:'pointer' }}>
                 <input type="checkbox" checked={form.federado} onChange={e => setForm(prev => ({ ...prev, federado: e.target.checked }))} />

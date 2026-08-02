@@ -40,6 +40,7 @@ describe('aprobarSolicitud', () => {
     solicitudId: 'solicitud-id', nombre: 'Pedrito', rut: '12345678-9', email: ' PEDRITO@EMAIL.CL ', telefono: '+56911111111',
     fecha_nacimiento: '2015-05-01', direccion: 'Calle Falsa 123', comuna: 'Buin',
     contacto_emergencia_nombre: 'Mamá Pedrito', contacto_emergencia_telefono: '+56922222222', indicaciones_medicas: '',
+    talla_polera: '', talla_short: '',
     password: 'clave123',
     categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: 2, mensualidad: 25000, sesiones_limite: 8,
     bloqueIds: [],
