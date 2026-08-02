@@ -154,12 +154,12 @@ export default function MarcasAuspiciadores({ clubId, esStaff, borderColor }: {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                 {descuentos.map(v => (
-                  <div key={v.id} style={{ border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', position: 'relative', opacity: v.activo ? 1 : 0.5 }}>
+                  <div key={v.id} style={{ border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', position: 'relative', opacity: v.activo ? 1 : 0.5, background: '#f4f7fa' }}>
                     <img
                       src={v.imagen_url}
                       alt={v.nombre}
                       onClick={() => setZoom(v)}
-                      style={{ width: '100%', aspectRatio: '3/4', objectFit: 'cover', cursor: 'zoom-in', display: 'block' }}
+                      style={{ width: '100%', aspectRatio: '3/4', objectFit: 'contain', cursor: 'zoom-in', display: 'block' }}
                     />
                     {esStaff && (
                       <button
