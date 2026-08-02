@@ -492,8 +492,18 @@ export default function LigaDetallePage() {
     const res = await generarProgramacionLiga({ ligaId })
     setProgramando(false)
     if (res.error) { setMensaje(res.error); return }
-    const extra = (res.totalSinProgramar ?? 0) > 0 ? ` · ${res.totalSinProgramar} sin programar (irán a Fecha ajuste)` : ''
-    setMensaje(`Programación lista: ${res.totalProgramados ?? 0} partidos asignados${extra}`)
+    // Si sobran partidos NO es que el algoritmo los mandó al reajuste: es que
+    // no alcanzan los bloques disponibles (fechas × horario) para todos. Hay
+    // que decirlo así, con la salida concreta, en vez de disfrazarlo.
+    const sinProgramar = res.totalSinProgramar ?? 0
+    if (sinProgramar > 0) {
+      setMensaje(
+        `Se programaron ${res.totalProgramados ?? 0} partidos, pero ${sinProgramar} no caben en el horario disponible. ` +
+        `Agregá fechas o ampliá el horario de juego, y volvé a programar.`,
+      )
+    } else {
+      setMensaje(`Programación lista: ${res.totalProgramados ?? 0} partidos asignados`)
+    }
     setProgramacionKey(k => k + 1)
     cargar()
   }

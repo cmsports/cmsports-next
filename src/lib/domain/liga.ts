@@ -360,17 +360,53 @@ function resolverOrdenFecha(
   return dfs(0) ? secuencia.map(i => partidos[i]) : null
 }
 
+// Tope de partidos que un jugador juega en una misma fecha. Más que esto
+// alarga su permanencia aunque el hueco entre partidos siga siendo chico.
+const MAX_PARTIDOS_POR_JUGADOR_POR_FECHA = 3
+
+function partidosDeJugadorEnFecha(fecha: PartidoAProgramar[], jugadorId: string): number {
+  let n = 0
+  for (const p of fecha) if (p.jugadorAId === jugadorId || p.jugadorBId === jugadorId) n++
+  return n
+}
+
+/**
+ * ¿Puede esta fecha recibir el partido? Devuelve el orden completo ya
+ * verificado si sí, o null si no (por cupo de mesa, por tope del jugador, o
+ * porque el conjunto resultante no admitiría ningún orden válido).
+ */
+function admiteEnFecha(
+  fecha: PartidoAProgramar[],
+  p: PartidoAProgramar,
+  capacidad: number,
+): PartidoAProgramar[] | null {
+  if (fecha.length >= capacidad) return null
+  if (partidosDeJugadorEnFecha(fecha, p.jugadorAId) >= MAX_PARTIDOS_POR_JUGADOR_POR_FECHA) return null
+  if (partidosDeJugadorEnFecha(fecha, p.jugadorBId) >= MAX_PARTIDOS_POR_JUGADOR_POR_FECHA) return null
+  return resolverOrdenFecha([...fecha, p])
+}
+
 /**
  * Programa una división completa en su mesa asignada.
  *
- * Cada partido se prueba contra las fechas ordenadas por balance (primero
- * aquella donde ambos jugadores tienen menos partidos) y se queda en la
- * PRIMERA que, con el partido adentro, siga admitiendo un orden válido según
- * `resolverOrdenFecha`. Si ninguna lo admite, el partido va a `sinAsignar`
- * para el reajuste manual.
+ * Objetivo: programar TODOS los partidos. La fecha de ajuste existe para que
+ * el admin patee partidos a mano cuando pasa algo, no para que el algoritmo
+ * deje afuera lo que no supo acomodar. `sinAsignar` sólo debería salir con
+ * algo cuando no alcanzan físicamente los bloques (fechas × bloques por
+ * fecha < partidos), y eso es un problema de configuración que hay que
+ * avisarle al admin.
  *
- * Consecuencia: todo partido que aparece en `programados` cumple la regla de
- * hueco máximo. Nunca se emite un horario que la viole.
+ * Dos fases:
+ *   1. Colocación: cada partido va a la primera fecha (ordenadas por menos
+ *      carga de ambos jugadores, y a igualdad la menos llena) que lo admita
+ *      manteniendo un orden válido.
+ *   2. Reparación por desalojo: para lo que quedó afuera, se busca una fecha
+ *      f y un partido q suyo tal que f admita el nuevo sin q, y q encuentre
+ *      lugar en otra fecha g. Rescata los casos que la fase 1, que nunca
+ *      deshace lo ya decidido, no puede resolver sola.
+ *
+ * Todo partido en `programados` cumple la regla de hueco máximo: no se emite
+ * un horario que la viole.
  */
 export function programarDivision(
   partidos: PartidoAProgramar[],
@@ -386,36 +422,68 @@ export function programarDivision(
   // Orden ya verificado de cada fecha — se reusa tal cual al emitir, para que
   // el horario final sea exactamente el que el solver validó.
   const ordenDeFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
-  const conteoFechaJugador = new Map<string, number>() // "jugador::fecha" -> count
-  const sinAsignar: PartidoAProgramar[] = []
+  const pendientes: PartidoAProgramar[] = []
 
+  // ── Fase 1: colocación ──────────────────────────────────────────────────
   for (const p of partidos) {
-    const candidatas: Array<{ fecha: number; score: number }> = []
+    const candidatas: Array<{ fecha: number; carga: number; ocupacion: number }> = []
     for (let f = 0; f < numFechas; f++) {
-      if (porFecha[f].length >= capacidad) continue
-      const cuentaA = conteoFechaJugador.get(`${p.jugadorAId}::${f}`) ?? 0
-      const cuentaB = conteoFechaJugador.get(`${p.jugadorBId}::${f}`) ?? 0
-      // Tope de 3 partidos por jugador por fecha: más que eso alarga la
-      // permanencia aunque el hueco entre partidos siga siendo chico.
-      if (cuentaA >= 3 || cuentaB >= 3) continue
-      candidatas.push({ fecha: f, score: cuentaA + cuentaB })
+      candidatas.push({
+        fecha: f,
+        carga: partidosDeJugadorEnFecha(porFecha[f], p.jugadorAId) + partidosDeJugadorEnFecha(porFecha[f], p.jugadorBId),
+        ocupacion: porFecha[f].length,
+      })
     }
-    // Menor score primero = fecha donde ambos jugadores están menos cargados.
-    candidatas.sort((x, y) => x.score - y.score)
+    // Primero donde ambos jugadores estén menos cargados; a igual carga, la
+    // fecha menos llena — repartir parejo deja más margen para los últimos
+    // partidos, que son los difíciles de acomodar.
+    candidatas.sort((x, y) => x.carga - y.carga || x.ocupacion - y.ocupacion)
 
     let colocado = false
     for (const { fecha } of candidatas) {
-      const tentativa = [...porFecha[fecha], p]
-      const orden = resolverOrdenFecha(tentativa)
-      if (!orden) continue // esta fecha quedaría sin orden válido: probar la siguiente
-      porFecha[fecha] = tentativa
+      const orden = admiteEnFecha(porFecha[fecha], p, capacidad)
+      if (!orden) continue
+      porFecha[fecha] = [...porFecha[fecha], p]
       ordenDeFecha[fecha] = orden
-      conteoFechaJugador.set(`${p.jugadorAId}::${fecha}`, (conteoFechaJugador.get(`${p.jugadorAId}::${fecha}`) ?? 0) + 1)
-      conteoFechaJugador.set(`${p.jugadorBId}::${fecha}`, (conteoFechaJugador.get(`${p.jugadorBId}::${fecha}`) ?? 0) + 1)
       colocado = true
       break
     }
-    if (!colocado) sinAsignar.push(p)
+    if (!colocado) pendientes.push(p)
+  }
+
+  // ── Fase 2: reparación por desalojo ─────────────────────────────────────
+  // Un desalojo mueve q de f a g, así que necesita al menos una fecha con
+  // hueco libre. Si no queda ninguna, el problema es de capacidad (no entran
+  // los partidos en los bloques disponibles) y ninguna reordenación lo
+  // arregla — no vale la pena ni intentarlo.
+  const hayEspacioLibre = () => porFecha.some(f => f.length < capacidad)
+
+  const sinAsignar: PartidoAProgramar[] = []
+  for (const p of pendientes) {
+    let resuelto = false
+    if (hayEspacioLibre()) {
+      for (let f = 0; f < numFechas && !resuelto; f++) {
+        for (const q of porFecha[f]) {
+          const fechaSinQ = porFecha[f].filter(x => x.id !== q.id)
+          const ordenF = admiteEnFecha(fechaSinQ, p, capacidad)
+          if (!ordenF) continue
+          // p entra en f si sacamos q; ahora hay que reubicar q en otra fecha.
+          for (let g = 0; g < numFechas; g++) {
+            if (g === f || porFecha[g].length >= capacidad) continue
+            const ordenG = admiteEnFecha(porFecha[g], q, capacidad)
+            if (!ordenG) continue
+            porFecha[f] = [...fechaSinQ, p]
+            ordenDeFecha[f] = ordenF
+            porFecha[g] = [...porFecha[g], q]
+            ordenDeFecha[g] = ordenG
+            resuelto = true
+            break
+          }
+          if (resuelto) break
+        }
+      }
+    }
+    if (!resuelto) sinAsignar.push(p)
   }
 
   const programados: PartidoProgramado[] = []

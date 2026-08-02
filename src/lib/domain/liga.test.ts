@@ -204,4 +204,26 @@ describe('programarDivision — garantía de hueco máximo', () => {
       }
     }
   })
+
+  // La fecha de ajuste es para que el admin patee partidos a mano cuando pasa
+  // algo, NO para que el algoritmo deje afuera lo que no supo acomodar. Si los
+  // bloques alcanzan, se programa todo.
+  describe('no manda partidos al reajuste si hay capacidad', () => {
+    const conCapacidad = casos.filter(([n, fechas]) => {
+      const totalPartidos = (n * (n - 1)) / 2
+      return fechas * bloques.length >= totalPartidos
+    })
+
+    it.each(conCapacidad)('%i jugadores en %i fechas: todos los partidos quedan programados', (n, fechas) => {
+      const { sinAsignar, programados, totalPartidos } = programar(n, fechas)
+      expect(sinAsignar, `quedaron ${sinAsignar.length} sin programar`).toHaveLength(0)
+      expect(programados).toHaveLength(totalPartidos)
+    })
+
+    it('el caso que falló en producción (12 jugadores, 5 fechas) programa los 66', () => {
+      const { programados, sinAsignar } = programar(12, 5)
+      expect(sinAsignar).toHaveLength(0)
+      expect(programados).toHaveLength(66)
+    })
+  })
 })
