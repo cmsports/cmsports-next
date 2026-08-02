@@ -15,8 +15,10 @@ import {
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
+import ModalCrearFeedback from '@/components/ModalCrearFeedback'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { MessageSquare } from 'lucide-react'
 
 const supabase = createClient()
 
@@ -82,6 +84,7 @@ export default function DashboardPage() {
   const [errorDatos, setErrorDatos] = useState(false)
   const [ddOpen, setDdOpen]         = useState(false)
   const [retencionOpen, setRetencionOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [tooltip, setTooltip]       = useState<string | null>(null)
   const router = useRouter()
 
@@ -552,7 +555,28 @@ export default function DashboardPage() {
             </span>
           </div>
         </Link>
+
+        {/* Crear feedback — comentario rápido a un alumno, sin salir del dashboard. */}
+        {tiene('feedback') && (
+          <div onClick={() => setFeedbackOpen(true)}
+            style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <MessageSquare size={15} color={C.skyD} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📝 Crear feedback</span>
+            </div>
+            <p style={{ fontSize: 12, color: C.muted, margin: '0 0 10px' }}>
+              Deja un comentario rápido a un alumno: fecha, hora y observación.
+            </p>
+            <span style={{ display: 'inline-block', background: C.skyL, color: C.skyD, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600 }}>
+              Escribir →
+            </span>
+          </div>
+        )}
       </div>
+
+      {feedbackOpen && perfil?.club_id && (
+        <ModalCrearFeedback clubId={perfil.club_id} onClose={() => setFeedbackOpen(false)} />
+      )}
 
       {/* ── Modal retención ── */}
       {retencionOpen && (

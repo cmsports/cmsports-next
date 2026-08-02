@@ -9,9 +9,10 @@ export type Modulo =
   | 'asistencia' | 'mensualidades' | 'finanzas'
   | 'tienda'
   | 'tienda_buin' | 'tienda_asociacion' | 'bibliografia' | 'libro_profe'
+  | 'feedback'
 
 const CORE: readonly string[] = ['dashboard', 'jugadores']
-const ALL_MODULOS: Modulo[] = ['torneos','liga','clases','calendario','asistencia','mensualidades','finanzas','tienda','tienda_buin','tienda_asociacion','bibliografia','libro_profe']
+const ALL_MODULOS: Modulo[] = ['torneos','liga','clases','calendario','asistencia','mensualidades','finanzas','tienda','tienda_buin','tienda_asociacion','bibliografia','libro_profe','feedback']
 
 type ModulosContextValue = {
   modulos: string[]

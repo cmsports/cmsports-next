@@ -13,10 +13,13 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { useModulos } from '@/lib/hooks/useModulos'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { diaDesdeFecha, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { useEnVivo } from '@/lib/useEnVivo'
+import ModalCrearFeedback from '@/components/ModalCrearFeedback'
+import { MessageSquare } from 'lucide-react'
 
 const supabase = createClient()
 
@@ -39,8 +42,10 @@ const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', '
 
 export default function DashboardProfesorPage() {
   const { perfil, loading: authLoading } = usePerfil()
+  const { tiene } = useModulos()
   const [bloques, setBloques] = useState<Bloque[]>([])
   const [loading, setLoading] = useState(true)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const router = useRouter()
 
   const ahora = new Date()
@@ -131,6 +136,28 @@ export default function DashboardProfesorPage() {
           {bloques.length > 0 && ` · ${bloques.length} grupo${bloques.length === 1 ? '' : 's'} · ${totalAlumnos} alumnos`}
         </div>
       </div>
+
+      {tiene('feedback') && (
+        <div onClick={() => setFeedbackOpen(true)}
+          style={{ ...card, padding: '14px 18px', marginBottom: 16, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <MessageSquare size={18} color="#4f46e5" />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: text }}>📝 Crear feedback</div>
+              <div style={{ fontSize: 11, color: muted }}>Deja un comentario rápido a un alumno</div>
+            </div>
+          </div>
+          <span style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
+            borderRadius: 8, padding: '7px 13px', fontSize: 12, fontWeight: 700 }}>
+            Escribir →
+          </span>
+        </div>
+      )}
+
+      {feedbackOpen && perfil?.club_id && (
+        <ModalCrearFeedback clubId={perfil.club_id} onClose={() => setFeedbackOpen(false)} />
+      )}
 
       {bloques.length === 0 ? (
         <div style={{ ...card, padding: 34, textAlign: 'center' }}>

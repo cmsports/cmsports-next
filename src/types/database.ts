@@ -1630,6 +1630,48 @@ export interface Database {
           { foreignKeyName: 'jugador_documentos_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
+      feedback_jugadores: {
+        Row: {
+          id: string
+          club_id: string
+          jugador_id: string
+          autor_id: string | null
+          autor_nombre: string
+          fecha: string
+          hora: string | null
+          comentario: string
+          creado_en: string
+          editado_en: string | null
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          jugador_id: string
+          autor_id?: string | null
+          autor_nombre: string
+          fecha: string
+          hora?: string | null
+          comentario: string
+          creado_en?: string
+          editado_en?: string | null
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          jugador_id?: string
+          autor_id?: string | null
+          autor_nombre?: string
+          fecha?: string
+          hora?: string | null
+          comentario?: string
+          creado_en?: string
+          editado_en?: string | null
+        }
+        Relationships: [
+          { foreignKeyName: 'feedback_jugadores_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+          { foreignKeyName: 'feedback_jugadores_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
+      }
       bloques_horario: {
         Row: {
           id: string
