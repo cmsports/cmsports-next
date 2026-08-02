@@ -581,12 +581,28 @@ function admiteEnFecha(
 export function programarDivision(
   partidos: PartidoAProgramar[],
   jugadorIds: string[],
-  numFechas: number,
+  fechasDisponibles: number | number[],
   bloques: string[],
   mesaNumero: number,
   restricciones: RestriccionDisponibilidad[] = [],
 ): { programados: PartidoProgramado[]; sinAsignar: PartidoSinAsignar[] } {
   if (partidos.length === 0) return { programados: [], sinAsignar: [] }
+
+  // Un número significa "las fechas 1 a N" (la programación inicial). Una
+  // lista son los números reales de las fechas que se pueden usar, que es lo
+  // que hace falta al reprogramar a mitad de liga: si ya se jugaron la 1, 2 y
+  // 3, hay que repartir en la 4, 5 y 6 — y las restricciones hablan de ESOS
+  // números, no de "la primera fecha disponible".
+  const numerosDeFecha = Array.isArray(fechasDisponibles)
+    ? fechasDisponibles
+    : Array.from({ length: fechasDisponibles }, (_, i) => i + 1)
+  const numFechas = numerosDeFecha.length
+  if (numFechas === 0) {
+    return {
+      programados: [],
+      sinAsignar: partidos.map(p => ({ ...p, motivo: 'sin_espacio' as const, jugadoresConRestriccion: [] })),
+    }
+  }
 
   const capacidad = bloques.length
   const porFecha: PartidoAProgramar[][] = Array.from({ length: numFechas }, () => [])
@@ -612,7 +628,7 @@ export function programarDivision(
 
     let colocado = false
     for (const { fecha } of candidatas) {
-      const slots = admiteEnFecha(porFecha[fecha], p, bloques, fecha + 1, restricciones)
+      const slots = admiteEnFecha(porFecha[fecha], p, bloques, numerosDeFecha[fecha], restricciones)
       if (!slots) continue
       porFecha[fecha] = [...porFecha[fecha], p]
       slotsDeFecha[fecha] = slots
@@ -639,12 +655,12 @@ export function programarDivision(
         for (const q of porFecha[f]) {
           if (++intentosReparacion > PRESUPUESTO_REPARACION) break
           const fechaSinQ = porFecha[f].filter(x => x.id !== q.id)
-          const slotsF = admiteEnFecha(fechaSinQ, p, bloques, f + 1, restricciones)
+          const slotsF = admiteEnFecha(fechaSinQ, p, bloques, numerosDeFecha[f], restricciones)
           if (!slotsF) continue
           // p entra en f si sacamos q; ahora hay que reubicar q en otra fecha.
           for (let g = 0; g < numFechas; g++) {
             if (g === f || porFecha[g].length >= capacidad) continue
-            const slotsG = admiteEnFecha(porFecha[g], q, bloques, g + 1, restricciones)
+            const slotsG = admiteEnFecha(porFecha[g], q, bloques, numerosDeFecha[g], restricciones)
             if (!slotsG) continue
             porFecha[f] = [...fechaSinQ, p]
             slotsDeFecha[f] = slotsF
@@ -678,7 +694,7 @@ export function programarDivision(
       if (!p) continue // bloque libre (puede pasar por restricciones horarias)
       programados.push({
         ...p,
-        fechaNumero: i + 1,
+        fechaNumero: numerosDeFecha[i],
         mesaNumero,
         bloqueHorario: bloques[b],
         arbitroId: null,

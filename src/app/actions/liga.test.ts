@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeSupabase } from '@/lib/test/fakeSupabase'
 
 const mocks = vi.hoisted(() => ({ requireAdminClub: vi.fn() }))
 vi.mock('@/lib/auth/require', () => ({ requireAdminClub: mocks.requireAdminClub }))
@@ -8,6 +9,9 @@ import {
   crearLiga,
   generarFixtureDivisionAction,
   registrarWalkover,
+  retirarJugadorDeLiga,
+  guardarRestriccionesLiga,
+  reprogramarFechasPendientes,
 } from './liga'
 
 describe('acciones críticas de liga', () => {
@@ -62,5 +66,191 @@ describe('acciones críticas de liga', () => {
 
     expect(resultado).toEqual({ error: 'Este partido ya fue resuelto' })
     expect(updateChain.not).toHaveBeenCalledWith('estado', 'in', '("finalizado","walkover")')
+  })
+})
+
+// El retiro toca partidos de verdad y no se deshace solo, así que lo que
+// importa verificar es a quién le da los puntos y qué NO toca.
+describe('retirarJugadorDeLiga', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  function conPendientes(pendientes: Array<{ id: string; jugador_a_id: string; jugador_b_id: string }>) {
+    const fake = fakeSupabase({ liga_partidos: pendientes })
+    mocks.requireAdminClub.mockResolvedValue({
+      error: null, supabase: fake.cliente, clubId: 'club-1', userId: 'u1',
+    })
+    return fake
+  }
+
+  it('en walkover el partido se lo lleva el rival, nunca el que se retira', async () => {
+    const fake = conPendientes([
+      { id: 'p1', jugador_a_id: 'j1', jugador_b_id: 'rival-A' },
+      { id: 'p2', jugador_a_id: 'rival-B', jugador_b_id: 'j1' },
+    ])
+
+    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'walkover' })
+
+    expect(res).toMatchObject({ success: true, partidosAfectados: 2 })
+    const wo = fake.escrituras('liga_partidos').filter(e => e.estado === 'walkover')
+    expect(wo.map(e => e.ganador_id)).toEqual(['rival-A', 'rival-B'])
+    expect(wo.map(e => e.ganador_id)).not.toContain('j1')
+  })
+
+  it('en modo eliminar borra los pendientes en vez de darlos por ganados', async () => {
+    const fake = conPendientes([{ id: 'p1', jugador_a_id: 'j1', jugador_b_id: 'rival-A' }])
+
+    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'eliminar' })
+
+    expect(res).toMatchObject({ success: true, partidosAfectados: 1 })
+    const escrito = fake.escrituras('liga_partidos')
+    expect(escrito.some(e => e.estado === 'walkover')).toBe(false)
+    expect(escrito.some(e => e.deleted_at)).toBe(true)
+  })
+
+  it('deja marcado el retiro para que no vuelva a entrar en el horario', async () => {
+    const fake = conPendientes([])
+
+    await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'walkover' })
+
+    // Restricción total: ninguna fecha, ninguna hora.
+    expect(fake.escrituras('liga_restricciones')[0]).toMatchObject({
+      liga_id: 'liga-1', jugador_id: 'j1',
+      fecha_numero: null, hora_desde: null, hora_hasta: null, motivo: 'retiro',
+    })
+  })
+
+  it('no escribe nada sobre los partidos si no quedaban pendientes', async () => {
+    const fake = conPendientes([])
+
+    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'eliminar' })
+
+    expect(res).toMatchObject({ partidosAfectados: 0 })
+    expect(fake.escrituras('liga_partidos')).toHaveLength(0)
+  })
+
+  it('corta sin autorización', async () => {
+    mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
+    await expect(retirarJugadorDeLiga({ ligaId: 'l', jugadorId: 'j', modo: 'walkover' }))
+      .resolves.toEqual({ error: 'Acceso denegado' })
+  })
+})
+
+describe('guardarRestriccionesLiga', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('no borra los retiros al reemplazar el resto de las restricciones', async () => {
+    // Hace falta ver el filtro del borrado, así que acá sí se arma la cadena.
+    const bajaChain: any = {
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      or: vi.fn().mockResolvedValue({ error: null }),
+    }
+    const supabase = {
+      from: vi.fn(() => ({
+        update: vi.fn(() => bajaChain),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase, clubId: 'club-1', userId: 'u1' })
+
+    await guardarRestriccionesLiga({ ligaId: 'liga-1', restricciones: [] })
+
+    expect(bajaChain.or).toHaveBeenCalledWith('motivo.is.null,motivo.neq.retiro')
+  })
+
+  it('guarda lo que le mandan, con quién lo cargó', async () => {
+    const fake = fakeSupabase()
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: fake.cliente, clubId: 'club-1', userId: 'u1' })
+
+    await guardarRestriccionesLiga({
+      ligaId: 'liga-1',
+      restricciones: [{ jugadorId: 'j1', fechaNumero: 3, horaDesde: null, horaHasta: null }],
+    })
+
+    expect(fake.escrituras('liga_restricciones')).toContainEqual(
+      expect.objectContaining({ jugador_id: 'j1', fecha_numero: 3, creado_por: 'u1' }),
+    )
+  })
+
+  it('rechaza un horario al revés en vez de guardar algo injugable', async () => {
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: {}, clubId: 'club-1', userId: 'u1' })
+
+    const res = await guardarRestriccionesLiga({
+      ligaId: 'liga-1',
+      restricciones: [{ jugadorId: 'j1', fechaNumero: null, horaDesde: '15:00', horaHasta: '10:00' }],
+    })
+
+    expect(res.error).toMatch(/al rev/i)
+  })
+
+  it('corta sin autorización', async () => {
+    mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
+    await expect(guardarRestriccionesLiga({ ligaId: 'l', restricciones: [] }))
+      .resolves.toEqual({ error: 'Acceso denegado' })
+  })
+})
+
+describe('reprogramarFechasPendientes', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('avisa en vez de romper cuando no queda ninguna fecha por jugar', async () => {
+    const fake = fakeSupabase({ liga_fechas: [] })
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: fake.cliente, clubId: 'club-1', userId: 'u1' })
+
+    const res = await reprogramarFechasPendientes({ ligaId: 'liga-1' })
+
+    expect(res.error).toMatch(/no quedan fechas/i)
+    // Y sobre todo: no soltó ningún partido.
+    expect(fake.escrituras('liga_partidos')).toHaveLength(0)
+  })
+
+  it('sólo suelta partidos de fechas que todavía no arrancaron, y no toca lo resuelto', async () => {
+    // El update corta con error para poder mirar los filtros sin entrar en la
+    // programación entera, que no es lo que se está probando acá.
+    const liberarChain: any = {
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      not: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      select: vi.fn().mockResolvedValue({ data: null, error: { message: 'corte del test' } }),
+    }
+    const fechasChain: any = {
+      eq: vi.fn(() => fechasChain),
+      then: (res: any) => Promise.resolve({ data: [{ id: 'f4', numero: 4 }], error: null }).then(res),
+    }
+    const supabase = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => fechasChain),
+        update: vi.fn(() => liberarChain),
+      })),
+    }
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase, clubId: 'club-1', userId: 'u1' })
+
+    await reprogramarFechasPendientes({ ligaId: 'liga-1' })
+
+    // Pide sólo las fechas que no arrancaron: ni en juego ni terminadas.
+    expect(fechasChain.eq).toHaveBeenCalledWith('estado', 'programada')
+    // Y de esas, deja quieto lo ya resuelto.
+    expect(liberarChain.not).toHaveBeenCalledWith('estado', 'in', '("finalizado","walkover")')
+    expect(liberarChain.is).toHaveBeenCalledWith('deleted_at', null)
+    // Sólo las fechas libres, no todas.
+    expect(liberarChain.in).toHaveBeenCalledWith('fecha_id', ['f4'])
+  })
+
+  it('lo que suelta es la fecha, la mesa, el bloque y el árbitro', async () => {
+    const fake = fakeSupabase({ liga_fechas: [{ id: 'f4', numero: 4 }] })
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: fake.cliente, clubId: 'club-1', userId: 'u1' })
+
+    await reprogramarFechasPendientes({ ligaId: 'liga-1' })
+
+    expect(fake.escrituras('liga_partidos')).toContainEqual(
+      expect.objectContaining({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null }),
+    )
+  })
+
+  it('corta sin autorización', async () => {
+    mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
+    const res = await reprogramarFechasPendientes({ ligaId: 'l' })
+    expect(res.error).toBe('Acceso denegado')
   })
 })

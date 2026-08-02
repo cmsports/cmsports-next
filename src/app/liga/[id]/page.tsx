@@ -8,7 +8,7 @@ import AppLayout from '@/app/layout-app'
 import {
   crearDivision, actualizarCapacidadDivision,
   asignarJugadoresDivision, calcularDiffFixtureDivision,
-  generarFixtureDivisionAction, generarProgramacionLiga,
+  generarFixtureDivisionAction, generarProgramacionLiga, reprogramarFechasPendientes,
   listarRestriccionesLiga, guardarRestriccionesLiga,
   retirarJugadorDeLiga, reincorporarJugadorALiga, contarPartidosPendientesJugador,
   crearJugadorExternoLiga,
@@ -567,16 +567,24 @@ export default function LigaDetallePage() {
     const guardado = await guardarRestriccionesLiga({ ligaId, restricciones })
     if (guardado.error) { setProgramando(false); setMensaje(guardado.error); return }
 
-    const res = await generarProgramacionLiga({ ligaId })
+    // Siempre por la vía de reprogramar: si no hay nada puesto todavía libera
+    // cero partidos y programa igual, y si ya había horario lo rearma con las
+    // restricciones nuevas. Un solo camino para los dos casos.
+    const res = await reprogramarFechasPendientes({ ligaId })
     setProgramando(false)
     setModalRestriccionesAbierto(false)
     if (res.error) { setMensaje(res.error); return }
+    const rearmados = res.partidosLiberados ?? 0
     // Si sobran partidos NO es que el algoritmo los mandó al reajuste. O no
     // alcanzan los bloques, o alguien avisó que no podía. Se arreglan de
     // maneras distintas, así que el aviso dice cuál de las dos fue.
     const sinProgramar = res.totalSinProgramar ?? 0
+    const fechasTocadas = res.fechasRearmadas ?? []
+    const encabezado = rearmados > 0 && fechasTocadas.length > 0
+      ? `Se rearmó la fecha ${fechasTocadas.join(', ')}: ${res.totalProgramados ?? 0} partidos.`
+      : `Programación lista: ${res.totalProgramados ?? 0} partidos asignados`
     if (sinProgramar === 0) {
-      setMensaje(`Programación lista: ${res.totalProgramados ?? 0} partidos asignados`)
+      setMensaje(encabezado)
     } else {
       const porRestriccion = res.sinProgramarPorRestriccion ?? 0
       const porEspacio = res.sinProgramarPorEspacio ?? 0

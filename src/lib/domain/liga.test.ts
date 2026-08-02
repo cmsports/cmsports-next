@@ -396,7 +396,9 @@ describe('programarDivision — restricciones de disponibilidad', () => {
       expect(s.motivo).toBe('restriccion')
       expect(s.jugadoresConRestriccion.length).toBeGreaterThan(0)
     }
-  })
+    // Margen explícito: este caso es el más pesado del archivo (~3s) y con el
+    // timeout por defecto de 5s fallaba de a ratos al correr todo el suite.
+  }, 30_000)
 
   it('sin restricciones programa exactamente igual que antes', () => {
     const sin = programarCon(12, 5, [])
@@ -409,6 +411,83 @@ describe('programarDivision — restricciones de disponibilidad', () => {
     const t0 = Date.now()
     programarCon(12, 5, restr)
     expect(Date.now() - t0).toBeLessThan(15_000)
+  }, 30_000)
+})
+
+// Al reprogramar a mitad de liga sólo quedan disponibles las fechas que no se
+// jugaron. Si ya pasaron la 1, 2 y 3, hay que repartir en la 4, 5 y 6 — y las
+// restricciones hablan de ESOS números, no de "la primera fecha libre". Que se
+// corriera el número era el error fácil de cometer acá.
+describe('programarDivision — reprogramar sólo las fechas que faltan', () => {
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, 30)
+
+  function programarEn(n: number, fechas: number | number[], restricciones: RestriccionDisponibilidad[] = []) {
+    const jugadorIds = Array.from({ length: n }, (_, i) => `J${i}`)
+    const partidos = generarFixtureDivision(jugadorIds).map(f => ({
+      id: `${f.jugadorA}-${f.jugadorB}`,
+      divisionId: 'D1',
+      jugadorAId: f.jugadorA,
+      jugadorBId: f.jugadorB,
+      ordenFixture: f.orden,
+    }))
+    return programarDivision(partidos, jugadorIds, fechas, bloques, 1, restricciones)
+  }
+
+  it('usa los números de fecha reales que se le pasan, no 1..N', () => {
+    const { programados } = programarEn(8, [4, 5, 6])
+    const usadas = [...new Set(programados.map(p => p.fechaNumero))].sort((a, b) => a - b)
+    expect(usadas).toEqual([4, 5, 6])
+  })
+
+  it('aplica la restricción al número real de fecha', () => {
+    // J0 no puede la fecha 5. Si el motor numerara las disponibles como 1,2,3,
+    // esta restricción no engancharía con ninguna y J0 jugaría igual.
+    const restr: RestriccionDisponibilidad[] = [
+      { jugadorId: 'J0', fechaNumero: 5, horaDesde: null, horaHasta: null },
+    ]
+    const { programados } = programarEn(8, [4, 5, 6], restr)
+    const enLa5 = programados.filter(
+      p => p.fechaNumero === 5 && (p.jugadorAId === 'J0' || p.jugadorBId === 'J0'),
+    )
+    expect(enLa5).toHaveLength(0)
+    // Y sigue jugando en las otras dos.
+    const enOtras = programados.filter(p => p.jugadorAId === 'J0' || p.jugadorBId === 'J0')
+    expect(enOtras.length).toBeGreaterThan(0)
+  })
+
+  it('pasar un número es lo mismo que pasar 1..N', () => {
+    const clave = (r: ReturnType<typeof programarEn>) =>
+      r.programados.map(p => `${p.fechaNumero}|${p.bloqueHorario}|${p.id}`).sort().join('\n')
+    expect(clave(programarEn(10, 4))).toBe(clave(programarEn(10, [1, 2, 3, 4])))
+  })
+
+  it('sin fechas disponibles no programa nada y lo dice', () => {
+    const { programados, sinAsignar } = programarEn(6, [])
+    expect(programados).toHaveLength(0)
+    expect(sinAsignar).toHaveLength(15)
+    expect(sinAsignar[0].motivo).toBe('sin_espacio')
+  })
+
+  it('respeta el hueco máximo también en las fechas rearmadas', () => {
+    const { programados } = programarEn(10, [3, 4, 5])
+    const idxBloque = new Map(bloques.map((b, i) => [b, i]))
+    const porFecha = new Map<number, Map<string, number[]>>()
+    for (const p of programados) {
+      if (!porFecha.has(p.fechaNumero)) porFecha.set(p.fechaNumero, new Map())
+      const mapa = porFecha.get(p.fechaNumero)!
+      for (const j of [p.jugadorAId, p.jugadorBId]) {
+        if (!mapa.has(j)) mapa.set(j, [])
+        mapa.get(j)!.push(idxBloque.get(p.bloqueHorario)!)
+      }
+    }
+    for (const [fechaNumero, porJugador] of porFecha) {
+      for (const [jugador, pos] of porJugador) {
+        pos.sort((a, b) => a - b)
+        for (let k = 1; k < pos.length; k++) {
+          expect(pos[k] - pos[k - 1] - 1, `fecha ${fechaNumero}, ${jugador}`).toBeLessThanOrEqual(1)
+        }
+      }
+    }
   })
 })
 

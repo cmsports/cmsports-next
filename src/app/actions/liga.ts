@@ -476,7 +476,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
 
   const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawDesdefNull }, { data: rawDesdeAjuste }, { data: rawRestricciones }] = await Promise.all([
     db.from('ligas').select('total_fechas, bloque_minutos, mesas_count').eq('id', ligaId).single(),
-    supabase.from('liga_fechas').select('id, numero').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero', { ascending: true }),
+    supabase.from('liga_fechas').select('id, numero, estado').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero', { ascending: true }),
     supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
     db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture').eq('liga_id', ligaId).is('fecha_id', null).not('estado', 'in', '("finalizado","walkover")').is('deleted_at', null).order('orden_fixture', { ascending: true }),
     sinAsignarQuery,
@@ -512,6 +512,15 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
 
   if (!fechas?.length)
     return { error: `Crea primero las fechas regulares de la liga (1 a ${nFechasRegulares})` }
+
+  // Sólo se reparte en fechas que todavía no arrancaron. Meter partidos en una
+  // fecha ya jugada, o en la que se está jugando ahora mismo, es cambiarle el
+  // horario a la gente que está en el club.
+  const fechasLibres = fechas.filter((f: { estado: string }) => f.estado === 'programada')
+  if (!fechasLibres.length) {
+    return { error: 'No quedan fechas por jugar donde programar. Todas están en juego o terminadas.' }
+  }
+  const numerosDeFechaLibres = fechasLibres.map((f: { numero: number }) => f.numero)
 
   // Si no hay mesas creadas, crearlas automáticamente usando mesas_count (default 4)
   let mesasActivas = mesasRaw ?? []
@@ -573,7 +582,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     const mesaNumero = mesaPorDivision.get(divId) ?? mesasActivas[0].numero
     const jugadoresDiv = jugadoresPorDivision.get(divId) ?? []
     const { programados: progDiv, sinAsignar: sinDiv } = programarDivision(
-      partidosDiv, jugadoresDiv, fechas.length, bloques, mesaNumero, restricciones,
+      partidosDiv, jugadoresDiv, numerosDeFechaLibres, bloques, mesaNumero, restricciones,
     )
     todosProgramados.push(...progDiv)
     sinAsignarIds.push(...sinDiv.map(p => p.id))
@@ -649,6 +658,97 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     sinProgramarPorRestriccion: porRestriccion.length,
     sinProgramarPorEspacio: sinAsignarDetalle.length - porRestriccion.length,
     jugadoresQueNoEntraron: nombresCulpables,
+  }
+}
+
+/**
+ * Rearma el horario de lo que falta jugar. Es lo que hace falta cuando a mitad
+ * de liga alguien avisa que ya no puede: `generarProgramacionLiga` sólo toca
+ * partidos sin fecha, así que los que ya estaban puestos en la fecha 5 se
+ * quedaban ahí aunque la nueva restricción los prohibiera.
+ *
+ * Qué se toca y qué no:
+ *   - Fechas terminadas o en juego: intactas. Nadie le cambia el horario a la
+ *     gente que ya está en el club.
+ *   - Partidos finalizados o resueltos por walkover: intactos, son historia.
+ *   - El resto (partidos pendientes de fechas que todavía no arrancaron): se
+ *     sueltan y se vuelven a repartir con las restricciones vigentes.
+ */
+export interface ResultadoReprogramacion {
+  error?: string
+  totalProgramados: number
+  totalSinProgramar: number
+  sinProgramarPorRestriccion: number
+  sinProgramarPorEspacio: number
+  jugadoresQueNoEntraron: string[]
+  partidosLiberados: number
+  fechasRearmadas: number[]
+}
+
+const REPROGRAMACION_VACIA: Omit<ResultadoReprogramacion, 'error'> = {
+  totalProgramados: 0,
+  totalSinProgramar: 0,
+  sinProgramarPorRestriccion: 0,
+  sinProgramarPorEspacio: 0,
+  jugadoresQueNoEntraron: [],
+  partidosLiberados: 0,
+  fechasRearmadas: [],
+}
+
+export async function reprogramarFechasPendientes(
+  params: { ligaId: string },
+): Promise<ResultadoReprogramacion> {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { ...REPROGRAMACION_VACIA, error: authErr }
+
+  const { ligaId } = params
+  const db = supabase as any
+
+  const { data: fechasLibres, error: fechasErr } = await supabase
+    .from('liga_fechas')
+    .select('id, numero')
+    .eq('liga_id', ligaId)
+    .eq('es_ajuste', false)
+    .eq('estado', 'programada')
+  if (fechasErr) return { ...REPROGRAMACION_VACIA, error: 'No se pudieron leer las fechas de la liga.' }
+  if (!fechasLibres?.length) {
+    return { ...REPROGRAMACION_VACIA, error: 'No quedan fechas por jugar: todas están en juego o terminadas.' }
+  }
+
+  // Soltar lo pendiente de esas fechas para que el motor lo reparta de nuevo.
+  const { data: liberados, error: liberarErr } = await db
+    .from('liga_partidos')
+    .update({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null })
+    .eq('liga_id', ligaId)
+    .in('fecha_id', fechasLibres.map(f => f.id))
+    .not('estado', 'in', '("finalizado","walkover")')
+    .is('deleted_at', null)
+    .select('id')
+  if (liberarErr) {
+    return { ...REPROGRAMACION_VACIA, error: 'No se pudieron liberar los partidos: ' + liberarErr.message }
+  }
+
+  const partidosLiberados: number = liberados?.length ?? 0
+  const fechasRearmadas = fechasLibres.map(f => f.numero).sort((a, b) => a - b)
+
+  const r = await generarProgramacionLiga({ ligaId })
+  if ('error' in r && r.error) {
+    return { ...REPROGRAMACION_VACIA, partidosLiberados, fechasRearmadas, error: r.error }
+  }
+  const ok = r as {
+    totalProgramados?: number; totalSinProgramar?: number
+    sinProgramarPorRestriccion?: number; sinProgramarPorEspacio?: number
+    jugadoresQueNoEntraron?: string[]
+  }
+
+  return {
+    totalProgramados: ok.totalProgramados ?? 0,
+    totalSinProgramar: ok.totalSinProgramar ?? 0,
+    sinProgramarPorRestriccion: ok.sinProgramarPorRestriccion ?? 0,
+    sinProgramarPorEspacio: ok.sinProgramarPorEspacio ?? 0,
+    jugadoresQueNoEntraron: ok.jugadoresQueNoEntraron ?? [],
+    partidosLiberados,
+    fechasRearmadas,
   }
 }
 
