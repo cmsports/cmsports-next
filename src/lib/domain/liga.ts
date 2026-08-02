@@ -231,10 +231,16 @@ export function normalizarBloque(s: string | null | undefined): string | null {
 //      elige el candidato cuya ventana [primera_actividad, última_actividad]
 //      ya contenga t (delta permanencia = 0), o el que menos la extienda.
 
-// Costo de una secuencia: penaliza cuadráticamente cada hueco mayor a 1
-// partido entre apariciones consecutivas del mismo jugador. Cuadrático (no
-// lineal) para que la búsqueda prefiera muchos huecos chicos a uno grande —
-// un hueco de 4 partidos es mucho peor que cuatro huecos de 1.
+// Costo de una secuencia:
+//   1. Regla dura: cualquier hueco >1 partido penaliza fuerte y cuadrático
+//      (un hueco de 4 es mucho peor que uno de 2) — esto es lo que garantiza
+//      el límite de 1 partido de espera.
+//   2. Preferencia secundaria: entre jugadores con 3 partidos en la fecha,
+//      es mejor que esperen UNA sola vez (2 partidos seguidos + 1 hueco) que
+//      dos veces (hueco después de cada partido). Se penaliza el número de
+//      huecos POR JUGADOR al cuadrado — así 2 huecos para el mismo jugador
+//      cuesta 4x, no 2x, y la búsqueda prefiere concentrar la espera en un
+//      solo corte en vez de repartirla entre todos sus partidos.
 function costoSecuencia(orden: PartidoAProgramar[]): number {
   const posiciones = new Map<string, number[]>()
   orden.forEach((p, idx) => {
@@ -245,10 +251,13 @@ function costoSecuencia(orden: PartidoAProgramar[]): number {
   })
   let costo = 0
   for (const pos of posiciones.values()) {
+    let huecosDeUno = 0
     for (let k = 1; k < pos.length; k++) {
       const gap = pos[k] - pos[k - 1] - 1
-      if (gap > 1) costo += (gap - 1) * (gap - 1)
+      if (gap > 1) costo += 1000 * (gap - 1) * (gap - 1)
+      else if (gap === 1) huecosDeUno++
     }
+    costo += huecosDeUno * huecosDeUno
   }
   return costo
 }
@@ -337,7 +346,7 @@ function shuffle<T>(arr: T[]): T[] {
 // costo. Verificado con fixtures reales de round-robin (8 a 20 jugadores):
 // reduce huecos que llegaban a 6-11 partidos (con el método anterior de
 // cadenas simple) a 1-2 partidos como máximo.
-function ordenarPartidosFecha(matchesFecha: PartidoAProgramar[], intentos = 8): PartidoAProgramar[] {
+function ordenarPartidosFecha(matchesFecha: PartidoAProgramar[], intentos = 15): PartidoAProgramar[] {
   if (matchesFecha.length <= 2) return matchesFecha
 
   let mejorOrden: PartidoAProgramar[] | null = null
