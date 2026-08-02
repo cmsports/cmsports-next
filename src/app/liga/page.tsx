@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
 import { crearLiga, eliminarLiga } from '@/app/actions/liga'
+import { fechasRecomendadas } from '@/lib/domain/liga'
 
 const supabase = createClient()
 
@@ -65,6 +66,23 @@ export default function LigaPage() {
       })
     return () => { vigente = false }
   }, [authLoading, perfil, router])
+
+  // Aviso de cuántas fechas hacen falta según el tamaño de las divisiones.
+  // Se calcula con la misma función que usa el programador, así que si dice
+  // que alcanza, alcanza de verdad.
+  const recomendacion = (() => {
+    const jugadores = parseInt(jugadoresPorDivision)
+    const elegidas = parseInt(totalFechas)
+    if (!jugadores || jugadores < 2 || !elegidas || elegidas < 2) return null
+    const sugeridas = fechasRecomendadas(jugadores)
+    return {
+      jugadores,
+      partidos: (jugadores * (jugadores - 1)) / 2,
+      fechasElegidas: elegidas,
+      sugeridas,
+      alcanza: elegidas >= sugeridas,
+    }
+  })()
 
   async function handleCrear() {
     if (!nombre.trim()) return
@@ -278,7 +296,41 @@ export default function LigaPage() {
                 </div>
               </div>
 
-              <div style={{ fontSize: 11, color: hint, marginBottom: 20 }}>
+              {recomendacion && (
+                <div style={{
+                  background: recomendacion.alcanza ? '#f0fdf4' : '#fffbeb',
+                  border: `1px solid ${recomendacion.alcanza ? '#bbf7d0' : '#fde68a'}`,
+                  borderRadius: 10, padding: '10px 12px', fontSize: 12,
+                  color: recomendacion.alcanza ? '#166534' : '#92400e',
+                  marginTop: 12, marginBottom: 4, lineHeight: 1.5,
+                }}>
+                  {recomendacion.alcanza ? (
+                    <>
+                      ✓ Con {recomendacion.jugadores} jugadores por división son {recomendacion.partidos} partidos.
+                      {' '}Las {recomendacion.fechasElegidas} fechas alcanzan para programarlos todos.
+                    </>
+                  ) : (
+                    <>
+                      ⚠️ Con {recomendacion.jugadores} jugadores por división son {recomendacion.partidos} partidos,
+                      {' '}y no entran en {recomendacion.fechasElegidas} fecha{recomendacion.fechasElegidas === 1 ? '' : 's'}.
+                      {' '}Se recomiendan <strong>{recomendacion.sugeridas} fechas</strong> (incluida la de ajuste).
+                      {' '}
+                      <button
+                        type="button"
+                        onClick={() => setTotalFechas(String(recomendacion.sugeridas))}
+                        style={{
+                          background: 'transparent', border: 'none', padding: 0,
+                          color: '#92400e', fontSize: 12, fontWeight: 700,
+                          textDecoration: 'underline', cursor: 'pointer',
+                        }}>
+                        Usar {recomendacion.sugeridas}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div style={{ fontSize: 11, color: hint, marginTop: 12, marginBottom: 20 }}>
                 💡 La última fecha es siempre de ajuste · Divisiones y jugadores son opcionales · La inscripción se precarga con este valor pero se puede cambiar para cada jugador al registrar su pago
               </div>
 

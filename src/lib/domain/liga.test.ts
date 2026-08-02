@@ -6,6 +6,7 @@ import {
   calcularRankingDivision,
   validarMovimientoPartido,
   programarDivision,
+  fechasRecomendadas,
   generarBloquesHorario,
   BLOQUE_INICIO,
   BLOQUE_FIN,
@@ -225,5 +226,45 @@ describe('programarDivision — garantía de hueco máximo', () => {
       expect(sinAsignar).toHaveLength(0)
       expect(programados).toHaveLength(66)
     })
+  })
+})
+
+// Lo único que importa de esta función: si dice que con X fechas alcanza,
+// tiene que alcanzar de verdad. Se verifica corriendo el programador real.
+describe('fechasRecomendadas', () => {
+  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, 30)
+
+  const tamaños = Array.from({ length: 17 }, (_, i) => i + 4) // 4 a 20 jugadores
+
+  it.each(tamaños)('con %i jugadores por división, las fechas que recomienda alcanzan para programar todo', n => {
+    const regulares = fechasRecomendadas(n, bloques.length) - 1 // la última es de ajuste
+    const jugadorIds = Array.from({ length: n }, (_, i) => `J${i}`)
+    const partidos = generarFixtureDivision(jugadorIds).map(f => ({
+      id: `${f.jugadorA}-${f.jugadorB}`,
+      divisionId: 'D1',
+      jugadorAId: f.jugadorA,
+      jugadorBId: f.jugadorB,
+      ordenFixture: f.orden,
+    }))
+    const { programados, sinAsignar } = programarDivision(partidos, jugadorIds, regulares, bloques, 1)
+    expect(sinAsignar, `quedaron ${sinAsignar.length} sin programar con ${regulares} fechas regulares`).toHaveLength(0)
+    expect(programados).toHaveLength(partidos.length)
+  })
+
+  it('reserva siempre una fecha de ajuste además de las necesarias para jugar', () => {
+    // 6 jugadores = 15 partidos, entran de sobra en una fecha de 16 bloques,
+    // pero igual hacen falta 2 de juego por el ritmo de cada jugador, +1 de ajuste.
+    expect(fechasRecomendadas(6, 16)).toBe(3)
+  })
+
+  it('crece cuando la mesa no da abasto', () => {
+    // Con bloques de una hora entran 8 partidos por fecha en vez de 16.
+    expect(fechasRecomendadas(12, 8)).toBeGreaterThan(fechasRecomendadas(12, 16))
+  })
+
+  it('devuelve un mínimo razonable con entradas inválidas', () => {
+    expect(fechasRecomendadas(0, 16)).toBe(2)
+    expect(fechasRecomendadas(1, 16)).toBe(2)
+    expect(fechasRecomendadas(12, 0)).toBe(2)
   })
 })

@@ -192,6 +192,41 @@ export function generarBloquesHorario(
   return bloques
 }
 
+// Tope de partidos que un jugador juega en una misma fecha. Más que esto
+// alarga su permanencia aunque el hueco entre partidos siga siendo chico.
+const MAX_PARTIDOS_POR_JUGADOR_POR_FECHA = 3
+
+/**
+ * Cuántas fechas necesita una liga para que entren TODOS los partidos de una
+ * división de `jugadoresPorDivision` jugadores, incluyendo la fecha de ajuste.
+ *
+ * Las divisiones juegan en paralelo (una mesa cada una), así que el número de
+ * divisiones no cambia la cuenta: manda la división más numerosa.
+ *
+ * Dos límites, gana el mayor:
+ *   - Capacidad de mesa: todos los partidos (n·(n−1)/2) tienen que caber en
+ *     fechas × bloques por fecha.
+ *   - Ritmo por jugador: cada uno juega n−1 partidos. El tope duro es 3 por
+ *     fecha, pero 3 sostenido no se alcanza: cuando todos los jugadores están
+ *     al tope, la regla de hueco máximo deja partidos sin ubicar. El promedio
+ *     que sí se sostiene es 2.5 por fecha — medido corriendo el programador
+ *     real y buscando el mínimo de fechas que coloca todo, para divisiones de
+ *     4 a 20 jugadores. La fórmula da exactamente ese mínimo en todos ellos.
+ *
+ * Se suma 1 por la fecha de ajuste, que no se usa para programar.
+ */
+export function fechasRecomendadas(
+  jugadoresPorDivision: number,
+  bloquesPorFecha: number = generarBloquesHorario().length,
+): number {
+  if (jugadoresPorDivision < 2 || bloquesPorFecha < 1) return 2
+  const partidos = (jugadoresPorDivision * (jugadoresPorDivision - 1)) / 2
+  const porCapacidadDeMesa = Math.ceil(partidos / bloquesPorFecha)
+  // ceil((n−1) / 2.5), sin decimales para no arrastrar error de punto flotante
+  const porRitmoDeJugador = Math.ceil((2 * (jugadoresPorDivision - 1)) / 5)
+  return Math.max(porCapacidadDeMesa, porRitmoDeJugador) + 1
+}
+
 export interface PartidoAProgramar {
   id: string
   divisionId: string
@@ -359,10 +394,6 @@ function resolverOrdenFecha(
 
   return dfs(0) ? secuencia.map(i => partidos[i]) : null
 }
-
-// Tope de partidos que un jugador juega en una misma fecha. Más que esto
-// alarga su permanencia aunque el hueco entre partidos siga siendo chico.
-const MAX_PARTIDOS_POR_JUGADOR_POR_FECHA = 3
 
 function partidosDeJugadorEnFecha(fecha: PartidoAProgramar[], jugadorId: string): number {
   let n = 0
