@@ -439,10 +439,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     ['asistencia', 'clases_extraordinarias', 'bloque_jugadores', 'bloques_horario', 'bloque_excepciones'],
     clubId,
     refrescar,
-    // Solo estas dos tienen `club_id`. Las de horario no, así que van sin
-    // filtro: llega el eco de los otros clubes, pero es mucho más barato que
-    // perderse un cambio propio.
-    { conClub: ['asistencia', 'clases_extraordinarias'] },
+    // `bloque_jugadores` y `bloque_excepciones` cuelgan del bloque y no llevan
+    // club, así que esas dos van sin filtro: llega el eco de los otros clubes,
+    // que es mucho más barato que perderse un cambio propio.
+    { conClub: ['asistencia', 'clases_extraordinarias', 'bloques_horario'] },
   )
 
   /**
