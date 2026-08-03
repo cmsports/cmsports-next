@@ -4,7 +4,7 @@
 // embeberlo como tab dentro de Jugadores. El wrapper AppLayout ahora vive
 // afuera (en la página que lo usa).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import GraficoAsistencia from '@/components/GraficoAsistencia'
@@ -28,6 +28,7 @@ import {
   type AsistenciaPendiente,
 } from '@/lib/offline/db'
 import { cachedFetch } from '@/lib/query-cache'
+import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
 
@@ -122,7 +123,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   // Le tocaba entrenar hoy, pero el día está marcado sin clase.
   // Lo mismo pero para el staff, sobre el día que está mirando.
   const [suspension,    setSuspension]    = useState<{ grupos: number; motivo: string | null } | null>(null)
-  const recargaPendiente = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Sube cada vez que llega un cambio en vivo. Es lo que obliga a recalcular
+  // los grupos del día y sus inscritos, que viven en un efecto aparte.
+  const [revision, setRevision] = useState(0)
 
   const [fechaVista, setFechaVista] = useState(() => fechaChile())
   const [asistenciasDia, setAsistenciasDia] = useState<any[]>([])
@@ -171,26 +174,20 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
     let j: any[]
     try {
+      // El padrón completo del club, no solo los que hoy tienen bloque. Esta
+      // lista es el universo: de acá salen los nombres de la tabla de arriba y
+      // los candidatos a clase extra, que por definición son los que NO están
+      // en el grupo. Quién aparece para pasar lista lo decide `inscritosDe`,
+      // que sí se calcula contra la fecha que se está mirando.
       j = await cachedFetch(jugKey, async () => {
-        // Traer jugadores desde bloque_jugadores para asegurar que solo los inscritos en bloques vigentes aparezcan
-        const { data: bloqJug, error: e1 } = await supabase
-          .from('bloque_jugadores')
-          .select('jugador_id,jugadores(id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede)')
-          .lte('vigente_desde', hoy)
-          .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
-        if (e1) throw e1
-
-        const jugadores = bloqJug?.map((x: any) => x.jugadores).filter(Boolean) || []
-        const jugadoresMap = new Map(jugadores.map((x: any) => [x.id, x]))
-
-        // Si es jugador viendo su propia lista, traerlo aunque no tenga bloques activos
-        if (perfil?.rol === 'jugador' && perfil.jugador_id) {
-          const { data: propio } = await supabase.from('jugadores').select('id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede').eq('id', perfil.jugador_id).single()
-          if (propio && !jugadoresMap.has(propio.id)) jugadoresMap.set(propio.id, propio)
-        }
-
-        return Array.from(jugadoresMap.values()).sort((a: any, b: any) => a.nombre.localeCompare(b.nombre))
-      }, 60_000)
+        let q = supabase.from('jugadores')
+          .select('id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
+          .eq('club_id', id).eq('estado', 'activo').order('nombre')
+        if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
+        const { data, error } = await q
+        if (error) throw error
+        return data || []
+      }, 60_000, ['jugadores'])
     } catch (e: any) {
       setMensaje({ tipo: 'error', texto: e?.message || 'No fue posible cargar los jugadores' })
       return
@@ -325,35 +322,40 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       const dia = diaDesdeFecha(fechaVista)
       if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
 
-      const [{ data: bloques }, { data: rel }] = await Promise.all([
-        supabase.from('bloques_horario')
-          .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
-          .eq('club_id', clubId).eq('dia_semana', dia)
-          .lte('vigente_desde', fechaVista)
-          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
-          .order('hora_inicio'),
-        // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
-        // alguien pudo haber salido del grupo la semana pasada y ese dia si
-        // entrenaba.
-        supabase.from('bloque_jugadores')
-          .select('bloque_id,jugador_id')
-          .lte('vigente_desde', fechaVista)
-          .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`),
-      ])
+      const { data: bloques } = await supabase.from('bloques_horario')
+        .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
+        .eq('club_id', clubId).eq('dia_semana', dia)
+        .lte('vigente_desde', fechaVista)
+        .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
+        .order('hora_inicio')
       if (!vigente) return
 
       const delDia = (bloques ?? []) as BloqueDelDia[]
-      const suyos = new Set(delDia.map(b => b.id))
+      if (delDia.length === 0) { setBloquesDelDia([]); setInscritosDe({}); return }
+
+      // Las inscripciones tal como estaban esa fecha, no las abiertas de hoy:
+      // alguien pudo haber salido del grupo la semana pasada y ese dia si
+      // entrenaba.
+      //
+      // Acotada a los grupos de este club y de este día. Antes venía sin filtro
+      // y se descartaba en el navegador: son cuatro clubes en la misma base, así
+      // que traía las inscripciones de todos para usar las de uno.
+      const { data: rel } = await supabase.from('bloque_jugadores')
+        .select('bloque_id,jugador_id')
+        .in('bloque_id', delDia.map(b => b.id))
+        .lte('vigente_desde', fechaVista)
+        .or(`vigente_hasta.is.null,vigente_hasta.gte.${fechaVista}`)
+      if (!vigente) return
+
       const porBloque: Record<string, string[]> = {}
       for (const r of rel ?? []) {
-        if (!suyos.has(r.bloque_id)) continue
         ;(porBloque[r.bloque_id] ??= []).push(r.jugador_id)
       }
       setBloquesDelDia(delDia)
       setInscritosDe(porBloque)
     })()
     return () => { vigente = false }
-  }, [clubId, esAdminOProfesor, fechaVista])
+  }, [clubId, esAdminOProfesor, fechaVista, revision])
 
   // Los bloques que le tocan hoy al propio jugador.
   useEffect(() => {
@@ -399,39 +401,40 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     return () => window.clearTimeout(carga)
   }, [cargarAsistenciasDia, clubId, fechaVista, hoy])
 
-  useEffect(() => {
+  // Antes acá había un canal armado a mano que escuchaba solo `asistencia` y
+  // `clases_extraordinarias`. Tenía dos agujeros que juntos explicaban casi
+  // todos los reportes de "la lista muestra cualquier cosa":
+  //
+  // Nadie escuchaba `bloque_jugadores`, así que quitarle un grupo a alguien en
+  // su ficha no movía nada acá hasta recargar a mano.
+  //
+  // Y el canal nunca invalidaba el caché. Llegaba el evento, se volvía a pedir
+  // la lista, y `cachedFetch` devolvía lo mismo que ya tenía guardado: la
+  // pantalla se enteraba del cambio y repintaba lo viejo, que se ve idéntico a
+  // un bug de datos.
+  //
+  // `useEnVivo` hace las dos cosas —tira el caché de esas tablas y agrupa la
+  // ráfaga— y es lo que usa el resto del sistema.
+  const refrescar = useCallback(() => {
     if (!clubId) return
-
-    // Pasar lista son veinte clicks seguidos, y cada uno vuelve también por
-    // acá. Sin agrupar serían cuarenta recargas de la lista completa en un
-    // minuto: la propia y la del eco. Se espera a que pare la ráfaga.
-    const refrescar = () => {
-      if (recargaPendiente.current) clearTimeout(recargaPendiente.current)
-      recargaPendiente.current = setTimeout(() => {
-        void cargarDatos(clubId)
-        void cargarExtras(fechaVista)
-        if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
-      }, 600)
-    }
-
-    const canal = supabase
-      .channel(`asistencia-panel-${clubId}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'asistencia', filter: `club_id=eq.${clubId}`,
-      }, refrescar)
-      // Las clases extra viven en otra tabla, así que necesitan su propia
-      // suscripción: sin esto, el profe que registra una desde el celular no la
-      // ve aparecer en el computador del club.
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'clases_extraordinarias', filter: `club_id=eq.${clubId}`,
-      }, refrescar)
-      .subscribe()
-
-    return () => {
-      if (recargaPendiente.current) clearTimeout(recargaPendiente.current)
-      void supabase.removeChannel(canal)
-    }
+    void cargarDatos(clubId)
+    void cargarExtras(fechaVista)
+    if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
+    // Los grupos del día y sus inscritos viven en otro efecto, con la fecha en
+    // las dependencias. Sin este contador no se enteran de un cambio de
+    // inscripciones, que es justo lo que hay que reflejar.
+    setRevision(r => r + 1)
   }, [cargarAsistenciasDia, cargarDatos, cargarExtras, clubId, fechaVista, hoy])
+
+  useEnVivo(
+    ['asistencia', 'clases_extraordinarias', 'bloque_jugadores', 'bloques_horario', 'bloque_excepciones'],
+    clubId,
+    refrescar,
+    // Solo estas dos tienen `club_id`. Las de horario no, así que van sin
+    // filtro: llega el eco de los otros clubes, pero es mucho más barato que
+    // perderse un cambio propio.
+    { conClub: ['asistencia', 'clases_extraordinarias'] },
+  )
 
   /**
    * El jugador vino a un grupo que no es el suyo. Se cobra aparte.
@@ -986,13 +989,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           {/* La lista completa se ve sin buscar: es la única forma de pasar
               lista, así que tiene que estar toda a mano. */}
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
-              {filtrados.filter(j => {
-                // Si hay bloque elegido, ya está filtrado por inscritos
-                if (bloqueSel) return true
-                // Si no, solo mostrar quienes tienen bloque en esa fecha
-                // Quienes no tienen bloque van en la sección de "vino alguien de otro grupo"
-                return conBloqueEseDia.has(j.id)
-              }).map(j => {
+              {filtrados.map(j => {
                 const ya = yaRegistrado.has(j.id)
                 const yaExtra = yaTieneExtra.has(j.id)
                 // Quien ese día no tiene ningún grupo no puede tener asistencia
