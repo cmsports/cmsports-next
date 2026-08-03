@@ -172,13 +172,24 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     let j: any[]
     try {
       j = await cachedFetch(jugKey, async () => {
-        let q = supabase.from('jugadores')
-          .select('id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
-          .eq('club_id', id).eq('estado', 'activo').order('nombre')
-        if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
-        const { data, error } = await q
-        if (error) throw error
-        return data || []
+        // Traer jugadores desde bloque_jugadores para asegurar que solo los inscritos en bloques vigentes aparezcan
+        const { data: bloqJug, error: e1 } = await supabase
+          .from('bloque_jugadores')
+          .select('jugador_id,jugadores(id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede)')
+          .lte('vigente_desde', hoy)
+          .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
+        if (e1) throw e1
+
+        const jugadores = bloqJug?.map((x: any) => x.jugadores).filter(Boolean) || []
+        const jugadoresMap = new Map(jugadores.map((x: any) => [x.id, x]))
+
+        // Si es jugador viendo su propia lista, traerlo aunque no tenga bloques activos
+        if (perfil?.rol === 'jugador' && perfil.jugador_id) {
+          const { data: propio } = await supabase.from('jugadores').select('id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede').eq('id', perfil.jugador_id).single()
+          if (propio && !jugadoresMap.has(propio.id)) jugadoresMap.set(propio.id, propio)
+        }
+
+        return Array.from(jugadoresMap.values()).sort((a: any, b: any) => a.nombre.localeCompare(b.nombre))
       }, 60_000)
     } catch (e: any) {
       setMensaje({ tipo: 'error', texto: e?.message || 'No fue posible cargar los jugadores' })
@@ -975,7 +986,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           {/* La lista completa se ve sin buscar: es la única forma de pasar
               lista, así que tiene que estar toda a mano. */}
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
-              {filtrados.map(j => {
+              {filtrados.filter(j => {
+                // Si hay bloque elegido, ya está filtrado por inscritos
+                if (bloqueSel) return true
+                // Si no, solo mostrar quienes tienen bloque en esa fecha
+                // Quienes no tienen bloque van en la sección de "vino alguien de otro grupo"
+                return conBloqueEseDia.has(j.id)
+              }).map(j => {
                 const ya = yaRegistrado.has(j.id)
                 const yaExtra = yaTieneExtra.has(j.id)
                 // Quien ese día no tiene ningún grupo no puede tener asistencia
