@@ -75,6 +75,54 @@ export function diaDesdeFecha(fechaISO: string): DiaSemana | null {
   return DIA_POR_INDICE[d.getDay()] ?? null
 }
 
+/** Un bloque, con lo justo para decidir desde cuándo vale estar inscrito en él. */
+export type BloqueDiaHora = { id: string; dia_semana: string; hora_inicio: string }
+
+/**
+ * Desde cuándo vale cada inscripción nueva.
+ *
+ * Casi siempre es hoy: inscribir a alguien no puede darle un pasado que no
+ * tuvo. Si arrancara antes, los días ya vencidos y sin lista le entran como
+ * falta, y termina debiendo clases a las que nadie lo esperaba.
+ *
+ * La excepción es mover a alguien de día dentro del mismo horario —sale mié
+ * 17:00, entra mar 17:00—: eso es la misma clase corrida de día, no una clase
+ * nueva. Si el día nuevo ya pasó **en la semana que está corriendo**, la
+ * inscripción tiene que alcanzarlo, porque la asistencia de esa semana se
+ * traslada con él y si no quedaría parada en un día en que no figuraba inscrito.
+ *
+ * "La semana que está corriendo" es la parte fina. `fechasDeSemanaChile` cuenta
+ * el domingo como día 7, así que un fin de semana devuelve la semana que ya
+ * terminó entera. Cambiar a alguien de jueves a viernes un domingo lo metía en
+ * la lista del viernes anterior y le movía la asistencia del jueves pasado:
+ * reescribir una semana cerrada porque se tocó el horario el fin de semana. Por
+ * eso solo se retrocede si hoy es día hábil.
+ *
+ * @param semana  Fechas lun-vie de la semana que `fechasDeSemanaChile` calcula.
+ * @returns Por id de bloque que entra, su `vigente_desde`.
+ */
+export function iniciosDeInscripcion(params: {
+  hoy: string
+  semana: Record<string, string>
+  salen: BloqueDiaHora[]
+  entran: BloqueDiaHora[]
+}): Map<string, string> {
+  const { hoy, semana, salen, entran } = params
+  const inicios = new Map<string, string>()
+  for (const b of entran) inicios.set(b.id, hoy)
+
+  // Fin de semana: no hay semana en curso que completar.
+  if (diaDesdeFecha(hoy) === null) return inicios
+
+  for (const sale of salen) {
+    const entra = entran.find(e => e.hora_inicio === sale.hora_inicio && e.dia_semana !== sale.dia_semana)
+    if (!entra) continue
+    const fechaNueva = semana[entra.dia_semana]
+    if (fechaNueva && fechaNueva < hoy) inicios.set(entra.id, fechaNueva)
+  }
+  return inicios
+}
+
 // Acá vivían `lunesDeSemana`, `fechaISO` y `fechasDeSemana`: armaban la semana
 // que la pantalla de Clases pedía generar. Esa pantalla y su tabla se
 // eliminaron (migración 111) y estas tres quedaron llamándose solo entre

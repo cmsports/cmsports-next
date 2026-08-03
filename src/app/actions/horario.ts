@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { diaDesdeFecha, hhmm } from '@/lib/domain/horario'
+import { diaDesdeFecha, hhmm, iniciosDeInscripcion } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cierreVigencia } from '@/lib/domain/vigencia'
 
@@ -456,24 +456,19 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
         .in('id', salen.map((r: Abierta) => r.bloque_id))
     : { data: [] as { id: string; dia_semana: string; hora_inicio: string }[] }
 
-  // Un cambio de día dentro del mismo horario —sale mié 17:00, entra mar 17:00—
-  // es la misma clase movida de día, no una clase nueva. Si el día nuevo ya pasó
-  // esta semana, la inscripción tiene que alcanzarlo: si no, la asistencia que se
-  // traslada más abajo queda parada en un día en que el jugador no figuraba
-  // inscrito, y el traslado deja los datos peor de como estaban.
-  const inicioDe = new Map<string, string>()
-  for (const bSale of (bloquesSalen ?? [])) {
-    const bEntra = bloques.find(b => entran.includes(b.id) && b.hora_inicio === bSale.hora_inicio)
-    if (!bEntra || bEntra.dia_semana === bSale.dia_semana) continue
-    const fechaNueva = semana[bEntra.dia_semana]
-    if (fechaNueva && fechaNueva < hoyISO()) inicioDe.set(bEntra.id, fechaNueva)
-  }
+  // Desde cuándo vale cada inscripción nueva. La regla vive en el dominio, con
+  // sus propias pruebas: acá adentro no se puede probar el fin de semana, que es
+  // justo donde estaba el agujero.
+  const inicioDe = iniciosDeInscripcion({
+    hoy: hoyISO(),
+    semana,
+    salen: ((bloquesSalen ?? []) as { id: string; dia_semana: string; hora_inicio: string }[])
+      .map(b => ({ id: b.id, dia_semana: b.dia_semana, hora_inicio: b.hora_inicio })),
+    entran: bloques.filter(b => entran.includes(b.id))
+      .map(b => ({ id: b.id, dia_semana: b.dia_semana, hora_inicio: b.hora_inicio })),
+  })
 
   if (entran.length > 0) {
-    // Todo lo demás arranca hoy. Antes arrancaba el lunes de la semana para
-    // todos, y eso le inventaba pasado a quien no lo tenía: inscribir a alguien
-    // un viernes lo daba por inscrito desde el lunes, y esos cuatro días —
-    // vencidos y sin lista— le entraban como falta.
     const { error } = await supabase.from('bloque_jugadores')
       .insert(entran.map(bloque_id => ({
         bloque_id,
@@ -485,7 +480,11 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
 
   // Transferir asistencias de esta semana cuando un día cambia por otro del mismo horario.
   // Ej: sale miércoles 17:00, entra martes 17:00 → mueve la asistencia del mie al mar.
-  if (salen.length > 0 && entran.length > 0) {
+  //
+  // Solo en día hábil, por lo mismo que la inscripción no retrocede el fin de
+  // semana: el sábado y el domingo `semana` apunta a una semana ya cerrada, y
+  // mover una asistencia de ahí es reescribir algo que ya pasó y se contó.
+  if (salen.length > 0 && entran.length > 0 && diaDesdeFecha(hoyISO()) !== null) {
     for (const bSale of (bloquesSalen ?? [])) {
       const bEntra = bloques.find(b => entran.includes(b.id) && b.hora_inicio === bSale.hora_inicio)
       if (!bEntra || bEntra.dia_semana === bSale.dia_semana) continue

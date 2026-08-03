@@ -257,6 +257,11 @@ describe('asignarBloquesJugador', () => {
       expect(vigenteEn({ vigente_desde: '2026-01-01', vigente_hasta: hasta }, fechaChile())).toBe(false)
     })
 
+    // Desde cuándo vale la inscripción nueva se prueba en
+    // `iniciosDeInscripcion.test.ts`, no acá: este fake devuelve la misma
+    // fixture para cualquier consulta a una tabla, sin mirar los filtros, así
+    // que no distingue "los bloques que entran" de "los que salen" y el caso
+    // del cambio de día pasaba en verde sin ejercitarse.
     it('el que se cambia de grupo no queda en los dos el mismo día', async () => {
       conBase({
         jugadores: { id: 'j1', club_id: 'club-1' },
