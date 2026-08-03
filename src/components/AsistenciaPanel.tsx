@@ -139,6 +139,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor'
   // El profesor marca la clase extra; el precio lo decide un administrador.
   const puedeMontos = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
+  // El calendario llega a los días que todavía no pasan, para poder revisar qué
+  // grupo se dicta y quiénes están inscritos. Pero ahí no se pasa lista: marcar
+  // presente en una clase que no ocurrió descuenta una sesión y entra en el
+  // porcentaje. El servidor ya lo rechaza (`fechaFutura`); esto es para que el
+  // botón no prometa algo que la acción va a negar.
+  const esFuturo = fechaVista > hoy
 
   const sincronizarCola = useCallback(async (cid?: string) => {
     const id = cid || clubId
@@ -683,6 +689,19 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         </div>
       )}
 
+      {/* Día que todavía no llega. Se puede mirar —qué grupos se dictan, quién
+          está inscrito— pero no marcar. */}
+      {esAdminOProfesor && esFuturo && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12,
+          padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#1e40af' }}>
+          <strong>👁️ Día futuro — solo vista previa</strong>
+          <div style={{ fontSize: 12, marginTop: 3, color: muted }}>
+            Se ve qué grupos se dictan y quiénes están inscritos, para revisar el horario antes de que llegue el día.
+            La asistencia se pasa el mismo día o después.
+          </div>
+        </div>
+      )}
+
       {/* El día está marcado sin clase desde Horario. Acá solo se avisa: sin
           esto se podía pasar lista de un día que el club dio por suspendido. */}
       {esAdminOProfesor && suspension && (
@@ -902,7 +921,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                   quiénes estaban inscritos entonces y dónde se escribe. */}
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
-                <input type="date" value={fechaVista} max={hoy}
+                <input type="date" value={fechaVista}
                   onChange={e => { if (e.target.value) { setFechaVista(e.target.value); setBloqueSel('') } }}
                   style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
                     padding: '7px 10px', color: text, fontSize: 13, outline: 'none' }} />
@@ -998,9 +1017,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 const esExtra = bloquesDelDia.length > 0 && !tieneBloqueEseDia(j.id)
                 const hecho = ya || yaExtra
                 return (
-                  <div key={j.id} onClick={() => !hecho && !esExtra && registrarAsistencia(j.id)}
+                  <div key={j.id} onClick={() => !hecho && !esExtra && !esFuturo && registrarAsistencia(j.id)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
-                      borderBottom: '1px solid #e2e8f0', cursor: hecho || esExtra ? 'default' : 'pointer', opacity: hecho ? 0.6 : 1,
+                      borderBottom: '1px solid #e2e8f0', cursor: hecho || esExtra || esFuturo ? 'default' : 'pointer', opacity: hecho ? 0.6 : 1,
                       background: esExtra && !hecho ? '#fffbeb' : undefined }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: text }}>{j.nombre}</div>
@@ -1019,6 +1038,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                             : <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>✅ Registrado</span>)
                         : (registrando === j.id || registrandoAusente === j.id)
                           ? <span style={{ color: muted, fontSize: 12 }}>{registrandoAusente === j.id ? 'Marcando ausente...' : 'Registrando...'}</span>
+                          : esFuturo
+                          // Inscrito en el grupo, pero el día no llega. Se ve
+                          // que le toca, sin botón que ofrezca marcarlo.
+                          ? <span style={{ background: '#eff6ff', color: '#1e40af', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>Le toca</span>
                           : esExtra
                             ? <button onClick={e => { e.stopPropagation(); setPendienteExtra({ jugadorId: j.id, bloqueId: null }) }} style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
                             : <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
@@ -1034,8 +1057,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
           {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:
               sin saber a qué horario vino no se puede cobrar la clase. Sirve
-              también para días pasados, porque escribe en la fecha elegida. */}
-          {bloqueElegido && (
+              también para días pasados, porque escribe en la fecha elegida.
+              En días futuros no: "vino" es pasado, y además se cobra. */}
+          {bloqueElegido && !esFuturo && (
             <div style={{ marginTop: 12, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
               {!mostrarOtros ? (
                 <button onClick={() => setMostrarOtros(true)}
@@ -1193,8 +1217,12 @@ function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, ho
   useEffect(() => {
     async function cargar() {
       const supabase = createClient()
-      const inicio = new Date(anio, mes, 1).toISOString().slice(0, 10)
-      const fin = new Date(anio, mes + 1, 0).toISOString().slice(0, 10)
+      // Armadas como texto, no con toISOString(): eso pasa por UTC y corre el
+      // borde del mes según la zona del navegador. Es la misma forma en que se
+      // arma `fecha` más abajo, así que los puntitos caen donde deben.
+      const mm = String(mes + 1).padStart(2, '0')
+      const inicio = `${anio}-${mm}-01`
+      const fin = `${anio}-${mm}-${String(new Date(anio, mes + 1, 0).getDate()).padStart(2, '0')}`
       const { data } = await supabase.from('asistencia').select('fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).limit(200)
       const dias = new Set((data || []).map((d: any) => d.fecha))
       setDiasConDatos(dias)
@@ -1244,13 +1272,16 @@ function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, ho
           const esHoy = fecha === hoy
           const esSeleccionado = fecha === fechaSeleccionada
           const tieneDatos = diasConDatos.has(fecha)
+          // Se puede entrar igual: sirve para revisar quién tiene clase antes de
+          // que llegue el día. Van apagados para que se note que ahí no se marca.
+          const esFuturo = fecha > hoy
           return (
             <div key={dia} onClick={() => onSeleccionar(fecha)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, cursor: 'pointer', padding: '2px 0' }}>
               <div style={{
                 width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 11, fontWeight: esSeleccionado || esHoy ? 700 : 400,
                 background: esSeleccionado ? '#4f46e5' : esHoy ? '#ede9fe' : 'transparent',
-                color: esSeleccionado ? 'white' : esHoy ? '#3730a3' : text,
+                color: esSeleccionado ? 'white' : esHoy ? '#3730a3' : esFuturo ? hint : text,
               }}>
                 {dia}
               </div>
