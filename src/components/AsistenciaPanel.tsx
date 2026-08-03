@@ -107,6 +107,9 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
   const [sedeFiltraTabla, setSedeFiltraTabla] = useState('')
   const [mostrarOtros, setMostrarOtros] = useState(false)
+  // Salida de emergencia para el día sin grupos: si el horario quedó mal
+  // cargado, el profe igual tiene que poder pasar lista.
+  const [verTodosIgual, setVerTodosIgual] = useState(false)
   const [buscaOtro,    setBuscaOtro]    = useState('')
 
   const [modalMonto,   setModalMonto]   = useState<ClaseExtraHoy | null>(null)
@@ -604,6 +607,17 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const bloqueElegido = bloquesDelDia.find(b => b.id === bloqueSel) ?? null
 
+  // Ese día no se dicta nada: fin de semana, feriado, o el horario sin cargar.
+  const sinGruposEseDia = esAdminOProfesor && bloquesDelDia.length === 0
+
+  // Cambiar de día resetea el grupo elegido y la salida de emergencia: los dos
+  // son decisiones sobre el día que se estaba mirando, no sobre el siguiente.
+  function irAFecha(fecha: string) {
+    setFechaVista(fecha)
+    setBloqueSel('')
+    setVerTodosIgual(false)
+  }
+
   // Los que ese día no están en ningún bloque: para ellos, venir es una clase
   // extra. Sale de los bloques de la fecha elegida, no de la semana entera: si
   // contara toda la semana, nadie sería candidato nunca.
@@ -861,7 +875,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
           {esAdminOProfesor && clubId && (
             <div style={{ borderLeft: '1px solid #e2e8f0', padding: 16 }}>
-              <MiniCalendarioAsistencia clubId={clubId} fechaSeleccionada={fechaVista} onSeleccionar={setFechaVista} hoy={hoy} />
+              <MiniCalendarioAsistencia clubId={clubId} fechaSeleccionada={fechaVista} onSeleccionar={irAFecha} hoy={hoy} />
             </div>
           )}
         </div>
@@ -922,11 +936,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
                 <input type="date" value={fechaVista}
-                  onChange={e => { if (e.target.value) { setFechaVista(e.target.value); setBloqueSel('') } }}
+                  onChange={e => { if (e.target.value) irAFecha(e.target.value) }}
                   style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
                     padding: '7px 10px', color: text, fontSize: 13, outline: 'none' }} />
                 {fechaVista !== hoy && (
-                  <button onClick={() => { setFechaVista(hoy); setBloqueSel('') }}
+                  <button onClick={() => irAFecha(hoy)}
                     style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: 12,
                       fontWeight: 600, cursor: 'pointer' }}>
                     Volver a hoy
@@ -1005,8 +1019,29 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               )}
             </div>
           )}
-          {/* La lista completa se ve sin buscar: es la única forma de pasar
-              lista, así que tiene que estar toda a mano. */}
+          {/* Un día sin ningún grupo —fin de semana, feriado, o el horario
+              todavía sin cargar— mostraba igual el padrón entero con el botón
+              Presente al lado de cada nombre. Y como la marca de "ese día no
+              entrena" depende de que haya grupos, tampoco aparecía: ciento
+              catorce personas ofrecidas para pasarles lista de una clase que no
+              existe. Se dice lo que pasa, y el que igual necesita marcar tiene
+              cómo. */}
+          {sinGruposEseDia && !verTodosIgual ? (
+            <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8,
+              padding: '28px 20px', textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: text, fontWeight: 600 }}>
+                Ese día no funciona ningún grupo
+              </div>
+              <div style={{ fontSize: 12, color: muted, marginTop: 4, maxWidth: 380, marginInline: 'auto', lineHeight: 1.5 }}>
+                No hay a quién pasarle lista. Los grupos y sus horarios se arman en Cupos/bloques.
+              </div>
+              <button onClick={() => setVerTodosIgual(true)}
+                style={{ marginTop: 14, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
+                  padding: '7px 13px', fontSize: 12, fontWeight: 600, color: muted, cursor: 'pointer' }}>
+                Mostrar el listado igual
+              </button>
+            </div>
+          ) : (
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
               {filtrados.map(j => {
                 const ya = yaRegistrado.has(j.id)
@@ -1039,9 +1074,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                         : (registrando === j.id || registrandoAusente === j.id)
                           ? <span style={{ color: muted, fontSize: 12 }}>{registrandoAusente === j.id ? 'Marcando ausente...' : 'Registrando...'}</span>
                           : esFuturo
-                          // Inscrito en el grupo, pero el día no llega. Se ve
-                          // que le toca, sin botón que ofrezca marcarlo.
-                          ? <span style={{ background: '#eff6ff', color: '#1e40af', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>Le toca</span>
+                          // El día no llega: se dice quién tiene clase y quién
+                          // no, sin botón que ofrezca marcarlo. "Le toca" para
+                          // todos daría lo mismo estar inscrito que no estarlo.
+                          ? (esExtra
+                              ? <span style={{ color: hint, fontSize: 11 }}>no entrena</span>
+                              : <span style={{ background: '#eff6ff', color: '#1e40af', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>Le toca</span>)
                           : esExtra
                             ? <button onClick={e => { e.stopPropagation(); setPendienteExtra({ jugadorId: j.id, bloqueId: null }) }} style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
                             : <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
@@ -1054,6 +1092,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               })}
               {filtrados.length === 0 && <div style={{ padding: 16, color: muted, fontSize: 13, textAlign: 'center' }}>Sin resultados</div>}
           </div>
+          )}
 
           {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:
               sin saber a qué horario vino no se puede cobrar la clase. Sirve
