@@ -448,21 +448,44 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
 
   const semana = fechasDeSemanaChile()
 
+  // Los grupos que deja, para cruzarlos con los que toma. Se leen antes de
+  // insertar porque de ese cruce sale desde cuándo vale cada inscripción nueva.
+  const { data: bloquesSalen } = salen.length > 0
+    ? await supabase.from('bloques_horario')
+        .select('id,dia_semana,hora_inicio')
+        .in('id', salen.map((r: Abierta) => r.bloque_id))
+    : { data: [] as { id: string; dia_semana: string; hora_inicio: string }[] }
+
+  // Un cambio de día dentro del mismo horario —sale mié 17:00, entra mar 17:00—
+  // es la misma clase movida de día, no una clase nueva. Si el día nuevo ya pasó
+  // esta semana, la inscripción tiene que alcanzarlo: si no, la asistencia que se
+  // traslada más abajo queda parada en un día en que el jugador no figuraba
+  // inscrito, y el traslado deja los datos peor de como estaban.
+  const inicioDe = new Map<string, string>()
+  for (const bSale of (bloquesSalen ?? [])) {
+    const bEntra = bloques.find(b => entran.includes(b.id) && b.hora_inicio === bSale.hora_inicio)
+    if (!bEntra || bEntra.dia_semana === bSale.dia_semana) continue
+    const fechaNueva = semana[bEntra.dia_semana]
+    if (fechaNueva && fechaNueva < hoyISO()) inicioDe.set(bEntra.id, fechaNueva)
+  }
+
   if (entran.length > 0) {
-    // ponytail: vigente_desde = lunes de esta semana para que el jugador aparezca
-    // en la lista de asistencia de todos los días que ya pasaron en la semana actual
+    // Todo lo demás arranca hoy. Antes arrancaba el lunes de la semana para
+    // todos, y eso le inventaba pasado a quien no lo tenía: inscribir a alguien
+    // un viernes lo daba por inscrito desde el lunes, y esos cuatro días —
+    // vencidos y sin lista— le entraban como falta.
     const { error } = await supabase.from('bloque_jugadores')
-      .insert(entran.map(bloque_id => ({ bloque_id, jugador_id: params.jugadorId, vigente_desde: semana['lun'] })))
+      .insert(entran.map(bloque_id => ({
+        bloque_id,
+        jugador_id: params.jugadorId,
+        vigente_desde: inicioDe.get(bloque_id) ?? hoyISO(),
+      })))
     if (error) return { error: 'No se pudo asignar a los bloques: ' + error.message }
   }
 
   // Transferir asistencias de esta semana cuando un día cambia por otro del mismo horario.
   // Ej: sale miércoles 17:00, entra martes 17:00 → mueve la asistencia del mie al mar.
   if (salen.length > 0 && entran.length > 0) {
-    const { data: bloquesSalen } = await supabase.from('bloques_horario')
-      .select('id,dia_semana,hora_inicio')
-      .in('id', salen.map((r: Abierta) => r.bloque_id))
-
     for (const bSale of (bloquesSalen ?? [])) {
       const bEntra = bloques.find(b => entran.includes(b.id) && b.hora_inicio === bSale.hora_inicio)
       if (!bEntra || bEntra.dia_semana === bSale.dia_semana) continue
