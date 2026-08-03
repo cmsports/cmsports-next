@@ -468,7 +468,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       return
     }
     setBuscaOtro('')
-    await cargarExtras(hoy)
+    // La fecha que se está mirando, no hoy: la clase extra se escribió en
+    // `fechaVista`, así que recargar hoy dejaba la que se acababa de anotar sin
+    // aparecer mientras se completaba un día pasado.
+    await cargarExtras(fechaVista)
   }
 
   async function guardarMonto() {
@@ -542,7 +545,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       setRegistrando(null)
       return
     }
-    await cargarDatos()
+    // El día que se está mirando, como hace `registrarAusente`: la asistencia se
+    // escribió en `fechaVista`, así que recargar hoy dejaba el nombre sin pasar
+    // a "Registrado" mientras se completaba un día pasado.
+    if (fechaVista === hoy) await cargarDatos()
+    else await cargarAsistenciasDia(fechaVista)
     setRegistrando(null)
     setBusqueda('')
   }
