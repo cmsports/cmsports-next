@@ -1509,6 +1509,89 @@ export interface Database {
           { foreignKeyName: 'vouchers_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
         ]
       }
+      configuracion_empresa: {
+        Row: {
+          id: string
+          razon_social: string | null
+          nombre_fantasia: string | null
+          rut: string | null
+          giro: string | null
+          domicilio: string | null
+          comuna: string | null
+          ciudad: string | null
+          email_contacto: string | null
+          telefono: string | null
+          representante_nombre: string | null
+          representante_rut: string | null
+          actualizado_en: string
+        }
+        Insert: {
+          id?: string
+          razon_social?: string | null
+          nombre_fantasia?: string | null
+          rut?: string | null
+          giro?: string | null
+          domicilio?: string | null
+          comuna?: string | null
+          ciudad?: string | null
+          email_contacto?: string | null
+          telefono?: string | null
+          representante_nombre?: string | null
+          representante_rut?: string | null
+          actualizado_en?: string
+        }
+        Update: {
+          id?: string
+          razon_social?: string | null
+          nombre_fantasia?: string | null
+          rut?: string | null
+          giro?: string | null
+          domicilio?: string | null
+          comuna?: string | null
+          ciudad?: string | null
+          email_contacto?: string | null
+          telefono?: string | null
+          representante_nombre?: string | null
+          representante_rut?: string | null
+          actualizado_en?: string
+        }
+        Relationships: []
+      }
+      actividad: {
+        Row: {
+          id: string
+          usuario_id: string | null
+          club_id: string | null
+          rol: string | null
+          ruta: string
+          modulo: string | null
+          segundos: number
+          ocurrido_en: string
+        }
+        Insert: {
+          id?: string
+          usuario_id?: string | null
+          club_id?: string | null
+          rol?: string | null
+          ruta: string
+          modulo?: string | null
+          segundos?: number
+          ocurrido_en?: string
+        }
+        Update: {
+          id?: string
+          usuario_id?: string | null
+          club_id?: string | null
+          rol?: string | null
+          ruta?: string
+          modulo?: string | null
+          segundos?: number
+          ocurrido_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'actividad_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
+        ]
+      }
       tareas: {
         Row: {
           id: string
