@@ -16,6 +16,8 @@ import FiltroMultiSelect, { setToggle, setDesdeParam } from '@/components/Filtro
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
+import { calcularEdad } from '@/lib/domain/jugadorExport'
+import ModalExportarJugadores from '@/components/ModalExportarJugadores'
 
 const supabase = createClient()
 
@@ -32,13 +34,6 @@ const badgeCategoria: Record<string, { bg: string; color: string }> = {
 
 const categorias = ['principiante', 'intermedio', 'avanzado']
 const jugadoresCache: Record<string, any[]> = {}
-
-function calcularEdad(fechaNacimiento: string | null | undefined): number | null {
-  if (!fechaNacimiento) return null
-  const anio = parseInt(fechaNacimiento.slice(0, 4))
-  if (Number.isNaN(anio)) return null
-  return new Date().getFullYear() - anio
-}
 
 
 export default function JugadoresPage() {
@@ -358,22 +353,7 @@ export default function JugadoresPage() {
     mostrarToast('Mensualidad actualizada')
   }
 
-  async function exportarExcel() {
-    const { utils, writeFile } = await import('xlsx')
-    const dias = (j: any) => ['lun','mar','mie','jue','vie'].filter(d => j[`entrena_${d}`]).join('-') || 'sin horario'
-    const datos = filtrados.map(j => ({
-      'Nombre': j.nombre, 'RUT': j.rut || '', 'Email': j.email || '', 'Teléfono': j.telefono || '',
-      'Categoría': j.categorias?.length ? j.categorias.join(' · ') : (j.categoria || ''),
-      'Grupo': grupoLabel(j.grupo), 'Sede': sedeLabel(j.sede),
-      // Vacío, no cero: en una planilla un 0 se suma y descuadra el total.
-      'Mensualidad': j.mensualidad ?? '',
-      'Horario': j.horario || '', 'Días': dias(j), 'Estado': j.estado
-    }))
-    const ws = utils.json_to_sheet(datos)
-    const wb = utils.book_new()
-    utils.book_append_sheet(wb, ws, 'Jugadores')
-    writeFile(wb, 'jugadores.xlsx')
-  }
+  const [exportModalOpen, setExportModalOpen] = useState(false)
 
   const sinHorario = (j: any) => !j.entrena_lun && !j.entrena_mar && !j.entrena_mie && !j.entrena_jue && !j.entrena_vie
   const sinHorarioCount = jugadores.filter(sinHorario).length
@@ -436,8 +416,8 @@ export default function JugadoresPage() {
         <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Jugadores</h1>
         <div style={{ display:'flex', gap:8 }}>
           {esAdmin && (
-            <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
-              Exportar Excel
+            <button onClick={() => setExportModalOpen(true)} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>
+              Exportar
             </button>
           )}
           {esAdmin && (
@@ -923,6 +903,16 @@ export default function JugadoresPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {exportModalOpen && esAdmin && (
+        <ModalExportarJugadores
+          jugadores={filtrados}
+          ctx={{ estadoPago, asistenciaHoy, conDocumento }}
+          clubNombre={clubNombre}
+          onClose={() => setExportModalOpen(false)}
+          onExportado={mostrarToast}
+        />
       )}
 
       {/* Toast */}
