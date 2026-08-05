@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // Desplegable con casillas: permite marcar varias opciones del mismo filtro
 // (por ejemplo PENECA + PREINFANTIL + INFANTIL a la vez). Lo usan Jugadores y
@@ -29,21 +30,48 @@ export default function FiltroMultiSelect({ label, options, selected, onChange, 
   colorActivo?: { bg: string; border: string; text: string }
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState({ top: 0, left: 0 })
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const activo = selected.size > 0
   const c = colorActivo || { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' }
+
+  // El desplegable se saca de acá y se planta en <body> vía portal: la tarjeta
+  // que lo contiene lleva `animation: entraTarjeta ... both`, y con fill-mode
+  // "both" eso la convierte en su propio contexto de apilamiento para siempre
+  // (no solo mientras dura la animación). Así, ningún z-index de un hijo
+  // absoluto logra ganarle a la tarjeta siguiente en el DOM. Con portal +
+  // position:fixed el menú se pinta directo sobre <body>, sin ese problema.
+  const reposicionar = () => {
+    const r = wrapRef.current?.getBoundingClientRect()
+    if (r) setCoords({ top: r.bottom + 4, left: r.left })
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return
+    reposicionar()
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     const onClickFuera = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (wrapRef.current?.contains(t)) return
+      if (menuRef.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onClickFuera)
-    return () => document.removeEventListener('mousedown', onClickFuera)
+    window.addEventListener('scroll', reposicionar, true)
+    window.addEventListener('resize', reposicionar)
+    return () => {
+      document.removeEventListener('mousedown', onClickFuera)
+      window.removeEventListener('scroll', reposicionar, true)
+      window.removeEventListener('resize', reposicionar)
+    }
   }, [open])
 
   return (
-    <div ref={ref} style={{ position:'relative' }}>
+    <div ref={wrapRef} style={{ position:'relative' }}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -51,8 +79,8 @@ export default function FiltroMultiSelect({ label, options, selected, onChange, 
       >
         {activo ? `${label} (${selected.size})` : label} ⌄
       </button>
-      {open && (
-        <div style={{ position:'absolute', top:'calc(100% + 4px)', left:0, zIndex:20, background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, boxShadow:'0 8px 24px rgba(15,23,42,0.12)', padding:8, minWidth:180, maxHeight:280, overflowY:'auto' }}>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div ref={menuRef} style={{ position:'fixed', top: coords.top, left: coords.left, zIndex:1000, background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, boxShadow:'0 8px 24px rgba(15,23,42,0.12)', padding:8, minWidth:180, maxHeight:280, overflowY:'auto' }}>
           {activo && (
             <div
               onClick={() => onChange(new Set())}
@@ -67,7 +95,8 @@ export default function FiltroMultiSelect({ label, options, selected, onChange, 
               {o.label}
             </label>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
