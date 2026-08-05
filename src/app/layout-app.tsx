@@ -17,6 +17,7 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import RegistroActividad from '@/components/RegistroActividad'
 import type { Perfil } from '@/types'
 import { esCuentaDemo } from '@/lib/auth/demo'
 
@@ -494,6 +495,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
       <div className="mobile-bell" style={{ position: 'fixed', top: 12, right: 12, zIndex: 30, display: 'none' }}>
         <CampanaNotificaciones perfil={perfil} />
       </div>
+
+      {/* No pinta nada: manda los pings de uso que alimentan /superadmin/actividad. */}
+      <RegistroActividad />
 
       <style>{`
         @media (max-width: 768px) {
