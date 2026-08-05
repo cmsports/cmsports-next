@@ -1,9 +1,9 @@
-export const MODULOS_CLUB = [
-  'torneos', 'liga', 'clases', 'calendario', 'asistencia',
-  'mensualidades', 'finanzas', 'tienda',
-] as const
+import { MODULOS_KEYS, type Modulo } from '@/lib/domain/modulos'
 
-export type ModuloClub = typeof MODULOS_CLUB[number]
+// Las claves salen del catálogo único (`src/lib/domain/modulos.ts`). Este
+// archivo tenía su propia copia con 8 módulos y se quedó atrás.
+export const MODULOS_CLUB = MODULOS_KEYS
+export type ModuloClub = Modulo
 
 const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly string[] }> = [
   // El torneo interno y el ranking viven en rutas propias que no cuelgan de
@@ -19,6 +19,16 @@ const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly stri
   { modulo: 'mensualidades', rutas: ['/mensualidades', '/estado-cuenta'] },
   { modulo: 'finanzas', rutas: ['/finanzas', '/reportes'] },
   { modulo: 'tienda', rutas: ['/tienda'] },
+  // Estos cuatro faltaban: el sidebar sí los escondía cuando el módulo estaba
+  // apagado, pero la URL directa seguía abriendo la pantalla. Las claves están
+  // cruzadas respecto del nombre visible y así es como viven en la base:
+  // `tienda_buin` es "Tienda del profe" y `tienda_asociacion` es "Tienda Buin".
+  { modulo: 'tienda_buin', rutas: ['/tienda-profe'] },
+  { modulo: 'tienda_asociacion', rutas: ['/tienda-buin'] },
+  { modulo: 'bibliografia', rutas: ['/bibliografia-tdm'] },
+  { modulo: 'libro_profe', rutas: ['/libro-profe'] },
+  { modulo: 'feedback', rutas: ['/feedbacks'] },
+  { modulo: 'tareas', rutas: ['/tareas'] },
 ]
 
 function coincideRuta(pathname: string, ruta: string) {

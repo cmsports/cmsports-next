@@ -63,7 +63,13 @@ export async function listarCredenciales(): Promise<{ error?: string; filas?: Fi
     if (esp.tipo_login !== 'email' || !p.email) return false
     return esp.usuario_login.trim().toLowerCase() !== p.email.trim().toLowerCase()
   }
-  const faltantes = (perfiles ?? []).filter(desalineado)
+  // El superadmin se salta la sincronización automática. Su perfil toma el
+  // `club_id` del club que esté gestionando (ver `gestionarClub`), así que cae
+  // dentro de este listado como cualquier admin — pero su cuenta no pertenece
+  // al club y no sigue el patrón de credenciales del club. Sin esta exclusión,
+  // basta con ABRIR esta pantalla para que se le reescriba la contraseña y
+  // quede fuera de la plataforma sin que nadie haya pedido un reset.
+  const faltantes = (perfiles ?? []).filter(p => p.rol !== 'superadmin' && desalineado(p))
   const nuevosEspejos: Array<{ usuario_id: string; club_id: string; password_plano: string; usuario_login: string; tipo_login: string; actualizado_en: string }> = []
   for (const p of faltantes as { id: string; nombre: string; email: string | null; jugador_id: string | null }[]) {
     const password = generarPasswordInicial(p.nombre)
@@ -132,6 +138,10 @@ export async function resetearCredencial(params: { usuarioId: string }): Promise
   const admin = createAdminClient()
   const { data: perfil } = await admin.from('perfiles').select('id,nombre,email,rol,jugador_id,club_id').eq('id', params.usuarioId).single()
   if (!perfil || perfil.club_id !== clubId) return { error: 'Ese usuario no es de este club' }
+  // Misma razón que en el reset masivo: el superadmin aparece en el listado
+  // mientras gestiona el club, pero su cuenta no es del club y resetearla lo
+  // deja sin acceso a la plataforma.
+  if (perfil.rol === 'superadmin') return { error: 'La cuenta de superadmin se administra desde su propio panel' }
 
   const nuevaPassword = generarPasswordInicial(perfil.nombre)
   const { error: upErr } = await admin.auth.admin.updateUserById(perfil.id, { password: nuevaPassword })
@@ -183,8 +193,13 @@ export async function resetearTodasLasCredenciales(): Promise<{ error?: string; 
   const admin = createAdminClient()
   // Alcanza a admins, profes y jugadores: la queja del admin fue justamente
   // que se limitaba a jugadores y dejaba huecos en los otros roles.
+  //
+  // El superadmin queda fuera a propósito. Mientras gestiona un club su perfil
+  // lleva el `club_id` de ese club, así que el filtro por club lo incluía y el
+  // reset le reescribía email y clave con el patrón `@cmsports.cl` — dejándolo
+  // sin acceso a la plataforma completa por una acción sobre un solo club.
   const { data: perfiles } = await admin.from('perfiles')
-    .select('id,nombre').eq('club_id', clubId)
+    .select('id,nombre').eq('club_id', clubId).neq('rol', 'superadmin')
   if (!perfiles?.length) return { cambiadas: 0, fallidas: 0 }
 
   // Resolvemos colisiones dentro de este batch: si dos nombres generan el

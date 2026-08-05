@@ -6,7 +6,7 @@ import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Pencil, Receipt, FileD
 import { actualizarPlanClub, registrarPagoClub } from '@/app/actions/superadmin'
 import { useClubesSuperadmin } from '../layout'
 import { formatCLP } from '@/lib/domain/finanzas'
-import { planVencido, type EstadoPlan } from '@/lib/domain/suscripciones'
+import { planVencido, metricasPlanes, type EstadoPlan } from '@/lib/domain/suscripciones'
 import { fechaChile } from '@/lib/domain/fechaChile'
 
 const supabase = createClient()
@@ -123,9 +123,7 @@ export default function FinanzasSuperadminPage() {
     doc.text(hoy, W - 14, 20, { align: 'right' })
 
     let y = 44
-    const mrrTotal = clubes.reduce((a, c) => a + (c.plan_mensual || 0), 0)
-    const planesActivos = clubes.filter(c => c.estado_plan === 'activo').length
-    const pagosVencidos = clubes.filter(c => planVencido(c.estado_plan, c.proximo_vencimiento)).length
+    const { mrr: mrrTotal, activos: planesActivos, vencidos: pagosVencidos, totalClubes: totalPDF } = metricasPlanes(clubes)
 
     doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
     doc.text('Resumen', 14, y); y += 8
@@ -135,7 +133,7 @@ export default function FinanzasSuperadminPage() {
       body: [
         ['MRR total', fmt(mrrTotal)],
         ['Cobrado este mes', fmt(cobradoEsteMes)],
-        ['Clubes activos', `${planesActivos} de ${clubes.length}`],
+        ['Planes activos', `${planesActivos} (de ${totalPDF} clubes, el resto en prueba)`],
         ['Pagos vencidos', String(pagosVencidos)],
       ],
       theme: 'striped',
@@ -193,9 +191,7 @@ export default function FinanzasSuperadminPage() {
   const loading = loadingClubes || loadingPagos
   if (loading) return <div style={{ color: '#94a3b8', fontSize: 14, padding: 24 }}>Cargando...</div>
 
-  const mrr = clubes.reduce((a, c) => a + (c.plan_mensual || 0), 0)
-  const vencidos = clubes.filter(c => planVencido(c.estado_plan, c.proximo_vencimiento)).length
-  const activos = clubes.filter(c => c.estado_plan === 'activo').length
+  const { mrr, vencidos, activos } = metricasPlanes(clubes)
 
   return (
     <div>
@@ -221,7 +217,7 @@ export default function FinanzasSuperadminPage() {
         {[
           { label: 'MRR total', value: formatCLP(mrr), icon: Wallet, color: '#4f46e5' },
           { label: 'Cobrado este mes', value: formatCLP(cobradoEsteMes), icon: TrendingUp, color: '#16a34a' },
-          { label: 'Planes activos', value: `${activos}/${clubes.length}`, icon: CheckCircle2, color: '#0891b2' },
+          { label: 'Planes activos', value: activos, icon: CheckCircle2, color: '#0891b2' },
           { label: 'Pagos vencidos', value: vencidos, icon: AlertTriangle, color: '#dc2626' },
         ].map(m => (
           <div key={m.label} style={{ ...card, padding: 16 }}>

@@ -9,26 +9,13 @@ import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
 import { crearClub, actualizarModulosClub, eliminarClub } from '@/app/actions/superadmin'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { formatCLP } from '@/lib/domain/finanzas'
+import { MODULOS as MODULOS_OPCIONALES, MODULOS_KEYS as TODOS_MODULOS, conDependencias } from '@/lib/domain/modulos'
+import { metricasPlanes } from '@/lib/domain/suscripciones'
 import { Settings } from 'lucide-react'
 
 const supabase = createClient()
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
-
-const MODULOS_OPCIONALES = [
-  { key: 'torneos', label: 'Torneos' },
-  { key: 'liga', label: 'Liga' },
-  // La clave sigue siendo 'clases' en la base, pero el módulo hoy solo gobierna
-  // el horario semanal: la pantalla de clases generadas se eliminó.
-  { key: 'clases', label: 'Cupos/bloques' },
-  { key: 'calendario', label: 'Calendario' },
-  { key: 'asistencia', label: 'Asistencia' },
-  { key: 'mensualidades', label: 'Mensualidades' },
-  { key: 'finanzas', label: 'Finanzas' },
-  { key: 'tienda', label: 'Tienda' },
-] as const
-
-const TODOS_MODULOS = MODULOS_OPCIONALES.map(m => m.key)
 
 export default function SuperadminPage() {
   const perfil = usePerfilSuperadmin()
@@ -79,11 +66,8 @@ export default function SuperadminPage() {
     if (!editModulosClub) return
     setGuardandoModulos(true)
     setErrorModulos('')
-    // ponytail: mensualidades requiere finanzas
-    const mods = editModulos.includes('mensualidades') && !editModulos.includes('finanzas')
-      ? [...editModulos, 'finanzas']
-      : editModulos
-    const res = await actualizarModulosClub({ clubId: editModulosClub.id, modulos: mods })
+    // Las dependencias las resuelve la Action; acá no se repiten.
+    const res = await actualizarModulosClub({ clubId: editModulosClub.id, modulos: editModulos })
     setGuardandoModulos(false)
     if (res?.error) { setErrorModulos(res.error); return }
     window.dispatchEvent(new CustomEvent('cmsports:modulos-actualizados', { detail: { clubId: editModulosClub.id } }))
@@ -92,13 +76,13 @@ export default function SuperadminPage() {
   }
 
   function toggleModulo(arr: string[], key: string): string[] {
+    // Al desmarcar, la dependencia va al revés: quitar Finanzas arrastra
+    // Mensualidades. `conDependencias` solo sabe agregar lo que falta.
     if (arr.includes(key)) {
       const sin = arr.filter(m => m !== key)
-      if (key === 'finanzas') return sin.filter(m => m !== 'mensualidades')
-      return sin
+      return key === 'finanzas' ? sin.filter(m => m !== 'mensualidades') : sin
     }
-    if (key === 'mensualidades') return [...arr, key, ...(arr.includes('finanzas') ? [] : ['finanzas'])]
-    return [...arr, key]
+    return conDependencias([...arr, key])
   }
 
   async function gestionarClub(clubId: string) {
@@ -127,8 +111,10 @@ export default function SuperadminPage() {
   )
 
   const totalJugadores = Object.values(conteos).reduce((a, b) => a + b, 0)
-  const mrr = clubes.reduce((a, c) => a + (c.plan_mensual || 0), 0)
-  const clubesAlDia = clubes.filter(c => c.estado_pago === 'pagado').length
+  // Solo los clubes con plan activo cuentan como clientes. Antes "al día"
+  // miraba `estado_pago` sobre TODOS los clubes, así que un club en prueba
+  // marcado como pagado sumaba: con un solo cliente real decía "2 de 4".
+  const { activos, mrr, alDia, totalClubes } = metricasPlanes(clubes)
 
   return (
     <div>
@@ -154,10 +140,10 @@ export default function SuperadminPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 22 }}>
         {[
-          { label: 'Clubes activos', value: clubes.length, icon: Building2, color: '#4f46e5' },
-          { label: 'Jugadores totales', value: totalJugadores, icon: Users, color: '#0891b2' },
-          { label: 'MRR (ingreso mensual)', value: formatCLP(mrr), icon: Wallet, color: '#16a34a' },
-          { label: 'Clubes al día', value: `${clubesAlDia}/${clubes.length}`, icon: ShieldCheck, color: '#d97706' },
+          { label: 'Clubes con plan activo', value: activos, hint: `${totalClubes} en total, el resto en prueba`, icon: Building2, color: '#4f46e5' },
+          { label: 'Jugadores totales', value: totalJugadores, hint: null, icon: Users, color: '#0891b2' },
+          { label: 'MRR (ingreso mensual)', value: formatCLP(mrr), hint: 'solo planes activos', icon: Wallet, color: '#16a34a' },
+          { label: 'Clubes al día', value: `${alDia}/${activos}`, hint: 'sobre los planes activos', icon: ShieldCheck, color: '#d97706' },
         ].map(m => (
           <div key={m.label} style={{ ...card, padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -165,6 +151,7 @@ export default function SuperadminPage() {
               <span style={{ fontSize: 11, color: '#94a3b8' }}>{m.label}</span>
             </div>
             <div style={{ fontSize: 19, fontWeight: 700, color: '#0f172a' }}>{m.value}</div>
+            {m.hint && <div style={{ fontSize: 10, color: '#cbd5e1', marginTop: 2 }}>{m.hint}</div>}
           </div>
         ))}
       </div>

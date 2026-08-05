@@ -4,16 +4,18 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireSuperadmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { hoyISO, sumarMesesISO } from '@/lib/domain/suscripciones'
-
-const MODULOS_VALIDOS = ['torneos', 'liga', 'clases', 'calendario', 'asistencia', 'mensualidades', 'finanzas', 'tienda'] as const
+import { hoyISO, sumarMesesISO, vencimientoTrasPago } from '@/lib/domain/suscripciones'
+import { MODULOS_KEYS, conDependencias } from '@/lib/domain/modulos'
 
 const crearClubSchema = z.object({
   nombre: z.string().trim().min(2, 'Ingresa el nombre del club'),
   ciudad: z.string().trim(),
   deporte: z.string().trim(),
   planMensual: z.number().min(0, 'El plan mensual no puede ser negativo'),
-  modulos: z.array(z.enum(MODULOS_VALIDOS)).optional(),
+  // Las claves desconocidas las descarta `conDependencias`, que es la misma
+  // validación que usa `actualizarModulosClub`. Un solo criterio para los dos
+  // caminos que escriben `modulos_habilitados`.
+  modulos: z.array(z.string()).optional(),
   adminNombre: z.string().trim().min(2, 'Ingresa el nombre del administrador'),
   adminEmail: z.string().trim().email('Ingresa un correo válido'),
   passwordProvisoria: z.string().min(8, 'La contraseña provisoria debe tener al menos 8 caracteres'),
@@ -35,10 +37,7 @@ export async function crearClub(input: {
   const parsed = crearClubSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const data = parsed.data
-  const modulos = data.modulos ?? [...MODULOS_VALIDOS]
-  const modulosFinales = modulos.includes('mensualidades') && !modulos.includes('finanzas')
-    ? [...modulos, 'finanzas']
-    : modulos
+  const modulosFinales = conDependencias(data.modulos ?? MODULOS_KEYS)
 
   const { data: club, error: clubError } = await supabase.from('clubes').insert({
     nombre: data.nombre,
@@ -139,8 +138,7 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
 export async function actualizarModulosClub(input: { clubId: string; modulos: string[] }) {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }
-  const modulos = input.modulos.filter((modulo): modulo is typeof MODULOS_VALIDOS[number] => MODULOS_VALIDOS.includes(modulo as typeof MODULOS_VALIDOS[number]))
-  const modulosFinales = modulos.includes('mensualidades') && !modulos.includes('finanzas') ? [...modulos, 'finanzas'] : modulos
+  const modulosFinales = conDependencias(input.modulos)
   const { error } = await supabase.from('clubes')
     .update({ modulos_habilitados: modulosFinales })
     .eq('id', input.clubId)
@@ -228,7 +226,7 @@ export async function registrarPagoClub(input: {
   const data = parsed.data
 
   const { data: club, error: clubError } = await supabase.from('clubes')
-    .select('estado_plan,proximo_vencimiento')
+    .select('estado_plan,proximo_vencimiento,fecha_inicio_plan')
     .eq('id', data.clubId)
     .single()
   if (clubError || !club) return { error: 'No se encontró el club' }
@@ -243,11 +241,17 @@ export async function registrarPagoClub(input: {
   })
   if (error) return { error: 'Error al registrar el pago' }
 
-  const baseVencimiento = club.proximo_vencimiento || hoyISO()
   const { error: estadoError } = await supabase.from('clubes')
     .update({
       estado_pago: 'pagado',
-      proximo_vencimiento: club.estado_plan === 'activo' ? sumarMesesISO(baseVencimiento) : club.proximo_vencimiento,
+      proximo_vencimiento: club.estado_plan === 'activo'
+        ? vencimientoTrasPago({
+            fechaInicioPlan: club.fecha_inicio_plan,
+            proximoVencimiento: club.proximo_vencimiento,
+            periodoMes: data.periodoMes,
+            periodoAnio: data.periodoAnio,
+          })
+        : club.proximo_vencimiento,
     })
     .eq('id', data.clubId)
   if (estadoError) return { error: 'Pago registrado pero fallo actualizar el estado' }

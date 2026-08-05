@@ -3,16 +3,9 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { MODULOS_CORE as CORE, MODULOS_KEYS as ALL_MODULOS, type Modulo } from '@/lib/domain/modulos'
 
-export type Modulo =
-  | 'torneos' | 'liga' | 'clases' | 'calendario'
-  | 'asistencia' | 'mensualidades' | 'finanzas'
-  | 'tienda'
-  | 'tienda_buin' | 'tienda_asociacion' | 'bibliografia' | 'libro_profe'
-  | 'feedback'
-
-const CORE: readonly string[] = ['dashboard', 'jugadores']
-const ALL_MODULOS: Modulo[] = ['torneos','liga','clases','calendario','asistencia','mensualidades','finanzas','tienda','tienda_buin','tienda_asociacion','bibliografia','libro_profe','feedback']
+export type { Modulo }
 
 type ModulosContextValue = {
   modulos: string[]

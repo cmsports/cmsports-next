@@ -217,10 +217,14 @@ describe('resetearTodasLasCredenciales', () => {
   const updateUserById = vi.fn()
   const espejoUpsert = vi.fn()
   const perfilesUpdate = vi.fn()
-  let perfilesData: Array<{ id: string; nombre: string }> = []
+  let perfilesData: Array<{ id: string; nombre: string; rol?: string }> = []
+  // Guarda el (columna, valor) del .neq() para poder afirmar que se excluye al
+  // superadmin en la consulta y no después, en memoria.
+  let neqArgs: [string, string] | null = null
 
   beforeEach(() => {
     vi.clearAllMocks()
+    neqArgs = null
     mocks.requireAdminClub.mockResolvedValue({ error: null, clubId: CLUB })
     updateUserById.mockResolvedValue({ error: null })
     espejoUpsert.mockResolvedValue({ error: null })
@@ -233,7 +237,14 @@ describe('resetearTodasLasCredenciales', () => {
       auth: { admin: { updateUserById } },
       from: vi.fn((tabla: string) => {
         if (tabla === 'perfiles') return {
-          select: () => ({ eq: () => Promise.resolve({ data: perfilesData }) }),
+          select: () => ({
+            eq: () => ({
+              neq: (col: string, val: string) => {
+                neqArgs = [col, val]
+                return Promise.resolve({ data: perfilesData.filter(p => p[col as 'rol'] !== val) })
+              },
+            }),
+          }),
           update: perfilesUpdate,
         }
         if (tabla === 'credencial_visible') return { upsert: espejoUpsert }
@@ -271,6 +282,22 @@ describe('resetearTodasLasCredenciales', () => {
     expect(r).toEqual({ cambiadas: 2, fallidas: 0 })
     expect(updateUserById).toHaveBeenCalledWith('u-1', expect.objectContaining({ email: 'ssalgadog@cmsports.cl' }))
     expect(updateUserById).toHaveBeenCalledWith('u-2', expect.objectContaining({ email: 'ssalgadog2@cmsports.cl' }))
+  })
+
+  // El superadmin toma el club_id del club que gestiona, así que el filtro por
+  // club lo alcanzaba: un reset masivo le reescribía email y clave con el
+  // patrón del club y lo dejaba sin poder entrar a la plataforma.
+  it('nunca toca al superadmin, aunque esté gestionando este club', async () => {
+    perfilesData = [
+      { id: 'u-1', nombre: 'Colomba Gonzalez Gonzalez', rol: 'admin' },
+      { id: 'u-sa', nombre: 'CmSports', rol: 'superadmin' },
+    ]
+
+    const r = await resetearTodasLasCredenciales()
+
+    expect(neqArgs).toEqual(['rol', 'superadmin'])
+    expect(r).toEqual({ cambiadas: 1, fallidas: 0 })
+    expect(updateUserById).not.toHaveBeenCalledWith('u-sa', expect.anything())
   })
 
   it('un fallo en auth se cuenta y no aborta el resto', async () => {
