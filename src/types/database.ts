@@ -1509,6 +1509,41 @@ export interface Database {
           { foreignKeyName: 'vouchers_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
         ]
       }
+      tareas: {
+        Row: {
+          id: string
+          club_id: string
+          texto: string
+          estado: string
+          completada_en: string | null
+          creada_por: string | null
+          creada_en: string
+          actualizada_en: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          texto: string
+          estado?: string
+          completada_en?: string | null
+          creada_por?: string | null
+          creada_en?: string
+          actualizada_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          texto?: string
+          estado?: string
+          completada_en?: string | null
+          creada_por?: string | null
+          creada_en?: string
+          actualizada_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'tareas_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
+        ]
+      }
       tienda_buin_productos: {
         Row: {
           id: string
