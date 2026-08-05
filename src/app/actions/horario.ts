@@ -413,10 +413,10 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
 
   // Solo bloques del club: los ids llegan del navegador y no son de fiar.
   const ids = [...new Set(params.bloqueIds)].filter(Boolean)
-  let bloques: { id: string; sede: string; dia_semana: string; hora_inicio: string; hora_fin: string; vigente_hasta: string | null }[] = []
+  let bloques: { id: string; nombre: string; sede: string; dia_semana: string; hora_inicio: string; hora_fin: string; cupo_maximo: number | null; vigente_hasta: string | null }[] = []
   if (ids.length > 0) {
     const { data, error } = await supabase.from('bloques_horario')
-      .select('id,sede,dia_semana,hora_inicio,hora_fin,vigente_hasta')
+      .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,vigente_hasta')
       .eq('club_id', clubId).in('id', ids)
     if (error) return { error: 'No se pudieron leer los bloques: ' + error.message }
     bloques = data ?? []
@@ -590,7 +590,23 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     })
   }
 
-  return { success: true, campos, extrasConvertidas: convertidas, extrasTrabadas: trabadas }
+  // Qué grupos quedaron sobre su cupo. El cupo no bloquea —el club a veces pasa
+  // de doce y prefiere verlo avisado antes que no poder inscribir—, pero avisar
+  // solo sirve si alguien lo dice: `agregarJugadorABloque` ya devolvía este dato
+  // y ninguna pantalla lo leía, y esta vía ni siquiera lo miraba. Resultado: dos
+  // grupos de Menores llegaron a 31 y 32 sobre 30 sin que nada lo mencionara.
+  const sobreCupo: { nombre: string; inscritos: number; cupo: number }[] = []
+  for (const b of bloques.filter(x => entran.includes(x.id))) {
+    if (!b.cupo_maximo) continue
+    const { count } = await supabase.from('bloque_jugadores')
+      .select('id', { count: 'exact', head: true })
+      .eq('bloque_id', b.id).is('vigente_hasta', null)
+    if ((count ?? 0) > b.cupo_maximo) {
+      sobreCupo.push({ nombre: b.nombre, inscritos: count ?? 0, cupo: b.cupo_maximo })
+    }
+  }
+
+  return { success: true, campos, extrasConvertidas: convertidas, extrasTrabadas: trabadas, sobreCupo }
 }
 
 export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorId: string }) {

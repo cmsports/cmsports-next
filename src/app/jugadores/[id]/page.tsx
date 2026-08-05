@@ -111,6 +111,9 @@ export default function JugadorDetallePage() {
   const [bloquesSel, setBloquesSel]   = useState<Set<string>>(new Set())
   const [guardandoDatos, setGuardandoDatos] = useState(false)
   const [datosError, setDatosError] = useState('')
+  // Grupos que quedaron sobre su tope al guardar los días. No impide guardar:
+  // el club a veces pasa del cupo a propósito y prefiere enterarse.
+  const [avisoCupo, setAvisoCupo] = useState('')
   const [modalExternoOpen, setModalExternoOpen] = useState(false)
   const [externoForm, setExternoForm] = useState({ club:'', clubNombre:'', categoria:'sub19', posicion:'fase_grupos', fecha:'' })
   const [guardandoExterno, setGuardandoExterno] = useState(false)
@@ -383,6 +386,14 @@ export default function JugadorDetallePage() {
 
     setJugador({ ...jugador, ...res.campos })
     setEditDias(false)
+
+    // El cupo no bloquea, pero tiene que decirse: sin este aviso los grupos se
+    // pasaban de su tope en silencio y recién se notaba contando a mano.
+    if (res.sobreCupo?.length) {
+      setAvisoCupo(res.sobreCupo.map(s => `${s.nombre} quedó con ${s.inscritos} inscritos y su cupo es ${s.cupo}`).join('. '))
+    } else {
+      setAvisoCupo('')
+    }
   }
 
   async function guardarExterno() {
@@ -736,6 +747,20 @@ export default function JugadorDetallePage() {
       <button onClick={() => router.back()} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer', marginBottom:16 }}>
         ← Volver
       </button>
+
+      {/* El grupo quedó sobre su tope. No impide guardar —el club a veces pasa
+          del cupo a propósito— pero antes no lo decía nadie y se descubría
+          contando a mano. */}
+      {avisoCupo && (
+        <div style={{ background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:12, padding:'12px 16px', marginBottom:16, display:'flex', alignItems:'flex-start', gap:10 }}>
+          <span style={{ fontSize:15 }}>⚠️</span>
+          <div style={{ flex:1, fontSize:13, color:'#c2410c' }}>
+            <strong>Sobre el cupo</strong>
+            <div style={{ fontSize:12, marginTop:2, color: muted }}>{avisoCupo}.</div>
+          </div>
+          <button onClick={() => setAvisoCupo('')} style={{ background:'none', border:'none', color: muted, fontSize:14, cursor:'pointer', padding:0, lineHeight:1 }}>✕</button>
+        </div>
+      )}
 
       {/* ── Header compacto ── */}
       <div style={{ background:'linear-gradient(135deg,#3730a3,#4f46e5)', borderRadius:16, padding:'20px 24px', marginBottom:20 }}>
