@@ -27,7 +27,8 @@ export const MODULOS = [
   { key: 'bibliografia', label: 'Bibliografía TDM' },
   { key: 'libro_profe', label: 'Libro del profe' },
   { key: 'feedback', label: 'Feedback' },
-  { key: 'tareas', label: 'Tareas' },
+  // Tareas NO va acá: es la lista privada de los superadmin
+  // (/superadmin/tareas), no una función que un club pueda activar.
 ] as const
 
 export type Modulo = (typeof MODULOS)[number]['key']

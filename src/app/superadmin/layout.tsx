@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, createContext, useContext } from 'rea
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
-import { Building2, Wallet, LogOut, Settings } from 'lucide-react'
+import { Building2, Wallet, LogOut, Settings, ListChecks } from 'lucide-react'
 import type { Tables } from '@/types/database'
 
 type Perfil = Tables<'perfiles'>
@@ -13,6 +13,7 @@ type Club = Tables<'clubes'>
 const nav = [
   { label: 'Clubes', icon: Building2, href: '/superadmin' },
   { label: 'Finanzas', icon: Wallet, href: '/superadmin/finanzas' },
+  { label: 'Tareas', icon: ListChecks, href: '/superadmin/tareas' },
   // Falta 'Actividad' (/superadmin/actividad): la capa de datos ya está pero
   // la pantalla no, y enlazarla daría 404.
   { label: 'Configuración', icon: Settings, href: '/superadmin/configuracion' },

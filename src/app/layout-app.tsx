@@ -14,7 +14,7 @@ import {
   CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
   Store, Library, BookLock, Eye, Award, Home, Landmark, CalendarClock,
-  MessageSquare, ListChecks,
+  MessageSquare,
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import type { Perfil } from '@/types'
@@ -33,7 +33,6 @@ const navAdmin = [
   { label: 'Feedbacks', emoji: '📝',       icon: MessageSquare,   href: '/feedbacks',  modulo: 'feedback' },
   { label: 'Cupos/bloques', emoji: '🗓️', icon: CalendarClock,  href: '/horario',    modulo: 'clases' },
   { label: 'Calendario', emoji: '📅',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
-  { label: 'Tareas', emoji: '📝',        icon: ListChecks,       href: '/tareas',     modulo: 'tareas' },
   { label: 'Finanzas', emoji: '💰',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
   { label: 'Central de Pago', emoji: '🏦', icon: Landmark,        href: '/central-de-pago' },
   { label: 'Tienda DoubleTT', emoji: '🛒', icon: ShoppingBag,    href: '/tienda',            modulo: 'tienda' },
@@ -53,7 +52,6 @@ const navProfesor = [
   { label: 'Feedbacks', emoji: '📝', icon: MessageSquare,    href: '/feedbacks',  modulo: 'feedback' },
   { label: 'Cupos/bloques', emoji: '🗓️', icon: CalendarClock, href: '/horario',   modulo: 'clases' },
   { label: 'Calendario', emoji: '📅', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
-  { label: 'Tareas', emoji: '📝',     icon: ListChecks,      href: '/tareas',     modulo: 'tareas' },
   { label: 'Torneo Externo', emoji: '🌎', icon: Globe,           href: '/torneos',          modulo: 'torneos' },
   { label: 'Torneo Interno', emoji: '🏆', icon: Home,            href: '/torneos-internos', modulo: 'torneos' },
   { label: 'Ranking', emoji: '🥇',       icon: Award,           href: '/ranking',          modulo: 'torneos' },

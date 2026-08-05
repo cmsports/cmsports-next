@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, Circle, CircleDashed, Plus, Trash2 } from 'lucide-react'
-import { usePerfil } from '@/lib/auth/PerfilProvider'
-import AppLayout from '@/app/layout-app'
 import { borrarTarea, cambiarEstadoTarea, crearTarea, editarTextoTarea, listarTareas, type Tarea } from '@/app/actions/tareas'
 import { ESTADOS_TAREA, HORAS_VISIBLE_TRAS_HECHA, horasHastaOcultar, type EstadoTarea } from '@/lib/domain/tareas'
 
@@ -16,7 +14,6 @@ const ESTILO_ESTADO: Record<EstadoTarea, { icono: typeof Circle; color: string; 
 }
 
 export default function TareasPage() {
-  const { perfil } = usePerfil()
   const [tareas, setTareas] = useState<Tarea[]>([])
   const [cargando, setCargando] = useState(true)
   const [texto, setTexto] = useState('')
@@ -75,13 +72,12 @@ export default function TareasPage() {
   const pendientes = tareas.filter(t => t.estado !== 'hecho').length
 
   return (
-    <AppLayout perfil={perfil ?? null}>
-      <div style={{ maxWidth: 780, margin: '0 auto' }}>
+    <div style={{ maxWidth: 780 }}>
 
         <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Tareas</h1>
-          <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
-            Lo que hay que hacer en el club. Al marcar una como hecha se queda {HORAS_VISIBLE_TRAS_HECHA} horas y después sale sola de la lista.
+          <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>Tareas</h1>
+          <p style={{ fontSize: 12, color: '#94a3b8' }}>
+            Lo que hay que hacer en CmSports. Es una lista compartida entre los superadmin. Al marcar una como hecha se queda {HORAS_VISIBLE_TRAS_HECHA} horas y después sale sola.
           </p>
         </div>
 
@@ -211,7 +207,6 @@ export default function TareasPage() {
             </div>
           </>
         )}
-      </div>
-    </AppLayout>
+    </div>
   )
 }

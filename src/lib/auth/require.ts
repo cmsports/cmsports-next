@@ -38,20 +38,6 @@ export async function requireSuperadmin() {
   return { error: null, supabase }
 }
 
-// Staff del club: admin, profesor o superadmin gestionando ese club. Para
-// pantallas operativas compartidas donde el jugador no entra (tareas).
-export async function requireStaffClub() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null, userId: null }
-  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol').eq('id', user.id).single()
-  const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'profesor' || perfil?.rol === 'superadmin'
-  if (!perfil || !esStaff || !perfil.club_id) {
-    return { error: 'Acceso denegado' as const, supabase: null, clubId: null, userId: null }
-  }
-  return { error: null, supabase, clubId: perfil.club_id, userId: user.id }
-}
-
 // Cualquier perfil con club asignado (staff o jugador) — asistencia.
 export async function requirePerfil() {
   const supabase = await createClient()

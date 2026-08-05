@@ -1595,7 +1595,6 @@ export interface Database {
       tareas: {
         Row: {
           id: string
-          club_id: string
           texto: string
           estado: string
           completada_en: string | null
@@ -1605,7 +1604,6 @@ export interface Database {
         }
         Insert: {
           id?: string
-          club_id: string
           texto: string
           estado?: string
           completada_en?: string | null
@@ -1615,7 +1613,6 @@ export interface Database {
         }
         Update: {
           id?: string
-          club_id?: string
           texto?: string
           estado?: string
           completada_en?: string | null
@@ -1623,9 +1620,7 @@ export interface Database {
           creada_en?: string
           actualizada_en?: string
         }
-        Relationships: [
-          { foreignKeyName: 'tareas_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] }
-        ]
+        Relationships: []
       }
       tienda_buin_productos: {
         Row: {
