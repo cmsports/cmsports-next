@@ -19,10 +19,7 @@ function formatMoney(raw: string) {
 
 function formatHora(time24: string) {
   if (!time24) return ''
-  const [h, m] = time24.split(':').map(Number)
-  const sufijo = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 === 0 ? 12 : h % 12
-  return `${h12}:${String(m).padStart(2, '0')} ${sufijo}`
+  return time24.slice(0, 5)
 }
 
 function formatFecha(iso: string) {

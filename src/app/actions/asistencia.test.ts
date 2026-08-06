@@ -279,13 +279,55 @@ describe('clase extraordinaria', () => {
       { p_id: 'extra-1', p_monto: 8000 })
   })
 
-  // El profesor marca la clase; cuánto se cobra lo decide un administrador.
-  // Esconder el campo en la pantalla no alcanza: la acción tiene que rebotar.
-  it('el profesor no le pone precio', async () => {
+  // Esta prueba decía lo contrario —"el profesor no le pone precio"— y quedó
+  // vieja: la regla cambió el 30-jul-2026 con "precio 0 = sin cargo". Marcar
+  // una clase como sin cargo (el profe le debe una clase al alumno) es parte
+  // del trabajo del profesor, no una decisión administrativa, así que se le
+  // abrió el monto entero y no solo el cero.
+  //
+  // Verificado contra la base: el RPC vigente admite 'admin', 'superadmin' y
+  // 'profesor'. La migración 127 lo deja reafirmado en el número más alto,
+  // porque la 104 (solo admin) es anterior pero tiene número mayor.
+  it('el profesor sí puede poner el monto', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'profesor', jugador_id: null },
+    })
+    mocks.rpc.mockResolvedValue({ data: null, error: null })
+
     const r = await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: 8000 })
 
-    expect(r.error).toContain('administrador')
+    expect(r).toEqual({ ok: true })
+    expect(mocks.rpc).toHaveBeenCalledWith('asignar_monto_clase_extraordinaria',
+      { p_id: 'extra-1', p_monto: 8000 })
+  })
+
+  // Lo que sigue cerrado: el jugador no toca precios por ningún camino.
+  it('el jugador no le pone precio', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'jugador', jugador_id: 'j1' },
+    })
+
+    const r = await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: 8000 })
+
+    expect(r.error).toBeTruthy()
     expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  // Sin cargo es un caso válido y es el que motivó abrirle el monto al profe.
+  it('el profesor puede marcar una clase sin cargo (monto 0)', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null, supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'profesor', jugador_id: null },
+    })
+    mocks.rpc.mockResolvedValue({ data: null, error: null })
+
+    const r = await asignarMontoClaseExtraordinaria({ id: 'extra-1', monto: 0 })
+
+    expect(r).toEqual({ ok: true })
+    expect(mocks.rpc).toHaveBeenCalledWith('asignar_monto_clase_extraordinaria',
+      { p_id: 'extra-1', p_monto: 0 })
   })
 
   // Vaciar el campo la devuelve a "por asignar". Un null tiene que llegar como
