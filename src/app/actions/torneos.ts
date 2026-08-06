@@ -19,13 +19,17 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fechaChile } from '@/lib/domain/fechaChile'
 
 // Clave de club para la regla blanda anti-choque de grupos (solo torneos
-// externos). Los jugadores del club anfitrión comparten una sola clave fija;
-// los externos usan su club_procedencia normalizado; sin dato → sin clave
-// (ese jugador queda sin restricción).
-function clubKeyDeJugador(j: { es_externo?: boolean | null; club_procedencia?: string | null }): string | null {
-  if (!j.es_externo) return 'HOST'
-  const club = j.club_procedencia?.trim()
-  return club ? club.toLowerCase() : null
+// externos). El club sale de la INSCRIPCIÓN, no de la ficha del jugador: la
+// misma persona puede jugar un torneo por un club y otro por otro (migración
+// 129). Los jugadores del club anfitrión comparten una clave fija; sin dato
+// declarado, el jugador queda sin restricción.
+function clubKeyDeInscripcion(
+  clubInscripcion: string | null | undefined,
+  esExternoJugador: boolean | null | undefined,
+): string | null {
+  const club = clubInscripcion?.trim()
+  if (club) return club.toLowerCase()
+  return esExternoJugador ? null : 'HOST'
 }
 
 type AdminSupabase = NonNullable<Awaited<ReturnType<typeof requireAdmin>>['supabase']>
@@ -773,13 +777,18 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
   const { data: inscritos } = await supabase
     .from('grupo_jugadores')
-    .select('jugador_id, jugadores(id,nombre,es_externo,club_procedencia)')
+    .select('jugador_id, club_procedencia, jugadores(id,nombre,es_externo)')
     .in('grupo_id', grupoIds.length ? grupoIds : ['00000000-0000-0000-0000-000000000000'])
 
+  // El club declarado en la inscripción se conserva al rearmar los grupos:
+  // más abajo se borran y recrean todas las filas de grupo_jugadores.
+  const clubPorJugador = new Map<string, string | null>()
   const jugadores: JugadorTorneo[] = (inscritos || [])
     .map((i): JugadorTorneo | null => {
       const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
-      return j ? { id: j.id, nombre: j.nombre ?? '', club: esExterno ? clubKeyDeJugador(j) : null } : null
+      if (!j) return null
+      clubPorJugador.set(j.id, i.club_procedencia ?? null)
+      return { id: j.id, nombre: j.nombre ?? '', club: esExterno ? clubKeyDeInscripcion(i.club_procedencia, j.es_externo) : null }
     })
     .filter((x): x is JugadorTorneo => x !== null)
 
@@ -821,6 +830,7 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     grupo_id: nuevosGrupos[a.grupoIndex].id,
     jugador_id: a.jugadorId,
     orden,
+    club_procedencia: clubPorJugador.get(a.jugadorId) ?? null,
   }})
   await supabase.from('grupo_jugadores').insert(inserts)
 
@@ -1265,11 +1275,16 @@ export async function generarGruposTardios(params: {
   if (!grupoMesa) return { error: 'No hay jugadores en mesa' }
 
   const { data: mesaJugadores } = await supabase
-    .from('grupo_jugadores').select('jugador_id, jugadores(id,nombre,es_externo,club_procedencia)').eq('grupo_id', grupoMesa.id)
+    .from('grupo_jugadores').select('jugador_id, club_procedencia, jugadores(id,nombre,es_externo)').eq('grupo_id', grupoMesa.id)
+  // Los tardíos de 2+ se insertan en grupos nuevos y se borran de MESA: el
+  // club declarado tiene que viajar con ellos.
+  const clubPorJugador = new Map<string, string | null>()
   const jugadores: JugadorTorneo[] = (mesaJugadores || [])
     .map((i): JugadorTorneo | null => {
       const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
-      return j ? { id: j.id, nombre: j.nombre ?? '', club: esExterno ? clubKeyDeJugador(j) : null } : null
+      if (!j) return null
+      clubPorJugador.set(j.id, i.club_procedencia ?? null)
+      return { id: j.id, nombre: j.nombre ?? '', club: esExterno ? clubKeyDeInscripcion(i.club_procedencia, j.es_externo) : null }
     })
     .filter((x): x is JugadorTorneo => x !== null)
 
@@ -1316,11 +1331,11 @@ export async function generarGruposTardios(params: {
   if (jugadores.length === 1) {
     const counts = await Promise.all(
       (gruposExistentes || []).map(async g => {
-        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id, orden, jugadores(es_externo,club_procedencia)').eq('grupo_id', g.id)
+        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id, orden, club_procedencia, jugadores(es_externo)').eq('grupo_id', g.id)
         const ordenados = ordenarMiembros(gjs || [])
         const clubesPresentes = new Set(
           (gjs || [])
-            .map(x => { const j = Array.isArray(x.jugadores) ? x.jugadores[0] : x.jugadores; return j ? clubKeyDeJugador(j) : null })
+            .map(x => { const j = Array.isArray(x.jugadores) ? x.jugadores[0] : x.jugadores; return j ? clubKeyDeInscripcion(x.club_procedencia, j.es_externo) : null })
             .filter((c): c is string => !!c),
         )
         return { id: g.id, nombre: g.nombre ?? '', enPreparacion: g.en_preparacion, count: ordenados.length, playerIds: ordenados.map(x => x.jugador_id).filter((id): id is string => !!id), clubesPresentes }
@@ -1420,6 +1435,7 @@ export async function generarGruposTardios(params: {
     grupo_id: nuevosGrupos[a.grupoIndex].id,
     jugador_id: a.jugadorId,
     orden,
+    club_procedencia: clubPorJugador.get(a.jugadorId) ?? null,
   }})
 
   // Preparar grupos y partidos antes de retirar a los jugadores de MESA.
@@ -1698,7 +1714,7 @@ export async function inscribirEnMesa(params: {
     // El usuario escribió el nombre manualmente (Enter sin seleccionar dropdown)
     // → buscar coincidencia EXACTA primero, si no hay → crear externo
     const { data: exacto } = await supabase
-      .from('jugadores').select('id,nombre,es_externo,club_procedencia')
+      .from('jugadores').select('id,nombre')
       .ilike('nombre', nombreBuscado)
       .eq('club_id', perfil.club_id)
       .maybeSingle()
@@ -1706,19 +1722,11 @@ export async function inscribirEnMesa(params: {
     if (exacto) {
       jugadorId = exacto.id
       jugadorNombre = exacto.nombre ?? jugadorNombre
-      // Ficha externa reconocida por nombre exacto (no por autocomplete) que
-      // todavía no tiene club guardado: completarlo con lo recién escrito,
-      // sin pisar un club ya cargado en un torneo anterior.
-      const clubNuevo = clubProcedencia?.trim()
-      if (exacto.es_externo && clubNuevo && !exacto.club_procedencia) {
-        await supabase.from('jugadores').update({ club_procedencia: clubNuevo }).eq('id', exacto.id)
-      }
     } else {
       const { data: nuevo } = await supabase.from('jugadores').insert({
         club_id: perfil.club_id, nombre: nombreBuscado,
         rut: rut || null, categoria: 'principiante', sesiones_limite: 0,
         es_externo: true,
-        club_procedencia: clubProcedencia?.trim() || null,
       }).select().single()
       if (!nuevo) return { error: 'No se pudo crear el jugador' }
       jugadorId = nuevo.id
@@ -1737,7 +1745,13 @@ export async function inscribirEnMesa(params: {
   }
   if (!grupoMesa) return { error: 'No se pudo crear el grupo MESA' }
 
-  await supabase.from('grupo_jugadores').insert({ grupo_id: grupoMesa.id, jugador_id: jugadorId })
+  // El club queda en la inscripción, no en la ficha: la misma persona puede
+  // jugar otro torneo por otro club sin reescribir este (migración 129).
+  await supabase.from('grupo_jugadores').insert({
+    grupo_id: grupoMesa.id,
+    jugador_id: jugadorId,
+    club_procedencia: torneo.tipo === 'interno' ? null : (clubProcedencia?.trim() || null),
+  })
 
   if ((torneo?.cuota_inscripcion ?? 0) > 0) {
     const estaPagado = metodoPago !== 'pendiente'

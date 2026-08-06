@@ -781,6 +781,7 @@ export interface Database {
           partidos_jugados: number | null
           partidos_ganados: number | null
           clasificado: boolean | null
+          club_procedencia: string | null
         }
         Insert: {
           id?: string
@@ -790,6 +791,7 @@ export interface Database {
           partidos_jugados?: number | null
           partidos_ganados?: number | null
           clasificado?: boolean | null
+          club_procedencia?: string | null
         }
         Update: {
           id?: string
@@ -799,6 +801,7 @@ export interface Database {
           partidos_jugados?: number | null
           partidos_ganados?: number | null
           clasificado?: boolean | null
+          club_procedencia?: string | null
         }
         Relationships: [
           { foreignKeyName: 'grupo_jugadores_grupo_id_fkey'; columns: ['grupo_id']; referencedRelation: 'torneo_grupos'; referencedColumns: ['id'] },

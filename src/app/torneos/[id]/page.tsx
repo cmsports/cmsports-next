@@ -134,7 +134,7 @@ export default function TorneoDetallePage() {
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
-      supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,jugadores(id,nombre,es_externo,club_procedencia),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
+      supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,club_procedencia,jugadores(id,nombre,es_externo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
 
@@ -190,15 +190,13 @@ export default function TorneoDetallePage() {
       .then(({ data }) => setJugadoresPorCategoria(data || []))
   }, [mesaOpen, torneo?.tipo, perfil?.club_id])
 
-  // Clubes de procedencia ya usados en fichas externas de este club, para
-  // sugerir en el input de la mesa (torneos externos) y evitar variantes de
-  // escritura del mismo club.
+  // Clubes ya usados en inscripciones de torneos de este club, para sugerir en
+  // el input de la mesa y evitar variantes de escritura del mismo club.
   useEffect(() => {
     if (!mesaOpen || torneo?.tipo === 'interno' || !perfil?.club_id) { setClubesConocidos([]); return }
-    supabase.from('jugadores')
-      .select('club_procedencia')
-      .eq('club_id', perfil.club_id)
-      .eq('es_externo', true)
+    supabase.from('grupo_jugadores')
+      .select('club_procedencia,torneo_grupos!inner(torneos!inner(club_id))')
+      .eq('torneo_grupos.torneos.club_id', perfil.club_id)
       .not('club_procedencia', 'is', null)
       .then(({ data }) => setClubesConocidos([...new Set((data || []).map((r: any) => r.club_procedencia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))))
   }, [mesaOpen, torneo?.tipo, perfil?.club_id])
@@ -375,7 +373,7 @@ export default function TorneoDetallePage() {
       setBusquedaMesa('')
       setRutMesa('')
       setClubMesa('')
-      setJugadoresInscritos(prev => [...prev, { jugador_id: res.jugadorId!, jugadores: { id: res.jugadorId, nombre: res.jugadorNombre } }])
+      setJugadoresInscritos(prev => [...prev, { jugador_id: res.jugadorId!, club_procedencia: clubMesa.trim() || null, jugadores: { id: res.jugadorId, nombre: res.jugadorNombre } }])
       await cargarTorneo()
     } finally {
       setInscribiendo(false)
@@ -405,9 +403,10 @@ export default function TorneoDetallePage() {
     const jugsGrupo = jugadoresPorGrupo.get(grupoId) || []
     const partidosGrupo = partidosPorGrupo.get(grupoId) || []
 
-    const stats: Record<string, { jugador: any, pts: number, pg: number, pp: number, orden: number }> = {}
+    const stats: Record<string, { jugador: any, club: string | null, pts: number, pg: number, pp: number, orden: number }> = {}
     jugsGrupo.forEach((j: any) => {
-      stats[j.jugador_id] = { jugador: j.jugadores, pts: 0, pg: 0, pp: 0, orden: j.orden ?? 0 }
+      // El club sale de la inscripción, no de la ficha del jugador (migración 129).
+      stats[j.jugador_id] = { jugador: j.jugadores, club: j.club_procedencia ?? null, pts: 0, pg: 0, pp: 0, orden: j.orden ?? 0 }
     })
 
     partidosGrupo.filter(p => p.ganador).forEach(p => {
@@ -877,8 +876,8 @@ export default function TorneoDetallePage() {
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text }}>
                         {j.jugador?.nombre||'—'}
-                        {j.jugador?.club_procedencia && (
-                          <span style={{ marginLeft:6, background:'#eef2ff', color:'#4338ca', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:8 }}>{j.jugador.club_procedencia}</span>
+                        {j.club && (
+                          <span style={{ marginLeft:6, background:'#eef2ff', color:'#4338ca', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:8 }}>{j.club}</span>
                         )}
                       </div>
                       <div style={{ fontSize:10, color: muted }}>{j.pg}G {j.pp}P · {j.pts}pts</div>
@@ -1768,8 +1767,8 @@ export default function TorneoDetallePage() {
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text, fontWeight:500 }}>
                         {j.jugadores?.nombre||'—'}
-                        {j.jugadores?.club_procedencia && (
-                          <span style={{ marginLeft:6, background:'#eef2ff', color:'#4338ca', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:8 }}>{j.jugadores.club_procedencia}</span>
+                        {j.club_procedencia && (
+                          <span style={{ marginLeft:6, background:'#eef2ff', color:'#4338ca', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:8 }}>{j.club_procedencia}</span>
                         )}
                       </div>
                       <div style={{ fontSize:11, color: muted }}>{j.jugadores?.categoria || ''}</div>
