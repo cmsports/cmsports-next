@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, createContext, useContext } from 'rea
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
-import { Building2, Wallet, LogOut, Settings, ListChecks, Activity } from 'lucide-react'
+import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays } from 'lucide-react'
+import ThemeToggle from '@/components/ThemeToggle'
 import type { Tables } from '@/types/database'
 
 type Perfil = Tables<'perfiles'>
@@ -15,6 +16,7 @@ const nav = [
   { label: 'Finanzas', icon: Wallet, href: '/superadmin/finanzas' },
   { label: 'Actividad', icon: Activity, href: '/superadmin/actividad' },
   { label: 'Tareas', icon: ListChecks, href: '/superadmin/tareas' },
+  { label: 'Calendario', icon: CalendarDays, href: '/superadmin/calendario' },
   { label: 'Configuración', icon: Settings, href: '/superadmin/configuracion' },
 ]
 
@@ -111,7 +113,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
   return (
     <PerfilContext.Provider value={{ perfil, clubes, administradores, conteos, loadingClubes, recargarClubes }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: '#f1f5f9' }}>
-        <aside style={{
+        <aside className="sidebar" style={{
           width: 220, background: '#ffffff', borderRight: '1px solid #e2e8f0',
           display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 10,
         }}>
@@ -151,6 +153,9 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
           </nav>
 
           <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <ThemeToggle />
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
               <div style={{
                 width: 30, height: 30, borderRadius: '50%', background: '#ede9fe',
@@ -176,7 +181,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
           </div>
         </aside>
 
-        <main style={{ marginLeft: 220, flex: 1, padding: 24 }}>
+        <main className="main-content" style={{ marginLeft: 220, flex: 1, padding: 24 }}>
           {children}
         </main>
       </div>

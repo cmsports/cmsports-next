@@ -208,17 +208,22 @@ function CalendarioContent() {
         </div>
       )}
 
-      <div style={{ display:'grid', gridTemplateColumns: diaSeleccionado ? '1fr 320px' : '1fr', gap:20 }}>
+      {/* ponytail: en móvil es 1 columna, en desktop el panel lateral aparece al lado */}
+      <style>{`
+        .cal-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+        @media (min-width: 768px) { .cal-grid--panel { grid-template-columns: 1fr 320px; } }
+      `}</style>
+      <div className={`cal-grid${diaSeleccionado ? ' cal-grid--panel' : ''}`}>
         {/* Calendario */}
-        <div style={{ ...card, overflow:'hidden' }}>
+        <div style={{ ...card, overflow:'hidden', minWidth: 0 }}>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'1px solid #e2e8f0' }}>
             {diasSemana.map(d => (
-              <div key={d} style={{ padding:'10px', textAlign:'center', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase' }}>{d}</div>
+              <div key={d} style={{ padding:'8px 2px', textAlign:'center', fontSize:10, color: muted, fontWeight:600, textTransform:'uppercase' }}>{d}</div>
             ))}
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)' }}>
             {Array.from({ length: primerDia }).map((_, i) => (
-              <div key={`e-${i}`} style={{ minHeight:70, borderRight:'1px solid #f1f5f9', borderBottom:'1px solid #f1f5f9' }} />
+              <div key={`e-${i}`} style={{ minHeight:56, borderRight:'1px solid #f1f5f9', borderBottom:'1px solid #f1f5f9' }} />
             ))}
             {Array.from({ length: diasEnMes }).map((_, i) => {
               const dia = i + 1
@@ -228,16 +233,15 @@ function CalendarioContent() {
               const seleccionado = diaSeleccionado === fecha
               return (
                 <div key={dia} onClick={() => setDiaSeleccionado(seleccionado ? null : fecha)}
-                  style={{ minHeight:70, padding:6, borderRight:'1px solid #f1f5f9', borderBottom:'1px solid #f1f5f9', cursor:'pointer', background: seleccionado ? '#ede9fe' : 'transparent' }}>
-                  <div style={{ width:26, height:26, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight: esHoy ? 700 : 400, background: esHoy ? '#4f46e5' : 'transparent', color: esHoy ? 'white' : seleccionado ? '#3730a3' : text, marginBottom:4 }}>
+                  style={{ minHeight:56, padding:'4px 2px', borderRight:'1px solid #f1f5f9', borderBottom:'1px solid #f1f5f9', cursor:'pointer', background: seleccionado ? '#ede9fe' : 'transparent', overflow:'hidden' }}>
+                  <div style={{ width:24, height:24, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight: esHoy ? 700 : 400, background: esHoy ? '#4f46e5' : 'transparent', color: esHoy ? 'white' : seleccionado ? '#3730a3' : text, marginBottom:2, marginLeft:'auto', marginRight:'auto' }}>
                     {dia}
                   </div>
-                  {items.slice(0,2).map((item, idx) => (
-                    <div key={idx} style={{ fontSize:9, padding:'1px 4px', borderRadius:3, marginBottom:2, background: (coloresEvento[item.tipo_item === 'clase' ? 'clase' : item.tipo] || '#64748b') + '22', color: coloresEvento[item.tipo_item === 'clase' ? 'clase' : item.tipo] || '#64748b', overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>
-                      {item.tipo_item === 'clase' ? item.contenido : item.titulo}
+                  {items.length > 0 && (
+                    <div style={{ fontSize:8, textAlign:'center', color: coloresEvento[items[0].tipo] || '#64748b', fontWeight:500, lineHeight:1.2 }}>
+                      {items.length === 1 ? '●' : `● ${items.length}`}
                     </div>
-                  ))}
-                  {items.length > 2 && <div style={{ fontSize:9, color: hint }}>+{items.length-2}</div>}
+                  )}
                 </div>
               )
             })}

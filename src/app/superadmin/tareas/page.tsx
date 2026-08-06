@@ -1,16 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, Circle, CircleDashed, Plus, Trash2 } from 'lucide-react'
-import { borrarTarea, cambiarEstadoTarea, crearTarea, editarTextoTarea, listarTareas, type Tarea } from '@/app/actions/tareas'
-import { ESTADOS_TAREA, HORAS_VISIBLE_TRAS_HECHA, horasHastaOcultar, type EstadoTarea } from '@/lib/domain/tareas'
+import { CheckCircle2, Circle, CircleDashed, Plus, Trash2, User } from 'lucide-react'
+import { asignarTarea, borrarTarea, cambiarEstadoTarea, cambiarPorcentajeTarea, crearTarea, editarTextoTarea, listarTareas, type Tarea } from '@/app/actions/tareas'
+import { ESTADOS_TAREA, HORAS_VISIBLE_TRAS_HECHA, PERSONAS, horasHastaOcultar, type AsignadoA, type EstadoTarea } from '@/lib/domain/tareas'
 
-// El ícono y el color dicen el estado de un vistazo; el selector de al lado lo
-// cambia. Los tres colores son los del tema (--text-muted, --yellow, --green).
 const ESTILO_ESTADO: Record<EstadoTarea, { icono: typeof Circle; color: string; fondo: string }> = {
   sin_realizar: { icono: Circle, color: '#94a3b8', fondo: '#f8fafc' },
   parcial: { icono: CircleDashed, color: '#d97706', fondo: '#fffbeb' },
   hecho: { icono: CheckCircle2, color: '#16a34a', fondo: '#f0fdf4' },
+}
+
+const COLORES_PERSONA: Record<AsignadoA, string> = {
+  luis: '#4f46e5',
+  benjamin: '#0891b2',
 }
 
 export default function TareasPage() {
@@ -20,6 +23,7 @@ export default function TareasPage() {
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
   const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null)
+  const [filtroPersona, setFiltroPersona] = useState<AsignadoA | 'todos'>('todos')
 
   const cargar = useCallback(async () => {
     const res = await listarTareas()
@@ -43,10 +47,23 @@ export default function TareasPage() {
   }
 
   async function cambiarEstado(id: string, estado: EstadoTarea) {
-    // Optimista: el selector responde al tiro y la fila se recolorea sola.
-    // Si el servidor rechaza, `cargar()` devuelve la lista real.
     setTareas(prev => prev.map(t => t.id === id ? { ...t, estado } : t))
     const res = await cambiarEstadoTarea({ id, estado })
+    if (res.error) setError(res.error)
+    await cargar()
+  }
+
+  async function cambiarPorcentaje(id: string, porcentaje: number) {
+    setTareas(prev => prev.map(t => t.id === id ? { ...t, porcentaje } : t))
+    const res = await cambiarPorcentajeTarea({ id, porcentaje })
+    if (res.error) setError(res.error)
+    await cargar()
+  }
+
+  async function cambiarAsignacion(id: string, valor: string) {
+    const asignado = valor === '' ? null : valor
+    setTareas(prev => prev.map(t => t.id === id ? { ...t, asignadoA: asignado as AsignadoA | null } : t))
+    const res = await asignarTarea({ id, asignado_a: asignado })
     if (res.error) setError(res.error)
     await cargar()
   }
@@ -69,79 +86,115 @@ export default function TareasPage() {
     await cargar()
   }
 
-  const pendientes = tareas.filter(t => t.estado !== 'hecho').length
+  const tareasFiltradas = filtroPersona === 'todos'
+    ? tareas
+    : tareas.filter(t => t.asignadoA === filtroPersona)
+  const pendientes = tareasFiltradas.filter(t => t.estado !== 'hecho').length
 
   return (
     <div style={{ maxWidth: 780 }}>
 
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>Tareas</h1>
-          <p style={{ fontSize: 12, color: '#94a3b8' }}>
-            Lo que hay que hacer en CmSports. Es una lista compartida entre los superadmin. Al marcar una como hecha se queda {HORAS_VISIBLE_TRAS_HECHA} horas y después sale sola.
-          </p>
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: '#0f172a', marginBottom: 2 }}>Tareas</h1>
+        <p style={{ fontSize: 12, color: '#94a3b8' }}>
+          Lo que hay que hacer en CmSports. Lista compartida entre los superadmin. Al marcar una como hecha se queda {HORAS_VISIBLE_TRAS_HECHA} horas y después sale sola.
+        </p>
+      </div>
 
-        {/* Agregar */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <input
-            value={texto}
-            onChange={e => setTexto(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') void agregar() }}
-            placeholder="Anota algo por hacer…"
-            maxLength={300}
-            style={{
-              flex: 1, minWidth: 0, padding: '10px 12px', border: '1px solid #e2e8f0',
-              borderRadius: 9, fontSize: 14, color: '#0f172a', background: '#fff',
-            }}
-          />
+      {/* Agregar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input
+          value={texto}
+          onChange={e => setTexto(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') void agregar() }}
+          placeholder="Anota algo por hacer…"
+          maxLength={300}
+          style={{
+            flex: 1, minWidth: 0, padding: '10px 12px', border: '1px solid #e2e8f0',
+            borderRadius: 9, fontSize: 14, color: '#0f172a', background: '#fff',
+          }}
+        />
+        <button
+          onClick={() => void agregar()}
+          disabled={!texto.trim() || guardando}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px',
+            background: !texto.trim() || guardando ? '#e2e8f0' : '#4f46e5',
+            color: !texto.trim() || guardando ? '#94a3b8' : '#fff',
+            border: 'none', borderRadius: 9, fontSize: 14, fontWeight: 600,
+            cursor: !texto.trim() || guardando ? 'default' : 'pointer', flexShrink: 0,
+          }}
+        >
+          <Plus size={16} /> Agregar
+        </button>
+      </div>
+
+      {/* Filtro por persona */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+        <button
+          onClick={() => setFiltroPersona('todos')}
+          style={{
+            padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+            border: '1px solid #e2e8f0',
+            background: filtroPersona === 'todos' ? '#4f46e5' : '#fff',
+            color: filtroPersona === 'todos' ? '#fff' : '#64748b',
+          }}
+        >
+          Todos
+        </button>
+        {PERSONAS.map(p => (
           <button
-            onClick={() => void agregar()}
-            disabled={!texto.trim() || guardando}
+            key={p.key}
+            onClick={() => setFiltroPersona(p.key)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px',
-              background: !texto.trim() || guardando ? '#e2e8f0' : '#4f46e5',
-              color: !texto.trim() || guardando ? '#94a3b8' : '#fff',
-              border: 'none', borderRadius: 9, fontSize: 14, fontWeight: 600,
-              cursor: !texto.trim() || guardando ? 'default' : 'pointer', flexShrink: 0,
+              padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              border: '1px solid #e2e8f0',
+              background: filtroPersona === p.key ? COLORES_PERSONA[p.key] : '#fff',
+              color: filtroPersona === p.key ? '#fff' : '#64748b',
             }}
           >
-            <Plus size={16} /> Agregar
+            {p.label}
           </button>
+        ))}
+      </div>
+
+      {error && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#dc2626' }}>
+          {error}
         </div>
+      )}
 
-        {error && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#dc2626' }}>
-            {error}
+      {cargando && <div style={{ textAlign: 'center', padding: 50, color: '#94a3b8', fontSize: 14 }}>Cargando tareas...</div>}
+
+      {!cargando && tareasFiltradas.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 60, border: '1px dashed #e2e8f0', borderRadius: 12 }}>
+          <p style={{ fontSize: 15, color: '#64748b', margin: 0 }}>
+            {filtroPersona === 'todos' ? 'No hay nada anotado todavía.' : `No hay tareas asignadas a ${PERSONAS.find(p => p.key === filtroPersona)?.label}.`}
+          </p>
+          <p style={{ fontSize: 13, color: '#94a3b8', margin: '6px 0 0' }}>Escribe arriba lo primero que haya que hacer.</p>
+        </div>
+      )}
+
+      {!cargando && tareasFiltradas.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+            {pendientes} pendiente{pendientes === 1 ? '' : 's'} de {tareasFiltradas.length} en la lista
           </div>
-        )}
 
-        {cargando && <div style={{ textAlign: 'center', padding: 50, color: '#94a3b8', fontSize: 14 }}>Cargando tareas...</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {tareasFiltradas.map(t => {
+              const estilo = ESTILO_ESTADO[t.estado]
+              const Icono = estilo.icono
+              const restan = horasHastaOcultar({ estado: t.estado, completada_en: t.completadaEn })
+              const enEdicion = editando?.id === t.id
 
-        {!cargando && tareas.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 60, border: '1px dashed #e2e8f0', borderRadius: 12 }}>
-            <p style={{ fontSize: 15, color: '#64748b', margin: 0 }}>No hay nada anotado todavía.</p>
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: '6px 0 0' }}>Escribe arriba lo primero que haya que hacer.</p>
-          </div>
-        )}
-
-        {!cargando && tareas.length > 0 && (
-          <>
-            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
-              {pendientes} pendiente{pendientes === 1 ? '' : 's'} de {tareas.length} en la lista
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {tareas.map(t => {
-                const estilo = ESTILO_ESTADO[t.estado]
-                const Icono = estilo.icono
-                const restan = horasHastaOcultar({ estado: t.estado, completada_en: t.completadaEn })
-                const enEdicion = editando?.id === t.id
-
-                return (
-                  <div key={t.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-                    background: estilo.fondo, border: '1px solid #e2e8f0', borderRadius: 10,
-                  }}>
+              return (
+                <div key={t.id} style={{
+                  padding: '10px 12px', background: estilo.fondo,
+                  border: '1px solid #e2e8f0', borderRadius: 10,
+                }}>
+                  {/* Fila principal */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <Icono size={18} color={estilo.color} style={{ flexShrink: 0 }} />
 
                     {enEdicion ? (
@@ -178,6 +231,21 @@ export default function TareasPage() {
                       </span>
                     )}
 
+                    {/* Asignar */}
+                    <select
+                      value={t.asignadoA ?? ''}
+                      onChange={e => void cambiarAsignacion(t.id, e.target.value)}
+                      aria-label={`Asignar: ${t.texto}`}
+                      style={{
+                        padding: '5px 7px', border: '1px solid #e2e8f0', borderRadius: 7,
+                        fontSize: 11, color: t.asignadoA ? COLORES_PERSONA[t.asignadoA] : '#94a3b8',
+                        background: '#fff', cursor: 'pointer', flexShrink: 0, maxWidth: 90,
+                      }}
+                    >
+                      <option value="">Sin asignar</option>
+                      {PERSONAS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                    </select>
+
                     <select
                       value={t.estado}
                       onChange={e => void cambiarEstado(t.id, e.target.value as EstadoTarea)}
@@ -202,11 +270,44 @@ export default function TareasPage() {
                       <Trash2 size={14} />
                     </button>
                   </div>
-                )
-              })}
-            </div>
-          </>
-        )}
+
+                  {/* Barra de progreso */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <div style={{
+                      flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        width: `${t.porcentaje}%`, height: '100%', borderRadius: 3,
+                        background: t.porcentaje === 100 ? '#16a34a' : t.porcentaje > 0 ? '#d97706' : '#e2e8f0',
+                        transition: 'width 0.2s',
+                      }} />
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={t.porcentaje}
+                      onChange={e => {
+                        const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0))
+                        setTareas(prev => prev.map(x => x.id === t.id ? { ...x, porcentaje: v } : x))
+                      }}
+                      onBlur={() => void cambiarPorcentaje(t.id, t.porcentaje)}
+                      onKeyDown={e => { if (e.key === 'Enter') void cambiarPorcentaje(t.id, t.porcentaje) }}
+                      aria-label={`Porcentaje de: ${t.texto}`}
+                      style={{
+                        width: 48, padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: 5,
+                        fontSize: 11, textAlign: 'center', color: '#64748b', background: '#fff',
+                      }}
+                    />
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>%</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -1,10 +1,20 @@
 export type EstadoTarea = 'sin_realizar' | 'parcial' | 'hecho'
+export type AsignadoA = 'luis' | 'benjamin'
 
 export const ESTADOS_TAREA: ReadonlyArray<{ key: EstadoTarea; label: string }> = [
   { key: 'sin_realizar', label: 'Sin realizar' },
   { key: 'parcial', label: 'Parcial' },
   { key: 'hecho', label: 'Hecho' },
 ]
+
+export const PERSONAS: ReadonlyArray<{ key: AsignadoA; label: string }> = [
+  { key: 'luis', label: 'Luis' },
+  { key: 'benjamin', label: 'Benjamín' },
+]
+
+export function esAsignadoValido(valor: string): valor is AsignadoA {
+  return PERSONAS.some(p => p.key === valor)
+}
 
 /** Cuánto se queda visible una tarea después de marcarla como hecha. */
 export const HORAS_VISIBLE_TRAS_HECHA = 12
