@@ -1747,11 +1747,18 @@ export async function inscribirEnMesa(params: {
 
   // El club queda en la inscripción, no en la ficha: la misma persona puede
   // jugar otro torneo por otro club sin reescribir este (migración 129).
-  await supabase.from('grupo_jugadores').insert({
+  //
+  // El error se revisa: sin esto, un insert fallido devolvía "success" igual,
+  // el jugador aparecía en pantalla por el update optimista y desaparecía al
+  // recargar, sin que nadie supiera por qué.
+  const { error: inscripcionError } = await supabase.from('grupo_jugadores').insert({
     grupo_id: grupoMesa.id,
     jugador_id: jugadorId,
     club_procedencia: torneo.tipo === 'interno' ? null : (clubProcedencia?.trim() || null),
   })
+  if (inscripcionError) {
+    return { error: `No se pudo inscribir a ${jugadorNombre}: ${inscripcionError.message}` }
+  }
 
   if ((torneo?.cuota_inscripcion ?? 0) > 0) {
     const estaPagado = metodoPago !== 'pendiente'
