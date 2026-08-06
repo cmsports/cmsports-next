@@ -168,13 +168,16 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
                 <div style={{ fontSize: 10, color: '#94a3b8' }}>Superadmin</div>
               </div>
             </div>
-            <button onClick={cerrarSesion} style={{
-              width: '100%', padding: '6px 10px', background: 'transparent',
-              border: '1px solid #e2e8f0', borderRadius: 7, color: '#64748b', fontSize: 12,
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}>
-              <LogOut size={13} /> Cerrar sesión
-            </button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <ThemeToggle />
+              <button onClick={cerrarSesion} style={{
+                flex: 1, padding: '6px 10px', background: 'transparent',
+                border: '1px solid #e2e8f0', borderRadius: 7, color: '#64748b', fontSize: 12,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+                <LogOut size={13} /> Cerrar sesión
+              </button>
+            </div>
           </div>
         </aside>
 
