@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CheckCircle2, Circle, CircleDashed, Plus, Trash2, User } from 'lucide-react'
+import { CheckCircle2, Circle, CircleDashed, MessageSquare, Plus, Trash2, User } from 'lucide-react'
 import { asignarTarea, borrarTarea, cambiarEstadoTarea, cambiarPorcentajeTarea, crearTarea, editarTextoTarea, listarTareas, type Tarea } from '@/app/actions/tareas'
+import { borrarNota, crearNota, listarNotas, type Nota } from '@/app/actions/notas'
 import { ESTADOS_TAREA, HORAS_VISIBLE_TRAS_HECHA, PERSONAS, horasHastaOcultar, type AsignadoA, type EstadoTarea } from '@/lib/domain/tareas'
 
 const ESTILO_ESTADO: Record<EstadoTarea, { icono: typeof Circle; color: string; fondo: string }> = {
@@ -24,11 +25,16 @@ export default function TareasPage() {
   const [error, setError] = useState('')
   const [editando, setEditando] = useState<{ id: string; texto: string } | null>(null)
   const [filtroPersona, setFiltroPersona] = useState<AsignadoA | 'todos'>('todos')
+  const [notas, setNotas] = useState<Nota[]>([])
+  const [textoNota, setTextoNota] = useState('')
+  const [autorNota, setAutorNota] = useState<AsignadoA>('luis')
 
   const cargar = useCallback(async () => {
-    const res = await listarTareas()
-    if (res.error) setError(res.error)
-    else setTareas(res.tareas ?? [])
+    const [resTareas, resNotas] = await Promise.all([listarTareas(), listarNotas()])
+    if (resTareas.error) setError(resTareas.error)
+    else setTareas(resTareas.tareas ?? [])
+    if (resNotas.error) setError(resNotas.error)
+    else setNotas(resNotas.notas ?? [])
     setCargando(false)
   }, [])
 
@@ -82,6 +88,25 @@ export default function TareasPage() {
   async function borrar(id: string) {
     setTareas(prev => prev.filter(t => t.id !== id))
     const res = await borrarTarea(id)
+    if (res.error) setError(res.error)
+    await cargar()
+  }
+
+  async function agregarNota() {
+    const limpio = textoNota.trim()
+    if (!limpio || guardando) return
+    setGuardando(true)
+    setError('')
+    const res = await crearNota({ texto: limpio, autor: autorNota })
+    setGuardando(false)
+    if (res.error) { setError(res.error); return }
+    setTextoNota('')
+    await cargar()
+  }
+
+  async function eliminarNota(id: string) {
+    setNotas(prev => prev.filter(n => n.id !== id))
+    const res = await borrarNota(id)
     if (res.error) setError(res.error)
     await cargar()
   }
@@ -308,6 +333,97 @@ export default function TareasPage() {
           </div>
         </>
       )}
+
+      {/* ── Notas ── */}
+      <div style={{ marginTop: 40, borderTop: '1px solid #e2e8f0', paddingTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <MessageSquare size={18} color="#64748b" />
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: '#0f172a', margin: 0 }}>Notas</h2>
+        </div>
+        <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 14 }}>
+          Avisos rápidos entre los dos. Se pegan, se leen, se borran.
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <select
+            value={autorNota}
+            onChange={e => setAutorNota(e.target.value as AsignadoA)}
+            style={{
+              padding: '10px 8px', border: '1px solid #e2e8f0', borderRadius: 9,
+              fontSize: 13, color: COLORES_PERSONA[autorNota], background: '#fff', cursor: 'pointer',
+            }}
+          >
+            {PERSONAS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+          </select>
+          <input
+            value={textoNota}
+            onChange={e => setTextoNota(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void agregarNota() }}
+            placeholder="Deja una nota…"
+            maxLength={500}
+            style={{
+              flex: 1, minWidth: 0, padding: '10px 12px', border: '1px solid #e2e8f0',
+              borderRadius: 9, fontSize: 14, color: '#0f172a', background: '#fff',
+            }}
+          />
+          <button
+            onClick={() => void agregarNota()}
+            disabled={!textoNota.trim() || guardando}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px',
+              background: !textoNota.trim() || guardando ? '#e2e8f0' : '#4f46e5',
+              color: !textoNota.trim() || guardando ? '#94a3b8' : '#fff',
+              border: 'none', borderRadius: 9, fontSize: 14, fontWeight: 600,
+              cursor: !textoNota.trim() || guardando ? 'default' : 'pointer', flexShrink: 0,
+            }}
+          >
+            <Plus size={16} /> Pegar
+          </button>
+        </div>
+
+        {!cargando && notas.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, border: '1px dashed #e2e8f0', borderRadius: 12 }}>
+            <p style={{ fontSize: 14, color: '#64748b', margin: 0 }}>Sin notas por ahora.</p>
+          </div>
+        )}
+
+        {notas.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {notas.map(n => (
+              <div key={n.id} style={{
+                padding: '10px 12px', background: '#f8fafc',
+                border: '1px solid #e2e8f0', borderRadius: 10,
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+              }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 600, color: COLORES_PERSONA[n.autor],
+                  padding: '2px 8px', background: '#fff', border: `1px solid ${COLORES_PERSONA[n.autor]}30`,
+                  borderRadius: 5, flexShrink: 0, marginTop: 1,
+                }}>
+                  {PERSONAS.find(p => p.key === n.autor)?.label}
+                </span>
+                <span style={{ flex: 1, fontSize: 14, color: '#0f172a', whiteSpace: 'pre-wrap' }}>
+                  {n.texto}
+                </span>
+                <span style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0, marginTop: 3 }}>
+                  {new Date(n.creadaEn).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <button
+                  onClick={() => void eliminarNota(n.id)}
+                  aria-label={`Borrar nota de ${n.autor}`}
+                  title="Borrar nota"
+                  style={{
+                    display: 'flex', alignItems: 'center', padding: 6, background: 'none',
+                    border: 'none', color: '#cbd5e1', cursor: 'pointer', flexShrink: 0,
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
