@@ -4,6 +4,7 @@ import {
   calcularNumGruposTardios,
   generarRoundRobin,
   seedingSerpenteo,
+  seedingSerpenteoConClubes,
   calcularTamanoBracket,
   determinarFaseInicial,
   siguienteFase,
@@ -157,6 +158,67 @@ describe('seedingSerpenteo', () => {
     const asign = seedingSerpenteo(js, 4, ['j3', 'j1', 'j6', 'j0'])
     expect(['j3', 'j1', 'j6', 'j0'].map(id => asign.find(a => a.jugadorId === id)!.grupoIndex))
       .toEqual([0, 1, 2, 3])
+  })
+})
+
+describe('seedingSerpenteoConClubes', () => {
+  function jugadoresConClub(clubes: (string | null)[]): JugadorTorneo[] {
+    return clubes.map((club, i) => ({ id: `j${i}`, nombre: `J${i}`, club }))
+  }
+
+  it('asigna a todos los jugadores exactamente una vez', () => {
+    const asign = seedingSerpenteoConClubes(jugadoresConClub([null, null, null, null, null, null]), 2)
+    expect(asign).toHaveLength(6)
+    expect(new Set(asign.map(a => a.jugadorId)).size).toBe(6)
+  })
+
+  it('reparte de forma balanceada entre grupos (difieren en ≤1) aunque no haya clubes', () => {
+    const asign = seedingSerpenteoConClubes(jugadoresConClub(Array(7).fill(null)), 3)
+    const counts = [0, 0, 0]
+    asign.forEach(a => counts[a.grupoIndex]++)
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1)
+  })
+
+  it('evita juntar a dos jugadores del mismo club cuando alcanzan los grupos', () => {
+    // 2 clubes de 3 jugadores cada uno, 3 grupos → cabe uno de cada club por grupo
+    const js = jugadoresConClub(['A', 'A', 'A', 'B', 'B', 'B'])
+    const asign = seedingSerpenteoConClubes(js, 3)
+    const grupoDe = new Map(asign.map(a => [a.jugadorId, a.grupoIndex]))
+    for (const club of ['A', 'B']) {
+      const grupos = js.filter(j => j.club === club).map(j => grupoDe.get(j.id))
+      expect(new Set(grupos).size).toBe(3)
+    }
+  })
+
+  it('permite el choque cuando es matemáticamente inevitable (regla blanda)', () => {
+    // 5 jugadores del mismo club, solo 2 grupos: no hay forma de separarlos a todos
+    const js = jugadoresConClub(['A', 'A', 'A', 'A', 'A'])
+    const asign = seedingSerpenteoConClubes(js, 2)
+    expect(asign).toHaveLength(5)
+    expect(new Set(asign.map(a => a.jugadorId)).size).toBe(5)
+    // sigue balanceado aunque haya choques inevitables
+    const counts = [0, 0]
+    asign.forEach(a => counts[a.grupoIndex]++)
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1)
+  })
+
+  it('los cabezas de serie caen en grupos distintos, igual que la serpentina normal', () => {
+    const js = jugadoresConClub([null, null, null, null, null, null])
+    const cabezas = [js[0].id, js[1].id]
+    const asign = seedingSerpenteoConClubes(js, 2, cabezas)
+    const g0 = asign.find(a => a.jugadorId === js[0].id)!.grupoIndex
+    const g1 = asign.find(a => a.jugadorId === js[1].id)!.grupoIndex
+    expect(g0).not.toBe(g1)
+  })
+
+  it('una cabeza de serie también cuenta como miembro de su club para evitar choques', () => {
+    // j0 es cabeza y de club A; j1 también es de club A. No debería caer en el grupo de j0
+    // si existe alternativa.
+    const js = jugadoresConClub(['A', 'A', 'B', 'B'])
+    const asign = seedingSerpenteoConClubes(js, 2, [js[0].id])
+    const grupoCabeza = asign.find(a => a.jugadorId === js[0].id)!.grupoIndex
+    const grupoOtroA = asign.find(a => a.jugadorId === js[1].id)!.grupoIndex
+    expect(grupoOtroA).not.toBe(grupoCabeza)
   })
 })
 

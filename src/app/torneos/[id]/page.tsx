@@ -59,6 +59,8 @@ export default function TorneoDetallePage() {
   const [qrOpen, setQrOpen] = useState(false)
   const [busquedaMesa, setBusquedaMesa] = useState('')
   const [rutMesa, setRutMesa] = useState('')
+  const [clubMesa, setClubMesa] = useState('')
+  const [clubesConocidos, setClubesConocidos] = useState<string[]>([])
   const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'pendiente'>('pendiente')
   const [pagoLoading, setPagoLoading] = useState<string|null>(null)
   const [pagosSeleccionados, setPagosSeleccionados] = useState<Set<string>>(new Set())
@@ -132,7 +134,7 @@ export default function TorneoDetallePage() {
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
-      supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,jugadores(id,nombre),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
+      supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,jugadores(id,nombre,es_externo,club_procedencia),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
 
@@ -186,6 +188,19 @@ export default function TorneoDetallePage() {
       .eq('estado', 'activo')
       .order('nombre')
       .then(({ data }) => setJugadoresPorCategoria(data || []))
+  }, [mesaOpen, torneo?.tipo, perfil?.club_id])
+
+  // Clubes de procedencia ya usados en fichas externas de este club, para
+  // sugerir en el input de la mesa (torneos externos) y evitar variantes de
+  // escritura del mismo club.
+  useEffect(() => {
+    if (!mesaOpen || torneo?.tipo === 'interno' || !perfil?.club_id) { setClubesConocidos([]); return }
+    supabase.from('jugadores')
+      .select('club_procedencia')
+      .eq('club_id', perfil.club_id)
+      .eq('es_externo', true)
+      .not('club_procedencia', 'is', null)
+      .then(({ data }) => setClubesConocidos([...new Set((data || []).map((r: any) => r.club_procedencia).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))))
   }, [mesaOpen, torneo?.tipo, perfil?.club_id])
 
   useEffect(() => {
@@ -354,11 +369,12 @@ export default function TorneoDetallePage() {
     if (inscribiendo || !busquedaMesa.trim()) return
     setInscribiendo(true)
     try {
-      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, jugadorId: jugadorIdSeleccionado ?? undefined, rut: rutMesa, metodoPago })
+      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, jugadorId: jugadorIdSeleccionado ?? undefined, rut: rutMesa, metodoPago, clubProcedencia: clubMesa })
       if (res.error) { alert(res.error); return }
 
       setBusquedaMesa('')
       setRutMesa('')
+      setClubMesa('')
       setJugadoresInscritos(prev => [...prev, { jugador_id: res.jugadorId!, jugadores: { id: res.jugadorId, nombre: res.jugadorNombre } }])
       await cargarTorneo()
     } finally {
@@ -859,7 +875,12 @@ export default function TorneoDetallePage() {
                     style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: esAdmin && !hayBracketJugado ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
                     <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, color: text }}>{j.jugador?.nombre||'—'}</div>
+                      <div style={{ fontSize:13, color: text }}>
+                        {j.jugador?.nombre||'—'}
+                        {j.jugador?.club_procedencia && (
+                          <span style={{ marginLeft:6, background:'#eef2ff', color:'#4338ca', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:8 }}>{j.jugador.club_procedencia}</span>
+                        )}
+                      </div>
                       <div style={{ fontSize:10, color: muted }}>{j.pg}G {j.pp}P · {j.pts}pts</div>
                     </div>
                     {esAdmin && cuota > 0 && (() => {
@@ -1653,6 +1674,7 @@ export default function TorneoDetallePage() {
                 onChange={async e => {
                   setBusquedaMesa(e.target.value)
                   setRutMesa('')
+                  setClubMesa('')
                   setJugadorIdSeleccionado(null)
                   if (torneo?.tipo === 'interno') {
                     const q = e.target.value.toLowerCase()
@@ -1708,6 +1730,15 @@ export default function TorneoDetallePage() {
             <div style={{ display:'flex', gap:8, marginBottom:10 }}>
               <input style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 placeholder="12345678-9" value={rutMesa} onChange={e => setRutMesa(formatRut(e.target.value))} maxLength={10} />
+              {torneo?.tipo !== 'interno' && !jugadorIdSeleccionado && (
+                <>
+                  <input style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
+                    placeholder="Club de procedencia (opcional)" value={clubMesa} onChange={e => setClubMesa(e.target.value)} list="clubes-conocidos" />
+                  <datalist id="clubes-conocidos">
+                    {clubesConocidos.map(c => <option key={c} value={c} />)}
+                  </datalist>
+                </>
+              )}
             </div>
             <div style={{ display:'flex', gap:8, marginBottom:16 }}>
               <select style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
@@ -1735,7 +1766,12 @@ export default function TorneoDetallePage() {
                   <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', borderBottom:'1px solid #e2e8f0', background:'#ffffff' }}>
                     <span style={{ fontSize:12, color: muted, width:20 }}>{i+1}</span>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, color: text, fontWeight:500 }}>{j.jugadores?.nombre||'—'}</div>
+                      <div style={{ fontSize:13, color: text, fontWeight:500 }}>
+                        {j.jugadores?.nombre||'—'}
+                        {j.jugadores?.club_procedencia && (
+                          <span style={{ marginLeft:6, background:'#eef2ff', color:'#4338ca', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:8 }}>{j.jugadores.club_procedencia}</span>
+                        )}
+                      </div>
                       <div style={{ fontSize:11, color: muted }}>{j.jugadores?.categoria || ''}</div>
                     </div>
                     {/* Estado pago */}

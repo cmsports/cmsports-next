@@ -2,6 +2,7 @@
 
 import {
   seedingSerpenteo,
+  seedingSerpenteoConClubes,
   generarRoundRobin,
   siguienteFase,
   construirLlavesLayoutNumerado,
@@ -16,6 +17,16 @@ import { CONFIG, type FaseOrden } from '@/lib/config'
 import { requireAdmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fechaChile } from '@/lib/domain/fechaChile'
+
+// Clave de club para la regla blanda anti-choque de grupos (solo torneos
+// externos). Los jugadores del club anfitrión comparten una sola clave fija;
+// los externos usan su club_procedencia normalizado; sin dato → sin clave
+// (ese jugador queda sin restricción).
+function clubKeyDeJugador(j: { es_externo?: boolean | null; club_procedencia?: string | null }): string | null {
+  if (!j.es_externo) return 'HOST'
+  const club = j.club_procedencia?.trim()
+  return club ? club.toLowerCase() : null
+}
 
 type AdminSupabase = NonNullable<Awaited<ReturnType<typeof requireAdmin>>['supabase']>
 
@@ -754,18 +765,21 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
   const { torneoId } = params
 
+  const { data: torneoInfo } = await (supabase as any).from('torneos').select('tipo').eq('id', torneoId).single()
+  const esExterno = torneoInfo?.tipo === 'externo'
+
   const { data: gruposPrev } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
   const grupoIds = (gruposPrev || []).map(g => g.id)
 
   const { data: inscritos } = await supabase
     .from('grupo_jugadores')
-    .select('jugador_id, jugadores(id,nombre)')
+    .select('jugador_id, jugadores(id,nombre,es_externo,club_procedencia)')
     .in('grupo_id', grupoIds.length ? grupoIds : ['00000000-0000-0000-0000-000000000000'])
 
   const jugadores: JugadorTorneo[] = (inscritos || [])
-    .map(i => {
+    .map((i): JugadorTorneo | null => {
       const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
-      return j ? { id: j.id, nombre: j.nombre ?? '' } : null
+      return j ? { id: j.id, nombre: j.nombre ?? '', club: esExterno ? clubKeyDeJugador(j) : null } : null
     })
     .filter((x): x is JugadorTorneo => x !== null)
 
@@ -796,7 +810,9 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     .select('id, nombre')
   if (!nuevosGrupos?.length) return { error: 'No se pudieron crear los grupos' }
 
-  const asignaciones = seedingSerpenteo(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
+  const asignaciones = esExterno
+    ? seedingSerpenteoConClubes(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
+    : seedingSerpenteo(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
   const ordenPorGrupo = new Map<number, number>()
   const inserts = asignaciones.map(a => {
     const orden = ordenPorGrupo.get(a.grupoIndex) ?? 0
@@ -1241,16 +1257,19 @@ export async function generarGruposTardios(params: {
 
   const { torneoId } = params
 
+  const { data: torneoInfo } = await (supabase as any).from('torneos').select('tipo').eq('id', torneoId).single()
+  const esExterno = torneoInfo?.tipo === 'externo'
+
   const { data: grupoMesa } = await supabase
     .from('torneo_grupos').select('id').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()
   if (!grupoMesa) return { error: 'No hay jugadores en mesa' }
 
   const { data: mesaJugadores } = await supabase
-    .from('grupo_jugadores').select('jugador_id, jugadores(id,nombre)').eq('grupo_id', grupoMesa.id)
+    .from('grupo_jugadores').select('jugador_id, jugadores(id,nombre,es_externo,club_procedencia)').eq('grupo_id', grupoMesa.id)
   const jugadores: JugadorTorneo[] = (mesaJugadores || [])
-    .map(i => {
+    .map((i): JugadorTorneo | null => {
       const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
-      return j ? { id: j.id, nombre: j.nombre ?? '' } : null
+      return j ? { id: j.id, nombre: j.nombre ?? '', club: esExterno ? clubKeyDeJugador(j) : null } : null
     })
     .filter((x): x is JugadorTorneo => x !== null)
 
@@ -1297,9 +1316,14 @@ export async function generarGruposTardios(params: {
   if (jugadores.length === 1) {
     const counts = await Promise.all(
       (gruposExistentes || []).map(async g => {
-        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id, orden').eq('grupo_id', g.id)
+        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id, orden, jugadores(es_externo,club_procedencia)').eq('grupo_id', g.id)
         const ordenados = ordenarMiembros(gjs || [])
-        return { id: g.id, nombre: g.nombre ?? '', enPreparacion: g.en_preparacion, count: ordenados.length, playerIds: ordenados.map(x => x.jugador_id).filter((id): id is string => !!id) }
+        const clubesPresentes = new Set(
+          (gjs || [])
+            .map(x => { const j = Array.isArray(x.jugadores) ? x.jugadores[0] : x.jugadores; return j ? clubKeyDeJugador(j) : null })
+            .filter((c): c is string => !!c),
+        )
+        return { id: g.id, nombre: g.nombre ?? '', enPreparacion: g.en_preparacion, count: ordenados.length, playerIds: ordenados.map(x => x.jugador_id).filter((id): id is string => !!id), clubesPresentes }
       }),
     )
     const cabezasIds = new Set(cabezas.map(c => c.jugadorId))
@@ -1308,9 +1332,16 @@ export async function generarGruposTardios(params: {
     if (jugadorEsCabeza && preparacion?.playerIds.some(id => cabezasIds.has(id))) {
       return { error: 'El grupo en preparación ya contiene otra cabeza de serie. Ajusta las cabezas antes de incorporar al jugador.' }
     }
-    const disponibles = counts.filter(g =>
+    let disponibles = counts.filter(g =>
       g.count < 4 && (!jugadorEsCabeza || !g.playerIds.some(id => cabezasIds.has(id))),
     )
+    // Regla blanda anti-choque de club (solo torneos externos): preferir
+    // grupos que todavía no tengan a nadie del mismo club; si ninguno queda
+    // libre, se mantiene la lista completa (choque inevitable, se permite).
+    if (esExterno && jugadores[0].club) {
+      const sinChoque = disponibles.filter(g => !g.clubesPresentes.has(jugadores[0].club!))
+      if (sinChoque.length) disponibles = sinChoque
+    }
     if (disponibles.length) {
       disponibles.sort((a, b) => Number(b.enPreparacion) - Number(a.enPreparacion) || a.count - b.count)
       const target = disponibles[0]
@@ -1354,7 +1385,9 @@ export async function generarGruposTardios(params: {
   if ((gruposExistentes?.length ?? 0) + numGrupos > CONFIG.TORNEO_MAX_GRUPOS) {
     return { error: `No se pueden superar ${CONFIG.TORNEO_MAX_GRUPOS} grupos en un torneo` }
   }
-  const asignaciones = seedingSerpenteo(jugadores, numGrupos, cabezasTardias)
+  const asignaciones = esExterno
+    ? seedingSerpenteoConClubes(jugadores, numGrupos, cabezasTardias)
+    : seedingSerpenteo(jugadores, numGrupos, cabezasTardias)
   const grupoIncompletoIdx = Array.from({ length: numGrupos }, (_, i) => i)
     .find(i => asignaciones.filter(a => a.grupoIndex === i).length < 3)
   if (grupoIncompletoIdx != null && (gruposExistentes || []).some(g => g.en_preparacion)) {
@@ -1631,11 +1664,12 @@ export async function inscribirEnMesa(params: {
   jugadorId?: string
   rut: string
   metodoPago: 'efectivo' | 'transferencia' | 'pendiente'
+  clubProcedencia?: string
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { torneoId, busqueda, jugadorId: jugadorIdParam, rut, metodoPago } = params
+  const { torneoId, busqueda, jugadorId: jugadorIdParam, rut, metodoPago, clubProcedencia } = params
   const nombreBuscado = busqueda.trim()
   if (!nombreBuscado) return { error: 'Nombre vacío' }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
@@ -1664,7 +1698,7 @@ export async function inscribirEnMesa(params: {
     // El usuario escribió el nombre manualmente (Enter sin seleccionar dropdown)
     // → buscar coincidencia EXACTA primero, si no hay → crear externo
     const { data: exacto } = await supabase
-      .from('jugadores').select('id,nombre')
+      .from('jugadores').select('id,nombre,es_externo,club_procedencia')
       .ilike('nombre', nombreBuscado)
       .eq('club_id', perfil.club_id)
       .maybeSingle()
@@ -1672,11 +1706,19 @@ export async function inscribirEnMesa(params: {
     if (exacto) {
       jugadorId = exacto.id
       jugadorNombre = exacto.nombre ?? jugadorNombre
+      // Ficha externa reconocida por nombre exacto (no por autocomplete) que
+      // todavía no tiene club guardado: completarlo con lo recién escrito,
+      // sin pisar un club ya cargado en un torneo anterior.
+      const clubNuevo = clubProcedencia?.trim()
+      if (exacto.es_externo && clubNuevo && !exacto.club_procedencia) {
+        await supabase.from('jugadores').update({ club_procedencia: clubNuevo }).eq('id', exacto.id)
+      }
     } else {
       const { data: nuevo } = await supabase.from('jugadores').insert({
         club_id: perfil.club_id, nombre: nombreBuscado,
         rut: rut || null, categoria: 'principiante', sesiones_limite: 0,
         es_externo: true,
+        club_procedencia: clubProcedencia?.trim() || null,
       }).select().single()
       if (!nuevo) return { error: 'No se pudo crear el jugador' }
       jugadorId = nuevo.id

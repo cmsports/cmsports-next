@@ -179,6 +179,7 @@ export interface Database {
           foto_path: string | null
           creado_en: string | null
           es_externo: boolean | null
+          club_procedencia: string | null
           mensualidad: number | null
           tipo_plan: string | null
           entrenamientos_por_semana: number | null
@@ -215,6 +216,7 @@ export interface Database {
           foto_path?: string | null
           creado_en?: string | null
           es_externo?: boolean | null
+          club_procedencia?: string | null
           mensualidad?: number | null
           tipo_plan?: string | null
           entrenamientos_por_semana?: number | null
@@ -251,6 +253,7 @@ export interface Database {
           foto_path?: string | null
           creado_en?: string | null
           es_externo?: boolean | null
+          club_procedencia?: string | null
           mensualidad?: number | null
           tipo_plan?: string | null
           entrenamientos_por_semana?: number | null

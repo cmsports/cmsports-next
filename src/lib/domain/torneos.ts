@@ -3,6 +3,10 @@ import { CONFIG, FaseOrden } from '../config'
 export interface JugadorTorneo {
   id: string
   nombre: string
+  // Clave de club normalizada, solo para torneos externos. 'HOST' para
+  // jugadores del club anfitrión, texto libre normalizado para externos,
+  // null/undefined si no hay club informado (sin restricción para ese jugador).
+  club?: string | null
 }
 
 export interface GrupoStats {
@@ -96,6 +100,57 @@ export function seedingSerpenteo(
       if (gi >= numGrupos) { gi = numGrupos - 1; dir = -1 }
       else if (gi < 0) { gi = 0; dir = 1 }
     }
+  }
+
+  return asignaciones
+}
+
+// Variante de seedingSerpenteo para torneos externos: además de separar a
+// las cabezas de serie (una por grupo, igual que la serpentina normal),
+// evita que dos jugadores del mismo club real queden en el mismo grupo.
+// Es una regla BLANDA: si un club trae más jugadores que grupos existen, el
+// choque es matemáticamente inevitable y el algoritmo lo permite en vez de
+// bloquear el armado — simplemente reparte por menor carga en ese caso.
+export function seedingSerpenteoConClubes(
+  jugadores: JugadorTorneo[],
+  numGrupos: number,
+  cabezasDeSerie: readonly string[] | ReadonlySet<string> = [],
+): SeedResult[] {
+  const porId = new Map(jugadores.map(j => [j.id, j]))
+  const idsCabeza = 'has' in cabezasDeSerie
+    ? jugadores.filter(j => cabezasDeSerie.has(j.id)).map(j => j.id)
+    : [...cabezasDeSerie]
+  const idsUnicos = [...new Set(idsCabeza)]
+  const cabezas = idsUnicos.map(id => porId.get(id)).filter((j): j is JugadorTorneo => !!j)
+  const cabezasSet = new Set(cabezas.map(j => j.id))
+  const resto = jugadores.filter(j => !cabezasSet.has(j.id))
+
+  const size = new Array(numGrupos).fill(0)
+  const clubesPorGrupo: Array<Set<string>> = Array.from({ length: numGrupos }, () => new Set())
+  const asignaciones: SeedResult[] = []
+
+  // Cabezas: una por grupo en orden, igual que la serpentina normal (ya
+  // validado en el caller que cabezas.length <= numGrupos).
+  cabezas.forEach((j, i) => {
+    asignaciones.push({ grupoIndex: i, jugadorId: j.id })
+    size[i]++
+    if (j.club) clubesPorGrupo[i].add(j.club)
+  })
+
+  // Resto: para cada jugador, el grupo con menos integrantes que todavía no
+  // tenga su club; si todos los grupos ya tienen ese club, se relaja la
+  // restricción y se usa igual el de menos integrantes.
+  for (const j of resto) {
+    let candidatos = Array.from({ length: numGrupos }, (_, i) => i)
+    if (j.club) {
+      const sinChoque = candidatos.filter(gi => !clubesPorGrupo[gi].has(j.club!))
+      if (sinChoque.length) candidatos = sinChoque
+    }
+    candidatos.sort((a, b) => size[a] - size[b] || a - b)
+    const gi = candidatos[0]
+    asignaciones.push({ grupoIndex: gi, jugadorId: j.id })
+    size[gi]++
+    if (j.club) clubesPorGrupo[gi].add(j.club)
   }
 
   return asignaciones
