@@ -107,6 +107,21 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
   if (perfilesError) return { error: 'No se pudieron identificar las cuentas del club' }
   const cuentas = (perfiles || []).map(perfil => perfil.id).filter(id => id !== user?.id)
 
+  // jugadores.club_id no tiene ON DELETE CASCADE hacia clubes, así que un club
+  // con jugadores reales bloqueaba el borrado con una violación de llave
+  // foránea. Se borran uno por uno con la misma función que ya usa "Eliminar
+  // jugador" (migración 127): arrastra asistencia, mensualidades, torneos y
+  // todo lo que depende de cada jugador, y conserva sus movimientos
+  // financieros (solo se les suelta la referencia) en vez de borrarlos.
+  const { data: jugadoresClub, error: jugadoresError } = await admin.from('jugadores')
+    .select('id').eq('club_id', club.id)
+  if (jugadoresError) return { error: 'No se pudieron identificar los jugadores del club' }
+  for (const jugador of jugadoresClub || []) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (admin as any).rpc('eliminar_jugador_atomico', { p_jugador_id: jugador.id })
+    if (error) return { error: `No se pudo eliminar un jugador del club (id ${jugador.id}): ${error.message}. El club no se borró.` }
+  }
+
   for (const bucket of ['flyer-referencias', 'galeria-fotos']) {
     const error = await eliminarCarpetaClub(admin, bucket, club.id)
     if (error) return { error: `No se pudieron eliminar los archivos del club: ${error.message}` }
