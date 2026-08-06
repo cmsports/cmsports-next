@@ -212,6 +212,9 @@ function CalendarioContent() {
       <style>{`
         .cal-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
         @media (min-width: 768px) { .cal-grid--panel { grid-template-columns: 1fr 320px; } }
+        .cal-labels { display: none; }
+        .cal-dot { display: block; }
+        @media (min-width: 768px) { .cal-labels { display: block; } .cal-dot { display: none; } .cal-cell { min-height: 76px !important; } }
       `}</style>
       <div className={`cal-grid${diaSeleccionado ? ' cal-grid--panel' : ''}`}>
         {/* Calendario */}
@@ -233,14 +236,29 @@ function CalendarioContent() {
               const seleccionado = diaSeleccionado === fecha
               return (
                 <div key={dia} onClick={() => setDiaSeleccionado(seleccionado ? null : fecha)}
+                  className="cal-cell"
                   style={{ minHeight:56, padding:'4px 2px', borderRight:'1px solid #f1f5f9', borderBottom:'1px solid #f1f5f9', cursor:'pointer', background: seleccionado ? '#ede9fe' : 'transparent', overflow:'hidden' }}>
                   <div style={{ width:24, height:24, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight: esHoy ? 700 : 400, background: esHoy ? '#4f46e5' : 'transparent', color: esHoy ? 'white' : seleccionado ? '#3730a3' : text, marginBottom:2, marginLeft:'auto', marginRight:'auto' }}>
                     {dia}
                   </div>
                   {items.length > 0 && (
-                    <div style={{ fontSize:8, textAlign:'center', color: coloresEvento[items[0].tipo] || '#64748b', fontWeight:500, lineHeight:1.2 }}>
-                      {items.length === 1 ? '●' : `● ${items.length}`}
-                    </div>
+                    <>
+                      {/* Móvil: puntito */}
+                      <div className="cal-dot" style={{ fontSize:8, textAlign:'center', color: coloresEvento[items[0].tipo] || '#64748b', fontWeight:500, lineHeight:1.2 }}>
+                        {items.length === 1 ? '●' : `● ${items.length}`}
+                      </div>
+                      {/* Desktop: títulos cortados */}
+                      <div className="cal-labels">
+                        {items.slice(0, 2).map((it, idx) => (
+                          <div key={idx} style={{ fontSize:9, color: coloresEvento[it.tipo] || '#64748b', fontWeight:500, lineHeight:1.2, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', padding:'0 2px' }}>
+                            {it.titulo}
+                          </div>
+                        ))}
+                        {items.length > 2 && (
+                          <div style={{ fontSize:8, color: hint, textAlign:'center' }}>+{items.length - 2} más</div>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               )
