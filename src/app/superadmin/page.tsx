@@ -8,6 +8,7 @@ import { Building2, Plus, LogIn, Users, Wallet, ShieldCheck, Mail, Trash2 } from
 import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
 import { crearClub, actualizarModulosClub, eliminarClub } from '@/app/actions/superadmin'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { clearAll as limpiarCacheConsultas } from '@/lib/query-cache'
 import { formatCLP } from '@/lib/domain/finanzas'
 import { MODULOS as MODULOS_OPCIONALES, MODULOS_KEYS as TODOS_MODULOS, conDependencias } from '@/lib/domain/modulos'
 import { metricasPlanes } from '@/lib/domain/suscripciones'
@@ -86,10 +87,14 @@ export default function SuperadminPage() {
   }
 
   async function gestionarClub(clubId: string) {
-    if (!perfil?.id) return
+    if (!perfil?.id || gestionandoId) return
     setGestionandoId(clubId)
     await supabase.from('perfiles').update({ club_id: clubId }).eq('id', perfil.id)
     await refetchPerfil()
+    // Sin esto, una pantalla que cacheó datos del club anterior (dentro del
+    // minuto de su TTL) los seguía mostrando encima del club nuevo: parecía
+    // que "Gestionar" te dejaba en otro club distinto al que tocaste.
+    limpiarCacheConsultas()
     router.push('/dashboard')
   }
 
@@ -187,11 +192,11 @@ export default function SuperadminPage() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={() => gestionarClub(c.id)} disabled={gestionandoId === c.id} style={{
+              <button onClick={() => gestionarClub(c.id)} disabled={!!gestionandoId} style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                 padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
-                borderRadius: 7, fontSize: 12, color: '#1e293b', cursor: gestionandoId === c.id ? 'not-allowed' : 'pointer',
-                opacity: gestionandoId === c.id ? 0.6 : 1,
+                borderRadius: 7, fontSize: 12, color: '#1e293b', cursor: gestionandoId ? 'not-allowed' : 'pointer',
+                opacity: gestionandoId ? 0.6 : 1,
               }}>
                 <LogIn size={13} /> {gestionandoId === c.id ? 'Entrando...' : 'Gestionar'}
               </button>
