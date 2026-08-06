@@ -1,3 +1,21 @@
+-- ⚠️ MIGRACIÓN ANULADA — NO VOLVER A EJECUTAR ⚠️
+--
+-- Ya se ejecutó: esas seis bajas están hechas. Repetirla vuelve a armar la
+-- lista de borrado desde cero y borra jugadores, sus cuentas en auth.users y
+-- sus mensualidades, sin respaldo. Los nombres que busca podrían coincidir hoy
+-- con otras personas.
+--
+-- Se anula por la misma razón que la 089: las migraciones de este proyecto se
+-- pegan a mano en el SQL Editor y nada impedía repetirlas. Para dar de baja a
+-- alguien hoy se usa la app (que llama a `eliminar_jugador_atomico`, corregida
+-- en la migración 123 para no borrar su historial financiero), no este
+-- archivo. Ver docs/migraciones-destructivas.md.
+
+DO $$
+BEGIN
+  RAISE EXCEPTION 'Migración 081 anulada: ya se ejecutó. Borra jugadores y sus cuentas sin respaldo. Para dar de baja a alguien, usar la app. Ver docs/migraciones-destructivas.md';
+END $$;
+
 -- Baja de seis jugadores que el profe confirmó que ya no entrenan:
 --   Luciano Enrique Colmenárez Liendo · Tomás Andrés Contreras Arancibia
 --   José Tomás López Peys             · Jesús Enrique Colmenárez Argüello

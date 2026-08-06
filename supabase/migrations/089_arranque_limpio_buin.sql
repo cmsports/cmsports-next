@@ -15,6 +15,38 @@
 -- compra, un gasto o un pago de torneo cargado, es otra cosa y no es lo que se
 -- pidió resetear. Al final se informa cuántos quedaron.
 --
+-- ⚠️ MIGRACIÓN ANULADA — NO VOLVER A EJECUTAR ⚠️
+--
+-- Esta migración ya se ejecutó y NO debe correrse nunca más. Se corrió dos
+-- veces, y la segunda vez destruyó datos reales de producción sin respaldo.
+-- Qué falló:
+--
+--   1. La premisa era falsa. Dice "lo que había era de las pruebas previas al
+--      lanzamiento", pero la plataforma se le entregó al club el 27 de julio
+--      de 2026: todo lo cargado desde esa fecha era real.
+--
+--   2. Borra más de lo que promete. El comentario dice que los movimientos que
+--      no vienen de una mensualidad no se tocan, pero la condición incluye
+--      `mes_correspondiente IS NOT NULL`, que barre con sueldos e ingresos
+--      manuales. Así se perdió un ingreso de $3.191.300 y dos sueldos.
+--
+--   3. El respaldo falla en silencio al repetirse. `CREATE TABLE IF NOT EXISTS`
+--      no hace nada si la tabla ya existe, pero el DELETE de más abajo corre
+--      igual: la segunda pasada borró sin copia de seguridad.
+--
+-- Lo borrado el 28-29 de julio se pudo recuperar solo porque
+-- `registrar_movimiento_financiero_atomico` guarda el monto en `audit_log` al
+-- crear cada movimiento. Sin eso, esa plata no se recuperaba.
+--
+-- La guarda de abajo aborta la ejecución. No la quites: si alguna vez hace
+-- falta un reseteo, se escribe una migración nueva siguiendo las reglas de
+-- docs/migraciones-destructivas.md.
+
+DO $$
+BEGIN
+  RAISE EXCEPTION 'Migración 089 anulada: ya se ejecutó y destruyó datos reales al repetirse. Ver el encabezado del archivo y docs/migraciones-destructivas.md';
+END $$;
+
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
 
 BEGIN;
