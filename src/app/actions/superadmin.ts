@@ -90,6 +90,81 @@ async function eliminarCarpetaClub(admin: ReturnType<typeof createAdminClient>, 
   }
 }
 
+// torneos.club_id no tenía ningún borrado asociado: un club con torneos
+// organizados (no solo jugadores inscritos, ya cubiertos por
+// eliminar_jugador_atomico) rompía "Eliminar club" con
+// "torneos_club_id_fkey" apenas llegaba a borrar la fila de `clubes`.
+// Se borra el árbol completo del torneo en orden de dependencia: los hijos
+// que apuntan a torneo_grupos primero, después los que apuntan a torneos,
+// y al final el torneo. movimientos.torneo_id se suelta solo (ON DELETE SET
+// NULL, migración 024): la plata generada por el torneo no se borra.
+async function eliminarTorneosDelClub(admin: ReturnType<typeof createAdminClient>, clubId: string) {
+  const { data: torneos, error: torneosError } = await admin.from('torneos').select('id').eq('club_id', clubId)
+  if (torneosError) return torneosError
+  const torneoIds = (torneos || []).map(t => t.id)
+  if (!torneoIds.length) return null
+
+  const { data: grupos, error: gruposError } = await admin.from('torneo_grupos').select('id').in('torneo_id', torneoIds)
+  if (gruposError) return gruposError
+  const grupoIds = (grupos || []).map(g => g.id)
+
+  if (grupoIds.length) {
+    const { error } = await admin.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+    if (error) return error
+  }
+
+  for (const tabla of ['torneo_partidos', 'torneo_jugadores', 'torneo_pagos', 'torneo_felicitaciones', 'torneo_cabezas_serie'] as const) {
+    const { error } = await admin.from(tabla).delete().in('torneo_id', torneoIds)
+    if (error) return error
+  }
+
+  const { error: gruposDeleteError } = await admin.from('torneo_grupos').delete().in('torneo_id', torneoIds)
+  if (gruposDeleteError) return gruposDeleteError
+
+  const { error: solicitudesError } = await admin.from('solicitudes_jugador').delete().in('torneo_id', torneoIds)
+  if (solicitudesError) return solicitudesError
+
+  const { error: torneosDeleteError } = await admin.from('torneos').delete().in('id', torneoIds)
+  if (torneosDeleteError) return torneosDeleteError
+
+  return null
+}
+
+// Mismo problema que con torneos, pero para ligas: liga_id no tenía ningún
+// borrado asociado. liga_abonos se va solo al borrar liga_jugador_pagos
+// (ON DELETE CASCADE, migración 016).
+async function eliminarLigasDelClub(admin: ReturnType<typeof createAdminClient>, clubId: string) {
+  const { data: ligas, error: ligasError } = await admin.from('ligas').select('id').eq('club_id', clubId)
+  if (ligasError) return ligasError
+  const ligaIds = (ligas || []).map(l => l.id)
+  if (!ligaIds.length) return null
+
+  const { data: divisiones, error: divisionesError } = await admin.from('liga_divisiones').select('id').in('liga_id', ligaIds)
+  if (divisionesError) return divisionesError
+  const divisionIds = (divisiones || []).map(d => d.id)
+
+  const { error: partidosError } = await admin.from('liga_partidos').delete().in('liga_id', ligaIds)
+  if (partidosError) return partidosError
+
+  if (divisionIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: pagosError } = await (admin as any).from('liga_jugador_pagos').delete().in('division_id', divisionIds)
+    if (pagosError) return pagosError
+    const { error: divJugadoresError } = await admin.from('liga_division_jugadores').delete().in('division_id', divisionIds)
+    if (divJugadoresError) return divJugadoresError
+  }
+
+  for (const tabla of ['liga_fechas', 'liga_mesas', 'liga_divisiones'] as const) {
+    const { error } = await admin.from(tabla).delete().in('liga_id', ligaIds)
+    if (error) return error
+  }
+
+  const { error: ligasDeleteError } = await admin.from('ligas').delete().in('id', ligaIds)
+  if (ligasDeleteError) return ligasDeleteError
+
+  return null
+}
+
 export async function eliminarClub(input: { clubId: string; confirmacion: string }) {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }
@@ -127,9 +202,46 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
     if (error) return { error: `No se pudieron eliminar los archivos del club: ${error.message}` }
   }
 
+  // torneos.club_id y ligas.club_id tampoco tienen ON DELETE CASCADE: un club
+  // con torneos o ligas propias (no solo jugadores inscritos) bloqueaba el
+  // borrado con "torneos_club_id_fkey" apenas se intentaba borrar `clubes`.
+  const torneosError = await eliminarTorneosDelClub(admin, club.id)
+  if (torneosError) return { error: `No se pudieron eliminar los torneos del club: ${torneosError.message}. El club no se borró.` }
+  const ligasError = await eliminarLigasDelClub(admin, club.id)
+  if (ligasError) return { error: `No se pudieron eliminar las ligas del club: ${ligasError.message}. El club no se borró.` }
+
+  // Resto de tablas que cuelgan directo de club_id y son datos propios del
+  // club (no dinero): se borran enteras, no tiene sentido dejarlas huérfanas.
+  for (const tabla of [
+    'torneos_externos', 'flyer_referencias', 'fotos_galeria', 'solicitudes_jugador',
+    'eventos', 'kioscos_asistencia', 'vouchers', 'tienda_buin_productos',
+    'tienda_asociacion_productos', 'credencial_visible', 'actividad',
+    'partidos', 'bloques_horario',
+  ] as const) {
+    const { error } = await admin.from(tabla).delete().eq('club_id', club.id)
+    if (error) return { error: `No se pudo eliminar "${tabla}" del club: ${error.message}. El club no se borró.` }
+  }
+
+  // La plata NO se borra, igual que al eliminar un jugador: el movimiento
+  // queda, solo se le suelta la referencia al club.
+  const { error: movimientosError } = await admin.from('movimientos').update({ club_id: null }).eq('club_id', club.id)
+  if (movimientosError) return { error: `No se pudieron desvincular los movimientos del club: ${movimientosError.message}. El club no se borró.` }
+
   // Esta relación histórica no tiene ON DELETE CASCADE en producción.
   const { error: invitacionesError } = await admin.from('invitaciones').delete().eq('club_id', club.id)
   if (invitacionesError) return { error: `No se pudieron eliminar las invitaciones del club: ${invitacionesError.message}` }
+
+  // Las cuentas de staff se borran ANTES del club: borrar el usuario de auth
+  // arrastra su fila de `perfiles` (ON DELETE CASCADE, migración 126), y
+  // perfiles.club_id es lo último que podía bloquear el borrado de `clubes`.
+  // Antes esto se hacía después de borrar el club, dejando el intento
+  // encadenado a que la fila de `clubes` ya no existiera para "liberar" nada.
+  let cuentasFallidas = 0
+  for (const cuentaId of cuentas) {
+    const { error } = await admin.auth.admin.deleteUser(cuentaId)
+    if (error) cuentasFallidas++
+  }
+  if (cuentasFallidas) return { error: `No se pudieron eliminar ${cuentasFallidas} cuenta(s) del club. El club no se borró.` }
 
   const { error: deleteError } = await admin.from('clubes').delete().eq('id', club.id)
   if (deleteError) return { error: `No se pudo eliminar el club: ${deleteError.message}` }
@@ -145,13 +257,6 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
       .eq('id', user.id).eq('rol', 'superadmin').eq('club_id', club.id)
     if (error) return { error: 'El club se eliminó, pero no se pudo liberar el acceso del superadmin' }
   }
-
-  let cuentasFallidas = 0
-  for (const cuentaId of cuentas) {
-    const { error } = await admin.auth.admin.deleteUser(cuentaId)
-    if (error) cuentasFallidas++
-  }
-  if (cuentasFallidas) return { error: `El club fue eliminado, pero ${cuentasFallidas} cuenta(s) asociada(s) no pudieron borrarse` }
 
   revalidatePath('/superadmin')
   return { success: true }
