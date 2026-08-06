@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import RegistroActividad from '@/components/RegistroActividad'
+import ThemeToggle from '@/components/ThemeToggle'
 import type { Perfil } from '@/types'
 import { esCuentaDemo } from '@/lib/auth/demo'
 
@@ -323,6 +324,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
             <CampanaNotificaciones perfil={perfil} placement="top" />
+            <ThemeToggle />
             {!esDemo && (
               <Link href="/configuracion" style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -491,8 +493,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
         </div>
       )}
 
-      {/* ── CAMPANA MÓVIL ── */}
-      <div className="mobile-bell" style={{ position: 'fixed', top: 12, right: 12, zIndex: 30, display: 'none' }}>
+      {/* ── CAMPANA MÓVIL + THEME ── */}
+      <div className="mobile-bell" style={{ position: 'fixed', top: 12, right: 12, zIndex: 30, display: 'none', gap: 4, alignItems: 'center' }}>
+        <ThemeToggle />
         <CampanaNotificaciones perfil={perfil} />
       </div>
 
@@ -504,7 +507,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
           .sidebar { display: none !important; }
           .main-content { margin-left: 0 !important; padding: 12px !important; padding-bottom: 80px !important; padding-top: 56px !important; }
           .mobile-nav { display: block !important; }
-          .mobile-bell { display: block !important; }
+          .mobile-bell { display: flex !important; }
         }
       `}</style>
     </div>

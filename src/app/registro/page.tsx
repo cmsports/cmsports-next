@@ -7,6 +7,7 @@ import { formatRut, rutValido } from '@/lib/rut'
 import { Suspense } from 'react'
 import { registrarSolicitud } from '@/app/actions/auth'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
+import ThemeToggle from '@/components/ThemeToggle'
 
 const text = '#0f172a'
 const muted = '#64748b'
@@ -361,8 +362,13 @@ function RegistroForm() {
 
 export default function RegistroPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}><div style={{ color: '#94a3b8' }}>Cargando...</div></div>}>
-      <RegistroForm />
-    </Suspense>
+    <>
+      <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 50 }}>
+        <ThemeToggle style={{ background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)', borderRadius: 8 }} />
+      </div>
+      <Suspense fallback={<div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}><div style={{ color: '#94a3b8' }}>Cargando...</div></div>}>
+        <RegistroForm />
+      </Suspense>
+    </>
   )
 }

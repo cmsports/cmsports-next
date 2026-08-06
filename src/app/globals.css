@@ -52,6 +52,13 @@ body {
   --purple: #4f46e5;
   --purple-light: #38bdf8;
 
+  /* Superficies base (las overridea dark mode) */
+  --surface-page: #f1f5f9;
+  --surface-card: #ffffff;
+  --surface-sidebar: #ffffff;
+  --surface-elevated: #f8fafc;
+  --surface-input: #ffffff;
+
   /* Movimiento. Una sola curva y tres velocidades: si cada pantalla elige la
      suya, la app se siente hecha por cinco personas distintas. */
   --curva: cubic-bezier(0.2, 0, 0.1, 1);
@@ -319,4 +326,253 @@ button:disabled { opacity: 0.6; }
 [style*="position:fixed"][style*="inset:0"],
 [style*="position: fixed"][style*="inset: 0"] {
   animation: aparece var(--rapido) var(--curva) both;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DARK MODE
+
+   Se activa con la clase .dark en <html>. Un script inline en el layout la
+   pone antes del primer paint leyendo localStorage, así no hay flash blanco.
+
+   Enfoque nuclear: como la app entera usa inline styles con colores
+   hardcoded, se overridea TODO con !important en selectores amplios y
+   después se restauran los colores semánticos (rojo, verde, etc.) con
+   selectores más específicos que le ganan al catch-all.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+html.dark {
+  color-scheme: dark;
+
+  --bg: #0b1120;
+  --bg-card: #16213a;
+  --bg-dark: #0b1120;
+  --bg-sidebar: #111a2e;
+  --border: #293548;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+
+  --green-light: #052e16;
+  --red-light: #450a0a;
+  --yellow-light: #451a03;
+  --sky-light: #1e1b4b;
+  --orange-light: #451a03;
+
+  --surface-page: #0b1120;
+  --surface-card: #16213a;
+  --surface-sidebar: #111a2e;
+  --surface-elevated: #1c2d4a;
+  --surface-input: #0e1629;
+}
+
+/* ── 1. BODY ── */
+html.dark body {
+  background: #0b1120 !important;
+  color: #f1f5f9 !important;
+}
+
+/* ── 2. TEXTO ──
+   Piso: todo texto → blanco suave (#f1f5f9).
+   Después se sube a blanco puro para títulos/números con más especificidad. */
+html.dark body * {
+  color: #f1f5f9 !important;
+}
+
+/* Títulos y números grandes: blanco puro para que resalten */
+html.dark h1, html.dark h2, html.dark h3, html.dark h4,
+html.dark h5, html.dark h6 {
+  color: #ffffff !important;
+}
+
+/* Texto bold / semibold / números grandes → blanco puro
+   Matchea los font-weight inline que usa la app para cifras y títulos */
+html.dark [style*="fontWeight: 700"],
+html.dark [style*="font-weight: 700"],
+html.dark [style*="fontWeight: 800"],
+html.dark [style*="font-weight: 800"],
+html.dark [style*="fontWeight: 600"],
+html.dark [style*="font-weight: 600"] {
+  color: #ffffff !important;
+}
+
+/* Números/cifras grandes (fontSize >= 20) */
+html.dark [style*="fontSize: 2"],
+html.dark [style*="font-size: 2"],
+html.dark [style*="fontSize: 3"],
+html.dark [style*="font-size: 3"],
+html.dark [style*="fontSize: 4"],
+html.dark [style*="font-size: 4"],
+html.dark [style*="fontSize: 5"],
+html.dark [style*="font-size: 5"] {
+  color: #ffffff !important;
+}
+
+/* Texto en botones de color / nav activa: blanco puro */
+html.dark [style*="color: #fff"],
+html.dark [style*="color:#fff"],
+html.dark [style*="color: white"],
+html.dark [style*="color: rgb(255, 255, 255)"] {
+  color: #ffffff !important;
+}
+
+/* Colores semánticos: versiones brillantes para fondo oscuro */
+html.dark [style*="color: #dc2626"], html.dark [style*="color: rgb(220, 38, 38)"] { color: #fb7185 !important; }
+html.dark [style*="color: #ef4444"], html.dark [style*="color: rgb(239, 68, 68)"] { color: #fb7185 !important; }
+html.dark [style*="color: #b91c1c"], html.dark [style*="color: rgb(185, 28, 28)"] { color: #fb7185 !important; }
+html.dark [style*="color: #16a34a"], html.dark [style*="color: rgb(22, 163, 74)"] { color: #34d399 !important; }
+html.dark [style*="color: #15803d"], html.dark [style*="color: rgb(21, 128, 61)"] { color: #34d399 !important; }
+html.dark [style*="color: #059669"], html.dark [style*="color: rgb(5, 150, 105)"]  { color: #34d399 !important; }
+html.dark [style*="color: #d97706"], html.dark [style*="color: rgb(217, 119, 6)"]  { color: #fbbf24 !important; }
+html.dark [style*="color: #92400e"], html.dark [style*="color: rgb(146, 64, 14)"]  { color: #fbbf24 !important; }
+html.dark [style*="color: #4f46e5"], html.dark [style*="color: rgb(79, 70, 229)"]  { color: #a5b4fc !important; }
+html.dark [style*="color: #3730a3"], html.dark [style*="color: rgb(55, 48, 163)"]  { color: #a5b4fc !important; }
+
+/* ── 3. BORDERS: todo borde → azul-gris sutil ── */
+html.dark * {
+  border-color: #293548 !important;
+}
+/* Bordes de cards ligeramente más visibles para separar del fondo */
+html.dark [style*="borderRadius"],
+html.dark [style*="border-radius"] {
+  border-color: #334155 !important;
+}
+
+/* ── 4. BACKGROUNDS ── */
+
+/* Sidebar y nav móvil */
+html.dark .sidebar { background: #111a2e !important; }
+html.dark .mobile-nav { background: #111a2e !important; }
+
+/* Gradiente del fondo principal de layout-app */
+html.dark div[style*="linear-gradient(160deg"] { background: #0b1120 !important; }
+
+/* Fondos blancos → card (azul profundo) — hex y rgb */
+html.dark [style*="background: #ffffff"],
+html.dark [style*="background: #fff;"],
+html.dark [style*="background:#ffffff"],
+html.dark [style*="background: white"],
+html.dark [style*="background: rgb(255, 255, 255)"],
+html.dark [style*="background-color: #ffffff"],
+html.dark [style*="background-color: white"],
+html.dark [style*="background-color: rgb(255, 255, 255)"] {
+  background: #16213a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(99, 102, 241, 0.05) !important;
+}
+
+/* Fondos gris claro → fondo base */
+html.dark [style*="background: #f1f5f9"],
+html.dark [style*="background: #f8fafc"],
+html.dark [style*="background: #f0f4ff"],
+html.dark [style*="background: #f4f7fa"],
+html.dark [style*="background: rgb(241, 245, 249)"],
+html.dark [style*="background: rgb(248, 250, 252)"] {
+  background: #0e1629 !important;
+}
+
+/* Purple light bg → deep indigo */
+html.dark [style*="background: #ede9fe"],
+html.dark [style*="background: rgb(237, 233, 254)"] {
+  background: #312e81 !important;
+}
+
+/* ── 5. TABLAS ── */
+html.dark table { color: #f1f5f9; }
+html.dark thead, html.dark thead th {
+  background: #111a2e !important;
+  color: #94a3b8 !important;
+}
+html.dark tbody td {
+  color: #f1f5f9 !important;
+}
+@media (hover: hover) {
+  html.dark tbody tr:hover { background: #1c2d4a !important; }
+}
+
+/* ── 6. INPUTS / SELECTS / TEXTAREAS ── */
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background: #0e1629 !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+html.dark select option {
+  background: #16213a;
+  color: #f1f5f9;
+}
+
+/* ── 7. ESQUELETOS DE CARGA ── */
+html.dark .esqueleto {
+  background: linear-gradient(90deg, #16213a 25%, #1c2d4a 50%, #16213a 75%) !important;
+  background-size: 840px 100% !important;
+}
+
+/* ── 8. MODALES ── */
+html.dark [style*="position:fixed"][style*="inset:0"],
+html.dark [style*="position: fixed"][style*="inset: 0"] {
+  background: rgba(0, 0, 0, 0.7) !important;
+}
+
+/* ── 9. AVISOS TIPO BANNER ── */
+html.dark [style*="background: #fef3c7"],
+html.dark [style*="background: rgb(254, 243, 199)"] {
+  background: #451a03 !important;
+}
+html.dark [style*="background: #fef2f2"],
+html.dark [style*="background: rgb(254, 242, 242)"] {
+  background: #450a0a !important;
+}
+html.dark [style*="background: #f0fdf4"],
+html.dark [style*="background: rgb(240, 253, 244)"] {
+  background: #052e16 !important;
+}
+html.dark [style*="background: #fecaca"],
+html.dark [style*="background: rgb(254, 202, 202)"] {
+  background: #7f1d1d !important;
+}
+
+/* ── 10. FOCUS ── */
+html.dark :focus-visible {
+  outline-color: #818cf8;
+}
+
+/* ── 11. SCROLLBAR (Webkit) ── */
+html.dark ::-webkit-scrollbar { width: 8px; height: 8px; }
+html.dark ::-webkit-scrollbar-track { background: #0b1120; }
+html.dark ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ── 12. BOTONES GRADIENTE: glow más intenso ── */
+html.dark [style*="linear-gradient(135deg"] {
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.6), 0 0 0 1px rgba(99, 102, 241, 0.15) !important;
+}
+
+/* ── 13. HOVER EN DARK ── */
+@media (hover: hover) {
+  html.dark [style*="entraTarjeta"]:hover {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(99, 102, 241, 0.1) !important;
+  }
+  html.dark .tocable:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  }
+  html.dark button:not(:disabled):hover,
+  html.dark [role="button"]:not(:disabled):hover {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+  }
+}
+
+/* ── 14. TRANSICIÓN SUAVE ── */
+html.dark body,
+html.dark .sidebar,
+html.dark .mobile-nav,
+html.dark .main-content {
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* ── 15. EL ACENTO BAJO h1 EN DARK → más brillante ── */
+html.dark .main-content h1::after {
+  background: linear-gradient(90deg, #818cf8, #a78bfa) !important;
 }

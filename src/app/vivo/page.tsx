@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ThemeToggle from '@/components/ThemeToggle'
 
 // Landing pública tipo Kahoot: se ingresa el código del torneo y entra a verlo.
 // Sin cuenta, sin sesión. La ruta /vivo ya es pública (no está en proxy.ts).
@@ -16,7 +17,10 @@ export default function VivoLandingPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#a9bac8', padding: 20 }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#a9bac8', padding: 20, position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 50 }}>
+        <ThemeToggle style={{ background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)', borderRadius: 8 }} />
+      </div>
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 18, boxShadow: '0 8px 30px rgba(15,23,42,0.2)', padding: 32, width: '100%', maxWidth: 380, textAlign: 'center' }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>🏓</div>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: 0 }}>Torneo en vivo</h1>

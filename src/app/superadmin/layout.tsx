@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
 import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays } from 'lucide-react'
+import ThemeToggle from '@/components/ThemeToggle'
 import type { Tables } from '@/types/database'
 
 type Perfil = Tables<'perfiles'>

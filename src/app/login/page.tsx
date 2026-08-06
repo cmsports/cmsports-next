@@ -5,6 +5,7 @@ import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { Mail, Lock, ArrowRight, Loader2, Phone, IdCard } from 'lucide-react'
 import Image from 'next/image'
+import ThemeToggle from '@/components/ThemeToggle'
 
 export default function LoginPage() {
   const [credential, setCredential] = useState('')
@@ -206,6 +207,10 @@ export default function LoginPage() {
             ¿Problemas para ingresar? Contacta al administrador del club.
           </p>
         </div>
+      </div>
+
+      <div style={{ position: 'fixed', top: 12, right: 12, zIndex: 50 }}>
+        <ThemeToggle style={{ background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', borderRadius: 8 }} />
       </div>
 
       <style>{`
