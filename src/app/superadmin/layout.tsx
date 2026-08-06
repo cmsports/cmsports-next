@@ -59,7 +59,10 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
     const supabase = createClient()
     const [{ data: c }, { data: j }, { data: admins }] = await Promise.all([
       supabase.from('clubes').select('*').order('nombre'),
-      supabase.from('jugadores').select('club_id'),
+      // Sin este filtro, un jugador externo inscrito de paso en un torneo de
+      // otro club (fichas es_externo, con su propio club_procedencia desde la
+      // migración 126) se contaba como si fuera del plantel del club anfitrión.
+      supabase.from('jugadores').select('club_id').or('es_externo.is.null,es_externo.eq.false'),
       supabase.from('perfiles').select('club_id,nombre,email').eq('rol', 'admin'),
     ])
     setClubes(c || [])

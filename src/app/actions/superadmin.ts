@@ -107,11 +107,6 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
   if (perfilesError) return { error: 'No se pudieron identificar las cuentas del club' }
   const cuentas = (perfiles || []).map(perfil => perfil.id).filter(id => id !== user?.id)
 
-  if (user?.id) {
-    const { error } = await admin.from('perfiles').update({ club_id: null }).eq('id', user.id).eq('rol', 'superadmin')
-    if (error) return { error: 'No se pudo liberar el acceso del superadmin' }
-  }
-
   for (const bucket of ['flyer-referencias', 'galeria-fotos']) {
     const error = await eliminarCarpetaClub(admin, bucket, club.id)
     if (error) return { error: `No se pudieron eliminar los archivos del club: ${error.message}` }
@@ -123,6 +118,18 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
 
   const { error: deleteError } = await admin.from('clubes').delete().eq('id', club.id)
   if (deleteError) return { error: `No se pudo eliminar el club: ${deleteError.message}` }
+
+  // Recién acá, con el club ya borrado de verdad: si el superadmin lo tenía
+  // "gestionando" en ese momento, su perfil quedaría apuntando a un club
+  // inexistente. Antes esto se hacía ANTES de intentar borrar, sin condición
+  // de que fuera este club: un intento fallido (como el de la llave foránea de
+  // jugadores) dejaba al superadmin sin club igual, aunque el club siguiera
+  // existiendo — por eso "Gestionar" después aterrizaba en un dashboard vacío.
+  if (user?.id) {
+    const { error } = await admin.from('perfiles').update({ club_id: null })
+      .eq('id', user.id).eq('rol', 'superadmin').eq('club_id', club.id)
+    if (error) return { error: 'El club se eliminó, pero no se pudo liberar el acceso del superadmin' }
+  }
 
   let cuentasFallidas = 0
   for (const cuentaId of cuentas) {
