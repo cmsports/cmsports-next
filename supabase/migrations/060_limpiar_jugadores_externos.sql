@@ -6,7 +6,7 @@
 -- Esta migración borra `jugadores WHERE es_externo = TRUE` SIN filtrar por
 -- club ni por torneo: si se repite hoy, se lleva a todos los externos de
 -- todos los clubes de la plataforma, incluidos los inscritos en torneos en
--- curso y su club de procedencia (migración 122).
+-- curso y su club de procedencia (migración 126).
 --
 -- Ya no hace falta: desde la migración 061 existe `fn_limpiar_externos`, y
 -- `finalizarTorneo` la llama sola al cerrar cada torneo, respetando campeón,

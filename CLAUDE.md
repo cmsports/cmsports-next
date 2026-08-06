@@ -42,7 +42,7 @@ quitarla): `089_arranque_limpio_buin`, `060_limpiar_jugadores_externos`,
   `(now() AT TIME ZONE 'America/Santiago')::date` en SQL.
 - **La plata de un mes cerrado no cambia.** Borrar un jugador no borra sus
   movimientos: `eliminar_jugador_atomico` los deja con `jugador_id = NULL`
-  (migración 123). No revertir eso.
+  (migración 127). No revertir eso.
 - **Toda operación financiera pasa por su RPC atómico** (`registrar_pago_*`,
   `registrar_movimiento_financiero_atomico`). Nunca insertar en `movimientos`
   desde el cliente: los RPC dejan el rastro en `audit_log` que ya salvó la

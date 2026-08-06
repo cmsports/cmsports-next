@@ -8,7 +8,7 @@
 -- Se anula por la misma razón que la 089: las migraciones de este proyecto se
 -- pegan a mano en el SQL Editor y nada impedía repetirlas. Para dar de baja a
 -- alguien hoy se usa la app (que llama a `eliminar_jugador_atomico`, corregida
--- en la migración 123 para no borrar su historial financiero), no este
+-- en la migración 127 para no borrar su historial financiero), no este
 -- archivo. Ver docs/migraciones-destructivas.md.
 
 DO $$

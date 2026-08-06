@@ -13,7 +13,7 @@ creado a mano. Las reglas de abajo son las cosas que fallaron ahí.
 
 Las migraciones de este proyecto se ejecutan a mano en el SQL Editor de
 Supabase, así que nada impide pegar dos veces el mismo archivo. Eso es
-exactamente lo que pasó con la 089. La migración `124_registro_de_migraciones`
+exactamente lo que pasó con la 089. La migración `128_registro_de_migraciones`
 agrega el portazo que faltaba.
 
 Toda migración nueva empieza así:

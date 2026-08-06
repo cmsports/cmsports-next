@@ -73,7 +73,7 @@ REVOKE EXECUTE ON FUNCTION _migracion_nueva(text) FROM PUBLIC, anon, authenticat
 -- resto crea o reemplaza funciones y no hace daño al reejecutarse.
 INSERT INTO _migraciones_aplicadas (nombre, aplicada_por) VALUES
   ('089_arranque_limpio_buin',            'registro retroactivo'),
-  ('124_registro_de_migraciones',         current_user)
+  ('128_registro_de_migraciones',         current_user)
 ON CONFLICT (nombre) DO NOTHING;
 
 COMMIT;
@@ -85,4 +85,4 @@ SELECT nombre, aplicada_en FROM _migraciones_aplicadas ORDER BY nombre;
 
 -- 2) El portazo funciona: esto DEBE fallar con "ya se aplicó".
 --    Descomenta para probarlo; déjalo comentado al guardar.
--- SELECT _migracion_nueva('124_registro_de_migraciones');
+-- SELECT _migracion_nueva('128_registro_de_migraciones');
