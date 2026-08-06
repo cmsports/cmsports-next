@@ -467,7 +467,11 @@ begin
 end;
 $$;
 
-CREATE OR REPLACE FUNCTION generar_mensualidades(p_club_id uuid, p_mes integer, p_anio integer)
+-- CREATE OR REPLACE no puede quitarle los valores por defecto a los
+-- parámetros de una función que ya los tenía; hay que soltarla primero.
+DROP FUNCTION IF EXISTS generar_mensualidades(uuid, integer, integer);
+
+CREATE FUNCTION generar_mensualidades(p_club_id uuid, p_mes integer, p_anio integer)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
