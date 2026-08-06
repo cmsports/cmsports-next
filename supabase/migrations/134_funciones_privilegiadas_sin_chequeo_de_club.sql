@@ -138,21 +138,29 @@ DECLARE
   v_club_actor    uuid;
   v_club_jugador  uuid;
 BEGIN
-  IF auth.uid() IS NULL THEN
-    RAISE EXCEPTION 'No autenticado';
-  END IF;
+  -- eliminarClub (Next.js) borra un club completo llamando esta función una
+  -- vez por jugador con el cliente de SERVICIO (admin), no con la sesión de
+  -- un usuario — necesita permiso elevado para hacerlo en cadena, y esa
+  -- acción ya está protegida aparte por requireSuperadmin(). El cliente de
+  -- servicio no tiene auth.uid(): tratarlo igual que "nadie inició sesión"
+  -- bloqueaba ese camino legítimo junto con el que sí había que cerrar.
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+    IF auth.uid() IS NULL THEN
+      RAISE EXCEPTION 'No autenticado';
+    END IF;
 
-  SELECT rol, club_id INTO v_rol, v_club_actor FROM perfiles WHERE id = auth.uid();
-  IF v_rol IS NULL OR v_rol NOT IN ('admin', 'superadmin') THEN
-    RAISE EXCEPTION 'Solo el administrador puede eliminar un jugador';
-  END IF;
+    SELECT rol, club_id INTO v_rol, v_club_actor FROM perfiles WHERE id = auth.uid();
+    IF v_rol IS NULL OR v_rol NOT IN ('admin', 'superadmin') THEN
+      RAISE EXCEPTION 'Solo el administrador puede eliminar un jugador';
+    END IF;
 
-  SELECT club_id INTO v_club_jugador FROM jugadores WHERE id = p_jugador_id;
-  IF v_club_jugador IS NULL THEN
-    RAISE EXCEPTION 'Jugador no encontrado';
-  END IF;
-  IF v_rol <> 'superadmin' AND v_club_actor IS DISTINCT FROM v_club_jugador THEN
-    RAISE EXCEPTION 'El jugador no es de este club';
+    SELECT club_id INTO v_club_jugador FROM jugadores WHERE id = p_jugador_id;
+    IF v_club_jugador IS NULL THEN
+      RAISE EXCEPTION 'Jugador no encontrado';
+    END IF;
+    IF v_rol <> 'superadmin' AND v_club_actor IS DISTINCT FROM v_club_jugador THEN
+      RAISE EXCEPTION 'El jugador no es de este club';
+    END IF;
   END IF;
 
   -- Referencias en otras entidades: se limpian, no se borran filas ajenas.
