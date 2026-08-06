@@ -152,9 +152,6 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
           </nav>
 
           <div style={{ padding: '12px 14px', borderTop: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <ThemeToggle />
-            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
               <div style={{
                 width: 30, height: 30, borderRadius: '50%', background: '#ede9fe',
