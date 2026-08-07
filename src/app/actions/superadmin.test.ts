@@ -158,6 +158,29 @@ describe('eliminarClub desde Superadmin', () => {
       .toBeLessThan(indice(l => l.tabla === 'clubes' && l.op === 'delete'))
   })
 
+  // Borrar el club se lleva su plata. La regla de "un mes cerrado no cambia"
+  // aplica al dar de baja a un jugador, no a borrar el club entero: ahí no
+  // queda balance al que pertenezcan esas filas, y dejarlas con club_id NULL
+  // es plata sin dueño que se suma sola en consultas sin filtro por club.
+  it('borra los movimientos del club en vez de dejarlos huérfanos', async () => {
+    const { borrados } = montarMocks()
+
+    await expect(eliminarClub({ clubId: club.id, confirmacion: club.nombre })).resolves.toEqual({ success: true })
+
+    expect(borrados.movimientos).toHaveBeenCalledWith('club_id', club.id)
+  })
+
+  // audit_log tiene FK ON DELETE RESTRICT y un CHECK club_id IS NOT NULL
+  // (migración 041): no se puede soltar ni dejar huérfano, o se borra o el
+  // club no se borra nunca. Era el tercer choque de llave foránea seguido.
+  it('borra el audit_log del club, que no admite quedar sin club', async () => {
+    const { borrados } = montarMocks()
+
+    await expect(eliminarClub({ clubId: club.id, confirmacion: club.nombre })).resolves.toEqual({ success: true })
+
+    expect(borrados.audit_log).toHaveBeenCalledWith('club_id', club.id)
+  })
+
   // La cuenta de auth no se puede borrar mientras su fila de `perfiles` la
   // referencie: sin ON DELETE CASCADE (migración 126, que se corre a mano y
   // puede no estar aplicada) deleteUser rebota y el club nunca se borra.

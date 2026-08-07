@@ -90,6 +90,64 @@ async function eliminarCarpetaClub(admin: ReturnType<typeof createAdminClient>, 
   }
 }
 
+// Todas las tablas con `club_id`, sacadas del esquema real y no de memoria.
+// Ir agregándolas de a una a medida que reventaba la llave foránea dejó
+// "Eliminar club" roto tres veces seguidas: torneos, después ligas, después
+// audit_log. Están todas para que no haya una cuarta.
+//
+// `movimientos` va acá, se borra. La regla de "la plata de un mes cerrado no
+// cambia" es para cuando se da de baja a un JUGADOR: el club sigue existiendo
+// y sus totales no pueden moverse porque alguien se fue, por eso
+// eliminar_jugador_atomico solo le suelta el `jugador_id`. Borrar el club
+// entero es otra cosa: no queda ningún balance al que pertenezcan esas filas,
+// y dejarlas con `club_id = NULL` es plata sin dueño que se suma sola en
+// cualquier consulta que no filtre por club —el mismo enredo que ya causaron
+// las consultas de diagnóstico sin filtro—. El diálogo de confirmación además
+// avisa que se borran los pagos.
+//
+// Fuera de esta lista quedan a propósito las cuatro que tienen su propio
+// camino más abajo: `jugadores` (eliminar_jugador_atomico, que arrastra sus
+// hijos), `torneos` y `ligas` (borran su árbol completo) y `perfiles` (se va
+// con la cuenta de auth).
+const TABLAS_BORRAR_POR_CLUB = [
+  '_respaldo_asistencia_089', '_respaldo_mensualidades_089', '_respaldo_movimientos_089',
+  'actividad', 'asistencia', 'audit_log', 'auditoria_asistencia', 'auditoria_mensualidades',
+  'bloques_horario', 'clases_extraordinarias', 'credencial_visible', 'cuotas',
+  'evaluaciones_trimestrales', 'eventos', 'feedback_jugadores', 'finanzas_operaciones',
+  'flyer_referencias', 'fotos_galeria', 'grupos_entrenamiento', 'invitaciones',
+  'jugador_documentos', 'jugador_horario_historial', 'kioscos_asistencia',
+  'mensualidades', 'movimientos', 'pagos_clubes', 'partidos', 'presupuestos', 'profesores',
+  'ranking_general', 'solicitudes_jugador', 'tienda_asociacion_productos',
+  'tienda_buin_productos', 'torneos_externos', 'usuarios', 'vouchers',
+] as const
+
+// Barre las tablas de arriba dando varias vueltas. Si una no se puede borrar
+// todavía porque otra la referencia, la vuelta siguiente ya la encuentra
+// libre; se corta cuando una pasada entera no logra borrar nada nuevo. Así no
+// hay que codificar a mano el orden de dependencias entre 34 tablas, que es
+// justo lo que se venía equivocando.
+async function barrerTablasDelClub(admin: ReturnType<typeof createAdminClient>, clubId: string) {
+  let pendientes: string[] = [...TABLAS_BORRAR_POR_CLUB]
+  const errores = new Map<string, string>()
+
+  while (pendientes.length) {
+    const fallaron: string[] = []
+    for (const tabla of pendientes) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (admin as any).from(tabla).delete().eq('club_id', clubId)
+      if (error) { fallaron.push(tabla); errores.set(tabla, error.message) }
+      else errores.delete(tabla)
+    }
+    if (fallaron.length === pendientes.length) {
+      // Una vuelta entera sin avanzar: lo que queda no se destraba solo.
+      return `No se pudieron vaciar estas tablas: ${fallaron
+        .map(t => `${t} (${errores.get(t)})`).join('; ')}`
+    }
+    pendientes = fallaron
+  }
+  return null
+}
+
 // torneos.club_id no tenía ningún borrado asociado: un club con torneos
 // organizados (no solo jugadores inscritos, ya cubiertos por
 // eliminar_jugador_atomico) rompía "Eliminar club" con
@@ -210,26 +268,9 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
   const ligasError = await eliminarLigasDelClub(admin, club.id)
   if (ligasError) return { error: `No se pudieron eliminar las ligas del club: ${ligasError.message}. El club no se borró.` }
 
-  // Resto de tablas que cuelgan directo de club_id y son datos propios del
-  // club (no dinero): se borran enteras, no tiene sentido dejarlas huérfanas.
-  for (const tabla of [
-    'torneos_externos', 'flyer_referencias', 'fotos_galeria', 'solicitudes_jugador',
-    'eventos', 'kioscos_asistencia', 'vouchers', 'tienda_buin_productos',
-    'tienda_asociacion_productos', 'credencial_visible', 'actividad',
-    'partidos', 'bloques_horario',
-  ] as const) {
-    const { error } = await admin.from(tabla).delete().eq('club_id', club.id)
-    if (error) return { error: `No se pudo eliminar "${tabla}" del club: ${error.message}. El club no se borró.` }
-  }
-
-  // La plata NO se borra, igual que al eliminar un jugador: el movimiento
-  // queda, solo se le suelta la referencia al club.
-  const { error: movimientosError } = await admin.from('movimientos').update({ club_id: null }).eq('club_id', club.id)
-  if (movimientosError) return { error: `No se pudieron desvincular los movimientos del club: ${movimientosError.message}. El club no se borró.` }
-
-  // Esta relación histórica no tiene ON DELETE CASCADE en producción.
-  const { error: invitacionesError } = await admin.from('invitaciones').delete().eq('club_id', club.id)
-  if (invitacionesError) return { error: `No se pudieron eliminar las invitaciones del club: ${invitacionesError.message}` }
+  // Todas las tablas con club_id, de una sola vez.
+  const errorBarrido = await barrerTablasDelClub(admin, club.id)
+  if (errorBarrido) return { error: `${errorBarrido}. El club no se borró.` }
 
   // Las cuentas de staff se borran ANTES del club: perfiles.club_id es lo
   // último que podía bloquear el borrado de `clubes`. Antes esto se hacía
