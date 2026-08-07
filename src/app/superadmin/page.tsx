@@ -37,6 +37,7 @@ export default function SuperadminPage() {
   const [confirmacionEliminar, setConfirmacionEliminar] = useState('')
   const [eliminando, setEliminando] = useState(false)
   const [errorEliminar, setErrorEliminar] = useState('')
+  const [errorGestionar, setErrorGestionar] = useState('')
   const router = useRouter()
 
   async function handleCrearClub() {
@@ -89,7 +90,14 @@ export default function SuperadminPage() {
   async function gestionarClub(clubId: string) {
     if (!perfil?.id || gestionandoId) return
     setGestionandoId(clubId)
-    await supabase.from('perfiles').update({ club_id: clubId }).eq('id', perfil.id)
+    // Si esto falla (una política que cambie, un trigger), sin el error a la
+    // vista te mandaba igual al dashboard del club anterior como si nada.
+    const { error } = await supabase.from('perfiles').update({ club_id: clubId }).eq('id', perfil.id)
+    if (error) {
+      setGestionandoId(null)
+      setErrorGestionar(`No se pudo entrar al club: ${error.message}`)
+      return
+    }
     await refetchPerfil()
     // Sin esto, una pantalla que cacheó datos del club anterior (dentro del
     // minuto de su TTL) los seguía mostrando encima del club nuevo: parecía
@@ -140,6 +148,12 @@ export default function SuperadminPage() {
       {mensajeExito && (
         <div style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 12px', fontSize: 12, marginBottom: 16 }}>
           {mensajeExito}
+        </div>
+      )}
+
+      {errorGestionar && (
+        <div style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', fontSize: 12, marginBottom: 16 }}>
+          {errorGestionar}
         </div>
       )}
 

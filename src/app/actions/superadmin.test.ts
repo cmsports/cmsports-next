@@ -79,12 +79,26 @@ describe('crearClub desde Superadmin', () => {
 })
 
 describe('eliminarClub desde Superadmin', () => {
-  it('elimina invitaciones antes de borrar el club y luego las cuentas', async () => {
-    const club = { id: '11111111-1111-4111-8111-111111111111', nombre: 'Club Prueba' }
-    const borrarInvitaciones = vi.fn().mockResolvedValue({ error: null })
-    const borrarClub = vi.fn().mockResolvedValue({ error: null })
+  const club = { id: '11111111-1111-4111-8111-111111111111', nombre: 'Club Prueba' }
+
+  // Objeto que es a la vez promesa resuelta y eslabón de cadena: permite
+  // `.eq(...).eq(...)` tantas veces como haga falta y se puede await en
+  // cualquier punto, igual que el builder real de supabase-js.
+  type Cadena = Promise<{ error: null }> & { eq: () => Cadena; in: () => Cadena }
+  const cadenaEq = (): Cadena => Object.assign(
+    Promise.resolve({ error: null }),
+    { eq: () => cadenaEq(), in: () => cadenaEq() },
+  ) as Cadena
+
+  // El borrado toca muchas tablas en cadena. El mock responde a cualquiera con
+  // "sin filas / sin error" y solo registra las llamadas, así el test no se cae
+  // cada vez que se agrega una tabla más al barrido; lo que se verifica es el
+  // orden, que es donde estaban los bugs reales.
+  function montarMocks() {
     const deleteUser = vi.fn().mockResolvedValue({ error: null })
-    const perfilUpdateEqRol = vi.fn().mockResolvedValue({ error: null })
+    const llamadas: Array<{ tabla: string; op: string }> = []
+    type Borrar = ReturnType<typeof vi.fn<(columna: string, valor: string) => Promise<{ error: null }>>>
+    const borrados: Record<string, Borrar> = {}
 
     mocks.requireSuperadmin.mockResolvedValue({
       error: null,
@@ -100,20 +114,63 @@ describe('eliminarClub desde Superadmin', () => {
       storage: { from: vi.fn(() => ({ list: vi.fn().mockResolvedValue({ data: [], error: null }), remove: vi.fn() })) },
       auth: { admin: { deleteUser } },
       from: vi.fn((tabla: string) => {
-        if (tabla === 'perfiles') return {
-          select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [{ id: 'cuenta-id' }], error: null }) }),
-          update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: perfilUpdateEqRol }) }),
+        const filas = tabla === 'perfiles' ? [{ id: 'cuenta-id' }] : []
+        const resultado = { data: filas, error: null }
+        const borrar = borrados[tabla] ??= vi.fn<(columna: string, valor: string) => Promise<{ error: null }>>()
+          .mockResolvedValue({ error: null })
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn((columna: string, valor: string) => {
+              llamadas.push({ tabla, op: `select:${columna}=${valor}` })
+              return Object.assign(Promise.resolve(resultado), { single: vi.fn().mockResolvedValue(resultado) })
+            }),
+            in: vi.fn().mockResolvedValue(resultado),
+          }),
+          delete: vi.fn().mockReturnValue({
+            eq: vi.fn((columna: string, valor: string) => {
+              llamadas.push({ tabla, op: 'delete' })
+              return borrar(columna, valor)
+            }),
+            in: vi.fn().mockResolvedValue({ error: null }),
+          }),
+          // `.eq()` encadenable sin límite: el update final del superadmin
+          // encadena tres (`id`, `rol`, `club_id`).
+          update: vi.fn().mockReturnValue(cadenaEq()),
         }
-        if (tabla === 'invitaciones') return { delete: vi.fn().mockReturnValue({ eq: borrarInvitaciones }) }
-        if (tabla === 'clubes') return { delete: vi.fn().mockReturnValue({ eq: borrarClub }) }
-        throw new Error(`Tabla inesperada: ${tabla}`)
       }),
     })
 
+    return { deleteUser, llamadas, borrados }
+  }
+
+  it('borra invitaciones y cuentas antes que el club', async () => {
+    const { deleteUser, llamadas, borrados } = montarMocks()
+
     await expect(eliminarClub({ clubId: club.id, confirmacion: club.nombre })).resolves.toEqual({ success: true })
-    expect(borrarInvitaciones).toHaveBeenCalledWith('club_id', club.id)
-    expect(borrarClub).toHaveBeenCalledWith('id', club.id)
-    expect(borrarInvitaciones.mock.invocationCallOrder[0]).toBeLessThan(borrarClub.mock.invocationCallOrder[0])
+
+    expect(borrados.invitaciones).toHaveBeenCalledWith('club_id', club.id)
+    expect(borrados.clubes).toHaveBeenCalledWith('id', club.id)
     expect(deleteUser).toHaveBeenCalledWith('cuenta-id')
+
+    const indice = (predicado: (l: { tabla: string; op: string }) => boolean) =>
+      llamadas.findIndex(predicado)
+    expect(indice(l => l.tabla === 'invitaciones' && l.op === 'delete'))
+      .toBeLessThan(indice(l => l.tabla === 'clubes' && l.op === 'delete'))
+  })
+
+  // La cuenta de auth no se puede borrar mientras su fila de `perfiles` la
+  // referencie: sin ON DELETE CASCADE (migración 126, que se corre a mano y
+  // puede no estar aplicada) deleteUser rebota y el club nunca se borra.
+  it('borra el perfil antes que la cuenta de auth, y ambos antes que el club', async () => {
+    const { deleteUser, llamadas, borrados } = montarMocks()
+
+    await expect(eliminarClub({ clubId: club.id, confirmacion: club.nombre })).resolves.toEqual({ success: true })
+
+    expect(borrados.perfiles).toHaveBeenCalledWith('id', 'cuenta-id')
+    expect(borrados.perfiles.mock.invocationCallOrder[0])
+      .toBeLessThan(deleteUser.mock.invocationCallOrder[0])
+    expect(deleteUser.mock.invocationCallOrder[0])
+      .toBeLessThan(borrados.clubes.mock.invocationCallOrder[0])
+    expect(llamadas.some(l => l.tabla === 'jugadores')).toBe(true)
   })
 })

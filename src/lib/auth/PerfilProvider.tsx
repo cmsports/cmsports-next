@@ -78,9 +78,16 @@ export function PerfilProvider({ children }: { children: React.ReactNode }) {
     return { perfil: p, userId: session.user.id }
   }, [])
 
-  const cargarPerfil = useCallback(async (forzarBD = false) => {
+  // Siempre va a la base: es la función que se expone como `refetchPerfil` y
+  // sus dos usos (cambiar de club desde superadmin, editar el perfil propio)
+  // ocurren justo después de escribir en `perfiles`. Antes tenía un parámetro
+  // `forzarBD` que por defecto era `false`, y como nadie lo pasaba, el refetch
+  // leía el cache de localStorage —vigente 5 minutos— y devolvía el perfil
+  // anterior: "Gestionar" grababa bien el club nuevo pero volvía con el viejo,
+  // así que todos los clubes aterrizaban en el que estuviera cacheado.
+  const cargarPerfil = useCallback(async () => {
     const generacionCarga = ++generacionRef.current
-    const resultado = await obtenerPerfil(forzarBD)
+    const resultado = await obtenerPerfil(true)
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!cargaPerfilSigueVigente(
@@ -114,7 +121,7 @@ export function PerfilProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       generacionRef.current++
       if (event === 'SIGNED_OUT') { setPerfil(null); guardarCache(null); clearQueryCache(); setLoading(false) }
-      if (event === 'SIGNED_IN') void cargarPerfil(true)
+      if (event === 'SIGNED_IN') void cargarPerfil()
     })
     return () => {
       activo = false

@@ -231,13 +231,22 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
   const { error: invitacionesError } = await admin.from('invitaciones').delete().eq('club_id', club.id)
   if (invitacionesError) return { error: `No se pudieron eliminar las invitaciones del club: ${invitacionesError.message}` }
 
-  // Las cuentas de staff se borran ANTES del club: borrar el usuario de auth
-  // arrastra su fila de `perfiles` (ON DELETE CASCADE, migración 126), y
-  // perfiles.club_id es lo último que podía bloquear el borrado de `clubes`.
-  // Antes esto se hacía después de borrar el club, dejando el intento
-  // encadenado a que la fila de `clubes` ya no existiera para "liberar" nada.
+  // Las cuentas de staff se borran ANTES del club: perfiles.club_id es lo
+  // último que podía bloquear el borrado de `clubes`. Antes esto se hacía
+  // después, dejando el intento encadenado a que la fila de `clubes` ya no
+  // existiera para "liberar" nada.
+  //
+  // El perfil se borra a mano primero, en vez de confiar en que se vaya solo
+  // al borrar la cuenta: la migración 126 le puso ON DELETE CASCADE a
+  // `perfiles.id -> auth.users(id)`, pero se ejecuta a mano y puede no estar
+  // aplicada. Sin el cascade, deleteUser rebota con "Database error deleting
+  // user" —que en realidad es la FK perfiles_id_fkey— y el club no se borra
+  // nunca. Borrando el perfil antes, el resultado es el mismo con o sin la
+  // migración puesta.
   let cuentasFallidas = 0
   for (const cuentaId of cuentas) {
+    const { error: perfilError } = await admin.from('perfiles').delete().eq('id', cuentaId)
+    if (perfilError) { cuentasFallidas++; continue }
     const { error } = await admin.auth.admin.deleteUser(cuentaId)
     if (error) cuentasFallidas++
   }
