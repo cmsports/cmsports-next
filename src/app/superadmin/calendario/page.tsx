@@ -6,18 +6,23 @@ import {
   borrarActividad, crearActividad, editarActividad, listarActividades,
   toggleActividad, type Actividad,
 } from '@/app/actions/actividades-superadmin'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
-function hoy() {
-  return new Date().toISOString().slice(0, 10)
+// ponytail: fechaChile() ya resuelve la zona; el mes/año salen del mismo string
+const hoy = fechaChile
+
+function mesAnioDeHoy() {
+  const [a, m] = hoy().split('-').map(Number)
+  return { mes: m - 1, anio: a }
 }
 
 export default function CalendarioSuperadminPage() {
-  const ahora = new Date()
-  const [mes, setMes] = useState(ahora.getMonth())
-  const [anio, setAnio] = useState(ahora.getFullYear())
+  const ahora = mesAnioDeHoy()
+  const [mes, setMes] = useState(ahora.mes)
+  const [anio, setAnio] = useState(ahora.anio)
   const [actividades, setActividades] = useState<Actividad[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
@@ -133,7 +138,7 @@ export default function CalendarioSuperadminPage() {
           padding: '6px 12px', border: '1px solid #e2e8f0', borderRadius: 8,
           background: '#fff', color: '#64748b', cursor: 'pointer', fontSize: 16,
         }}>▶</button>
-        <button onClick={() => { setMes(ahora.getMonth()); setAnio(ahora.getFullYear()); setDiaSeleccionado(hoy()) }} style={{
+        <button onClick={() => { const h = mesAnioDeHoy(); setMes(h.mes); setAnio(h.anio); setDiaSeleccionado(hoy()) }} style={{
           padding: '5px 10px', border: '1px solid #e2e8f0', borderRadius: 7,
           background: '#fff', color: '#4f46e5', cursor: 'pointer', fontSize: 12, fontWeight: 600, marginLeft: 'auto',
         }}>
