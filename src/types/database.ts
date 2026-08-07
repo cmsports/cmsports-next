@@ -2094,6 +2094,15 @@ export interface Database {
         }
         Returns: Json
       }
+      registrar_gastos_gestion_torneo_atomico: {
+        Args: {
+          p_torneo_id: string
+          p_torneo_nombre: string
+          p_gastos: Json
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
     }
     Enums: {}
     CompositeTypes: {}

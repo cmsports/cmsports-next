@@ -19,6 +19,7 @@ import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
 import { calcularRankingDivision, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
+import { fechaChile } from '@/lib/domain/fechaChile'
 import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/liga'
 import ModalRestricciones from '@/components/liga/ModalRestricciones'
 import type { RestriccionEditable } from '@/components/liga/ModalRestricciones'
@@ -221,7 +222,11 @@ export default function LigaDetallePage() {
   const [pagoDivisionId, setPagoDivisionId] = useState<string | null>(null)
   const [montoTotal, setMontoTotal] = useState('')
   const [montoAbono, setMontoAbono] = useState('')
-  const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0])
+  // fechaChile(), no toISOString(): este campo es la fecha de un pago, y
+  // toISOString() da la fecha en UTC — después de las 20:00 en Chile ya es el
+  // día siguiente, así que un pago de la noche quedaba fechado mañana y, a fin
+  // de mes, contado en el mes equivocado.
+  const [fechaPago, setFechaPago] = useState(fechaChile())
   const [metodoPago, setMetodoPago] = useState('')
   const [registrandoPago, setRegistrandoPago] = useState(false)
   const [pagoError, setPagoError] = useState('')
@@ -664,7 +669,7 @@ export default function LigaDetallePage() {
       : pagosReporteFilas.find(f => f.divisionId === divId && f.jugadorId === jugador.id)?.montoTotal
     setMontoTotal(montoExistente ? String(montoExistente) : (liga?.montoInscripcionDefault ? String(liga.montoInscripcionDefault) : ''))
     setMontoAbono('')
-    setFechaPago(new Date().toISOString().split('T')[0])
+    setFechaPago(fechaChile())
     setMetodoPago('')
     setPagoModalAbierto(true)
   }

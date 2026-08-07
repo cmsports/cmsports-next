@@ -1836,14 +1836,24 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
     .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
   const grupoIds = (grupos || []).map(g => g.id)
 
-  await supabase.from('movimientos').delete().eq('torneo_id', torneoId)
-  if (torneo.nombre && torneo.club_id) {
-    await supabase
-      .from('movimientos')
-      .delete()
-      .eq('club_id', torneo.club_id)
-      .ilike('descripcion', `%${torneo.nombre}%`)
-  }
+  // La plata del torneo NO se borra. Misma regla que al dar de baja a un
+  // jugador (migración 127): el club sigue existiendo y los totales de un mes
+  // ya cerrado no pueden moverse porque después se borre el torneo. La FK
+  // `movimientos.torneo_id` es ON DELETE SET NULL desde la migración 024
+  // justamente para eso: al borrar el torneo, sus movimientos quedan sin
+  // torneo pero siguen sumando en Finanzas.
+  //
+  // Antes acá había dos DELETE. El segundo borraba por coincidencia de texto:
+  //
+  //     .eq('club_id', ...).ilike('descripcion', `%${torneo.nombre}%`)
+  //
+  // Eso no significa "los movimientos de este torneo", significa "cualquier
+  // movimiento del club que mencione ese texto". Como las mensualidades se
+  // describen "Mensualidad Juan Pérez — Julio 2026", un torneo llamado "Julio"
+  // borraba $669.500 en mensualidades de Buin, y uno llamado "2026", $998.700.
+  // Venía de cuando `movimientos.torneo_id` no existía y el nombre era el único
+  // vínculo; hoy el RPC de la migración 050 guarda el torneo_id en cada fila,
+  // así que ese rastreo por texto ya no cumplía ninguna función.
   if (grupoIds.length) await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
   await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
   await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
@@ -1886,6 +1896,7 @@ export async function guardarGastosGestion(params: {
   torneoId: string
   torneoNombre: string
   gastos: { tipo: string; monto: number }[]
+  idempotencyKey?: string
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -1893,25 +1904,17 @@ export async function guardarGastosGestion(params: {
   const validos = params.gastos.filter(g => g.tipo.trim() && g.monto > 0)
   if (!validos.length) return { error: 'No hay gastos válidos' }
 
-  const { data: torneo } = await supabase.from('torneos').select('club_id').eq('id', params.torneoId).single()
-  if (!torneo) return { error: 'Torneo no encontrado' }
-
-  const { data: perfil } = await supabase.from('perfiles').select('nombre').single()
-  const admin = perfil?.nombre ?? 'Admin'
-
-  const inserts = validos.map(g => ({
-    club_id: torneo.club_id,
-    torneo_id: params.torneoId,
-    tipo: 'gasto' as const,
-    categoria: 'otro_gasto',
-    descripcion: `${g.tipo.trim()} — ${params.torneoNombre}`,
-    monto: g.monto,
-    fecha: fechaChile(),
-    registrado_por_nombre: admin,
-  }))
-
-  const { error } = await supabase.from('movimientos').insert(inserts)
+  // Antes esto insertaba directo en `movimientos` desde acá: sin idempotencia
+  // (un doble clic cargaba el gasto dos veces), sin verificar que el torneo
+  // fuera del club de quien llama, y sin dejar el rastro que dejan los RPC.
+  // Es la única operación financiera que se había quedado fuera del patrón.
+  const { data, error } = await supabase.rpc('registrar_gastos_gestion_torneo_atomico', {
+    p_torneo_id: params.torneoId,
+    p_torneo_nombre: params.torneoNombre,
+    p_gastos: validos.map(g => ({ tipo: g.tipo.trim(), monto: g.monto })),
+    p_idempotency_key: params.idempotencyKey ?? crypto.randomUUID(),
+  })
   if (error) return { error: error.message }
 
-  return { success: true, cantidad: validos.length }
+  return { success: true, cantidad: (data as { cantidad?: number } | null)?.cantidad ?? validos.length }
 }
