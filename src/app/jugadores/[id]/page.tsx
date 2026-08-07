@@ -7,6 +7,7 @@ import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { puedeVerPantallasDeClub } from '@/lib/auth/roles'
+import { useTextoMonto } from '@/components/Monto'
 import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
 import { credencialDelJugador } from '@/app/actions/credenciales'
 import { formatRut } from '@/lib/rut'
@@ -231,6 +232,8 @@ export default function JugadorDetallePage() {
     return () => { activo = false }
   }, [jugador?.foto_path, jugador?.foto_url])
   const esAdmin = perfil?.rol === 'admin'
+  // Los PDF de más arriba arman sus montos aparte y van con la cifra real.
+  const fmtMonto = useTextoMonto()
   const esProfesor = perfil?.rol === 'profesor'
 
   // Traé la credencial cuando el admin abre la ficha, para que la tarjeta de
@@ -909,7 +912,7 @@ export default function JugadorDetallePage() {
         {esAdmin && (
           <div style={{ ...cardStyle, padding:'16px 20px', textAlign:'center' }}>
             <div style={{ fontSize: jugador.mensualidad ? 20 : 12, fontWeight:800, color: jugador.mensualidad ? '#4f46e5' : '#c2410c', fontVariantNumeric:'tabular-nums' }}>
-              {jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : SIN_CUOTA}
+              {jugador.mensualidad ? fmtMonto(jugador.mensualidad) : SIN_CUOTA}
             </div>
             <div style={{ fontSize:11, color: muted, marginTop:4 }}>Mensualidad</div>
           </div>
@@ -1038,7 +1041,7 @@ export default function JugadorDetallePage() {
           <div style={{ padding:'16px 20px' }}>
             <div style={{ fontSize: jugador.mensualidad ? 24 : 15, fontWeight:800, color: jugador.mensualidad ? text : '#c2410c', marginBottom:4 }}>
               {jugador.mensualidad
-                ? <>{`$${jugador.mensualidad.toLocaleString('es-CL')}`}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span></>
+                ? <>{fmtMonto(jugador.mensualidad)}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span></>
                 : SIN_CUOTA}
             </div>
             <div style={{ fontSize:13, color: muted }}>
@@ -1060,7 +1063,7 @@ export default function JugadorDetallePage() {
                   </div>
                 </div>
                 <div style={{ fontSize:18, fontWeight:800, color:'#a16207', fontVariantNumeric:'tabular-nums' }}>
-                  {totalExtras > 0 ? `$${totalExtras.toLocaleString('es-CL')}` : '—'}
+                  {totalExtras > 0 ? fmtMonto(totalExtras) : '—'}
                 </div>
               </div>
             )}

@@ -34,6 +34,7 @@ import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayoutNumerado } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
+import { useTextoMonto } from '@/components/Monto'
 import dynamic from 'next/dynamic'
 const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.QRCodeSVG })), { ssr: false })
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
@@ -533,7 +534,8 @@ export default function TorneoDetallePage() {
   const pagosPendientesDeSubir = pagos.filter(p => p.estado === 'pagado' && !p.subido_a_finanzas)
   const recaudadoPendiente = pagosPendientesDeSubir.length * cuota
   const proyectado = totalInscritos * cuota
-  const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+  // Respeta el ojito: todo lo que este `fmt` dibuja va a pantalla.
+  const fmt = useTextoMonto()
 
   const faseActual = torneo?.fase
   const esPlayoffs = faseActual && (fasesOrden.includes(faseActual) || faseActual === 'finalizado')
@@ -1411,7 +1413,7 @@ export default function TorneoDetallePage() {
               const p1 = premio1 ? parseInt(premio1) : null
               const p2 = premio2 ? parseInt(premio2) : null
               const p3 = premioTerceroOpen && premio3 ? parseInt(premio3) : null
-              const fmtM = (n: number) => '$' + n.toLocaleString('es-CL')
+              const fmtM = fmt
               return (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
                   <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.18)' }}>

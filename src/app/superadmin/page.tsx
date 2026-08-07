@@ -9,7 +9,7 @@ import { usePerfilSuperadmin, useClubesSuperadmin } from './layout'
 import { crearClub, actualizarModulosClub, eliminarClub } from '@/app/actions/superadmin'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { clearAll as limpiarCacheConsultas } from '@/lib/query-cache'
-import { formatCLP } from '@/lib/domain/finanzas'
+import { useTextoMonto } from '@/components/Monto'
 import { MODULOS as MODULOS_OPCIONALES, MODULOS_KEYS as TODOS_MODULOS, conDependencias } from '@/lib/domain/modulos'
 import { metricasPlanes } from '@/lib/domain/suscripciones'
 import { Settings } from 'lucide-react'
@@ -38,6 +38,7 @@ export default function SuperadminPage() {
   const [eliminando, setEliminando] = useState(false)
   const [errorEliminar, setErrorEliminar] = useState('')
   const [errorGestionar, setErrorGestionar] = useState('')
+  const fmtMonto = useTextoMonto()
   const router = useRouter()
 
   async function handleCrearClub() {
@@ -161,7 +162,7 @@ export default function SuperadminPage() {
         {[
           { label: 'Clubes con plan activo', value: activos, hint: `${totalClubes} en total, el resto en prueba`, icon: Building2, color: '#4f46e5' },
           { label: 'Jugadores totales', value: totalJugadores, hint: null, icon: Users, color: '#0891b2' },
-          { label: 'MRR (ingreso mensual)', value: formatCLP(mrr), hint: 'solo planes activos', icon: Wallet, color: '#16a34a' },
+          { label: 'MRR (ingreso mensual)', value: fmtMonto(mrr), hint: 'solo planes activos', icon: Wallet, color: '#16a34a' },
           { label: 'Clubes al día', value: `${alDia}/${activos}`, hint: 'sobre los planes activos', icon: ShieldCheck, color: '#d97706' },
         ].map(m => (
           <div key={m.label} style={{ ...card, padding: 16 }}>
@@ -200,7 +201,7 @@ export default function SuperadminPage() {
               </span>
             </div>
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14 }}>
-              {c.plan_mensual > 0 ? `Plan: ${formatCLP(c.plan_mensual)}/mes` : 'Plan por definir'}
+              {c.plan_mensual > 0 ? `Plan: ${fmtMonto(c.plan_mensual)}/mes` : 'Plan por definir'}
               <span style={{ color: c.estado_pago === 'pagado' ? '#16a34a' : c.estado_pago === 'atrasado' ? '#dc2626' : '#d97706' }}>
                 {' · '}{c.estado_pago === 'pagado' ? 'Pago al día' : c.estado_pago === 'atrasado' ? 'Pago atrasado' : 'Pago pendiente'}
               </span>

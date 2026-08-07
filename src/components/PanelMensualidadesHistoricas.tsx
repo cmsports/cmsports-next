@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTextoMonto } from '@/components/Monto'
 import { createClient } from '@/lib/supabase/client'
 import { corregirMensualidad } from '@/app/actions/mensualidades'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -30,10 +31,11 @@ type Cambio  = {
   monto_anterior: number | null; monto_nuevo: number | null; motivo: string | null; creado_en: string
 }
 
-const fmt = (n: number | null | undefined) =>
-  n == null ? '—' : '$' + Number(n).toLocaleString('es-CL')
-
 export default function PanelMensualidadesHistoricas({ clubId }: { clubId: string }) {
+  // El guion se mantiene fuera del ojito: "sin monto" no es lo mismo que
+  // "monto oculto", y taparlo con puntos diría que hay una cifra que no hay.
+  const textoMonto = useTextoMonto()
+  const fmt = (n: number | null | undefined) => (n == null ? '—' : textoMonto(n))
   const [jugadores, setJugadores] = useState<Jugador[]>([])
   const [busqueda, setBusqueda]   = useState('')
   const [elegido, setElegido]     = useState<Jugador | null>(null)

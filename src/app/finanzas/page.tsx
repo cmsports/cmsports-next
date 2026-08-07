@@ -14,6 +14,7 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import { cachedFetch } from '@/lib/query-cache'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { useTextoMonto } from '@/components/Monto'
 
 const supabase = createClient()
 
@@ -43,6 +44,9 @@ const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','mat
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
+// Para los PDF y las exportaciones: ahí la cifra va siempre real. El ojito
+// tapa lo que se ve en pantalla, no lo que el usuario decide descargar —un
+// reporte con los montos en puntitos no le sirve a nadie.
 const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 
 export default function FinanzasPage() {
@@ -54,6 +58,9 @@ export default function FinanzasPage() {
 }
 
 function FinanzasContent() {
+  // Tapa el `fmt` de arriba a propósito: acá todo lo que se dibuja va a
+  // pantalla, así que pasa por el interruptor del ojito.
+  const fmt = useTextoMonto()
   const { perfil, loading: authLoading } = usePerfil()
   const [movimientos, setMovimientos] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
@@ -755,6 +762,10 @@ const categoriasReporte: { key: CategoriaReporte; label: string; desc: string }[
 ]
 
 function ReportesTab({ clubId }: { clubId: string | null }) {
+  // Dos formateadores a propósito: `fmt` (el de arriba) para el PDF, que lleva
+  // la cifra real, y `fmtVista` para lo que se muestra en pantalla, que
+  // obedece al ojito.
+  const fmtVista = useTextoMonto()
   const [categoriaRep, setCategoriaRep] = useState<CategoriaReporte>('general')
   const [tipo, setTipo] = useState<'mensual'|'trimestral'|'semestral'|'anual'>('mensual')
   const [mes, setMes] = useState(new Date().getMonth() + 1)
@@ -1142,7 +1153,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         <div>
           <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — General — {titulo}</div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
-            {[{ label:'Ingresos', value:fmt(preview.ingresos), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }, { label:'Gastos', value:fmt(preview.gastos), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' }, { label:'Balance', value:fmt(preview.ingresos - preview.gastos), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' }].map(s => (
+            {[{ label:'Ingresos', value:fmtVista(preview.ingresos), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }, { label:'Gastos', value:fmtVista(preview.gastos), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' }, { label:'Balance', value:fmtVista(preview.ingresos - preview.gastos), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' }].map(s => (
               <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:16 }}>
                 <div style={{ fontSize:20, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
                 <div style={{ fontSize:12, color:s.color, marginTop:4 }}>{s.label}</div>
@@ -1163,7 +1174,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               {Object.entries(preview.desgloseIngresos).map(([cat, total]) => (
                 <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
                   <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
-                  <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                  <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmtVista(total as number)}</span>
                 </div>
               ))}
               {Object.keys(preview.desgloseIngresos).length === 0 && <p style={{ fontSize:12, color: hint }}>Sin ingresos</p>}

@@ -7,6 +7,7 @@
 // cobro es un movimiento con todas las del mismo jugador adentro.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTextoMonto } from '@/components/Monto'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
 import {
@@ -39,9 +40,8 @@ type Extra = {
 type Jugador = { id: string; nombre: string; telefono: string | null }
 type Bloque  = { id: string; nombre: string; hora_inicio: string; hora_fin: string }
 
-const fmt = (n: number) => '$' + Number(n).toLocaleString('es-CL')
-
 export default function PanelClasesExtra({ clubId }: { clubId: string | null }) {
+  const fmt = useTextoMonto()
   const [extras, setExtras]       = useState<Extra[]>([])
   const [jugadores, setJugadores] = useState<Record<string, Jugador>>({})
   const [bloques, setBloques]     = useState<Record<string, Bloque>>({})

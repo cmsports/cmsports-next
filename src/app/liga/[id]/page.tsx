@@ -20,6 +20,7 @@ import { RankingDivision } from '@/components/liga/RankingDivision'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
 import { calcularRankingDivision, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { useTextoMonto } from '@/components/Monto'
 import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/liga'
 import ModalRestricciones from '@/components/liga/ModalRestricciones'
 import type { RestriccionEditable } from '@/components/liga/ModalRestricciones'
@@ -162,6 +163,10 @@ const SEMAFORO: Record<string, string> = {
 }
 
 export default function LigaDetallePage() {
+  // Para lo que se ve en pantalla. El PDF del reporte de pagos, más abajo,
+  // sigue armando las cifras a mano: ahí van reales porque es un documento
+  // que el admin descarga a propósito.
+  const fmtVista = useTextoMonto()
   const params = useParams<{ id: string }>()
   const ligaId = params.id
   const { perfil, loading: authLoading } = usePerfil()
@@ -699,7 +704,7 @@ export default function LigaDetallePage() {
     setPagoModalAbierto(false)
     if (pagoDivisionId === divisionActiva) await cargarPagos(pagoDivisionId)
     if (pagosReporteAbierto) await cargarPagosReporte()
-    setMensaje(`Pago registrado — ${jugadorPagando.nombre}: $${ma.toLocaleString('es-CL')}`)
+    setMensaje(`Pago registrado — ${jugadorPagando.nombre}: ${fmtVista(ma)}`)
   }
 
   async function exportarPDFPagos() {
@@ -1131,7 +1136,7 @@ export default function LigaDetallePage() {
                           <span style={{ flex:1, fontSize:13, fontWeight:600, color: txtColor }}>{nombre}</span>
                           {pago && (
                             <span style={{ fontSize:11, color: mutedColor, fontVariantNumeric:'tabular-nums', fontFamily:'monospace' }}>
-                              ${pago.monto_pagado.toLocaleString('es-CL')} / ${pago.monto_total.toLocaleString('es-CL')}
+                              {fmtVista(pago.monto_pagado)} / {fmtVista(pago.monto_total)}
                             </span>
                           )}
                           <span style={{ background: `${color}20`, color, padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:700, whiteSpace:'nowrap', border:`1px solid ${color}40` }}>{label}</span>
@@ -1171,12 +1176,12 @@ export default function LigaDetallePage() {
                               <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
                                 <div style={{ fontSize:11, color: mutedColor }}>
                                   {estado === 'pagado' ? '✅ Inscripción al día'
-                                    : estado === 'parcial' ? `⚡ Abonó $${pago?.monto_pagado.toLocaleString('es-CL')}`
+                                    : estado === 'parcial' ? `⚡ Abonó ${fmtVista(pago?.monto_pagado ?? 0)}`
                                     : '⏳ Pago pendiente'}
                                 </div>
                                 {pago && (
                                   <div style={{ fontSize:11, color: mutedColor }}>
-                                    Total: ${pago.monto_total.toLocaleString('es-CL')}
+                                    Total: {fmtVista(pago.monto_total)}
                                   </div>
                                 )}
                                 <div style={{ fontSize:11, color:'#6366f1', marginTop:2 }}>División: {division?.nombre}</div>
@@ -1594,11 +1599,11 @@ export default function LigaDetallePage() {
                 <>
                   <div style={{ display:'flex', gap:10, marginBottom:22, flexWrap:'wrap' }}>
                     <div style={{ flex:'1 1 140px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:12, padding:'12px 14px' }}>
-                      <div style={{ fontSize:18, fontWeight:800, color:'#16a34a', fontVariantNumeric:'tabular-nums' }}>${totalRecaudado.toLocaleString('es-CL')}</div>
+                      <div style={{ fontSize:18, fontWeight:800, color:'#16a34a', fontVariantNumeric:'tabular-nums' }}>{fmtVista(totalRecaudado)}</div>
                       <div style={{ fontSize:11, color:'#166534', fontWeight:600 }}>RECAUDADO</div>
                     </div>
                     <div style={{ flex:'1 1 140px', background:'#eef2ff', border:'1px solid #c7d2fe', borderRadius:12, padding:'12px 14px' }}>
-                      <div style={{ fontSize:18, fontWeight:800, color:'#4f46e5', fontVariantNumeric:'tabular-nums' }}>${totalEsperado.toLocaleString('es-CL')}</div>
+                      <div style={{ fontSize:18, fontWeight:800, color:'#4f46e5', fontVariantNumeric:'tabular-nums' }}>{fmtVista(totalEsperado)}</div>
                       <div style={{ fontSize:11, color:'#4338ca', fontWeight:600 }}>ESPERADO</div>
                     </div>
                     <div style={{ flex:'1 1 100px', background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:12, padding:'12px 14px' }}>
@@ -1628,7 +1633,7 @@ export default function LigaDetallePage() {
                                 <span style={{ width:8, height:8, borderRadius:'50%', background: SEMAFORO[f.estado], flexShrink:0 }} />
                                 <span style={{ flex:1, fontWeight:600, color: text, fontSize:13 }}>{nombrePorId[f.jugadorId] ?? '—'}</span>
                                 <span style={{ fontSize:12, color: muted, fontVariantNumeric:'tabular-nums' }}>
-                                  ${f.montoPagado.toLocaleString('es-CL')} / ${f.montoTotal.toLocaleString('es-CL')}
+                                  {fmtVista(f.montoPagado)} / {fmtVista(f.montoTotal)}
                                 </span>
                               </div>
                             ))}
@@ -1685,11 +1690,11 @@ export default function LigaDetallePage() {
                 <div style={{ background:'#f4f7fa', borderRadius:10, padding:'10px 14px', fontSize:12, color: muted, marginBottom:16 }}>
                   Pagado hasta ahora:{' '}
                   <strong style={{ color: text, fontVariantNumeric:'tabular-nums' }}>
-                    ${montoPagado.toLocaleString('es-CL')}
+                    {fmtVista(montoPagado)}
                   </strong>
                   {' '}de{' '}
                   <strong style={{ color: text, fontVariantNumeric:'tabular-nums' }}>
-                    ${montoTotalReg.toLocaleString('es-CL')}
+                    {fmtVista(montoTotalReg)}
                   </strong>
                 </div>
               )

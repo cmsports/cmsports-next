@@ -6,6 +6,7 @@ import { Wallet, TrendingUp, AlertTriangle, CheckCircle2, Pencil, Receipt, FileD
 import { actualizarPlanClub, registrarPagoClub } from '@/app/actions/superadmin'
 import { useClubesSuperadmin } from '../layout'
 import { formatCLP } from '@/lib/domain/finanzas'
+import { useTextoMonto } from '@/components/Monto'
 import { planVencido, metricasPlanes, type EstadoPlan } from '@/lib/domain/suscripciones'
 import { fechaChile } from '@/lib/domain/fechaChile'
 
@@ -29,6 +30,9 @@ const PLAN_COLOR: Record<EstadoPlan, { bg: string; fg: string; label: string }> 
 }
 
 export default function FinanzasSuperadminPage() {
+  // Para lo que se dibuja en pantalla. El PDF sigue usando `formatCLP` directo,
+  // más abajo: ahí la cifra va real porque es un documento que se descarga.
+  const fmtVista = useTextoMonto()
   const { clubes, loading: loadingClubes, recargar: recargarClubes } = useClubesSuperadmin()
   const [pagos, setPagos] = useState<any[]>([])
   const [loadingPagos, setLoadingPagos] = useState(true)
@@ -215,8 +219,8 @@ export default function FinanzasSuperadminPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 22 }}>
         {[
-          { label: 'MRR total', value: formatCLP(mrr), icon: Wallet, color: '#4f46e5' },
-          { label: 'Cobrado este mes', value: formatCLP(cobradoEsteMes), icon: TrendingUp, color: '#16a34a' },
+          { label: 'MRR total', value: fmtVista(mrr), icon: Wallet, color: '#4f46e5' },
+          { label: 'Cobrado este mes', value: fmtVista(cobradoEsteMes), icon: TrendingUp, color: '#16a34a' },
           { label: 'Planes activos', value: activos, icon: CheckCircle2, color: '#0891b2' },
           { label: 'Pagos vencidos', value: vencidos, icon: AlertTriangle, color: '#dc2626' },
         ].map(m => (
@@ -252,7 +256,7 @@ export default function FinanzasSuperadminPage() {
                 <td style={{ padding: '10px 18px' }}>{editando ?
                   <input autoFocus type="number" min="0" value={planForm.monto} onChange={e => setPlanForm({ ...planForm, monto: e.target.value })} style={{ width: 105, padding: '5px 8px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12 }} /> :
                   <button onClick={() => { setError(''); setEditandoPlan(c.id); setPlanForm({ monto: String(c.plan_mensual || 0), estado: estadoPlan, fechaInicio: c.fecha_inicio_plan || '' }) }} style={{ border: 0, background: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                    {c.plan_mensual > 0 ? formatCLP(c.plan_mensual) : 'Por definir'} <Pencil size={11} color="#94a3b8" />
+                    {c.plan_mensual > 0 ? fmtVista(c.plan_mensual) : 'Por definir'} <Pencil size={11} color="#94a3b8" />
                   </button>}
                 </td>
                 <td style={{ padding: '10px 18px' }}>{editando ? <div style={{ display: 'grid', gap: 5 }}>
@@ -289,7 +293,7 @@ export default function FinanzasSuperadminPage() {
                   <td style={{ padding: '10px 18px', color: '#0f172a', fontWeight: 500 }}>{p.clubes?.nombre || '—'}</td>
                   <td style={{ padding: '10px 18px', color: '#64748b' }}>{MESES[p.periodo_mes - 1]} {p.periodo_anio}</td>
                   <td style={{ padding: '10px 18px', color: '#64748b' }}>{p.metodo || '—'}</td>
-                  <td style={{ padding: '10px 18px', textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>{formatCLP(p.monto)}</td>
+                  <td style={{ padding: '10px 18px', textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>{fmtVista(p.monto)}</td>
                 </tr>
               ))}
             </tbody>

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { archivarTorneo, crearTorneo as crearTorneoAction, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 
 const supabase = createClient()
@@ -108,6 +109,7 @@ export default function TorneosInternosPage() {
   }
 
   const esAdmin = perfil?.rol === 'admin'
+  const fmtMonto = useTextoMonto()
 
   const estadoConfig: Record<string, { color: string; bg: string; emoji: string }> = {
     en_curso: { color: '#16a34a', bg: '#f0fdf4', emoji: '🟢' },
@@ -199,7 +201,7 @@ export default function TorneosInternosPage() {
                 <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
                   <span style={{ fontSize: 13, color: muted }}>👥 <strong style={{ color: text }}>{t.inscritos || 0}</strong> inscritos</span>
                   {t.cuota_inscripcion > 0 && (
-                    <span style={{ fontSize: 13, color: muted }}>Cuota: <strong style={{ color: '#16a34a' }}>${t.cuota_inscripcion?.toLocaleString('es-CL')}</strong></span>
+                    <span style={{ fontSize: 13, color: muted }}>Cuota: <strong style={{ color: '#16a34a' }}>{fmtMonto(t.cuota_inscripcion ?? 0)}</strong></span>
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

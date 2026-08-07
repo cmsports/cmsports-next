@@ -13,9 +13,10 @@ import {
   LayoutDashboard, Users, Trophy, ClipboardCheck, Calendar,
   CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
-  Store, Library, BookLock, Eye, Award, Home, Landmark, CalendarClock,
+  Store, Library, BookLock, Eye, EyeOff, Award, Home, Landmark, CalendarClock,
   MessageSquare,
 } from 'lucide-react'
+import { useMontos } from '@/lib/ui/MontosProvider'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import RegistroActividad from '@/components/RegistroActividad'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -135,6 +136,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const [jugadorBloqueado, setJugadorBloqueado] = useState(false)
   const [clubTelefono, setClubTelefono] = useState('')
   const { tiene } = useModulos()
+  const { ocultos: montosOcultos, alternar: alternarMontos } = useMontos()
 
   useEffect(() => {
     if (!clubId) return
@@ -368,6 +370,29 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
               gap: 6,
             }}>
               Volver a Superadmin
+            </button>
+          )}
+          {/* Tapar los montos sin salir de la pantalla, para revisar el
+              sistema con gente al lado. Solo lo ve quien tiene plata a la
+              vista; al jugador no le cambia nada tenerlo. */}
+          {(esAdminOSuperadmin || perfil?.rol === 'profesor') && (
+            <button onClick={alternarMontos} title={montosOcultos ? 'Mostrar los montos' : 'Ocultar los montos'} style={{
+              width: '100%',
+              padding: '6px 10px',
+              marginBottom: 6,
+              background: montosOcultos ? '#ede9fe' : 'transparent',
+              border: `1px solid ${montosOcultos ? '#c4b5fd' : '#e2e8f0'}`,
+              borderRadius: 7,
+              color: montosOcultos ? '#4f46e5' : '#64748b',
+              fontSize: 12,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}>
+              {montosOcultos ? <EyeOff size={13} /> : <Eye size={13} />}
+              {montosOcultos ? 'Montos ocultos' : 'Ocultar montos'}
             </button>
           )}
           <button onClick={cerrarSesion} style={{

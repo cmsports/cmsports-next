@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useTextoMonto } from '@/components/Monto'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago } from '@/app/actions/mensualidades'
@@ -272,7 +273,10 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const pendientes = mensualidades.filter(m => m.estado === 'pendiente').length
   const atrasados = mensualidades.filter(m => m.estado === 'atrasado').length
   const totalRecaudado = mensualidades.filter(m => m.estado === 'pagado').reduce((s,m) => s + (m.monto||0), 0)
-  const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+  // Respeta el ojito. Los mensajes de WhatsApp más abajo NO lo usan a
+  // propósito: ahí el monto le llega al jugador, que necesita saber cuánto
+  // debe; ocultarlo dejaría el mensaje sin sentido.
+  const fmt = useTextoMonto()
 
   const categoriasDisponibles = [...new Set(
     jugadores.flatMap(j => (j.categorias?.length ? j.categorias : [j.categoria])).filter(Boolean)

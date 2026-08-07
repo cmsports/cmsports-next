@@ -10,6 +10,7 @@ import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actu
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
+import { useTextoMonto } from '@/components/Monto'
 import { SEDES, GRUPOS, sedeLabel, grupoLabel, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 import { firmarUrls } from '@/lib/supabase/privado'
 import FiltroMultiSelect, { setToggle, setDesdeParam } from '@/components/FiltroMultiSelect'
@@ -387,6 +388,7 @@ export default function JugadoresPage() {
   const categorias = [...new Set(jugadores.map(j => j.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   const horarios = [...new Set(jugadores.map(j => j.horario).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   const esAdmin = perfil?.rol === 'admin'
+  const fmtMonto = useTextoMonto()
 
   const chipsActivos: { key: string; label: string; onRemove: () => void }[] = [
     ...(busqueda ? [{ key:'q', label:`"${busqueda}"`, onRemove: () => setBusqueda('') }] : []),
@@ -635,7 +637,7 @@ export default function JugadoresPage() {
                           title={esAdmin ? 'Clic para editar' : undefined}
                           style={{ fontSize: j.mensualidad ? 13 : 11, color: j.mensualidad ? text : '#c2410c', fontWeight: j.mensualidad ? 600 : 500, cursor: esAdmin ? 'pointer' : 'default' }}
                         >
-                          {j.mensualidad ? `$${j.mensualidad.toLocaleString('es-CL')}` : SIN_CUOTA}
+                          {j.mensualidad ? fmtMonto(j.mensualidad) : SIN_CUOTA}
                         </span>
                       )}
                     </td>

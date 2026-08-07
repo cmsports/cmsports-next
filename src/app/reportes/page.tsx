@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { puedeVerPantallasDeClub } from '@/lib/auth/roles'
+import { useTextoMonto } from '@/components/Monto'
 
 const supabase = createClient()
 
@@ -390,7 +391,10 @@ export default function ReportesPage() {
     setGenerando(false)
   }
 
-  const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+  // Solo la pantalla pasa por el ojito. El `fmt` de la generación del PDF, más
+  // arriba, sigue llevando la cifra real: un reporte descargado con los montos
+  // tapados no le sirve a nadie.
+  const fmt = useTextoMonto()
   const { titulo } = getRango()
 
   if (loading) return (

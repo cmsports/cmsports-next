@@ -19,6 +19,7 @@ import ModalCrearFeedback from '@/components/ModalCrearFeedback'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { MessageSquare } from 'lucide-react'
+import { useTextoMonto } from '@/components/Monto'
 
 const supabase = createClient()
 
@@ -283,7 +284,9 @@ export default function DashboardPage() {
     }
   }, [authLoading, perfil, router])
 
-  const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
+  // Pasa por el interruptor del ojito: con los montos ocultos devuelve puntos
+  // en vez de la cifra, sin que cada tarjeta tenga que saberlo.
+  const fmt = useTextoMonto()
 
   if (authLoading || (Boolean(perfil?.club_id) && loading)) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: C.bg }}>

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { PerfilProvider } from "@/lib/auth/PerfilProvider";
+import { MontosProvider } from "@/lib/ui/MontosProvider";
 import { ModulosProvider } from "@/lib/hooks/useModulos";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import AvisoPagoPlanGlobal from "@/components/aviso-pago-plan";
@@ -41,8 +42,10 @@ export default function RootLayout({
         <ServiceWorkerRegister />
         <PerfilProvider>
           <ModulosProvider>
-            <AvisoPagoPlanGlobal />
-            {children}
+            <MontosProvider>
+              <AvisoPagoPlanGlobal />
+              {children}
+            </MontosProvider>
           </ModulosProvider>
         </PerfilProvider>
       </body>
