@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState, createContext, useContext } from 'rea
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
-import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays, Eye, EyeOff } from 'lucide-react'
+import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays, Database, Download, X, Eye, EyeOff } from 'lucide-react'
 import { useMontos } from '@/lib/ui/MontosProvider'
 import ThemeToggle from '@/components/ThemeToggle'
 import type { Tables } from '@/types/database'
+import { fechaChile } from '@/lib/domain/fechaChile'
+import { CLAVE_ULTIMO_RESPALDO, tocaRespaldar } from '@/lib/domain/respaldoAviso'
 
 type Perfil = Tables<'perfiles'>
 type Club = Tables<'clubes'>
@@ -18,6 +20,7 @@ const nav = [
   { label: 'Actividad', icon: Activity, href: '/superadmin/actividad' },
   { label: 'Tareas', icon: ListChecks, href: '/superadmin/tareas' },
   { label: 'Calendario', icon: CalendarDays, href: '/superadmin/calendario' },
+  { label: 'Respaldos', icon: Database, href: '/superadmin/respaldos' },
   { label: 'Configuración', icon: Settings, href: '/superadmin/configuracion' },
 ]
 
@@ -202,9 +205,62 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
         </aside>
 
         <main className="main-content" style={{ marginLeft: 220, flex: 1, padding: 24 }}>
+          {pathname !== '/superadmin/respaldos' && <AvisoRespaldo onIr={() => router.push('/superadmin/respaldos')} />}
           {children}
         </main>
       </div>
     </PerfilContext.Provider>
+  )
+}
+
+// Cartel semanal: aparece cada domingo en todo el panel y no se va hasta que
+// se descarga el respaldo completo. "Ahora no" lo esconde solo hasta que se
+// cierre la pestaña, para que no se pierda el domingo entero por un click.
+function AvisoRespaldo({ onIr }: { onIr: () => void }) {
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    function revisar() {
+      const oculto = sessionStorage.getItem('cmsports:aviso-respaldo-oculto') === '1'
+      setVisible(!oculto && tocaRespaldar(localStorage.getItem(CLAVE_ULTIMO_RESPALDO), fechaChile()))
+    }
+    revisar()
+    window.addEventListener('cmsports:respaldo-hecho', revisar)
+    return () => window.removeEventListener('cmsports:respaldo-hecho', revisar)
+  }, [])
+
+  if (!visible) return null
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+      background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff',
+      borderRadius: 12, padding: '14px 16px', marginBottom: 18,
+      boxShadow: '0 6px 20px rgba(79,70,229,0.25)',
+      animation: 'entraTarjeta var(--normal) var(--curva) both',
+    }}>
+      <div style={{
+        width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        <Database size={19} />
+      </div>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.4 }}>DESCARGA LAS BASES DE DATOS</div>
+        <div style={{ fontSize: 11, opacity: 0.85, marginTop: 2 }}>Respaldo semanal pendiente: guarda el ZIP con todos los datos de todos los clubes.</div>
+      </div>
+      <button onClick={onIr} style={{
+        display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
+        background: '#fff', color: '#3730a3', border: 'none', borderRadius: 8,
+        fontSize: 12, fontWeight: 700, cursor: 'pointer',
+      }}>
+        <Download size={14} /> Descargar ahora
+      </button>
+      <button aria-label="Ocultar aviso" onClick={() => { sessionStorage.setItem('cmsports:aviso-respaldo-oculto', '1'); setVisible(false) }} style={{
+        background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.75)', cursor: 'pointer', padding: 4, display: 'flex',
+      }}>
+        <X size={16} />
+      </button>
+    </div>
   )
 }
