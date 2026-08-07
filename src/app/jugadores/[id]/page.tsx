@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { puedeVerPantallasDeClub } from '@/lib/auth/roles'
 import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
 import { credencialDelJugador } from '@/app/actions/credenciales'
 import { formatRut } from '@/lib/rut'
@@ -154,7 +155,7 @@ export default function JugadorDetallePage() {
     async function cargar() {
       if (authLoading) return
       if (!perfil) { router.push('/login'); return }
-      if (perfil.rol !== 'admin' && perfil.rol !== 'profesor') {
+      if (!puedeVerPantallasDeClub(perfil.rol) && perfil.rol !== 'profesor') {
         router.replace(perfil.rol === 'jugador' ? '/perfil' : '/')
         return
       }

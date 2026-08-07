@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { esAdminDeClub } from './roles'
+import { esAdminDeClub, puedeVerPantallasDeClub } from './roles'
 
 describe('semántica de roles administrativos', () => {
   it('permite administrar un tenant solo al rol admin', () => {
@@ -10,6 +10,21 @@ describe('semántica de roles administrativos', () => {
     expect(esAdminDeClub('profesor')).toBe(false)
     expect(esAdminDeClub('jugador')).toBe(false)
     expect(esAdminDeClub(null)).toBe(false)
+  })
+
+  // El superadmin entra a un club por "Gestionar" y tiene que poder mirar sus
+  // pantallas; escribir sigue siendo del admin. Que sean dos funciones
+  // distintas es el punto: ensanchar la de lectura no toca la de escritura.
+  it('deja mirar las pantallas del club al admin y al superadmin', () => {
+    expect(puedeVerPantallasDeClub('admin')).toBe(true)
+    expect(puedeVerPantallasDeClub('superadmin')).toBe(true)
+    expect(puedeVerPantallasDeClub('jugador')).toBe(false)
+    expect(puedeVerPantallasDeClub(null)).toBe(false)
+  })
+
+  it('mirar no habilita a escribir: el superadmin sigue sin ser admin', () => {
+    expect(puedeVerPantallasDeClub('superadmin')).toBe(true)
+    expect(esAdminDeClub('superadmin')).toBe(false)
   })
 
   it('comparte la misma regla entre proxy y Server Actions', () => {

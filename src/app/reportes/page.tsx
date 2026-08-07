@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { puedeVerPantallasDeClub } from '@/lib/auth/roles'
 
 const supabase = createClient()
 
@@ -54,7 +55,7 @@ export default function ReportesPage() {
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.rol !== 'admin') { router.push('/dashboard'); return }
+    if (!puedeVerPantallasDeClub(perfil.rol)) { router.push('/dashboard'); return }
     let vigente = true
     supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', perfil.club_id).order('nombre').then(({ data }) => {
       if (!vigente) return

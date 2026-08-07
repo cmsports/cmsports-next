@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { Link2, Copy, Check, UserCheck, XCircle } from 'lucide-react'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { puedeVerPantallasDeClub } from '@/lib/auth/roles'
 import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
@@ -106,7 +107,7 @@ export default function SolicitudesPage() {
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.rol !== 'admin') { router.push('/dashboard'); return }
+    if (!puedeVerPantallasDeClub(perfil.rol)) { router.push('/dashboard'); return }
     if (!perfil.club_id) return
     let activo = true
 
