@@ -137,6 +137,8 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
   const [clubTelefono, setClubTelefono] = useState('')
   const { tiene } = useModulos()
   const { ocultos: montosOcultos, alternar: alternarMontos } = useMontos()
+  // Solo quien tiene plata a la vista. Al jugador no le cambia nada tenerlo.
+  const puedeOcultarMontos = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'
 
   useEffect(() => {
     if (!clubId) return
@@ -375,7 +377,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
           {/* Tapar los montos sin salir de la pantalla, para revisar el
               sistema con gente al lado. Solo lo ve quien tiene plata a la
               vista; al jugador no le cambia nada tenerlo. */}
-          {(esAdminOSuperadmin || perfil?.rol === 'profesor') && (
+          {puedeOcultarMontos && (
             <button onClick={alternarMontos} title={montosOcultos ? 'Mostrar los montos' : 'Ocultar los montos'} style={{
               width: '100%',
               padding: '6px 10px',
@@ -485,12 +487,28 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
       </div>
 
       {/* ── MENÚ MÁS (móvil, todos los roles) ── */}
-      {masOpen && masItems.length > 0 && (
+      {masOpen && (masItems.length > 0 || puedeOcultarMontos) && (
         <div style={{
           position: 'fixed', bottom: 64, left: 0, right: 0,
           background: '#ffffff', borderTop: '1px solid #e2e8f0',
           zIndex: 19, padding: 12,
         }}>
+          {/* En móvil la barra lateral no existe, así que el interruptor de
+              los montos vive acá: sin esto el ojito solo funcionaba en
+              escritorio, y la plata se revisa igual desde el teléfono. */}
+          {puedeOcultarMontos && (
+            <button onClick={() => { alternarMontos(); setMasOpen(false) }} style={{
+              width: '100%', padding: '10px 12px', marginBottom: 8,
+              background: montosOcultos ? '#ede9fe' : '#f8fafc',
+              border: `1px solid ${montosOcultos ? '#c4b5fd' : '#e2e8f0'}`,
+              borderRadius: 10, color: montosOcultos ? '#4f46e5' : '#64748b',
+              fontSize: 13, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              {montosOcultos ? <EyeOff size={16} /> : <Eye size={16} />}
+              {montosOcultos ? 'Mostrar los montos' : 'Ocultar los montos'}
+            </button>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
             {masItems.map(item => {
               const Icon = item.icon

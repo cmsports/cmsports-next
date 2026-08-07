@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, createContext, useContext } from 'rea
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
-import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays } from 'lucide-react'
+import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays, Eye, EyeOff } from 'lucide-react'
+import { useMontos } from '@/lib/ui/MontosProvider'
 import ThemeToggle from '@/components/ThemeToggle'
 import type { Tables } from '@/types/database'
 
@@ -47,6 +48,7 @@ export function useClubesSuperadmin() {
 export default function SuperadminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
+  const { ocultos: montosOcultos, alternar: alternarMontos } = useMontos()
   const [perfil, setPerfil] = useState<Perfil | null>(null)
   const [loading, setLoading] = useState(true)
   const [clubes, setClubes] = useState<Club[]>([])
@@ -173,6 +175,19 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
                 <div style={{ fontSize: 10, color: '#94a3b8' }}>Superadmin</div>
               </div>
             </div>
+            {/* El panel de superadmin tiene su propio layout, así que el
+                interruptor de layout-app no llega hasta acá. Va también, que
+                es donde se ven el MRR y los planes de todos los clubes. */}
+            <button onClick={alternarMontos} title={montosOcultos ? 'Mostrar los montos' : 'Ocultar los montos'} style={{
+              width: '100%', padding: '6px 10px', marginBottom: 6,
+              background: montosOcultos ? '#ede9fe' : 'transparent',
+              border: `1px solid ${montosOcultos ? '#c4b5fd' : '#e2e8f0'}`,
+              borderRadius: 7, color: montosOcultos ? '#4f46e5' : '#64748b', fontSize: 12,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}>
+              {montosOcultos ? <EyeOff size={13} /> : <Eye size={13} />}
+              {montosOcultos ? 'Montos ocultos' : 'Ocultar montos'}
+            </button>
             <div style={{ display: 'flex', gap: 6 }}>
               <ThemeToggle />
               <button onClick={cerrarSesion} style={{
