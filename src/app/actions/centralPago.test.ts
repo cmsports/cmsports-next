@@ -60,36 +60,68 @@ describe('Central de Pago: el número de cuenta deja de ser público', () => {
   })
 })
 
-describe('migración 139: cumple las reglas de las destructivas', () => {
+describe('migración 139: solo hace lo que la base deja hacer', () => {
   const m = leer('supabase/migrations/139_central_pago_privado.sql')
 
   it('empieza con el portazo', () => {
     expect(m).toContain("SELECT _migracion_nueva('139_central_pago_privado')")
   })
 
-  it('el respaldo no lleva IF NOT EXISTS: el error es la protección', () => {
-    expect(m).toMatch(/CREATE TABLE _respaldo_central_pago_publico_\d{8}/)
-    expect(m).not.toMatch(/CREATE TABLE IF NOT EXISTS _respaldo/)
+  it('no intenta escribir storage.objects', () => {
+    // La primera versión hacía DELETE ahí y la base la rechazó con el trigger
+    // storage.protect_delete: borrar la fila dejaba el archivo huérfano en el
+    // disco, sin la fila que permitía encontrarlo. Mover archivos va por la
+    // API de almacenamiento, no por SQL.
+    //
+    // Se miran solo las líneas de SQL: el encabezado explica ese error y
+    // nombra el DELETE viejo, y un test que lea los comentarios prohibiría
+    // contar la historia de por qué el archivo es como es.
+    const sql = m.split('\n').filter(l => !l.trimStart().startsWith('--')).join('\n')
+    expect(sql).not.toMatch(/DELETE\s+FROM\s+storage\.objects/i)
+    expect(sql).not.toMatch(/UPDATE\s+storage\.objects/i)
+    expect(sql).not.toMatch(/INSERT\s+INTO\s+storage\.objects/i)
   })
 
-  it('respalda antes de borrar, no después', () => {
-    expect(m.indexOf('CREATE TABLE _respaldo')).toBeLessThan(m.indexOf('DELETE FROM storage.objects'))
+  it('deja escrito por dónde se mueven los archivos', () => {
+    expect(m).toContain('scripts/migrar-central-pago-a-privado.mjs')
+    expect(m).toContain('storage.protect_delete')
   })
 
-  it('cuenta antes de borrar y se planta si el número no calza', () => {
-    expect(m).toContain('RAISE EXCEPTION')
-    expect(m.indexOf('SELECT count(*) INTO v_n')).toBeLessThan(m.indexOf('DELETE FROM storage.objects'))
-  })
-
-  it('el DELETE usa el mismo WHERE que el conteo y el respaldo', () => {
-    const condiciones = m.match(/name LIKE 'central-pago\/%'/g) ?? []
-    // conteo + respaldo + delete + verificación
-    expect(condiciones.length).toBeGreaterThanOrEqual(4)
+  it('carga el teléfono sin pisar el que ya esté cargado', () => {
+    expect(m).toMatch(/UPDATE clubes/)
+    expect(m).toMatch(/nullif\(btrim\(coalesce\(telefono, ''\)\), ''\) IS NULL/)
   })
 
   it('va en una sola transacción y termina con verificación', () => {
     expect(m).toContain('BEGIN;')
     expect(m).toContain('COMMIT;')
-    expect(m).toContain('deberia_ser_cero')
+    expect(m).toContain('estado_boton')
+  })
+})
+
+describe('el script que mueve los archivos copia antes de borrar', () => {
+  const s = leer('scripts/migrar-central-pago-a-privado.mjs')
+
+  it('no borra nada sin --borrar', () => {
+    expect(s).toContain("process.argv.includes('--borrar')")
+    expect(s).toMatch(/if \(!BORRAR\)/)
+  })
+
+  it('verifica la copia antes de borrar el original', () => {
+    const iVerifica = s.indexOf('.download(rutaPrivada(club.id))')
+    const iBorra    = s.indexOf('.remove([`central-pago/${club.id}`])')
+    expect(iVerifica).toBeGreaterThan(-1)
+    expect(iBorra).toBeGreaterThan(iVerifica)
+  })
+
+  it('no borra si la copia privada quedó vacía', () => {
+    // Un upload que devuelve ok pero deja el archivo en 0 bytes se llevaría
+    // puesta la única copia que quedaba.
+    expect(s).toMatch(/check\.size === 0/)
+  })
+
+  it('comprueba al final que la URL pública ya no responde', () => {
+    expect(s).toContain('/storage/v1/object/public/')
+    expect(s).toContain('SIGUE EXPUESTO')
   })
 })
