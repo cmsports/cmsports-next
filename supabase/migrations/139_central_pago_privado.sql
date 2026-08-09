@@ -67,7 +67,15 @@
 -- hay NULL, así que no hay valor previo que perder.
 --
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
--- Corrida el: ____________  (anotar la fecha al aplicarla)
+-- Corrida el: 2026-08-09 06:55 UTC. Buin quedó con +56977437894.
+--
+-- El movimiento de archivos quedó hecho el mismo día, pero no por el script:
+-- el admin resubió la imagen desde Central de Pago y la acción nueva hizo el
+-- trabajo sola —la subió a `privado` y borró la copia pública—, que es
+-- justamente lo que se le pidió que hiciera. Verificado: el enlace firmado
+-- sirve los 149.821 bytes, y tanto la ruta privada sin sesión como el enlace
+-- público viejo devuelven 400. El script queda igual, para el próximo club
+-- que suba la suya antes de que este código esté desplegado.
 
 BEGIN;
 
