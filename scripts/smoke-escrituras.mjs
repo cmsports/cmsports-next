@@ -83,17 +83,23 @@ await probar('Marcar un día sin clase', async () => {
     .upsert({ bloque_id: BLOQUE_REAL, fecha: F, motivo: 'prueba' }, { onConflict: 'bloque_id,fecha' })
     .select('id').single(), 'bloque_excepciones')
 })
-await probar('Generar la semana con los bloques reales', async () => {
-  const { data: todos } = await db.from('bloques_horario')
-    .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin').eq('club_id', BUIN).is('vigente_hasta', null)
-  const filas = todos.map(b => ({
-    club_id: BUIN, bloque_id: b.id, sede: b.sede, fecha: F, dia_semana: LARGO[b.dia_semana],
-    hora_inicio: b.hora_inicio, hora_fin: b.hora_fin, contenido: b.nombre, publicada: false,
-  }))
-  const r = await db.from('clases').upsert(filas, { onConflict: 'bloque_id,fecha', ignoreDuplicates: true }).select('id')
-  if (r.error) throw new Error(r.error.message)
-  for (const c of r.data) basura.push(['clases', c.id])
-  if (r.data.length !== todos.length) throw new Error(`generó ${r.data.length} de ${todos.length}`)
+// Acá había un caso "Generar la semana con los bloques reales" que insertaba
+// en `clases`. Esa tabla ya no existe: la migración 111 la eliminó y la semana
+// dejó de materializarse —se deriva de `bloques_horario` al vuelo—. El caso
+// fallaba desde entonces con "Could not find the table public.clases", que es
+// el smoke avisando de un concepto borrado, no de una regresión.
+//
+// Se quita en vez de reescribirse: no hay nada equivalente que probar. Lo que
+// aquella prueba cuidaba —que los bloques vigentes se lean bien— lo cubren los
+// casos de arriba.
+await probar('Los bloques vigentes del club se leen completos', async () => {
+  const { data: todos, error } = await db.from('bloques_horario')
+    .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin')
+    .eq('club_id', BUIN).is('vigente_hasta', null)
+  if (error) throw new Error(error.message)
+  if (!todos.length) throw new Error('el club no tiene ningún bloque vigente')
+  const rotos = todos.filter(b => b.dia_semana == null || !b.hora_inicio || !b.hora_fin)
+  if (rotos.length) throw new Error(`${rotos.length} bloque(s) sin día u horario`)
 })
 await probar('Dar de baja un día del grupo', async () => {
   debe(await db.from('bloques_horario').update({ vigente_hasta: F }).eq('id', bloqueId).select('id').single())
@@ -201,16 +207,48 @@ await rechaza('No deja repetir jugador, fecha y grupo', () =>
   db.from('clases_extraordinarias').insert({
     club_id: BUIN, jugador_id: JUG, fecha: F, bloque_id: bloqueId,
   }))
-await rechaza('No acepta monto cero ni negativo', () =>
-  db.from('clases_extraordinarias').update({ monto: 0 }).eq('id', extraId))
+// El monto 0 es válido y significa "sin cargo": el profe debía esa clase. La
+// migración 100 aflojó el CHECK a propósito (`monto >= 0`) y toda la interfaz
+// lo trata así. Este caso afirmaba la regla vieja de la 099 y fallaba desde
+// entonces. Lo que sí hay que sostener es que un negativo no entre: un monto
+// negativo restaría de un total que se le cobra a alguien.
+await probar('Monto 0 se acepta: es "sin cargo"', async () => {
+  debe(await db.from('clases_extraordinarias')
+    .update({ monto: 0 }).eq('id', extraId).select('id').single())
+})
+await rechaza('No acepta monto negativo', () =>
+  db.from('clases_extraordinarias').update({ monto: -500 }).eq('id', extraId))
+
 await probar('No le descuenta sesiones al jugador', async () => {
+  // Se compara contra exactamente lo que cuenta `recalcular_sesiones`: todas
+  // las filas de `asistencia` DEL MES EN CURSO, presentes y ausentes.
+  //
+  // Las dos mitades importan y las dos estaban mal antes:
+  //
+  //   · Del mes. La 106 acotó el contador al mes en curso —antes decía "18/12"
+  //     al segundo mes—. Comparar contra toda la historia no podía dar.
+  //   · Presentes Y ausentes. La ausencia gasta sesión a propósito, porque el
+  //     cupo se ocupó igual: decisión del club, escrita en la 087 y ratificada
+  //     en la 106. Filtrar por 'presente' acá sería afirmar lo contrario de lo
+  //     que el club decidió.
+  //
+  // Lo que el caso cuida es otra cosa: que la clase extra no entre en
+  // `asistencia`. Si se colara, este número subiría de más.
+  const hoyCL = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+  const [anio, mes] = hoyCL.split('-').map(Number)
+  const desde = `${hoyCL.slice(0, 7)}-01`
+  const hasta = `${hoyCL.slice(0, 7)}-${String(new Date(anio, mes, 0).getDate()).padStart(2, '0')}`
+
+  await db.rpc('recalcular_sesiones', { p_jugador: JUG })
   const { data } = await db.from('jugadores').select('sesiones_usadas').eq('id', JUG).single()
   const { count } = await db.from('asistencia')
-    .select('*', { count: 'exact', head: true }).eq('jugador_id', JUG)
-  // El contador sale de `asistencia`. Si la clase extra se hubiera colado ahí,
-  // estos dos números dejarían de coincidir.
-  if (data.sesiones_usadas !== count) {
-    throw new Error(`sesiones_usadas ${data.sesiones_usadas} != asistencias ${count}`)
+    .select('*', { count: 'exact', head: true })
+    .eq('jugador_id', JUG).gte('fecha', desde).lte('fecha', hasta)
+
+  if ((data.sesiones_usadas ?? 0) !== count) {
+    throw new Error(`sesiones_usadas ${data.sesiones_usadas} != filas del mes ${count}`)
   }
 })
 

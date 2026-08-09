@@ -17,7 +17,16 @@
 
 BEGIN;
 
-SELECT _migracion_nueva('131_superadmin_ve_jugadores');
+-- Se registra como '130_...' y no como '131_...' a propósito: esta migración
+-- ya corrió, el 2026-08-06, cuando el archivo se llamaba 130. Después se lo
+-- renumeró a 131 porque el 130 ya lo ocupaba `130_notas_superadmin`, pero en
+-- `_migraciones_aplicadas` quedó el nombre viejo.
+--
+-- Con '131_...' el portazo no encontraba nada registrado y dejaba pasar: el
+-- archivo se podía volver a ejecutar entero. Acá no era grave —es DROP POLICY
+-- IF EXISTS + CREATE POLICY, idempotente— pero el portazo que no protege es
+-- peor que no tenerlo, porque se lee como si protegiera.
+SELECT _migracion_nueva('130_superadmin_ve_jugadores');
 
 DROP POLICY IF EXISTS "jugadores_select" ON public.jugadores;
 CREATE POLICY "jugadores_select" ON public.jugadores

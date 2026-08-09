@@ -1,3 +1,16 @@
+-- ⚠️ NO HACE FALTA CORRERLA. Quedó absorbida por la 135.
+--
+-- Auditoría del 2026-08-09: esta migración nunca se aplicó —no está en
+-- `_migraciones_aplicadas`— y aun así el arreglo está en producción. La 134 y
+-- después la 135 volvieron a escribir `eliminar_jugador_atomico` entera, con el
+-- UPDATE único de `torneo_partidos` que se inventó acá y también el manejo de
+-- `liga_partidos`. La 135 sí corrió, el 2026-08-06.
+--
+-- Se deja el archivo porque explica POR QUÉ la función quedó así, que es lo que
+-- se pierde cuando alguien la "simplifica" de vuelta a tres UPDATE sueltos.
+-- Correrla ahora no rompe nada, pero tampoco cambia nada.
+--
+-- ── El problema original ──────────────────────────────────────────────────
 -- eliminar_jugador_atomico rompía el check de torneo_partidos si el jugador
 -- había ganado un partido.
 --
