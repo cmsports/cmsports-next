@@ -35,6 +35,35 @@ Para saber qué se aplicó y cuándo:
 SELECT * FROM _migraciones_aplicadas ORDER BY aplicada_en DESC;
 ```
 
+## 0.b Nada de tablas temporales
+
+`CREATE TEMP TABLE` no sirve en el SQL Editor de Supabase. La tabla se suelta
+en el `COMMIT` (o antes, si el pooler manda alguna sentencia por otra
+conexión), así que cualquier consulta que la use después falla con:
+
+```
+ERROR: 42P01: la relación "_loquesea" no existe
+```
+
+Pasó con la `141_borrar_cuentas_fantasma_buin`: el borrado se aplicó completo
+y bien, pero las consultas de verificación del final reventaron y por un rato
+pareció que la migración había fallado. Peor caso posible en una migración
+destructiva: no saber si borró o no.
+
+Cuando haga falta juntar filas una vez y usarlas en varios pasos, esa lista es
+el respaldo. Se crea como tabla normal —con nombre único, ver el punto 1— y
+todo lo demás sale de ahí:
+
+```sql
+CREATE TABLE _respaldo_x_20260809 AS
+SELECT ... WHERE <la condición, escrita UNA vez>;
+
+DELETE FROM tabla WHERE id IN (SELECT id FROM _respaldo_x_20260809);
+```
+
+Así el respaldo y el borrado no pueden desalinearse, y las verificaciones del
+final siguen teniendo de dónde leer.
+
 ## 1. El respaldo lleva nombre único por corrida
 
 **Nunca** `CREATE TABLE IF NOT EXISTS _respaldo_x`.

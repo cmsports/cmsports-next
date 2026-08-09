@@ -36,8 +36,31 @@
 -- Se borra la fila de `perfiles` y el usuario de `auth.users`. Sin lo segundo
 -- la cuenta sigue pudiendo iniciar sesión, que es la mitad del problema.
 --
+-- ── CORRIDA EL 2026-08-09. Resultado verificado ──────────────────────────
+--   · las 8 cuentas borradas de `perfiles` y de `auth.users`
+--     (146 usuarios → 138, exactamente −8)
+--   · rsalazarf@cmsports.cl y csalazarr@cmsports.cl, intactos
+--   · 0 cuentas huérfanas restantes en el club
+--   · respaldo con las 8 filas guardado
+--
+-- TIRÓ UN ERROR AL FINAL Y NO ERA LO QUE PARECÍA. Las consultas de
+-- verificación fallaron con:
+--
+--     ERROR: 42P01: la relación "_fantasmas" no existe
+--
+-- El borrado ya se había aplicado y commiteado; lo que faltaba era la tabla
+-- TEMPORAL de más abajo, que el `COMMIT` suelta antes de que corran las
+-- verificaciones. En una migración destructiva ese susto es lo peor que puede
+-- pasar: quedar sin saber si borró o no.
+--
+-- La lección quedó en docs/migraciones-destructivas.md (punto 0.b): en el SQL
+-- Editor no se usan tablas temporales. Cuando haga falta una lista para varios
+-- pasos, esa lista es el respaldo, que es una tabla normal y sobrevive.
+--
+-- No se reescribe este archivo para "arreglarlo": ya corrió así, tiene su
+-- portazo y lo que vale ahora es que diga la verdad de lo que pasó.
+--
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
--- Corrida el: ____________  (anotar la fecha al aplicarla)
 
 BEGIN;
 
