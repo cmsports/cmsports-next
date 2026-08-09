@@ -48,7 +48,10 @@
 -- ── Después de correrla ───────────────────────────────────────────────────
 -- Cada club vuelve a subir su imagen una vez desde Central de Pago. La acción
 -- ya la manda al bucket privado y de paso borra la copia pública si quedara.
--- Hasta que la suban, la pantalla muestra el estado vacío. Son 4 clubes.
+-- Hasta que la suban, la pantalla muestra el estado vacío.
+--
+-- Al 2026-08-09 hay 3 clubes y una sola imagen cargada (la de Buin), así que
+-- en la práctica es una sola resubida.
 --
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
@@ -59,9 +62,9 @@ SELECT _migracion_nueva('139_central_pago_privado');
 
 
 -- ══ 1. Qué hay hoy expuesto ═══════════════════════════════════════════════
--- El mismo WHERE que usa el DELETE de abajo. Si este número no es el que
--- esperás (1 fila por club que haya subido su imagen, máximo 4), la condición
--- está mal escrita: se corrige la condición, no el comentario.
+-- El mismo WHERE que usa el DELETE de abajo. Al 2026-08-09 tiene que dar 1:
+-- una sola imagen cargada, la de Buin. Si da otra cosa, mirar qué son antes de
+-- seguir — la condición se corrige, no el comentario.
 DO $$
 DECLARE v_n integer;
 BEGIN
