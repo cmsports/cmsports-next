@@ -218,6 +218,26 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
     }
   }
 
+  // El PDF sale del período que estás mirando, no de "todo": recibe los mismos
+  // `calendarios` que pinta la pantalla y el mismo `desde`/`hasta`. Un PDF que
+  // ignora el filtro de arriba no es el que pediste.
+  //
+  // Los calendarios llegan por parámetro porque se calculan más abajo, después
+  // del guard de carga.
+  async function descargarPdf(modo: 'masivo' | 'individual', cals: CalendarioDeJugador[]) {
+    setSelectorAbierto(false)
+    setDescargando(true)
+    try {
+      const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
+      const meta = { clubNombre: club?.nombre ?? '', periodo: etiqueta, desde, hasta }
+      const pdf = await import('@/lib/panorama-asistencia-pdf')
+      if (modo === 'masivo') await pdf.exportarPanoramaPdf(cals, meta)
+      else await pdf.exportarPanoramaIndividualPdf(cals, meta)
+    } finally {
+      setDescargando(false)
+    }
+  }
+
   if (cargando || !datos) {
     return <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Calculando...</div>
   }
@@ -302,12 +322,35 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 20,
               cursor: descargando ? 'not-allowed' : 'pointer', border: '1px solid #4f46e5', background: '#4f46e5', color: '#fff' }}>
             <Download size={13} />
-            {descargando ? 'Generando...' : 'Descargar por bloque'}
+            {descargando ? 'Generando...' : 'Descargar'}
           </button>
           {selectorAbierto && (
             <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 10, background: '#fff', border: '1px solid #e2e8f0',
-              borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,0.18)', padding: 10, minWidth: 190 }}>
-              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 6, padding: '0 4px' }}>¿De cuánto tiempo?</div>
+              borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,0.18)', padding: 10, minWidth: 232 }}>
+
+              {/* Los dos PDF salen de lo que estás viendo ahora mismo, por eso
+                  van arriba y dicen el período: es la diferencia con el Excel,
+                  que pide un rango propio. */}
+              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 6, padding: '0 4px' }}>
+                PDF · {etiqueta.toLowerCase()}
+              </div>
+              {([
+                ['masivo', 'Resumen del club', 'Una hoja: días, grupos y ranking'],
+                ['individual', 'Uno por jugador', 'Una hoja cada uno, para el apoderado'],
+              ] as const).map(([modo, titulo, sub]) => (
+                <div key={modo} onClick={() => void descargarPdf(modo, calendarios)}
+                  style={{ padding: '7px 8px', borderRadius: 8, cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <div style={{ fontSize: 13, color: text, fontWeight: 600 }}>{titulo}</div>
+                  <div style={{ fontSize: 10.5, color: hint, marginTop: 1 }}>{sub}</div>
+                </div>
+              ))}
+
+              <div style={{ borderTop: '1px solid #e2e8f0', margin: '8px 0 6px' }} />
+              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 6, padding: '0 4px' }}>
+                Excel por bloque · ¿de cuánto tiempo?
+              </div>
               {[1, 2, 3, 6, 12].map(n => (
                 <div key={n} onClick={() => void descargarExcel(n)}
                   style={{ padding: '7px 8px', fontSize: 13, color: text, borderRadius: 8, cursor: 'pointer' }}
