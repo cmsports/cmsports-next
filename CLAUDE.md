@@ -56,6 +56,17 @@ quitarla): `089_arranque_limpio_buin`, `060_limpiar_jugadores_externos`,
 
 - Toda pantalla nueva usa `useEnVivo` para refrescarse sola, y `cachedFetch`
   declarando las tablas que consume. Sin eso, muestra datos viejos.
+- **Y la tabla que escuche tiene que estar en `supabase_realtime`.** Suscribirse
+  a una que no está no da error: se conecta, queda escuchando y no llega nada
+  nunca. Mordió dos veces —la 121 y la 142— y la segunda dejó a `movimientos`,
+  `perfiles` y `credencial_visible` mudas: se cobraba una clase extra y
+  Finanzas no se enteraba, se creaba una cuenta y el informe de credenciales no
+  la mostraba. Para ver qué está publicado hoy:
+
+  ```sql
+  SELECT tablename FROM pg_publication_tables
+  WHERE pubname = 'supabase_realtime' ORDER BY tablename;
+  ```
 - Español en toda la interfaz.
 
 ## Alcance
