@@ -12,6 +12,7 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
+import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
@@ -29,6 +30,7 @@ export default function PerfilPage() {
   const [fotoUrl, setFotoUrl] = useState<string | null>(null)
   const [asistencias, setAsistencias] = useState<any[]>([])
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
+  const [extrasImpagas, setExtrasImpagas] = useState<ClaseExtraJugador[]>([])
   const [loading, setLoading] = useState(true)
   const [yaRegistroHoy, setYaRegistroHoy] = useState(false)
   // Se derivan de los bloques, no de las columnas de `jugadores`: esas son un
@@ -57,8 +59,13 @@ export default function PerfilPage() {
           // Solo presencias: la lista se llama "Últimas asistencias" y el aviso
           // de hoy dice "¡Buen entrenamiento!" — una falta registrada no es eso.
           supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).eq('estado', 'presente').order('fecha', { ascending: false }).limit(10),
-          supabase.from('mensualidades').select('id,mes,anio,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
+          supabase.from('mensualidades').select('id,mes,anio,monto,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
           supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy).eq('estado', 'presente'),
+          // Las clases extra impagas también son deuda. Sin esto el hero decía
+          // "✅ Pagado" mientras Mi Estado de Cuenta —la pantalla de al lado—
+          // decía "Pendiente $3.000" del mismo jugador el mismo día.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any).from('clases_extraordinarias').select('id,fecha,monto,pagada_en').eq('jugador_id', perfil.jugador_id).is('pagada_en', null),
         ])
 
         const errorInicial = resultados.find(resultado => resultado.error)?.error
@@ -73,6 +80,7 @@ export default function PerfilPage() {
           { data: a },
           { data: mens },
           { data: asistHoy },
+          { data: ex },
         ] = resultados
 
         setJugador(j)
@@ -80,6 +88,7 @@ export default function PerfilPage() {
         setAsistencias(a || [])
         setMensualidadActual(mens)
         setYaRegistroHoy((asistHoy || []).length > 0)
+        setExtrasImpagas((ex ?? []) as ClaseExtraJugador[])
 
         // Las sesiones del mes salen del calendario de sus bloques, igual que
         // en Asistencia Histórica, para que las dos pantallas no puedan decir
@@ -115,9 +124,17 @@ export default function PerfilPage() {
   )
 
   const iniciales = jugador.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+  // El estado de la cuenta entera, no solo de la cuota: una clase extra impaga
+  // es plata que debe, y decirle "Pagado" mientras Mi Estado de Cuenta le cobra
+  // $3.000 es la clase de contradicción por la que deja de creerle a las dos.
+  const cuenta = cuentaDelJugador(mensualidadActual, extrasImpagas)
   const mensEstado = mensualidadActual?.estado
-  const mensLabel = mensEstado === 'pagado' ? '✅ Pagado' : mensEstado === 'atrasado' ? '❌ Atrasado' : mensEstado === 'pendiente' ? '⚠️ Pendiente' : '—'
-  const mensColor = mensEstado === 'pagado' ? '#86efac' : mensEstado === 'atrasado' ? '#fca5a5' : mensEstado === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
+  const estadoCuenta = !mensEstado && !tieneExtrasPendientes(cuenta) ? null
+    : cuenta.total === 0 ? 'pagado'
+    : mensEstado === 'atrasado' ? 'atrasado'
+    : 'pendiente'
+  const mensLabel = estadoCuenta === 'pagado' ? '✅ Pagado' : estadoCuenta === 'atrasado' ? '❌ Atrasado' : estadoCuenta === 'pendiente' ? '⚠️ Pendiente' : '—'
+  const mensColor = estadoCuenta === 'pagado' ? '#86efac' : estadoCuenta === 'atrasado' ? '#fca5a5' : estadoCuenta === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
 
   return (
     <AppLayout perfil={perfil}>
@@ -148,7 +165,9 @@ export default function PerfilPage() {
             quitó: al jugador no le dice nada del entrenamiento. */}
         <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '10px', textAlign: 'center' }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: mensColor, lineHeight: 1.8 }}>{mensLabel}</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Mensualidad</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>
+            {tieneExtrasPendientes(cuenta) ? 'Mensualidad + clases extra' : 'Mensualidad'}
+          </div>
         </div>
 
         {/* Sesiones del mes — salen de los días que le tocan según sus bloques. */}

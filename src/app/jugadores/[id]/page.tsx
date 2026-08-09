@@ -26,6 +26,7 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { sesionesDelMes } from '@/lib/domain/historialAsistencia'
+import { cuentaDelJugador, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
 
 const supabase = createClient()
 
@@ -96,7 +97,7 @@ export default function JugadorDetallePage() {
   const [jugador, setJugador] = useState<any>(null)
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
   // Clases extra sin cobrar. Se muestran en el recuadro de Membresía.
-  const [extrasImpagas, setExtrasImpagas] = useState<{ id: string; monto: number | null }[]>([])
+  const [extrasImpagas, setExtrasImpagas] = useState<ClaseExtraJugador[]>([])
   const [partidos, setPartidos] = useState<any[]>([])
   const [externos, setExternos] = useState<any[]>([])
   const [tab, setTab] = useState(0)
@@ -178,8 +179,9 @@ export default function JugadorDetallePage() {
         // error y data null: el bloque simplemente no aparece.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: extrasPend } = await (supabase as any).from('clases_extraordinarias')
-          .select('id,monto').eq('jugador_id', jugadorId).is('pagada_en', null)
-        setExtrasImpagas((extrasPend ?? []) as { id: string; monto: number | null }[])
+          .select('id,fecha,monto,pagada_en')
+          .eq('jugador_id', jugadorId).eq('club_id', perfil.club_id).is('pagada_en', null)
+        setExtrasImpagas((extrasPend ?? []) as ClaseExtraJugador[])
 
         if (perfil.rol === 'admin') {
           const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
@@ -333,8 +335,11 @@ export default function JugadorDetallePage() {
     setGuardandoDatos(false)
   }
 
-  const totalExtras   = extrasImpagas.reduce((s, e) => s + (e.monto ?? 0), 0)
-  const extrasSinMonto = extrasImpagas.filter(e => e.monto == null).length
+  // Mismo cálculo que ve el jugador en su estado de cuenta: si acá dijera otra
+  // cosa, el admin le estaría cobrando un número y él viendo otro.
+  const cuentaExtras   = cuentaDelJugador(null, extrasImpagas)
+  const totalExtras    = cuentaExtras.extras
+  const extrasSinMonto = cuentaExtras.sinMonto.length
 
   async function desmarcarMatriculaJugador() {
     if (!jugador) return
@@ -1124,8 +1129,12 @@ export default function JugadorDetallePage() {
                 <div>
                   <div style={{ fontSize:12, fontWeight:600, color:'#a16207' }}>🟡 Costo clase extra</div>
                   <div style={{ fontSize:11, color: hint, marginTop:1 }}>
-                    {extrasImpagas.length} clase{extrasImpagas.length === 1 ? '' : 's'} sin cobrar
+                    {/* Antes contaba acá las de monto 0 y decía "3 clases sin
+                        cobrar · $3.000" cuando dos eran sin cargo. Se cuentan
+                        las que de verdad se cobran, y las gratis se nombran. */}
+                    {cuentaExtras.porCobrar.length} clase{cuentaExtras.porCobrar.length === 1 ? '' : 's'} sin cobrar
                     {extrasSinMonto > 0 ? ` · ${extrasSinMonto} sin monto` : ''}
+                    {cuentaExtras.sinCargo.length > 0 ? ` · ${cuentaExtras.sinCargo.length} sin cargo` : ''}
                   </div>
                 </div>
                 <div style={{ fontSize:18, fontWeight:800, color:'#a16207', fontVariantNumeric:'tabular-nums' }}>
