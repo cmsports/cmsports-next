@@ -21,7 +21,11 @@ export const TABLAS_POR_CLUB = [
   'flyer_referencias', 'fotos_galeria', 'grupos_entrenamiento', 'invitaciones',
   'jugador_documentos', 'jugador_horario_historial', 'kioscos_asistencia',
   'mensualidades', 'movimientos', 'pagos_clubes', 'partidos', 'presupuestos', 'profesores',
-  'ranking_general', 'solicitudes_jugador', 'tienda_asociacion_productos',
+  // 'ranking_general' se fue con la migración 140: nadie le escribía —había 117
+  // partidos de torneo cargados y seguía en cero filas— y el ranking se calcula
+  // al vuelo desde `torneo_partidos`. Si queda nombrada acá, el respaldo semanal
+  // sale a leer una tabla que ya no existe.
+  'solicitudes_jugador', 'tienda_asociacion_productos',
   'tienda_buin_productos', 'torneos_externos', 'usuarios', 'vouchers',
   'jugadores', 'perfiles', 'torneos', 'ligas',
 ] as const

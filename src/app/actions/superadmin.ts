@@ -117,7 +117,10 @@ const TABLAS_BORRAR_POR_CLUB = [
   'flyer_referencias', 'fotos_galeria', 'grupos_entrenamiento', 'invitaciones',
   'jugador_documentos', 'jugador_horario_historial', 'kioscos_asistencia',
   'mensualidades', 'movimientos', 'pagos_clubes', 'partidos', 'presupuestos', 'profesores',
-  'ranking_general', 'solicitudes_jugador', 'tienda_asociacion_productos',
+  // 'ranking_general' se fue con la migración 140. Acá importaba especialmente:
+  // el barrido da varias vueltas y se corta cuando una pasada no borra nada,
+  // así que una tabla inexistente en la lista solo suma un error por vuelta.
+  'solicitudes_jugador', 'tienda_asociacion_productos',
   'tienda_buin_productos', 'torneos_externos', 'usuarios', 'vouchers',
 ] as const
 
