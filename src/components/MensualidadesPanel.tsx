@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTextoMonto } from '@/components/Monto'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
@@ -11,6 +11,7 @@ import FiltroMultiSelect from '@/components/FiltroMultiSelect'
 import { SEDES, GRUPOS, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 import { montoEsperado, montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
 
@@ -25,6 +26,9 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const { perfil } = usePerfil()
   const [jugadores, setJugadores] = useState<any[]>([])
   const [mensualidades, setMensualidades] = useState<any[]>([])
+  // Lo que cada jugador debe por clases extra, aparte de su cuota. Es un aviso,
+  // no un sumando: ver el comentario de la columna Monto.
+  const [extrasPorJugador, setExtrasPorJugador] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [mesLocal, setMesLocal] = useState(new Date().getMonth() + 1)
   const [anioLocal, setAnioLocal] = useState(new Date().getFullYear())
@@ -73,12 +77,52 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     Promise.all(tasks).then(() => setLoading(false))
   }, [clubId, mes, anio])
 
+  // Recarga SOLO las clases extra, no la tabla entera.
+  //
+  // `cargarMensualidades` de paso genera las mensualidades del mes que falten,
+  // y colgar eso de un evento en tiempo real es pedir que se dispare escritura
+  // cada vez que alguien toca una clase extra en otra pantalla. Acá alcanza con
+  // volver a leer los montos.
+  const recargarExtras = useCallback(async () => {
+    if (!clubId) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any).from('clases_extraordinarias')
+      .select('jugador_id,monto').eq('club_id', clubId).is('pagada_en', null)
+    const m = new Map<string, number>()
+    for (const e of (data ?? []) as { jugador_id: string; monto: number | null }[]) {
+      if (e.monto == null || e.monto <= 0) continue
+      m.set(e.jugador_id, (m.get(e.jugador_id) ?? 0) + e.monto)
+    }
+    setExtrasPorJugador(m)
+  }, [clubId])
+
+  // Ponerle precio a una extra pasa en la pestaña de al lado. Sin esto, el
+  // aviso de esta tabla se queda con el valor viejo hasta que alguien recargue.
+  useEnVivo(['clases_extraordinarias'], clubId ?? null, recargarExtras, {
+    conClub: ['clases_extraordinarias'],
+  })
+
   async function cargarMensualidades(cid?: string) {
     const id = cid || clubId
-    const [{ data: j }, { data: m }] = await Promise.all([
+    const [{ data: j }, { data: m }, { data: ex }] = await Promise.all([
       supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono').eq('club_id', id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').order('nombre'),
-      supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
+      supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio),
+      // Las clases extra impagas del club. No se filtran por mes: si quedó sin
+      // cobrar, se debe, y el aviso tiene que aparecer igual mirando agosto.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).from('clases_extraordinarias')
+        .select('jugador_id,monto').eq('club_id', id).is('pagada_en', null),
     ])
+
+    // Solo las que tienen precio: una extra sin monto asignado no es deuda
+    // todavía, y anunciarla como "+$0" o como un número inventado sería peor
+    // que no decir nada.
+    const porJugador = new Map<string, number>()
+    for (const e of (ex ?? []) as { jugador_id: string; monto: number | null }[]) {
+      if (e.monto == null || e.monto <= 0) continue
+      porJugador.set(e.jugador_id, (porJugador.get(e.jugador_id) ?? 0) + e.monto)
+    }
+    setExtrasPorJugador(porJugador)
     // ponytail: un jugador dado de baja igual puede tener mensualidad del mes;
     // sin esto desaparece de la tabla y su pago queda invisible
     const jugActivos = j || []
@@ -520,6 +564,27 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                         : montoEsperado(j, mens) != null
                           ? fmt(montoEsperado(j, mens)!)
                           : <span style={{ fontFamily:'inherit', fontSize:11, fontWeight:600, color:'#c2410c', background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:6, padding:'3px 7px', whiteSpace:'nowrap' }}>{SIN_CUOTA}</span>}
+
+                      {/* Las clases extra se avisan, NO se suman a la cuota.
+                          Sumarlas sería peor que no mostrarlas: "Marcar pagado"
+                          registra un pago de mensualidad y nada más, así que una
+                          fila que dijera $38.000 haría creer al admin que cobró
+                          los $3.000 de la clase extra —que se cobran aparte, con
+                          su propio movimiento, desde Clases extraordinarias— y
+                          esa plata quedaría sin registrar. La migración 099 lo
+                          dejó escrito: el cobro de la extra no se suma al monto
+                          de la mensualidad. */}
+                      {(extrasPorJugador.get(j.id) ?? 0) > 0 && (
+                        <button
+                          onClick={() => document.getElementById('clases-extra')?.scrollIntoView({ behavior:'smooth', block:'start' })}
+                          title="Se cobra aparte de la mensualidad. Tocá acá para ir al panel de Clases extraordinarias, más abajo en esta misma pestaña."
+                          style={{ fontFamily:'inherit', fontSize:10.5, fontWeight:700, color:'#a16207',
+                            background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6,
+                            padding:'3px 7px', marginTop:5, display:'inline-block', whiteSpace:'nowrap',
+                            cursor:'pointer' }}>
+                          🟡 + {fmt(extrasPorJugador.get(j.id)!)} clase extra →
+                        </button>
+                      )}
                     </td>
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>

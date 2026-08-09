@@ -598,8 +598,13 @@ function FinanzasContent() {
         {mensualidadesVista && <MensualidadesPanel mes={mes} anio={anio} onPagoRegistrado={() => cargarMovimientos()} />}
         {/* Las clases extra van acá abajo y no en su propia pestaña: se cobran
             en la misma conversación que la mensualidad. */}
+        {/* El id es el destino del aviso "+ $X clase extra" que sale en la
+            columna Monto de la tabla de arriba. Sin eso el panel existe pero
+            está debajo de cien y pico de filas, así que nadie llega: el admin
+            veía que el jugador debía una clase extra y no tenía forma de saber
+            dónde se cobraba. */}
         {mensualidadesVista && (
-          <div style={{ marginTop: 16 }}>
+          <div id="clases-extra" style={{ marginTop: 16, scrollMarginTop: 16 }}>
             <PanelClasesExtra clubId={clubId} />
           </div>
         )}
