@@ -123,7 +123,7 @@ export default function JugadorDetallePage() {
   const [tieneCuenta, setTieneCuenta] = useState(true)
   const [creandoAcceso, setCreandoAcceso] = useState(false)
   const [accesoError, setAccesoError] = useState('')
-  const [accesoExito, setAccesoExito] = useState(false)
+  const [accesoCreado, setAccesoCreado] = useState<{ usuario: string; password: string } | null>(null)
   const [showPasswordReset, setShowPasswordReset] = useState(false)
   const [passwordNueva, setPasswordNueva] = useState('')
   const [cambiandoPassword, setCambiandoPassword] = useState(false)
@@ -469,8 +469,12 @@ export default function JugadorDetallePage() {
     const res = await crearAccesoJugador({ jugadorId })
     setCreandoAcceso(false)
     if (res.error) { setAccesoError(res.error); return }
-    setAccesoExito(true)
+    // La acción devuelve la contraseña generada y hasta ahora se descartaba: el
+    // admin quedaba con un aviso que no le servía para nada.
+    setAccesoCreado({ usuario: res.usuario ?? '', password: res.password ?? '' })
     setTieneCuenta(true)
+    // La ficha se queda con el email viejo si la cuenta se lo acaba de generar.
+    if (res.usuario?.includes('@')) setJugador((prev: any) => ({ ...prev, email: res.usuario }))
   }
 
   // ── Foto callbacks (hooks deben ir antes de cualquier early return) ──
@@ -881,9 +885,26 @@ export default function JugadorDetallePage() {
           )}
         </div>
 
-        {esAdmin && (accesoError || accesoExito) && (
-          <div style={{ marginTop:12, background: accesoError ? 'rgba(220,38,38,0.25)' : 'rgba(34,197,94,0.25)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#fff' }}>
-            {accesoError ? accesoError : <>Invitación enviada a {jugador.email}. El jugador debe usar ese enlace para crear su contraseña.</>}
+        {/* Decía "Invitación enviada a {jugador.email}" y era falso dos veces:
+            no se manda ningún correo —`crearAccesoJugador` crea la cuenta con
+            una clave generada— y el jugador puede no tener email, con lo que el
+            aviso quedaba en "Invitación enviada a ." y el admin sin saber qué
+            había pasado ni qué entregarle. Ahora muestra lo único que sirve:
+            el usuario y la contraseña. */}
+        {esAdmin && (accesoError || accesoCreado) && (
+          <div style={{ marginTop:12, background: accesoError ? 'rgba(220,38,38,0.25)' : 'rgba(34,197,94,0.25)', border:'1px solid rgba(255,255,255,0.3)', borderRadius:10, padding:'12px 14px', fontSize:12, color:'#fff' }}>
+            {accesoError ? accesoError : (
+              <>
+                <div style={{ fontWeight:700, marginBottom:6 }}>Cuenta creada. Estas son sus credenciales:</div>
+                <div style={{ fontFamily:'monospace', fontSize:13, lineHeight:1.7 }}>
+                  Usuario: <strong>{accesoCreado!.usuario}</strong><br />
+                  Contraseña: <strong>{accesoCreado!.password}</strong>
+                </div>
+                <div style={{ marginTop:6, opacity:0.85 }}>
+                  Quedan guardadas en Credenciales, así que no hace falta anotarlas ahora.
+                </div>
+              </>
+            )}
           </div>
         )}
         {esAdmin && showPasswordReset && (

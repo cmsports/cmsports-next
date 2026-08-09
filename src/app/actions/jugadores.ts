@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
-import { authEmailDe as emailParaAuth, generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
+import { authEmailDe as emailParaAuth, generarEmailInicial, generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
 import { sincronizarEmailAuth } from '@/lib/credencialesAuth'
 import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
 
@@ -114,12 +114,42 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
 
   const { data: jugador } = await supabase.from('jugadores').select('id,email,nombre,telefono,rut').eq('id', params.jugadorId).eq('club_id', clubId).single()
   if (!jugador) return { error: 'Jugador no encontrado' }
-  const authEmail = emailParaAuth({ email: jugador.email, telefono: jugador.telefono, rut: jugador.rut })
-  if (!authEmail) return { error: 'El jugador necesita email, celular (9 dígitos) o RUT para tener acceso' }
 
   const admin = createAdminClient()
   const { data: existente } = await admin.from('perfiles').select('id').eq('jugador_id', params.jugadorId).maybeSingle()
   if (existente) return { error: 'Este jugador ya tiene una cuenta de acceso' }
+
+  // Al que no tiene correo se le arma uno del club: `emunozh@cmsports.cl`, el
+  // mismo patrón del reset masivo y de todas las cuentas que ya existen.
+  //
+  // ANTES CAÍA EN UN EMAIL SINTÉTICO del celular o del RUT
+  // (`215892905@rut.cmsports.cl`). Funcionaba para entrar, pero dejaba una
+  // cuenta que no se parece a ninguna otra, que el admin no puede dictar por
+  // teléfono, y cuyo "usuario" el informe de credenciales mostraba distinto de
+  // lo que auth guardaba. El caso Edison: se le entregó "+56937073626" y su
+  // cuenta era el RUT.
+  //
+  // El correo generado se guarda TAMBIÉN en la ficha del jugador. Es lo que
+  // mantiene alineados auth, el informe y la pantalla de login: a partir de ahí
+  // `usuarioLoginDe` lo devuelve como email y todos miran el mismo dato.
+  let emailFicha = jugador.email?.trim() ?? ''
+  if (!emailFicha.includes('@')) {
+    const base = generarEmailInicial(jugador.nombre)
+    const [usuario, dominio] = base.split('@')
+    // Los duplicados se resuelven acá, que es donde se sabe qué está ocupado.
+    // Dos "Muñoz Hernández" en el mismo club no pueden compartir cuenta.
+    let candidato = base
+    for (let n = 2; n < 100; n++) {
+      const { data: ocupado } = await admin.from('perfiles').select('id').ilike('email', candidato).maybeSingle()
+      if (!ocupado) break
+      candidato = `${usuario}${n}@${dominio}`
+    }
+    emailFicha = candidato
+    await admin.from('jugadores').update({ email: emailFicha }).eq('id', params.jugadorId).eq('club_id', clubId)
+  }
+
+  const authEmail = emailParaAuth({ email: emailFicha, telefono: jugador.telefono, rut: jugador.rut })
+  if (!authEmail) return { error: 'El jugador necesita email, celular (9 dígitos) o RUT para tener acceso' }
 
   const password = generarPasswordInicial(jugador.nombre)
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
@@ -141,13 +171,19 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
     return { error: 'No se pudo vincular la cuenta: ' + perfilError.message }
   }
 
-  const { login, tipo } = usuarioLoginDe({ email: jugador.email, telefono: jugador.telefono, rut: jugador.rut })
+  // `emailFicha` y no `jugador.email`: el segundo es el valor de ANTES de
+  // generar el correo, así que el informe mostraba el celular mientras la
+  // cuenta se creaba con otra cosa. Era exactamente el desalineo del caso Edison.
+  const { login, tipo } = usuarioLoginDe({ email: emailFicha, telefono: jugador.telefono, rut: jugador.rut })
   await admin.from('credencial_visible').upsert({
     usuario_id: userId, club_id: clubId, password_plano: password,
     usuario_login: login, tipo_login: tipo,
   })
 
-  return { success: true, password }
+  // Se devuelve también el usuario. La pantalla no puede derivarlo sola: su
+  // copia del jugador todavía tiene el email de antes —vacío, si se acaba de
+  // generar— y mostraría el celular o el RUT en vez de la cuenta real.
+  return { success: true, password, usuario: login }
 }
 
 export async function editarJugador(params: {

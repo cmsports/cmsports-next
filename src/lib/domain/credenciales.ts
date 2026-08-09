@@ -55,43 +55,75 @@ export function generarEmailInicial(nombreCompleto: string): string {
   return `${partes[0][0]}${apellido1}${apellido2[0]}@cmsports.cl`
 }
 
-/**
- * Con qué se loguea el usuario en la práctica. Es lo que va en la columna
- * "Usuario" del reporte. El email manda si existe; el celular si no; el RUT
- * es la salida cuando varios jugadores comparten celular (caso familiar).
- */
-export function usuarioLoginDe(datos: {
+type DatosIdentidad = {
   email?: string | null
   telefono?: string | null
   rut?: string | null
-}): { login: string; tipo: 'email' | 'celular' | 'rut' } {
-  if (datos.email?.trim()) return { login: datos.email.trim(), tipo: 'email' }
-  if (datos.telefono?.trim()) return { login: datos.telefono.trim(), tipo: 'celular' }
-  if (datos.rut?.trim()) return { login: datos.rut.trim(), tipo: 'rut' }
-  return { login: '', tipo: 'email' }
 }
 
 /**
- * El email real que debe tener en `auth.users`, a partir de los mismos datos
- * que decide `usuarioLoginDe`.
+ * Con qué entra el jugador y qué email tiene en `auth.users`. Las dos cosas
+ * salen de acá, juntas, y ese es el punto.
  *
- * El celular y el RUT no sirven tal cual como email de auth, así que se les
- * arma uno sintético (`<celular>@cel.cmsports.cl`, `<rut-sin-guion>@rut.cmsports.cl`)
- * que la pantalla de login ya sabe reconstruir a partir de lo que el jugador
- * escribe. Mantener esta función como la única fuente de ese patrón evita que
- * `auth.users.email` quede desalineado con lo que el reporte de credenciales
- * le muestra al admin como "usuario".
+ * ANTES ERAN DOS FUNCIONES SEPARADAS Y SE DESALINEARON. `authEmailDe` exigía
+ * que el celular fuera exactamente nueve dígitos; `usuarioLoginDe` aceptaba
+ * cualquier cosa no vacía. Con un teléfono guardado como "+56937073626" —o
+ * "56989859433", con el código de país pegado— la cuenta de auth se creaba con
+ * el RUT, pero el reporte de credenciales le mostraba al admin el celular.
+ *
+ * El jugador recibía un usuario que no existe. Y encima ese texto tampoco se
+ * puede escribir en la pantalla de login, que exige nueve dígitos pelados o un
+ * RUT con guion. Eran 7 jugadores de Buin, 6 de ellos imposibilitados de
+ * entrar con lo que se les entregó.
+ *
+ * Devolviendo las dos cosas de una sola decisión, no pueden volver a discrepar.
  */
-export function authEmailDe(datos: {
-  email?: string | null
-  telefono?: string | null
-  rut?: string | null
-}): string | null {
-  const email = datos.email?.trim().toLowerCase()
-  if (email) return email
+function identidadDe(datos: DatosIdentidad):
+  { login: string; tipo: 'email' | 'celular' | 'rut'; authEmail: string } | null {
+
+  const email = datos.email?.trim()
+  // Un "email" sin arroba no sirve para entrar ni para auth. Se descarta acá y
+  // se sigue con el celular o el RUT, en vez de mostrar algo inservible.
+  if (email && email.includes('@')) {
+    return { login: email, tipo: 'email', authEmail: email.toLowerCase() }
+  }
+
   const tel = datos.telefono?.trim()
-  if (tel && /^\d{9}$/.test(tel)) return `${tel}@cel.cmsports.cl`
-  const rut = datos.rut?.trim().replace('-', '')
-  if (rut && /^\d{7,8}[\dkK]$/.test(rut)) return `${rut}@rut.cmsports.cl`
+  if (tel && /^\d{9}$/.test(tel)) {
+    return { login: tel, tipo: 'celular', authEmail: `${tel}@cel.cmsports.cl` }
+  }
+
+  // El RUT se muestra CON guion porque es como lo pide la pantalla de login,
+  // y sin guion en el email de auth. Guardado puede venir de cualquier forma.
+  const rut = datos.rut?.trim().replace(/[.\-]/g, '').toUpperCase()
+  if (rut && /^\d{7,8}[\dK]$/.test(rut)) {
+    return {
+      login: `${rut.slice(0, -1)}-${rut.slice(-1)}`,
+      tipo: 'rut',
+      authEmail: `${rut.toLowerCase()}@rut.cmsports.cl`,
+    }
+  }
+
   return null
+}
+
+/**
+ * Con qué se loguea el usuario en la práctica. Es lo que va en la columna
+ * "Usuario" del reporte, y lo que el admin le pasa al jugador: tiene que ser
+ * algo que se pueda escribir tal cual en la pantalla de login.
+ */
+export function usuarioLoginDe(datos: DatosIdentidad): { login: string; tipo: 'email' | 'celular' | 'rut' } {
+  const id = identidadDe(datos)
+  return id ? { login: id.login, tipo: id.tipo } : { login: '', tipo: 'email' }
+}
+
+/**
+ * El email real que debe tener en `auth.users`.
+ *
+ * El celular y el RUT no sirven tal cual como email, así que se les arma uno
+ * sintético (`<celular>@cel.cmsports.cl`, `<rut-sin-guion>@rut.cmsports.cl`)
+ * que la pantalla de login reconstruye a partir de lo que el jugador escribe.
+ */
+export function authEmailDe(datos: DatosIdentidad): string | null {
+  return identidadDe(datos)?.authEmail ?? null
 }
