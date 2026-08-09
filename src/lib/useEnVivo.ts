@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { invalidarPorTabla } from '@/lib/query-cache'
 
@@ -30,6 +30,23 @@ export function useEnVivo(
 ) {
   const { conClub = [], esperaMs = 250 } = opciones
 
+  // Identificador propio de cada componente que usa el hook.
+  //
+  // EL CANAL SE LLAMABA SOLO `envivo-{club}-{tablas}`, así que dos componentes
+  // montados a la vez que miraran las mismas tablas pedían el MISMO canal. Eso
+  // es un join duplicado al mismo topic sobre un solo socket: Realtime lo
+  // rechaza y la suscripción entra a reintentar sola.
+  //
+  // Pasó al poner el aviso de clases extra en la tabla de Mensualidades:
+  // `MensualidadesPanel` y `PanelClasesExtra` se montan juntos en esa pestaña y
+  // los dos escuchan `clases_extraordinarias`. La pestaña dejaba de cargar.
+  //
+  // No era un problema de esa pantalla sino de acá, y seguía latente para el
+  // otro par que ya escuchaba las mismas tablas
+  // (`bloque_jugadores`,`bloques_horario`): solo hacía falta que se montaran
+  // juntos alguna vez.
+  const instancia = useId()
+
   // La función de recarga se rearma en cada render. Guardarla en una referencia
   // evita volver a suscribirse cada vez, y se actualiza en un efecto porque
   // tocar una referencia durante el render no está permitido.
@@ -43,7 +60,7 @@ export function useEnVivo(
     if (!clubId || tablas.length === 0) return
 
     let pendiente: ReturnType<typeof setTimeout> | null = null
-    const canal = supabase.channel(`envivo-${clubId}-${clave}`)
+    const canal = supabase.channel(`envivo-${clubId}-${clave}-${instancia}`)
 
     for (const tabla of clave.split(',')) {
       canal.on(
@@ -68,5 +85,7 @@ export function useEnVivo(
       if (pendiente) clearTimeout(pendiente)
       void supabase.removeChannel(canal)
     }
-  }, [clubId, clave, claveClub, esperaMs, tablas.length])
+    // `instancia` es estable durante toda la vida del componente, así que
+    // entra en las dependencias sin provocar resuscripciones.
+  }, [clubId, clave, claveClub, esperaMs, tablas.length, instancia])
 }
