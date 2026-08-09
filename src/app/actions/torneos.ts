@@ -45,6 +45,37 @@ function ordenarMiembros<T extends { orden?: number | null; jugador_id?: string 
   return [...miembros].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(a.jugador_id ?? '').localeCompare(String(b.jugador_id ?? '')))
 }
 
+// Reescribe el orden de un grupo y regenera su round robin desde cero.
+// Devuelve el mensaje de error o null. Los grupos en preparación quedan sin
+// partidos: se crean recién al finalizarlos.
+async function regenerarGrupo(
+  supabase: AdminSupabase,
+  torneoId: string,
+  grupoId: string,
+  ordenados: { id: string; jugador_id?: string | null }[],
+  enPreparacion = false,
+): Promise<string | null> {
+  const updates = await Promise.all(ordenados.map((m, orden) => supabase.from('grupo_jugadores').update({ orden }).eq('id', m.id)))
+  if (updates.some(r => r.error)) return 'No se pudo guardar el nuevo orden del grupo.'
+  const { error: deleteErr } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).eq('grupo_id', grupoId)
+  if (deleteErr) return 'No se pudieron regenerar los partidos del grupo.'
+  if (enPreparacion) return null
+  const ids = ordenados.map(m => m.jugador_id).filter((id): id is string => !!id)
+  const partidos = generarRoundRobin(ids).map(([jugador_a, jugador_b], orden) => ({
+    torneo_id: torneoId,
+    grupo_id: grupoId,
+    fase: 'grupos',
+    jugador_a,
+    jugador_b,
+    orden,
+  }))
+  if (partidos.length) {
+    const { error: insertErr } = await supabase.from('torneo_partidos').insert(partidos)
+    if (insertErr) return 'No se pudieron crear los nuevos partidos del grupo.'
+  }
+  return null
+}
+
 async function leerCabezasSerie(supabase: AdminSupabase, torneoId: string): Promise<{ cabezas: CabezaNumerada[]; error?: string }> {
   const { data, error } = await supabase.from('torneo_cabezas_serie')
     .select('jugador_id,numero').eq('torneo_id', torneoId).order('numero')
@@ -739,23 +770,66 @@ export async function reordenarJugadorEnGrupo(params: {
   ordenados[idx] = ordenados[swapIdx]
   ordenados[swapIdx] = actual
 
-  const updates = await Promise.all(ordenados.map((m, orden) => supabase.from('grupo_jugadores').update({ orden }).eq('id', m.id)))
-  if (updates.some(r => r.error)) return { error: 'No se pudo guardar el nuevo orden del grupo.' }
+  const { data: grupoInfo } = await supabase.from('torneo_grupos')
+    .select('en_preparacion').eq('id', grupoId).maybeSingle()
+  const errorRegenerar = await regenerarGrupo(supabase, torneoId, grupoId, ordenados, !!grupoInfo?.en_preparacion)
+  if (errorRegenerar) return { error: errorRegenerar }
 
-  const { error: deleteErr } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).eq('grupo_id', grupoId)
-  if (deleteErr) return { error: 'No se pudieron regenerar los partidos del grupo.' }
-  const idsGrupo = ordenados.map(m => m.jugador_id).filter((id): id is string => !!id)
-  const partidos = generarRoundRobin(idsGrupo).map(([a, b], orden) => ({
-    torneo_id: torneoId,
-    grupo_id: grupoId,
-    fase: 'grupos',
-    jugador_a: a,
-    jugador_b: b,
-    orden,
-  }))
-  if (partidos.length) {
-    const { error: insertErr } = await supabase.from('torneo_partidos').insert(partidos)
-    if (insertErr) return { error: 'No se pudieron crear los nuevos partidos del grupo.' }
+  return { success: true }
+}
+
+// Un jugador que no llegó se saca del grupo y con eso queda fuera del torneo:
+// grupo_jugadores es la inscripción. El round robin del grupo se rehace sin él.
+export async function quitarJugadorDeGrupo(params: {
+  torneoId: string
+  grupoId: string
+  jugadorId: string
+}) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId, grupoId, jugadorId } = params
+
+  const { data: grupo } = await supabase.from('torneo_grupos')
+    .select('id,nombre,en_preparacion').eq('id', grupoId).eq('torneo_id', torneoId).maybeSingle()
+  if (!grupo) return { error: 'El grupo no pertenece a este torneo' }
+
+  const { data: bracket } = await supabase.from('torneo_partidos')
+    .select('ganador,jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')
+  if ((bracket || []).some(llaveFueJugada)) {
+    return { error: 'No se puede quitar jugadores: el bracket ya tiene partidos jugados' }
+  }
+
+  const { data: partidosGrupo } = await supabase.from('torneo_partidos')
+    .select('id,ganador').eq('torneo_id', torneoId).eq('grupo_id', grupoId)
+  if (partidosGrupo?.some(p => !!p.ganador)) {
+    return { error: 'No se puede quitar al jugador: este grupo ya tiene partidos jugados' }
+  }
+
+  const { data: miembros, error: miembrosErr } = await supabase.from('grupo_jugadores')
+    .select('id,jugador_id,orden').eq('grupo_id', grupoId)
+  if (miembrosErr) return { error: 'No se pudieron leer los integrantes del grupo' }
+  const saliente = (miembros || []).find(m => m.jugador_id === jugadorId)
+  if (!saliente) return { error: 'El jugador no pertenece a este grupo' }
+
+  const restantes = ordenarMiembros((miembros || []).filter(m => m.id !== saliente.id))
+  // Un grupo cerrado de 1 rompe el bracket: su "2° de grupo" nunca se llena.
+  if (!grupo.en_preparacion && restantes.length === 1 && grupo.nombre !== 'MESA') {
+    return { error: 'Quedaría un solo jugador en el grupo. Muévelo antes a otro grupo y el grupo vacío se elimina solo.' }
+  }
+
+  const { error: borrarErr } = await supabase.from('grupo_jugadores').delete().eq('id', saliente.id)
+  if (borrarErr) return { error: 'No se pudo quitar al jugador del grupo' }
+  // Sale del torneo, así que deja de ser cabeza de serie. torneo_pagos NO se
+  // toca: si ya pagó, la devolución la decide el admin en finanzas.
+  await supabase.from('torneo_cabezas_serie').delete().eq('torneo_id', torneoId).eq('jugador_id', jugadorId)
+
+  const errorRegenerar = await regenerarGrupo(supabase, torneoId, grupoId, restantes, !!grupo.en_preparacion)
+  if (errorRegenerar) return { error: errorRegenerar }
+
+  if (!restantes.length && grupo.nombre !== 'MESA') {
+    await supabase.from('torneo_grupos').delete().eq('id', grupoId)
+    return { success: true, grupoEliminado: true }
   }
 
   return { success: true }

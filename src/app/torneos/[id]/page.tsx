@@ -25,6 +25,7 @@ import {
   eliminarGrupoManualVacio,
   moverJugadorEntreGrupos,
   reordenarJugadorEnGrupo,
+  quitarJugadorDeGrupo,
   quitarJugadorDeMesa,
   guardarDesempateGrupo,
   intercambiarJugadores,
@@ -323,6 +324,19 @@ export default function TorneoDetallePage() {
     const res = await reordenarJugadorEnGrupo({ torneoId, jugadorId, grupoId, direccion })
     if (res.error) { alert(res.error); return }
     await cargarTorneo()
+  }
+
+  async function quitarDelGrupo(jugadorId: string, jugadorNombre: string, grupoId: string, grupoNombre: string) {
+    if (moviendoJugadorId) return
+    if (!confirm(`¿Quitar a ${jugadorNombre} del Grupo ${grupoNombre}?\n\nQueda fuera del torneo y los partidos del grupo se rehacen sin él.`)) return
+    setMoviendoJugadorId(jugadorId)
+    try {
+      const res = await quitarJugadorDeGrupo({ torneoId, jugadorId, grupoId })
+      if (res.error) { alert(res.error); return }
+      await cargarTorneo()
+    } finally {
+      setMoviendoJugadorId(null)
+    }
   }
 
   async function marcarGanador(partidoId: string, ganadorId: string) {
@@ -928,6 +942,17 @@ export default function TorneoDetallePage() {
                           style={{ width:24, height:24, border:'1px solid #e2e8f0', borderRadius:6, background:i === ordenados.length - 1 ? '#f8fafc' : '#ffffff', color:i === ordenados.length - 1 ? hint : text, cursor:i === ordenados.length - 1 ? 'not-allowed' : 'pointer', fontSize:12 }}
                         >
                           ↓
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            j.jugador?.id && quitarDelGrupo(j.jugador.id, j.jugador.nombre || 'este jugador', grupo.id, grupo.nombre)
+                          }}
+                          disabled={!j.jugador?.id || !!moviendoJugadorId}
+                          title="Quitar del grupo (no asistió)"
+                          style={{ width:24, height:24, border:'1px solid #fecaca', borderRadius:6, background:'#fff', color:'#dc2626', cursor:moviendoJugadorId?'not-allowed':'pointer', opacity:moviendoJugadorId?0.55:1, fontSize:12 }}
+                        >
+                          ✕
                         </button>
                       </div>
                     )}
