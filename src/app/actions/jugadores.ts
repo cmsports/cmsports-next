@@ -153,20 +153,28 @@ export async function crearAccesoJugador(params: { jugadorId: string }) {
 export async function editarJugador(params: {
   jugadorId: string; nombre: string; rut: string; email: string; telefono: string
 } & PlanFields & DatosExtendidos) {
-  const { error: authErr, supabase } = await requireAdminClub()
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
   const { jugadorId, nombre, rut, email, telefono, ...planFields } = params
-  const { error } = await supabase.from('jugadores').update({
+  // `.select().maybeSingle()` en vez de solo `.eq('id', jugadorId)`: sin el
+  // select, un jugadorId de OTRO club hace que la política de RLS filtre la
+  // fila y el update no toque nada, pero devuelve éxito igual (0 filas
+  // afectadas no es un error para Postgres). El código seguía de largo con
+  // `admin` —que se salta RLS— y sincronizaba el email de auth de un jugador
+  // ajeno con lo que el llamante hubiera mandado: un admin de un club podía
+  // secuestrar el login de un jugador de otro club pasando su id a mano.
+  const { data: actualizado, error } = await supabase.from('jugadores').update({
     nombre: nombre.trim(), rut: rut || null, email: email || null, telefono: telefono || null, ...planFields,
-  }).eq('id', jugadorId)
+  }).eq('id', jugadorId).eq('club_id', clubId).select('id').maybeSingle()
   if (error) return { error: 'Error al editar: ' + error.message }
+  if (!actualizado) return { error: 'Jugador no encontrado' }
 
   // Si el jugador tiene cuenta de acceso, su email/celular/rut nuevo tiene que
   // quedar reflejado en auth.users; si no, queda logueando con el dato viejo
   // aunque la ficha y el reporte de credenciales ya muestren el nuevo.
   const admin = createAdminClient()
-  const { data: perfil } = await admin.from('perfiles').select('id,email').eq('jugador_id', jugadorId).maybeSingle()
+  const { data: perfil } = await admin.from('perfiles').select('id,email').eq('jugador_id', jugadorId).eq('club_id', clubId).maybeSingle()
   if (perfil) await sincronizarEmailAuth(admin, perfil.id, perfil.email, { email, telefono, rut })
 
   return { success: true }
