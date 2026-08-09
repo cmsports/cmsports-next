@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, createContext, useContext } from 'rea
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
-import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays, Database, Download, X, Eye, EyeOff } from 'lucide-react'
+import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays, Database, Download, X, Eye, EyeOff, Menu } from 'lucide-react'
 import { useMontos } from '@/lib/ui/MontosProvider'
 import ThemeToggle from '@/components/ThemeToggle'
 import type { Tables } from '@/types/database'
@@ -23,6 +23,15 @@ const nav = [
   { label: 'Respaldos', icon: Database, href: '/superadmin/respaldos' },
   { label: 'Configuración', icon: Settings, href: '/superadmin/configuracion' },
 ]
+
+const mobileNav = [
+  { label: 'Clubes', icon: Building2, href: '/superadmin' },
+  { label: 'Finanzas', icon: Wallet, href: '/superadmin/finanzas' },
+  { label: 'Actividad', icon: Activity, href: '/superadmin/actividad' },
+]
+
+const mobileNavHrefs = new Set(mobileNav.map(i => i.href))
+const masNav = nav.filter(i => !mobileNavHrefs.has(i.href))
 
 type SuperadminContextValue = {
   perfil: Perfil | null
@@ -58,6 +67,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
   const [administradores, setAdministradores] = useState<Record<string, { nombre: string | null; email: string | null }>>({})
   const [conteos, setConteos] = useState<Record<string, number>>({})
   const [loadingClubes, setLoadingClubes] = useState(true)
+  const [masOpen, setMasOpen] = useState(false)
 
   const recargarClubes = useCallback(async () => {
     setLoadingClubes(true)
@@ -208,6 +218,103 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
           {pathname !== '/superadmin/respaldos' && <AvisoRespaldo onIr={() => router.push('/superadmin/respaldos')} />}
           {children}
         </main>
+
+        {/* ── NAV MÓVIL ── */}
+        <div style={{
+          display: 'none',
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          background: '#ffffff',
+          borderTop: '1px solid #e2e8f0',
+          zIndex: 20,
+          padding: '6px 4px 8px',
+        }} className="mobile-nav">
+          <div style={{ display: 'flex', justifyContent: 'space-around' }}>
+            {mobileNav.map(item => {
+              const active = isActive(item.href)
+              const Icon = item.icon
+              return (
+                <div key={item.href} onClick={() => router.push(item.href)} style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                  padding: '5px 8px', cursor: 'pointer',
+                  color: active ? '#4f46e5' : '#94a3b8',
+                  fontSize: 10, minWidth: 50, textAlign: 'center',
+                }}>
+                  <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+                  <span>{item.label}</span>
+                </div>
+              )
+            })}
+            <div onClick={() => setMasOpen(!masOpen)} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+              padding: '5px 8px', cursor: 'pointer',
+              color: masOpen ? '#4f46e5' : '#94a3b8',
+              fontSize: 10, minWidth: 50, textAlign: 'center',
+            }}>
+              <Menu size={20} strokeWidth={masOpen ? 2.2 : 1.8} />
+              <span>Más</span>
+            </div>
+            <div onClick={cerrarSesion} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+              padding: '5px 8px', cursor: 'pointer',
+              color: '#94a3b8', fontSize: 10, minWidth: 50, textAlign: 'center',
+            }}>
+              <LogOut size={20} strokeWidth={1.8} />
+              <span>Salir</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── MENÚ MÁS (móvil) ── */}
+        {masOpen && (
+          <div style={{
+            position: 'fixed', bottom: 64, left: 0, right: 0,
+            background: '#ffffff', borderTop: '1px solid #e2e8f0',
+            zIndex: 19, padding: 12,
+          }}>
+            <button onClick={alternarMontos} style={{
+              width: '100%', padding: '10px 12px', marginBottom: 8,
+              background: montosOcultos ? '#ede9fe' : '#f8fafc',
+              border: `1px solid ${montosOcultos ? '#c4b5fd' : '#e2e8f0'}`,
+              borderRadius: 10, color: montosOcultos ? '#4f46e5' : '#64748b',
+              fontSize: 13, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              {montosOcultos ? <EyeOff size={16} /> : <Eye size={16} />}
+              {montosOcultos ? 'Mostrar los montos' : 'Ocultar los montos'}
+            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+              {masNav.map(item => {
+                const Icon = item.icon
+                return (
+                  <div key={item.href} onClick={() => { router.push(item.href); setMasOpen(false) }}
+                    style={{
+                      background: '#f8fafc', border: '1px solid #e2e8f0',
+                      borderRadius: 10, padding: 14, textAlign: 'center', cursor: 'pointer',
+                    }}>
+                    <Icon size={20} color="#4f46e5" style={{ margin: '0 auto 4px' }} />
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{item.label}</div>
+                  </div>
+                )
+              })}
+            </div>
+            <button onClick={() => setMasOpen(false)} style={{
+              width: '100%', marginTop: 8, padding: '8px',
+              background: 'transparent', border: '1px solid #e2e8f0',
+              borderRadius: 8, color: '#64748b', fontSize: 12, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+            }}>
+              <X size={13} /> Cerrar
+            </button>
+          </div>
+        )}
+
+        <style>{`
+          @media (max-width: 768px) {
+            .sidebar { display: none !important; }
+            .main-content { margin-left: 0 !important; padding: 12px !important; padding-bottom: 80px !important; padding-top: 12px !important; }
+            .mobile-nav { display: block !important; }
+          }
+        `}</style>
       </div>
     </PerfilContext.Provider>
   )
