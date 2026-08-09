@@ -57,16 +57,39 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse
   }
 
+  // El perfil se busca una sola vez y se reusa más abajo. Antes se consultaba
+  // dos veces —acá y en la protección por rol—, y peor: cada rama sacaba su
+  // propia conclusión de lo que significaba no encontrarlo.
+  const { data: perfil } = user
+    ? await supabase
+        .from('perfiles')
+        .select('rol,club_id,jugador_id')
+        .eq('id', user.id)
+        .maybeSingle()
+    : { data: null }
+
+  // Token vivo de alguien que ya no está en `perfiles`: lo eliminaron del club
+  // y su sesión todavía no vence.
+  //
+  // Es el caso que colgaba la pantalla. `getClaims()` solo verifica la firma
+  // del token, no que el usuario exista, así que el middleware lo daba por
+  // logueado; la pantalla no encontraba perfil y lo mandaba a /login; y /login
+  // veía "sesión activa", llamaba a getRolRedirect(null) —que devuelve
+  // /perfil— y lo mandaba de vuelta. Ida y vuelta hasta que venciera el token.
+  //
+  // Va antes que las rutas públicas a propósito: si no, /login lo sigue
+  // rebotando. /sin-club le cierra la sesión y le ofrece postular de nuevo.
+  if (user && !perfil) {
+    if (pathname === '/sin-club') return supabaseResponse
+    const url = request.nextUrl.clone()
+    url.pathname = '/sin-club'
+    return NextResponse.redirect(url)
+  }
+
   // Public routes — allow without auth
   if (publicRoutes.some((r) => pathname.startsWith(r))) {
     if (user) {
       // Already logged in, redirect to their home
-      const { data: perfil } = await supabase
-        .from('perfiles')
-        .select('rol')
-        .eq('id', user.id)
-        .single()
-
       const url = request.nextUrl.clone()
       url.pathname = getRolRedirect(perfil?.rol ?? null)
       return NextResponse.redirect(url)
@@ -89,13 +112,9 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse
   }
 
-  // Get user role for route protection
-  const { data: perfil } = await supabase
-    .from('perfiles')
-    .select('rol,club_id,jugador_id')
-    .eq('id', user.id)
-    .single()
-
+  // Llegar acá con `perfil` nulo ya no es posible: ese caso se desvía a
+  // /sin-club más arriba. El `?? 'jugador'` que había era justamente lo que le
+  // inventaba un rol al usuario borrado y lo metía en el ciclo.
   const rol = perfil?.rol ?? 'jugador'
 
   // Route protection by role
