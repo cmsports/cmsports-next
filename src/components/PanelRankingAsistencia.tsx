@@ -1,13 +1,33 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { Download } from 'lucide-react'
+/**
+ * Panorama de asistencia.
+ *
+ * Antes respondía "¿cómo venimos hace tres meses?" con promedios de todo el
+ * trimestre. El club no funciona así: se opera por día y por semana, y un
+ * promedio trimestral esconde justo lo accionable —que el grupo del martes se
+ * cayó, que hoy faltó media lista, que alguien no aparece hace dos semanas—.
+ * Ahora arranca en la semana en curso y lo macro queda comprimido abajo.
+ *
+ * Los cálculos viven en `domain/panoramaAsistencia`; acá solo se dibuja.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Download, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { calendarioJugador, indexar, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
+import {
+  lunesDeLaSemana, viernesDeLaSemana, sumarDias, sumarSemanas,
+  conteoDelRango, resumenPorDia, resumenPorSemana, resumenPorGrupo,
+  diferencia, ordenarPorRiesgo, ordenarPorMerito,
+  type CalendarioDeJugador, type FilaJugador,
+} from '@/lib/domain/panoramaAsistencia'
 import { descargarExcelAsistenciaPorBloque } from '@/lib/asistencia-bloque-excel'
+import { linkWhatsApp } from '@/lib/whatsapp'
+import WhatsAppBtn from '@/components/WhatsAppBtn'
 
 const supabase = createClient()
 
@@ -19,16 +39,14 @@ const verde = '#16a34a'
 const rojo  = '#dc2626'
 const azul  = '#3b82f6'
 
-type Jugador = { id: string; nombre: string; categoria: string | null; grupo: string | null; sede: string | null }
+type Jugador = { id: string; nombre: string; categoria: string | null; grupo: string | null; sede: string | null; telefono: string | null }
 
-type Fila = {
-  jugador: Jugador
+type Fila = FilaJugador & {
+  jugadorCompleto: Jugador
   programados: number
-  presentes: number
-  ausentes: number
   pendientes: number
-  porcentaje: number | null
   rachaAusentes: number
+  ultimaAsistencia: string | null
 }
 
 const th = { padding: '9px 12px', textAlign: 'left' as const, fontSize: 11, fontWeight: 600, color: muted,
@@ -41,21 +59,44 @@ function color(pct: number | null) {
   return pct >= 75 ? verde : pct >= 50 ? '#d97706' : rojo
 }
 
-function restarMeses(fecha: string, n: number): string {
-  const d = new Date(fecha + 'T12:00:00')
-  d.setMonth(d.getMonth() - n)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const DIA_LARGO: Record<string, string> = { lun: 'Lunes', mar: 'Martes', mie: 'Miércoles', jue: 'Jueves', vie: 'Viernes' }
+
+/** "3 ago" — para etiquetas cortas donde el año sobra. */
+function fechaCorta(iso: string) {
+  const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+  const [, m, d] = iso.split('-')
+  return `${Number(d)} ${MESES[Number(m) - 1]}`
 }
 
-function Tabla({ titulo, nota, filas: fs, extra }: {
-  titulo: string; nota?: string; filas: Fila[]; extra?: (f: Fila) => React.ReactNode
+function diasDesde(iso: string, hoy: string): number {
+  return Math.round((new Date(`${hoy}T12:00:00`).getTime() - new Date(`${iso}T12:00:00`).getTime()) / 86_400_000)
+}
+
+function Seccion({ titulo, nota, children, plegable = false }: {
+  titulo: string; nota?: string; children: React.ReactNode; plegable?: boolean
 }) {
+  const [abierto, setAbierto] = useState(!plegable)
   return (
-  <div style={{ ...card, overflow: 'hidden' }}>
-    <div style={{ padding: '13px 16px', borderBottom: '1px solid #e2e8f0' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{titulo}</div>
-      {nota && <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>{nota}</div>}
+    <div style={{ ...card, overflow: 'hidden' }}>
+      <div onClick={plegable ? () => setAbierto(v => !v) : undefined}
+        style={{ padding: '13px 16px', borderBottom: abierto ? '1px solid #e2e8f0' : 'none',
+          display: 'flex', alignItems: 'center', gap: 8, cursor: plegable ? 'pointer' : 'default' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{titulo}</div>
+          {nota && <div style={{ fontSize: 11, color: hint, marginTop: 2 }}>{nota}</div>}
+        </div>
+        {plegable && (
+          <ChevronDown size={16} color={hint}
+            style={{ transform: abierto ? 'rotate(180deg)' : 'none', transition: 'transform var(--rapido, 150ms)' }} />
+        )}
+      </div>
+      {abierto && children}
     </div>
+  )
+}
+
+function TablaJugadores({ filas, extra }: { filas: Fila[]; extra?: (f: Fila) => React.ReactNode }) {
+  return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -68,7 +109,7 @@ function Tabla({ titulo, nota, filas: fs, extra }: {
           </tr>
         </thead>
         <tbody>
-          {fs.map(f => (
+          {filas.map(f => (
             <tr key={f.jugador.id}>
               <td style={{ ...td, fontWeight: 600 }}>{f.jugador.nombre}</td>
               <td style={num}>{f.presentes}</td>
@@ -79,52 +120,85 @@ function Tabla({ titulo, nota, filas: fs, extra }: {
               {extra && <td style={num}>{extra(f)}</td>}
             </tr>
           ))}
-          {fs.length === 0 && (
+          {filas.length === 0 && (
             <tr><td colSpan={extra ? 5 : 4} style={{ ...td, textAlign: 'center', color: hint }}>Nada por acá</td></tr>
           )}
         </tbody>
       </table>
     </div>
-  </div>
   )
 }
+
+type Rango = 'semana' | 'mes' | 'trimestre'
 
 export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [jugadores, setJugadores] = useState<Jugador[]>([])
   const [datos, setDatos]         = useState<DatosHistorial | null>(null)
-  const [meses, setMeses]         = useState(3)
+  const [rango, setRango]         = useState<Rango>('semana')
+  /** Cuántos períodos hacia atrás desde el actual. 0 = el de ahora. */
+  const [atras, setAtras]         = useState(0)
   const [cargando, setCargando]   = useState(true)
   const [selectorAbierto, setSelectorAbierto] = useState(false)
   const [descargando, setDescargando]         = useState(false)
+  const [diaAbierto, setDiaAbierto]           = useState<string | null>(null)
 
   const hoy = fechaChile()
-  const desde = restarMeses(hoy, meses)
+
+  // El rango que se está mirando. La semana va de lunes a viernes porque es la
+  // semana laboral del club; el finde no tiene bloques.
+  const { desde, hasta, desdeAnterior, hastaAnterior, etiqueta } = useMemo(() => {
+    if (rango === 'semana') {
+      const lunes = sumarSemanas(lunesDeLaSemana(hoy), -atras)
+      const prev  = sumarSemanas(lunes, -1)
+      return {
+        desde: lunes, hasta: viernesDeLaSemana(lunes),
+        desdeAnterior: prev, hastaAnterior: viernesDeLaSemana(prev),
+        etiqueta: atras === 0 ? 'Esta semana' : atras === 1 ? 'Semana pasada' : `${fechaCorta(lunes)} — ${fechaCorta(viernesDeLaSemana(lunes))}`,
+      }
+    }
+    const meses = rango === 'mes' ? 1 : 3
+    const fin = new Date(`${hoy}T12:00:00`); fin.setMonth(fin.getMonth() - meses * atras)
+    const ini = new Date(fin); ini.setMonth(ini.getMonth() - meses)
+    const prevFin = new Date(ini); const prevIni = new Date(ini); prevIni.setMonth(prevIni.getMonth() - meses)
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return {
+      desde: iso(ini), hasta: iso(fin),
+      desdeAnterior: iso(prevIni), hastaAnterior: iso(prevFin),
+      etiqueta: atras === 0 ? (rango === 'mes' ? 'Último mes' : 'Últimos 3 meses') : `${fechaCorta(iso(ini))} — ${fechaCorta(iso(fin))}`,
+    }
+  }, [rango, atras, hoy])
+
+  // Se carga desde el período anterior para poder comparar, y desde ocho
+  // semanas atrás para la tendencia — lo que sea más viejo.
+  const desdeCarga = useMemo(() => {
+    const ochoSemanas = sumarSemanas(lunesDeLaSemana(hoy), -7)
+    return [desdeAnterior, ochoSemanas].sort()[0]
+  }, [desdeAnterior, hoy])
 
   const cargar = useCallback(async () => {
     const [{ data: jugs }, datosClub] = await Promise.all([
       supabase.from('jugadores')
-        .select('id,nombre,categoria,grupo,sede')
+        .select('id,nombre,categoria,grupo,sede,telefono')
         .eq('club_id', clubId).eq('estado', 'activo')
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre'),
-      cargarHistorialClub(clubId, desde, hoy),
+      cargarHistorialClub(clubId, desdeCarga, hasta > hoy ? hasta : hoy),
     ])
     setJugadores((jugs ?? []) as Jugador[])
     setDatos(datosClub)
     setCargando(false)
-  }, [clubId, desde, hoy])
+  }, [clubId, desdeCarga, hasta, hoy])
 
   useEffect(() => { void cargar() }, [cargar])
   useEnVivo(['asistencia', 'bloque_jugadores'], clubId, cargar, { conClub: ['asistencia'] })
 
-  // El Excel se descarga con su propio período, elegido al momento de bajarlo:
-  // no depende de qué rango esté mirando la pantalla ahora mismo.
   async function descargarExcel(mesesElegidos: number) {
     setSelectorAbierto(false)
     setDescargando(true)
     try {
       const hastaD = fechaChile()
-      const desdeD = restarMeses(hastaD, mesesElegidos)
+      const d = new Date(`${hastaD}T12:00:00`); d.setMonth(d.getMonth() - mesesElegidos)
+      const desdeD = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       const [{ data: club }, { data: jugs }, datosClub] = await Promise.all([
         supabase.from('clubes').select('nombre').eq('id', clubId).single(),
         supabase.from('jugadores')
@@ -148,99 +222,87 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
     return <div style={{ padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>Calculando...</div>
   }
 
-  // El mismo motor que usa el calendario individual, jugador por jugador.
-  // Los índices se arman una vez y se comparten: son ciento tres llamadas
-  // sobre exactamente los mismos datos.
+  // Un solo índice compartido: son cien y pico de llamadas sobre los mismos datos.
   const indice = indexar(datos)
-  const calendarios = jugadores.map(j => ({ jugador: j, dias: calendarioJugador(j.id, desde, hoy, datos, indice) }))
-  const filas: Fila[] = calendarios.map(({ jugador: j, dias }) => {
-    const ind = indicadores(dias)
+  const calendarios: (CalendarioDeJugador & { completo: Jugador })[] = jugadores.map(j => ({
+    jugador: { id: j.id, nombre: j.nombre },
+    completo: j,
+    dias: calendarioJugador(j.id, desdeCarga, hasta > hoy ? hasta : hoy, datos, indice),
+  }))
+
+  const delPeriodo = calendarios.map(c => ({
+    ...c,
+    dias: c.dias.filter(d => d.fecha >= desde && d.fecha <= hasta),
+  }))
+
+  const conteo    = conteoDelRango(calendarios, desde, hasta)
+  const conteoPre = conteoDelRango(calendarios, desdeAnterior, hastaAnterior)
+  const delta     = diferencia(conteo, conteoPre)
+
+  const dias    = resumenPorDia(calendarios, desde, rango === 'semana' ? hasta : hasta)
+  const semanas = resumenPorSemana(calendarios, sumarSemanas(lunesDeLaSemana(hoy), -7), hoy)
+  const grupos  = resumenPorGrupo(calendarios, desde, hasta)
+  const gruposPre = new Map(resumenPorGrupo(calendarios, desdeAnterior, hastaAnterior).map(g => [g.nombre, g]))
+
+  const filas: Fila[] = delPeriodo.map(({ jugador, completo, dias: ds }) => {
+    const ind = indicadores(ds)
     return {
-      jugador: j,
-      programados: ind.programados,
-      presentes: ind.presentes,
-      ausentes: ind.ausentes,
-      pendientes: ind.pendientes,
-      porcentaje: ind.porcentaje,
-      rachaAusentes: ind.rachaAusentes,
+      jugador, jugadorCompleto: completo,
+      presentes: ind.presentes, ausentes: ind.ausentes,
+      porcentaje: ind.porcentaje, programados: ind.programados,
+      pendientes: ind.pendientes, rachaAusentes: ind.rachaAusentes,
+      ultimaAsistencia: ind.ultimaAsistencia,
     }
   }).filter(f => f.programados > 0)
 
-  const conDatos = filas.filter(f => f.porcentaje !== null)
-  const mejores  = [...conDatos].sort((a, b) => b.porcentaje! - a.porcentaje!).slice(0, 8)
-  const peores   = [...conDatos].sort((a, b) => a.porcentaje! - b.porcentaje!).slice(0, 8)
-  const enRiesgo = filas.filter(f => f.rachaAusentes >= 2).sort((a, b) => b.rachaAusentes - a.rachaAusentes)
-  const pendientes = filas.filter(f => f.pendientes > 0).sort((a, b) => b.pendientes - a.pendientes).slice(0, 12)
+  // La racha y la última asistencia se miran sobre TODO lo cargado, no sobre
+  // el período elegido: alguien que no viene hace tres semanas tiene que
+  // aparecer aunque se esté mirando solo esta semana.
+  const alertas = calendarios.map(({ jugador, completo, dias: ds }) => {
+    const ind = indicadores(ds)
+    return { jugador, completo, racha: ind.rachaAusentes, ultima: ind.ultimaAsistencia }
+  }).filter(a => a.racha >= 2).sort((a, b) => b.racha - a.racha)
 
-  const totPresentes = filas.reduce((s, f) => s + f.presentes, 0)
-  const totAusentes  = filas.reduce((s, f) => s + f.ausentes, 0)
-  const totPend      = filas.reduce((s, f) => s + f.pendientes, 0)
-  const totProg      = filas.reduce((s, f) => s + f.programados, 0)
-  const promedioClub = totPresentes + totAusentes > 0
-    ? Math.round((totPresentes / (totPresentes + totAusentes)) * 100) : null
+  const sinRegistrar = dias.filter(d => d.pendientes > 0 && d.fecha < hoy)
 
-  // Promedio por categoría y por grupo, sobre los mismos días.
-  function agrupar(clave: (f: Fila) => string | null) {
-    const m = new Map<string, { si: number; no: number; jugadores: number }>()
-    for (const f of filas) {
-      const k = clave(f) || '(sin asignar)'
-      const acc = m.get(k) ?? { si: 0, no: 0, jugadores: 0 }
-      acc.si += f.presentes; acc.no += f.ausentes; acc.jugadores++
-      m.set(k, acc)
-    }
-    return [...m.entries()]
-      .map(([k, v]) => ({ k, jugadores: v.jugadores, pct: v.si + v.no > 0 ? Math.round((v.si / (v.si + v.no)) * 100) : null }))
-      .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))
-  }
-
-  const porCategoria = agrupar(f => f.jugador.categoria)
-  const porSede      = agrupar(f => f.jugador.sede)
-
-  // Promedio por grupo de entrenamiento, día por día: cada jornada se cuenta en
-  // el bloque al que pertenecía ESE día (dia.bloques, ya resuelto por fecha en
-  // calendarioJugador), no en el bloque actual del jugador. Así un cambio de
-  // bloque a mitad del período no reescribe a qué grupo perteneció lo ya vivido.
-  const porGrupo = (() => {
-    const m = new Map<string, { si: number; no: number; jugadores: Set<string> }>()
-    for (const { jugador: j, dias } of calendarios) {
-      for (const d of dias) {
-        if (d.estado !== 'presente' && d.estado !== 'ausente') continue
-        for (const nombre of d.bloques) {
-          const acc = m.get(nombre) ?? { si: 0, no: 0, jugadores: new Set<string>() }
-          if (d.estado === 'presente') acc.si++; else acc.no++
-          acc.jugadores.add(j.id)
-          m.set(nombre, acc)
-        }
-      }
-    }
-    return [...m.entries()]
-      .map(([k, v]) => ({ k, jugadores: v.jugadores.size, pct: v.si + v.no > 0 ? Math.round((v.si / (v.si + v.no)) * 100) : null }))
-      .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))
-  })()
-
+  const flecha = delta === null ? null : delta > 0 ? '↑' : delta < 0 ? '↓' : '='
+  const colorDelta = delta === null ? hint : delta > 0 ? verde : delta < 0 ? rojo : muted
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: muted }}>Período:</span>
-        {[1, 3, 6, 12].map(n => (
-          <button key={n} onClick={() => { setCargando(true); setMeses(n) }}
-            style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
-              border: `1px solid ${meses === n ? '#4f46e5' : '#e2e8f0'}`,
-              background: meses === n ? '#4f46e5' : '#fff',
-              color: meses === n ? '#fff' : muted }}>
-            {n === 1 ? '1 mes' : `${n} meses`}
+      {/* ── Selector de período ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 8, padding: 3 }}>
+          {(['semana', 'mes', 'trimestre'] as const).map(r => (
+            <div key={r} onClick={() => { setRango(r); setAtras(0); setDiaAbierto(null) }}
+              style={{ padding: '5px 14px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                background: rango === r ? '#fff' : 'transparent', color: rango === r ? '#3730a3' : muted,
+                textTransform: 'capitalize' }}>
+              {r}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button onClick={() => { setAtras(a => a + 1); setDiaAbierto(null) }} title="Período anterior"
+            style={{ padding: 5, borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex' }}>
+            <ChevronLeft size={15} color={muted} />
           </button>
-        ))}
-        <span style={{ fontSize: 11, color: hint }}>{desde} al {hoy}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: text, minWidth: 130, textAlign: 'center' }}>{etiqueta}</span>
+          <button onClick={() => { setAtras(a => Math.max(0, a - 1)); setDiaAbierto(null) }} disabled={atras === 0} title="Período siguiente"
+            style={{ padding: 5, borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff',
+              cursor: atras === 0 ? 'default' : 'pointer', opacity: atras === 0 ? 0.4 : 1, display: 'flex' }}>
+            <ChevronRight size={15} color={muted} />
+          </button>
+        </div>
 
         <div style={{ position: 'relative', marginLeft: 'auto' }}>
           <button onClick={() => setSelectorAbierto(v => !v)} disabled={descargando}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 20,
               cursor: descargando ? 'not-allowed' : 'pointer', border: '1px solid #4f46e5', background: '#4f46e5', color: '#fff' }}>
             <Download size={13} />
-            {descargando ? 'Generando...' : 'Descargar asistencia por bloque'}
+            {descargando ? 'Generando...' : 'Descargar por bloque'}
           </button>
           {selectorAbierto && (
             <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 10, background: '#fff', border: '1px solid #e2e8f0',
@@ -259,61 +321,190 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
         </div>
       </div>
 
-      {/* Administración: el club de un vistazo */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-        {([
-          ['Asistencia del club', promedioClub === null ? '—' : `${promedioClub}%`, color(promedioClub)],
-          ['Entrenamientos programados', String(totProg), text],
-          ['Realizados y registrados', String(totPresentes + totAusentes), text],
-          ['Sin registrar', String(totPend), totPend > 0 ? azul : muted],
-        ] as const).map(([label, valor, c]) => (
-          <div key={label} style={{ ...card, padding: 14 }}>
-            <div style={{ fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: c, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>{valor}</div>
+      {/* ── El número y su comparación ── */}
+      <div style={{ ...card, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+            Asistencia · {etiqueta.toLowerCase()}
           </div>
-        ))}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 2 }}>
+            <span style={{ fontSize: 36, fontWeight: 800, color: color(conteo.porcentaje), fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+              {conteo.porcentaje === null ? '—' : `${conteo.porcentaje}%`}
+            </span>
+            {flecha && (
+              <span style={{ fontSize: 14, fontWeight: 700, color: colorDelta }}>
+                {flecha} {Math.abs(delta!)} pts
+                <span style={{ fontSize: 11, fontWeight: 500, color: hint }}> vs período anterior</span>
+              </span>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 22, marginLeft: 'auto', flexWrap: 'wrap' }}>
+          {([['Vinieron', conteo.presentes, verde], ['Faltaron', conteo.ausentes, rojo],
+             ['Sin registrar', conteo.pendientes, conteo.pendientes > 0 ? azul : hint]] as const).map(([l, v, c]) => (
+            <div key={l}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: c, fontVariantNumeric: 'tabular-nums' }}>{v}</div>
+              <div style={{ fontSize: 10, color: muted, fontWeight: 600, textTransform: 'uppercase' }}>{l}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {totPend > 0 && (
-        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '11px 15px', fontSize: 13, color: '#1e40af' }}>
-          Hay <strong>{totPend}</strong> entrenamientos sin registrar en el período. Quedan fuera del
-          porcentaje: no son faltas, es lista que no se pasó.
+      {/* ── La tira de días: solo tiene sentido en la vista semanal ── */}
+      {rango === 'semana' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+          {dias.filter(d => d.dia !== 'sab' && d.dia !== 'dom').map(d => {
+            const esHoy = d.fecha === hoy
+            const futuro = d.fecha > hoy
+            const vacio = d.programados === 0
+            const abierto = diaAbierto === d.fecha
+            return (
+              <div key={d.fecha}
+                onClick={() => !vacio && setDiaAbierto(abierto ? null : d.fecha)}
+                style={{ ...card, padding: '12px 10px', cursor: vacio ? 'default' : 'pointer',
+                  opacity: futuro || vacio ? 0.55 : 1,
+                  border: abierto ? '2px solid #4f46e5' : esHoy ? '2px solid #c7d2fe' : '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 10, color: esHoy ? '#4f46e5' : muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  {DIA_LARGO[d.dia] ?? d.dia}{esHoy ? ' · hoy' : ''}
+                </div>
+                <div style={{ fontSize: 10, color: hint, marginBottom: 6 }}>{fechaCorta(d.fecha)}</div>
+                {vacio ? (
+                  <div style={{ fontSize: 12, color: hint }}>Sin clases</div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 26, fontWeight: 800, color: color(d.porcentaje), fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                      {d.porcentaje === null ? '—' : `${d.porcentaje}%`}
+                    </div>
+                    <div style={{ fontSize: 11, color: muted, marginTop: 3 }}>
+                      {d.presentes} vino{d.presentes === 1 ? '' : 'n'} · {d.ausentes} faltó{d.ausentes === 1 ? '' : 'n'}
+                    </div>
+                    {d.pendientes > 0 && (
+                      <div style={{ fontSize: 10, color: azul, marginTop: 2, fontWeight: 600 }}>{d.pendientes} sin registrar</div>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-        <Tabla titulo="Mejor asistencia" filas={mejores} />
-        <Tabla titulo="Menor asistencia" nota="Con quiénes conviene hablar" filas={peores} />
-      </div>
+      {/* Detalle del día que se abrió */}
+      {diaAbierto && (
+        <Seccion titulo={`${DIA_LARGO[dias.find(d => d.fecha === diaAbierto)?.dia ?? ''] ?? ''} ${fechaCorta(diaAbierto)}`}
+          nota="Quiénes faltaron ese día, por grupo">
+          <div style={{ padding: '12px 16px' }}>
+            {(() => {
+              const faltaron = calendarios
+                .map(c => ({ c, d: c.dias.find(x => x.fecha === diaAbierto && x.estado === 'ausente') }))
+                .filter(x => x.d)
+              if (!faltaron.length) return <div style={{ fontSize: 13, color: verde, fontWeight: 600 }}>✅ No faltó nadie</div>
+              const porGrupo = new Map<string, string[]>()
+              for (const { c, d } of faltaron) {
+                for (const g of d!.bloques) porGrupo.set(g, [...(porGrupo.get(g) ?? []), c.jugador.nombre])
+              }
+              return [...porGrupo.entries()].map(([grupo, nombres]) => (
+                <div key={grupo} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: text }}>{grupo} <span style={{ color: rojo }}>({nombres.length})</span></div>
+                  <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>{nombres.join(' · ')}</div>
+                </div>
+              ))
+            })()}
+          </div>
+        </Seccion>
+      )}
 
-      <Tabla titulo="Faltas seguidas"
-        nota="Los que vienen faltando de corrido, del que más lleva al que menos"
-        filas={enRiesgo}
-        extra={f => <span style={{ color: rojo, fontWeight: 700 }}>{f.rachaAusentes} seguidas</span>} />
-
-      <Tabla titulo="Pendientes de registrar"
-        nota="Días que les tocaba entrenar y nadie marcó nada"
-        filas={pendientes}
-        extra={f => <span style={{ color: azul, fontWeight: 700 }}>{f.pendientes} días</span>} />
-
-      {/* Promedios por corte */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-        {([['Por grupo', porGrupo], ['Por categoría', porCategoria], ['Por sede', porSede]] as const).map(([titulo, filas]) => (
-          <div key={titulo} style={{ ...card, overflow: 'hidden' }}>
-            <div style={{ padding: '13px 16px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text }}>{titulo}</div>
+      {/* ── Lo accionable ── */}
+      {alertas.length > 0 && (
+        <Seccion titulo={`🔴 Dejaron de venir (${alertas.length})`}
+          nota="Faltas seguidas, del que más lleva al que menos. Mirado sobre todo el historial, no solo este período.">
+          <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <tbody>
-                {filas.map(f => (
-                  <tr key={f.k}>
-                    <td style={{ ...td, fontWeight: 600 }}>{f.k}</td>
-                    <td style={{ ...num, color: muted }}>{f.jugadores} jug.</td>
-                    <td style={{ ...num, color: color(f.pct), fontWeight: 700 }}>{f.pct === null ? '—' : `${f.pct}%`}</td>
+                {alertas.map(a => (
+                  <tr key={a.jugador.id}>
+                    <td style={{ ...td, fontWeight: 600 }}>{a.jugador.nombre}</td>
+                    <td style={{ ...td, color: rojo, fontWeight: 700, whiteSpace: 'nowrap' }}>{a.racha} faltas seguidas</td>
+                    <td style={{ ...td, color: muted, fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {a.ultima ? `vino hace ${diasDesde(a.ultima, hoy)} días` : 'nunca vino'}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      {a.completo.telefono && (
+                        <WhatsAppBtn variant="compact" href={linkWhatsApp(a.completo.telefono,
+                          `Hola ${a.jugador.nombre.split(' ')[0]}! 👋 Te echamos de menos en los entrenamientos. ¿Todo bien? Cualquier cosa nos avisás.`) ?? ''} />
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ))}
+        </Seccion>
+      )}
+
+      {sinRegistrar.length > 0 && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: '11px 15px', fontSize: 13, color: '#1e40af' }}>
+          🔵 Falta pasar lista de <strong>{sinRegistrar.length}</strong> día{sinRegistrar.length === 1 ? '' : 's'}:{' '}
+          {sinRegistrar.map(d => fechaCorta(d.fecha)).join(', ')}. No son faltas — es lista que no se pasó, y por eso
+          queda fuera del porcentaje.
+        </div>
+      )}
+
+      {/* ── Por grupo, con su tendencia ── */}
+      <Seccion titulo="Por grupo" nota="Cómo viene cada uno, comparado con el período anterior">
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <tbody>
+            {grupos.map(g => {
+              const pre = gruposPre.get(g.nombre)
+              const d = pre ? diferencia(g, pre) : null
+              return (
+                <tr key={g.nombre}>
+                  <td style={{ ...td, fontWeight: 600 }}>{g.nombre}</td>
+                  <td style={{ ...num, color: muted, fontSize: 12 }}>{g.jugadores} jug.</td>
+                  <td style={{ ...num, color: muted, fontSize: 12 }}>{g.presentes}/{g.presentes + g.ausentes}</td>
+                  <td style={{ ...num, color: color(g.porcentaje), fontWeight: 700 }}>
+                    {g.porcentaje === null ? '—' : `${g.porcentaje}%`}
+                  </td>
+                  <td style={{ ...num, fontSize: 12, fontWeight: 700, color: d === null ? hint : d > 0 ? verde : d < 0 ? rojo : muted, whiteSpace: 'nowrap' }}>
+                    {d === null ? '—' : d === 0 ? '=' : `${d > 0 ? '↑' : '↓'} ${Math.abs(d)}`}
+                  </td>
+                </tr>
+              )
+            })}
+            {grupos.length === 0 && (
+              <tr><td style={{ ...td, textAlign: 'center', color: hint }}>Sin entrenamientos en este período</td></tr>
+            )}
+          </tbody>
+        </table>
+      </Seccion>
+
+      {/* ── Lo macro, comprimido ── */}
+      <Seccion titulo="Últimas 8 semanas" nota="La tendencia del club, semana a semana">
+        <div style={{ padding: '16px 16px 12px', display: 'flex', alignItems: 'flex-end', gap: 6, height: 110 }}>
+          {semanas.map(s => (
+            <div key={s.inicio} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: color(s.porcentaje), fontVariantNumeric: 'tabular-nums' }}>
+                {s.porcentaje === null ? '' : `${s.porcentaje}%`}
+              </div>
+              <div title={`Semana del ${fechaCorta(s.inicio)}`}
+                style={{ width: '100%', height: Math.max(3, (s.porcentaje ?? 0) * 0.6),
+                  background: s.porcentaje === null ? '#e2e8f0' : color(s.porcentaje),
+                  borderRadius: '4px 4px 0 0', opacity: s.porcentaje === null ? 0.5 : 0.85 }} />
+              <div style={{ fontSize: 9, color: hint, whiteSpace: 'nowrap' }}>{fechaCorta(s.inicio)}</div>
+            </div>
+          ))}
+        </div>
+      </Seccion>
+
+      {/* ── Rankings: siguen estando, pero ya no ocupan la pantalla ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        <Seccion titulo="Menor asistencia" plegable
+          nota="Todo el club, de peor a mejor. A igual porcentaje va primero el que más faltó.">
+          <TablaJugadores filas={ordenarPorRiesgo(filas) as Fila[]} />
+        </Seccion>
+        <Seccion titulo="Mejor asistencia" plegable nota="Todo el club, de mejor a peor.">
+          <TablaJugadores filas={ordenarPorMerito(filas) as Fila[]} />
+        </Seccion>
       </div>
     </div>
   )
