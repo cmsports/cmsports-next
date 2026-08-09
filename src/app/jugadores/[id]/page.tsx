@@ -807,7 +807,7 @@ export default function JugadorDetallePage() {
 
       {/* ── Header compacto ── */}
       <div style={{ background:'linear-gradient(135deg,#3730a3,#4f46e5)', borderRadius:16, padding:'20px 24px', marginBottom:20 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+        <div className="header-jugador" style={{ display:'flex', alignItems:'center', gap:16 }}>
           <div
             onClick={() => esAdmin && setModalFoto(true)}
             title={esAdmin ? 'Cambiar foto' : undefined}

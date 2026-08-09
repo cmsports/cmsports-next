@@ -441,7 +441,7 @@ export default function JugadoresPage() {
           onChange={e => setBusqueda(e.target.value)}
         />
         {/* Filtros */}
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+        <div className="filtros-desktop" style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
           <FiltroMultiSelect
             label="Todas las categorías"
             options={categorias.map(c => ({ value:c, label:c }))}
@@ -497,7 +497,7 @@ export default function JugadoresPage() {
         </div>
 
         {/* Fila 2: filtros avanzados */}
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
+        <div className="filtros-desktop" style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
           <FiltroMultiSelect
             label="Sede"
             options={SEDES.map(s => ({ value: s.value, label: s.label }))}
@@ -567,7 +567,7 @@ export default function JugadoresPage() {
 
         {/* Chips de filtros activos */}
         {chipsActivos.length > 0 && (
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
+          <div className="filtros-desktop" style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center', marginTop:8, paddingTop:8, borderTop:'1px solid #f1f5f9' }}>
             {chipsActivos.map(chip => (
               <span key={chip.key} style={{ display:'inline-flex', alignItems:'center', gap:5, background:'#eff6ff', border:'1px solid #bfdbfe', color:'#1d4ed8', borderRadius:999, padding:'3px 6px 3px 10px', fontSize:12 }}>
                 {chip.label}
@@ -584,8 +584,35 @@ export default function JugadoresPage() {
         )}
       </div>
 
+      {/* Vista mobile — solo nombre + ver perfil */}
+      <div className="lista-jugadores-mobile" style={{ display:'none' }}>
+        {filtrados.map((j, i) => {
+          const foto = (j.foto_path ? fotosFirmadas[j.foto_path] : j.foto_url) || null
+          const ini = j.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()
+          return (
+            <div key={j.id} onClick={() => router.push(`/jugadores/${j.id}`)} style={{
+              ...card, padding:'12px 14px', marginBottom:8, display:'flex', alignItems:'center', gap:12, cursor:'pointer',
+            }}>
+              <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg,#3730a3,#4f46e5)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'white', overflow:'hidden', flexShrink:0 }}>
+                {foto ? <img src={foto} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : ini}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:14, fontWeight:600, color: text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{j.nombre}</div>
+                <div style={{ fontSize:11, color: hint }}>{j.categoria || '—'}</div>
+              </div>
+              <span style={{ fontSize:12, color:'#3730a3', fontWeight:600, flexShrink:0 }}>Ver →</span>
+            </div>
+          )
+        })}
+        {filtrados.length === 0 && (
+          <div style={{ padding:40, textAlign:'center', color: hint, fontSize:13 }}>
+            {busqueda ? 'No se encontraron jugadores' : 'Sin jugadores registrados'}
+          </div>
+        )}
+      </div>
+
       {/* Vista tabla — pantallas medianas y grandes */}
-      <div style={{ ...card, overflow:'hidden' }}>
+      <div className="tabla-jugadores" style={{ ...card, overflow:'hidden' }}>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:600 }}>
             <thead>
