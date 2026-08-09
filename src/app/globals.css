@@ -733,6 +733,17 @@ html.dark [style*="linear-gradient(135deg"] {
   }
 }
 
+/* ── RESPONSIVE: grids y tabs en móvil ── */
+@media (max-width: 768px) {
+  .grid-responsive-2 { grid-template-columns: 1fr 1fr !important; }
+  .grid-responsive-1 { grid-template-columns: 1fr !important; }
+  .tabs-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabs-scroll > div { white-space: nowrap; min-width: min-content; }
+  .header-responsive { flex-direction: column; align-items: stretch !important; gap: 10px !important; }
+  .header-responsive > * { width: 100%; }
+  .header-responsive > div { justify-content: center; }
+}
+
 /* ── 14. TRANSICIÓN SUAVE ── */
 html.dark body,
 html.dark .sidebar,

@@ -304,7 +304,7 @@ export default function DashboardPage() {
     <AppLayout perfil={perfil}>
 
       {/* ── Cabecera ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
+      <div className="header-responsive" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 600, color: C.text, marginBottom: 2 }}>
             {new Date().getHours() < 12 ? 'Buenos días' : new Date().getHours() < 20 ? 'Buenas tardes' : 'Buenas noches'}{perfil?.nombre ? `, ${perfil.nombre.split(' ')[0]}` : ''}
@@ -377,7 +377,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── KPIs ── */}
-      <div className="anim-lista" style={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (tiene('finanzas') ? 3 : 0)},1fr)`, gap: 14, marginBottom: 16 }}>
+      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (tiene('finanzas') ? 3 : 0)},1fr)`, gap: 14, marginBottom: 16 }}>
 
         {/* Jugadores activos */}
         <KpiCard
@@ -457,7 +457,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
-      <div className="anim-lista" style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
 
         {/* Gastos este mes */}
         {tiene('finanzas') && (

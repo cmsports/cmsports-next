@@ -366,7 +366,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       </div>
 
       {/* KPIs */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
+      <div className="grid-responsive-2" style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
         {(alcance === 'deuda' ? [
           { label:'👥 Deudores', value:deudores.length, color:'#dc2626', bg:'#fef2f2' },
           { label:'🧾 Cuotas impagas', value:cuotasImpagas, color:'#d97706', bg:'#fffbeb' },

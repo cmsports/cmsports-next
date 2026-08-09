@@ -376,20 +376,20 @@ function FinanzasContent() {
   return (
     <AppLayout perfil={perfil}>
       {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:10 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+      <div className="header-responsive" style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:10 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center' }}>
           <button onClick={() => cambiarMes(-1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>◀</button>
           <span style={{ fontSize:16, fontWeight:600, color: text, minWidth:160, textAlign:'center' }}>{mesesN[mes-1]} {anio}</span>
           <button onClick={() => cambiarMes(1)} style={{ ...card, border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 12px', color: muted, cursor:'pointer' }}>▶</button>
         </div>
-        <div style={{ display:'flex', gap:8 }}>
+        <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
           <button onClick={exportarExcel} style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:13, cursor:'pointer' }}>📊 Exportar Excel</button>
           <button onClick={abrirNuevo} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}>➕ Movimiento</button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:20 }}>
+      <div className="tabs-scroll" style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:20 }}>
         {[
           { key:'movimientos', label:'📋 Movimientos' },
           { key:'mensualidades', label:'💳 Mensualidades' },
@@ -397,7 +397,7 @@ function FinanzasContent() {
           { key:'reportes', label:'📈 Reportes' },
         ].map(t => (
           <div key={t.key} onClick={() => { setTabActivo(t.key as any); if (t.key === 'mensualidades') setMensualidadesVista(true) }}
-            style={{ flex:1, padding:'9px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabActivo===t.key?'#ffffff':'transparent', color:tabActivo===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabActivo===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
+            style={{ flex:'1 0 auto', padding:'9px 12px', textAlign:'center', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:500, background:tabActivo===t.key?'#ffffff':'transparent', color:tabActivo===t.key?'#3730a3': muted, transition:'all 0.15s', boxShadow: tabActivo===t.key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
             {t.label}
           </div>
         ))}
@@ -405,7 +405,7 @@ function FinanzasContent() {
 
       <div style={{ display: tabActivo === 'movimientos' ? 'block' : 'none' }}>
       {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
+      <div className="grid-responsive-1" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:20 }}>
         {[
           { label:'💰 Ingresos', value:fmt(ingresos), color:'#16a34a', bg:'#f0fdf4' },
           { label:'💸 Gastos', value:fmt(gastos), color:'#dc2626', bg:'#fef2f2' },
@@ -419,7 +419,7 @@ function FinanzasContent() {
       </div>
 
       {/* Desglose */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
+      <div className="grid-responsive-1" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
         <div style={{ ...card, padding:16 }}>
           <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💰 Ingresos por categoría</div>
           {Object.entries(desgloseIngresos).length === 0
