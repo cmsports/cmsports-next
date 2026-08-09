@@ -116,20 +116,24 @@ if (sinGrupo.length) {
 // ══ 5. Cuentas de acceso ══════════════════════════════════════════════════
 console.log('\n5. Acceso de los jugadores\n')
 
-const { data: perfiles } = await db.from('perfiles').select('id,jugador_id,rol').eq('club_id', BUIN).not('jugador_id', 'is', null)
+const { data: perfiles } = await db.from('perfiles').select('id,nombre,email,jugador_id,rol').eq('club_id', BUIN).not('jugador_id', 'is', null)
 const idsJug = new Set((jugs ?? []).map(j => j.id))
-// Solo las cuentas que apuntan a un jugador ACTIVO. Contar todas daba "123 de
-// 113", que es imposible y delataba que las huérfanas se estaban colando.
 const conCuenta = new Set((perfiles ?? []).map(p => p.jugador_id).filter(id => idsJug.has(id)))
 const sinCuenta = (jugs ?? []).filter(j => !conCuenta.has(j.id))
 console.log(`   ${conCuenta.size} de ${jugs?.length} jugadores activos tienen cuenta`)
-if (sinCuenta.length) aviso(`${sinCuenta.length} no pueden entrar a ver su estado de cuenta`)
+for (const j of sinCuenta) aviso(`${j.nombre} no puede entrar a ver su estado de cuenta`)
 
-// Perfiles apuntando a un jugador que ya no existe: es el caso que colgaba la
-// pantalla antes del arreglo de /sin-club.
-const huerfanos = (perfiles ?? []).filter(p => !idsJug.has(p.jugador_id))
-if (huerfanos.length) aviso(`${huerfanos.length} perfil(es) apuntan a un jugador que ya no está (pueden ser bajas: caen en /sin-club)`)
-else ok('ningún perfil apunta a un jugador inexistente')
+// Un perfil solo es huérfano si su jugador NO EXISTE. Antes se comparaba
+// contra los activos, así que los bloqueados —que existen, están bloqueados y
+// van a /cuenta-bloqueada como corresponde— salían denunciados como huérfanos.
+// Eran 11 reportados por 8 reales.
+const { data: todosJug } = await db.from('jugadores').select('id').eq('club_id', BUIN)
+const idsExisten = new Set((todosJug ?? []).map(j => j.id))
+const huerfanos = (perfiles ?? []).filter(p => !idsExisten.has(p.jugador_id))
+if (huerfanos.length) {
+  aviso(`${huerfanos.length} cuenta(s) cuyo jugador fue borrado: pueden iniciar sesión y ven "Perfil no vinculado"`)
+  for (const p of huerfanos) console.log(`       · ${p.nombre ?? '(sin nombre)'} — ${p.email ?? ''}`)
+} else ok('ninguna cuenta apunta a un jugador borrado')
 
 // ══ 6. Teléfonos que WhatsApp no acepta ═══════════════════════════════════
 console.log('\n6. Teléfonos que el botón de WhatsApp va a rechazar\n')
@@ -146,10 +150,11 @@ if (malos.length) {
   for (const j of malos.slice(0, 6)) console.log(`       · ${j.nombre}: "${j.telefono}"`)
 } else ok('todos los teléfonos cargados sirven para WhatsApp')
 
-const { data: clubes } = await db.from('clubes').select('nombre,telefono')
-for (const c of clubes ?? []) {
-  if (!wa(c.telefono)) aviso(`club "${c.nombre}" sin teléfono usable ("${c.telefono ?? ''}") — sus jugadores no ven el botón de comprobante`)
-}
+// Solo Buin. Los otros clubes de la base no son alcance de este proyecto y
+// meterlos acá solo ensucia el informe con problemas de otro.
+const { data: club } = await db.from('clubes').select('nombre,telefono').eq('id', BUIN).single()
+if (!wa(club?.telefono)) aviso(`el club no tiene teléfono usable ("${club?.telefono ?? ''}") — los jugadores no ven el botón de comprobante`)
+else ok(`teléfono del club: ${club.telefono}`)
 
 // ══ 7. Cierre ═════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(62)}`)
