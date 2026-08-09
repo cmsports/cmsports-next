@@ -1129,12 +1129,15 @@ export default function JugadorDetallePage() {
                 <div>
                   <div style={{ fontSize:12, fontWeight:600, color:'#a16207' }}>🟡 Costo clase extra</div>
                   <div style={{ fontSize:11, color: hint, marginTop:1 }}>
-                    {/* Antes contaba acá las de monto 0 y decía "3 clases sin
-                        cobrar · $3.000" cuando dos eran sin cargo. Se cuentan
-                        las que de verdad se cobran, y las gratis se nombran. */}
-                    {cuentaExtras.porCobrar.length} clase{cuentaExtras.porCobrar.length === 1 ? '' : 's'} sin cobrar
-                    {extrasSinMonto > 0 ? ` · ${extrasSinMonto} sin monto` : ''}
-                    {cuentaExtras.sinCargo.length > 0 ? ` · ${cuentaExtras.sinCargo.length} sin cargo` : ''}
+                    {/* Se nombra solo lo que hay. Antes contaba las de monto 0
+                        como cobrables —"3 clases sin cobrar · $3.000" con dos
+                        gratis—, y arreglarlo a secas dejaba el caso de Benjamín
+                        diciendo "0 clases sin cobrar · 1 sin cargo". */}
+                    {[
+                      cuentaExtras.porCobrar.length > 0 && `${cuentaExtras.porCobrar.length} clase${cuentaExtras.porCobrar.length === 1 ? '' : 's'} sin cobrar`,
+                      extrasSinMonto > 0 && `${extrasSinMonto} sin monto`,
+                      cuentaExtras.sinCargo.length > 0 && `${cuentaExtras.sinCargo.length} sin cargo`,
+                    ].filter(Boolean).join(' · ')}
                   </div>
                 </div>
                 <div style={{ fontSize:18, fontWeight:800, color:'#a16207', fontVariantNumeric:'tabular-nums' }}>
