@@ -77,6 +77,10 @@ export default function SolicitudesPage() {
     talla_polera: '', talla_short: '',
   })
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '' })
+  // Arranca sin marcar: el que recién entra solo figura con la matrícula al día
+  // si la pagó en este momento. Los jugadores que ya venían quedaron marcados
+  // por la migración 138, que es otra cosa.
+  const [matriculaForm, setMatriculaForm] = useState({ pagada: false, monto: '' })
   // Los grupos se eligen al aprobar: si entra sin bloque queda invisible para
   // la asistencia y no puede marcarse solo desde la app.
   const [bloquesClub, setBloquesClub] = useState<BloqueHorario[]>([])
@@ -160,6 +164,8 @@ export default function SolicitudesPage() {
       mensualidad: montoIngresado(planForm.mensualidad),
       sesiones_limite: ses,
       bloqueIds: [...bloquesSel],
+      matriculaPagada: matriculaForm.pagada,
+      matriculaMonto: matriculaForm.pagada ? montoIngresado(matriculaForm.monto) : null,
     })
     setAprobando(false)
     if (res.error) { setErrorAprobar(res.error); return }
@@ -305,6 +311,7 @@ export default function SolicitudesPage() {
                               passwordConfirm: '',
                             })
                             setPlanForm({ categoria: catAuto, tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '' })
+                            setMatriculaForm({ pagada: false, monto: '' })
                             setErrorAprobar('')
                           }}
                             style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -477,6 +484,32 @@ export default function SolicitudesPage() {
               </div>
               <input type="number" placeholder="Monto personalizado" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
                 value={planForm.mensualidad} onChange={e => setPlanForm(f => ({ ...f, mensualidad: e.target.value }))} />
+
+              {/* Matrícula: se pregunta acá porque es el momento en que se
+                  cobra. Si no la paga ahora, la ficha queda pendiente y se
+                  cobra después desde su perfil. */}
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: text }}>
+                  <input type="checkbox" checked={matriculaForm.pagada}
+                    onChange={e => setMatriculaForm(f => ({ ...f, pagada: e.target.checked }))}
+                    style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#16a34a' }} />
+                  🎓 Pagó la matrícula
+                </label>
+                {matriculaForm.pagada ? (
+                  <>
+                    <input type="number" min={0} placeholder="Monto de la matrícula"
+                      style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none', marginTop: 8 }}
+                      value={matriculaForm.monto} onChange={e => setMatriculaForm(f => ({ ...f, monto: e.target.value }))} />
+                    <div style={{ fontSize: 11, color: hint, marginTop: 5 }}>
+                      Se registra como ingreso en Finanzas. Poné <strong>0</strong> si se la eximís.
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: hint, marginTop: 5 }}>
+                    Queda como pendiente en su ficha; se puede cobrar después.
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* SECCIÓN: Credenciales */}

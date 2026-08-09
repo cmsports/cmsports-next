@@ -200,6 +200,9 @@ export interface Database {
           sede: string | null
           talla_polera: string | null
           talla_short: string | null
+          matricula_pagada: boolean
+          matricula_monto: number | null
+          matricula_fecha: string | null
         }
         Insert: {
           id?: string
@@ -237,6 +240,9 @@ export interface Database {
           sede?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          matricula_pagada?: boolean
+          matricula_monto?: number | null
+          matricula_fecha?: string | null
         }
         Update: {
           id?: string
@@ -274,6 +280,9 @@ export interface Database {
           sede?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          matricula_pagada?: boolean
+          matricula_monto?: number | null
+          matricula_fecha?: string | null
         }
         Relationships: [
           { foreignKeyName: 'jugadores_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
@@ -2099,6 +2108,14 @@ export interface Database {
           p_torneo_id: string
           p_torneo_nombre: string
           p_gastos: Json
+          p_idempotency_key: string
+        }
+        Returns: Json
+      }
+      registrar_pago_matricula_atomico: {
+        Args: {
+          p_jugador_id: string
+          p_monto: number
           p_idempotency_key: string
         }
         Returns: Json

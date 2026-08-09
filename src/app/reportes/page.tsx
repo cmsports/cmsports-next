@@ -18,7 +18,7 @@ const hint = '#94a3b8'
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
 const catLabel: Record<string, string> = {
-  mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo',
+  mensualidad:'Mensualidad', matricula:'Matrícula', inscripcion_torneo:'Inscripción torneo',
   inscripcion_liga:'Inscripción liga', premio_torneo:'Premio torneo',
   arriendo_cancha:'Arriendo cancha', donacion:'Donación', otro_ingreso:'Otro ingreso',
   sueldo_profesor:'Sueldo profesor', sueldo_staff:'Sueldo staff',

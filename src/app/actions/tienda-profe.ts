@@ -1,21 +1,20 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
+import { requireStaffClub } from '@/lib/auth/require'
 import type { Database } from '@/types/database'
 
 type TiendaBuinUpdate = Database['public']['Tables']['tienda_buin_productos']['Update']
 
 const BUCKET = 'galeria-fotos'
 
+// Delega en el guard compartido: la regla de quién es staff vive en un solo
+// lugar (require.ts). Acá solo se le suma el cliente de servicio, que es lo
+// único propio de las tiendas —suben imágenes al bucket—.
 async function requireProfesor() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado', admin: null, clubId: null }
-  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol').eq('id', user.id).single()
-  if (!perfil?.club_id || !['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? ''))
-    return { error: 'Acceso denegado', admin: null, clubId: null }
-  return { error: null, admin: createAdminClient(), clubId: perfil.club_id as string }
+  const { error, clubId } = await requireStaffClub()
+  if (error || !clubId) return { error, admin: null, clubId: null }
+  return { error: null, admin: createAdminClient(), clubId }
 }
 
 function parsearBase64(base64: string) {

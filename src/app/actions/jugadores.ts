@@ -180,6 +180,55 @@ export async function editarJugador(params: {
   return { success: true }
 }
 
+/**
+ * Marca la matrícula como pagada y, si hubo monto, la registra en Finanzas.
+ *
+ * Las dos cosas van juntas en un RPC porque tienen que pasar o no pasar a la
+ * vez: si el flag se guardara acá y el movimiento fallara después, quedaría un
+ * jugador "al día" con plata que el club recibió y no figura en ningún lado.
+ *
+ * Monto 0 es válido y significa que se le eximió la matrícula: queda marcada y
+ * Finanzas no se toca, porque no hubo ingreso que registrar.
+ */
+export async function registrarMatricula(params: {
+  jugadorId: string
+  monto: number
+  idempotencyKey?: string
+}) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+  if (!Number.isFinite(params.monto) || params.monto < 0) return { error: 'El monto no puede ser negativo' }
+
+  const { error } = await supabase.rpc('registrar_pago_matricula_atomico', {
+    p_jugador_id: params.jugadorId,
+    p_monto: Math.round(params.monto),
+    p_idempotency_key: params.idempotencyKey ?? crypto.randomUUID(),
+  })
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+/**
+ * Desmarca la matrícula, sin tocar Finanzas.
+ *
+ * El ingreso que se haya registrado antes se queda donde está: esa plata entró
+ * de verdad y un mes ya cerrado no cambia de saldo porque después alguien
+ * corrija el estado de la ficha. Desmarcar significa "de acá en adelante
+ * figura como no pagada", no "nunca pagó".
+ */
+export async function desmarcarMatricula(params: { jugadorId: string }) {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const { data, error } = await supabase.from('jugadores')
+    .update({ matricula_pagada: false })
+    .eq('id', params.jugadorId).eq('club_id', clubId)
+    .select('id').maybeSingle()
+  if (error) return { error: error.message }
+  if (!data) return { error: 'Jugador no encontrado' }
+  return { success: true }
+}
+
 export async function actualizarMensualidad(params: { jugadorId: string; mensualidad: number }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }

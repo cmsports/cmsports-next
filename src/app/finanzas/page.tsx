@@ -27,7 +27,7 @@ const hint = '#94a3b8'
 // llevan tildes. Al agregar una categoría hay que tocar los dos lados: si falta
 // en este mapa, el movimiento se muestra con su nombre interno crudo.
 const catLabel: Record<string, string> = {
-  mensualidad:'Mensualidad', inscripcion_torneo:'Inscripción torneo',
+  mensualidad:'Mensualidad', matricula:'Matrícula', inscripcion_torneo:'Inscripción torneo',
   inscripcion_liga:'Inscripción liga', premio_torneo:'Premio torneo',
   arriendo_cancha:'Arriendo cancha', donacion:'Donación',
   clase_extraordinaria:'Clase extra', otro_ingreso:'Otro ingreso',
@@ -39,7 +39,7 @@ const catLabel: Record<string, string> = {
 // La clase extra no está en esta lista a propósito: se cobra desde su propia
 // sección, que además marca la clase como pagada. Cargarla a mano crearía el
 // ingreso y dejaría la clase figurando como impaga para siempre.
-const categoriasIngreso = ['mensualidad','inscripcion_torneo','inscripcion_liga','arriendo_cancha','donacion','otro_ingreso']
+const categoriasIngreso = ['mensualidad','matricula','inscripcion_torneo','inscripcion_liga','arriendo_cancha','donacion','otro_ingreso']
 const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','material_deportivo','servicios_basicos','mantenimiento','otro_gasto']
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']

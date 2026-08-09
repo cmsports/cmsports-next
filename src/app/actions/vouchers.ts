@@ -1,21 +1,10 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
-
-async function requireStaff() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null }
-  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol').eq('id', user.id).single()
-  if (!perfil?.club_id || !['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
-    return { error: 'Acceso denegado' as const, supabase: null, clubId: null }
-  }
-  return { error: null, supabase, clubId: perfil.club_id! }
-}
+import { requireStaffClub } from '@/lib/auth/require'
 
 export async function subirVoucher(params: { nombre: string; base64: string; marca?: string | null }) {
-  const { error: authErr, clubId } = await requireStaff()
+  const { error: authErr, clubId } = await requireStaffClub()
   if (authErr) return { error: authErr }
 
   const mimeMatch = params.base64.match(/^data:(image\/\w+);base64,/)
@@ -48,7 +37,7 @@ export async function subirVoucher(params: { nombre: string; base64: string; mar
 }
 
 export async function eliminarVoucher(params: { id: string }) {
-  const { error: authErr, clubId } = await requireStaff()
+  const { error: authErr, clubId } = await requireStaffClub()
   if (authErr) return { error: authErr }
 
   const admin = createAdminClient()
@@ -58,7 +47,7 @@ export async function eliminarVoucher(params: { id: string }) {
 }
 
 export async function toggleVoucher(params: { id: string; activo: boolean }) {
-  const { error: authErr, clubId } = await requireStaff()
+  const { error: authErr, clubId } = await requireStaffClub()
   if (authErr) return { error: authErr }
 
   const admin = createAdminClient()

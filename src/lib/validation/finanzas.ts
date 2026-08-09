@@ -11,7 +11,7 @@ const FECHA = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida').refine(
 
 export const METODOS_PAGO = ['efectivo', 'transferencia'] as const
 export const TIPOS_MOVIMIENTO = ['ingreso', 'gasto'] as const
-export const CATEGORIAS_INGRESO = ['mensualidad', 'inscripcion_torneo', 'inscripcion_liga', 'arriendo_cancha', 'donacion', 'otro_ingreso'] as const
+export const CATEGORIAS_INGRESO = ['mensualidad', 'matricula', 'inscripcion_torneo', 'inscripcion_liga', 'arriendo_cancha', 'donacion', 'otro_ingreso'] as const
 export const CATEGORIAS_GASTO = ['sueldo_profesor', 'sueldo_staff', 'arriendo_cancha', 'material_deportivo', 'servicios_basicos', 'mantenimiento', 'premio_torneo', 'otro_gasto'] as const
 
 export const pagoLigaSchema = z.object({

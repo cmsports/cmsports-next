@@ -8,7 +8,7 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { puedeVerPantallasDeClub } from '@/lib/auth/roles'
 import { useTextoMonto } from '@/components/Monto'
-import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador } from '@/app/actions/jugadores'
+import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador, registrarMatricula, desmarcarMatricula } from '@/app/actions/jugadores'
 import { credencialDelJugador } from '@/app/actions/credenciales'
 import { formatRut } from '@/lib/rut'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
@@ -166,7 +166,7 @@ export default function JugadorDetallePage() {
 
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short').eq('id', jugadorId).single(),
+          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           perfil.rol === 'admin'
@@ -234,6 +234,13 @@ export default function JugadorDetallePage() {
   const esAdmin = perfil?.rol === 'admin'
   // Los PDF de más arriba arman sus montos aparte y van con la cifra real.
   const fmtMonto = useTextoMonto()
+  const [modalMatricula, setModalMatricula]         = useState(false)
+  const [montoMatricula, setMontoMatricula]         = useState('')
+  const [errorMatricula, setErrorMatricula]         = useState('')
+  const [guardandoMatricula, setGuardandoMatricula] = useState(false)
+  // Se fija al abrir el modal y se reusa si el guardado falla y se reintenta:
+  // así un reintento no crea un segundo ingreso por la misma matrícula.
+  const claveMatricula = useRef<string | null>(null)
   const esProfesor = perfil?.rol === 'profesor'
 
   // Traé la credencial cuando el admin abre la ficha, para que la tarjeta de
@@ -328,6 +335,33 @@ export default function JugadorDetallePage() {
 
   const totalExtras   = extrasImpagas.reduce((s, e) => s + (e.monto ?? 0), 0)
   const extrasSinMonto = extrasImpagas.filter(e => e.monto == null).length
+
+  async function desmarcarMatriculaJugador() {
+    if (!jugador) return
+    if (!confirm('¿Marcar la matrícula como no pagada?\n\nEl ingreso que ya se haya registrado en Finanzas se mantiene: esa plata entró de verdad. Si volvés a marcarla, se te pedirá el monto y se registra un ingreso nuevo.')) return
+    setGuardandoMatricula(true)
+    const res = await desmarcarMatricula({ jugadorId: jugador.id })
+    setGuardandoMatricula(false)
+    if (res.error) { alert(res.error); return }
+    setJugador({ ...jugador, matricula_pagada: false })
+  }
+
+  async function guardarMatricula() {
+    if (!jugador) return
+    const monto = montoIngresado(montoMatricula)
+    if (monto == null) { setErrorMatricula('Escribí un monto. Si no le cobrás nada, poné 0.'); return }
+    if (monto < 0) { setErrorMatricula('El monto no puede ser negativo.'); return }
+    claveMatricula.current ??= crypto.randomUUID()
+    setGuardandoMatricula(true)
+    setErrorMatricula('')
+    const res = await registrarMatricula({ jugadorId: jugador.id, monto, idempotencyKey: claveMatricula.current })
+    setGuardandoMatricula(false)
+    if (res.error) { setErrorMatricula(res.error); return }
+    claveMatricula.current = null
+    setJugador({ ...jugador, matricula_pagada: true, matricula_monto: monto, matricula_fecha: fechaChile() })
+    setModalMatricula(false)
+    setMontoMatricula('')
+  }
 
   function abrirEditPlan() {
     setPlanFormState({
@@ -1049,6 +1083,38 @@ export default function JugadorDetallePage() {
               {jugador.tipo_plan === 'libre' ? ' — Libre acceso' : jugador.entrenamientos_por_semana ? ` — ${jugador.entrenamientos_por_semana} entrenamientos/semana` : ''}
             </div>
 
+            {/* Matrícula. Va en esta tarjeta y no en una propia porque es parte
+                de lo que el jugador paga por pertenecer, igual que la cuota. */}
+            <div style={{ marginTop:14, paddingTop:12, borderTop:'1px solid #e2e8f0',
+              display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
+              <div>
+                <div style={{ fontSize:12, fontWeight:600, color: jugador.matricula_pagada ? '#15803d' : '#c2410c' }}>
+                  {jugador.matricula_pagada ? '🎓 Matrícula pagada' : '⚠️ Matrícula pendiente'}
+                </div>
+                <div style={{ fontSize:11, color: hint, marginTop:1 }}>
+                  {jugador.matricula_pagada
+                    ? jugador.matricula_monto == null
+                      ? 'Sin monto registrado'
+                      : jugador.matricula_monto === 0
+                        ? `Sin cobro${jugador.matricula_fecha ? ` · ${jugador.matricula_fecha}` : ''}`
+                        : `${fmtMonto(jugador.matricula_monto)}${jugador.matricula_fecha ? ` · ${jugador.matricula_fecha}` : ''}`
+                    : 'Todavía no la pagó'}
+                </div>
+              </div>
+              {puedeEditar && (
+                <button
+                  onClick={() => jugador.matricula_pagada ? desmarcarMatriculaJugador() : setModalMatricula(true)}
+                  disabled={guardandoMatricula}
+                  style={{ padding:'6px 12px', borderRadius:20, fontSize:12, fontWeight:600,
+                    cursor: guardandoMatricula ? 'default' : 'pointer',
+                    border: `1px solid ${jugador.matricula_pagada ? '#bbf7d0' : '#fed7aa'}`,
+                    background: jugador.matricula_pagada ? '#f0fdf4' : '#fff7ed',
+                    color: jugador.matricula_pagada ? '#15803d' : '#c2410c' }}>
+                  {guardandoMatricula ? '...' : jugador.matricula_pagada ? 'Desmarcar' : 'Marcar pagada'}
+                </button>
+              )}
+            </div>
+
             {/* Lo que debe por venir a grupos que no son el suyo. Va aparte de
                 la cuota a propósito: no es una mensualidad más cara, son clases
                 sueltas que se cobran por separado. */}
@@ -1544,6 +1610,53 @@ export default function JugadorDetallePage() {
               <button onClick={guardarFoto} disabled={!fotoSrc || subiendoFoto}
                 style={{ flex:2, padding:11, background:'#7c3aed', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', opacity:(!fotoSrc || subiendoFoto) ? 0.5 : 1 }}>
                 {subiendoFoto ? 'Subiendo...' : 'Guardar foto'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cobro de la matrícula */}
+      {modalMatricula && jugador && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', display:'flex',
+          alignItems:'center', justifyContent:'center', zIndex:200, padding:16 }}>
+          <div style={{ background:'#fff', borderRadius:14, padding:22, width:'100%', maxWidth:400 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:text, marginBottom:4 }}>🎓 Cobrar matrícula</div>
+            <div style={{ fontSize:12, color:muted, marginBottom:16 }}>
+              {jugador.nombre}. Se registra como ingreso en Finanzas.
+            </div>
+
+            {errorMatricula && (
+              <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'9px 12px',
+                marginBottom:12, fontSize:12, color:'#dc2626', fontWeight:600 }}>
+                {errorMatricula}
+              </div>
+            )}
+
+            <label style={{ fontSize:11, color:muted, display:'block', marginBottom:4 }}>Monto de la matrícula</label>
+            <input
+              type="number" min={0} inputMode="numeric" autoFocus
+              placeholder="Ej: 20000"
+              value={montoMatricula}
+              onChange={e => setMontoMatricula(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !guardandoMatricula) void guardarMatricula() }}
+              style={{ width:'100%', boxSizing:'border-box', background:'#f4f7fa', border:'1px solid #e2e8f0',
+                borderRadius:8, padding:'10px 12px', color:text, fontSize:14, outline:'none' }}
+            />
+            <div style={{ fontSize:11, color:hint, marginTop:6, marginBottom:16 }}>
+              Poné <strong>0</strong> si le eximís la matrícula: queda marcada como pagada y no se genera ingreso.
+            </div>
+
+            <div style={{ display:'flex', gap:10 }}>
+              <button onClick={() => { setModalMatricula(false); setMontoMatricula(''); setErrorMatricula(''); claveMatricula.current = null }}
+                style={{ flex:1, padding:11, background:'#f4f7fa', color:muted, border:'none', borderRadius:8, fontSize:13, cursor:'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={guardarMatricula} disabled={guardandoMatricula}
+                style={{ flex:2, padding:11, background:'#16a34a', color:'#fff', border:'none', borderRadius:8,
+                  fontSize:13, fontWeight:600, cursor: guardandoMatricula ? 'default' : 'pointer',
+                  opacity: guardandoMatricula ? 0.6 : 1 }}>
+                {guardandoMatricula ? 'Guardando...' : 'Registrar pago'}
               </button>
             </div>
           </div>

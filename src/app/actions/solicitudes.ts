@@ -29,6 +29,11 @@ export async function aprobarSolicitud(params: {
   /** Grupos del horario a los que entra. Sin esto queda sin días ni sede, no
    *  aparece en ninguna lista y no se puede marcar la asistencia solo. */
   bloqueIds: string[]
+  /** Si pagó la matrícula al momento de aceptarlo. Si no, la ficha queda con
+   *  la matrícula pendiente y se cobra después desde el perfil. */
+  matriculaPagada?: boolean
+  /** Monto cobrado. 0 = se le eximió. Solo se usa si matriculaPagada. */
+  matriculaMonto?: number | null
 }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
@@ -38,7 +43,7 @@ export async function aprobarSolicitud(params: {
     fecha_nacimiento, direccion, comuna,
     contacto_emergencia_nombre, contacto_emergencia_telefono, indicaciones_medicas,
     talla_polera, talla_short,
-    password, bloqueIds,
+    password, bloqueIds, matriculaPagada, matriculaMonto,
     ...planFields
   } = params
   const emailNormalizado = email.trim().toLowerCase()
@@ -73,6 +78,10 @@ export async function aprobarSolicitud(params: {
     sesiones_usadas: 0,
     estado: 'activo',
     es_externo: false,
+    // A diferencia de los jugadores que ya venían (que la migración 138 dio
+    // por pagada), el que entra ahora solo queda marcado si de verdad la pagó
+    // en este momento. El ingreso en Finanzas se registra más abajo con el RPC.
+    matricula_pagada: !!matriculaPagada,
   }).select('id').single()
   if (insertErr || !nuevoJugador) return { error: 'Error al crear jugador: ' + (insertErr?.message ?? '') }
 
@@ -117,6 +126,18 @@ export async function aprobarSolicitud(params: {
   // arreglar desde su ficha, mientras que deshacer la cuenta creada no.
   if (bloqueIds?.length) {
     await asignarBloquesJugador({ jugadorId: nuevoJugador.id, bloqueIds })
+  }
+
+  // La matrícula, si la pagó al entrar. Va después del alta y con su propio
+  // RPC porque el ingreso tiene que quedar atado al jugador ya creado. Si
+  // falla, el alta no se deshace: el jugador ya está y la matrícula se cobra
+  // desde su ficha, que es mucho mejor que perder la cuenta recién creada.
+  if (matriculaPagada && (matriculaMonto ?? 0) > 0) {
+    await supabase.rpc('registrar_pago_matricula_atomico', {
+      p_jugador_id: nuevoJugador.id,
+      p_monto: Math.round(matriculaMonto as number),
+      p_idempotency_key: crypto.randomUUID(),
+    })
   }
 
   const { error: aprobarError } = await supabase.from('solicitudes_jugador')

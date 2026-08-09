@@ -1,24 +1,20 @@
 'use server'
 
-import { createClient as createServerClient } from '@/lib/supabase/server'
 import { diaDesdeFecha, hhmm, iniciosDeInscripcion } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cierreVigencia } from '@/lib/domain/vigencia'
+import { requireStaffClub } from '@/lib/auth/require'
 
-// El horario semanal lo maneja el staff (admin o profesor). requireAdminClub
-// solo deja pasar al admin, así que acá va una comprobación propia.
+// El horario semanal lo maneja el staff (admin o profesor), no solo el admin,
+// así que no sirve requireAdminClub. Delega en el guard compartido: la regla
+// de quién es staff vive en un solo lugar (require.ts). Lo único propio de
+// este archivo es el casteo del cliente, porque los tipos generados no traen
+// las columnas de vigencia ni grupo_id.
 async function requireStaff() {
-  const supabase = await createServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null }
-  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol').eq('id', user.id).single()
-  if (!perfil?.club_id || !['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
-    return { error: 'Acceso denegado' as const, supabase: null, clubId: null }
-  }
-  // Los tipos generados de Supabase no traen las columnas de vigencia ni
-  // grupo_id, así que el cliente sale casteado para todo este archivo.
+  const { error, supabase, clubId } = await requireStaffClub()
+  if (error || !supabase) return { error, supabase: null, clubId: null }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return { error: null, supabase: supabase as any, clubId: perfil.club_id }
+  return { error: null, supabase: supabase as any, clubId }
 }
 
 /** Hoy en Chile. Las vigencias son fechas, no instantes. */
