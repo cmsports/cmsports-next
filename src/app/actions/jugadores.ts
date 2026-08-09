@@ -229,20 +229,34 @@ export async function desmarcarMatricula(params: { jugadorId: string }) {
   return { success: true }
 }
 
+// Las dos de acá abajo filtran por club igual que sus vecinas. Hoy la RLS ya
+// lo impide —`jugadores_admin_write` exige club propio y rol admin—, así que
+// esto no tapa un agujero abierto: evita el de mañana. Es la misma forma del
+// bug de `editarJugador` (commit 8bf7a27), y el día que una de estas pase al
+// cliente de servicio para resolver otra cosa, se abre sola y sin ruido.
+
 export async function actualizarMensualidad(params: { jugadorId: string; mensualidad: number }) {
-  const { error: authErr, supabase } = await requireAdminClub()
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
-  const { error } = await supabase.from('jugadores').update({ mensualidad: params.mensualidad }).eq('id', params.jugadorId)
+  const { data, error } = await supabase.from('jugadores')
+    .update({ mensualidad: params.mensualidad })
+    .eq('id', params.jugadorId).eq('club_id', clubId)
+    .select('id').maybeSingle()
   if (error) return { error: error.message }
+  if (!data) return { error: 'Jugador no encontrado' }
   return { success: true }
 }
 
 export async function toggleEstadoJugador(params: { jugadorId: string; nuevoEstado: 'activo' | 'bloqueado' }) {
-  const { error: authErr, supabase } = await requireAdminClub()
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { error } = await supabase.from('jugadores').update({ estado: params.nuevoEstado }).eq('id', params.jugadorId)
+  const { data, error } = await supabase.from('jugadores')
+    .update({ estado: params.nuevoEstado })
+    .eq('id', params.jugadorId).eq('club_id', clubId)
+    .select('id').maybeSingle()
   if (error) return { error: 'Error al cambiar estado' }
+  if (!data) return { error: 'Jugador no encontrado' }
   return { success: true }
 }
 

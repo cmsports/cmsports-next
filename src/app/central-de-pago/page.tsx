@@ -7,14 +7,15 @@ import { createClient } from '@/lib/supabase/client'
 import { Upload, ImageIcon } from 'lucide-react'
 import { subirImagenCentralPago } from '../actions/central-pago'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
-
-const WA = '56977437894'
+import { firmarUrl, rutaCentralPago } from '@/lib/supabase/privado'
+import { linkWhatsApp } from '@/lib/whatsapp'
 
 export default function CentralDePagoPage() {
   const { perfil, loading } = usePerfil()
   const [imagenUrl, setImagenUrl]       = useState<string | null>(null)
   const [imagenExiste, setImagenExiste] = useState<boolean | null>(null)
   const [subiendo, setSubiendo]         = useState(false)
+  const [clubTelefono, setClubTelefono] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const esAdmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
@@ -22,8 +23,16 @@ export default function CentralDePagoPage() {
   useEffect(() => {
     if (!perfil?.club_id) return
     const supabase = createClient()
-    const { data } = supabase.storage.from('galeria-fotos').getPublicUrl(`central-pago/${perfil.club_id}`)
-    setImagenUrl(`${data.publicUrl}?t=${Date.now()}`)
+    // El comprobante va al WhatsApp del club, no a uno escrito en el código.
+    // Estaba fijo en el número de Buin: los jugadores de Paine y de Unión San
+    // Bernardo le mandaban su comprobante de pago a otro club.
+    void supabase.from('clubes').select('telefono').eq('id', perfil.club_id).maybeSingle()
+      .then(({ data }) => setClubTelefono(data?.telefono ?? null))
+    // Enlace firmado, no público: acá está el número de cuenta del club.
+    void firmarUrl(rutaCentralPago(perfil.club_id)).then(url => {
+      setImagenUrl(url)
+      if (!url) setImagenExiste(false)
+    })
   }, [perfil?.club_id])
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -35,18 +44,21 @@ export default function CentralDePagoPage() {
       const base64 = ev.target?.result as string
       const res = await subirImagenCentralPago({ base64 })
       if (res.error) { alert('Error: ' + res.error); setSubiendo(false); return }
-      setImagenUrl(res.url!)
-      setImagenExiste(true)
+      setImagenUrl(res.url ?? null)
+      setImagenExiste(!!res.url)
       setSubiendo(false)
     }
     reader.readAsDataURL(file)
     e.target.value = ''
   }
 
-  const mensajeWA = encodeURIComponent(
-    `Hola! Soy ${perfil?.nombre || 'un socio'}. Adjunto comprobante de pago.`
+  // Devuelve null si el club no tiene teléfono cargado. Antes era imposible que
+  // faltara —el número estaba escrito acá— y por eso el botón nunca contemplaba
+  // el caso: mandaba a wa.me/undefined.
+  const linkWA = linkWhatsApp(
+    clubTelefono,
+    `Hola! Soy ${perfil?.nombre || 'un socio'}. Adjunto comprobante de pago.`,
   )
-  const linkWA = `https://wa.me/${WA}?text=${mensajeWA}`
 
   if (loading) return null
 
@@ -114,12 +126,22 @@ export default function CentralDePagoPage() {
           <div style={{ background: '#f1f5f9', borderRadius: 16, height: 480, marginBottom: 20, animation: 'pulse 1.5s ease-in-out infinite' }} />
         )}
 
-        {/* Botón WhatsApp — visible siempre (imagen o no) */}
-        {imagenExiste !== false || !esAdmin ? (
+        {/* Botón WhatsApp — visible siempre (imagen o no), salvo que el club no
+            tenga teléfono: un botón que lleva a ninguna parte es peor que no
+            tenerlo. */}
+        {linkWA && (imagenExiste !== false || !esAdmin) ? (
           <WhatsAppBtn href={linkWA} style={{ padding: '15px 20px', fontSize: 15 }}>
             Enviar comprobante por WhatsApp
           </WhatsAppBtn>
         ) : null}
+
+        {!linkWA && esAdmin && (
+          <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12,
+            padding: 14, fontSize: 12, color: '#c2410c', lineHeight: 1.5 }}>
+            ⚠️ El club no tiene teléfono cargado, así que el jugador no ve el botón para
+            enviar su comprobante. Se carga en la configuración del club.
+          </div>
+        )}
       </div>
 
       <style>{`

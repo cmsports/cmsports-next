@@ -15,6 +15,14 @@ export function rutaDocumentoJugador(clubId: string, jugadorId: string, tipo: st
   return `documentos/${clubId}/${jugadorId}/${tipo}.${ext}`
 }
 
+// Los datos de transferencia del club. Vivían en `galeria-fotos` con URL
+// pública: el número de cuenta de cada club se abría sin sesión con solo tener
+// el enlace, y el club_id no es un secreto. El club va en la segunda carpeta
+// porque es lo que mira la política del bucket — `foldername(name)[2]`.
+export function rutaCentralPago(clubId: string) {
+  return `central-pago/${clubId}/datos.jpg`
+}
+
 export async function firmarUrl(path: string | null | undefined): Promise<string | null> {
   if (!path) return null
   const { data } = await createClient().storage
