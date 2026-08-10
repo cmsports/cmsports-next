@@ -567,6 +567,28 @@ html.dark [style*="background-color: rgb(220, 252, 231)"] {
   background: #052e16 !important;
 }
 
+/* Menta y turquesa claros (#ecfdf5, #f0fdfa)
+   Faltaban, y se notaba en la grilla de Cupos/bloques: los colores de grupo
+   salen de una paleta de seis pasteles y estos dos eran los únicos sin
+   traducción a oscuro. Como `html.dark body *` pone TODO el texto en blanco,
+   quedaban blanco sobre casi blanco — los bloques existían pero no se leían.
+   Los otros cuatro de esa paleta ya estaban cubiertos más arriba. */
+html.dark [style*="background:#ecfdf5"],
+html.dark [style*="background: #ecfdf5"],
+html.dark [style*="background-color:#ecfdf5"],
+html.dark [style*="background: rgb(236, 253, 245)"],
+html.dark [style*="background-color: rgb(236, 253, 245)"] {
+  background: #052e16 !important;
+}
+
+html.dark [style*="background:#f0fdfa"],
+html.dark [style*="background: #f0fdfa"],
+html.dark [style*="background-color:#f0fdfa"],
+html.dark [style*="background: rgb(240, 253, 250)"],
+html.dark [style*="background-color: rgb(240, 253, 250)"] {
+  background: #042f2e !important;
+}
+
 /* Ámbar / naranja claro (#fffbeb, #fef9c3, #fefce8, #fef3c7, #fff7ed) */
 html.dark [style*="background:#fffbeb"],
 html.dark [style*="background: #fffbeb"],
