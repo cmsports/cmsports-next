@@ -1,7 +1,11 @@
 # Manual de torneos: reglas internas y uso
 
-Versión vigente: 17 de julio de 2026
+Versión vigente: 11 de agosto de 2026
 Alcance: torneos internos de CMSPORTS con fase de grupos y eliminación directa.
+
+> Nota: este manual describe **torneos club** (`/torneos`, `/torneos-internos`).
+> El flujo de **torneo oficial ITTF** (`/torneo-oficial`) se documenta en
+> `docs/plan-torneos-base-y-oficial-ittf.md`.
 
 ## 1. Objetivo del módulo
 
