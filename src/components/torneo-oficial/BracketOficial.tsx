@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { CONFIG } from '@/lib/config'
-import { formatearSets, type SetMarcador } from '@/lib/domain/oficial-ittf'
+import { etiquetaCierreOficial, formatearSets, type SetMarcador, type TipoCierreOficial } from '@/lib/domain/oficial-ittf'
+import { torneoUi } from '@/lib/torneos/ui-tokens'
 
 type PartidoBracket = {
   id: string
@@ -13,7 +14,10 @@ type PartidoBracket = {
   ganador_id: string | null
   sets: SetMarcador[]
   es_walkover: boolean
+  tipo_cierre?: TipoCierreOficial | null
 }
+
+type Slot = { partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' }
 
 const FASE_LABELS = CONFIG.FASE_LABELS as Record<string, string>
 
@@ -27,21 +31,43 @@ function fasesBracket(playoff: PartidoBracket[]): string[] {
   return base
 }
 
+function nombreSlot(
+  p: PartidoBracket,
+  pos: 'inscrito_a' | 'inscrito_b',
+  nombrePorId: Map<string, string>,
+): string {
+  if (pos === 'inscrito_b' && !p.inscrito_b_id) return 'BYE'
+  const id = pos === 'inscrito_a' ? p.inscrito_a_id : p.inscrito_b_id
+  if (!id) return '—'
+  return nombrePorId.get(id) || '?'
+}
+
 export default function BracketOficial(props: {
   partidos: PartidoBracket[]
   nombrePorId: Map<string, string>
   esAdmin?: boolean
   faseInicial?: string | null
-  onIntercambiar?: (slotA: { partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' }, slotB: { partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' }) => void | Promise<void>
+  onIntercambiar?: (slotA: Slot, slotB: Slot) => void | Promise<void>
 }) {
-  const [dragSlot, setDragSlot] = useState<{ partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' } | null>(null)
-  const [dragOver, setDragOver] = useState<{ partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' } | null>(null)
+  // En celu NO montamos el cuadro SVG (divs absolutos + conectores): con
+  // display:none React lo reconcilía igual y reventaba la pestaña (OOM club).
+  const [isMobile, setIsMobile] = useState(false)
+  const [dragSlot, setDragSlot] = useState<Slot | null>(null)
+  const [dragOver, setDragOver] = useState<Slot | null>(null)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const on = () => setIsMobile(mq.matches)
+    on()
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
 
   const playoff = props.partidos.filter(p => p.fase !== 'grupos')
   if (!playoff.length) return null
 
   const fases = fasesBracket(playoff)
-
+  const fasesMain = fases.filter(f => f !== 'tercer_lugar')
   const porFase = new Map<string, PartidoBracket[]>()
   for (const f of fases) {
     porFase.set(f, playoff.filter(p => p.fase === f).sort((a, b) => a.orden - b.orden))
@@ -59,92 +85,314 @@ export default function BracketOficial(props: {
     setDragOver(null)
   }
 
-  return (
-    <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
-      {props.esAdmin && props.faseInicial && props.onIntercambiar && (
-        <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px' }}>
-          Arrastra jugadores en la ronda inicial para intercambiar cupos.
-        </p>
-      )}
-      <div style={{ display: 'flex', gap: 16, minWidth: 'max-content' }}>
-        {fases.map(fase => (
-          <div key={fase} style={{ minWidth: 180 }}>
-            <div style={{
-              fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase',
-              letterSpacing: 0.5, marginBottom: 8, textAlign: 'center',
-            }}>
-              {FASE_LABELS[fase] || fase}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {(porFase.get(fase) || []).map(p => {
-                const a = p.inscrito_a_id ? props.nombrePorId.get(p.inscrito_a_id) : '—'
-                const esBye = !p.inscrito_b_id
-                const b = esBye ? 'BYE' : (p.inscrito_b_id ? props.nombrePorId.get(p.inscrito_b_id) : '—')
-                const ganoA = p.ganador_id === p.inscrito_a_id
-                const ganoB = p.ganador_id === p.inscrito_b_id
-                const puedeMover = Boolean(
-                  props.esAdmin && props.faseInicial && p.fase === props.faseInicial
-                  && !(p.ganador_id && p.inscrito_b_id) && props.onIntercambiar,
-                )
+  function puedeMoverPartido(p: PartidoBracket) {
+    return Boolean(
+      props.esAdmin && props.faseInicial && p.fase === props.faseInicial
+      && !(p.ganador_id && p.inscrito_b_id) && props.onIntercambiar,
+    )
+  }
 
-                const slotStyle = (pos: 'inscrito_a' | 'inscrito_b', gano: boolean, tieneInscrito: boolean): CSSProperties => ({
-                  padding: '6px 8px',
-                  background: dragOver?.partidoId === p.id && dragOver?.posicion === pos
-                    ? '#dbeafe'
-                    : gano ? '#ecfdf5' : '#fff',
-                  fontWeight: gano ? 700 : 400,
-                  borderBottom: pos === 'inscrito_a' ? '1px solid #f1f5f9' : undefined,
-                  cursor: puedeMover && tieneInscrito ? 'grab' : 'default',
-                  opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === pos ? 0.45 : 1,
-                })
+  const hintDrag = props.esAdmin && props.faseInicial && props.onIntercambiar && (
+    <p style={{ fontSize: 12, color: torneoUi.muted, margin: '0 0 10px' }}>
+      Arrastra jugadores en la ronda inicial para intercambiar cupos.
+    </p>
+  )
 
-                return (
-                  <div key={p.id} style={{
-                    border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', fontSize: 12,
-                    background: '#fff',
-                  }}>
-                    <div
-                      draggable={puedeMover && !!p.inscrito_a_id}
-                      onDragStart={puedeMover && p.inscrito_a_id ? () => setDragSlot({ partidoId: p.id, posicion: 'inscrito_a' }) : undefined}
-                      onDragOver={puedeMover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'inscrito_a' }) } : undefined}
-                      onDrop={puedeMover ? (e) => { e.preventDefault(); void soltar(p.id, 'inscrito_a') } : undefined}
-                      onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                      style={slotStyle('inscrito_a', ganoA, !!p.inscrito_a_id)}
-                    >
-                      {a || '?'}
-                    </div>
-                    {esBye ? (
+  // —— Móvil: lista grande por fase (sin SVG) ——
+  if (isMobile) {
+    return (
+      <div>
+        {hintDrag}
+        {fases.map(fase => {
+          const ps = porFase.get(fase) || []
+          if (!ps.length) return null
+          return (
+            <div key={fase} style={{ marginBottom: 18 }}>
+              <div style={{
+                fontSize: 11, color: torneoUi.muted, textTransform: 'uppercase',
+                letterSpacing: '1px', fontWeight: 700, marginBottom: 8,
+              }}>
+                {FASE_LABELS[fase] || fase}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {ps.map((p, i) => {
+                  const esBye = !p.inscrito_b_id
+                  const ganoA = p.ganador_id === p.inscrito_a_id
+                  const ganoB = p.ganador_id === p.inscrito_b_id
+                  const mover = puedeMoverPartido(p)
+
+                  const Lado = (pos: 'inscrito_a' | 'inscrito_b') => {
+                    const gano = pos === 'inscrito_a' ? ganoA : ganoB
+                    const id = pos === 'inscrito_a' ? p.inscrito_a_id : p.inscrito_b_id
+                    const label = nombreSlot(p, pos, props.nombrePorId)
+                    const definido = !!id
+                    const esByeSlot = pos === 'inscrito_b' && esBye
+                    return (
                       <div
-                        onDragOver={puedeMover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'inscrito_b' }) } : undefined}
-                        onDrop={puedeMover ? (e) => { e.preventDefault(); void soltar(p.id, 'inscrito_b') } : undefined}
-                        style={{ ...slotStyle('inscrito_b', false, false), fontStyle: 'italic', color: '#94a3b8' }}
-                      >
-                        BYE
-                      </div>
-                    ) : (
-                      <div
-                        draggable={puedeMover && !!p.inscrito_b_id}
-                        onDragStart={puedeMover && p.inscrito_b_id ? () => setDragSlot({ partidoId: p.id, posicion: 'inscrito_b' }) : undefined}
-                        onDragOver={puedeMover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'inscrito_b' }) } : undefined}
-                        onDrop={puedeMover ? (e) => { e.preventDefault(); void soltar(p.id, 'inscrito_b') } : undefined}
+                        draggable={mover && definido}
+                        onDragStart={mover && definido ? () => setDragSlot({ partidoId: p.id, posicion: pos }) : undefined}
+                        onDragOver={mover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: pos }) } : undefined}
+                        onDrop={mover ? (e) => { e.preventDefault(); void soltar(p.id, pos) } : undefined}
                         onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                        style={slotStyle('inscrito_b', ganoB, !!p.inscrito_b_id)}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                          gap: 8, padding: '13px 14px',
+                          background: dragOver?.partidoId === p.id && dragOver?.posicion === pos
+                            ? '#dbeafe'
+                            : gano ? '#f0fdf4' : 'transparent',
+                          color: gano ? torneoUi.success : (definido || esByeSlot ? torneoUi.text : torneoUi.hint),
+                          fontStyle: definido && !esByeSlot ? 'normal' : 'italic',
+                          fontWeight: gano ? 700 : 500,
+                          fontSize: 15,
+                          cursor: mover && definido ? 'grab' : 'default',
+                          opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === pos ? 0.45 : 1,
+                          borderTop: pos === 'inscrito_b' ? '1px solid #f1f5f9' : undefined,
+                        }}
                       >
-                        {b}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {esByeSlot ? 'BYE (pasa directo)' : label}
+                        </span>
+                        {gano && <span style={{ color: torneoUi.success, fontSize: 15, flexShrink: 0 }}>✓</span>}
                       </div>
-                    )}
-                    {p.ganador_id && p.inscrito_b_id && (
-                      <div style={{ padding: '4px 8px', fontSize: 10, color: '#64748b', background: '#f8fafc' }}>
-                        {formatearSets(p.sets)}{p.es_walkover ? ' · W.O.' : ''}
+                    )
+                  }
+
+                  return (
+                    <div key={p.id} style={{
+                      ...torneoUi.card,
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      boxShadow: '0 1px 4px rgba(15,23,42,0.07)',
+                    }}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
+                      }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>Llave {i + 1}</span>
+                        {p.ganador_id && p.inscrito_b_id && (
+                          <span style={{ fontSize: 10, color: torneoUi.success }}>
+                            {formatearSets(p.sets)}{etiquetaCierreOficial(p.tipo_cierre, p.es_walkover) ? ` · ${etiquetaCierreOficial(p.tipo_cierre, p.es_walkover)}` : ''}
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )
-              })}
+                      {Lado('inscrito_a')}
+                      {Lado('inscrito_b')}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
+    )
+  }
+
+  // —— Desktop: cuadro con conectores SVG ——
+  const CARD_H = 80
+  const SLOT_H = 96
+  const COL_W = 190
+  const CONN_W = 22
+
+  const byFase: Record<string, PartidoBracket[]> = {}
+  for (const f of fasesMain) byFase[f] = porFase.get(f) || []
+
+  const N0 = byFase[fasesMain[0]]?.length || 1
+  const expectedN: Record<string, number> = {}
+  fasesMain.forEach((f, i) => { expectedN[f] = Math.max(1, Math.round(N0 / (2 ** i))) })
+  const totalH = N0 * SLOT_H
+  const cy = (orden: number, N: number) => ((orden + 0.5) / N) * totalH
+
+  const tercer = porFase.get('tercer_lugar') || []
+
+  return (
+    <div>
+      {hintDrag}
+      <div style={{ overflowX: 'auto', paddingBottom: 16, paddingTop: 44 }}>
+        <div style={{ display: 'flex', minWidth: 'max-content' }}>
+          {fasesMain.flatMap((fase, pi) => {
+            const ps = byFase[fase] || []
+            const isLast = pi === fasesMain.length - 1
+
+            const col = (
+              <div key={fase} style={{ width: COL_W, position: 'relative', height: totalH }}>
+                <div style={{
+                  position: 'absolute', top: -36, left: 0, right: 0,
+                  fontSize: 10, color: torneoUi.muted, textTransform: 'uppercase',
+                  letterSpacing: '1px', textAlign: 'center', background: '#f4f7fa',
+                  padding: '3px 6px', borderRadius: 5,
+                }}>
+                  {FASE_LABELS[fase] || fase}
+                </div>
+                {ps.map((p, i) => {
+                  const eN = expectedN[fase] ?? ps.length
+                  const top = cy(p.orden ?? i, eN) - CARD_H / 2
+                  const esBye = !p.inscrito_b_id
+                  const ganoA = p.ganador_id === p.inscrito_a_id
+                  const ganoB = p.ganador_id === p.inscrito_b_id
+                  const mover = puedeMoverPartido(p)
+
+                  const slotStyle = (pos: 'inscrito_a' | 'inscrito_b', gano: boolean): CSSProperties => ({
+                    height: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0 10px',
+                    borderBottom: pos === 'inscrito_a' ? '1px solid #f1f5f9' : undefined,
+                    background: dragOver?.partidoId === p.id && dragOver?.posicion === pos
+                      ? '#dbeafe'
+                      : gano ? '#f0fdf4' : 'transparent',
+                    cursor: mover && (pos === 'inscrito_a' ? p.inscrito_a_id : p.inscrito_b_id) ? 'grab' : 'default',
+                    opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === pos ? 0.45 : 1,
+                  })
+
+                  return (
+                    <div key={p.id} style={{
+                      position: 'absolute', left: 0, right: 0, top, height: CARD_H,
+                      background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
+                      overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,0.07)',
+                    }}>
+                      <div
+                        draggable={mover && !!p.inscrito_a_id}
+                        onDragStart={mover && p.inscrito_a_id ? () => setDragSlot({ partidoId: p.id, posicion: 'inscrito_a' }) : undefined}
+                        onDragOver={mover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'inscrito_a' }) } : undefined}
+                        onDrop={mover ? (e) => { e.preventDefault(); void soltar(p.id, 'inscrito_a') } : undefined}
+                        onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
+                        style={slotStyle('inscrito_a', ganoA)}
+                      >
+                        <span style={{
+                          fontSize: 12,
+                          color: ganoA ? torneoUi.success : (p.inscrito_a_id ? torneoUi.text : torneoUi.hint),
+                          fontStyle: p.inscrito_a_id ? 'normal' : 'italic',
+                          fontWeight: ganoA ? 700 : 400,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                        }}>
+                          <span style={{
+                            fontSize: 9, background: torneoUi.accentLight, color: '#3730a3',
+                            padding: '1px 3px', borderRadius: 3, marginRight: 4,
+                          }}>{i * 2 + 1}</span>
+                          {nombreSlot(p, 'inscrito_a', props.nombrePorId)}
+                        </span>
+                        {ganoA && <span style={{ color: torneoUi.success, fontSize: 11, marginLeft: 4 }}>✓</span>}
+                      </div>
+                      {esBye ? (
+                        <div
+                          onDragOver={mover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'inscrito_b' }) } : undefined}
+                          onDrop={mover ? (e) => { e.preventDefault(); void soltar(p.id, 'inscrito_b') } : undefined}
+                          style={{
+                            ...slotStyle('inscrito_b', false),
+                            fontSize: 11, color: torneoUi.hint, fontStyle: 'italic',
+                          }}
+                        >
+                          BYE
+                        </div>
+                      ) : (
+                        <div
+                          draggable={mover && !!p.inscrito_b_id}
+                          onDragStart={mover && p.inscrito_b_id ? () => setDragSlot({ partidoId: p.id, posicion: 'inscrito_b' }) : undefined}
+                          onDragOver={mover ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'inscrito_b' }) } : undefined}
+                          onDrop={mover ? (e) => { e.preventDefault(); void soltar(p.id, 'inscrito_b') } : undefined}
+                          onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
+                          style={slotStyle('inscrito_b', ganoB)}
+                        >
+                          <span style={{
+                            fontSize: 12,
+                            color: ganoB ? torneoUi.success : (p.inscrito_b_id ? torneoUi.text : torneoUi.hint),
+                            fontStyle: p.inscrito_b_id ? 'normal' : 'italic',
+                            fontWeight: ganoB ? 700 : 400,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
+                          }}>
+                            <span style={{
+                              fontSize: 9, background: torneoUi.accentLight, color: '#3730a3',
+                              padding: '1px 3px', borderRadius: 3, marginRight: 4,
+                            }}>{i * 2 + 2}</span>
+                            {nombreSlot(p, 'inscrito_b', props.nombrePorId)}
+                          </span>
+                          {ganoB && <span style={{ color: torneoUi.success, fontSize: 11, marginLeft: 4 }}>✓</span>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+
+            if (isLast) return [col]
+
+            const nextFase = fasesMain[pi + 1]
+            const eN = expectedN[fase] ?? ps.length
+            const eN2 = expectedN[nextFase] ?? Math.max(1, Math.round(eN / 2))
+            const connector = (
+              <svg key={`conn-${pi}`} width={CONN_W} height={totalH} style={{ flexShrink: 0, display: 'block' }}>
+                {Array.from({ length: eN2 }, (_, j) => {
+                  const ordA = j * 2
+                  const ordB = j * 2 + 1
+                  const y1 = cy(ordA, eN)
+                  const y2 = cy(ordB, eN)
+                  const ym = cy(j, eN2)
+                  const mx = CONN_W / 2
+                  return ordA === ordB
+                    ? <path key={j} d={`M 0,${y1} H ${CONN_W}`} stroke={torneoUi.accentBorder} strokeWidth={1.5} fill="none" />
+                    : <path key={j} d={`M 0,${y1} H ${mx} V ${y2} M 0,${y2} H ${mx} M ${mx},${ym} H ${CONN_W}`} stroke={torneoUi.accentBorder} strokeWidth={1.5} fill="none" />
+                })}
+              </svg>
+            )
+
+            return [col, connector]
+          })}
+        </div>
+      </div>
+
+      {tercer.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{
+            fontSize: 10, color: torneoUi.muted, textTransform: 'uppercase',
+            letterSpacing: '1px', marginBottom: 8, fontWeight: 700,
+          }}>
+            {FASE_LABELS.tercer_lugar || '3er lugar'}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+            {tercer.map((p, i) => {
+              const ganoA = p.ganador_id === p.inscrito_a_id
+              const ganoB = p.ganador_id === p.inscrito_b_id
+              return (
+                <div key={p.id} style={{
+                  width: COL_W, background: '#fff', border: '1px solid #e2e8f0',
+                  borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,0.07)',
+                }}>
+                  <div style={{
+                    padding: '4px 10px', fontSize: 10, color: '#3730a3', fontWeight: 700,
+                    background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
+                  }}>
+                    Llave {i + 1}
+                  </div>
+                  <div style={{
+                    padding: '8px 10px', fontSize: 12, borderBottom: '1px solid #f1f5f9',
+                    background: ganoA ? '#f0fdf4' : '#fff',
+                    fontWeight: ganoA ? 700 : 400,
+                    color: ganoA ? torneoUi.success : torneoUi.text,
+                  }}>
+                    {nombreSlot(p, 'inscrito_a', props.nombrePorId)}{ganoA ? ' ✓' : ''}
+                  </div>
+                  <div style={{
+                    padding: '8px 10px', fontSize: 12,
+                    background: ganoB ? '#f0fdf4' : '#fff',
+                    fontWeight: ganoB ? 700 : 400,
+                    color: ganoB ? torneoUi.success : torneoUi.text,
+                  }}>
+                    {nombreSlot(p, 'inscrito_b', props.nombrePorId)}{ganoB ? ' ✓' : ''}
+                  </div>
+                  {p.ganador_id && p.inscrito_b_id && (
+                    <div style={{ padding: '4px 10px', fontSize: 10, color: torneoUi.muted, background: '#f8fafc' }}>
+                      {formatearSets(p.sets)}{etiquetaCierreOficial(p.tipo_cierre, p.es_walkover) ? ` · ${etiquetaCierreOficial(p.tipo_cierre, p.es_walkover)}` : ''}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

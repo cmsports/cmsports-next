@@ -11,6 +11,8 @@ export type FilaPrograma = {
   partido: string
   fase: string
   resultado?: string
+  numeroIttf?: number | null
+  arbitro?: string | null
 }
 
 export async function exportarProgramaOficialPdf(params: {
@@ -32,13 +34,24 @@ export async function exportarProgramaOficialPdf(params: {
   } else {
     autoTable(doc, {
       startY: y,
-      head: [['Hora', 'Mesa', 'Evento', 'Fase', 'Partido', 'Resultado']],
-      body: params.filas.map(f => [f.hora, String(f.mesa), f.evento, f.fase, f.partido, f.resultado || '—']),
+      head: [['#', 'Hora', 'Mesa', 'Evento', 'Fase', 'Partido', 'Árbitro', 'Resultado']],
+      body: params.filas.map(f => [
+        f.numeroIttf != null ? String(f.numeroIttf) : '—',
+        f.hora,
+        String(f.mesa),
+        f.evento,
+        f.fase,
+        f.partido,
+        f.arbitro || '—',
+        f.resultado || '—',
+      ]),
       ...estiloTabla(),
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 14, halign: 'center' },
-        4: { cellWidth: 70 },
+        0: { cellWidth: 12, halign: 'center' },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 12, halign: 'center' },
+        5: { cellWidth: 55 },
+        6: { cellWidth: 28 },
       },
     })
   }

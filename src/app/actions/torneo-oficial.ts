@@ -6,7 +6,6 @@ import { CONFIG, type FaseOrden } from '@/lib/config'
 import {
   calcularNumGrupos,
   construirLlavesLayoutNumerado,
-  generarRoundRobin,
   nombreGrupo,
   seedingSerpenteoConClubes,
   siguienteFase,
@@ -16,14 +15,26 @@ import {
   clasificarGrupoIttf,
   gamesParaGanarFormato,
   ganadorDesdeSets,
+  ordenPartidosGrupoIttf,
   parsearSetsTexto,
+  resolverCierrePartido,
+  type AlcanceSancionOficial,
   type PartidoOficialStats,
   type SetMarcador,
+  type TipoCierreOficial,
 } from '@/lib/domain/oficial-ittf'
 import {
+  conflictosAlAsignar,
+  detectarConflictosProgramaMulti,
   prioridadPartidoOficial,
-  programarPartidosGreedy,
+  programarPartidosGreedyConInforme,
 } from '@/lib/domain/programar-oficial'
+import {
+  aplicarModoSorteoLlave,
+  asignarNumerosIttf,
+  esModoSorteoLlave,
+  type ModoSorteoLlave,
+} from '@/lib/domain/oficial-sorteo'
 
 type Resultado<T extends object = object> =
   | { error: string; [key: string]: unknown }
@@ -40,6 +51,30 @@ function dbOficial(supabase: NonNullable<Awaited<ReturnType<typeof requireAdmin>
 
 function llaveFueJugada(partido: { ganador_id: string | null; inscrito_b_id: string | null }) {
   return !!partido.ganador_id && !!partido.inscrito_b_id
+}
+
+/** Asigna numero_ittf 1..N al evento (§4.5). Ignora si falta la columna (migración 181). */
+async function renumerarPartidosEventoDb(db: AdminDb, eventoId: string): Promise<void> {
+  const { data: grupos } = await db.from('oficial_grupos').select('id, orden').eq('evento_id', eventoId)
+  const ordenGrupo = new Map((grupos || []).map((g: { id: string; orden: number }) => [g.id, g.orden]))
+  const { data: partidos, error } = await db.from('oficial_partidos')
+    .select('id, fase, orden, grupo_id')
+    .eq('evento_id', eventoId)
+  if (error || !partidos?.length) return
+
+  const numeros = asignarNumerosIttf(partidos.map((p: { id: string; fase: string; orden: number; grupo_id: string | null }) => ({
+    id: p.id,
+    fase: p.fase,
+    orden: p.orden,
+    grupoOrden: p.grupo_id ? (ordenGrupo.get(p.grupo_id) ?? 0) : null,
+  })))
+
+  for (const [partidoId, numero] of numeros) {
+    const { error: updErr } = await db.from('oficial_partidos')
+      .update({ numero_ittf: numero })
+      .eq('id', partidoId)
+    if (updErr && String(updErr.message || '').includes('numero_ittf')) return
+  }
 }
 
 function perdedorPartido(partido: {
@@ -278,13 +313,18 @@ export async function formarGruposOficial(params: { eventoId: string }): Promise
   const { data: grupos, error: gErr } = await db.from('oficial_grupos').insert(gruposInsert).select('id, orden')
   if (gErr || !grupos) return { error: gErr?.message || 'No se pudieron crear los grupos' }
 
-  const grupoPorOrden = new Map(grupos.map((g: { id: string; orden: number }) => [g.orden, g.id]))
-  const miembros = asignaciones.map((a, idx) => ({
-    club_id: perfil.club_id!,
-    grupo_id: grupoPorOrden.get(a.grupoIndex)!,
-    inscrito_id: a.jugadorId,
-    orden: idx,
-  }))
+  const miembros: Array<Record<string, unknown>> = []
+  for (const g of grupos) {
+    const ids = asignaciones.filter(a => a.grupoIndex === g.orden).map(a => a.jugadorId)
+    ids.forEach((inscritoId, ordenEnGrupo) => {
+      miembros.push({
+        club_id: perfil.club_id!,
+        grupo_id: g.id,
+        inscrito_id: inscritoId,
+        orden: ordenEnGrupo,
+      })
+    })
+  }
 
   const { error: mErr } = await db.from('oficial_grupo_inscritos').insert(miembros)
   if (mErr) return { error: mErr.message || 'No se pudieron asignar inscritos' }
@@ -292,7 +332,7 @@ export async function formarGruposOficial(params: { eventoId: string }): Promise
   const partidos: Array<Record<string, unknown>> = []
   for (const g of grupos) {
     const ids = asignaciones.filter(a => a.grupoIndex === g.orden).map(a => a.jugadorId)
-    generarRoundRobin(ids).forEach(([a, b], i) => {
+    ordenPartidosGrupoIttf(ids).forEach(([a, b], i) => {
       partidos.push({
         club_id: perfil.club_id!,
         evento_id: params.eventoId,
@@ -313,6 +353,8 @@ export async function formarGruposOficial(params: { eventoId: string }): Promise
   await db.from('oficial_campeonatos').update({ estado: 'en_curso', actualizado_en: new Date().toISOString() })
     .eq('id', evento.campeonato_id).eq('club_id', perfil.club_id)
 
+  await renumerarPartidosEventoDb(db, params.eventoId)
+
   return { numGrupos }
 }
 
@@ -321,59 +363,92 @@ export async function registrarResultadoOficial(params: {
   setsTexto?: string
   sets?: SetMarcador[]
   ganadorId?: string
+  /** @deprecated preferir tipoCierre */
   esWalkover?: boolean
+  tipoCierre?: TipoCierreOficial
+  motivoCierre?: string
+  alcanceSancion?: AlcanceSancionOficial
 }): Promise<Resultado> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
 
   const { data: partido } = await db.from('oficial_partidos')
-    .select('id, evento_id, fase, orden, grupo_id, inscrito_a_id, inscrito_b_id, ganador_id')
+    .select('id, evento_id, fase, orden, grupo_id, inscrito_a_id, inscrito_b_id, ganador_id, sets')
     .eq('id', params.partidoId).eq('club_id', perfil.club_id).maybeSingle()
   if (!partido) return { error: 'Partido no encontrado' }
   if (!partido.inscrito_a_id) return { error: 'Faltan jugadores' }
   if (!partido.inscrito_b_id) return { error: 'Los BYE avanzan solos; no se registran manualmente' }
   if (partido.ganador_id) return { error: 'El partido ya tiene resultado' }
 
-  const { data: evento } = await db.from('oficial_eventos').select('formato_partido, fase')
+  const { data: evento } = await db.from('oficial_eventos').select('formato_partido, fase, campeonato_id')
     .eq('id', partido.evento_id).maybeSingle()
   const meta = gamesParaGanarFormato(evento?.formato_partido || 'bo5')
 
-  let sets: SetMarcador[] = params.sets ?? []
+  let sets: SetMarcador[] = params.sets ?? (Array.isArray(partido.sets) ? partido.sets as SetMarcador[] : [])
   if (params.setsTexto?.trim()) {
     const parsed = parsearSetsTexto(params.setsTexto)
     if ('error' in parsed) return { error: parsed.error }
     sets = parsed
   }
 
-  let ganadorId = params.ganadorId || null
-  const esWalkover = Boolean(params.esWalkover)
+  let tipoCierre: TipoCierreOficial = params.tipoCierre
+    ?? (params.esWalkover ? 'walkover' : 'jugado')
 
-  if (esWalkover) {
-    if (!ganadorId) return { error: 'En W.O. debes indicar el ganador' }
-    if (ganadorId !== partido.inscrito_a_id && ganadorId !== partido.inscrito_b_id) {
-      return { error: 'El ganador no pertenece al partido' }
-    }
-    sets = []
-  } else {
-    if (!sets.length) return { error: 'Indica los sets (ej. 11-6; 11-8; 11-4)' }
-    const derivado = ganadorDesdeSets(partido.inscrito_a_id, partido.inscrito_b_id, sets, meta)
-    if (!derivado) return { error: `Los sets no definen un ganador al mejor de ${meta * 2 - 1}` }
-    if (ganadorId && ganadorId !== derivado) return { error: 'El ganador no coincide con los sets' }
-    ganadorId = derivado
+  const resuelto = resolverCierrePartido({
+    inscritoA: partido.inscrito_a_id,
+    inscritoB: partido.inscrito_b_id,
+    tipoCierre,
+    ganadorId: params.ganadorId,
+    sets,
+    gamesParaGanar: meta,
+  })
+  if ('error' in resuelto) return { error: resuelto.error }
+
+  const alcance = params.alcanceSancion ?? 'partido'
+  const motivo = params.motivoCierre?.trim() || null
+  if ((resuelto.tipoCierre === 'walkover' || resuelto.tipoCierre === 'retiro') && !motivo) {
+    return { error: 'Indica el motivo del W.O. / retiro' }
   }
 
   const { error: err } = await db.from('oficial_partidos').update({
-    ganador_id: ganadorId,
-    sets,
-    es_walkover: esWalkover,
+    ganador_id: resuelto.ganadorId,
+    sets: resuelto.sets,
+    es_walkover: resuelto.esIncompleto,
+    tipo_cierre: resuelto.tipoCierre,
+    motivo_cierre: motivo,
+    alcance_sancion: resuelto.esIncompleto ? alcance : null,
     actualizado_en: new Date().toISOString(),
   }).eq('id', params.partidoId).is('ganador_id', null)
 
-  if (err) return { error: err.message || 'No se pudo guardar el resultado' }
+  if (err) {
+    if (String(err.message || '').includes('tipo_cierre') || String(err.message || '').includes('motivo_cierre')) {
+      return { error: 'Falta aplicar la migración 180_oficial_cierre_sanciones_programa en Supabase.' }
+    }
+    return { error: err.message || 'No se pudo guardar el resultado' }
+  }
+
+  const perdedorId = resuelto.ganadorId === partido.inscrito_a_id
+    ? partido.inscrito_b_id
+    : partido.inscrito_a_id
+
+  if (resuelto.esIncompleto && perdedorId && (alcance === 'evento' || alcance === 'campeonato')) {
+    const errAlcance = await aplicarWalkoverAlcance({
+      db,
+      clubId: perfil.club_id!,
+      partidoOrigenId: params.partidoId,
+      eventoId: partido.evento_id,
+      campeonatoId: evento?.campeonato_id ?? null,
+      perdedorId,
+      alcance,
+      motivo: motivo || 'Alcance de sanción',
+      gamesParaGanar: meta,
+    })
+    if (errAlcance) return { error: errAlcance }
+  }
 
   if (partido.fase !== 'grupos') {
-    const errProp = await propagarGanadorPlayoffOficial(db, partido, ganadorId!, perfil.club_id!)
+    const errProp = await propagarGanadorPlayoffOficial(db, partido, resuelto.ganadorId, perfil.club_id!)
     if (errProp) return { error: errProp }
     if (partido.fase === 'semis') {
       const errTercer = await sincronizarTercerLugarOficial(db, partido.evento_id, perfil.club_id!)
@@ -382,18 +457,18 @@ export async function registrarResultadoOficial(params: {
     await avanzarFaseEventoOficial(db, partido.evento_id, partido.fase)
     if (partido.fase === 'tercer_lugar') {
       await db.from('oficial_eventos').update({
-        tercer_inscrito_id: ganadorId,
+        tercer_inscrito_id: resuelto.ganadorId,
         actualizado_en: new Date().toISOString(),
       }).eq('id', partido.evento_id)
     }
     if (partido.fase === 'final') {
-      const perdedorId = ganadorId === partido.inscrito_a_id ? partido.inscrito_b_id : partido.inscrito_a_id
+      const subId = resuelto.ganadorId === partido.inscrito_a_id ? partido.inscrito_b_id : partido.inscrito_a_id
       const { data: ev } = await db.from('oficial_eventos').select('campeonato_id').eq('id', partido.evento_id).maybeSingle()
       await db.from('oficial_eventos').update({
         fase: 'finalizado',
         estado: 'finalizado',
-        campeon_inscrito_id: ganadorId,
-        subcampeon_inscrito_id: perdedorId,
+        campeon_inscrito_id: resuelto.ganadorId,
+        subcampeon_inscrito_id: subId,
         actualizado_en: new Date().toISOString(),
       }).eq('id', partido.evento_id)
       if (ev?.campeonato_id) await actualizarEstadoCampeonatoOficial(db, ev.campeonato_id, perfil.club_id!)
@@ -403,6 +478,63 @@ export async function registrarResultadoOficial(params: {
   }
 
   return {}
+}
+
+/** Aplica W.O. a partidos pendientes del sancionado en evento o campeonato. */
+async function aplicarWalkoverAlcance(params: {
+  db: AdminDb
+  clubId: string
+  partidoOrigenId: string
+  eventoId: string
+  campeonatoId: string | null
+  perdedorId: string
+  alcance: AlcanceSancionOficial
+  motivo: string
+  gamesParaGanar: number
+}): Promise<string | null> {
+  let eventoIds = [params.eventoId]
+  if (params.alcance === 'campeonato' && params.campeonatoId) {
+    const { data: evs } = await params.db.from('oficial_eventos')
+      .select('id').eq('campeonato_id', params.campeonatoId).eq('club_id', params.clubId)
+    eventoIds = (evs || []).map((e: { id: string }) => e.id)
+  }
+
+  const { data: pendientes } = await params.db.from('oficial_partidos')
+    .select('id, inscrito_a_id, inscrito_b_id, evento_id, fase, orden, grupo_id')
+    .eq('club_id', params.clubId)
+    .in('evento_id', eventoIds)
+    .is('ganador_id', null)
+    .neq('id', params.partidoOrigenId)
+    .or(`inscrito_a_id.eq.${params.perdedorId},inscrito_b_id.eq.${params.perdedorId}`)
+
+  for (const p of pendientes || []) {
+    if (!p.inscrito_a_id || !p.inscrito_b_id) continue
+    const ganadorId = p.inscrito_a_id === params.perdedorId ? p.inscrito_b_id : p.inscrito_a_id
+    const resuelto = resolverCierrePartido({
+      inscritoA: p.inscrito_a_id,
+      inscritoB: p.inscrito_b_id,
+      tipoCierre: 'walkover',
+      ganadorId,
+      sets: [],
+      gamesParaGanar: params.gamesParaGanar,
+    })
+    if ('error' in resuelto) continue
+
+    await params.db.from('oficial_partidos').update({
+      ganador_id: resuelto.ganadorId,
+      sets: resuelto.sets,
+      es_walkover: true,
+      tipo_cierre: 'walkover',
+      motivo_cierre: params.motivo,
+      alcance_sancion: params.alcance,
+      actualizado_en: new Date().toISOString(),
+    }).eq('id', p.id).is('ganador_id', null)
+
+    if (p.fase !== 'grupos') {
+      await propagarGanadorPlayoffOficial(params.db, p, resuelto.ganadorId, params.clubId)
+    }
+  }
+  return null
 }
 
 /** Guarda sets completados durante el marcador en vivo (sin cerrar el partido). */
@@ -434,13 +566,15 @@ export async function sincronizarResultadoDesdeMarcador(params: {
   marcadorId: string
   sets: SetMarcador[]
   ganadorLado: 'a' | 'b'
+  tipoCierre?: TipoCierreOficial
+  motivoCierre?: string
 }): Promise<Resultado> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return {}
   const db = dbOficial(supabase)
 
   const { data: oficial } = await db.from('oficial_partidos')
-    .select('id, inscrito_a_id, inscrito_b_id, ganador_id')
+    .select('id, inscrito_a_id, inscrito_b_id, ganador_id, evento_id')
     .eq('club_id', perfil.club_id)
     .eq('marcador_id', params.marcadorId)
     .maybeSingle()
@@ -451,11 +585,206 @@ export async function sincronizarResultadoDesdeMarcador(params: {
   const ganadorId = params.ganadorLado === 'a' ? oficial.inscrito_a_id : oficial.inscrito_b_id
   if (!ganadorId) return { error: 'Faltan inscritos en el partido oficial' }
 
-  return registrarResultadoOficial({
+  const tipoCierre = params.tipoCierre
+    ?? (params.sets.length > 0 && params.motivoCierre ? 'retiro' : 'jugado')
+
+  const res = await registrarResultadoOficial({
     partidoId: oficial.id,
     sets: params.sets,
     ganadorId,
+    tipoCierre,
+    motivoCierre: params.motivoCierre
+      ?? (tipoCierre === 'jugado' ? undefined : 'Cierre desde marcador técnico'),
+    alcanceSancion: 'partido',
   })
+
+  // Sync tarjetas del marcador → bitácora oficial (best-effort).
+  await sincronizarSancionesDesdeMarcador({
+    db,
+    clubId: perfil.club_id!,
+    partidoOficialId: oficial.id,
+    eventoId: oficial.evento_id,
+    marcadorId: params.marcadorId,
+    inscritoA: oficial.inscrito_a_id,
+    inscritoB: oficial.inscrito_b_id,
+    creadoPor: perfil.id,
+  })
+
+  return res
+}
+
+async function sincronizarSancionesDesdeMarcador(params: {
+  db: AdminDb
+  clubId: string
+  partidoOficialId: string
+  eventoId: string
+  marcadorId: string
+  inscritoA: string | null
+  inscritoB: string | null
+  creadoPor?: string | null
+}): Promise<void> {
+  const { data: tecnico } = await params.db.from('tecnico_partidos')
+    .select('tarjetas_a, tarjetas_b')
+    .eq('id', params.marcadorId)
+    .maybeSingle()
+  if (!tecnico) return
+
+  type Tarjetas = { blanca?: boolean; amarilla?: number; roja?: number }
+  const lados: Array<{ lado: 'a' | 'b'; inscrito: string | null; t: Tarjetas }> = [
+    { lado: 'a', inscrito: params.inscritoA, t: (tecnico.tarjetas_a || {}) as Tarjetas },
+    { lado: 'b', inscrito: params.inscritoB, t: (tecnico.tarjetas_b || {}) as Tarjetas },
+  ]
+
+  const filas: Array<Record<string, unknown>> = []
+  for (const { inscrito, t } of lados) {
+    if (!inscrito) continue
+    if (t.blanca) {
+      filas.push({
+        club_id: params.clubId,
+        evento_id: params.eventoId,
+        partido_id: params.partidoOficialId,
+        inscrito_id: inscrito,
+        tipo: 'blanca',
+        detalle: 'Tarjeta blanca (marcador)',
+        origen: 'marcador',
+        creado_por: params.creadoPor ?? null,
+      })
+    }
+    const amarillas = Number(t.amarilla || 0)
+    for (let i = 0; i < amarillas; i++) {
+      filas.push({
+        club_id: params.clubId,
+        evento_id: params.eventoId,
+        partido_id: params.partidoOficialId,
+        inscrito_id: inscrito,
+        tipo: 'amarilla',
+        detalle: `Tarjeta amarilla #${i + 1} (marcador)`,
+        origen: 'marcador',
+        creado_por: params.creadoPor ?? null,
+      })
+    }
+    const rojas = Number(t.roja || 0)
+    for (let i = 0; i < rojas; i++) {
+      filas.push({
+        club_id: params.clubId,
+        evento_id: params.eventoId,
+        partido_id: params.partidoOficialId,
+        inscrito_id: inscrito,
+        tipo: 'roja',
+        detalle: `Tarjeta roja #${i + 1} (marcador)`,
+        origen: 'marcador',
+        creado_por: params.creadoPor ?? null,
+      })
+    }
+  }
+  if (!filas.length) return
+
+  // Evitar duplicar si ya se sincronizó.
+  await params.db.from('oficial_sanciones')
+    .delete()
+    .eq('partido_id', params.partidoOficialId)
+    .eq('origen', 'marcador')
+  await params.db.from('oficial_sanciones').insert(filas)
+}
+
+/** Crea o reutiliza el marcador tablet técnico vinculado a un partido oficial. */
+export async function abrirMarcadorOficial(params: {
+  partidoId: string
+}): Promise<Resultado<{ marcadorId: string; eventoId: string }>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: partido } = await db.from('oficial_partidos')
+    .select('id, evento_id, fase, marcador_id, inscrito_a_id, inscrito_b_id, ganador_id')
+    .eq('id', params.partidoId)
+    .eq('club_id', perfil.club_id)
+    .maybeSingle()
+
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (!partido.inscrito_a_id || !partido.inscrito_b_id) {
+    return { error: 'El partido necesita ambos jugadores para abrir el marcador' }
+  }
+
+  if (partido.marcador_id) {
+    return { marcadorId: partido.marcador_id as string, eventoId: partido.evento_id as string }
+  }
+
+  const { data: evento } = await db.from('oficial_eventos')
+    .select('id, nombre, formato_partido')
+    .eq('id', partido.evento_id)
+    .eq('club_id', perfil.club_id)
+    .maybeSingle()
+  if (!evento) return { error: 'Evento no encontrado' }
+
+  const { data: inscritos } = await db.from('oficial_inscritos')
+    .select('id, nombre, asociacion')
+    .in('id', [partido.inscrito_a_id, partido.inscrito_b_id])
+
+  const porId = new Map<string, { nombre: string; asociacion: string | null }>(
+    (inscritos || []).map((i: { id: string; nombre: string; asociacion: string | null }) => [
+      i.id,
+      { nombre: i.nombre, asociacion: i.asociacion },
+    ]),
+  )
+
+  function etiqueta(inscritoId: string): string {
+    const row = porId.get(inscritoId)
+    if (!row) return 'Jugador'
+    return row.asociacion ? `${row.nombre} (${row.asociacion})` : row.nombre
+  }
+
+  const formatoRaw = String(evento.formato_partido || 'bo5')
+  const formato = formatoRaw === 'bo3' || formatoRaw === 'bo5' || formatoRaw === 'bo7'
+    ? formatoRaw
+    : 'bo5'
+
+  const faseLabel = (CONFIG.FASE_LABELS as Record<string, string>)[partido.fase] || partido.fase
+
+  const { data: tecnico, error: insErr } = await db.from('tecnico_partidos').insert({
+    club_id: perfil.club_id,
+    titulo: evento.nombre || 'Torneo oficial',
+    ronda: faseLabel || null,
+    formato,
+    nombre_a: etiqueta(partido.inscrito_a_id),
+    nombre_b: etiqueta(partido.inscrito_b_id),
+    estado: 'preparacion',
+    creado_por: perfil.id ?? null,
+  }).select('id').single()
+
+  if (insErr || !tecnico?.id) {
+    return { error: insErr?.message || 'No se pudo crear el marcador técnico' }
+  }
+
+  const { data: vinculado, error: updErr } = await db.from('oficial_partidos')
+    .update({
+      marcador_id: tecnico.id,
+      actualizado_en: new Date().toISOString(),
+    })
+    .eq('id', partido.id)
+    .eq('club_id', perfil.club_id)
+    .is('marcador_id', null)
+    .select('marcador_id')
+    .maybeSingle()
+
+  if (updErr) {
+    await db.from('tecnico_partidos').delete().eq('id', tecnico.id).eq('club_id', perfil.club_id)
+    return { error: updErr.message || 'No se pudo vincular el marcador' }
+  }
+
+  // Carrera: otro proceso ya vinculó; reutilizar el existente y descartar el huérfano.
+  if (!vinculado?.marcador_id) {
+    const { data: actual } = await db.from('oficial_partidos')
+      .select('marcador_id')
+      .eq('id', partido.id)
+      .eq('club_id', perfil.club_id)
+      .maybeSingle()
+    await db.from('tecnico_partidos').delete().eq('id', tecnico.id).eq('club_id', perfil.club_id)
+    if (!actual?.marcador_id) return { error: 'No se pudo vincular el marcador' }
+    return { marcadorId: actual.marcador_id as string, eventoId: partido.evento_id as string }
+  }
+
+  return { marcadorId: vinculado.marcador_id as string, eventoId: partido.evento_id as string }
 }
 
 export async function hoyChileOficial(): Promise<string> {
@@ -621,7 +950,16 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
     }
   }
 
-  const { data: evento } = await db.from('oficial_eventos').select('fase, clasifican_por_grupo').eq('id', params.eventoId).maybeSingle()
+  const { data: eventoRaw, error: evSelErr } = await db.from('oficial_eventos')
+    .select('fase, clasifican_por_grupo, modo_sorteo_llave')
+    .eq('id', params.eventoId).maybeSingle()
+  let evento = eventoRaw as { fase: string; clasifican_por_grupo: number; modo_sorteo_llave?: string } | null
+  if (evSelErr && String(evSelErr.message || '').includes('modo_sorteo_llave')) {
+    const { data: ev2 } = await db.from('oficial_eventos')
+      .select('fase, clasifican_por_grupo')
+      .eq('id', params.eventoId).maybeSingle()
+    evento = ev2 ? { ...ev2, modo_sorteo_llave: 'fijo' } : null
+  }
   if (!evento) return { error: 'Evento no encontrado' }
 
   const { data: grupos } = await db.from('oficial_grupos').select('id, orden').eq('evento_id', params.eventoId).order('orden')
@@ -674,8 +1012,12 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
     .eq('evento_id', params.eventoId).neq('fase', 'grupos')
 
   const gruposListosIdx = clasificados.map(c => idxByGrupoId.get(c.grupoId)).filter((i): i is number => i != null)
-  const layout = construirLlavesLayoutNumerado(numGrupos, cabezasSlots, gruposListosIdx)
-  if (!layout.matches.length) return { error: 'No se pudo construir un bracket válido' }
+  const layoutBase = construirLlavesLayoutNumerado(numGrupos, cabezasSlots, gruposListosIdx)
+  if (!layoutBase.matches.length) return { error: 'No se pudo construir un bracket válido' }
+  const modoSorteo: ModoSorteoLlave = esModoSorteoLlave(evento.modo_sorteo_llave)
+    ? evento.modo_sorteo_llave
+    : 'fijo'
+  const layout = aplicarModoSorteoLlave(modoSorteo, layoutBase, numGrupos)
 
   const hayLlavesJugadas = !!bracketExistente?.some(llaveFueJugada)
   const inicialesExistentes = (bracketExistente || []).filter((p: { fase: string }) => p.fase === layout.faseInicial)
@@ -763,6 +1105,8 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
       .eq('id', params.eventoId)
   }
 
+  await renumerarPartidosEventoDb(db, params.eventoId)
+
   return { faseInicial: layout.faseInicial, bracketCreado: true }
 }
 
@@ -800,7 +1144,7 @@ export async function actualizarConfigProgramacionOficial(params: {
 export async function programarCampeonatoOficial(params: {
   campeonatoId: string
   fecha?: string
-}): Promise<Resultado<{ programados: number }>> {
+}): Promise<Resultado<{ programados: number; omitidos: number }>> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
@@ -825,9 +1169,9 @@ export async function programarCampeonatoOficial(params: {
     .not('inscrito_a_id', 'is', null)
 
   const pendientes = (partidos || []).filter((p: { inscrito_b_id: string | null }) => p.inscrito_b_id)
-  if (!pendientes.length) return { programados: 0 }
+  if (!pendientes.length) return { programados: 0, omitidos: 0 }
 
-  const asignaciones = programarPartidosGreedy(
+  const { asignaciones, omitidos } = programarPartidosGreedyConInforme(
     pendientes.map((p: { id: string; inscrito_a_id: string; inscrito_b_id: string; fase: string; orden: number }) => ({
       id: p.id,
       inscritoA: p.inscrito_a_id,
@@ -849,10 +1193,10 @@ export async function programarCampeonatoOficial(params: {
     }).eq('id', partidoId)
   }
 
-  return { programados: asignaciones.size }
+  return { programados: asignaciones.size, omitidos: omitidos.length }
 }
 
-export async function programarEventoOficial(params: { eventoId: string; fecha?: string }): Promise<Resultado<{ programados: number }>> {
+export async function programarEventoOficial(params: { eventoId: string; fecha?: string }): Promise<Resultado<{ programados: number; omitidos: number }>> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
@@ -877,7 +1221,7 @@ export async function programarEventoOficial(params: { eventoId: string; fecha?:
     .not('inscrito_a_id', 'is', null)
 
   const pendientes = (partidos || []).filter((p: { inscrito_b_id: string | null }) => p.inscrito_b_id)
-  const asignaciones = programarPartidosGreedy(
+  const { asignaciones, omitidos } = programarPartidosGreedyConInforme(
     pendientes.map((p: { id: string; inscrito_a_id: string; inscrito_b_id: string; fase: string; orden: number }) => ({
       id: p.id,
       inscritoA: p.inscrito_a_id,
@@ -898,7 +1242,7 @@ export async function programarEventoOficial(params: { eventoId: string; fecha?:
     }).eq('id', partidoId)
   }
 
-  return { programados: asignaciones.size }
+  return { programados: asignaciones.size, omitidos: omitidos.length }
 }
 
 async function actualizarEstadoCampeonatoOficial(db: AdminDb, campeonatoId: string, clubId: string) {
@@ -971,6 +1315,9 @@ export async function corregirResultadoOficial(params: {
       ganador_id: params.nuevoGanadorId,
       sets,
       es_walkover: false,
+      tipo_cierre: 'jugado',
+      motivo_cierre: null,
+      alcance_sancion: null,
       actualizado_en: new Date().toISOString(),
     }).eq('id', params.partidoId)
     await sincronizarLlavesOficial({ eventoId: partido.evento_id })
@@ -1169,5 +1516,366 @@ export async function reiniciarLlavesOficial(params: { eventoId: string }): Prom
   }).eq('id', params.eventoId)
 
   await sincronizarLlavesOficial({ eventoId: params.eventoId })
+  return {}
+}
+
+/** Edita mesa/hora de un partido y reporta conflictos de mesa/jugador. */
+export async function actualizarProgramaPartidoOficial(params: {
+  partidoId: string
+  mesa: number | null
+  programadoEn: string | null
+  /** Si true, guarda aunque haya conflicto (solo advierte). */
+  forzar?: boolean
+}): Promise<Resultado<{ conflictos: Array<{ tipo: string; motivo: string; otroId: string }> }>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: partido } = await db.from('oficial_partidos')
+    .select('id, evento_id, inscrito_a_id, inscrito_b_id, mesa, programado_en')
+    .eq('id', params.partidoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!partido) return { error: 'Partido no encontrado' }
+
+  if (params.mesa != null && params.mesa < 1) return { error: 'Mesa inválida' }
+
+  const { data: campRow } = await db.from('oficial_eventos')
+    .select('campeonato_id').eq('id', partido.evento_id).maybeSingle()
+  const { data: camp } = campRow?.campeonato_id
+    ? await db.from('oficial_campeonatos')
+      .select('mesas_count').eq('id', campRow.campeonato_id).maybeSingle()
+    : { data: null }
+  if (params.mesa != null && camp?.mesas_count && params.mesa > camp.mesas_count) {
+    return { error: `La mesa debe estar entre 1 y ${camp.mesas_count}` }
+  }
+
+  // Conflictos contra todos los partidos del campeonato (multi-evento mismo día).
+  let query = db.from('oficial_partidos')
+    .select('id, inscrito_a_id, inscrito_b_id, mesa, programado_en, evento_id')
+    .eq('club_id', perfil.club_id)
+  if (campRow?.campeonato_id) {
+    const { data: evs } = await db.from('oficial_eventos')
+      .select('id').eq('campeonato_id', campRow.campeonato_id)
+    const ids = (evs || []).map((e: { id: string }) => e.id)
+    query = query.in('evento_id', ids)
+  } else {
+    query = query.eq('evento_id', partido.evento_id)
+  }
+  const { data: todos } = await query
+
+  const slots = (todos || []).map((p: {
+    id: string; inscrito_a_id: string | null; inscrito_b_id: string | null
+    mesa: number | null; programado_en: string | null
+  }) => ({
+    id: p.id,
+    inscritoA: p.inscrito_a_id,
+    inscritoB: p.inscrito_b_id,
+    mesa: p.mesa,
+    programadoEn: p.programado_en,
+  }))
+
+  let conflictos: Array<{ tipo: string; motivo: string; otroId: string }> = []
+  if (params.mesa != null && params.programadoEn) {
+    conflictos = conflictosAlAsignar(
+      slots,
+      params.partidoId,
+      params.mesa,
+      new Date(params.programadoEn),
+    ).map(c => ({ tipo: c.tipo, motivo: c.motivo, otroId: c.otroId }))
+    if (conflictos.length && !params.forzar) {
+      return { error: conflictos[0].motivo, conflictos }
+    }
+  }
+
+  const { error: updErr } = await db.from('oficial_partidos').update({
+    mesa: params.mesa,
+    programado_en: params.programadoEn,
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', params.partidoId)
+
+  if (updErr) return { error: updErr.message || 'No se pudo actualizar el programa' }
+  return { conflictos }
+}
+
+/** Lista conflictos actuales del programa de un evento (o campeonato). */
+export async function listarConflictosProgramaOficial(params: {
+  eventoId?: string
+  campeonatoId?: string
+}): Promise<Resultado<{
+  conflictos: ReturnType<typeof detectarConflictosProgramaMulti>
+}>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  let eventoIds: string[] = []
+  const eventoNombre = new Map<string, string>()
+  if (params.campeonatoId) {
+    const { data: evs } = await db.from('oficial_eventos')
+      .select('id, nombre').eq('campeonato_id', params.campeonatoId).eq('club_id', perfil.club_id)
+    eventoIds = (evs || []).map((e: { id: string }) => e.id)
+    for (const e of evs || []) eventoNombre.set(e.id, e.nombre)
+  } else if (params.eventoId) {
+    eventoIds = [params.eventoId]
+    const { data: ev } = await db.from('oficial_eventos').select('id, nombre').eq('id', params.eventoId).maybeSingle()
+    if (ev) eventoNombre.set(ev.id, ev.nombre)
+  } else {
+    return { error: 'Indica evento o campeonato' }
+  }
+
+  if (!eventoIds.length) return { conflictos: [] }
+
+  const { data: inscritos } = await db.from('oficial_inscritos')
+    .select('id, nombre, jugador_id, evento_id')
+    .in('evento_id', eventoIds)
+
+  const clavePorInscrito = new Map<string, string>()
+  const nombrePorInscrito = new Map<string, string>()
+  for (const i of inscritos || []) {
+    const clave = i.jugador_id
+      ? `jid:${i.jugador_id}`
+      : `nom:${String(i.nombre || '').trim().toLowerCase()}`
+    clavePorInscrito.set(i.id, clave)
+    nombrePorInscrito.set(i.id, i.nombre)
+  }
+
+  const { data: todos } = await db.from('oficial_partidos')
+    .select('id, evento_id, inscrito_a_id, inscrito_b_id, mesa, programado_en, numero_ittf')
+    .eq('club_id', perfil.club_id)
+    .in('evento_id', eventoIds)
+    .not('programado_en', 'is', null)
+
+  const conflictos = detectarConflictosProgramaMulti((todos || []).map((p: {
+    id: string; evento_id: string; inscrito_a_id: string | null; inscrito_b_id: string | null
+    mesa: number | null; programado_en: string | null; numero_ittf?: number | null
+  }) => {
+    const na = p.inscrito_a_id ? (nombrePorInscrito.get(p.inscrito_a_id) || '?') : '?'
+    const nb = p.inscrito_b_id ? (nombrePorInscrito.get(p.inscrito_b_id) || '?') : 'BYE'
+    const num = p.numero_ittf ? `#${p.numero_ittf} ` : ''
+    return {
+      id: p.id,
+      eventoId: p.evento_id,
+      inscritoA: p.inscrito_a_id,
+      inscritoB: p.inscrito_b_id,
+      mesa: p.mesa,
+      programadoEn: p.programado_en,
+      claveJugadorA: p.inscrito_a_id ? (clavePorInscrito.get(p.inscrito_a_id) ?? null) : null,
+      claveJugadorB: p.inscrito_b_id ? (clavePorInscrito.get(p.inscrito_b_id) ?? null) : null,
+      eventoNombre: eventoNombre.get(p.evento_id),
+      labelPartido: `${num}${na} vs ${nb}${eventoNombre.has(p.evento_id) ? ` (${eventoNombre.get(p.evento_id)})` : ''}`,
+    }
+  }))
+
+  return { conflictos }
+}
+
+export async function registrarSancionOficial(params: {
+  eventoId: string
+  partidoId?: string
+  inscritoId: string
+  tipo: 'blanca' | 'amarilla' | 'roja' | 'descalificacion' | 'otro'
+  detalle?: string
+}): Promise<Resultado<{ id: string }>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: evento } = await db.from('oficial_eventos')
+    .select('id').eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!evento) return { error: 'Evento no encontrado' }
+
+  const { data, error: insErr } = await db.from('oficial_sanciones').insert({
+    club_id: perfil.club_id,
+    evento_id: params.eventoId,
+    partido_id: params.partidoId ?? null,
+    inscrito_id: params.inscritoId,
+    tipo: params.tipo,
+    detalle: params.detalle?.trim() || null,
+    origen: 'manual',
+    creado_por: perfil.id,
+  }).select('id').single()
+
+  if (insErr) {
+    if (String(insErr.message || '').includes('oficial_sanciones')) {
+      return { error: 'Falta aplicar la migración 180_oficial_cierre_sanciones_programa en Supabase.' }
+    }
+    return { error: insErr.message || 'No se pudo registrar la sanción' }
+  }
+  return { id: data.id }
+}
+
+/** Configura el modo de sorteo de 2ª fase (§3.7). Requiere re-sincronizar llaves. */
+export async function actualizarModoSorteoLlaveOficial(params: {
+  eventoId: string
+  modo: ModoSorteoLlave
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  if (!esModoSorteoLlave(params.modo)) return { error: 'Modo de sorteo inválido' }
+  const db = dbOficial(supabase)
+
+  const { data: evento } = await db.from('oficial_eventos')
+    .select('id, fase').eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!evento) return { error: 'Evento no encontrado' }
+
+  const { data: jugados } = await db.from('oficial_partidos')
+    .select('id, ganador_id, inscrito_b_id')
+    .eq('evento_id', params.eventoId)
+    .neq('fase', 'grupos')
+  if ((jugados || []).some(llaveFueJugada)) {
+    return { error: 'Hay llaves jugadas. Reinicia las llaves antes de cambiar el sorteo.' }
+  }
+
+  const { error: updErr } = await db.from('oficial_eventos').update({
+    modo_sorteo_llave: params.modo,
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', params.eventoId)
+
+  if (updErr) {
+    if (String(updErr.message || '').includes('modo_sorteo_llave')) {
+      return { error: 'Falta aplicar la migración 181_oficial_sorteo_numero_arbitro en Supabase.' }
+    }
+    return { error: updErr.message || 'No se pudo guardar el modo de sorteo' }
+  }
+  return {}
+}
+
+/** Reasigna numeración ITTF del evento (§4.5). */
+export async function renumerarPartidosOficial(params: { eventoId: string }): Promise<Resultado<{ total: number }>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: evento } = await db.from('oficial_eventos')
+    .select('id').eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!evento) return { error: 'Evento no encontrado' }
+
+  const { count } = await db.from('oficial_partidos')
+    .select('id', { count: 'exact', head: true }).eq('evento_id', params.eventoId)
+  await renumerarPartidosEventoDb(db, params.eventoId)
+  return { total: count ?? 0 }
+}
+
+/** Asigna árbitro (texto) a un partido/mesa. */
+export async function actualizarArbitroPartidoOficial(params: {
+  partidoId: string
+  arbitroNombre: string | null
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const nombre = params.arbitroNombre?.trim() || null
+  if (nombre && nombre.length > 80) return { error: 'Nombre de árbitro demasiado largo' }
+
+  const { error: updErr } = await db.from('oficial_partidos').update({
+    arbitro_nombre: nombre,
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', params.partidoId).eq('club_id', perfil.club_id)
+
+  if (updErr) {
+    if (String(updErr.message || '').includes('arbitro_nombre')) {
+      return { error: 'Falta aplicar la migración 181_oficial_sorteo_numero_arbitro en Supabase.' }
+    }
+    return { error: updErr.message || 'No se pudo guardar el árbitro' }
+  }
+  return {}
+}
+
+/** Soft-archive: mismo patrón que torneos de club (`estado = 'archivado'`). */
+export async function archivarCampeonatoOficial(params: {
+  campeonatoId: string
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+  const clubId = perfil.club_id
+
+  const { data: camp } = await db.from('oficial_campeonatos')
+    .select('id, estado').eq('id', params.campeonatoId).eq('club_id', clubId).maybeSingle()
+  if (!camp) return { error: 'Campeonato no encontrado' }
+  if (camp.estado === 'archivado') return {}
+
+  const ahora = new Date().toISOString()
+  const { error: updErr } = await db.from('oficial_campeonatos').update({
+    estado: 'archivado',
+    actualizado_en: ahora,
+  }).eq('id', params.campeonatoId).eq('club_id', clubId)
+  if (updErr) return { error: `No se pudo archivar: ${updErr.message}` }
+
+  await db.from('oficial_eventos').update({
+    estado: 'archivado',
+    actualizado_en: ahora,
+  }).eq('campeonato_id', params.campeonatoId).eq('club_id', clubId)
+
+  return {}
+}
+
+/** Restaura un campeonato archivado a `en_curso` (espejo de torneos internos). */
+export async function desarchivarCampeonatoOficial(params: {
+  campeonatoId: string
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+  const clubId = perfil.club_id
+
+  const { data: camp } = await db.from('oficial_campeonatos')
+    .select('id, estado').eq('id', params.campeonatoId).eq('club_id', clubId).maybeSingle()
+  if (!camp) return { error: 'Campeonato no encontrado' }
+  if (camp.estado !== 'archivado') return { error: 'El campeonato no está archivado' }
+
+  const ahora = new Date().toISOString()
+  const { error: updErr } = await db.from('oficial_campeonatos').update({
+    estado: 'en_curso',
+    actualizado_en: ahora,
+  }).eq('id', params.campeonatoId).eq('club_id', clubId)
+  if (updErr) return { error: `No se pudo desarchivar: ${updErr.message}` }
+
+  await db.from('oficial_eventos').update({
+    estado: 'en_curso',
+    actualizado_en: ahora,
+  }).eq('campeonato_id', params.campeonatoId).eq('club_id', clubId).eq('estado', 'archivado')
+
+  return {}
+}
+
+/**
+ * Hard-delete del campeonato oficial y todo lo colgante (eventos, inscritos,
+ * grupos, partidos, sanciones) vía ON DELETE CASCADE. Sin movimientos
+ * financieros asociados.
+ */
+export async function eliminarCampeonatoOficialDefinitivo(params: {
+  campeonatoId: string
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+  const clubId = perfil.club_id
+
+  const { data: camp } = await db.from('oficial_campeonatos')
+    .select('id, nombre').eq('id', params.campeonatoId).eq('club_id', clubId).maybeSingle()
+  if (!camp) return { error: 'Campeonato no encontrado' }
+
+  // Limpia vínculos a marcador técnico antes del cascade (FK SET NULL en 179,
+  // pero los tecnico_partidos quedan huérfanos; no los borramos).
+  const { data: eventos } = await db.from('oficial_eventos')
+    .select('id').eq('campeonato_id', params.campeonatoId).eq('club_id', clubId)
+  const eventoIds = (eventos || []).map((e: { id: string }) => e.id)
+  if (eventoIds.length) {
+    await db.from('oficial_partidos')
+      .update({ marcador_id: null, actualizado_en: new Date().toISOString() })
+      .in('evento_id', eventoIds)
+    // Evita fricción si quedan FKs campeon/subcampeon → inscritos al borrar.
+    await db.from('oficial_eventos').update({
+      campeon_inscrito_id: null,
+      subcampeon_inscrito_id: null,
+      tercer_inscrito_id: null,
+    }).in('id', eventoIds)
+  }
+
+  const { error: delErr } = await db.from('oficial_campeonatos')
+    .delete().eq('id', params.campeonatoId).eq('club_id', clubId)
+  if (delErr) return { error: `No se pudo eliminar: ${delErr.message}` }
+
   return {}
 }

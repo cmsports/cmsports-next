@@ -9,12 +9,16 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import { CONFIG } from '@/lib/config'
 import {
   actualizarConfigProgramacionOficial,
+  archivarCampeonatoOficial,
   crearEventoOficial,
+  listarConflictosProgramaOficial,
   programarCampeonatoOficial,
 } from '@/app/actions/torneo-oficial'
 import { formatearSets, type SetMarcador } from '@/lib/domain/oficial-ittf'
 import { exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
-import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
+import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
+import ProgramaOficialTablero, { type CeldaProgramaOficial } from '@/components/torneo-oficial/ProgramaOficialTablero'
+import { btnOutlineIndigo, btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
 
 const supabase = createClient()
 
@@ -41,7 +45,7 @@ type Campeonato = {
   hora_inicio: string
 }
 
-const card = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.08)' } as const
+const card = torneoUi.card
 const FASE_LABELS = CONFIG.FASE_LABELS as Record<string, string>
 
 export default function CampeonatoOficialDetallePage() {
@@ -49,9 +53,15 @@ export default function CampeonatoOficialDetallePage() {
   const { perfil, loading: authLoading } = usePerfil()
   const router = useRouter()
   const clubId = perfil?.club_id
+  const esAdmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
   const [camp, setCamp] = useState<Campeonato | null>(null)
+  const [archivando, setArchivando] = useState(false)
   const [eventos, setEventos] = useState<Evento[]>([])
-  const [programaRows, setProgramaRows] = useState<Array<{ hora: string; mesa: number; evento: string; fase: string; partido: string; resultado?: string }>>([])
+  const [programaRows, setProgramaRows] = useState<Array<{
+    hora: string; mesa: number; evento: string; fase: string; partido: string
+    resultado?: string; numeroIttf?: number | null; arbitro?: string | null
+  }>>([])
+  const [programaCeldas, setProgramaCeldas] = useState<CeldaProgramaOficial[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
   const [categoria, setCategoria] = useState('Juvenil')
@@ -65,12 +75,17 @@ export default function CampeonatoOficialDetallePage() {
   const [mesas, setMesas] = useState('8')
   const [bloque, setBloque] = useState('25')
   const [horaInicio, setHoraInicio] = useState('09:00')
+  const [conflictosCamp, setConflictosCamp] = useState<Array<{ motivo: string; labelA?: string; labelB?: string; tipo: string }>>([])
   const cargadoRef = useRef(false)
 
   type DatosCamp = {
     camp: Campeonato | null
     eventos: Evento[]
-    programaRows: Array<{ hora: string; mesa: number; evento: string; fase: string; partido: string; resultado?: string }>
+    programaRows: Array<{
+      hora: string; mesa: number; evento: string; fase: string; partido: string
+      resultado?: string; numeroIttf?: number | null; arbitro?: string | null
+    }>
+    programaCeldas: CeldaProgramaOficial[]
     error?: string
   }
 
@@ -79,6 +94,7 @@ export default function CampeonatoOficialDetallePage() {
     setCamp(d.camp)
     setEventos(d.eventos)
     setProgramaRows(d.programaRows)
+    setProgramaCeldas(d.programaCeldas)
     if (d.camp) {
       setMesas(String(d.camp.mesas_count))
       setBloque(String(d.camp.bloque_minutos))
@@ -101,8 +117,8 @@ export default function CampeonatoOficialDetallePage() {
           .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
           .eq('id', id).eq('club_id', clubId).maybeSingle()
 
-        if (errC) return { camp: null, eventos: [], programaRows: [], error: errC.message || 'Error al cargar el campeonato' }
-        if (!c) return { camp: null, eventos: [], programaRows: [] }
+        if (errC) return { camp: null, eventos: [], programaRows: [], programaCeldas: [], error: errC.message || 'Error al cargar el campeonato' }
+        if (!c) return { camp: null, eventos: [], programaRows: [], programaCeldas: [] }
 
         let mesas_count = 8
         let bloque_minutos = 25
@@ -125,30 +141,56 @@ export default function CampeonatoOficialDetallePage() {
 
         const eventoIds = eventosList.map(e => e.id)
         let programaRows: DatosCamp['programaRows'] = []
+        let programaCeldas: CeldaProgramaOficial[] = []
         if (eventoIds.length) {
           const { data: ins } = await db.from('oficial_inscritos').select('id,nombre,asociacion').in('evento_id', eventoIds)
           const nombreMap = new Map((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) =>
             [i.id, i.asociacion ? `${i.nombre} (${i.asociacion})` : i.nombre]))
           const eventoMap = new Map(eventosList.map(e => [e.id, e.nombre]))
 
-          const { data: par } = await db.from('oficial_partidos')
-            .select('evento_id,fase,inscrito_a_id,inscrito_b_id,ganador_id,sets,mesa,programado_en')
+          const qPar = await db.from('oficial_partidos')
+            .select('id,evento_id,fase,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,mesa,programado_en,numero_ittf,arbitro_nombre')
             .in('evento_id', eventoIds).not('programado_en', 'is', null).order('programado_en')
+          let parRows = qPar.data || []
+          if (qPar.error && String(qPar.error.message || '').includes('numero_ittf')) {
+            const q2 = await db.from('oficial_partidos')
+              .select('id,evento_id,fase,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,mesa,programado_en')
+              .in('evento_id', eventoIds).not('programado_en', 'is', null).order('programado_en')
+            parRows = q2.data || []
+          }
 
-          programaRows = (par || []).map((p: {
-            evento_id: string; fase: string; inscrito_a_id: string; inscrito_b_id: string | null
-            ganador_id: string | null; sets: SetMarcador[]; mesa: number; programado_en: string
+          programaRows = parRows.map((p: {
+            id: string; evento_id: string; fase: string; inscrito_a_id: string; inscrito_b_id: string | null
+            ganador_id: string | null; sets: SetMarcador[]; es_walkover: boolean; mesa: number; programado_en: string
+            numero_ittf?: number | null; arbitro_nombre?: string | null
           }) => ({
             hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
             mesa: p.mesa ?? 0,
             evento: eventoMap.get(p.evento_id) || '',
             fase: FASE_LABELS[p.fase] || p.fase,
-            partido: `${nombreMap.get(p.inscrito_a_id) || '?'} vs ${p.inscrito_b_id ? nombreMap.get(p.inscrito_b_id) : 'BYE'}`,
+            partido: `${p.numero_ittf ? `#${p.numero_ittf} ` : ''}${nombreMap.get(p.inscrito_a_id) || '?'} vs ${p.inscrito_b_id ? nombreMap.get(p.inscrito_b_id) : 'BYE'}`,
             resultado: p.ganador_id ? formatearSets((p.sets || []) as SetMarcador[]) : undefined,
+            numeroIttf: p.numero_ittf,
+            arbitro: p.arbitro_nombre,
+          }))
+
+          programaCeldas = parRows.filter((p: { mesa: number | null; inscrito_a_id: string | null }) => p.mesa && p.inscrito_a_id).map((p: {
+            id: string; evento_id: string; fase: string; inscrito_a_id: string; inscrito_b_id: string | null
+            ganador_id: string | null; sets: SetMarcador[]; es_walkover: boolean; mesa: number; programado_en: string
+          }) => ({
+            id: p.id,
+            mesa: p.mesa,
+            hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            faseLabel: FASE_LABELS[p.fase] || p.fase,
+            jugadorA: nombreMap.get(p.inscrito_a_id) || '?',
+            jugadorB: p.inscrito_b_id ? (nombreMap.get(p.inscrito_b_id) || '?') : 'BYE',
+            resultado: p.ganador_id ? formatearSets((p.sets || []) as SetMarcador[]) : undefined,
+            eventoNombre: eventoMap.get(p.evento_id) || undefined,
+            estado: p.es_walkover ? 'walkover' as const : p.ganador_id ? 'finalizado' as const : 'pendiente' as const,
           }))
         }
 
-        return { camp: campCompleto, eventos: eventosList, programaRows }
+        return { camp: campCompleto, eventos: eventosList, programaRows, programaCeldas }
       },
       {
         tablas: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos', 'oficial_inscritos'],
@@ -172,6 +214,25 @@ export default function CampeonatoOficialDetallePage() {
     () => { void cargar(true) },
     { conClub: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos'] },
   )
+
+  const refrescarConflictosCamp = useCallback(async () => {
+    const res = await listarConflictosProgramaOficial({ campeonatoId: id })
+    if (res.error) {
+      setConflictosCamp([])
+      return
+    }
+    const lista = Array.isArray(res.conflictos) ? res.conflictos : []
+    setConflictosCamp(lista.map(c => ({
+      motivo: c.motivo,
+      tipo: c.tipo,
+      labelA: c.labelA,
+      labelB: c.labelB,
+    })))
+  }, [id])
+
+  useEffect(() => {
+    if (cargadoRef.current && programaCeldas.length) void refrescarConflictosCamp()
+  }, [programaCeldas.length, refrescarConflictosCamp])
 
   const resumen = useMemo(() => ({
     total: eventos.length,
@@ -217,7 +278,15 @@ export default function CampeonatoOficialDetallePage() {
     const res = await programarCampeonatoOficial({ campeonatoId: id })
     setProgramando(false)
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else {
+      const omitidos = typeof res.omitidos === 'number' ? res.omitidos : 0
+      const programados = typeof res.programados === 'number' ? res.programados : 0
+      if (omitidos > 0) {
+        setErrorMsg(`Se programaron ${programados} partidos; ${omitidos} no cupieron (sube mesas o baja min/bloque).`)
+      }
+      void cargar()
+      void refrescarConflictosCamp()
+    }
   }
 
   async function exportarPrograma() {
@@ -231,34 +300,85 @@ export default function CampeonatoOficialDetallePage() {
     })
   }
 
+  async function archivar() {
+    if (!camp || !clubId) return
+    if (!confirm(`¿Archivar "${camp.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
+    setArchivando(true)
+    const res = await archivarCampeonatoOficial({ campeonatoId: camp.id })
+    setArchivando(false)
+    if (res.error) { alert(res.error); return }
+    invalidarCacheOficial(`oficial:lista:${clubId}:act`)
+    invalidarCacheOficial(`oficial:lista:${clubId}:arch`)
+    invalidarCacheOficial(`oficial:camp:${id}:${clubId}`)
+    router.push('/torneo-oficial')
+  }
+
   return (
     <AppLayout perfil={perfil}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <button type="button" onClick={() => router.push('/torneo-oficial')} style={btnBack}>← Volver</button>
         {loading && !camp ? (
-          <p style={{ color: '#94a3b8' }}>Cargando…</p>
+          <p style={{ color: torneoUi.hint }}>Cargando…</p>
         ) : !camp ? (
-          <p style={{ color: '#94a3b8' }}>Campeonato no encontrado</p>
+          <p style={{ color: torneoUi.hint }}>Campeonato no encontrado</p>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
               <div>
-                <h1 style={{ margin: 0, fontSize: 22 }}>{camp.nombre}</h1>
-                <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>
+                <h1 style={{ margin: 0, fontSize: 22, color: torneoUi.text }}>{camp.nombre}</h1>
+                <p style={{ margin: '6px 0 0', color: torneoUi.muted, fontSize: 13 }}>
                   {camp.fecha_inicio}{camp.fecha_fin ? ` → ${camp.fecha_fin}` : ''}
                   {camp.sede ? ` · ${camp.sede}` : ''}{camp.zona ? ` · ${camp.zona}` : ''} · {camp.estado}
                 </p>
-                <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>
+                <p style={{ margin: '4px 0 0', color: torneoUi.muted, fontSize: 12 }}>
                   {resumen.total} evento(s) · {resumen.enGrupos} en grupos · {resumen.enLlaves} en llaves · {resumen.finalizados} finalizados
                 </p>
               </div>
-              <button type="button" onClick={() => setModal(true)} style={btnPrimary}>+ Evento / categoría</button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                {esAdmin && camp.estado !== 'archivado' && (
+                  <button
+                    type="button"
+                    onClick={() => void archivar()}
+                    disabled={archivando}
+                    style={{ background: 'transparent', border: '1px solid #fecaca', borderRadius: 8, padding: '6px 14px', color: '#dc2626', fontSize: 13, cursor: archivando ? 'wait' : 'pointer', opacity: archivando ? 0.6 : 1 }}
+                  >
+                    {archivando ? 'Archivando…' : 'Archivar'}
+                  </button>
+                )}
+                {camp.estado !== 'archivado' && (
+                  <button type="button" onClick={() => setModal(true)} style={btnPrimaryIndigo}>+ Evento / categoría</button>
+                )}
+              </div>
             </div>
 
-            {errorMsg && <div style={{ ...card, padding: 12, marginBottom: 14, color: '#e11d48', fontSize: 13 }}>{errorMsg}</div>}
+            {errorMsg && <div style={{ ...card, padding: 12, marginBottom: 14, color: torneoUi.danger, fontSize: 13 }}>{errorMsg}</div>}
+
+            {conflictosCamp.length > 0 && (
+              <div style={{ ...card, padding: 14, marginBottom: 14, borderColor: '#fcd34d', background: '#fffbeb' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#92400e' }}>
+                    Conflictos multi-evento ({conflictosCamp.length})
+                  </div>
+                  <button type="button" onClick={() => void refrescarConflictosCamp()} style={btnOutlineIndigo}>Actualizar</button>
+                </div>
+                <p style={{ margin: '6px 0 8px', fontSize: 12, color: '#a16207' }}>
+                  Mismo jugador o misma mesa en dos partidos a la misma hora (§4.3).
+                </p>
+                {conflictosCamp.slice(0, 12).map((c, i) => (
+                  <div key={i} style={{ fontSize: 12, color: '#92400e', marginBottom: 4 }}>
+                    • {c.motivo}
+                    {c.labelA ? ` — ${c.labelA}` : ''}
+                    {c.labelB ? ` ↔ ${c.labelB}` : ''}
+                  </div>
+                ))}
+                {conflictosCamp.length > 12 && (
+                  <div style={{ fontSize: 11, color: '#a16207' }}>…y {conflictosCamp.length - 12} más</div>
+                )}
+              </div>
+            )}
 
             <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-              <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Programación de mesas</h2>
+              <h2 style={{ margin: '0 0 12px', fontSize: 16, color: torneoUi.text }}>Programación de mesas</h2>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                 <div><label style={labelStyle}>Mesas</label>
                   <input type="number" min={1} max={64} value={mesas} onChange={e => setMesas(e.target.value)} style={inputStyle} /></div>
@@ -268,39 +388,35 @@ export default function CampeonatoOficialDetallePage() {
                   <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)} style={inputStyle} /></div>
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                <button type="button" onClick={() => void guardarConfig()} style={btnGhost}>Guardar config</button>
-                <button type="button" onClick={() => void programarTodo()} disabled={programando} style={btnPrimary}>
+                <button type="button" onClick={() => void guardarConfig()} style={btnOutlineIndigo}>Guardar config</button>
+                <button type="button" onClick={() => void programarTodo()} disabled={programando} style={{ ...btnPrimaryIndigo, opacity: programando ? 0.6 : 1 }}>
                   {programando ? 'Programando…' : 'Programar todos los eventos'}
                 </button>
                 {programaRows.length > 0 && (
-                  <button type="button" onClick={() => void exportarPrograma()} style={btnGhost}>PDF programa completo</button>
+                  <button type="button" onClick={() => void exportarPrograma()} style={btnOutlineIndigo}>PDF programa completo</button>
                 )}
               </div>
             </div>
 
-            {programaRows.length > 0 && (
-              <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-                <h2 style={{ margin: '0 0 10px', fontSize: 16 }}>Programa del día ({programaRows.length} partidos)</h2>
-                <div style={{ maxHeight: 220, overflow: 'auto', fontSize: 13 }}>
-                  {programaRows.slice(0, 12).map((r, i) => (
-                    <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #f1f5f9' }}>
-                      <strong>{r.hora}</strong> M{r.mesa} · {r.evento} · {r.partido}
-                    </div>
-                  ))}
-                  {programaRows.length > 12 && <p style={{ color: '#94a3b8', margin: '8px 0 0' }}>+{programaRows.length - 12} más…</p>}
-                </div>
+            {programaCeldas.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <ProgramaOficialTablero
+                  celdas={programaCeldas}
+                  mesasCount={camp.mesas_count}
+                  emptyMessage="Sin partidos programados. Guarda la config y pulsa «Programar todos los eventos»."
+                />
               </div>
             )}
 
             {eventos.length === 0 ? (
-              <div style={{ ...card, padding: 24, color: '#64748b' }}>Agrega un evento (ej. Juvenil Varones, Adulto Damas).</div>
+              <div style={{ ...card, padding: 24, color: torneoUi.muted }}>Agrega un evento (ej. Juvenil Varones, Adulto Damas).</div>
             ) : (
               <div style={{ display: 'grid', gap: 10 }}>
                 {eventos.map(e => (
                   <button key={e.id} type="button" onClick={() => router.push(`/torneo-oficial/evento/${e.id}`)}
                     style={{ ...card, padding: 14, textAlign: 'left', cursor: 'pointer', width: '100%' }}>
-                    <strong>{e.nombre}</strong>
-                    <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                    <strong style={{ color: torneoUi.text }}>{e.nombre}</strong>
+                    <div style={{ fontSize: 13, color: torneoUi.muted, marginTop: 4 }}>
                       {e.categoria} · {e.genero} · {e.formato_partido.toUpperCase()} · fase {e.fase}
                       {e.fase === 'finalizado' ? ' · 🏆' : ''}
                     </div>
@@ -311,9 +427,9 @@ export default function CampeonatoOficialDetallePage() {
           </>
         )}
         {modal && (
-          <div style={overlayStyle}>
+          <div style={modalOverlay}>
             <div style={{ ...card, width: '100%', maxWidth: 420, padding: 20 }}>
-              <h2 style={{ margin: '0 0 12px' }}>Nuevo evento</h2>
+              <h2 style={{ margin: '0 0 12px', color: torneoUi.text }}>Nuevo evento</h2>
               <label style={labelStyle}>Categoría</label>
               <input value={categoria} onChange={e => setCategoria(e.target.value)} style={inputStyle} />
               <label style={labelStyle}>Género</label>
@@ -326,10 +442,10 @@ export default function CampeonatoOficialDetallePage() {
               </select>
               <label style={labelStyle}>Nombre visible (opc.)</label>
               <input value={nombre} onChange={e => setNombre(e.target.value)} style={inputStyle} />
-              {errorMsg && <p style={{ color: '#e11d48', fontSize: 13 }}>{errorMsg}</p>}
+              {errorMsg && <p style={{ color: torneoUi.danger, fontSize: 13 }}>{errorMsg}</p>}
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button type="button" onClick={() => setModal(false)} style={btnGhost}>Cancelar</button>
-                <button type="button" onClick={() => void crearEvento()} disabled={guardando || !categoria} style={{ ...btnPrimary, flex: 1 }}>Crear evento</button>
+                <button type="button" onClick={() => setModal(false)} style={{ ...btnOutlineIndigo, flex: 1 }}>Cancelar</button>
+                <button type="button" onClick={() => void crearEvento()} disabled={guardando || !categoria} style={{ ...btnPrimaryIndigo, flex: 1, opacity: guardando ? 0.6 : 1 }}>Crear evento</button>
               </div>
             </div>
           </div>
@@ -339,9 +455,6 @@ export default function CampeonatoOficialDetallePage() {
   )
 }
 
-const labelStyle: CSSProperties = { display: 'block', fontSize: 12, color: '#64748b', marginBottom: 4, marginTop: 10 }
+const labelStyle: CSSProperties = { display: 'block', fontSize: 12, color: torneoUi.muted, marginBottom: 4, marginTop: 10 }
 const inputStyle: CSSProperties = { width: '100%', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', fontSize: 14, boxSizing: 'border-box' }
-const btnGhost: CSSProperties = { background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontSize: 13 }
-const btnPrimary: CSSProperties = { background: '#0f172a', color: 'white', border: 'none', borderRadius: 8, padding: '10px 14px', fontWeight: 600, cursor: 'pointer' }
-const btnBack: CSSProperties = { background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', marginBottom: 14, cursor: 'pointer' }
-const overlayStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }
+const btnBack: CSSProperties = { background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', marginBottom: 14, cursor: 'pointer', color: torneoUi.text }

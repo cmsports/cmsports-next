@@ -6,9 +6,15 @@ import AppLayout from '../layout-app'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
-import { crearCampeonatoOficial } from '@/app/actions/torneo-oficial'
+import {
+  crearCampeonatoOficial,
+  archivarCampeonatoOficial,
+  desarchivarCampeonatoOficial,
+  eliminarCampeonatoOficialDefinitivo,
+} from '@/app/actions/torneo-oficial'
 import { fechaChile } from '@/lib/domain/fechaChile'
-import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
+import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
+import { btnOutlineIndigo, btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
 
 const supabase = createClient()
 
@@ -23,12 +29,7 @@ type Campeonato = {
   eventos_count?: number
 }
 
-const card = {
-  background: '#ffffff',
-  border: '1px solid #e2e8f0',
-  borderRadius: 14,
-  boxShadow: '0 4px 16px rgba(15,23,42,0.08)',
-} as const
+const card = torneoUi.card
 
 export default function TorneoOficialPage() {
   const { perfil, loading: authLoading } = usePerfil()
@@ -43,17 +44,25 @@ export default function TorneoOficialPage() {
   const [fechaFin, setFechaFin] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const cargadoRef = useRef(false)
+  const esAdmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
 
-  const cargar = useCallback(async (clubId: string, silencioso = false) => {
+  const cacheKey = (clubId: string, archivados: boolean) =>
+    `oficial:lista:${clubId}:${archivados ? 'arch' : 'act'}`
+
+  const cargar = useCallback(async (clubId: string, silencioso = false, archivados = mostrarArchivados) => {
     await cargarOficialConCache(
-      `oficial:lista:${clubId}`,
+      cacheKey(clubId, archivados),
       async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const db = supabase as any
-        const { data } = await db.from('oficial_campeonatos')
+        let query = db.from('oficial_campeonatos')
           .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
-          .eq('club_id', clubId).neq('estado', 'archivado').order('creado_en', { ascending: false })
+          .eq('club_id', clubId)
+          .order('creado_en', { ascending: false })
+        query = archivados ? query.eq('estado', 'archivado') : query.neq('estado', 'archivado')
+        const { data } = await query
 
         const rows = (data || []) as Campeonato[]
         if (!rows.length) return []
@@ -72,14 +81,15 @@ export default function TorneoOficialPage() {
         tieneDatos: () => cargadoRef.current,
       },
     )
-  }, [])
+  }, [mostrarArchivados])
 
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
+    cargadoRef.current = false
     if (perfil.club_id) void cargar(perfil.club_id)
     else setLoading(false)
-  }, [authLoading, perfil, cargar, router])
+  }, [authLoading, perfil, cargar, router, mostrarArchivados])
 
   useEnVivo(
     ['oficial_campeonatos', 'oficial_eventos'],
@@ -87,6 +97,11 @@ export default function TorneoOficialPage() {
     () => { if (perfil?.club_id) void cargar(perfil.club_id, true) },
     { conClub: ['oficial_campeonatos', 'oficial_eventos'] },
   )
+
+  function invalidarListas(clubId: string) {
+    invalidarCacheOficial(cacheKey(clubId, true))
+    invalidarCacheOficial(cacheKey(clubId, false))
+  }
 
   async function crear() {
     setErrorMsg('')
@@ -97,7 +112,10 @@ export default function TorneoOficialPage() {
     setModal(false)
     setNombre(''); setSede(''); setZona('')
     if (res.id) {
-      if (perfil?.club_id) await cargar(perfil.club_id, true)
+      if (perfil?.club_id) {
+        invalidarListas(perfil.club_id)
+        await cargar(perfil.club_id, true)
+      }
       router.push(`/torneo-oficial/${res.id}`)
     }
   }
@@ -105,45 +123,130 @@ export default function TorneoOficialPage() {
   return (
     <AppLayout perfil={perfil}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 24, color: '#0f172a' }}>Torneo oficial</h1>
-            <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 14 }}>
+            <h1 style={{ margin: 0, fontSize: 24, color: torneoUi.text }}>Torneo oficial</h1>
+            <p style={{ margin: '6px 0 0', color: torneoUi.muted, fontSize: 14 }}>
               Reglas ITTF / Juez General. Separado de torneos de club.
             </p>
           </div>
-          <button onClick={() => setModal(true)} style={btnPrimary}>+ Nuevo campeonato</button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {esAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (perfil?.club_id) invalidarListas(perfil.club_id)
+                  setMostrarArchivados(v => !v)
+                }}
+                style={{
+                  ...btnOutlineIndigo,
+                  background: mostrarArchivados ? '#ede9fe' : '#ffffff',
+                  color: mostrarArchivados ? '#3730a3' : torneoUi.muted,
+                }}
+              >
+                {mostrarArchivados ? 'Ver activos' : 'Ver archivados'}
+              </button>
+            )}
+            {esAdmin && !mostrarArchivados && (
+              <button type="button" onClick={() => setModal(true)} style={btnPrimaryIndigo}>+ Nuevo campeonato</button>
+            )}
+          </div>
         </div>
 
         {loading && lista.length === 0 ? (
-          <p style={{ color: '#94a3b8' }}>Cargando…</p>
+          <p style={{ color: torneoUi.hint }}>Cargando…</p>
         ) : lista.length === 0 ? (
-          <div style={{ ...card, padding: 28, textAlign: 'center', color: '#64748b' }}>
-            Crea el primer campeonato oficial para armar categorías, grupos y resultados con sets.
+          <div style={{ ...card, padding: 28, textAlign: 'center', color: torneoUi.muted }}>
+            {mostrarArchivados
+              ? 'Sin campeonatos archivados'
+              : 'Crea el primer campeonato oficial para armar categorías, grupos y resultados con sets.'}
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 12 }}>
             {lista.map(c => (
-              <button key={c.id} onClick={() => router.push(`/torneo-oficial/${c.id}`)}
-                style={{ ...card, padding: 16, textAlign: 'left', cursor: 'pointer', width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <strong style={{ fontSize: 16 }}>{c.nombre}</strong>
-                  <span style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase' }}>{c.estado}</span>
+              <div
+                key={c.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => router.push(`/torneo-oficial/${c.id}`)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') router.push(`/torneo-oficial/${c.id}`) }}
+                style={{ ...card, padding: 16, textAlign: 'left', cursor: 'pointer', width: '100%' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ fontSize: 16, color: torneoUi.text }}>{c.nombre}</strong>
+                    <div style={{ marginTop: 6, fontSize: 13, color: torneoUi.muted }}>
+                      {c.fecha_inicio}{c.fecha_fin ? ` → ${c.fecha_fin}` : ''}
+                      {c.sede ? ` · ${c.sede}` : ''}{c.zona ? ` · ${c.zona}` : ''}
+                      {` · ${c.eventos_count || 0} evento(s)`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, color: torneoUi.muted, textTransform: 'uppercase' }}>{c.estado}</span>
+                    {esAdmin && !mostrarArchivados && (
+                      <button
+                        type="button"
+                        onClick={async e => {
+                          e.stopPropagation()
+                          if (!confirm(`¿Eliminar "${c.nombre}" definitivamente? Esta acción no se puede deshacer.`)) return
+                          const res = await eliminarCampeonatoOficialDefinitivo({ campeonatoId: c.id })
+                          if (res.error) { alert(res.error); return }
+                          if (perfil?.club_id) {
+                            invalidarListas(perfil.club_id)
+                            await cargar(perfil.club_id, true)
+                          }
+                        }}
+                        style={{ background: 'transparent', border: '1px solid #fecaca', borderRadius: 8, padding: '5px 10px', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}
+                      >
+                        Eliminar
+                      </button>
+                    )}
+                    {esAdmin && mostrarArchivados && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={async e => {
+                            e.stopPropagation()
+                            const res = await desarchivarCampeonatoOficial({ campeonatoId: c.id })
+                            if (res.error) { alert(res.error); return }
+                            if (perfil?.club_id) {
+                              invalidarListas(perfil.club_id)
+                              await cargar(perfil.club_id, true)
+                            }
+                          }}
+                          style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '5px 10px', color: '#16a34a', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          Desarchivar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async e => {
+                            e.stopPropagation()
+                            if (!confirm(`¿Borrar definitivamente "${c.nombre}"? Se eliminarán eventos, inscritos, grupos y partidos.`)) return
+                            const res = await eliminarCampeonatoOficialDefinitivo({ campeonatoId: c.id })
+                            if (res.error) { alert(res.error); return }
+                            if (perfil?.club_id) {
+                              invalidarListas(perfil.club_id)
+                              await cargar(perfil.club_id, true)
+                            }
+                          }}
+                          style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '5px 10px', color: '#dc2626', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          Borrar definitivo
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div style={{ marginTop: 6, fontSize: 13, color: '#64748b' }}>
-                  {c.fecha_inicio}{c.fecha_fin ? ` → ${c.fecha_fin}` : ''}
-                  {c.sede ? ` · ${c.sede}` : ''}{c.zona ? ` · ${c.zona}` : ''}
-                  {` · ${c.eventos_count || 0} evento(s)`}
-                </div>
-              </button>
+              </div>
             ))}
           </div>
         )}
 
         {modal && (
-          <div style={overlayStyle}>
+          <div style={modalOverlay}>
             <div style={{ ...card, width: '100%', maxWidth: 440, padding: 20 }}>
-              <h2 style={{ margin: '0 0 14px', fontSize: 18 }}>Nuevo campeonato oficial</h2>
+              <h2 style={{ margin: '0 0 14px', fontSize: 18, color: torneoUi.text }}>Nuevo campeonato oficial</h2>
               <label style={labelStyle}>Nombre</label>
               <input value={nombre} onChange={e => setNombre(e.target.value)} style={inputStyle} placeholder="2do Zonal Individual MET2" />
               <label style={labelStyle}>Sede</label>
@@ -156,10 +259,10 @@ export default function TorneoOficialPage() {
                 <div><label style={labelStyle}>Fin (opc.)</label>
                   <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} style={inputStyle} /></div>
               </div>
-              {errorMsg && <p style={{ color: '#e11d48', fontSize: 13 }}>{errorMsg}</p>}
+              {errorMsg && <p style={{ color: torneoUi.danger, fontSize: 13 }}>{errorMsg}</p>}
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button onClick={() => setModal(false)} style={btnGhost}>Cancelar</button>
-                <button onClick={crear} disabled={guardando || !nombre} style={{ ...btnPrimary, flex: 1, opacity: guardando ? 0.6 : 1 }}>
+                <button type="button" onClick={() => setModal(false)} style={{ ...btnOutlineIndigo, flex: 1 }}>Cancelar</button>
+                <button type="button" onClick={crear} disabled={guardando || !nombre} style={{ ...btnPrimaryIndigo, flex: 1, opacity: guardando ? 0.6 : 1 }}>
                   {guardando ? 'Creando…' : 'Crear'}
                 </button>
               </div>
@@ -171,8 +274,5 @@ export default function TorneoOficialPage() {
   )
 }
 
-const labelStyle: CSSProperties = { display: 'block', fontSize: 12, color: '#64748b', marginBottom: 4, marginTop: 10 }
+const labelStyle: CSSProperties = { display: 'block', fontSize: 12, color: torneoUi.muted, marginBottom: 4, marginTop: 10 }
 const inputStyle: CSSProperties = { width: '100%', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', fontSize: 14, boxSizing: 'border-box' }
-const btnGhost: CSSProperties = { flex: 1, background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, cursor: 'pointer' }
-const btnPrimary: CSSProperties = { background: '#0f172a', color: 'white', border: 'none', borderRadius: 8, padding: '10px 16px', fontWeight: 600, cursor: 'pointer' }
-const overlayStyle: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }

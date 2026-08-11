@@ -26,6 +26,7 @@ export default function InscripcionOficialModal(props: {
   const [asociacion, setAsociacion] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [cabezas, setCabezas] = useState<CabezaSerieJugador[]>([])
+  const [cabezasDirty, setCabezasDirty] = useState(false)
 
   const candidatos = useMemo(
     () => props.inscritos.map(i => ({
@@ -46,9 +47,14 @@ export default function InscripcionOficialModal(props: {
     [props.inscritos],
   )
 
-  const cabezasActuales = cabezas.length ? cabezas : cabezasDesdeDb
-
+  const cabezasActuales = cabezasDirty ? cabezas : cabezasDesdeDb
   const numGruposEstimados = Math.max(1, Math.ceil(props.inscritos.length / 4))
+  const numCabezas = cabezasActuales.length
+
+  const inscritosOrdenados = useMemo(
+    () => [...props.inscritos].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+    [props.inscritos],
+  )
 
   if (!props.open) return null
 
@@ -65,6 +71,7 @@ export default function InscripcionOficialModal(props: {
     if (cabezasActuales.length) {
       const resCab = await props.onGuardarCabezas(cabezasActuales.map(c => c.id))
       if (resCab?.error) { setErrorMsg(resCab.error); return }
+      setCabezasDirty(false)
     }
     const res = await props.onFormarGrupos()
     if (res.error) { setErrorMsg(res.error); return }
@@ -76,23 +83,31 @@ export default function InscripcionOficialModal(props: {
       <div style={modalCard} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: torneoUi.text }}>Inscripción oficial</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: torneoUi.text }}>🪑 Mesa de inscripción</div>
             <div style={{ fontSize: 12, color: torneoUi.muted, marginTop: 2 }}>{props.eventoNombre}</div>
           </div>
           <button type="button" onClick={props.onClose} style={btnCerrar}>✕</button>
         </div>
 
+        {/* Stats en vivo — sin recaudado/RUT (oficial no cobra en mesa) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
           {[
-            { label: 'Inscritos', value: props.inscritos.length },
-            { label: 'Grupos est.', value: numGruposEstimados },
-            { label: 'Mínimo', value: 4 },
+            { label: 'Inscritos', value: props.inscritos.length, color: torneoUi.text },
+            { label: 'Grupos estimados', value: numGruposEstimados, color: '#3730a3' },
+            { label: 'Cabezas', value: numCabezas, color: numCabezas ? '#d97706' : torneoUi.hint },
           ].map(s => (
             <div key={s.label} style={{ background: '#f4f7fa', borderRadius: 8, padding: 10, textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: torneoUi.text, fontFamily: 'monospace' }}>{s.value}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: s.color, fontFamily: 'monospace' }}>{s.value}</div>
               <div style={{ fontSize: 10, color: torneoUi.muted }}>{s.label}</div>
             </div>
           ))}
+        </div>
+
+        <div style={{
+          background: torneoUi.accentLight, borderRadius: 8, padding: '6px 10px',
+          marginBottom: 10, fontSize: 11, color: '#5b21b6', fontWeight: 600,
+        }}>
+          Torneo oficial — nombre y asociación (sin pago ni RUT)
         </div>
 
         {errorMsg && (
@@ -101,46 +116,82 @@ export default function InscripcionOficialModal(props: {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
           <input
             value={nombre}
             onChange={e => setNombre(e.target.value)}
             placeholder="Nombre del jugador"
-            style={{ ...inputStyle, flex: 2 }}
+            style={{ ...inputStyle, flex: '2 1 160px' }}
             onKeyDown={e => e.key === 'Enter' && void handleInscribir()}
           />
           <input
             value={asociacion}
             onChange={e => setAsociacion(e.target.value)}
             placeholder="Asociación (opc.)"
-            style={{ ...inputStyle, flex: 1 }}
+            style={{ ...inputStyle, flex: '1 1 120px' }}
+            onKeyDown={e => e.key === 'Enter' && void handleInscribir()}
           />
           <button type="button" onClick={() => void handleInscribir()}
             disabled={props.inscribiendo || !nombre.trim()}
-            style={{ ...btnPrimaryIndigo, opacity: props.inscribiendo || !nombre.trim() ? 0.6 : 1, whiteSpace: 'nowrap' }}>
+            style={{
+              ...btnInscribir,
+              opacity: props.inscribiendo || !nombre.trim() ? 0.6 : 1,
+              flex: '0 0 auto',
+            }}>
             {props.inscribiendo ? '…' : '+ Inscribir'}
           </button>
         </div>
 
-        {props.inscritos.length > 0 && (
-          <div style={{ background: '#f4f7fa', borderRadius: 10, overflow: 'hidden', marginBottom: 16, maxHeight: 180, overflowY: 'auto' }}>
-            <div style={{ padding: '8px 14px', fontSize: 11, color: torneoUi.muted, textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #e2e8f0' }}>
-              Jugadores inscritos
+        {/* Lista viva numerada */}
+        {inscritosOrdenados.length > 0 && (
+          <div style={{
+            background: '#f4f7fa', borderRadius: 10, overflow: 'hidden',
+            marginBottom: 16, maxHeight: 220, overflowY: 'auto',
+            border: '1px solid #e2e8f0',
+          }}>
+            <div style={{
+              padding: '8px 14px', fontSize: 11, color: torneoUi.muted,
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+              borderBottom: '1px solid #e2e8f0',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span>Jugadores inscritos</span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: torneoUi.text }}>
+                {inscritosOrdenados.length}
+              </span>
             </div>
-            {[...props.inscritos].map((i, idx) => (
-              <div key={i.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #e2e8f0', background: '#fff' }}>
-                <span style={{ fontSize: 12, color: torneoUi.muted, width: 20 }}>{idx + 1}</span>
-                <div style={{ flex: 1, fontSize: 13, color: torneoUi.text }}>
-                  {i.nombre}
-                  {i.asociacion && (
-                    <span style={{ marginLeft: 6, background: '#eef2ff', color: '#4338ca', fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8 }}>
-                      {i.asociacion}
-                    </span>
-                  )}
+            {inscritosOrdenados.map((i, idx) => (
+              <div key={i.id} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 14px', borderBottom: '1px solid #e2e8f0', background: '#fff',
+              }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: '#3730a3',
+                  background: torneoUi.accentLight, width: 22, height: 22,
+                  borderRadius: 6, display: 'inline-flex', alignItems: 'center',
+                  justifyContent: 'center', flexShrink: 0,
+                }}>
+                  {idx + 1}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: torneoUi.text, fontWeight: 500 }}>
+                    {i.nombre}
+                    {i.asociacion && (
+                      <span style={{
+                        marginLeft: 6, background: '#eef2ff', color: '#4338ca',
+                        fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8,
+                      }}>
+                        {i.asociacion}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {i.cabeza_numero != null && (
-                  <span style={{ fontSize: 10, color: '#3730a3', background: torneoUi.accentLight, padding: '2px 6px', borderRadius: 8 }}>
-                    #{i.cabeza_numero}
+                  <span style={{
+                    fontSize: 10, color: '#92400e', background: '#fffbeb',
+                    border: '1px solid #fde68a', padding: '2px 6px', borderRadius: 8, fontWeight: 700,
+                  }}>
+                    CS{i.cabeza_numero}
                   </span>
                 )}
               </div>
@@ -153,9 +204,18 @@ export default function InscripcionOficialModal(props: {
             <CabezasSerieEditor
               cabezas={cabezasActuales}
               candidatos={candidatos}
-              onChange={setCabezas}
-              onGuardar={props.onGuardarCabezas}
+              onChange={(nuevas) => { setCabezas(nuevas); setCabezasDirty(true) }}
+              onGuardar={async (ids) => {
+                const res = await props.onGuardarCabezas(ids)
+                if (!res?.error) setCabezasDirty(false)
+                return res
+              }}
             />
+            {cabezasDirty && (
+              <div role="status" style={{ marginTop: 6, color: '#92400e', fontSize: 11 }}>
+                Los cambios de cabezas se guardarán al cerrar la inscripción.
+              </div>
+            )}
           </div>
         )}
 
@@ -176,7 +236,7 @@ export default function InscripcionOficialModal(props: {
             ? 'Formando grupos…'
             : props.inscritos.length < 4
               ? `Mínimo 4 jugadores (faltan ${4 - props.inscritos.length})`
-              : `✓ Cerrar inscripción · generar ${numGruposEstimados} grupos`}
+              : `✓ ${cabezasDirty ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · generar ${numGruposEstimados} grupos`}
         </button>
       </div>
     </div>
@@ -211,4 +271,12 @@ const inputStyle: CSSProperties = {
   fontSize: 13,
   outline: 'none',
   boxSizing: 'border-box',
+  minWidth: 0,
+}
+
+const btnInscribir: CSSProperties = {
+  ...btnPrimaryIndigo,
+  background: '#f43f5e',
+  padding: '10px 14px',
+  whiteSpace: 'nowrap',
 }

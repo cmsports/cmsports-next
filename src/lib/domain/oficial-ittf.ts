@@ -2,18 +2,26 @@
  * Clasificación de grupos según Manual del Juez General ITTF:
  * - Ganador: 2 puntos
  * - Perdedor de partido jugado/completo: 1 punto
- * - Perdedor W.O. / partido no completado: 0 puntos
+ * - Perdedor W.O. / retiro / partido no completado: 0 puntos
  * Desempates solo entre empatados: pts → ratio juegos → ratio puntos.
  */
 
 export type SetMarcador = [number, number]
+
+/** Cierre de partido: jugado completo, W.O. sin juego, o retiro a mitad. */
+export type TipoCierreOficial = 'jugado' | 'walkover' | 'retiro'
+
+/** Alcance de ausencia / descalificación (§1.6–1.7). */
+export type AlcanceSancionOficial = 'partido' | 'evento' | 'campeonato'
 
 export interface PartidoOficialStats {
   inscritoA: string
   inscritoB: string
   ganador: string | null
   sets?: SetMarcador[]
+  /** true si W.O. o retiro (partido incompleto → 0 pts al perdedor). */
   esWalkover?: boolean
+  tipoCierre?: TipoCierreOficial | null
 }
 
 export interface StatsOficial {
@@ -209,4 +217,154 @@ export function gamesParaGanarFormato(formato: 'bo3' | 'bo5' | 'bo7'): number {
   if (formato === 'bo3') return 2
   if (formato === 'bo7') return 4
   return 3
+}
+
+/** Sets sintéticos 11-0 para W.O. sin juego (§2.3.6–2.3.7). */
+export function setsSinteticosWalkover(
+  ganadorEsA: boolean,
+  gamesParaGanar: number,
+): SetMarcador[] {
+  const n = Math.max(1, gamesParaGanar)
+  return Array.from({ length: n }, () => (ganadorEsA ? [11, 0] : [0, 11]) as SetMarcador)
+}
+
+/**
+ * Completa un retiro: conserva sets parciales y agrega 11-0 restantes
+ * hasta que el ganador alcance gamesParaGanar.
+ */
+export function completarSetsRetiro(
+  setsParciales: SetMarcador[],
+  ganadorEsA: boolean,
+  gamesParaGanar: number,
+): SetMarcador[] {
+  const out: SetMarcador[] = setsParciales.map(([a, b]) => [a, b])
+  const { juegosA, juegosB } = conteoSets(out)
+  let ja = juegosA
+  let jb = juegosB
+  while (ja < gamesParaGanar && jb < gamesParaGanar) {
+    if (ganadorEsA) {
+      out.push([11, 0])
+      ja++
+    } else {
+      out.push([0, 11])
+      jb++
+    }
+  }
+  return out
+}
+
+export type ResolverCierreInput = {
+  inscritoA: string
+  inscritoB: string
+  tipoCierre: TipoCierreOficial
+  ganadorId?: string | null
+  sets?: SetMarcador[]
+  gamesParaGanar: number
+}
+
+export type ResolverCierreOk = {
+  ganadorId: string
+  sets: SetMarcador[]
+  tipoCierre: TipoCierreOficial
+  /** true → 0 pts al perdedor en clasificación de grupo. */
+  esIncompleto: boolean
+}
+
+/**
+ * Resuelve cierre Jugado / W.O. / Retiro según ITTF §2.3.6–2.3.7.
+ * - Jugado: sets completos definen ganador.
+ * - W.O.: sin sets jugados → N×11-0 sintéticos a favor del ganador.
+ * - Retiro: conserva parciales y completa con 11-0; 0 pts al que se retira.
+ */
+export function resolverCierrePartido(
+  input: ResolverCierreInput,
+): ResolverCierreOk | { error: string } {
+  const { inscritoA, inscritoB, tipoCierre, gamesParaGanar } = input
+  const setsIn = input.sets ?? []
+
+  if (tipoCierre === 'walkover') {
+    const ganadorId = input.ganadorId
+    if (!ganadorId) return { error: 'En W.O. debes indicar el ganador' }
+    if (ganadorId !== inscritoA && ganadorId !== inscritoB) {
+      return { error: 'El ganador no pertenece al partido' }
+    }
+    // Si ya hubo sets jugados, tratar como retiro (conservar parciales).
+    if (setsIn.length > 0) {
+      return resolverCierrePartido({ ...input, tipoCierre: 'retiro' })
+    }
+    return {
+      ganadorId,
+      sets: setsSinteticosWalkover(ganadorId === inscritoA, gamesParaGanar),
+      tipoCierre: 'walkover',
+      esIncompleto: true,
+    }
+  }
+
+  if (tipoCierre === 'retiro') {
+    const ganadorId = input.ganadorId
+    if (!ganadorId) return { error: 'En retiro debes indicar quién gana (el rival del que se retira)' }
+    if (ganadorId !== inscritoA && ganadorId !== inscritoB) {
+      return { error: 'El ganador no pertenece al partido' }
+    }
+    const sets = completarSetsRetiro(setsIn, ganadorId === inscritoA, gamesParaGanar)
+    return { ganadorId, sets, tipoCierre: 'retiro', esIncompleto: true }
+  }
+
+  // jugado
+  if (!setsIn.length) return { error: 'Indica los sets (ej. 11-6; 11-8; 11-4)' }
+  const derivado = ganadorDesdeSets(inscritoA, inscritoB, setsIn, gamesParaGanar)
+  if (!derivado) {
+    return { error: `Los sets no definen un ganador al mejor de ${gamesParaGanar * 2 - 1}` }
+  }
+  if (input.ganadorId && input.ganadorId !== derivado) {
+    return { error: 'El ganador no coincide con los sets' }
+  }
+  return {
+    ganadorId: derivado,
+    sets: setsIn,
+    tipoCierre: 'jugado',
+    esIncompleto: false,
+  }
+}
+
+/**
+ * Orden de juego ITTF / Koidan en grupos de 3 y 4 (§2.2).
+ * ids[0]=posición 1, ids[1]=2, …
+ * - 3: 1-3, 2-3, 1-2
+ * - 4: 1-3, 2-4, 1-2, 3-4, 1-4, 2-3 (secuencia Excel compañero)
+ * Otros tamaños: round-robin por índice (i < j).
+ */
+export function ordenPartidosGrupoIttf(ids: string[]): Array<[string, string]> {
+  const n = ids.length
+  if (n < 2) return []
+  if (n === 3) {
+    return [
+      [ids[0], ids[2]],
+      [ids[1], ids[2]],
+      [ids[0], ids[1]],
+    ]
+  }
+  if (n === 4) {
+    return [
+      [ids[0], ids[2]],
+      [ids[1], ids[3]],
+      [ids[0], ids[1]],
+      [ids[2], ids[3]],
+      [ids[0], ids[3]],
+      [ids[1], ids[2]],
+    ]
+  }
+  const partidos: Array<[string, string]> = []
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      partidos.push([ids[i], ids[j]])
+    }
+  }
+  return partidos
+}
+
+export function etiquetaCierreOficial(tipo: TipoCierreOficial | null | undefined, esWalkover?: boolean): string {
+  if (tipo === 'retiro') return 'Retiro'
+  if (tipo === 'walkover' || (!tipo && esWalkover)) return 'W.O.'
+  return ''
 }

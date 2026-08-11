@@ -8,31 +8,51 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { CONFIG } from '@/lib/config'
 import {
+  actualizarArbitroPartidoOficial,
+  actualizarModoSorteoLlaveOficial,
+  actualizarProgramaPartidoOficial,
   configurarCabezasOficial,
   corregirResultadoOficial,
   formarGruposOficial,
   inscribirJugadorOficial,
   intercambiarCuposOficial,
+  listarConflictosProgramaOficial,
   programarEventoOficial,
   registrarResultadoOficial,
+  registrarSancionOficial,
   reiniciarLlavesOficial,
+  renumerarPartidosOficial,
   sincronizarLlavesOficial,
 } from '@/app/actions/torneo-oficial'
 import {
   clasificarGrupoIttf,
+  etiquetaCierreOficial,
   formatearSets,
+  type AlcanceSancionOficial,
   type PartidoOficialStats,
   type SetMarcador,
+  type TipoCierreOficial,
 } from '@/lib/domain/oficial-ittf'
+import {
+  MODO_SORTEO_LLAVE_LABEL,
+  resumenSiembraCuadro,
+  type ModoSorteoLlave,
+} from '@/lib/domain/oficial-sorteo'
 import BracketOficial from '@/components/torneo-oficial/BracketOficial'
 import InscripcionOficialModal from '@/components/torneo-oficial/InscripcionOficialModal'
+import PartidoOficialRow, { type GuardarResultadoOpts } from '@/components/torneo-oficial/PartidoOficialRow'
+import ProgramaOficialTablero, {
+  type CeldaProgramaOficial,
+  type SinProgramarOficial,
+} from '@/components/torneo-oficial/ProgramaOficialTablero'
+import { descargarExcelOficialKoidan } from '@/lib/oficial-export-excel'
 import { exportarGruposOficialPdf, exportarLlavesOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
 import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 import { btnOutlineIndigo, btnPrimaryIndigo, tabUnderline, torneoUi } from '@/lib/torneos/ui-tokens'
 
 const supabase = createClient()
 
-type Tab = 'grupos' | 'llaves' | 'programa'
+type Tab = 'grupos' | 'llaves' | 'programa' | 'sanciones'
 
 type Evento = {
   id: string
@@ -44,9 +64,10 @@ type Evento = {
   campeonato_id: string
   campeon_inscrito_id: string | null
   tercer_inscrito_id: string | null
+  modo_sorteo_llave?: ModoSorteoLlave
 }
 
-type Campeonato = { id: string; nombre: string }
+type Campeonato = { id: string; nombre: string; mesas_count?: number }
 
 type Inscrito = {
   id: string
@@ -67,9 +88,24 @@ type Partido = {
   ganador_id: string | null
   sets: SetMarcador[]
   es_walkover: boolean
+  tipo_cierre?: TipoCierreOficial | null
+  motivo_cierre?: string | null
+  alcance_sancion?: AlcanceSancionOficial | null
   orden: number
   mesa: number | null
   programado_en: string | null
+  numero_ittf?: number | null
+  arbitro_nombre?: string | null
+}
+
+type Sancion = {
+  id: string
+  partido_id: string | null
+  inscrito_id: string | null
+  tipo: string
+  detalle: string | null
+  origen: string
+  creado_en: string
 }
 
 const card = torneoUi.card
@@ -92,6 +128,16 @@ export default function EventoOficialPage() {
   const [grupos, setGrupos] = useState<Grupo[]>([])
   const [miembrosGrupo, setMiembrosGrupo] = useState<Array<{ grupo_id: string; inscrito_id: string }>>([])
   const [partidos, setPartidos] = useState<Partido[]>([])
+  const [sanciones, setSanciones] = useState<Sancion[]>([])
+  const [conflictosProg, setConflictosProg] = useState<Array<{ partidoId: string; motivo: string; tipo: string }>>([])
+  const [editProgId, setEditProgId] = useState<string | null>(null)
+  const [editMesa, setEditMesa] = useState('')
+  const [editHora, setEditHora] = useState('')
+  const [editArbitro, setEditArbitro] = useState('')
+  const [guardandoProg, setGuardandoProg] = useState(false)
+  const [modoSorteo, setModoSorteo] = useState<ModoSorteoLlave>('fijo')
+  const [guardandoSorteo, setGuardandoSorteo] = useState(false)
+  const [sancionForm, setSancionForm] = useState({ inscritoId: '', tipo: 'amarilla', detalle: '', partidoId: '' })
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('grupos')
 
@@ -110,20 +156,6 @@ export default function EventoOficialPage() {
     [id, perfil?.club_id],
   )
 
-  const [isMobile, setIsMobile] = useState(false)
-  const [setsEditId, setSetsEditId] = useState<string | null>(null)
-  const [setsGanadorLado, setSetsGanadorLado] = useState<'a' | 'b' | null>(null)
-  const [setsTexto, setSetsTexto] = useState('')
-  const [corrigiendoId, setCorrigiendoId] = useState<string | null>(null)
-  const [corregirTexto, setCorregirTexto] = useState('')
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
-
   function recargarEvento() {
     if (cacheKey) invalidarCacheOficial(cacheKey)
     void cargar()
@@ -136,6 +168,7 @@ export default function EventoOficialPage() {
     grupos: Grupo[]
     miembrosGrupo: Array<{ grupo_id: string; inscrito_id: string }>
     partidos: Partido[]
+    sanciones: Sancion[]
   }
 
   const aplicarDatos = useCallback((d: DatosEvento) => {
@@ -145,6 +178,8 @@ export default function EventoOficialPage() {
     setGrupos(d.grupos)
     setMiembrosGrupo(d.miembrosGrupo)
     setPartidos(d.partidos)
+    setSanciones(d.sanciones)
+    if (d.evento?.modo_sorteo_llave) setModoSorteo(d.evento.modo_sorteo_llave)
     cargadoRef.current = true
   }, [])
 
@@ -157,13 +192,20 @@ export default function EventoOficialPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const db = supabase as any
 
-        const { data: ev } = await db.from('oficial_eventos')
-          .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id')
+        const qEv = await db.from('oficial_eventos')
+          .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id,tercer_inscrito_id,modo_sorteo_llave')
           .eq('id', id).eq('club_id', clubId).maybeSingle()
+        let ev = (qEv.data || null) as Evento | null
+        if (qEv.error && String(qEv.error.message || '').includes('modo_sorteo_llave')) {
+          const { data: ev2 } = await db.from('oficial_eventos')
+            .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id,tercer_inscrito_id')
+            .eq('id', id).eq('club_id', clubId).maybeSingle()
+          ev = ev2 ? { ...ev2, modo_sorteo_llave: 'fijo' as ModoSorteoLlave } : null
+        }
 
         let camp: Campeonato | null = null
         if (ev?.campeonato_id) {
-          const { data: c } = await db.from('oficial_campeonatos').select('id,nombre')
+          const { data: c } = await db.from('oficial_campeonatos').select('id,nombre,mesas_count')
             .eq('id', ev.campeonato_id).maybeSingle()
           camp = c
         }
@@ -179,13 +221,38 @@ export default function EventoOficialPage() {
         let miembrosGrupo: DatosEvento['miembrosGrupo'] = []
         if (grupoIds.length) {
           const { data: mg } = await db.from('oficial_grupo_inscritos')
-            .select('grupo_id,inscrito_id').in('grupo_id', grupoIds)
-          miembrosGrupo = mg || []
+            .select('grupo_id,inscrito_id,orden').in('grupo_id', grupoIds).order('orden')
+          miembrosGrupo = (mg || []).map((m: { grupo_id: string; inscrito_id: string }) => ({
+            grupo_id: m.grupo_id,
+            inscrito_id: m.inscrito_id,
+          }))
         }
 
-        const { data: par } = await db.from('oficial_partidos')
-          .select('id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,orden,mesa,programado_en')
-          .eq('evento_id', id).order('orden')
+        let par: Partido[] = []
+        const selFull = 'id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,tipo_cierre,motivo_cierre,alcance_sancion,orden,mesa,programado_en,numero_ittf,arbitro_nombre'
+        const selMid = 'id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,tipo_cierre,motivo_cierre,alcance_sancion,orden,mesa,programado_en'
+        const selBase = 'id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,orden,mesa,programado_en'
+        const q1 = await db.from('oficial_partidos').select(selFull).eq('evento_id', id).order('orden')
+        if (q1.error && String(q1.error.message || '').includes('numero_ittf')) {
+          const qMid = await db.from('oficial_partidos').select(selMid).eq('evento_id', id).order('orden')
+          if (qMid.error && String(qMid.error.message || '').includes('tipo_cierre')) {
+            const q2 = await db.from('oficial_partidos').select(selBase).eq('evento_id', id).order('orden')
+            par = q2.data || []
+          } else {
+            par = qMid.data || []
+          }
+        } else if (q1.error && String(q1.error.message || '').includes('tipo_cierre')) {
+          const q2 = await db.from('oficial_partidos').select(selBase).eq('evento_id', id).order('orden')
+          par = q2.data || []
+        } else {
+          par = q1.data || []
+        }
+
+        let sanciones: Sancion[] = []
+        const { data: san, error: sanErr } = await db.from('oficial_sanciones')
+          .select('id,partido_id,inscrito_id,tipo,detalle,origen,creado_en')
+          .eq('evento_id', id).order('creado_en', { ascending: false })
+        if (!sanErr) sanciones = san || []
 
         return {
           evento: ev,
@@ -193,18 +260,25 @@ export default function EventoOficialPage() {
           inscritos: ins || [],
           grupos: gr || [],
           miembrosGrupo,
-          partidos: (par || []).map((p: Partido) => ({ ...p, sets: (p.sets || []) as SetMarcador[] })),
+          partidos: par.map((p: Partido & { sets: unknown }) => ({
+            ...p,
+            sets: Array.isArray(p.sets) ? p.sets as SetMarcador[] : [],
+          })),
+          sanciones,
         }
       },
       {
-        tablas: ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_campeonatos'],
+        tablas: [
+          'oficial_eventos', 'oficial_inscritos', 'oficial_grupos',
+          'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_campeonatos', 'oficial_sanciones',
+        ],
         silencioso,
         aplicar: aplicarDatos,
         setLoading,
         tieneDatos: () => cargadoRef.current,
       },
     )
-  }, [id, clubId, aplicarDatos])
+  }, [clubId, id, aplicarDatos])
 
   useEffect(() => {
     if (authLoading) return
@@ -213,10 +287,10 @@ export default function EventoOficialPage() {
   }, [authLoading, perfil, cargar, router])
 
   useEnVivo(
-    ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos'],
+    ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_sanciones'],
     perfil?.club_id ?? null,
     () => { void cargar(true) },
-    { conClub: ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos'] },
+    { conClub: ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_sanciones'] },
   )
 
   useEffect(() => {
@@ -316,7 +390,12 @@ export default function EventoOficialPage() {
   const programaFilas = useMemo(() =>
     [...partidos]
       .filter(p => p.programado_en && p.inscrito_a_id)
-      .sort((a, b) => new Date(a.programado_en!).getTime() - new Date(b.programado_en!).getTime())
+      .sort((a, b) => {
+        const na = a.numero_ittf ?? 9999
+        const nb = b.numero_ittf ?? 9999
+        if (na !== nb) return na - nb
+        return new Date(a.programado_en!).getTime() - new Date(b.programado_en!).getTime()
+      })
       .map(p => ({
         hora: new Date(p.programado_en!).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
         mesa: p.mesa ?? 0,
@@ -324,8 +403,52 @@ export default function EventoOficialPage() {
         fase: FASE_LABELS[p.fase] || p.fase,
         partido: `${nombrePorId.get(p.inscrito_a_id!) || '?'} vs ${p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) : 'BYE'}`,
         resultado: p.ganador_id ? formatearSets(p.sets) : undefined,
+        numeroIttf: p.numero_ittf,
+        arbitro: p.arbitro_nombre,
       })),
   [partidos, evento, nombrePorId])
+
+  const resumenCuadro = useMemo(() => {
+    const clasificados = grupos.length * 2
+    return resumenSiembraCuadro(clasificados)
+  }, [grupos.length])
+
+  const { programaCeldas, programaSinUbicar } = useMemo(() => {
+    const celdas: CeldaProgramaOficial[] = []
+    const sin: SinProgramarOficial[] = []
+    for (const p of partidos) {
+      if (!p.inscrito_a_id) continue
+      const faseLabel = FASE_LABELS[p.fase] || p.fase
+      const jugadorA = nombrePorId.get(p.inscrito_a_id) || '?'
+      const jugadorB = p.inscrito_b_id ? (nombrePorId.get(p.inscrito_b_id) || '?') : 'BYE'
+      const estado: CeldaProgramaOficial['estado'] = p.tipo_cierre === 'retiro'
+        ? 'retiro'
+        : p.es_walkover || p.tipo_cierre === 'walkover'
+          ? 'walkover'
+          : p.ganador_id
+            ? 'finalizado'
+            : 'pendiente'
+      const resultado = p.ganador_id
+        ? `${formatearSets(p.sets)}${etiquetaCierreOficial(p.tipo_cierre, p.es_walkover) ? ` ${etiquetaCierreOficial(p.tipo_cierre, p.es_walkover)}` : ''}`
+        : undefined
+      if (p.programado_en && p.mesa) {
+        celdas.push({
+          id: p.id,
+          mesa: p.mesa,
+          hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          faseLabel,
+          jugadorA,
+          jugadorB,
+          resultado,
+          estado,
+        })
+      } else {
+        sin.push({ id: p.id, faseLabel, jugadorA, jugadorB })
+      }
+    }
+    celdas.sort((a, b) => a.hora.localeCompare(b.hora) || a.mesa - b.mesa)
+    return { programaCeldas: celdas, programaSinUbicar: sin }
+  }, [partidos, nombrePorId])
 
   async function inscribirDesdeModal(nombre: string, asociacion?: string) {
     setInscribiendo(true)
@@ -355,17 +478,31 @@ export default function EventoOficialPage() {
     const res = await programarEventoOficial({ eventoId: id })
     setProgramando(false)
     if (res.error) setErrorMsg(res.error)
-    else recargarEvento()
+    else {
+      const omitidos = typeof res.omitidos === 'number' ? res.omitidos : 0
+      const programados = typeof res.programados === 'number' ? res.programados : 0
+      if (omitidos > 0) {
+        setErrorMsg(`Se programaron ${programados} partidos; ${omitidos} no cupieron (ajusta mesas/minutos en el campeonato).`)
+      }
+      recargarEvento()
+    }
   }
 
-  async function guardarResultado(partidoId: string, opts?: { walkover?: boolean; ganadorId?: string; setsTexto?: string }) {
-    if (!opts?.walkover && !opts?.setsTexto?.trim()) return { error: 'Indica los sets' }
+  async function guardarResultado(partidoId: string, opts?: GuardarResultadoOpts) {
+    const tipo = opts?.tipoCierre ?? (opts?.walkover ? 'walkover' : 'jugado')
+    if (tipo === 'jugado' && !opts?.setsTexto?.trim()) return { error: 'Indica los sets' }
+    if ((tipo === 'walkover' || tipo === 'retiro') && !opts?.motivoCierre?.trim()) {
+      return { error: 'Indica el motivo' }
+    }
     setGuardandoRes(partidoId)
     const res = await registrarResultadoOficial({
       partidoId,
-      setsTexto: opts?.walkover ? undefined : opts?.setsTexto,
-      esWalkover: opts?.walkover,
+      setsTexto: tipo === 'walkover' ? undefined : opts?.setsTexto,
+      esWalkover: tipo === 'walkover',
+      tipoCierre: tipo,
       ganadorId: opts?.ganadorId,
+      motivoCierre: opts?.motivoCierre,
+      alcanceSancion: opts?.alcanceSancion,
     })
     setGuardandoRes(null)
     if (res.error) { setErrorMsg(res.error); return res }
@@ -415,8 +552,155 @@ export default function EventoOficialPage() {
         ganador: p.ganador_id,
         sets: p.sets,
         esWalkover: p.es_walkover,
+        tipoCierre: p.tipo_cierre,
       }))
     return clasificarGrupoIttf(ids, statsInput)
+  }
+
+  async function exportarExcel() {
+    if (!evento || !camp) return
+    const inscritosPorG = new Map<string, string[]>()
+    for (const m of miembrosGrupo) {
+      const lista = inscritosPorG.get(m.grupo_id) ?? []
+      lista.push(m.inscrito_id)
+      inscritosPorG.set(m.grupo_id, lista)
+    }
+    await descargarExcelOficialKoidan({
+      eventoNombre: evento.nombre,
+      campeonatoNombre: camp.nombre,
+      inscritos: inscritos.map(i => ({
+        id: i.id,
+        nombre: i.nombre,
+        asociacion: i.asociacion,
+        cabezaNumero: i.cabeza_numero,
+        ordenInscripcion: i.orden_inscripcion,
+      })),
+      grupos: grupos.map(g => ({
+        id: g.id,
+        nombre: g.nombre,
+        orden: g.orden,
+        inscritoIds: inscritosPorG.get(g.id) ?? [],
+      })),
+      partidos: partidos.map(p => ({
+        id: p.id,
+        fase: p.fase,
+        orden: p.orden,
+        grupoId: p.grupo_id,
+        inscritoA: p.inscrito_a_id,
+        inscritoB: p.inscrito_b_id,
+        ganadorId: p.ganador_id,
+        sets: p.sets,
+        esWalkover: p.es_walkover,
+        tipoCierre: p.tipo_cierre,
+        mesa: p.mesa,
+        programadoEn: p.programado_en,
+        numeroIttf: p.numero_ittf,
+        arbitroNombre: p.arbitro_nombre,
+      })),
+      statsPorGrupo: (grupoId) => statsGrupo(grupoId).map(s => ({
+        inscritoId: s.inscritoId,
+        pts: s.pts,
+        pg: s.pg,
+        pp: s.pp,
+        juegosGanados: s.juegosGanados,
+        juegosPerdidos: s.juegosPerdidos,
+      })),
+      nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_oficial.xlsx`,
+    })
+  }
+
+  async function refrescarConflictos() {
+    const res = await listarConflictosProgramaOficial({ eventoId: id })
+    if (res.error) return
+    const lista = Array.isArray(res.conflictos) ? res.conflictos : []
+    setConflictosProg(lista.map((c: { partidoId: string; motivo: string; tipo: string }) => ({
+      partidoId: c.partidoId,
+      motivo: c.motivo,
+      tipo: c.tipo,
+    })))
+  }
+
+  async function guardarEdicionPrograma(forzar = false) {
+    if (!editProgId) return
+    const mesa = editMesa.trim() ? Number(editMesa) : null
+    let programadoEn: string | null = null
+    if (editHora.trim()) {
+      programadoEn = new Date(editHora).toISOString()
+    }
+    setGuardandoProg(true)
+    const res = await actualizarProgramaPartidoOficial({
+      partidoId: editProgId,
+      mesa,
+      programadoEn,
+      forzar,
+    })
+    if (!res.error || forzar) {
+      const arb = await actualizarArbitroPartidoOficial({
+        partidoId: editProgId,
+        arbitroNombre: editArbitro.trim() || null,
+      })
+      if (arb.error && String(arb.error).includes('181')) {
+        // Columna aún no migrada: no bloquea mesa/hora
+      } else if (arb.error) {
+        setGuardandoProg(false)
+        setErrorMsg(arb.error)
+        return
+      }
+    }
+    setGuardandoProg(false)
+    const conflictosRes = Array.isArray(res.conflictos) ? res.conflictos as Array<{ tipo: string; motivo: string; otroId: string }> : []
+    if (res.error && !forzar) {
+      setErrorMsg(res.error)
+      if (conflictosRes.length) {
+        setConflictosProg(conflictosRes.map(c => ({
+          partidoId: editProgId,
+          motivo: c.motivo,
+          tipo: c.tipo,
+        })))
+      }
+      return
+    }
+    setEditProgId(null)
+    setErrorMsg('')
+    recargarEvento()
+    void refrescarConflictos()
+  }
+
+  async function guardarModoSorteo() {
+    setErrorMsg('')
+    setGuardandoSorteo(true)
+    const res = await actualizarModoSorteoLlaveOficial({ eventoId: id, modo: modoSorteo })
+    setGuardandoSorteo(false)
+    if (res.error) { setErrorMsg(res.error); return }
+    const sync = await sincronizarLlavesOficial({ eventoId: id })
+    if (sync.error) setErrorMsg(sync.error)
+    else recargarEvento()
+  }
+
+  async function agregarSancionManual() {
+    if (!sancionForm.inscritoId) {
+      setErrorMsg('Elige el jugador sancionado')
+      return
+    }
+    const res = await registrarSancionOficial({
+      eventoId: id,
+      inscritoId: sancionForm.inscritoId,
+      tipo: sancionForm.tipo as 'blanca' | 'amarilla' | 'roja' | 'descalificacion' | 'otro',
+      detalle: sancionForm.detalle || undefined,
+      partidoId: sancionForm.partidoId || undefined,
+    })
+    if (res.error) { setErrorMsg(res.error); return }
+    setSancionForm({ inscritoId: '', tipo: 'amarilla', detalle: '', partidoId: '' })
+    recargarEvento()
+  }
+
+  function sancionesDePartido(partidoId: string): string {
+    const lista = sanciones.filter(s => s.partido_id === partidoId)
+    if (!lista.length) return ''
+    return lista.map(s => {
+      const nom = s.inscrito_id ? (nombrePorId.get(s.inscrito_id) || '') : ''
+      return `${s.tipo}${nom ? ` · ${nom}` : ''}`
+    }).join(' · ')
   }
 
   async function exportarGruposPdf() {
@@ -460,28 +744,6 @@ export default function EventoOficialPage() {
       })),
       nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_llaves.pdf`,
     })
-  }
-
-  function abrirSetsInline(partidoId: string, lado: 'a' | 'b') {
-    setSetsEditId(partidoId)
-    setSetsGanadorLado(lado)
-    setSetsTexto('')
-  }
-
-  function cerrarSetsInline() {
-    setSetsEditId(null)
-    setSetsGanadorLado(null)
-    setSetsTexto('')
-  }
-
-  function abrirCorregir(partidoId: string, sets: SetMarcador[]) {
-    setCorrigiendoId(partidoId)
-    setCorregirTexto(sets.length ? formatearSets(sets) : '')
-  }
-
-  function cerrarCorregir() {
-    setCorrigiendoId(null)
-    setCorregirTexto('')
   }
 
   const enInscripcion = evento?.fase === 'inscripcion'
@@ -536,11 +798,14 @@ export default function EventoOficialPage() {
             {/* Tabs */}
             {!enInscripcion && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', alignItems: 'center' }}>
-                {(['grupos', 'llaves', 'programa'] as Tab[]).map(t => (
+                {(['grupos', 'llaves', 'programa', 'sanciones'] as Tab[]).map(t => (
                   <button key={t} type="button" onClick={() => setTab(t)} style={tabUnderline(tab === t)}>
-                    {t === 'grupos' ? 'Grupos' : t === 'llaves' ? 'Llaves' : 'Programa'}
+                    {t === 'grupos' ? 'Grupos' : t === 'llaves' ? 'Llaves' : t === 'programa' ? 'Programa' : 'Sanciones'}
                   </button>
                 ))}
+                {(tab === 'grupos' || tab === 'llaves' || tab === 'programa') && (
+                  <button type="button" onClick={() => void exportarExcel()} style={btnOutlineIndigo}>Excel</button>
+                )}
                 {tab === 'llaves' && (
                   <>
                     <button type="button" onClick={() => void armarLlaves()} disabled={syncLlaves} style={btnOutlineIndigo}>
@@ -588,6 +853,13 @@ export default function EventoOficialPage() {
 
             {/* Groups grid */}
             {(enInscripcion || tab === 'grupos') && grupos.length > 0 && (
+              <>
+                {esAdmin && evento.fase !== 'finalizado' && (
+                  <p style={{ margin: '0 0 12px', fontSize: 12, color: muted }}>
+                    Resultado por partido: <strong style={{ color: text }}>🎯 En vivo</strong> (marcador tablet)
+                    {' '}o <strong style={{ color: text }}>Sets</strong> a mano — ambos válidos.
+                  </p>
+                )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
                 {grupos.map(g => {
                   const stats = statsGrupo(g.id)
@@ -619,130 +891,23 @@ export default function EventoOficialPage() {
                           const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
                           const esBye = !p.inscrito_b_id
                           const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
-                          const cerrado = Boolean(p.ganador_id)
-                          const editandoSets = setsEditId === p.id
-                          const corrigiendoEste = corrigiendoId === p.id
+                          const ganadorNombre = p.ganador_id ? nombrePorId.get(p.ganador_id) || null : null
 
                           return (
-                            <div key={p.id}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
-                                <span style={{ flex: 1, color: p.ganador_id === p.inscrito_a_id ? '#16a34a' : text, textAlign: 'right', fontWeight: p.ganador_id === p.inscrito_a_id ? 600 : 400 }}>{nombreA}</span>
-                                <span style={{ color: hint, fontSize: 10 }}>vs</span>
-                                <span style={{ flex: 1, color: p.ganador_id === p.inscrito_b_id ? '#16a34a' : text, fontWeight: p.ganador_id === p.inscrito_b_id ? 600 : 400 }}>{nombreB}</span>
-
-                                {cerrado && !corrigiendoEste && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <span style={{ color: '#16a34a', fontSize: 10 }}>✓ {formatearSets(p.sets)}{p.es_walkover ? ' W.O.' : ''}</span>
-                                    {esAdmin && evento.fase !== 'finalizado' && !esBye && (
-                                      <button type="button" onClick={() => abrirCorregir(p.id, p.sets)} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 10, cursor: 'pointer', padding: '2px 4px' }} title="Corregir resultado">✏️</button>
-                                    )}
-                                  </div>
-                                )}
-
-                                {cerrado && corrigiendoEste && (
-                                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                    <span style={{ fontSize: 10, color: hint }}>Corregir:</span>
-                                    <button type="button" onClick={() => setCorrigiendoId(null)} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 12, cursor: 'pointer' }}>✕</button>
-                                  </div>
-                                )}
-
-                                {!cerrado && !esBye && esAdmin && !editandoSets && (
-                                  <div style={{ display: 'flex', gap: 4 }}>
-                                    <button type="button" onClick={() => abrirSetsInline(p.id, 'a')} style={btnAB}>A✓</button>
-                                    <button type="button" onClick={() => abrirSetsInline(p.id, 'b')} style={btnAB}>✓B</button>
-                                    <button type="button" onClick={() => router.push(`/torneo-oficial/marcador/${p.id}`)} style={btnMarcadorSmall} title="Marcador en vivo">🎯</button>
-                                  </div>
-                                )}
-
-                                {!cerrado && esBye && (
-                                  <span style={{ fontSize: 10, color: muted }}>BYE</span>
-                                )}
-                              </div>
-
-                              {/* Inline sets input */}
-                              {editandoSets && (
-                                <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <input
-                                    value={setsTexto}
-                                    onChange={e => setSetsTexto(e.target.value)}
-                                    placeholder="11-6; 11-8; 11-4"
-                                    style={inlineInput}
-                                    autoFocus
-                                    onKeyDown={e => {
-                                      if (e.key === 'Enter' && setsTexto.trim()) {
-                                        void guardarResultado(p.id, { setsTexto }).then(res => { if (!res?.error) cerrarSetsInline() })
-                                      }
-                                      if (e.key === 'Escape') cerrarSetsInline()
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    disabled={guardandoRes === p.id || !setsTexto.trim()}
-                                    onClick={async () => {
-                                      const res = await guardarResultado(p.id, { setsTexto })
-                                      if (!res?.error) cerrarSetsInline()
-                                    }}
-                                    style={{ ...btnConfirmSets, opacity: guardandoRes === p.id || !setsTexto.trim() ? 0.5 : 1 }}
-                                  >
-                                    {guardandoRes === p.id ? '…' : `Gana ${setsGanadorLado === 'a' ? 'A' : 'B'}`}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={guardandoRes === p.id}
-                                    onClick={async () => {
-                                      const ganadorId = setsGanadorLado === 'a' ? p.inscrito_a_id! : p.inscrito_b_id!
-                                      const res = await guardarResultado(p.id, { walkover: true, ganadorId })
-                                      if (!res?.error) cerrarSetsInline()
-                                    }}
-                                    style={btnWoSmall}
-                                  >
-                                    W.O.
-                                  </button>
-                                  <button type="button" onClick={cerrarSetsInline} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
-                                </div>
-                              )}
-
-                              {/* Inline correction */}
-                              {corrigiendoEste && (
-                                <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <input
-                                    value={corregirTexto}
-                                    onChange={e => setCorregirTexto(e.target.value)}
-                                    placeholder="11-6; 11-8; 11-4"
-                                    style={inlineInput}
-                                    autoFocus
-                                    onKeyDown={e => { if (e.key === 'Escape') cerrarCorregir() }}
-                                  />
-                                  {p.inscrito_a_id && (
-                                    <button
-                                      type="button"
-                                      disabled={guardandoRes === p.id}
-                                      onClick={async () => {
-                                        const res = await corregir(p.id, p.inscrito_a_id!, corregirTexto || undefined)
-                                        if (!res?.error) cerrarCorregir()
-                                      }}
-                                      style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
-                                    >
-                                      Gana A
-                                    </button>
-                                  )}
-                                  {p.inscrito_b_id && (
-                                    <button
-                                      type="button"
-                                      disabled={guardandoRes === p.id}
-                                      onClick={async () => {
-                                        const res = await corregir(p.id, p.inscrito_b_id!, corregirTexto || undefined)
-                                        if (!res?.error) cerrarCorregir()
-                                      }}
-                                      style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
-                                    >
-                                      Gana B
-                                    </button>
-                                  )}
-                                  <button type="button" onClick={cerrarCorregir} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
-                                </div>
-                              )}
-                            </div>
+                            <PartidoOficialRow
+                              key={p.id}
+                              partido={p}
+                              eventoId={id}
+                              nombreA={nombreA}
+                              nombreB={nombreB}
+                              esBye={esBye}
+                              ganadorNombre={ganadorNombre}
+                              puedeCorregir={esAdmin && evento.fase !== 'finalizado'}
+                              guardando={guardandoRes === p.id}
+                              sancionesResumen={sancionesDePartido(p.id)}
+                              onGuardar={(opts) => guardarResultado(p.id, opts)}
+                              onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
+                            />
                           )
                         })}
                       </div>
@@ -750,11 +915,53 @@ export default function EventoOficialPage() {
                   )
                 })}
               </div>
+              </>
             )}
 
             {/* Llaves tab */}
             {tab === 'llaves' && (
-              partidosPlayoff.length === 0 ? (
+              <>
+                {esAdmin && evento.fase !== 'finalizado' && (
+                  <div style={{ ...card, padding: 16, marginBottom: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 8 }}>Sorteo 2ª fase</div>
+                    <p style={{ margin: '0 0 10px', fontSize: 12, color: muted }}>
+                      Alternativa al cruzamiento fijo 1°×2° (§3.7). Guardar re-sincroniza las llaves no jugadas.
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select
+                        value={modoSorteo}
+                        onChange={e => setModoSorteo(e.target.value as ModoSorteoLlave)}
+                        style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13, minWidth: 260 }}
+                      >
+                        {(Object.keys(MODO_SORTEO_LLAVE_LABEL) as ModoSorteoLlave[]).map(m => (
+                          <option key={m} value={m}>{MODO_SORTEO_LLAVE_LABEL[m]}</option>
+                        ))}
+                      </select>
+                      <button type="button" disabled={guardandoSorteo} onClick={() => void guardarModoSorteo()} style={btnPrimaryIndigo}>
+                        {guardandoSorteo ? 'Aplicando…' : 'Aplicar sorteo'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void renumerarPartidosOficial({ eventoId: id }).then(r => {
+                          if (r.error) setErrorMsg(r.error)
+                          else recargarEvento()
+                        })}
+                        style={btnOutlineIndigo}
+                      >
+                        Renumerar ITTF
+                      </button>
+                    </div>
+                    {resumenCuadro && (
+                      <p style={{ margin: '10px 0 0', fontSize: 12, color: hint }}>
+                        Cuadro: {resumenCuadro.clasificados} clasificados → llave de {resumenCuadro.tamanoLlave}
+                        {resumenCuadro.byes > 0 ? ` · ${resumenCuadro.byes} BYE` : ''}
+                        {' · '}fase inicial {FASE_LABELS[resumenCuadro.faseInicial] || resumenCuadro.faseInicial}
+                        {' · '}previas = fase de grupos
+                      </p>
+                    )}
+                  </div>
+                )}
+              {partidosPlayoff.length === 0 ? (
                 <div style={{ ...card, padding: 24, color: muted, textAlign: 'center' }}>
                   Aún no hay llaves. Cierra al menos un grupo o pulsa «Sincronizar llaves».
                 </div>
@@ -780,181 +987,34 @@ export default function EventoOficialPage() {
                     />
                   </div>
 
-                  {/* Playoff matches by fase - mobile list fallback */}
-                  {isMobile && fasesPlayoffOrdenadas.map(fase => {
-                    const lista = partidosPorFase.get(fase) ?? []
-                    if (!lista.length) return null
-                    return (
-                      <div key={fase} style={{ marginBottom: 18 }}>
-                        <div style={{ fontSize: 11, color: muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>{FASE_LABELS[fase] || fase}</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {lista.sort((a, b) => a.orden - b.orden).map((p, i) => {
-                            const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
-                            const esBye = !p.inscrito_b_id
-                            const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
-                            const ganoA = p.ganador_id === p.inscrito_a_id
-                            const ganoB = p.ganador_id === p.inscrito_b_id
-
-                            return (
-                              <div key={p.id} style={{ ...card, borderRadius: 12, overflow: 'hidden' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>Llave {i + 1}</span>
-                                  {p.ganador_id && (
-                                    <span style={{ fontSize: 10, color: '#16a34a' }}>{formatearSets(p.sets)}{p.es_walkover ? ' W.O.' : ''}</span>
-                                  )}
-                                </div>
-                                <div style={{ padding: '13px 14px', background: ganoA ? '#f0fdf4' : 'transparent', color: ganoA ? '#16a34a' : text, fontWeight: ganoA ? 700 : 500, fontSize: 15 }}>
-                                  {nombreA} {ganoA && <span>✓</span>}
-                                </div>
-                                {esBye ? (
-                                  <div style={{ padding: '13px 14px', borderTop: '1px solid #f1f5f9', fontSize: 14, color: hint, fontStyle: 'italic' }}>BYE</div>
-                                ) : (
-                                  <div style={{ padding: '13px 14px', borderTop: '1px solid #f1f5f9', background: ganoB ? '#f0fdf4' : 'transparent', color: ganoB ? '#16a34a' : text, fontWeight: ganoB ? 700 : 500, fontSize: 15 }}>
-                                    {nombreB} {ganoB && <span>✓</span>}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  {/* Desktop: llaves by fase list */}
-                  {!isMobile && fasesPlayoffOrdenadas.map(fase => {
+                  {/* Sets / 🎯 por fase — PartidoOficialRow (bridge marcador); cuadro visual arriba */}
+                  {fasesPlayoffOrdenadas.map(fase => {
                     const lista = partidosPorFase.get(fase) ?? []
                     if (!lista.length) return null
                     return (
                       <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
                         <h2 style={{ margin: '0 0 12px', fontSize: 16, color: text }}>{FASE_LABELS[fase] || fase}</h2>
-                        <div style={{ display: 'grid', gap: 0, padding: '0 16px 12px' }}>
+                        <div style={{ display: 'grid', gap: 4 }}>
                           {lista.sort((a, b) => a.orden - b.orden).map(p => {
                             const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
                             const esBye = !p.inscrito_b_id
                             const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
-                            const cerrado = Boolean(p.ganador_id)
-                            const editandoSets = setsEditId === p.id
-                            const corrigiendoEste = corrigiendoId === p.id
-
+                            const ganadorNombre = p.ganador_id ? nombrePorId.get(p.ganador_id) || null : null
                             return (
-                              <div key={p.id}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
-                                  <span style={{ flex: 1, color: p.ganador_id === p.inscrito_a_id ? '#16a34a' : text, textAlign: 'right', fontWeight: p.ganador_id === p.inscrito_a_id ? 600 : 400 }}>{nombreA}</span>
-                                  <span style={{ color: hint, fontSize: 10 }}>vs</span>
-                                  <span style={{ flex: 1, color: p.ganador_id === p.inscrito_b_id ? '#16a34a' : text, fontWeight: p.ganador_id === p.inscrito_b_id ? 600 : 400 }}>{nombreB}</span>
-
-                                  {cerrado && !corrigiendoEste && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                      <span style={{ color: '#16a34a', fontSize: 10 }}>✓ {formatearSets(p.sets)}{p.es_walkover ? ' W.O.' : ''}</span>
-                                      {esAdmin && evento.fase !== 'finalizado' && !esBye && (
-                                        <button type="button" onClick={() => abrirCorregir(p.id, p.sets)} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 10, cursor: 'pointer', padding: '2px 4px' }} title="Corregir resultado">✏️</button>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {cerrado && corrigiendoEste && (
-                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                      <span style={{ fontSize: 10, color: hint }}>Corregir:</span>
-                                      <button type="button" onClick={cerrarCorregir} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 12, cursor: 'pointer' }}>✕</button>
-                                    </div>
-                                  )}
-
-                                  {!cerrado && !esBye && esAdmin && !editandoSets && (
-                                    <div style={{ display: 'flex', gap: 4 }}>
-                                      <button type="button" onClick={() => abrirSetsInline(p.id, 'a')} style={btnAB}>A✓</button>
-                                      <button type="button" onClick={() => abrirSetsInline(p.id, 'b')} style={btnAB}>✓B</button>
-                                      <button type="button" onClick={() => router.push(`/torneo-oficial/marcador/${p.id}`)} style={btnMarcadorSmall} title="Marcador en vivo">🎯</button>
-                                    </div>
-                                  )}
-
-                                  {!cerrado && esBye && (
-                                    <span style={{ fontSize: 10, color: muted }}>BYE</span>
-                                  )}
-                                </div>
-
-                                {editandoSets && (
-                                  <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <input
-                                      value={setsTexto}
-                                      onChange={e => setSetsTexto(e.target.value)}
-                                      placeholder="11-6; 11-8; 11-4"
-                                      style={inlineInput}
-                                      autoFocus
-                                      onKeyDown={e => {
-                                        if (e.key === 'Enter' && setsTexto.trim()) {
-                                          void guardarResultado(p.id, { setsTexto }).then(res => { if (!res?.error) cerrarSetsInline() })
-                                        }
-                                        if (e.key === 'Escape') cerrarSetsInline()
-                                      }}
-                                    />
-                                    <button
-                                      type="button"
-                                      disabled={guardandoRes === p.id || !setsTexto.trim()}
-                                      onClick={async () => {
-                                        const res = await guardarResultado(p.id, { setsTexto })
-                                        if (!res?.error) cerrarSetsInline()
-                                      }}
-                                      style={{ ...btnConfirmSets, opacity: guardandoRes === p.id || !setsTexto.trim() ? 0.5 : 1 }}
-                                    >
-                                      {guardandoRes === p.id ? '…' : `Gana ${setsGanadorLado === 'a' ? 'A' : 'B'}`}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={guardandoRes === p.id}
-                                      onClick={async () => {
-                                        const ganadorId = setsGanadorLado === 'a' ? p.inscrito_a_id! : p.inscrito_b_id!
-                                        const res = await guardarResultado(p.id, { walkover: true, ganadorId })
-                                        if (!res?.error) cerrarSetsInline()
-                                      }}
-                                      style={btnWoSmall}
-                                    >
-                                      W.O.
-                                    </button>
-                                    <button type="button" onClick={cerrarSetsInline} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
-                                  </div>
-                                )}
-
-                                {corrigiendoEste && (
-                                  <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <input
-                                      value={corregirTexto}
-                                      onChange={e => setCorregirTexto(e.target.value)}
-                                      placeholder="11-6; 11-8; 11-4"
-                                      style={inlineInput}
-                                      autoFocus
-                                      onKeyDown={e => { if (e.key === 'Escape') cerrarCorregir() }}
-                                    />
-                                    {p.inscrito_a_id && (
-                                      <button
-                                        type="button"
-                                        disabled={guardandoRes === p.id}
-                                        onClick={async () => {
-                                          const res = await corregir(p.id, p.inscrito_a_id!, corregirTexto || undefined)
-                                          if (!res?.error) cerrarCorregir()
-                                        }}
-                                        style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
-                                      >
-                                        Gana A
-                                      </button>
-                                    )}
-                                    {p.inscrito_b_id && (
-                                      <button
-                                        type="button"
-                                        disabled={guardandoRes === p.id}
-                                        onClick={async () => {
-                                          const res = await corregir(p.id, p.inscrito_b_id!, corregirTexto || undefined)
-                                          if (!res?.error) cerrarCorregir()
-                                        }}
-                                        style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
-                                      >
-                                        Gana B
-                                      </button>
-                                    )}
-                                    <button type="button" onClick={cerrarCorregir} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
-                                  </div>
-                                )}
-                              </div>
+                              <PartidoOficialRow
+                                key={p.id}
+                                partido={p}
+                                eventoId={id}
+                                nombreA={nombreA}
+                                nombreB={nombreB}
+                                esBye={esBye}
+                                ganadorNombre={ganadorNombre}
+                                puedeCorregir={esAdmin && evento.fase !== 'finalizado'}
+                                guardando={guardandoRes === p.id}
+                                sancionesResumen={sancionesDePartido(p.id)}
+                                onGuardar={(opts) => guardarResultado(p.id, opts)}
+                                onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
+                              />
                             )
                           })}
                         </div>
@@ -962,95 +1022,189 @@ export default function EventoOficialPage() {
                     )
                   })}
                 </>
-              )
+              )}
+              </>
             )}
 
             {/* Programa tab */}
             {tab === 'programa' && (
-              programaFilas.length === 0 ? (
-                <div style={{ ...card, padding: 24, color: muted, textAlign: 'center' }}>
-                  Sin partidos programados. Usa «Auto-programar» (configura mesas en el campeonato).
-                </div>
-              ) : (
+              <div>
+                {conflictosProg.length > 0 && (
+                  <div style={{ ...card, padding: 12, marginBottom: 12, borderColor: '#fcd34d', background: '#fffbeb' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 6 }}>
+                      Conflictos de programa
+                    </div>
+                    {conflictosProg.map((c, i) => (
+                      <div key={i} style={{ fontSize: 12, color: '#a16207' }}>• {c.motivo}</div>
+                    ))}
+                  </div>
+                )}
+
+                {esAdmin && (
+                  <div style={{ ...card, padding: 16, marginBottom: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 10 }}>Editor de mesa / hora</div>
+                    <div style={{ display: 'grid', gap: 8, maxHeight: 280, overflowY: 'auto' }}>
+                      {partidos.filter(p => p.inscrito_a_id).map(p => {
+                        const label = `${p.numero_ittf ? `#${p.numero_ittf} ` : ''}${nombrePorId.get(p.inscrito_a_id!) || '?'} vs ${p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) : 'BYE'}`
+                        const editing = editProgId === p.id
+                        return (
+                          <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, borderBottom: '1px solid #f1f5f9', paddingBottom: 8 }}>
+                            <span style={{ flex: 1, minWidth: 140, color: text }}>{label}</span>
+                            <span style={{ color: muted, fontSize: 11 }}>{FASE_LABELS[p.fase] || p.fase}</span>
+                            {editing ? (
+                              <>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  placeholder="Mesa"
+                                  value={editMesa}
+                                  onChange={e => setEditMesa(e.target.value)}
+                                  style={{ width: 70, border: '1px solid #e2e8f0', borderRadius: 6, padding: '6px 8px' }}
+                                />
+                                <input
+                                  type="datetime-local"
+                                  value={editHora}
+                                  onChange={e => setEditHora(e.target.value)}
+                                  style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: '6px 8px' }}
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Árbitro"
+                                  value={editArbitro}
+                                  onChange={e => setEditArbitro(e.target.value)}
+                                  style={{ width: 120, border: '1px solid #e2e8f0', borderRadius: 6, padding: '6px 8px' }}
+                                />
+                                <button type="button" disabled={guardandoProg} onClick={() => void guardarEdicionPrograma(false)} style={btnPrimaryIndigo}>
+                                  Guardar
+                                </button>
+                                <button type="button" disabled={guardandoProg} onClick={() => void guardarEdicionPrograma(true)} style={btnOutlineIndigo} title="Guardar aunque haya conflicto">
+                                  Forzar
+                                </button>
+                                <button type="button" onClick={() => setEditProgId(null)} style={btnOutlineIndigo}>Cancelar</button>
+                              </>
+                            ) : (
+                              <>
+                                <span style={{ color: muted }}>
+                                  {p.mesa ? `M${p.mesa}` : 'Sin mesa'}
+                                  {p.programado_en
+                                    ? ` · ${new Date(p.programado_en).toLocaleString('es-CL', { timeZone: 'America/Santiago', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                                    : ''}
+                                  {p.arbitro_nombre ? ` · Árb. ${p.arbitro_nombre}` : ''}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditProgId(p.id)
+                                    setEditMesa(p.mesa ? String(p.mesa) : '')
+                                    setEditArbitro(p.arbitro_nombre || '')
+                                    if (p.programado_en) {
+                                      const d = new Date(p.programado_en)
+                                      const pad = (n: number) => String(n).padStart(2, '0')
+                                      setEditHora(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`)
+                                    } else {
+                                      setEditHora('')
+                                    }
+                                    void refrescarConflictos()
+                                  }}
+                                  style={btnOutlineIndigo}
+                                >
+                                  Editar
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <ProgramaOficialTablero
+                  celdas={programaCeldas}
+                  sinProgramar={programaSinUbicar}
+                  mesasCount={camp?.mesas_count}
+                />
+              </div>
+            )}
+
+            {/* Sanciones tab */}
+            {tab === 'sanciones' && (
+              <div>
+                {esAdmin && (
+                  <div style={{ ...card, padding: 16, marginBottom: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 10 }}>Registrar sanción</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select
+                        value={sancionForm.inscritoId}
+                        onChange={e => setSancionForm(f => ({ ...f, inscritoId: e.target.value }))}
+                        style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}
+                      >
+                        <option value="">Jugador…</option>
+                        {inscritos.map(i => (
+                          <option key={i.id} value={i.id}>{i.nombre}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={sancionForm.tipo}
+                        onChange={e => setSancionForm(f => ({ ...f, tipo: e.target.value }))}
+                        style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}
+                      >
+                        <option value="blanca">Blanca</option>
+                        <option value="amarilla">Amarilla</option>
+                        <option value="roja">Roja</option>
+                        <option value="descalificacion">Descalificación</option>
+                        <option value="otro">Otro</option>
+                      </select>
+                      <input
+                        value={sancionForm.detalle}
+                        onChange={e => setSancionForm(f => ({ ...f, detalle: e.target.value }))}
+                        placeholder="Detalle (opcional)"
+                        style={{ flex: 1, minWidth: 160, border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}
+                      />
+                      <button type="button" onClick={() => void agregarSancionManual()} style={btnPrimaryIndigo}>
+                        Agregar
+                      </button>
+                    </div>
+                    <p style={{ margin: '8px 0 0', fontSize: 11, color: hint }}>
+                      Las tarjetas del marcador técnico se copian a esta bitácora al cerrar el partido.
+                    </p>
+                  </div>
+                )}
+
                 <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: muted, textAlign: 'left' }}>
-                        <th style={thStyle}>Hora</th><th style={thStyle}>Mesa</th><th style={thStyle}>Fase</th><th style={thStyle}>Partido</th><th style={thStyle}>Resultado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {programaFilas.map((f, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={tdStyle}>{f.hora}</td><td style={tdStyle}>{f.mesa}</td><td style={tdStyle}>{f.fase}</td>
-                          <td style={tdStyle}>{f.partido}</td><td style={tdStyle}>{f.resultado || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {sanciones.length === 0 ? (
+                    <div style={{ padding: 24, color: muted, textAlign: 'center' }}>Sin sanciones registradas en este evento.</div>
+                  ) : (
+                    sanciones.map(s => (
+                      <div key={s.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8,
+                          background: s.tipo === 'roja' ? '#fee2e2' : s.tipo === 'amarilla' ? '#fef9c3' : '#f1f5f9',
+                          color: s.tipo === 'roja' ? '#b91c1c' : s.tipo === 'amarilla' ? '#a16207' : muted,
+                        }}>
+                          {s.tipo}
+                        </span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, color: text }}>
+                            {s.inscrito_id ? (nombrePorId.get(s.inscrito_id) || 'Jugador') : '—'}
+                          </div>
+                          {s.detalle && <div style={{ fontSize: 12, color: muted }}>{s.detalle}</div>}
+                          <div style={{ fontSize: 10, color: hint, marginTop: 2 }}>
+                            {s.origen} · {new Date(s.creado_en).toLocaleString('es-CL', { timeZone: 'America/Santiago' })}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
-              )
+              </div>
             )}
           </>
         )}
       </div>
 
-      {/* Full-screen modal for correction from PartidoOficialRow inline - keeping for marcador link */}
     </AppLayout>
   )
 }
 
-const thStyle: CSSProperties = { padding: '8px 10px', fontWeight: 600 }
-const tdStyle: CSSProperties = { padding: '8px 10px' }
 const btnBack: CSSProperties = { background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', marginBottom: 14, cursor: 'pointer' }
-
-const btnAB: CSSProperties = {
-  background: '#ede9fe',
-  color: '#3730a3',
-  border: 'none',
-  borderRadius: 4,
-  padding: '3px 6px',
-  fontSize: 10,
-  cursor: 'pointer',
-}
-
-const btnMarcadorSmall: CSSProperties = {
-  background: '#ede9fe',
-  color: '#3730a3',
-  border: 'none',
-  borderRadius: 4,
-  padding: '3px 6px',
-  fontSize: 10,
-  cursor: 'pointer',
-}
-
-const inlineInput: CSSProperties = {
-  flex: 1,
-  minWidth: 100,
-  border: '1px solid #e2e8f0',
-  borderRadius: 6,
-  padding: '5px 8px',
-  fontSize: 11,
-  boxSizing: 'border-box',
-}
-
-const btnConfirmSets: CSSProperties = {
-  background: '#ede9fe',
-  color: '#3730a3',
-  border: 'none',
-  borderRadius: 5,
-  padding: '5px 8px',
-  fontSize: 10,
-  fontWeight: 600,
-  cursor: 'pointer',
-}
-
-const btnWoSmall: CSSProperties = {
-  background: '#fef3c7',
-  color: '#92400e',
-  border: '1px solid #fcd34d',
-  borderRadius: 5,
-  padding: '4px 7px',
-  fontSize: 10,
-  cursor: 'pointer',
-}
