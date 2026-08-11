@@ -195,7 +195,12 @@ export default function SesionTecnicaPage() {
       const { data: itemsData } = await db.from('tecnico_evaluacion_items')
         .select('objetivo_id,codigo,nombre,estado,valor,comentario')
         .eq('evaluacion_id', eva.id)
-      const porObjetivo = new Map((itemsData ?? []).map((item: { objetivo_id: string; estado: string; valor: number | null; comentario: string | null }) => [item.objetivo_id, item]))
+      const porObjetivo = new Map<string, { estado: string; valor: number | null; comentario: string | null }>(
+        (itemsData ?? []).map((item: { objetivo_id: string; estado: string; valor: number | null; comentario: string | null }) => [
+          item.objetivo_id,
+          { estado: item.estado, valor: item.valor, comentario: item.comentario },
+        ]),
+      )
       setItems((objs ?? []).map((obj: Objetivo) => {
         const previo = porObjetivo.get(obj.id)
         return {
