@@ -26,7 +26,6 @@ import {
 } from '@/lib/domain/oficial-ittf'
 import BracketOficial from '@/components/torneo-oficial/BracketOficial'
 import InscripcionOficialModal from '@/components/torneo-oficial/InscripcionOficialModal'
-import PartidoOficialRow from '@/components/torneo-oficial/PartidoOficialRow'
 import { exportarGruposOficialPdf, exportarLlavesOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
 import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 import { btnOutlineIndigo, btnPrimaryIndigo, tabUnderline, torneoUi } from '@/lib/torneos/ui-tokens'
@@ -74,6 +73,9 @@ type Partido = {
 }
 
 const card = torneoUi.card
+const text = torneoUi.text
+const muted = torneoUi.muted
+const hint = torneoUi.hint
 
 const FASE_LABELS = CONFIG.FASE_LABELS as Record<string, string>
 
@@ -107,6 +109,20 @@ export default function EventoOficialPage() {
     () => (perfil?.club_id ? `oficial:evento:${id}:${perfil.club_id}` : ''),
     [id, perfil?.club_id],
   )
+
+  const [isMobile, setIsMobile] = useState(false)
+  const [setsEditId, setSetsEditId] = useState<string | null>(null)
+  const [setsGanadorLado, setSetsGanadorLado] = useState<'a' | 'b' | null>(null)
+  const [setsTexto, setSetsTexto] = useState('')
+  const [corrigiendoId, setCorrigiendoId] = useState<string | null>(null)
+  const [corregirTexto, setCorregirTexto] = useState('')
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   function recargarEvento() {
     if (cacheKey) invalidarCacheOficial(cacheKey)
@@ -446,26 +462,26 @@ export default function EventoOficialPage() {
     })
   }
 
-  function renderPartidoRow(p: Partido) {
-    const a = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
-    const esBye = !p.inscrito_b_id
-    const b = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
-    const ganadorNombre = p.ganador_id ? nombrePorId.get(p.ganador_id) : null
+  function abrirSetsInline(partidoId: string, lado: 'a' | 'b') {
+    setSetsEditId(partidoId)
+    setSetsGanadorLado(lado)
+    setSetsTexto('')
+  }
 
-    return (
-      <PartidoOficialRow
-        key={p.id}
-        partido={p}
-        nombreA={a}
-        nombreB={b}
-        esBye={esBye}
-        ganadorNombre={ganadorNombre ?? null}
-        puedeCorregir={!esBye && evento?.fase !== 'finalizado'}
-        guardando={guardandoRes === p.id}
-        onGuardar={(opts) => guardarResultado(p.id, opts)}
-        onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
-      />
-    )
+  function cerrarSetsInline() {
+    setSetsEditId(null)
+    setSetsGanadorLado(null)
+    setSetsTexto('')
+  }
+
+  function abrirCorregir(partidoId: string, sets: SetMarcador[]) {
+    setCorrigiendoId(partidoId)
+    setCorregirTexto(sets.length ? formatearSets(sets) : '')
+  }
+
+  function cerrarCorregir() {
+    setCorrigiendoId(null)
+    setCorregirTexto('')
   }
 
   const enInscripcion = evento?.fase === 'inscripcion'
@@ -484,15 +500,16 @@ export default function EventoOficialPage() {
         </button>
 
         {loading && !evento ? (
-          <p style={{ color: '#94a3b8' }}>Cargando…</p>
+          <p style={{ color: hint }}>Cargando…</p>
         ) : !evento ? (
-          <p style={{ color: '#94a3b8' }}>Evento no encontrado</p>
+          <p style={{ color: hint }}>Evento no encontrado</p>
         ) : (
           <>
+            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
               <div>
-                <h1 style={{ margin: 0, fontSize: 22, color: torneoUi.text }}>{evento.nombre}</h1>
-                <p style={{ margin: '6px 0 0', color: torneoUi.muted, fontSize: 13 }}>
+                <h1 style={{ margin: 0, fontSize: 22, color: text }}>{evento.nombre}</h1>
+                <p style={{ margin: '6px 0 0', color: muted, fontSize: 13 }}>
                   {evento.categoria} · {evento.genero} · {evento.formato_partido.toUpperCase()} · fase {evento.fase}
                   {campeonNombre ? ` · 🏆 ${campeonNombre}` : ''}
                   {tercerNombre ? ` · 🥉 ${tercerNombre}` : ''}
@@ -510,12 +527,13 @@ export default function EventoOficialPage() {
             )}
 
             {enInscripcion && inscritos.length > 0 && (
-              <div style={{ ...card, padding: 16, marginBottom: 16, textAlign: 'center', color: torneoUi.muted, fontSize: 13 }}>
+              <div style={{ ...card, padding: 16, marginBottom: 16, textAlign: 'center', color: muted, fontSize: 13 }}>
                 {inscritos.length} jugador{inscritos.length !== 1 ? 'es' : ''} inscrito{inscritos.length !== 1 ? 's' : ''}.
                 {esAdmin ? ' Pulsa «Inscripción» para agregar jugadores, cabezas de serie y formar grupos.' : ''}
               </div>
             )}
 
+            {/* Tabs */}
             {!enInscripcion && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', alignItems: 'center' }}>
                 {(['grupos', 'llaves', 'programa'] as Tab[]).map(t => (
@@ -568,15 +586,20 @@ export default function EventoOficialPage() {
               onGuardarCabezas={guardarCabezasModal}
             />
 
+            {/* Groups grid */}
             {(enInscripcion || tab === 'grupos') && grupos.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
                 {grupos.map(g => {
                   const stats = statsGrupo(g.id)
                   const partidosG = partidosPorGrupo.get(g.id) ?? []
+                  const todosCerrados = partidosG.length > 0 && partidosG.every(p => p.ganador_id)
                   return (
                     <div key={g.id} style={{ ...card, overflow: 'hidden' }}>
-                      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: torneoUi.text }}>Grupo {g.nombre}</span>
+                      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: text }}>Grupo {g.nombre}</span>
+                        {todosCerrados && (
+                          <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '2px 8px', borderRadius: 10, fontSize: 10 }}>✓ Cerrado</span>
+                        )}
                       </div>
                       {stats.map((s, idx) => (
                         <div key={s.inscritoId} style={{
@@ -586,13 +609,142 @@ export default function EventoOficialPage() {
                         }}>
                           <span style={{ fontSize: 14 }}>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '—'}</span>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, color: torneoUi.text }}>{nombrePorId.get(s.inscritoId)}</div>
-                            <div style={{ fontSize: 10, color: torneoUi.muted }}>{s.pg}G {s.pp}P · {s.pts}pts</div>
+                            <div style={{ fontSize: 13, color: text }}>{nombrePorId.get(s.inscritoId)}</div>
+                            <div style={{ fontSize: 10, color: muted }}>{s.pg}G {s.pp}P · {s.pts}pts</div>
                           </div>
                         </div>
                       ))}
                       <div style={{ padding: '8px 16px' }}>
-                        {partidosG.map(renderPartidoRow)}
+                        {partidosG.map(p => {
+                          const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
+                          const esBye = !p.inscrito_b_id
+                          const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
+                          const cerrado = Boolean(p.ganador_id)
+                          const editandoSets = setsEditId === p.id
+                          const corrigiendoEste = corrigiendoId === p.id
+
+                          return (
+                            <div key={p.id}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
+                                <span style={{ flex: 1, color: p.ganador_id === p.inscrito_a_id ? '#16a34a' : text, textAlign: 'right', fontWeight: p.ganador_id === p.inscrito_a_id ? 600 : 400 }}>{nombreA}</span>
+                                <span style={{ color: hint, fontSize: 10 }}>vs</span>
+                                <span style={{ flex: 1, color: p.ganador_id === p.inscrito_b_id ? '#16a34a' : text, fontWeight: p.ganador_id === p.inscrito_b_id ? 600 : 400 }}>{nombreB}</span>
+
+                                {cerrado && !corrigiendoEste && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ color: '#16a34a', fontSize: 10 }}>✓ {formatearSets(p.sets)}{p.es_walkover ? ' W.O.' : ''}</span>
+                                    {esAdmin && evento.fase !== 'finalizado' && !esBye && (
+                                      <button type="button" onClick={() => abrirCorregir(p.id, p.sets)} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 10, cursor: 'pointer', padding: '2px 4px' }} title="Corregir resultado">✏️</button>
+                                    )}
+                                  </div>
+                                )}
+
+                                {cerrado && corrigiendoEste && (
+                                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                    <span style={{ fontSize: 10, color: hint }}>Corregir:</span>
+                                    <button type="button" onClick={() => setCorrigiendoId(null)} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 12, cursor: 'pointer' }}>✕</button>
+                                  </div>
+                                )}
+
+                                {!cerrado && !esBye && esAdmin && !editandoSets && (
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    <button type="button" onClick={() => abrirSetsInline(p.id, 'a')} style={btnAB}>A✓</button>
+                                    <button type="button" onClick={() => abrirSetsInline(p.id, 'b')} style={btnAB}>✓B</button>
+                                    <button type="button" onClick={() => router.push(`/torneo-oficial/marcador/${p.id}`)} style={btnMarcadorSmall} title="Marcador en vivo">🎯</button>
+                                  </div>
+                                )}
+
+                                {!cerrado && esBye && (
+                                  <span style={{ fontSize: 10, color: muted }}>BYE</span>
+                                )}
+                              </div>
+
+                              {/* Inline sets input */}
+                              {editandoSets && (
+                                <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <input
+                                    value={setsTexto}
+                                    onChange={e => setSetsTexto(e.target.value)}
+                                    placeholder="11-6; 11-8; 11-4"
+                                    style={inlineInput}
+                                    autoFocus
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter' && setsTexto.trim()) {
+                                        void guardarResultado(p.id, { setsTexto }).then(res => { if (!res?.error) cerrarSetsInline() })
+                                      }
+                                      if (e.key === 'Escape') cerrarSetsInline()
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={guardandoRes === p.id || !setsTexto.trim()}
+                                    onClick={async () => {
+                                      const res = await guardarResultado(p.id, { setsTexto })
+                                      if (!res?.error) cerrarSetsInline()
+                                    }}
+                                    style={{ ...btnConfirmSets, opacity: guardandoRes === p.id || !setsTexto.trim() ? 0.5 : 1 }}
+                                  >
+                                    {guardandoRes === p.id ? '…' : `Gana ${setsGanadorLado === 'a' ? 'A' : 'B'}`}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={guardandoRes === p.id}
+                                    onClick={async () => {
+                                      const ganadorId = setsGanadorLado === 'a' ? p.inscrito_a_id! : p.inscrito_b_id!
+                                      const res = await guardarResultado(p.id, { walkover: true, ganadorId })
+                                      if (!res?.error) cerrarSetsInline()
+                                    }}
+                                    style={btnWoSmall}
+                                  >
+                                    W.O.
+                                  </button>
+                                  <button type="button" onClick={cerrarSetsInline} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                </div>
+                              )}
+
+                              {/* Inline correction */}
+                              {corrigiendoEste && (
+                                <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <input
+                                    value={corregirTexto}
+                                    onChange={e => setCorregirTexto(e.target.value)}
+                                    placeholder="11-6; 11-8; 11-4"
+                                    style={inlineInput}
+                                    autoFocus
+                                    onKeyDown={e => { if (e.key === 'Escape') cerrarCorregir() }}
+                                  />
+                                  {p.inscrito_a_id && (
+                                    <button
+                                      type="button"
+                                      disabled={guardandoRes === p.id}
+                                      onClick={async () => {
+                                        const res = await corregir(p.id, p.inscrito_a_id!, corregirTexto || undefined)
+                                        if (!res?.error) cerrarCorregir()
+                                      }}
+                                      style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
+                                    >
+                                      Gana A
+                                    </button>
+                                  )}
+                                  {p.inscrito_b_id && (
+                                    <button
+                                      type="button"
+                                      disabled={guardandoRes === p.id}
+                                      onClick={async () => {
+                                        const res = await corregir(p.id, p.inscrito_b_id!, corregirTexto || undefined)
+                                        if (!res?.error) cerrarCorregir()
+                                      }}
+                                      style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
+                                    >
+                                      Gana B
+                                    </button>
+                                  )}
+                                  <button type="button" onClick={cerrarCorregir} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
                   )
@@ -600,15 +752,25 @@ export default function EventoOficialPage() {
               </div>
             )}
 
+            {/* Llaves tab */}
             {tab === 'llaves' && (
               partidosPlayoff.length === 0 ? (
-                <div style={{ ...card, padding: 24, color: '#64748b', textAlign: 'center' }}>
+                <div style={{ ...card, padding: 24, color: muted, textAlign: 'center' }}>
                   Aún no hay llaves. Cierra al menos un grupo o pulsa «Sincronizar llaves».
                 </div>
               ) : (
                 <>
+                  {/* Campeón banner */}
+                  {evento.fase === 'finalizado' && campeonNombre && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 16, padding: 24, textAlign: 'center', marginBottom: 16 }}>
+                      <div style={{ fontSize: 48, marginBottom: 8 }}>🏆</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: '#d97706' }}>¡Campeón!</div>
+                      <div style={{ fontSize: 18, color: text, marginTop: 4 }}>{campeonNombre}</div>
+                    </div>
+                  )}
+
                   <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-                    <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Cuadro eliminatorio</h2>
+                    <h2 style={{ margin: '0 0 12px', fontSize: 16, color: text }}>Cuadro eliminatorio</h2>
                     <BracketOficial
                       partidos={partidosPlayoff}
                       nombrePorId={nombrePorId}
@@ -617,32 +779,203 @@ export default function EventoOficialPage() {
                       onIntercambiar={esAdmin ? intercambiarCupos : undefined}
                     />
                   </div>
-                  {fasesPlayoffOrdenadas.map(fase => {
+
+                  {/* Playoff matches by fase - mobile list fallback */}
+                  {isMobile && fasesPlayoffOrdenadas.map(fase => {
                     const lista = partidosPorFase.get(fase) ?? []
                     if (!lista.length) return null
                     return (
-                    <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
-                      <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>{FASE_LABELS[fase] || fase}</h2>
-                      <div style={{ display: 'grid', gap: 0, padding: '0 16px 12px' }}>
-                        {lista.sort((a, b) => a.orden - b.orden).map(renderPartidoRow)}
+                      <div key={fase} style={{ marginBottom: 18 }}>
+                        <div style={{ fontSize: 11, color: muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>{FASE_LABELS[fase] || fase}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {lista.sort((a, b) => a.orden - b.orden).map((p, i) => {
+                            const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
+                            const esBye = !p.inscrito_b_id
+                            const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
+                            const ganoA = p.ganador_id === p.inscrito_a_id
+                            const ganoB = p.ganador_id === p.inscrito_b_id
+
+                            return (
+                              <div key={p.id} style={{ ...card, borderRadius: 12, overflow: 'hidden' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>Llave {i + 1}</span>
+                                  {p.ganador_id && (
+                                    <span style={{ fontSize: 10, color: '#16a34a' }}>{formatearSets(p.sets)}{p.es_walkover ? ' W.O.' : ''}</span>
+                                  )}
+                                </div>
+                                <div style={{ padding: '13px 14px', background: ganoA ? '#f0fdf4' : 'transparent', color: ganoA ? '#16a34a' : text, fontWeight: ganoA ? 700 : 500, fontSize: 15 }}>
+                                  {nombreA} {ganoA && <span>✓</span>}
+                                </div>
+                                {esBye ? (
+                                  <div style={{ padding: '13px 14px', borderTop: '1px solid #f1f5f9', fontSize: 14, color: hint, fontStyle: 'italic' }}>BYE</div>
+                                ) : (
+                                  <div style={{ padding: '13px 14px', borderTop: '1px solid #f1f5f9', background: ganoB ? '#f0fdf4' : 'transparent', color: ganoB ? '#16a34a' : text, fontWeight: ganoB ? 700 : 500, fontSize: 15 }}>
+                                    {nombreB} {ganoB && <span>✓</span>}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )
+                  })}
+
+                  {/* Desktop: llaves by fase list */}
+                  {!isMobile && fasesPlayoffOrdenadas.map(fase => {
+                    const lista = partidosPorFase.get(fase) ?? []
+                    if (!lista.length) return null
+                    return (
+                      <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
+                        <h2 style={{ margin: '0 0 12px', fontSize: 16, color: text }}>{FASE_LABELS[fase] || fase}</h2>
+                        <div style={{ display: 'grid', gap: 0, padding: '0 16px 12px' }}>
+                          {lista.sort((a, b) => a.orden - b.orden).map(p => {
+                            const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
+                            const esBye = !p.inscrito_b_id
+                            const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
+                            const cerrado = Boolean(p.ganador_id)
+                            const editandoSets = setsEditId === p.id
+                            const corrigiendoEste = corrigiendoId === p.id
+
+                            return (
+                              <div key={p.id}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
+                                  <span style={{ flex: 1, color: p.ganador_id === p.inscrito_a_id ? '#16a34a' : text, textAlign: 'right', fontWeight: p.ganador_id === p.inscrito_a_id ? 600 : 400 }}>{nombreA}</span>
+                                  <span style={{ color: hint, fontSize: 10 }}>vs</span>
+                                  <span style={{ flex: 1, color: p.ganador_id === p.inscrito_b_id ? '#16a34a' : text, fontWeight: p.ganador_id === p.inscrito_b_id ? 600 : 400 }}>{nombreB}</span>
+
+                                  {cerrado && !corrigiendoEste && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                      <span style={{ color: '#16a34a', fontSize: 10 }}>✓ {formatearSets(p.sets)}{p.es_walkover ? ' W.O.' : ''}</span>
+                                      {esAdmin && evento.fase !== 'finalizado' && !esBye && (
+                                        <button type="button" onClick={() => abrirCorregir(p.id, p.sets)} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 10, cursor: 'pointer', padding: '2px 4px' }} title="Corregir resultado">✏️</button>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {cerrado && corrigiendoEste && (
+                                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                      <span style={{ fontSize: 10, color: hint }}>Corregir:</span>
+                                      <button type="button" onClick={cerrarCorregir} style={{ background: 'transparent', border: 'none', color: hint, fontSize: 12, cursor: 'pointer' }}>✕</button>
+                                    </div>
+                                  )}
+
+                                  {!cerrado && !esBye && esAdmin && !editandoSets && (
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                      <button type="button" onClick={() => abrirSetsInline(p.id, 'a')} style={btnAB}>A✓</button>
+                                      <button type="button" onClick={() => abrirSetsInline(p.id, 'b')} style={btnAB}>✓B</button>
+                                      <button type="button" onClick={() => router.push(`/torneo-oficial/marcador/${p.id}`)} style={btnMarcadorSmall} title="Marcador en vivo">🎯</button>
+                                    </div>
+                                  )}
+
+                                  {!cerrado && esBye && (
+                                    <span style={{ fontSize: 10, color: muted }}>BYE</span>
+                                  )}
+                                </div>
+
+                                {editandoSets && (
+                                  <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <input
+                                      value={setsTexto}
+                                      onChange={e => setSetsTexto(e.target.value)}
+                                      placeholder="11-6; 11-8; 11-4"
+                                      style={inlineInput}
+                                      autoFocus
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter' && setsTexto.trim()) {
+                                          void guardarResultado(p.id, { setsTexto }).then(res => { if (!res?.error) cerrarSetsInline() })
+                                        }
+                                        if (e.key === 'Escape') cerrarSetsInline()
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      disabled={guardandoRes === p.id || !setsTexto.trim()}
+                                      onClick={async () => {
+                                        const res = await guardarResultado(p.id, { setsTexto })
+                                        if (!res?.error) cerrarSetsInline()
+                                      }}
+                                      style={{ ...btnConfirmSets, opacity: guardandoRes === p.id || !setsTexto.trim() ? 0.5 : 1 }}
+                                    >
+                                      {guardandoRes === p.id ? '…' : `Gana ${setsGanadorLado === 'a' ? 'A' : 'B'}`}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={guardandoRes === p.id}
+                                      onClick={async () => {
+                                        const ganadorId = setsGanadorLado === 'a' ? p.inscrito_a_id! : p.inscrito_b_id!
+                                        const res = await guardarResultado(p.id, { walkover: true, ganadorId })
+                                        if (!res?.error) cerrarSetsInline()
+                                      }}
+                                      style={btnWoSmall}
+                                    >
+                                      W.O.
+                                    </button>
+                                    <button type="button" onClick={cerrarSetsInline} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                  </div>
+                                )}
+
+                                {corrigiendoEste && (
+                                  <div style={{ padding: '8px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <input
+                                      value={corregirTexto}
+                                      onChange={e => setCorregirTexto(e.target.value)}
+                                      placeholder="11-6; 11-8; 11-4"
+                                      style={inlineInput}
+                                      autoFocus
+                                      onKeyDown={e => { if (e.key === 'Escape') cerrarCorregir() }}
+                                    />
+                                    {p.inscrito_a_id && (
+                                      <button
+                                        type="button"
+                                        disabled={guardandoRes === p.id}
+                                        onClick={async () => {
+                                          const res = await corregir(p.id, p.inscrito_a_id!, corregirTexto || undefined)
+                                          if (!res?.error) cerrarCorregir()
+                                        }}
+                                        style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
+                                      >
+                                        Gana A
+                                      </button>
+                                    )}
+                                    {p.inscrito_b_id && (
+                                      <button
+                                        type="button"
+                                        disabled={guardandoRes === p.id}
+                                        onClick={async () => {
+                                          const res = await corregir(p.id, p.inscrito_b_id!, corregirTexto || undefined)
+                                          if (!res?.error) cerrarCorregir()
+                                        }}
+                                        style={{ ...btnConfirmSets, opacity: guardandoRes === p.id ? 0.5 : 1 }}
+                                      >
+                                        Gana B
+                                      </button>
+                                    )}
+                                    <button type="button" onClick={cerrarCorregir} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
                     )
                   })}
                 </>
               )
             )}
 
+            {/* Programa tab */}
             {tab === 'programa' && (
               programaFilas.length === 0 ? (
-                <div style={{ ...card, padding: 24, color: '#64748b', textAlign: 'center' }}>
+                <div style={{ ...card, padding: 24, color: muted, textAlign: 'center' }}>
                   Sin partidos programados. Usa «Auto-programar» (configura mesas en el campeonato).
                 </div>
               ) : (
                 <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'left' }}>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: muted, textAlign: 'left' }}>
                         <th style={thStyle}>Hora</th><th style={thStyle}>Mesa</th><th style={thStyle}>Fase</th><th style={thStyle}>Partido</th><th style={thStyle}>Resultado</th>
                       </tr>
                     </thead>
@@ -661,6 +994,8 @@ export default function EventoOficialPage() {
           </>
         )}
       </div>
+
+      {/* Full-screen modal for correction from PartidoOficialRow inline - keeping for marcador link */}
     </AppLayout>
   )
 }
@@ -668,3 +1003,54 @@ export default function EventoOficialPage() {
 const thStyle: CSSProperties = { padding: '8px 10px', fontWeight: 600 }
 const tdStyle: CSSProperties = { padding: '8px 10px' }
 const btnBack: CSSProperties = { background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', marginBottom: 14, cursor: 'pointer' }
+
+const btnAB: CSSProperties = {
+  background: '#ede9fe',
+  color: '#3730a3',
+  border: 'none',
+  borderRadius: 4,
+  padding: '3px 6px',
+  fontSize: 10,
+  cursor: 'pointer',
+}
+
+const btnMarcadorSmall: CSSProperties = {
+  background: '#ede9fe',
+  color: '#3730a3',
+  border: 'none',
+  borderRadius: 4,
+  padding: '3px 6px',
+  fontSize: 10,
+  cursor: 'pointer',
+}
+
+const inlineInput: CSSProperties = {
+  flex: 1,
+  minWidth: 100,
+  border: '1px solid #e2e8f0',
+  borderRadius: 6,
+  padding: '5px 8px',
+  fontSize: 11,
+  boxSizing: 'border-box',
+}
+
+const btnConfirmSets: CSSProperties = {
+  background: '#ede9fe',
+  color: '#3730a3',
+  border: 'none',
+  borderRadius: 5,
+  padding: '5px 8px',
+  fontSize: 10,
+  fontWeight: 600,
+  cursor: 'pointer',
+}
+
+const btnWoSmall: CSSProperties = {
+  background: '#fef3c7',
+  color: '#92400e',
+  border: '1px solid #fcd34d',
+  borderRadius: 5,
+  padding: '4px 7px',
+  fontSize: 10,
+  cursor: 'pointer',
+}
