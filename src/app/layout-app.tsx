@@ -14,7 +14,7 @@ import {
   CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
   Store, Library, BookLock, Eye, EyeOff, Award, Home, Landmark, CalendarClock,
-  MessageSquare,
+  MessageSquare, Gavel,
 } from 'lucide-react'
 import { useMontos } from '@/lib/ui/MontosProvider'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
@@ -29,6 +29,7 @@ const navAdmin = [
   { label: 'Jugadores', emoji: '🏓',     icon: Users,            href: '/jugadores' },
   { label: 'Torneo Externo', emoji: '🌎',  icon: Globe,            href: '/torneos',          modulo: 'torneos' },
   { label: 'Torneo Interno', emoji: '🏆',  icon: Home,             href: '/torneos-internos', modulo: 'torneos' },
+  { label: 'Torneo oficial', emoji: '⚖️', icon: Gavel,            href: '/torneo-oficial',   modulo: 'torneo_oficial' },
   { label: 'Ranking', emoji: '🥇',         icon: Award,            href: '/ranking',          modulo: 'torneos' },
   { label: 'Liga', emoji: '📈',           icon: BarChart2,        href: '/liga',             modulo: 'liga' },
   { section: 'Gestión' },
@@ -57,6 +58,7 @@ const navProfesor = [
   { label: 'Calendario', emoji: '📅', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
   { label: 'Torneo Externo', emoji: '🌎', icon: Globe,           href: '/torneos',          modulo: 'torneos' },
   { label: 'Torneo Interno', emoji: '🏆', icon: Home,            href: '/torneos-internos', modulo: 'torneos' },
+  { label: 'Torneo oficial', emoji: '⚖️', icon: Gavel,           href: '/torneo-oficial',   modulo: 'torneo_oficial' },
   { label: 'Ranking', emoji: '🥇',       icon: Award,           href: '/ranking',          modulo: 'torneos' },
   { label: 'Central de Pago', emoji: '🏦', icon: Landmark,      href: '/central-de-pago' },
   { section: 'Tienda' },

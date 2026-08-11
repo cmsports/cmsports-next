@@ -9,6 +9,7 @@ const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly stri
   // El torneo interno y el ranking viven en rutas propias que no cuelgan de
   // /torneos: sin nombrarlas acá, apagar el módulo las dejaba abiertas por URL.
   { modulo: 'torneos', rutas: ['/torneos', '/torneos-internos', '/ranking'] },
+  { modulo: 'torneo_oficial', rutas: ['/torneo-oficial'] },
   { modulo: 'liga', rutas: ['/liga'] },
   // `/mi-horario` es la vista del jugador de lo mismo que el staff arma en
   // `/horario`, así que depende del mismo módulo. La ruta /clases ya no está:

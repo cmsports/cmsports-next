@@ -13,6 +13,7 @@
  */
 export const MODULOS = [
   { key: 'torneos', label: 'Torneos' },
+  { key: 'torneo_oficial', label: 'Torneo oficial' },
   { key: 'liga', label: 'Liga' },
   // La clave sigue siendo 'clases' en la base, pero el módulo hoy solo gobierna
   // el horario semanal: la pantalla de clases generadas se eliminó.
