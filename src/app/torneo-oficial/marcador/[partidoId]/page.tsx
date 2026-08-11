@@ -176,10 +176,10 @@ export default function MarcadorOficialPage() {
   )
 
   useEffect(() => {
-    if (!partido?.ganador_id) {
-      guardarMarcadorLocal(partidoId, estado)
-    }
-  }, [estado, partidoId, partido?.ganador_id])
+    if (!cargadoRef.current || !partido || partido.ganador_id) return
+    const hayActividad = estado.puntos_a > 0 || estado.puntos_b > 0 || estado.historial_sets.length > 0
+    if (hayActividad) guardarMarcadorLocal(partidoId, estado)
+  }, [estado, partidoId, partido])
 
   const formato: FormatoPartido = evento?.formato_partido || 'bo5'
   const cerrado = Boolean(partido?.ganador_id)

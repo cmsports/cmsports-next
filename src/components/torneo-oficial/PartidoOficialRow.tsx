@@ -23,8 +23,8 @@ export default function PartidoOficialRow(props: {
   ganadorNombre: string | null
   puedeCorregir: boolean
   guardando: boolean
-  onGuardar: (opts?: { walkover?: boolean; ganadorId?: string; setsTexto?: string }) => void
-  onCorregir: (ganadorId: string, setsTexto?: string) => void
+  onGuardar: (opts?: { walkover?: boolean; ganadorId?: string; setsTexto?: string }) => Promise<{ error?: string } | void>
+  onCorregir: (ganadorId: string, setsTexto?: string) => Promise<{ error?: string } | void>
 }) {
   const router = useRouter()
   const { partido: p, esBye, guardando } = props
@@ -122,14 +122,20 @@ export default function PartidoOficialRow(props: {
                 <>
                   {p.inscrito_a_id && (
                     <button type="button" disabled={guardando}
-                      onClick={() => { props.onCorregir(p.inscrito_a_id!, setsTexto); cerrarModal() }}
+                      onClick={async () => {
+                        const res = await props.onCorregir(p.inscrito_a_id!, setsTexto)
+                        if (!res?.error) cerrarModal()
+                      }}
                       style={{ ...btnPrimaryIndigo, opacity: guardando ? 0.6 : 1 }}>
                       Gana A
                     </button>
                   )}
                   {p.inscrito_b_id && (
                     <button type="button" disabled={guardando}
-                      onClick={() => { props.onCorregir(p.inscrito_b_id!, setsTexto); cerrarModal() }}
+                      onClick={async () => {
+                        const res = await props.onCorregir(p.inscrito_b_id!, setsTexto)
+                        if (!res?.error) cerrarModal()
+                      }}
                       style={{ ...btnPrimaryIndigo, opacity: guardando ? 0.6 : 1 }}>
                       Gana B
                     </button>
@@ -138,17 +144,26 @@ export default function PartidoOficialRow(props: {
               ) : (
                 <>
                   <button type="button" disabled={guardando || !setsTexto.trim()}
-                    onClick={() => { props.onGuardar({ setsTexto }); cerrarModal() }}
+                    onClick={async () => {
+                      const res = await props.onGuardar({ setsTexto })
+                      if (!res?.error) cerrarModal()
+                    }}
                     style={{ ...btnPrimaryIndigo, opacity: guardando || !setsTexto.trim() ? 0.6 : 1 }}>
                     {guardando ? 'Guardando…' : 'Guardar sets'}
                   </button>
                   {p.inscrito_a_id && p.inscrito_b_id && (
                     <>
                       <button type="button" disabled={guardando}
-                        onClick={() => { props.onGuardar({ walkover: true, ganadorId: p.inscrito_a_id! }); cerrarModal() }}
+                        onClick={async () => {
+                          const res = await props.onGuardar({ walkover: true, ganadorId: p.inscrito_a_id! })
+                          if (!res?.error) cerrarModal()
+                        }}
                         style={btnWo}>W.O. A</button>
                       <button type="button" disabled={guardando}
-                        onClick={() => { props.onGuardar({ walkover: true, ganadorId: p.inscrito_b_id! }); cerrarModal() }}
+                        onClick={async () => {
+                          const res = await props.onGuardar({ walkover: true, ganadorId: p.inscrito_b_id! })
+                          if (!res?.error) cerrarModal()
+                        }}
                         style={btnWo}>W.O. B</button>
                     </>
                   )}

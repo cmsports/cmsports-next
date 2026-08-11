@@ -28,7 +28,7 @@ import BracketOficial from '@/components/torneo-oficial/BracketOficial'
 import InscripcionOficialModal from '@/components/torneo-oficial/InscripcionOficialModal'
 import PartidoOficialRow from '@/components/torneo-oficial/PartidoOficialRow'
 import { exportarGruposOficialPdf, exportarLlavesOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
-import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
+import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 import { btnOutlineIndigo, btnPrimaryIndigo, tabUnderline, torneoUi } from '@/lib/torneos/ui-tokens'
 
 const supabase = createClient()
@@ -102,6 +102,15 @@ export default function EventoOficialPage() {
   const [guardandoRes, setGuardandoRes] = useState<string | null>(null)
   const [reiniciando, setReiniciando] = useState(false)
   const cargadoRef = useRef(false)
+  const cacheKey = useMemo(
+    () => (perfil?.club_id ? `oficial:evento:${id}:${perfil.club_id}` : ''),
+    [id, perfil?.club_id],
+  )
+
+  function recargarEvento() {
+    if (cacheKey) invalidarCacheOficial(cacheKey)
+    void cargar()
+  }
 
   type DatosEvento = {
     evento: Evento | null
@@ -305,14 +314,14 @@ export default function EventoOficialPage() {
     setInscribiendo(true)
     const res = await inscribirJugadorOficial({ eventoId: id, nombre, asociacion })
     setInscribiendo(false)
-    if (!res.error) void cargar()
+    if (!res.error) recargarEvento()
     return res
   }
 
   async function guardarCabezasModal(jugadorIds: string[]) {
     const cabezas = jugadorIds.map((inscritoId, i) => ({ inscritoId, numero: i + 1 }))
     const res = await configurarCabezasOficial({ eventoId: id, cabezas })
-    if (!res.error) void cargar()
+    if (!res.error) recargarEvento()
     return res
   }
 
@@ -321,7 +330,7 @@ export default function EventoOficialPage() {
     const res = await sincronizarLlavesOficial({ eventoId: id })
     setSyncLlaves(false)
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else recargarEvento()
   }
 
   async function programar() {
@@ -329,11 +338,11 @@ export default function EventoOficialPage() {
     const res = await programarEventoOficial({ eventoId: id })
     setProgramando(false)
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else recargarEvento()
   }
 
   async function guardarResultado(partidoId: string, opts?: { walkover?: boolean; ganadorId?: string; setsTexto?: string }) {
-    if (!opts?.walkover && !opts?.setsTexto?.trim()) return
+    if (!opts?.walkover && !opts?.setsTexto?.trim()) return { error: 'Indica los sets' }
     setGuardandoRes(partidoId)
     const res = await registrarResultadoOficial({
       partidoId,
@@ -342,8 +351,9 @@ export default function EventoOficialPage() {
       ganadorId: opts?.ganadorId,
     })
     setGuardandoRes(null)
-    if (res.error) { setErrorMsg(res.error); return }
-    void cargar()
+    if (res.error) { setErrorMsg(res.error); return res }
+    recargarEvento()
+    return res
   }
 
   async function corregir(partidoId: string, ganadorId: string, setsTexto?: string) {
@@ -354,8 +364,9 @@ export default function EventoOficialPage() {
       setsTexto,
     })
     setGuardandoRes(null)
-    if (res.error) { setErrorMsg(res.error); return }
-    void cargar()
+    if (res.error) { setErrorMsg(res.error); return res }
+    recargarEvento()
+    return res
   }
 
   async function reiniciarLlaves() {
@@ -364,7 +375,7 @@ export default function EventoOficialPage() {
     const res = await reiniciarLlavesOficial({ eventoId: id })
     setReiniciando(false)
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else recargarEvento()
   }
 
   async function intercambiarCupos(
@@ -373,7 +384,7 @@ export default function EventoOficialPage() {
   ) {
     const res = await intercambiarCuposOficial({ eventoId: id, slotA, slotB })
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else recargarEvento()
   }
 
   function statsGrupo(grupoId: string) {
@@ -450,8 +461,8 @@ export default function EventoOficialPage() {
         ganadorNombre={ganadorNombre ?? null}
         puedeCorregir={!esBye && evento?.fase !== 'finalizado'}
         guardando={guardandoRes === p.id}
-        onGuardar={(opts) => void guardarResultado(p.id, opts)}
-        onCorregir={(ganadorId, setsTexto) => void corregir(p.id, ganadorId, setsTexto)}
+        onGuardar={(opts) => guardarResultado(p.id, opts)}
+        onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
       />
     )
   }
@@ -550,7 +561,7 @@ export default function EventoOficialPage() {
                 setFormando(true)
                 const res = await formarGruposOficial({ eventoId: id })
                 setFormando(false)
-                if (!res.error) void cargar()
+                if (!res.error) recargarEvento()
                 return res
               }}
               onGuardarCabezas={guardarCabezasModal}

@@ -1086,16 +1086,27 @@ export async function intercambiarCuposOficial(params: {
     .select('id,evento_id,fase,orden,inscrito_a_id,inscrito_b_id,ganador_id')
     .in('id', ids).eq('evento_id', eventoId)
   for (const p of post ?? []) {
-    if (!p.ganador_id || !p.fase || p.orden == null) continue
+    if (!p.fase || p.orden == null) continue
     const faseSig = siguienteFase(p.fase as FaseOrden)
     if (!faseSig) continue
     const ordenSig = Math.floor(p.orden / 2)
-    const updateData = p.orden % 2 === 0
-      ? { inscrito_a_id: p.ganador_id }
-      : { inscrito_b_id: p.ganador_id }
-    await db.from('oficial_partidos')
-      .update(updateData)
-      .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig)
+    const slotField = p.orden % 2 === 0 ? 'inscrito_a_id' : 'inscrito_b_id'
+
+    if (p.ganador_id) {
+      await db.from('oficial_partidos')
+        .update({ [slotField]: p.ganador_id })
+        .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig)
+      continue
+    }
+
+    const { data: siguiente } = await db.from('oficial_partidos')
+      .select('id, ganador_id')
+      .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig).maybeSingle()
+    if (siguiente && !siguiente.ganador_id) {
+      await db.from('oficial_partidos')
+        .update({ [slotField]: null })
+        .eq('id', siguiente.id)
+    }
   }
 
   return {}

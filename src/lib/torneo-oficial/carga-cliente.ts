@@ -1,6 +1,6 @@
 'use client'
 
-import { getCached, cachedFetch } from '@/lib/query-cache'
+import { getCached, cachedFetch, invalidate } from '@/lib/query-cache'
 
 /** TTL largo: los datos se invalidan por realtime, no por tiempo. */
 export const TTL_OFICIAL = 120_000
@@ -32,4 +32,9 @@ export async function cargarOficialConCache<T>(
   opts.aplicar(data)
   opts.setLoading(false)
   return data
+}
+
+/** Invalida cache de una pantalla oficial tras mutaciones (resultados, cupos, etc.). */
+export function invalidarCacheOficial(key: string) {
+  invalidate(key)
 }
