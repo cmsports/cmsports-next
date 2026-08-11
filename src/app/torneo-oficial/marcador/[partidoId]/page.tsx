@@ -67,10 +67,10 @@ export default function MarcadorOficialPage() {
     const ids = [p.inscrito_a_id, p.inscrito_b_id].filter(Boolean) as string[]
     if (ids.length) {
       const { data: ins } = await db.from('oficial_inscritos').select('id,nombre,asociacion').in('id', ids)
-      const map = new Map((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) => [
+      const map = new Map<string, string>((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) => [
         i.id,
         i.asociacion ? `${i.nombre} (${i.asociacion})` : i.nombre,
-      ]))
+      ] as [string, string]))
       if (p.inscrito_a_id) setNombreA(map.get(p.inscrito_a_id) || 'Jugador A')
       if (p.inscrito_b_id) setNombreB(map.get(p.inscrito_b_id) || 'Jugador B')
     }
