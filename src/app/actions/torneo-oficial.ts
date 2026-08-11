@@ -726,9 +726,6 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
   if (todosCompletos && evento.fase === 'grupos') {
     await db.from('oficial_eventos').update({ fase: 'llaves', actualizado_en: new Date().toISOString() })
       .eq('id', params.eventoId)
-  } else if (clasificados.length > 0 && evento.fase === 'grupos') {
-    await db.from('oficial_eventos').update({ fase: 'llaves', actualizado_en: new Date().toISOString() })
-      .eq('id', params.eventoId)
   }
 
   return { faseInicial: layout.faseInicial, bracketCreado: true }
@@ -895,7 +892,7 @@ export async function corregirResultadoOficial(params: {
   const db = dbOficial(supabase)
 
   const { data: partido } = await db.from('oficial_partidos')
-    .select('id, evento_id, fase, orden, grupo_id, inscrito_a_id, inscrito_b_id, ganador_id, slot_a_grupo_id, slot_b_grupo_id')
+    .select('id, evento_id, fase, orden, grupo_id, inscrito_a_id, inscrito_b_id, ganador_id, sets, slot_a_grupo_id, slot_b_grupo_id')
     .eq('id', params.partidoId).eq('club_id', perfil.club_id).maybeSingle()
   if (!partido?.ganador_id) return { error: 'El partido no tiene resultado aún' }
   if (params.nuevoGanadorId !== partido.inscrito_a_id && params.nuevoGanadorId !== partido.inscrito_b_id) {
@@ -915,7 +912,7 @@ export async function corregirResultadoOficial(params: {
         return { error: 'La rama de este grupo ya fue jugada. Reinicia las llaves primero.' }
       }
     }
-    let sets: SetMarcador[] = []
+    let sets: SetMarcador[] = (partido.sets || []) as SetMarcador[]
     if (params.setsTexto?.trim()) {
       const parsed = parsearSetsTexto(params.setsTexto)
       if ('error' in parsed) return { error: parsed.error }
@@ -1089,14 +1086,13 @@ export async function intercambiarCuposOficial(params: {
     .select('id,evento_id,fase,orden,inscrito_a_id,inscrito_b_id,ganador_id')
     .in('id', ids).eq('evento_id', eventoId)
   for (const p of post ?? []) {
-    if (!p.fase || p.orden == null) continue
+    if (!p.ganador_id || !p.fase || p.orden == null) continue
     const faseSig = siguienteFase(p.fase as FaseOrden)
     if (!faseSig) continue
     const ordenSig = Math.floor(p.orden / 2)
-    const inscrito = p.ganador_id ?? null
     const updateData = p.orden % 2 === 0
-      ? { inscrito_a_id: inscrito }
-      : { inscrito_b_id: inscrito }
+      ? { inscrito_a_id: p.ganador_id }
+      : { inscrito_b_id: p.ganador_id }
     await db.from('oficial_partidos')
       .update(updateData)
       .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig)
