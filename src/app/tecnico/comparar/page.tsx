@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -29,6 +29,14 @@ type Periodo = 'todo' | 'mes_actual' | 'mes_anterior' | '90d'
 type TipoFiltro = 'todos' | 'competencia' | 'entrenamiento' | 'analisis_video' | 'evaluacion'
 
 export default function CompararJugadoresPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#64748b' }}>Cargando comparación...</div>}>
+      <CompararJugadoresContent />
+    </Suspense>
+  )
+}
+
+function CompararJugadoresContent() {
   const { perfil, loading: authLoading } = usePerfil()
   const search = useSearchParams()
   const [jugadores, setJugadores] = useState<Jugador[]>([])

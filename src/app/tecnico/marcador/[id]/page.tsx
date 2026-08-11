@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -47,6 +47,14 @@ function horaEvento(iso: string): string {
 }
 
 export default function MarcadorPartidoPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Cargando marcador...</div>}>
+      <MarcadorPartidoContent />
+    </Suspense>
+  )
+}
+
+function MarcadorPartidoContent() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const vuelta = searchParams.get('vuelta')
