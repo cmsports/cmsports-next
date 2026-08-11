@@ -429,6 +429,35 @@ export async function sincronizarSetsMarcadorOficial(params: {
   return {}
 }
 
+/** Cierra el partido oficial vinculado a un marcador técnico (si existe). */
+export async function sincronizarResultadoDesdeMarcador(params: {
+  marcadorId: string
+  sets: SetMarcador[]
+  ganadorLado: 'a' | 'b'
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return {}
+  const db = dbOficial(supabase)
+
+  const { data: oficial } = await db.from('oficial_partidos')
+    .select('id, inscrito_a_id, inscrito_b_id, ganador_id')
+    .eq('club_id', perfil.club_id)
+    .eq('marcador_id', params.marcadorId)
+    .maybeSingle()
+
+  if (!oficial) return {}
+  if (oficial.ganador_id) return {}
+
+  const ganadorId = params.ganadorLado === 'a' ? oficial.inscrito_a_id : oficial.inscrito_b_id
+  if (!ganadorId) return { error: 'Faltan inscritos en el partido oficial' }
+
+  return registrarResultadoOficial({
+    partidoId: oficial.id,
+    sets: params.sets,
+    ganadorId,
+  })
+}
+
 export async function hoyChileOficial(): Promise<string> {
   return fechaChile()
 }
