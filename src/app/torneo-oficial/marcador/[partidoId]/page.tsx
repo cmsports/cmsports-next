@@ -25,7 +25,7 @@ import {
 } from '@/lib/marcador-oficial-persist'
 import MarcadorPantalla from '@/components/marcador/MarcadorPantalla'
 import type { SetMarcador } from '@/lib/domain/oficial-ittf'
-import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
+import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 
 const supabase = createClient()
 
@@ -230,6 +230,9 @@ export default function MarcadorOficialPage() {
     setCerrando(false)
     if (res.error) { setErrorMsg(res.error); return }
     limpiarMarcadorLocal(partidoId)
+    if (perfil?.club_id) {
+      invalidarCacheOficial(`oficial:evento:${partido.evento_id}:${perfil.club_id}`)
+    }
     router.push(`/torneo-oficial/evento/${partido.evento_id}`)
   }
 

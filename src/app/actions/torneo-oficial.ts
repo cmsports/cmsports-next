@@ -905,6 +905,9 @@ export async function corregirResultadoOficial(params: {
     return { error: 'El ganador debe pertenecer al partido' }
   }
   if (partido.ganador_id === params.nuevoGanadorId) return {}
+  if (!params.setsTexto?.trim()) {
+    return { error: 'Para corregir el ganador debes ingresar los sets corregidos' }
+  }
 
   if (partido.fase === 'grupos') {
     const { data: llaves } = await db.from('oficial_partidos')
@@ -918,11 +921,22 @@ export async function corregirResultadoOficial(params: {
         return { error: 'La rama de este grupo ya fue jugada. Reinicia las llaves primero.' }
       }
     }
-    let sets: SetMarcador[] = (partido.sets || []) as SetMarcador[]
-    if (params.setsTexto?.trim()) {
-      const parsed = parsearSetsTexto(params.setsTexto)
-      if ('error' in parsed) return { error: parsed.error }
-      sets = parsed
+    const parsed = parsearSetsTexto(params.setsTexto)
+    if ('error' in parsed) return { error: parsed.error }
+    const sets = parsed
+    const { data: eventoGrupo } = await db.from('oficial_eventos')
+      .select('formato_partido').eq('id', partido.evento_id).maybeSingle()
+    const metaGrupo = gamesParaGanarFormato(eventoGrupo?.formato_partido || 'bo5')
+    if (partido.inscrito_a_id && partido.inscrito_b_id) {
+      const derivado = ganadorDesdeSets(
+        partido.inscrito_a_id,
+        partido.inscrito_b_id,
+        sets,
+        metaGrupo,
+      )
+      if (!derivado || derivado !== params.nuevoGanadorId) {
+        return { error: 'Los sets corregidos no coinciden con el nuevo ganador' }
+      }
     }
     await db.from('oficial_partidos').update({
       ganador_id: params.nuevoGanadorId,
@@ -955,23 +969,20 @@ export async function corregirResultadoOficial(params: {
 
   const { data: evento } = await db.from('oficial_eventos').select('formato_partido, campeonato_id').eq('id', partido.evento_id).maybeSingle()
   const meta = gamesParaGanarFormato(evento?.formato_partido || 'bo5')
-  let sets: SetMarcador[] = []
-  if (params.setsTexto?.trim()) {
-    const parsed = parsearSetsTexto(params.setsTexto)
-    if ('error' in parsed) return { error: parsed.error }
-    sets = parsed
-    if (partido.inscrito_a_id && partido.inscrito_b_id) {
-      const derivado = ganadorDesdeSets(partido.inscrito_a_id, partido.inscrito_b_id, sets, meta)
-      if (derivado && derivado !== params.nuevoGanadorId) {
-        return { error: 'Los sets no coinciden con el ganador indicado' }
-      }
+  const parsed = parsearSetsTexto(params.setsTexto)
+  if ('error' in parsed) return { error: parsed.error }
+  const sets = parsed
+  if (partido.inscrito_a_id && partido.inscrito_b_id) {
+    const derivado = ganadorDesdeSets(partido.inscrito_a_id, partido.inscrito_b_id, sets, meta)
+    if (!derivado || derivado !== params.nuevoGanadorId) {
+      return { error: 'Los sets no coinciden con el ganador indicado' }
     }
   }
 
   const { error: rpcErr } = await supabase.rpc('corregir_resultado_playoff_oficial_seguro', {
     p_partido_id: params.partidoId,
     p_nuevo_ganador_id: params.nuevoGanadorId,
-    p_sets: sets.length ? sets : [],
+    p_sets: sets,
   })
   if (rpcErr) {
     const msg = rpcErr.message || ''
