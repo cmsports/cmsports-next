@@ -1931,6 +1931,16 @@ export interface Database {
         }
         Returns: Json
       }
+      intercambiar_cupos_oficial_seguro: {
+        Args: {
+          p_evento_id: string
+          p_partido_a_id: string
+          p_posicion_a: string
+          p_partido_b_id: string
+          p_posicion_b: string
+        }
+        Returns: Json
+      }
       configurar_cabezas_serie: {
         Args: { p_torneo_id: string; p_jugador_ids: string[] }
         Returns: Json

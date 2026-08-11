@@ -83,7 +83,11 @@ export default function TorneoOficialPage() {
     setGuardando(false)
     if (res.error) { setErrorMsg(res.error); return }
     setModal(false)
-    if (res.id) router.push(`/torneo-oficial/${res.id}`)
+    setNombre(''); setSede(''); setZona('')
+    if (res.id) {
+      if (perfil?.club_id) await cargar(perfil.club_id)
+      router.push(`/torneo-oficial/${res.id}`)
+    }
   }
 
   return (

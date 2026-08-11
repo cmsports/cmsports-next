@@ -26,6 +26,7 @@ export const CONFIG = {
     '8vos': '8vos de final',
     cuartos: 'Cuartos de final',
     semis: 'Semifinal',
+    tercer_lugar: '3er lugar',
     final: 'Final',
     finalizado: 'Finalizado',
   } as const,

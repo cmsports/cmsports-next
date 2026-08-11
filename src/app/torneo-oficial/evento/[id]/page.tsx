@@ -12,6 +12,7 @@ import {
   corregirResultadoOficial,
   formarGruposOficial,
   inscribirJugadorOficial,
+  intercambiarCuposOficial,
   programarEventoOficial,
   registrarResultadoOficial,
   reiniciarLlavesOficial,
@@ -39,6 +40,7 @@ type Evento = {
   formato_partido: string
   campeonato_id: string
   campeon_inscrito_id: string | null
+  tercer_inscrito_id: string | null
 }
 
 type Campeonato = { id: string; nombre: string }
@@ -200,11 +202,35 @@ export default function EventoOficialPage() {
 
   const partidosPlayoff = useMemo(() =>
     partidos.filter(p => p.fase !== 'grupos').sort((a, b) => {
-      const fa = CONFIG.FASES_ORDEN.indexOf(a.fase as typeof CONFIG.FASES_ORDEN[number])
-      const fb = CONFIG.FASES_ORDEN.indexOf(b.fase as typeof CONFIG.FASES_ORDEN[number])
-      return (fa < 0 ? 99 : fa) - (fb < 0 ? 99 : fb) || a.orden - b.orden
+      const ordenFase = (f: string) => {
+        if (f === 'tercer_lugar') {
+          const i = CONFIG.FASES_ORDEN.indexOf('semis')
+          return i >= 0 ? i + 0.5 : 98
+        }
+        const idx = CONFIG.FASES_ORDEN.indexOf(f as typeof CONFIG.FASES_ORDEN[number])
+        return idx >= 0 ? idx : 99
+      }
+      return ordenFase(a.fase) - ordenFase(b.fase) || a.orden - b.orden
     }),
   [partidos])
+
+  const faseInicialLlaves = useMemo(
+    () => CONFIG.FASES_ORDEN.find(f => partidosPlayoff.some(p => p.fase === f)) ?? null,
+    [partidosPlayoff],
+  )
+
+  const fasesPlayoffOrdenadas = useMemo(() => {
+    const fases = [...new Set(partidosPlayoff.map(p => p.fase))]
+    const ordenFase = (f: string) => {
+      if (f === 'tercer_lugar') {
+        const i = CONFIG.FASES_ORDEN.indexOf('semis')
+        return i >= 0 ? i + 0.5 : 98
+      }
+      const idx = CONFIG.FASES_ORDEN.indexOf(f as typeof CONFIG.FASES_ORDEN[number])
+      return idx >= 0 ? idx : 99
+    }
+    return fases.sort((a, b) => ordenFase(a) - ordenFase(b))
+  }, [partidosPlayoff])
 
   const partidosPorFase = useMemo(() => {
     const map = new Map<string, Partido[]>()
@@ -309,6 +335,15 @@ export default function EventoOficialPage() {
     setReiniciando(true)
     const res = await reiniciarLlavesOficial({ eventoId: id })
     setReiniciando(false)
+    if (res.error) setErrorMsg(res.error)
+    else void cargar()
+  }
+
+  async function intercambiarCupos(
+    slotA: { partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' },
+    slotB: { partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' },
+  ) {
+    const res = await intercambiarCuposOficial({ eventoId: id, slotA, slotB })
     if (res.error) setErrorMsg(res.error)
     else void cargar()
   }
@@ -439,6 +474,11 @@ export default function EventoOficialPage() {
 
   const enInscripcion = evento?.fase === 'inscripcion'
   const campeonNombre = evento?.campeon_inscrito_id ? nombrePorId.get(evento.campeon_inscrito_id) : null
+  const tercerNombre = useMemo(() => {
+    const p = partidos.find(x => x.fase === 'tercer_lugar' && x.ganador_id)
+    return p?.ganador_id ? nombrePorId.get(p.ganador_id) : null
+  }, [partidos, nombrePorId])
+  const esAdmin = perfil?.rol === 'admin'
 
   return (
     <AppLayout perfil={perfil}>
@@ -456,6 +496,7 @@ export default function EventoOficialPage() {
               <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>
                 {evento.categoria} · {evento.genero} · {evento.formato_partido.toUpperCase()} · fase {evento.fase}
                 {campeonNombre ? ` · 🏆 ${campeonNombre}` : ''}
+                {tercerNombre ? ` · 🥉 ${tercerNombre}` : ''}
               </p>
             </div>
 
@@ -574,14 +615,24 @@ export default function EventoOficialPage() {
                 <>
                   <div style={{ ...card, padding: 16, marginBottom: 16 }}>
                     <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Cuadro eliminatorio</h2>
-                    <BracketOficial partidos={partidosPlayoff} nombrePorId={nombrePorId} />
+                    <BracketOficial
+                      partidos={partidosPlayoff}
+                      nombrePorId={nombrePorId}
+                      esAdmin={esAdmin}
+                      faseInicial={faseInicialLlaves}
+                      onIntercambiar={esAdmin ? intercambiarCupos : undefined}
+                    />
                   </div>
-                  {[...partidosPorFase.entries()].map(([fase, lista]) => (
+                  {fasesPlayoffOrdenadas.map(fase => {
+                    const lista = partidosPorFase.get(fase) ?? []
+                    if (!lista.length) return null
+                    return (
                     <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
                       <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>{FASE_LABELS[fase] || fase}</h2>
                       <div style={{ display: 'grid', gap: 10 }}>{lista.sort((a, b) => a.orden - b.orden).map(renderPartidoRow)}</div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </>
               )
             )}

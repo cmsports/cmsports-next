@@ -67,17 +67,45 @@ export default function CampeonatoOficialDetallePage() {
   const cargar = useCallback(async () => {
     if (!perfil?.club_id) return
     setLoading(true)
+    setErrorMsg('')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
-    const { data: c } = await db.from('oficial_campeonatos')
-      .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado,mesas_count,bloque_minutos,hora_inicio')
+
+    // Columnas base (migración 156). mesas_count/hora_inicio requieren 158.
+    const { data: c, error: errC } = await db.from('oficial_campeonatos')
+      .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
       .eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
-    setCamp(c)
-    if (c) {
-      setMesas(String(c.mesas_count ?? 8))
-      setBloque(String(c.bloque_minutos ?? 25))
-      setHoraInicio(String(c.hora_inicio || '09:00:00').slice(0, 5))
+
+    if (errC) {
+      setErrorMsg(errC.message || 'Error al cargar el campeonato')
+      setCamp(null)
+      setLoading(false)
+      return
     }
+
+    if (!c) {
+      setCamp(null)
+      setLoading(false)
+      return
+    }
+
+    let mesas_count = 8
+    let bloque_minutos = 25
+    let hora_inicio = '09:00:00'
+    const { data: cfg, error: errCfg } = await db.from('oficial_campeonatos')
+      .select('mesas_count,bloque_minutos,hora_inicio')
+      .eq('id', id).maybeSingle()
+    if (!errCfg && cfg) {
+      mesas_count = cfg.mesas_count ?? mesas_count
+      bloque_minutos = cfg.bloque_minutos ?? bloque_minutos
+      hora_inicio = cfg.hora_inicio ?? hora_inicio
+    }
+
+    const campCompleto = { ...c, mesas_count, bloque_minutos, hora_inicio }
+    setCamp(campCompleto)
+    setMesas(String(mesas_count))
+    setBloque(String(bloque_minutos))
+    setHoraInicio(String(hora_inicio).slice(0, 5))
 
     const { data: ev } = await db.from('oficial_eventos')
       .select('id,nombre,categoria,genero,fase,formato_partido,campeon_inscrito_id')
