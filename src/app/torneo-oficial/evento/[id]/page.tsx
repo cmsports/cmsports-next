@@ -12,6 +12,7 @@ import {
   corregirResultadoOficial,
   formarGruposOficial,
   inscribirJugadorOficial,
+  intercambiarCuposOficial,
   programarEventoOficial,
   registrarResultadoOficial,
   reiniciarLlavesOficial,
@@ -24,7 +25,11 @@ import {
   type SetMarcador,
 } from '@/lib/domain/oficial-ittf'
 import BracketOficial from '@/components/torneo-oficial/BracketOficial'
+import InscripcionOficialModal from '@/components/torneo-oficial/InscripcionOficialModal'
+import PartidoOficialRow from '@/components/torneo-oficial/PartidoOficialRow'
 import { exportarGruposOficialPdf, exportarLlavesOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
+import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
+import { btnOutlineIndigo, btnPrimaryIndigo, tabUnderline, torneoUi } from '@/lib/torneos/ui-tokens'
 
 const supabase = createClient()
 
@@ -39,6 +44,7 @@ type Evento = {
   formato_partido: string
   campeonato_id: string
   campeon_inscrito_id: string | null
+  tercer_inscrito_id: string | null
 }
 
 type Campeonato = { id: string; nombre: string }
@@ -67,12 +73,7 @@ type Partido = {
   programado_en: string | null
 }
 
-const card = {
-  background: '#fff',
-  border: '1px solid #e2e8f0',
-  borderRadius: 14,
-  boxShadow: '0 4px 16px rgba(15,23,42,0.08)',
-} as const
+const card = torneoUi.card
 
 const FASE_LABELS = CONFIG.FASE_LABELS as Record<string, string>
 
@@ -80,6 +81,7 @@ export default function EventoOficialPage() {
   const { id } = useParams<{ id: string }>()
   const { perfil, loading: authLoading } = usePerfil()
   const router = useRouter()
+  const clubId = perfil?.club_id
   const syncLlavesRef = useRef<string | null>(null)
 
   const [evento, setEvento] = useState<Evento | null>(null)
@@ -91,58 +93,102 @@ export default function EventoOficialPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('grupos')
 
-  const [nombreNuevo, setNombreNuevo] = useState('')
-  const [asocNueva, setAsocNueva] = useState('')
+  const [modalInscripcion, setModalInscripcion] = useState(false)
   const [inscribiendo, setInscribiendo] = useState(false)
   const [formando, setFormando] = useState(false)
   const [syncLlaves, setSyncLlaves] = useState(false)
   const [programando, setProgramando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  const [setsEdit, setSetsEdit] = useState<Record<string, string>>({})
   const [guardandoRes, setGuardandoRes] = useState<string | null>(null)
-  const [editandoId, setEditandoId] = useState<string | null>(null)
   const [reiniciando, setReiniciando] = useState(false)
+  const cargadoRef = useRef(false)
+  const cacheKey = useMemo(
+    () => (perfil?.club_id ? `oficial:evento:${id}:${perfil.club_id}` : ''),
+    [id, perfil?.club_id],
+  )
 
-  const cargar = useCallback(async () => {
-    if (!perfil?.club_id) return
-    setLoading(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
+  function recargarEvento() {
+    if (cacheKey) invalidarCacheOficial(cacheKey)
+    void cargar()
+  }
 
-    const { data: ev } = await db.from('oficial_eventos')
-      .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id')
-      .eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
-    setEvento(ev)
+  type DatosEvento = {
+    evento: Evento | null
+    camp: Campeonato | null
+    inscritos: Inscrito[]
+    grupos: Grupo[]
+    miembrosGrupo: Array<{ grupo_id: string; inscrito_id: string }>
+    partidos: Partido[]
+  }
 
-    if (ev?.campeonato_id) {
-      const { data: c } = await db.from('oficial_campeonatos').select('id,nombre')
-        .eq('id', ev.campeonato_id).maybeSingle()
-      setCamp(c)
-    }
+  const aplicarDatos = useCallback((d: DatosEvento) => {
+    setEvento(d.evento)
+    setCamp(d.camp)
+    setInscritos(d.inscritos)
+    setGrupos(d.grupos)
+    setMiembrosGrupo(d.miembrosGrupo)
+    setPartidos(d.partidos)
+    cargadoRef.current = true
+  }, [])
 
-    const { data: ins } = await db.from('oficial_inscritos')
-      .select('id,nombre,asociacion,cabeza_numero,orden_inscripcion')
-      .eq('evento_id', id).order('orden_inscripcion')
-    setInscritos(ins || [])
+  const cargar = useCallback(async (silencioso = false) => {
+    if (!clubId) return
 
-    const { data: gr } = await db.from('oficial_grupos')
-      .select('id,nombre,orden').eq('evento_id', id).order('orden')
-    setGrupos(gr || [])
+    await cargarOficialConCache(
+      `oficial:evento:${id}:${clubId}`,
+      async (): Promise<DatosEvento> => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const db = supabase as any
 
-    const grupoIds = (gr || []).map((g: Grupo) => g.id)
-    if (grupoIds.length) {
-      const { data: mg } = await db.from('oficial_grupo_inscritos')
-        .select('grupo_id,inscrito_id').in('grupo_id', grupoIds)
-      setMiembrosGrupo(mg || [])
-    } else setMiembrosGrupo([])
+        const { data: ev } = await db.from('oficial_eventos')
+          .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id')
+          .eq('id', id).eq('club_id', clubId).maybeSingle()
 
-    const { data: par } = await db.from('oficial_partidos')
-      .select('id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,orden,mesa,programado_en')
-      .eq('evento_id', id).order('orden')
-    setPartidos((par || []).map((p: Partido) => ({ ...p, sets: (p.sets || []) as SetMarcador[] })))
-    setLoading(false)
-  }, [id, perfil?.club_id])
+        let camp: Campeonato | null = null
+        if (ev?.campeonato_id) {
+          const { data: c } = await db.from('oficial_campeonatos').select('id,nombre')
+            .eq('id', ev.campeonato_id).maybeSingle()
+          camp = c
+        }
+
+        const { data: ins } = await db.from('oficial_inscritos')
+          .select('id,nombre,asociacion,cabeza_numero,orden_inscripcion')
+          .eq('evento_id', id).order('orden_inscripcion')
+
+        const { data: gr } = await db.from('oficial_grupos')
+          .select('id,nombre,orden').eq('evento_id', id).order('orden')
+
+        const grupoIds = (gr || []).map((g: Grupo) => g.id)
+        let miembrosGrupo: DatosEvento['miembrosGrupo'] = []
+        if (grupoIds.length) {
+          const { data: mg } = await db.from('oficial_grupo_inscritos')
+            .select('grupo_id,inscrito_id').in('grupo_id', grupoIds)
+          miembrosGrupo = mg || []
+        }
+
+        const { data: par } = await db.from('oficial_partidos')
+          .select('id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,orden,mesa,programado_en')
+          .eq('evento_id', id).order('orden')
+
+        return {
+          evento: ev,
+          camp,
+          inscritos: ins || [],
+          grupos: gr || [],
+          miembrosGrupo,
+          partidos: (par || []).map((p: Partido) => ({ ...p, sets: (p.sets || []) as SetMarcador[] })),
+        }
+      },
+      {
+        tablas: ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_campeonatos'],
+        silencioso,
+        aplicar: aplicarDatos,
+        setLoading,
+        tieneDatos: () => cargadoRef.current,
+      },
+    )
+  }, [id, clubId, aplicarDatos])
 
   useEffect(() => {
     if (authLoading) return
@@ -153,7 +199,7 @@ export default function EventoOficialPage() {
   useEnVivo(
     ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos'],
     perfil?.club_id ?? null,
-    () => { void cargar() },
+    () => { void cargar(true) },
     { conClub: ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos'] },
   )
 
@@ -161,11 +207,22 @@ export default function EventoOficialPage() {
     if (!evento || loading || authLoading) return
     if (evento.fase !== 'grupos' && evento.fase !== 'llaves') return
     if (!grupos.length) return
-    const firma = `${grupos.length}|${partidos.filter(p => p.fase === 'grupos' && p.ganador_id).length}`
+
+    const partidosGrupo = partidos.filter(p => p.fase === 'grupos')
+    const todosGruposCerrados = grupos.every(g => {
+      const delGrupo = partidosGrupo.filter(p => p.grupo_id === g.id)
+      return delGrupo.length > 0 && delGrupo.every(p => p.ganador_id)
+    })
+    if (!todosGruposCerrados) return
+
+    const firma = `${grupos.length}|${partidosGrupo.filter(p => p.ganador_id).length}`
     if (syncLlavesRef.current === firma) return
     syncLlavesRef.current = firma
-    void sincronizarLlavesOficial({ eventoId: id }).then(() => void cargar())
-  }, [evento?.fase, grupos.length, partidos, loading, authLoading, id, cargar])
+    void sincronizarLlavesOficial({ eventoId: id }).then(res => {
+      if (res.error) setErrorMsg(res.error)
+      else void cargar()
+    })
+  }, [evento?.fase, grupos, partidos, loading, authLoading, id, cargar])
 
   useEffect(() => {
     if (evento?.fase === 'llaves' || evento?.fase === 'finalizado') setTab(t => t === 'grupos' ? 'llaves' : t)
@@ -200,11 +257,35 @@ export default function EventoOficialPage() {
 
   const partidosPlayoff = useMemo(() =>
     partidos.filter(p => p.fase !== 'grupos').sort((a, b) => {
-      const fa = CONFIG.FASES_ORDEN.indexOf(a.fase as typeof CONFIG.FASES_ORDEN[number])
-      const fb = CONFIG.FASES_ORDEN.indexOf(b.fase as typeof CONFIG.FASES_ORDEN[number])
-      return (fa < 0 ? 99 : fa) - (fb < 0 ? 99 : fb) || a.orden - b.orden
+      const ordenFase = (f: string) => {
+        if (f === 'tercer_lugar') {
+          const i = CONFIG.FASES_ORDEN.indexOf('semis')
+          return i >= 0 ? i + 0.5 : 98
+        }
+        const idx = CONFIG.FASES_ORDEN.indexOf(f as typeof CONFIG.FASES_ORDEN[number])
+        return idx >= 0 ? idx : 99
+      }
+      return ordenFase(a.fase) - ordenFase(b.fase) || a.orden - b.orden
     }),
   [partidos])
+
+  const faseInicialLlaves = useMemo(
+    () => CONFIG.FASES_ORDEN.find(f => partidosPlayoff.some(p => p.fase === f)) ?? null,
+    [partidosPlayoff],
+  )
+
+  const fasesPlayoffOrdenadas = useMemo(() => {
+    const fases = [...new Set(partidosPlayoff.map(p => p.fase))]
+    const ordenFase = (f: string) => {
+      if (f === 'tercer_lugar') {
+        const i = CONFIG.FASES_ORDEN.indexOf('semis')
+        return i >= 0 ? i + 0.5 : 98
+      }
+      const idx = CONFIG.FASES_ORDEN.indexOf(f as typeof CONFIG.FASES_ORDEN[number])
+      return idx >= 0 ? idx : 99
+    }
+    return fases.sort((a, b) => ordenFase(a) - ordenFase(b))
+  }, [partidosPlayoff])
 
   const partidosPorFase = useMemo(() => {
     const map = new Map<string, Partido[]>()
@@ -230,33 +311,19 @@ export default function EventoOficialPage() {
       })),
   [partidos, evento, nombrePorId])
 
-  async function inscribir() {
-    setErrorMsg('')
+  async function inscribirDesdeModal(nombre: string, asociacion?: string) {
     setInscribiendo(true)
-    const res = await inscribirJugadorOficial({ eventoId: id, nombre: nombreNuevo, asociacion: asocNueva || undefined })
+    const res = await inscribirJugadorOficial({ eventoId: id, nombre, asociacion })
     setInscribiendo(false)
-    if (res.error) { setErrorMsg(res.error); return }
-    setNombreNuevo(''); setAsocNueva('')
-    void cargar()
+    if (!res.error) recargarEvento()
+    return res
   }
 
-  async function cambiarCabeza(inscritoId: string, valor: string) {
-    const num = valor === '' ? null : Number(valor)
-    const cabezas = inscritos.filter(i => i.id !== inscritoId && i.cabeza_numero != null)
-      .map(i => ({ inscritoId: i.id, numero: i.cabeza_numero! }))
-    if (num != null) cabezas.push({ inscritoId, numero: num })
-    cabezas.sort((a, b) => a.numero - b.numero)
+  async function guardarCabezasModal(jugadorIds: string[]) {
+    const cabezas = jugadorIds.map((inscritoId, i) => ({ inscritoId, numero: i + 1 }))
     const res = await configurarCabezasOficial({ eventoId: id, cabezas })
-    if (res.error) setErrorMsg(res.error)
-    else void cargar()
-  }
-
-  async function formarGrupos() {
-    setErrorMsg(''); setFormando(true)
-    const res = await formarGruposOficial({ eventoId: id })
-    setFormando(false)
-    if (res.error) { setErrorMsg(res.error); return }
-    void cargar()
+    if (!res.error) recargarEvento()
+    return res
   }
 
   async function armarLlaves() {
@@ -264,7 +331,7 @@ export default function EventoOficialPage() {
     const res = await sincronizarLlavesOficial({ eventoId: id })
     setSyncLlaves(false)
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else recargarEvento()
   }
 
   async function programar() {
@@ -272,36 +339,35 @@ export default function EventoOficialPage() {
     const res = await programarEventoOficial({ eventoId: id })
     setProgramando(false)
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else recargarEvento()
   }
 
-  async function guardarResultado(partidoId: string, opts?: { walkover?: boolean; ganadorId?: string }) {
-    const texto = setsEdit[partidoId]?.trim()
-    if (!opts?.walkover && !texto) return
+  async function guardarResultado(partidoId: string, opts?: { walkover?: boolean; ganadorId?: string; setsTexto?: string }) {
+    if (!opts?.walkover && !opts?.setsTexto?.trim()) return { error: 'Indica los sets' }
     setGuardandoRes(partidoId)
     const res = await registrarResultadoOficial({
       partidoId,
-      setsTexto: opts?.walkover ? undefined : texto,
+      setsTexto: opts?.walkover ? undefined : opts?.setsTexto,
       esWalkover: opts?.walkover,
       ganadorId: opts?.ganadorId,
     })
     setGuardandoRes(null)
-    if (res.error) { setErrorMsg(res.error); return }
-    setSetsEdit(prev => { const n = { ...prev }; delete n[partidoId]; return n })
-    void cargar()
+    if (res.error) { setErrorMsg(res.error); return res }
+    recargarEvento()
+    return res
   }
 
-  async function corregir(partidoId: string, ganadorId: string) {
+  async function corregir(partidoId: string, ganadorId: string, setsTexto?: string) {
     setGuardandoRes(partidoId)
     const res = await corregirResultadoOficial({
       partidoId,
       nuevoGanadorId: ganadorId,
-      setsTexto: setsEdit[partidoId],
+      setsTexto,
     })
     setGuardandoRes(null)
-    if (res.error) { setErrorMsg(res.error); return }
-    setEditandoId(null)
-    void cargar()
+    if (res.error) { setErrorMsg(res.error); return res }
+    recargarEvento()
+    return res
   }
 
   async function reiniciarLlaves() {
@@ -310,7 +376,16 @@ export default function EventoOficialPage() {
     const res = await reiniciarLlavesOficial({ eventoId: id })
     setReiniciando(false)
     if (res.error) setErrorMsg(res.error)
-    else void cargar()
+    else recargarEvento()
+  }
+
+  async function intercambiarCupos(
+    slotA: { partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' },
+    slotB: { partidoId: string; posicion: 'inscrito_a' | 'inscrito_b' },
+  ) {
+    const res = await intercambiarCuposOficial({ eventoId: id, slotA, slotB })
+    if (res.error) setErrorMsg(res.error)
+    else recargarEvento()
   }
 
   function statsGrupo(grupoId: string) {
@@ -372,73 +447,34 @@ export default function EventoOficialPage() {
   }
 
   function renderPartidoRow(p: Partido) {
-    const a = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) : '?'
+    const a = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
     const esBye = !p.inscrito_b_id
-    const b = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) : '?')
-    const cerrado = Boolean(p.ganador_id)
+    const b = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
     const ganadorNombre = p.ganador_id ? nombrePorId.get(p.ganador_id) : null
 
     return (
-      <div key={p.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: cerrado ? '#f8fafc' : '#fff' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14 }}>
-            {a} <span style={{ color: '#94a3b8' }}>vs</span> {b}
-            {p.mesa ? <span style={{ color: '#64748b', fontSize: 12 }}> · M{p.mesa}</span> : null}
-          </span>
-          {cerrado ? (
-            editandoId === p.id ? (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                <input placeholder="Sets corregidos" value={setsEdit[p.id] ?? ''}
-                  onChange={e => setSetsEdit(prev => ({ ...prev, [p.id]: e.target.value }))}
-                  style={{ ...inputStyle, width: 160, margin: 0 }} />
-                {p.inscrito_a_id && (
-                  <button type="button" onClick={() => void corregir(p.id, p.inscrito_a_id!)} style={btnSmall}>Gana A</button>
-                )}
-                {p.inscrito_b_id && (
-                  <button type="button" onClick={() => void corregir(p.id, p.inscrito_b_id!)} style={btnSmall}>Gana B</button>
-                )}
-                <button type="button" onClick={() => setEditandoId(null)} style={btnGhost}>Cancelar</button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>
-                  {ganadorNombre && !esBye ? `✓ ${ganadorNombre}` : 'BYE'} · {formatearSets(p.sets)}{p.es_walkover ? ' · W.O.' : ''}
-                </span>
-                {!esBye && evento?.fase !== 'finalizado' && (
-                  <button type="button" onClick={() => setEditandoId(p.id)} style={btnGhost}>Corregir</button>
-                )}
-              </div>
-            )
-          ) : esBye ? (
-            <span style={{ fontSize: 12, color: '#64748b' }}>Avance automático</span>
-          ) : (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <input placeholder="11-6; 11-8; 11-4" value={setsEdit[p.id] ?? ''}
-                onChange={e => setSetsEdit(prev => ({ ...prev, [p.id]: e.target.value }))}
-                style={{ ...inputStyle, width: 180, margin: 0 }} />
-              <button type="button" onClick={() => void guardarResultado(p.id)} disabled={guardandoRes === p.id} style={btnSmall}>
-                {guardandoRes === p.id ? '…' : 'Guardar'}
-              </button>
-              {p.inscrito_a_id && p.inscrito_b_id && (
-                <>
-                  <button type="button" title="W.O. gana A"
-                    onClick={() => void guardarResultado(p.id, { walkover: true, ganadorId: p.inscrito_a_id! })}
-                    style={btnWo}>W.O. A</button>
-                  <button type="button" title="W.O. gana B"
-                    onClick={() => void guardarResultado(p.id, { walkover: true, ganadorId: p.inscrito_b_id! })}
-                    style={btnWo}>W.O. B</button>
-                </>
-              )}
-              <button type="button" onClick={() => router.push(`/torneo-oficial/marcador/${p.id}`)} style={btnMarcador}>Marcador</button>
-            </div>
-          )}
-        </div>
-      </div>
+      <PartidoOficialRow
+        key={p.id}
+        partido={p}
+        nombreA={a}
+        nombreB={b}
+        esBye={esBye}
+        ganadorNombre={ganadorNombre ?? null}
+        puedeCorregir={!esBye && evento?.fase !== 'finalizado'}
+        guardando={guardandoRes === p.id}
+        onGuardar={(opts) => guardarResultado(p.id, opts)}
+        onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
+      />
     )
   }
 
   const enInscripcion = evento?.fase === 'inscripcion'
   const campeonNombre = evento?.campeon_inscrito_id ? nombrePorId.get(evento.campeon_inscrito_id) : null
+  const tercerNombre = useMemo(() => {
+    const p = partidos.find(x => x.fase === 'tercer_lugar' && x.ganador_id)
+    return p?.ganador_id ? nombrePorId.get(p.ganador_id) : null
+  }, [partidos, nombrePorId])
+  const esAdmin = perfil?.rol === 'admin'
 
   return (
     <AppLayout perfil={perfil}>
@@ -447,123 +483,122 @@ export default function EventoOficialPage() {
           ← {camp?.nombre || 'Volver'}
         </button>
 
-        {loading || !evento ? (
-          <p style={{ color: '#94a3b8' }}>{loading ? 'Cargando…' : 'Evento no encontrado'}</p>
+        {loading && !evento ? (
+          <p style={{ color: '#94a3b8' }}>Cargando…</p>
+        ) : !evento ? (
+          <p style={{ color: '#94a3b8' }}>Evento no encontrado</p>
         ) : (
           <>
-            <div style={{ marginBottom: 16 }}>
-              <h1 style={{ margin: 0, fontSize: 22 }}>{evento.nombre}</h1>
-              <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>
-                {evento.categoria} · {evento.genero} · {evento.formato_partido.toUpperCase()} · fase {evento.fase}
-                {campeonNombre ? ` · 🏆 ${campeonNombre}` : ''}
-              </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+              <div>
+                <h1 style={{ margin: 0, fontSize: 22, color: torneoUi.text }}>{evento.nombre}</h1>
+                <p style={{ margin: '6px 0 0', color: torneoUi.muted, fontSize: 13 }}>
+                  {evento.categoria} · {evento.genero} · {evento.formato_partido.toUpperCase()} · fase {evento.fase}
+                  {campeonNombre ? ` · 🏆 ${campeonNombre}` : ''}
+                  {tercerNombre ? ` · 🥉 ${tercerNombre}` : ''}
+                </p>
+              </div>
+              {enInscripcion && esAdmin && (
+                <button type="button" onClick={() => setModalInscripcion(true)} style={btnPrimaryIndigo}>
+                  🪑 Inscripción ({inscritos.length})
+                </button>
+              )}
             </div>
 
-            {errorMsg && <div style={{ ...card, padding: 12, marginBottom: 14, color: '#e11d48', fontSize: 13 }}>{errorMsg}</div>}
+            {errorMsg && (
+              <div style={{ ...card, padding: 12, marginBottom: 14, color: torneoUi.danger, fontSize: 13 }}>{errorMsg}</div>
+            )}
+
+            {enInscripcion && inscritos.length > 0 && (
+              <div style={{ ...card, padding: 16, marginBottom: 16, textAlign: 'center', color: torneoUi.muted, fontSize: 13 }}>
+                {inscritos.length} jugador{inscritos.length !== 1 ? 'es' : ''} inscrito{inscritos.length !== 1 ? 's' : ''}.
+                {esAdmin ? ' Pulsa «Inscripción» para agregar jugadores, cabezas de serie y formar grupos.' : ''}
+              </div>
+            )}
 
             {!enInscripcion && (
-              <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap', alignItems: 'center' }}>
                 {(['grupos', 'llaves', 'programa'] as Tab[]).map(t => (
-                  <button key={t} type="button" onClick={() => setTab(t)}
-                    style={{ ...tabBtn, ...(tab === t ? tabBtnActivo : {}) }}>
+                  <button key={t} type="button" onClick={() => setTab(t)} style={tabUnderline(tab === t)}>
                     {t === 'grupos' ? 'Grupos' : t === 'llaves' ? 'Llaves' : 'Programa'}
                   </button>
                 ))}
                 {tab === 'llaves' && (
                   <>
-                    <button type="button" onClick={() => void armarLlaves()} disabled={syncLlaves} style={btnGhost}>
+                    <button type="button" onClick={() => void armarLlaves()} disabled={syncLlaves} style={btnOutlineIndigo}>
                       {syncLlaves ? 'Sincronizando…' : '↻ Sincronizar llaves'}
                     </button>
-                    <button type="button" onClick={() => void reiniciarLlaves()} disabled={reiniciando} style={btnGhost}>
+                    <button type="button" onClick={() => void reiniciarLlaves()} disabled={reiniciando} style={btnOutlineIndigo}>
                       {reiniciando ? '…' : 'Reiniciar llaves'}
                     </button>
                     {partidosPlayoff.length > 0 && (
-                      <button type="button" onClick={() => void exportarLlavesPdf()} style={btnGhost}>PDF llaves</button>
+                      <button type="button" onClick={() => void exportarLlavesPdf()} style={btnOutlineIndigo}>PDF llaves</button>
                     )}
                   </>
                 )}
                 {tab === 'programa' && (
                   <>
-                    <button type="button" onClick={() => void programar()} disabled={programando} style={btnGhost}>
+                    <button type="button" onClick={() => void programar()} disabled={programando} style={btnOutlineIndigo}>
                       {programando ? 'Programando…' : 'Auto-programar'}
                     </button>
-                    <button type="button" onClick={() => void exportarProgramaPdf()} style={btnGhost}>PDF programa</button>
+                    <button type="button" onClick={() => void exportarProgramaPdf()} style={btnOutlineIndigo}>PDF programa</button>
                   </>
                 )}
                 {tab === 'grupos' && grupos.length > 0 && (
-                  <button type="button" onClick={() => void exportarGruposPdf()} style={btnGhost}>PDF grupos</button>
+                  <button type="button" onClick={() => void exportarGruposPdf()} style={btnOutlineIndigo}>PDF grupos</button>
                 )}
               </div>
             )}
 
-            {enInscripcion && (
-              <>
-                <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-                  <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Inscripción ({inscritos.length})</h2>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
-                    <div><label style={labelStyle}>Nombre</label>
-                      <input value={nombreNuevo} onChange={e => setNombreNuevo(e.target.value)} style={inputStyle} /></div>
-                    <div><label style={labelStyle}>Asociación (opc.)</label>
-                      <input value={asocNueva} onChange={e => setAsocNueva(e.target.value)} style={inputStyle} /></div>
-                    <button type="button" onClick={() => void inscribir()} disabled={inscribiendo || !nombreNuevo.trim()}
-                      style={{ ...btnPrimary, opacity: inscribiendo ? 0.6 : 1 }}>{inscribiendo ? '…' : 'Inscribir'}</button>
-                  </div>
-                </div>
-                {inscritos.length > 0 && (
-                  <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-                    <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Cabezas de serie</h2>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      {inscritos.map(i => (
-                        <div key={i.id} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 14 }}>
-                          <span style={{ flex: 1 }}>{nombrePorId.get(i.id)}</span>
-                          <select value={i.cabeza_numero ?? ''} onChange={e => void cambiarCabeza(i.id, e.target.value)}
-                            style={{ ...inputStyle, width: 90 }}>
-                            <option value="">—</option>
-                            {Array.from({ length: Math.min(inscritos.length, 16) }, (_, n) => n + 1).map(n => (
-                              <option key={n} value={n}>{n}ª cabeza</option>
-                            ))}
-                          </select>
+            <InscripcionOficialModal
+              open={modalInscripcion}
+              onClose={() => setModalInscripcion(false)}
+              inscritos={inscritos}
+              eventoNombre={evento.nombre}
+              inscribiendo={inscribiendo}
+              formando={formando}
+              onInscribir={inscribirDesdeModal}
+              onFormarGrupos={async () => {
+                setFormando(true)
+                const res = await formarGruposOficial({ eventoId: id })
+                setFormando(false)
+                if (!res.error) recargarEvento()
+                return res
+              }}
+              onGuardarCabezas={guardarCabezasModal}
+            />
+
+            {(enInscripcion || tab === 'grupos') && grupos.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
+                {grupos.map(g => {
+                  const stats = statsGrupo(g.id)
+                  const partidosG = partidosPorGrupo.get(g.id) ?? []
+                  return (
+                    <div key={g.id} style={{ ...card, overflow: 'hidden' }}>
+                      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: torneoUi.text }}>Grupo {g.nombre}</span>
+                      </div>
+                      {stats.map((s, idx) => (
+                        <div key={s.inscritoId} style={{
+                          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+                          borderBottom: '1px solid #f1f5f9',
+                          borderLeft: `3px solid ${idx === 0 ? '#d97706' : idx === 1 ? '#94a3b8' : 'transparent'}`,
+                        }}>
+                          <span style={{ fontSize: 14 }}>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '—'}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 13, color: torneoUi.text }}>{nombrePorId.get(s.inscritoId)}</div>
+                            <div style={{ fontSize: 10, color: torneoUi.muted }}>{s.pg}G {s.pp}P · {s.pts}pts</div>
+                          </div>
                         </div>
                       ))}
+                      <div style={{ padding: '8px 16px' }}>
+                        {partidosG.map(renderPartidoRow)}
+                      </div>
                     </div>
-                    <button type="button" onClick={() => void formarGrupos()} disabled={formando || inscritos.length < 4}
-                      style={{ ...btnPrimary, marginTop: 16, width: '100%' }}>
-                      {formando ? 'Formando grupos…' : `Formar grupos (${inscritos.length} inscritos, mín. 4)`}
-                    </button>
-                  </div>
-                )}
-              </>
+                  )
+                })}
+              </div>
             )}
-
-            {(enInscripcion || tab === 'grupos') && grupos.map(g => {
-              const stats = statsGrupo(g.id)
-              const partidosG = partidosPorGrupo.get(g.id) ?? []
-              return (
-                <div key={g.id} style={{ ...card, padding: 16, marginBottom: 16 }}>
-                  <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Grupo {g.nombre}</h2>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'left' }}>
-                        <th style={thStyle}>#</th><th style={thStyle}>Jugador</th><th style={thStyle}>Pts</th>
-                        <th style={thStyle}>PG</th><th style={thStyle}>PP</th><th style={thStyle}>J+</th><th style={thStyle}>J−</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stats.map((s, idx) => (
-                        <tr key={s.inscritoId} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={tdStyle}>{idx + 1}</td>
-                          <td style={tdStyle}>{nombrePorId.get(s.inscritoId)}</td>
-                          <td style={tdStyle}><strong>{s.pts}</strong></td>
-                          <td style={tdStyle}>{s.pg}</td><td style={tdStyle}>{s.pp}</td>
-                          <td style={tdStyle}>{s.juegosGanados}</td><td style={tdStyle}>{s.juegosPerdidos}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div style={{ display: 'grid', gap: 10 }}>{partidosG.map(renderPartidoRow)}</div>
-                </div>
-              )
-            })}
 
             {tab === 'llaves' && (
               partidosPlayoff.length === 0 ? (
@@ -574,14 +609,26 @@ export default function EventoOficialPage() {
                 <>
                   <div style={{ ...card, padding: 16, marginBottom: 16 }}>
                     <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Cuadro eliminatorio</h2>
-                    <BracketOficial partidos={partidosPlayoff} nombrePorId={nombrePorId} />
+                    <BracketOficial
+                      partidos={partidosPlayoff}
+                      nombrePorId={nombrePorId}
+                      esAdmin={esAdmin}
+                      faseInicial={faseInicialLlaves}
+                      onIntercambiar={esAdmin ? intercambiarCupos : undefined}
+                    />
                   </div>
-                  {[...partidosPorFase.entries()].map(([fase, lista]) => (
+                  {fasesPlayoffOrdenadas.map(fase => {
+                    const lista = partidosPorFase.get(fase) ?? []
+                    if (!lista.length) return null
+                    return (
                     <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
                       <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>{FASE_LABELS[fase] || fase}</h2>
-                      <div style={{ display: 'grid', gap: 10 }}>{lista.sort((a, b) => a.orden - b.orden).map(renderPartidoRow)}</div>
+                      <div style={{ display: 'grid', gap: 0, padding: '0 16px 12px' }}>
+                        {lista.sort((a, b) => a.orden - b.orden).map(renderPartidoRow)}
+                      </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </>
               )
             )}
@@ -618,15 +665,6 @@ export default function EventoOficialPage() {
   )
 }
 
-const labelStyle: CSSProperties = { display: 'block', fontSize: 12, color: '#64748b', marginBottom: 4 }
-const inputStyle: CSSProperties = { width: '100%', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 14, boxSizing: 'border-box' }
 const thStyle: CSSProperties = { padding: '8px 10px', fontWeight: 600 }
 const tdStyle: CSSProperties = { padding: '8px 10px' }
 const btnBack: CSSProperties = { background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', marginBottom: 14, cursor: 'pointer' }
-const btnPrimary: CSSProperties = { background: '#0f172a', color: 'white', border: 'none', borderRadius: 8, padding: '10px 16px', fontWeight: 600, cursor: 'pointer' }
-const btnGhost: CSSProperties = { background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }
-const btnSmall: CSSProperties = { background: '#0f172a', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }
-const btnMarcador: CSSProperties = { background: '#0369a1', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }
-const btnWo: CSSProperties = { background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', borderRadius: 6, padding: '6px 8px', fontSize: 11, cursor: 'pointer' }
-const tabBtn: CSSProperties = { background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }
-const tabBtnActivo: CSSProperties = { background: '#0f172a', color: '#fff', borderColor: '#0f172a' }

@@ -69,7 +69,7 @@ export function programarPartidosGreedy(
 
 /** Prioridad: fase grupos primero, luego playoff por orden de fase y llave. */
 export function prioridadPartidoOficial(fase: string, orden: number): number {
-  const fases = ['grupos', 'avance', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'final'] as const
+  const fases = ['grupos', 'avance', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'tercer_lugar', 'final'] as const
   const idx = fases.indexOf(fase as typeof fases[number])
   const faseIdx = idx >= 0 ? idx : 99
   return faseIdx * 1000 + orden

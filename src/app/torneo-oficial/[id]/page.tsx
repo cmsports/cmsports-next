@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AppLayout from '../../layout-app'
 import { createClient } from '@/lib/supabase/client'
@@ -14,6 +14,7 @@ import {
 } from '@/app/actions/torneo-oficial'
 import { formatearSets, type SetMarcador } from '@/lib/domain/oficial-ittf'
 import { exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
+import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
 
 const supabase = createClient()
 
@@ -47,6 +48,7 @@ export default function CampeonatoOficialDetallePage() {
   const { id } = useParams<{ id: string }>()
   const { perfil, loading: authLoading } = usePerfil()
   const router = useRouter()
+  const clubId = perfil?.club_id
   const [camp, setCamp] = useState<Campeonato | null>(null)
   const [eventos, setEventos] = useState<Evento[]>([])
   const [programaRows, setProgramaRows] = useState<Array<{ hora: string; mesa: number; evento: string; fase: string; partido: string; resultado?: string }>>([])
@@ -63,53 +65,100 @@ export default function CampeonatoOficialDetallePage() {
   const [mesas, setMesas] = useState('8')
   const [bloque, setBloque] = useState('25')
   const [horaInicio, setHoraInicio] = useState('09:00')
+  const cargadoRef = useRef(false)
 
-  const cargar = useCallback(async () => {
-    if (!perfil?.club_id) return
-    setLoading(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
-    const { data: c } = await db.from('oficial_campeonatos')
-      .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado,mesas_count,bloque_minutos,hora_inicio')
-      .eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
-    setCamp(c)
-    if (c) {
-      setMesas(String(c.mesas_count ?? 8))
-      setBloque(String(c.bloque_minutos ?? 25))
-      setHoraInicio(String(c.hora_inicio || '09:00:00').slice(0, 5))
+  type DatosCamp = {
+    camp: Campeonato | null
+    eventos: Evento[]
+    programaRows: Array<{ hora: string; mesa: number; evento: string; fase: string; partido: string; resultado?: string }>
+    error?: string
+  }
+
+  const aplicarDatos = useCallback((d: DatosCamp) => {
+    if (d.error) setErrorMsg(d.error)
+    setCamp(d.camp)
+    setEventos(d.eventos)
+    setProgramaRows(d.programaRows)
+    if (d.camp) {
+      setMesas(String(d.camp.mesas_count))
+      setBloque(String(d.camp.bloque_minutos))
+      setHoraInicio(String(d.camp.hora_inicio).slice(0, 5))
     }
+    cargadoRef.current = true
+  }, [])
 
-    const { data: ev } = await db.from('oficial_eventos')
-      .select('id,nombre,categoria,genero,fase,formato_partido,campeon_inscrito_id')
-      .eq('campeonato_id', id).order('creado_en')
-    setEventos(ev || [])
+  const cargar = useCallback(async (silencioso = false) => {
+    if (!clubId) return
+    if (!silencioso) setErrorMsg('')
 
-    const eventoIds = (ev || []).map((e: Evento) => e.id)
-    if (eventoIds.length) {
-      const { data: ins } = await db.from('oficial_inscritos').select('id,nombre,asociacion').in('evento_id', eventoIds)
-      const nombreMap = new Map((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) =>
-        [i.id, i.asociacion ? `${i.nombre} (${i.asociacion})` : i.nombre]))
-      const eventoMap = new Map((ev || []).map((e: Evento) => [e.id, e.nombre]))
+    await cargarOficialConCache(
+      `oficial:camp:${id}:${clubId}`,
+      async (): Promise<DatosCamp> => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const db = supabase as any
 
-      const { data: par } = await db.from('oficial_partidos')
-        .select('evento_id,fase,inscrito_a_id,inscrito_b_id,ganador_id,sets,mesa,programado_en')
-        .in('evento_id', eventoIds).not('programado_en', 'is', null).order('programado_en')
+        const { data: c, error: errC } = await db.from('oficial_campeonatos')
+          .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
+          .eq('id', id).eq('club_id', clubId).maybeSingle()
 
-      setProgramaRows((par || []).map((p: {
-        evento_id: string; fase: string; inscrito_a_id: string; inscrito_b_id: string | null
-        ganador_id: string | null; sets: SetMarcador[]; mesa: number; programado_en: string
-      }) => ({
-        hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
-        mesa: p.mesa ?? 0,
-        evento: eventoMap.get(p.evento_id) || '',
-        fase: FASE_LABELS[p.fase] || p.fase,
-        partido: `${nombreMap.get(p.inscrito_a_id) || '?'} vs ${p.inscrito_b_id ? nombreMap.get(p.inscrito_b_id) : 'BYE'}`,
-        resultado: p.ganador_id ? formatearSets((p.sets || []) as SetMarcador[]) : undefined,
-      })))
-    } else setProgramaRows([])
+        if (errC) return { camp: null, eventos: [], programaRows: [], error: errC.message || 'Error al cargar el campeonato' }
+        if (!c) return { camp: null, eventos: [], programaRows: [] }
 
-    setLoading(false)
-  }, [id, perfil?.club_id])
+        let mesas_count = 8
+        let bloque_minutos = 25
+        let hora_inicio = '09:00:00'
+        const { data: cfg, error: errCfg } = await db.from('oficial_campeonatos')
+          .select('mesas_count,bloque_minutos,hora_inicio')
+          .eq('id', id).maybeSingle()
+        if (!errCfg && cfg) {
+          mesas_count = cfg.mesas_count ?? mesas_count
+          bloque_minutos = cfg.bloque_minutos ?? bloque_minutos
+          hora_inicio = cfg.hora_inicio ?? hora_inicio
+        }
+
+        const campCompleto = { ...c, mesas_count, bloque_minutos, hora_inicio } as Campeonato
+
+        const { data: ev } = await db.from('oficial_eventos')
+          .select('id,nombre,categoria,genero,fase,formato_partido,campeon_inscrito_id')
+          .eq('campeonato_id', id).order('creado_en')
+        const eventosList = (ev || []) as Evento[]
+
+        const eventoIds = eventosList.map(e => e.id)
+        let programaRows: DatosCamp['programaRows'] = []
+        if (eventoIds.length) {
+          const { data: ins } = await db.from('oficial_inscritos').select('id,nombre,asociacion').in('evento_id', eventoIds)
+          const nombreMap = new Map((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) =>
+            [i.id, i.asociacion ? `${i.nombre} (${i.asociacion})` : i.nombre]))
+          const eventoMap = new Map(eventosList.map(e => [e.id, e.nombre]))
+
+          const { data: par } = await db.from('oficial_partidos')
+            .select('evento_id,fase,inscrito_a_id,inscrito_b_id,ganador_id,sets,mesa,programado_en')
+            .in('evento_id', eventoIds).not('programado_en', 'is', null).order('programado_en')
+
+          programaRows = (par || []).map((p: {
+            evento_id: string; fase: string; inscrito_a_id: string; inscrito_b_id: string | null
+            ganador_id: string | null; sets: SetMarcador[]; mesa: number; programado_en: string
+          }) => ({
+            hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            mesa: p.mesa ?? 0,
+            evento: eventoMap.get(p.evento_id) || '',
+            fase: FASE_LABELS[p.fase] || p.fase,
+            partido: `${nombreMap.get(p.inscrito_a_id) || '?'} vs ${p.inscrito_b_id ? nombreMap.get(p.inscrito_b_id) : 'BYE'}`,
+            resultado: p.ganador_id ? formatearSets((p.sets || []) as SetMarcador[]) : undefined,
+          }))
+        }
+
+        return { camp: campCompleto, eventos: eventosList, programaRows }
+      },
+      {
+        tablas: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos', 'oficial_inscritos'],
+        silencioso,
+        aplicar: aplicarDatos,
+        setLoading,
+        tieneDatos: () => cargadoRef.current,
+      },
+    )
+  }, [id, clubId, aplicarDatos])
 
   useEffect(() => {
     if (authLoading) return
@@ -120,7 +169,7 @@ export default function CampeonatoOficialDetallePage() {
   useEnVivo(
     ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos'],
     perfil?.club_id ?? null,
-    () => { void cargar() },
+    () => { void cargar(true) },
     { conClub: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos'] },
   )
 
@@ -186,8 +235,10 @@ export default function CampeonatoOficialDetallePage() {
     <AppLayout perfil={perfil}>
       <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
         <button type="button" onClick={() => router.push('/torneo-oficial')} style={btnBack}>← Volver</button>
-        {loading || !camp ? (
-          <p style={{ color: '#94a3b8' }}>{loading ? 'Cargando…' : 'Campeonato no encontrado'}</p>
+        {loading && !camp ? (
+          <p style={{ color: '#94a3b8' }}>Cargando…</p>
+        ) : !camp ? (
+          <p style={{ color: '#94a3b8' }}>Campeonato no encontrado</p>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>

@@ -28,6 +28,8 @@
 | 157 | Demo club + técnico (requiere 154) |
 | 158 | Índice llaves + config mesas |
 | 159 | Solo activar módulo en Club Demostración |
+| 160 | 3er lugar + RPC drag cupos oficial |
+| 161 | RPC corregir playoff oficial (atómico) |
 
 ## Club Demostración TDM
 
@@ -35,9 +37,22 @@
 
 Si el sidebar no muestra «Torneo oficial», pegar migración **159** o activar `torneo_oficial` en superadmin.
 
+## Estado actual (agosto 2026)
+
+- ✅ Partido por 3.er lugar en torneo oficial:
+  - Se crea al cerrar ambas semifinales.
+  - Guarda ganador como `tercer_inscrito_id`.
+  - Se muestra en UI como 🥉.
+- ✅ Intercambio de cupos (drag) en llaves oficiales:
+  - Solo ronda inicial.
+  - Bloquea llaves ya jugadas.
+  - RPC: `intercambiar_cupos_oficial_seguro`.
+- ✅ Fallback en detalle de campeonato si falta migración 158:
+  - El campeonato se muestra igual con defaults de programación.
+  - Mensaje explícito cuando falte aplicar 158/160/161.
+- ✅ Recarga silenciosa en pantallas oficiales (`cachedFetch` + sin spinner si ya hay datos).
+- ✅ RPC atómico `corregir_resultado_playoff_oficial_seguro` (migración 161).
+
 ## Pendiente futuro
 
-- Partido por 3.er lugar
 - Export Excel estilo Koidan
-- Intercambio de cupos en llaves (drag)
-- RPC atómico para corregir playoff (como club `corregir_resultado_playoff_seguro`)
