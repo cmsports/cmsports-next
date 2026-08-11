@@ -9,10 +9,12 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import { CONFIG } from '@/lib/config'
 import {
   configurarCabezasOficial,
+  corregirResultadoOficial,
   formarGruposOficial,
   inscribirJugadorOficial,
   programarEventoOficial,
   registrarResultadoOficial,
+  reiniciarLlavesOficial,
   sincronizarLlavesOficial,
 } from '@/app/actions/torneo-oficial'
 import {
@@ -21,7 +23,8 @@ import {
   type PartidoOficialStats,
   type SetMarcador,
 } from '@/lib/domain/oficial-ittf'
-import { exportarGruposOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
+import BracketOficial from '@/components/torneo-oficial/BracketOficial'
+import { exportarGruposOficialPdf, exportarLlavesOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
 
 const supabase = createClient()
 
@@ -98,6 +101,8 @@ export default function EventoOficialPage() {
 
   const [setsEdit, setSetsEdit] = useState<Record<string, string>>({})
   const [guardandoRes, setGuardandoRes] = useState<string | null>(null)
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [reiniciando, setReiniciando] = useState(false)
 
   const cargar = useCallback(async () => {
     if (!perfil?.club_id) return
@@ -270,15 +275,42 @@ export default function EventoOficialPage() {
     else void cargar()
   }
 
-  async function guardarResultado(partidoId: string) {
+  async function guardarResultado(partidoId: string, opts?: { walkover?: boolean; ganadorId?: string }) {
     const texto = setsEdit[partidoId]?.trim()
-    if (!texto) return
+    if (!opts?.walkover && !texto) return
     setGuardandoRes(partidoId)
-    const res = await registrarResultadoOficial({ partidoId, setsTexto: texto })
+    const res = await registrarResultadoOficial({
+      partidoId,
+      setsTexto: opts?.walkover ? undefined : texto,
+      esWalkover: opts?.walkover,
+      ganadorId: opts?.ganadorId,
+    })
     setGuardandoRes(null)
     if (res.error) { setErrorMsg(res.error); return }
     setSetsEdit(prev => { const n = { ...prev }; delete n[partidoId]; return n })
     void cargar()
+  }
+
+  async function corregir(partidoId: string, ganadorId: string) {
+    setGuardandoRes(partidoId)
+    const res = await corregirResultadoOficial({
+      partidoId,
+      nuevoGanadorId: ganadorId,
+      setsTexto: setsEdit[partidoId],
+    })
+    setGuardandoRes(null)
+    if (res.error) { setErrorMsg(res.error); return }
+    setEditandoId(null)
+    void cargar()
+  }
+
+  async function reiniciarLlaves() {
+    if (!confirm('¿Borrar las llaves no jugadas y reconstruir desde los grupos?')) return
+    setReiniciando(true)
+    const res = await reiniciarLlavesOficial({ eventoId: id })
+    setReiniciando(false)
+    if (res.error) setErrorMsg(res.error)
+    else void cargar()
   }
 
   function statsGrupo(grupoId: string) {
@@ -325,6 +357,20 @@ export default function EventoOficialPage() {
     })
   }
 
+  async function exportarLlavesPdf() {
+    if (!evento || !camp) return
+    await exportarLlavesOficialPdf({
+      titulo: `Llaves — ${evento.nombre}`,
+      club: camp.nombre,
+      filas: partidosPlayoff.map(p => ({
+        fase: FASE_LABELS[p.fase] || p.fase,
+        partido: `${nombrePorId.get(p.inscrito_a_id!) || '?'} vs ${p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) : 'BYE'}`,
+        resultado: p.ganador_id ? `${formatearSets(p.sets)}${p.es_walkover ? ' W.O.' : ''}` : '—',
+      })),
+      nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_llaves.pdf`,
+    })
+  }
+
   function renderPartidoRow(p: Partido) {
     const a = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) : '?'
     const esBye = !p.inscrito_b_id
@@ -340,9 +386,29 @@ export default function EventoOficialPage() {
             {p.mesa ? <span style={{ color: '#64748b', fontSize: 12 }}> · M{p.mesa}</span> : null}
           </span>
           {cerrado ? (
-            <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>
-              {ganadorNombre && !esBye ? `✓ ${ganadorNombre}` : 'BYE'} · {formatearSets(p.sets)}{p.es_walkover ? ' · W.O.' : ''}
-            </span>
+            editandoId === p.id ? (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input placeholder="Sets corregidos" value={setsEdit[p.id] ?? ''}
+                  onChange={e => setSetsEdit(prev => ({ ...prev, [p.id]: e.target.value }))}
+                  style={{ ...inputStyle, width: 160, margin: 0 }} />
+                {p.inscrito_a_id && (
+                  <button type="button" onClick={() => void corregir(p.id, p.inscrito_a_id!)} style={btnSmall}>Gana A</button>
+                )}
+                {p.inscrito_b_id && (
+                  <button type="button" onClick={() => void corregir(p.id, p.inscrito_b_id!)} style={btnSmall}>Gana B</button>
+                )}
+                <button type="button" onClick={() => setEditandoId(null)} style={btnGhost}>Cancelar</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>
+                  {ganadorNombre && !esBye ? `✓ ${ganadorNombre}` : 'BYE'} · {formatearSets(p.sets)}{p.es_walkover ? ' · W.O.' : ''}
+                </span>
+                {!esBye && evento?.fase !== 'finalizado' && (
+                  <button type="button" onClick={() => setEditandoId(p.id)} style={btnGhost}>Corregir</button>
+                )}
+              </div>
+            )
           ) : esBye ? (
             <span style={{ fontSize: 12, color: '#64748b' }}>Avance automático</span>
           ) : (
@@ -353,6 +419,16 @@ export default function EventoOficialPage() {
               <button type="button" onClick={() => void guardarResultado(p.id)} disabled={guardandoRes === p.id} style={btnSmall}>
                 {guardandoRes === p.id ? '…' : 'Guardar'}
               </button>
+              {p.inscrito_a_id && p.inscrito_b_id && (
+                <>
+                  <button type="button" title="W.O. gana A"
+                    onClick={() => void guardarResultado(p.id, { walkover: true, ganadorId: p.inscrito_a_id! })}
+                    style={btnWo}>W.O. A</button>
+                  <button type="button" title="W.O. gana B"
+                    onClick={() => void guardarResultado(p.id, { walkover: true, ganadorId: p.inscrito_b_id! })}
+                    style={btnWo}>W.O. B</button>
+                </>
+              )}
               <button type="button" onClick={() => router.push(`/torneo-oficial/marcador/${p.id}`)} style={btnMarcador}>Marcador</button>
             </div>
           )}
@@ -394,9 +470,17 @@ export default function EventoOficialPage() {
                   </button>
                 ))}
                 {tab === 'llaves' && (
-                  <button type="button" onClick={() => void armarLlaves()} disabled={syncLlaves} style={btnGhost}>
-                    {syncLlaves ? 'Sincronizando…' : '↻ Sincronizar llaves'}
-                  </button>
+                  <>
+                    <button type="button" onClick={() => void armarLlaves()} disabled={syncLlaves} style={btnGhost}>
+                      {syncLlaves ? 'Sincronizando…' : '↻ Sincronizar llaves'}
+                    </button>
+                    <button type="button" onClick={() => void reiniciarLlaves()} disabled={reiniciando} style={btnGhost}>
+                      {reiniciando ? '…' : 'Reiniciar llaves'}
+                    </button>
+                    {partidosPlayoff.length > 0 && (
+                      <button type="button" onClick={() => void exportarLlavesPdf()} style={btnGhost}>PDF llaves</button>
+                    )}
+                  </>
                 )}
                 {tab === 'programa' && (
                   <>
@@ -487,12 +571,18 @@ export default function EventoOficialPage() {
                   Aún no hay llaves. Cierra al menos un grupo o pulsa «Sincronizar llaves».
                 </div>
               ) : (
-                [...partidosPorFase.entries()].map(([fase, lista]) => (
-                  <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
-                    <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>{FASE_LABELS[fase] || fase}</h2>
-                    <div style={{ display: 'grid', gap: 10 }}>{lista.sort((a, b) => a.orden - b.orden).map(renderPartidoRow)}</div>
+                <>
+                  <div style={{ ...card, padding: 16, marginBottom: 16 }}>
+                    <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Cuadro eliminatorio</h2>
+                    <BracketOficial partidos={partidosPlayoff} nombrePorId={nombrePorId} />
                   </div>
-                ))
+                  {[...partidosPorFase.entries()].map(([fase, lista]) => (
+                    <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
+                      <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>{FASE_LABELS[fase] || fase}</h2>
+                      <div style={{ display: 'grid', gap: 10 }}>{lista.sort((a, b) => a.orden - b.orden).map(renderPartidoRow)}</div>
+                    </div>
+                  ))}
+                </>
               )
             )}
 
@@ -537,5 +627,6 @@ const btnPrimary: CSSProperties = { background: '#0f172a', color: 'white', borde
 const btnGhost: CSSProperties = { background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }
 const btnSmall: CSSProperties = { background: '#0f172a', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }
 const btnMarcador: CSSProperties = { background: '#0369a1', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer' }
+const btnWo: CSSProperties = { background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', borderRadius: 6, padding: '6px 8px', fontSize: 11, cursor: 'pointer' }
 const tabBtn: CSSProperties = { background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }
 const tabBtnActivo: CSSProperties = { background: '#0f172a', color: '#fff', borderColor: '#0f172a' }

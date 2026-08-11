@@ -93,6 +93,7 @@ const mobileNavAdmin = [
   { label: 'Inicio', emoji: '🏠',     icon: LayoutDashboard, href: '/dashboard' },
   { label: 'Jugadores', emoji: '🏓',  icon: Users,            href: '/jugadores' },
   { label: 'Torneos', emoji: '🏆',    icon: Trophy,           href: '/torneos-internos',  modulo: 'torneos' },
+  { label: 'Oficial', emoji: '⚖️',   icon: Gavel,            href: '/torneo-oficial',    modulo: 'torneo_oficial' },
   { label: 'Finanzas', emoji: '💰',   icon: DollarSign,       href: '/finanzas', modulo: 'finanzas' },
 ]
 

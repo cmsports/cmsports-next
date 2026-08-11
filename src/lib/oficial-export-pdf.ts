@@ -22,10 +22,10 @@ export async function exportarProgramaOficialPdf(params: {
 }) {
   const { default: jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
-  const { encabezado, piePagina, estiloTabla, sinDatos, COLOR } = await import('@/lib/pdf/estilo')
+  const { encabezado, piePagina, estiloTabla, sinDatos } = await import('@/lib/pdf/estilo')
 
   const doc = new jsPDF({ orientation: 'landscape' })
-  let y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: params.subtitulo })
+  const y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: params.subtitulo })
 
   if (!params.filas.length) {
     sinDatos(doc, y, 'No hay partidos programados')
@@ -78,6 +78,34 @@ export async function exportarGruposOficialPdf(params: {
     })
     y = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y
     y += 10
+  }
+
+  piePagina(doc, params.club)
+  doc.save(params.nombreArchivo)
+}
+
+export async function exportarLlavesOficialPdf(params: {
+  titulo: string
+  club: string
+  filas: Array<{ fase: string; partido: string; resultado: string }>
+  nombreArchivo: string
+}) {
+  const { default: jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+  const { encabezado, piePagina, estiloTabla, sinDatos } = await import('@/lib/pdf/estilo')
+
+  const doc = new jsPDF()
+  const y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: 'Cuadro eliminatorio' })
+
+  if (!params.filas.length) {
+    sinDatos(doc, y, 'No hay llaves generadas')
+  } else {
+    autoTable(doc, {
+      startY: y,
+      head: [['Fase', 'Partido', 'Resultado']],
+      body: params.filas.map(f => [f.fase, f.partido, f.resultado]),
+      ...estiloTabla(),
+    })
   }
 
   piePagina(doc, params.club)

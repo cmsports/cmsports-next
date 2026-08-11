@@ -324,6 +324,7 @@ export async function registrarResultadoOficial(params: {
     await avanzarFaseEventoOficial(db, partido.evento_id, partido.fase)
     if (partido.fase === 'final') {
       const perdedorId = ganadorId === partido.inscrito_a_id ? partido.inscrito_b_id : partido.inscrito_a_id
+      const { data: ev } = await db.from('oficial_eventos').select('campeonato_id').eq('id', partido.evento_id).maybeSingle()
       await db.from('oficial_eventos').update({
         fase: 'finalizado',
         estado: 'finalizado',
@@ -331,6 +332,7 @@ export async function registrarResultadoOficial(params: {
         subcampeon_inscrito_id: perdedorId,
         actualizado_en: new Date().toISOString(),
       }).eq('id', partido.evento_id)
+      if (ev?.campeonato_id) await actualizarEstadoCampeonatoOficial(db, ev.campeonato_id, perfil.club_id!)
     }
   } else if (evento?.fase === 'grupos') {
     await sincronizarLlavesOficial({ eventoId: partido.evento_id })
@@ -801,4 +803,157 @@ export async function programarEventoOficial(params: { eventoId: string; fecha?:
   }
 
   return { programados: asignaciones.size }
+}
+
+async function actualizarEstadoCampeonatoOficial(db: AdminDb, campeonatoId: string, clubId: string) {
+  const { data: eventos } = await db.from('oficial_eventos')
+    .select('fase, estado').eq('campeonato_id', campeonatoId).eq('club_id', clubId)
+  if (!eventos?.length) return
+  const todosFinal = eventos.every((e: { fase: string; estado: string }) =>
+    e.fase === 'finalizado' || e.estado === 'finalizado',
+  )
+  if (todosFinal) {
+    await db.from('oficial_campeonatos').update({
+      estado: 'finalizado',
+      actualizado_en: new Date().toISOString(),
+    }).eq('id', campeonatoId).eq('club_id', clubId)
+  }
+}
+
+/** Corrige un resultado ya registrado (grupos o llaves). */
+export async function corregirResultadoOficial(params: {
+  partidoId: string
+  nuevoGanadorId: string
+  setsTexto?: string
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: partido } = await db.from('oficial_partidos')
+    .select('id, evento_id, fase, orden, grupo_id, inscrito_a_id, inscrito_b_id, ganador_id, slot_a_grupo_id, slot_b_grupo_id')
+    .eq('id', params.partidoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!partido?.ganador_id) return { error: 'El partido no tiene resultado aún' }
+  if (params.nuevoGanadorId !== partido.inscrito_a_id && params.nuevoGanadorId !== partido.inscrito_b_id) {
+    return { error: 'El ganador debe pertenecer al partido' }
+  }
+  if (partido.ganador_id === params.nuevoGanadorId) return {}
+
+  const viejoGanador = partido.ganador_id as string
+
+  if (partido.fase === 'grupos') {
+    const { data: llaves } = await db.from('oficial_partidos')
+      .select('id, ganador_id, inscrito_b_id, slot_a_grupo_id, slot_b_grupo_id')
+      .eq('evento_id', partido.evento_id).neq('fase', 'grupos')
+    if (llaves?.length && partido.grupo_id) {
+      const afectadas = llaves.filter((p: { slot_a_grupo_id: string | null; slot_b_grupo_id: string | null }) =>
+        p.slot_a_grupo_id === partido.grupo_id || p.slot_b_grupo_id === partido.grupo_id,
+      )
+      if (afectadas.some(llaveFueJugada)) {
+        return { error: 'La rama de este grupo ya fue jugada. Reinicia las llaves primero.' }
+      }
+    }
+    let sets: SetMarcador[] = []
+    if (params.setsTexto?.trim()) {
+      const parsed = parsearSetsTexto(params.setsTexto)
+      if ('error' in parsed) return { error: parsed.error }
+      sets = parsed
+    }
+    await db.from('oficial_partidos').update({
+      ganador_id: params.nuevoGanadorId,
+      sets,
+      es_walkover: false,
+      actualizado_en: new Date().toISOString(),
+    }).eq('id', params.partidoId)
+    await sincronizarLlavesOficial({ eventoId: partido.evento_id })
+    return {}
+  }
+
+  const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
+  if (faseSiguiente) {
+    const ordenSig = Math.floor(partido.orden / 2)
+    const { data: siguiente } = await db.from('oficial_partidos')
+      .select('ganador_id').eq('evento_id', partido.evento_id)
+      .eq('fase', faseSiguiente).eq('orden', ordenSig).maybeSingle()
+    if (siguiente?.ganador_id) {
+      return { error: 'La rama siguiente ya tiene ganador. Corrige primero los partidos posteriores.' }
+    }
+  }
+
+  const { data: evento } = await db.from('oficial_eventos').select('formato_partido').eq('id', partido.evento_id).maybeSingle()
+  const meta = gamesParaGanarFormato(evento?.formato_partido || 'bo5')
+  let sets: SetMarcador[] = []
+  if (params.setsTexto?.trim()) {
+    const parsed = parsearSetsTexto(params.setsTexto)
+    if ('error' in parsed) return { error: parsed.error }
+    sets = parsed
+    if (partido.inscrito_a_id && partido.inscrito_b_id) {
+      const derivado = ganadorDesdeSets(partido.inscrito_a_id, partido.inscrito_b_id, sets, meta)
+      if (derivado && derivado !== params.nuevoGanadorId) {
+        return { error: 'Los sets no coinciden con el ganador indicado' }
+      }
+    }
+  }
+
+  await db.from('oficial_partidos').update({
+    ganador_id: params.nuevoGanadorId,
+    sets,
+    es_walkover: false,
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', params.partidoId)
+
+  if (faseSiguiente) {
+    const ordenSig = Math.floor(partido.orden / 2)
+    const slot = partido.orden % 2 === 0 ? 'inscrito_a_id' : 'inscrito_b_id'
+    const { data: next } = await db.from('oficial_partidos')
+      .select('id, inscrito_a_id, inscrito_b_id')
+      .eq('evento_id', partido.evento_id).eq('fase', faseSiguiente).eq('orden', ordenSig).maybeSingle()
+    if (next) {
+      const upd: Record<string, unknown> = {}
+      if (next.inscrito_a_id === viejoGanador) upd.inscrito_a_id = params.nuevoGanadorId
+      if (next.inscrito_b_id === viejoGanador) upd.inscrito_b_id = params.nuevoGanadorId
+      if (Object.keys(upd).length === 0) upd[slot] = params.nuevoGanadorId
+      await db.from('oficial_partidos').update(upd).eq('id', next.id)
+    } else {
+      await propagarGanadorPlayoffOficial(db, partido, params.nuevoGanadorId, perfil.club_id!)
+    }
+  }
+
+  if (partido.fase === 'final') {
+    const perdedorId = params.nuevoGanadorId === partido.inscrito_a_id ? partido.inscrito_b_id : partido.inscrito_a_id
+    const { data: ev } = await db.from('oficial_eventos').select('campeonato_id').eq('id', partido.evento_id).maybeSingle()
+    await db.from('oficial_eventos').update({
+      campeon_inscrito_id: params.nuevoGanadorId,
+      subcampeon_inscrito_id: perdedorId,
+      actualizado_en: new Date().toISOString(),
+    }).eq('id', partido.evento_id)
+    if (ev?.campeonato_id) await actualizarEstadoCampeonatoOficial(db, ev.campeonato_id, perfil.club_id!)
+  }
+
+  return {}
+}
+
+/** Borra las llaves no jugadas y reconstruye desde grupos. */
+export async function reiniciarLlavesOficial(params: { eventoId: string }): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: jugadas } = await db.from('oficial_partidos')
+    .select('ganador_id, inscrito_b_id').eq('evento_id', params.eventoId).neq('fase', 'grupos')
+  if (!jugadas?.length) return { error: 'No hay llaves generadas' }
+  if (jugadas.some(llaveFueJugada)) {
+    return { error: 'Hay partidos de llave ya jugados. Corrige esos resultados antes de reiniciar.' }
+  }
+
+  await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId).neq('fase', 'grupos')
+  await db.from('oficial_eventos').update({
+    fase: 'grupos',
+    campeon_inscrito_id: null,
+    subcampeon_inscrito_id: null,
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', params.eventoId)
+
+  await sincronizarLlavesOficial({ eventoId: params.eventoId })
+  return {}
 }
