@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { createClient } from '@/lib/supabase/client'
@@ -8,6 +8,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { crearCampeonatoOficial } from '@/app/actions/torneo-oficial'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
 
 const supabase = createClient()
 
@@ -42,37 +43,48 @@ export default function TorneoOficialPage() {
   const [fechaFin, setFechaFin] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const cargadoRef = useRef(false)
 
-  async function cargar(clubId: string) {
-    setLoading(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
-    const { data } = await db.from('oficial_campeonatos')
-      .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
-      .eq('club_id', clubId).neq('estado', 'archivado').order('creado_en', { ascending: false })
+  const cargar = useCallback(async (clubId: string, silencioso = false) => {
+    await cargarOficialConCache(
+      `oficial:lista:${clubId}`,
+      async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const db = supabase as any
+        const { data } = await db.from('oficial_campeonatos')
+          .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
+          .eq('club_id', clubId).neq('estado', 'archivado').order('creado_en', { ascending: false })
 
-    const rows = (data || []) as Campeonato[]
-    if (!rows.length) { setLista([]); setLoading(false); return }
+        const rows = (data || []) as Campeonato[]
+        if (!rows.length) return []
 
-    const ids = rows.map(r => r.id)
-    const { data: eventos } = await db.from('oficial_eventos').select('id, campeonato_id').in('campeonato_id', ids)
-    const count: Record<string, number> = {}
-    for (const e of eventos || []) count[e.campeonato_id] = (count[e.campeonato_id] || 0) + 1
-    setLista(rows.map(r => ({ ...r, eventos_count: count[r.id] || 0 })))
-    setLoading(false)
-  }
+        const ids = rows.map(r => r.id)
+        const { data: eventos } = await db.from('oficial_eventos').select('id, campeonato_id').in('campeonato_id', ids)
+        const count: Record<string, number> = {}
+        for (const e of eventos || []) count[e.campeonato_id] = (count[e.campeonato_id] || 0) + 1
+        return rows.map(r => ({ ...r, eventos_count: count[r.id] || 0 }))
+      },
+      {
+        tablas: ['oficial_campeonatos', 'oficial_eventos'],
+        silencioso,
+        aplicar: (data) => { setLista(data); cargadoRef.current = true },
+        setLoading,
+        tieneDatos: () => cargadoRef.current,
+      },
+    )
+  }, [])
 
   useEffect(() => {
     if (authLoading) return
     if (!perfil) { router.push('/login'); return }
-    if (perfil.club_id) cargar(perfil.club_id)
+    if (perfil.club_id) void cargar(perfil.club_id)
     else setLoading(false)
-  }, [authLoading, perfil])
+  }, [authLoading, perfil, cargar, router])
 
   useEnVivo(
     ['oficial_campeonatos', 'oficial_eventos'],
     perfil?.club_id ?? null,
-    () => { if (perfil?.club_id) void cargar(perfil.club_id) },
+    () => { if (perfil?.club_id) void cargar(perfil.club_id, true) },
     { conClub: ['oficial_campeonatos', 'oficial_eventos'] },
   )
 
@@ -85,7 +97,7 @@ export default function TorneoOficialPage() {
     setModal(false)
     setNombre(''); setSede(''); setZona('')
     if (res.id) {
-      if (perfil?.club_id) await cargar(perfil.club_id)
+      if (perfil?.club_id) await cargar(perfil.club_id, true)
       router.push(`/torneo-oficial/${res.id}`)
     }
   }
@@ -103,7 +115,7 @@ export default function TorneoOficialPage() {
           <button onClick={() => setModal(true)} style={btnPrimary}>+ Nuevo campeonato</button>
         </div>
 
-        {loading ? (
+        {loading && lista.length === 0 ? (
           <p style={{ color: '#94a3b8' }}>Cargando…</p>
         ) : lista.length === 0 ? (
           <div style={{ ...card, padding: 28, textAlign: 'center', color: '#64748b' }}>

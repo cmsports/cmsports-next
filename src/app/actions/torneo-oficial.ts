@@ -903,8 +903,6 @@ export async function corregirResultadoOficial(params: {
   }
   if (partido.ganador_id === params.nuevoGanadorId) return {}
 
-  const viejoGanador = partido.ganador_id as string
-
   if (partido.fase === 'grupos') {
     const { data: llaves } = await db.from('oficial_partidos')
       .select('id, ganador_id, inscrito_b_id, slot_a_grupo_id, slot_b_grupo_id')
@@ -952,7 +950,7 @@ export async function corregirResultadoOficial(params: {
     }
   }
 
-  const { data: evento } = await db.from('oficial_eventos').select('formato_partido').eq('id', partido.evento_id).maybeSingle()
+  const { data: evento } = await db.from('oficial_eventos').select('formato_partido, campeonato_id').eq('id', partido.evento_id).maybeSingle()
   const meta = gamesParaGanarFormato(evento?.formato_partido || 'bo5')
   let sets: SetMarcador[] = []
   if (params.setsTexto?.trim()) {
@@ -967,50 +965,25 @@ export async function corregirResultadoOficial(params: {
     }
   }
 
-  await db.from('oficial_partidos').update({
-    ganador_id: params.nuevoGanadorId,
-    sets,
-    es_walkover: false,
-    actualizado_en: new Date().toISOString(),
-  }).eq('id', params.partidoId)
-
-  if (faseSiguiente) {
-    const ordenSig = Math.floor(partido.orden / 2)
-    const slot = partido.orden % 2 === 0 ? 'inscrito_a_id' : 'inscrito_b_id'
-    const { data: next } = await db.from('oficial_partidos')
-      .select('id, inscrito_a_id, inscrito_b_id')
-      .eq('evento_id', partido.evento_id).eq('fase', faseSiguiente).eq('orden', ordenSig).maybeSingle()
-    if (next) {
-      const upd: Record<string, unknown> = {}
-      if (next.inscrito_a_id === viejoGanador) upd.inscrito_a_id = params.nuevoGanadorId
-      if (next.inscrito_b_id === viejoGanador) upd.inscrito_b_id = params.nuevoGanadorId
-      if (Object.keys(upd).length === 0) upd[slot] = params.nuevoGanadorId
-      await db.from('oficial_partidos').update(upd).eq('id', next.id)
-    } else {
-      await propagarGanadorPlayoffOficial(db, partido, params.nuevoGanadorId, perfil.club_id!)
+  const { error: rpcErr } = await supabase.rpc('corregir_resultado_playoff_oficial_seguro', {
+    p_partido_id: params.partidoId,
+    p_nuevo_ganador_id: params.nuevoGanadorId,
+    p_sets: sets.length ? sets : undefined,
+  })
+  if (rpcErr) {
+    const msg = rpcErr.message || ''
+    if (msg.includes('corregir_resultado_playoff_oficial_seguro') || msg.includes('Could not find the function')) {
+      return { error: 'Falta aplicar la migración 161_corregir_playoff_oficial_seguro en Supabase.' }
     }
-  }
-
-  if (partido.fase === 'final') {
-    const perdedorId = params.nuevoGanadorId === partido.inscrito_a_id ? partido.inscrito_b_id : partido.inscrito_a_id
-    const { data: ev } = await db.from('oficial_eventos').select('campeonato_id').eq('id', partido.evento_id).maybeSingle()
-    await db.from('oficial_eventos').update({
-      campeon_inscrito_id: params.nuevoGanadorId,
-      subcampeon_inscrito_id: perdedorId,
-      actualizado_en: new Date().toISOString(),
-    }).eq('id', partido.evento_id)
-    if (ev?.campeonato_id) await actualizarEstadoCampeonatoOficial(db, ev.campeonato_id, perfil.club_id!)
-  }
-
-  if (partido.fase === 'tercer_lugar') {
-    await db.from('oficial_eventos').update({
-      tercer_inscrito_id: params.nuevoGanadorId,
-      actualizado_en: new Date().toISOString(),
-    }).eq('id', partido.evento_id)
+    return { error: msg }
   }
 
   if (partido.fase === 'semis') {
     await sincronizarTercerLugarOficial(db, partido.evento_id, perfil.club_id!)
+  }
+
+  if (partido.fase === 'final' && evento?.campeonato_id) {
+    await actualizarEstadoCampeonatoOficial(db, evento.campeonato_id, perfil.club_id!)
   }
 
   return {}

@@ -26,6 +26,7 @@ import {
 } from '@/lib/domain/oficial-ittf'
 import BracketOficial from '@/components/torneo-oficial/BracketOficial'
 import { exportarGruposOficialPdf, exportarLlavesOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
+import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
 
 const supabase = createClient()
 
@@ -105,46 +106,84 @@ export default function EventoOficialPage() {
   const [guardandoRes, setGuardandoRes] = useState<string | null>(null)
   const [editandoId, setEditandoId] = useState<string | null>(null)
   const [reiniciando, setReiniciando] = useState(false)
+  const cargadoRef = useRef(false)
 
-  const cargar = useCallback(async () => {
+  type DatosEvento = {
+    evento: Evento | null
+    camp: Campeonato | null
+    inscritos: Inscrito[]
+    grupos: Grupo[]
+    miembrosGrupo: Array<{ grupo_id: string; inscrito_id: string }>
+    partidos: Partido[]
+  }
+
+  const aplicarDatos = useCallback((d: DatosEvento) => {
+    setEvento(d.evento)
+    setCamp(d.camp)
+    setInscritos(d.inscritos)
+    setGrupos(d.grupos)
+    setMiembrosGrupo(d.miembrosGrupo)
+    setPartidos(d.partidos)
+    cargadoRef.current = true
+  }, [])
+
+  const cargar = useCallback(async (silencioso = false) => {
     if (!perfil?.club_id) return
-    setLoading(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
 
-    const { data: ev } = await db.from('oficial_eventos')
-      .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id')
-      .eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
-    setEvento(ev)
+    await cargarOficialConCache(
+      `oficial:evento:${id}:${perfil.club_id}`,
+      async (): Promise<DatosEvento> => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const db = supabase as any
 
-    if (ev?.campeonato_id) {
-      const { data: c } = await db.from('oficial_campeonatos').select('id,nombre')
-        .eq('id', ev.campeonato_id).maybeSingle()
-      setCamp(c)
-    }
+        const { data: ev } = await db.from('oficial_eventos')
+          .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id')
+          .eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
 
-    const { data: ins } = await db.from('oficial_inscritos')
-      .select('id,nombre,asociacion,cabeza_numero,orden_inscripcion')
-      .eq('evento_id', id).order('orden_inscripcion')
-    setInscritos(ins || [])
+        let camp: Campeonato | null = null
+        if (ev?.campeonato_id) {
+          const { data: c } = await db.from('oficial_campeonatos').select('id,nombre')
+            .eq('id', ev.campeonato_id).maybeSingle()
+          camp = c
+        }
 
-    const { data: gr } = await db.from('oficial_grupos')
-      .select('id,nombre,orden').eq('evento_id', id).order('orden')
-    setGrupos(gr || [])
+        const { data: ins } = await db.from('oficial_inscritos')
+          .select('id,nombre,asociacion,cabeza_numero,orden_inscripcion')
+          .eq('evento_id', id).order('orden_inscripcion')
 
-    const grupoIds = (gr || []).map((g: Grupo) => g.id)
-    if (grupoIds.length) {
-      const { data: mg } = await db.from('oficial_grupo_inscritos')
-        .select('grupo_id,inscrito_id').in('grupo_id', grupoIds)
-      setMiembrosGrupo(mg || [])
-    } else setMiembrosGrupo([])
+        const { data: gr } = await db.from('oficial_grupos')
+          .select('id,nombre,orden').eq('evento_id', id).order('orden')
 
-    const { data: par } = await db.from('oficial_partidos')
-      .select('id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,orden,mesa,programado_en')
-      .eq('evento_id', id).order('orden')
-    setPartidos((par || []).map((p: Partido) => ({ ...p, sets: (p.sets || []) as SetMarcador[] })))
-    setLoading(false)
-  }, [id, perfil?.club_id])
+        const grupoIds = (gr || []).map((g: Grupo) => g.id)
+        let miembrosGrupo: DatosEvento['miembrosGrupo'] = []
+        if (grupoIds.length) {
+          const { data: mg } = await db.from('oficial_grupo_inscritos')
+            .select('grupo_id,inscrito_id').in('grupo_id', grupoIds)
+          miembrosGrupo = mg || []
+        }
+
+        const { data: par } = await db.from('oficial_partidos')
+          .select('id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,orden,mesa,programado_en')
+          .eq('evento_id', id).order('orden')
+
+        return {
+          evento: ev,
+          camp,
+          inscritos: ins || [],
+          grupos: gr || [],
+          miembrosGrupo,
+          partidos: (par || []).map((p: Partido) => ({ ...p, sets: (p.sets || []) as SetMarcador[] })),
+        }
+      },
+      {
+        tablas: ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_campeonatos'],
+        silencioso,
+        aplicar: aplicarDatos,
+        setLoading,
+        tieneDatos: () => cargadoRef.current,
+      },
+    )
+  }, [id, perfil?.club_id, aplicarDatos])
 
   useEffect(() => {
     if (authLoading) return
@@ -155,7 +194,7 @@ export default function EventoOficialPage() {
   useEnVivo(
     ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos'],
     perfil?.club_id ?? null,
-    () => { void cargar() },
+    () => { void cargar(true) },
     { conClub: ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos'] },
   )
 
@@ -487,8 +526,10 @@ export default function EventoOficialPage() {
           ← {camp?.nombre || 'Volver'}
         </button>
 
-        {loading || !evento ? (
-          <p style={{ color: '#94a3b8' }}>{loading ? 'Cargando…' : 'Evento no encontrado'}</p>
+        {loading && !evento ? (
+          <p style={{ color: '#94a3b8' }}>Cargando…</p>
+        ) : !evento ? (
+          <p style={{ color: '#94a3b8' }}>Evento no encontrado</p>
         ) : (
           <>
             <div style={{ marginBottom: 16 }}>

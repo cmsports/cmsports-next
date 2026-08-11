@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AppLayout from '../../../layout-app'
 import { createClient } from '@/lib/supabase/client'
@@ -19,6 +19,7 @@ import {
   type Lado,
 } from '@/lib/marcador-oficial'
 import type { SetMarcador } from '@/lib/domain/oficial-ittf'
+import { cargarOficialConCache } from '@/lib/torneo-oficial/carga-cliente'
 
 const supabase = createClient()
 
@@ -46,46 +47,29 @@ export default function MarcadorOficialPage() {
   const [loading, setLoading] = useState(true)
   const [cerrando, setCerrando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const cargadoRef = useRef(false)
 
-  const cargar = useCallback(async () => {
-    if (!perfil?.club_id) return
-    setLoading(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const db = supabase as any
+  type DatosMarcador = {
+    partido: PartidoRow | null
+    evento: EventoRow | null
+    nombreA: string
+    nombreB: string
+    estadoInicial: EstadoMarcador
+  }
 
-    const { data: p } = await db.from('oficial_partidos')
-      .select('id,evento_id,inscrito_a_id,inscrito_b_id,ganador_id,sets')
-      .eq('id', partidoId).eq('club_id', perfil.club_id).maybeSingle()
-    if (!p) { setPartido(null); setLoading(false); return }
-
-    setPartido({ ...p, sets: (p.sets || []) as SetMarcador[] })
-
-    const { data: ev } = await db.from('oficial_eventos')
-      .select('formato_partido,nombre').eq('id', p.evento_id).maybeSingle()
-    setEvento(ev)
-
-    const ids = [p.inscrito_a_id, p.inscrito_b_id].filter(Boolean) as string[]
-    if (ids.length) {
-      const { data: ins } = await db.from('oficial_inscritos').select('id,nombre,asociacion').in('id', ids)
-      const map = new Map<string, string>((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) => [
-        i.id,
-        i.asociacion ? `${i.nombre} (${i.asociacion})` : i.nombre,
-      ] as [string, string]))
-      if (p.inscrito_a_id) setNombreA(map.get(p.inscrito_a_id) || 'Jugador A')
-      if (p.inscrito_b_id) setNombreB(map.get(p.inscrito_b_id) || 'Jugador B')
-    }
-
+  function estadoDesdePartido(p: { ganador_id: string | null; sets: SetMarcador[] }): EstadoMarcador {
     if (p.ganador_id) {
-      setEstado(prev => ({ ...prev, finalizado: true, historial_sets: (p.sets || []) as Array<[number, number]> }))
-    } else if ((p.sets as SetMarcador[])?.length) {
-      const sets = p.sets as SetMarcador[]
+      return { ...estadoInicial(), finalizado: true, historial_sets: (p.sets || []) as Array<[number, number]> }
+    }
+    if (p.sets?.length) {
+      const sets = p.sets
       let games_a = 0
       let games_b = 0
       for (const [pa, pb] of sets) {
         if (pa > pb) games_a++
         else if (pb > pa) games_b++
       }
-      setEstado({
+      return {
         puntos_a: 0,
         puntos_b: 0,
         games_a,
@@ -94,13 +78,73 @@ export default function MarcadorOficialPage() {
         historial_sets: sets,
         ganador_lado: null,
         finalizado: false,
-      })
-    } else {
-      setEstado(estadoInicial())
+      }
     }
+    return estadoInicial()
+  }
 
-    setLoading(false)
-  }, [partidoId, perfil?.club_id])
+  const aplicarDatos = useCallback((d: DatosMarcador, silencioso: boolean) => {
+    setPartido(d.partido)
+    setEvento(d.evento)
+    setNombreA(d.nombreA)
+    setNombreB(d.nombreB)
+    if (!silencioso || d.partido?.ganador_id) {
+      setEstado(d.estadoInicial)
+    }
+    cargadoRef.current = true
+  }, [])
+
+  const cargar = useCallback(async (silencioso = false) => {
+    if (!perfil?.club_id) return
+
+    await cargarOficialConCache(
+      `oficial:marcador:${partidoId}:${perfil.club_id}`,
+      async (): Promise<DatosMarcador> => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const db = supabase as any
+
+        const { data: p } = await db.from('oficial_partidos')
+          .select('id,evento_id,inscrito_a_id,inscrito_b_id,ganador_id,sets')
+          .eq('id', partidoId).eq('club_id', perfil.club_id).maybeSingle()
+        if (!p) {
+          return { partido: null, evento: null, nombreA: 'Jugador A', nombreB: 'Jugador B', estadoInicial: estadoInicial() }
+        }
+
+        const partidoRow = { ...p, sets: (p.sets || []) as SetMarcador[] }
+
+        const { data: ev } = await db.from('oficial_eventos')
+          .select('formato_partido,nombre').eq('id', p.evento_id).maybeSingle()
+
+        let nombreA = 'Jugador A'
+        let nombreB = 'Jugador B'
+        const ids = [p.inscrito_a_id, p.inscrito_b_id].filter(Boolean) as string[]
+        if (ids.length) {
+          const { data: ins } = await db.from('oficial_inscritos').select('id,nombre,asociacion').in('id', ids)
+          const map = new Map<string, string>((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) => [
+            i.id,
+            i.asociacion ? `${i.nombre} (${i.asociacion})` : i.nombre,
+          ] as [string, string]))
+          if (p.inscrito_a_id) nombreA = map.get(p.inscrito_a_id) || nombreA
+          if (p.inscrito_b_id) nombreB = map.get(p.inscrito_b_id) || nombreB
+        }
+
+        return {
+          partido: partidoRow,
+          evento: ev,
+          nombreA,
+          nombreB,
+          estadoInicial: estadoDesdePartido(partidoRow),
+        }
+      },
+      {
+        tablas: ['oficial_partidos', 'oficial_eventos', 'oficial_inscritos'],
+        silencioso,
+        aplicar: (d) => aplicarDatos(d, silencioso),
+        setLoading,
+        tieneDatos: () => cargadoRef.current,
+      },
+    )
+  }, [partidoId, perfil?.club_id, aplicarDatos])
 
   useEffect(() => {
     if (authLoading) return
@@ -111,7 +155,7 @@ export default function MarcadorOficialPage() {
   useEnVivo(
     ['oficial_partidos'],
     perfil?.club_id ?? null,
-    () => { void cargar() },
+    () => { void cargar(true) },
     { conClub: ['oficial_partidos'] },
   )
 
@@ -169,7 +213,7 @@ export default function MarcadorOficialPage() {
           ← Volver al evento
         </button>
 
-        {loading ? (
+        {loading && !partido ? (
           <p style={{ color: '#94a3b8' }}>Cargando marcador…</p>
         ) : !partido ? (
           <p style={{ color: '#e11d48' }}>Partido no encontrado</p>

@@ -1941,6 +1941,14 @@ export interface Database {
         }
         Returns: Json
       }
+      corregir_resultado_playoff_oficial_seguro: {
+        Args: {
+          p_partido_id: string
+          p_nuevo_ganador_id: string
+          p_sets?: Json
+        }
+        Returns: Json
+      }
       configurar_cabezas_serie: {
         Args: { p_torneo_id: string; p_jugador_ids: string[] }
         Returns: Json
