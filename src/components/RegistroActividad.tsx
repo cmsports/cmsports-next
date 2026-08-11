@@ -30,7 +30,7 @@ const MAX_SEGUNDOS = 300
  */
 export default function RegistroActividad() {
   const pathname = usePathname()
-  const desde = useRef(Date.now())
+  const desde = useRef(0)
 
   useEffect(() => {
     const ruta = rutaSinParametros(pathname)

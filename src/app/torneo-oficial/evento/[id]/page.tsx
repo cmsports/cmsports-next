@@ -81,6 +81,7 @@ export default function EventoOficialPage() {
   const { id } = useParams<{ id: string }>()
   const { perfil, loading: authLoading } = usePerfil()
   const router = useRouter()
+  const clubId = perfil?.club_id
   const syncLlavesRef = useRef<string | null>(null)
 
   const [evento, setEvento] = useState<Evento | null>(null)
@@ -132,17 +133,17 @@ export default function EventoOficialPage() {
   }, [])
 
   const cargar = useCallback(async (silencioso = false) => {
-    if (!perfil?.club_id) return
+    if (!clubId) return
 
     await cargarOficialConCache(
-      `oficial:evento:${id}:${perfil.club_id}`,
+      `oficial:evento:${id}:${clubId}`,
       async (): Promise<DatosEvento> => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const db = supabase as any
 
         const { data: ev } = await db.from('oficial_eventos')
           .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id')
-          .eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
+          .eq('id', id).eq('club_id', clubId).maybeSingle()
 
         let camp: Campeonato | null = null
         if (ev?.campeonato_id) {
@@ -187,7 +188,7 @@ export default function EventoOficialPage() {
         tieneDatos: () => cargadoRef.current,
       },
     )
-  }, [id, perfil?.club_id, aplicarDatos])
+  }, [id, clubId, aplicarDatos])
 
   useEffect(() => {
     if (authLoading) return

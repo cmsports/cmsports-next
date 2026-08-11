@@ -48,6 +48,7 @@ export default function CampeonatoOficialDetallePage() {
   const { id } = useParams<{ id: string }>()
   const { perfil, loading: authLoading } = usePerfil()
   const router = useRouter()
+  const clubId = perfil?.club_id
   const [camp, setCamp] = useState<Campeonato | null>(null)
   const [eventos, setEventos] = useState<Evento[]>([])
   const [programaRows, setProgramaRows] = useState<Array<{ hora: string; mesa: number; evento: string; fase: string; partido: string; resultado?: string }>>([])
@@ -87,18 +88,18 @@ export default function CampeonatoOficialDetallePage() {
   }, [])
 
   const cargar = useCallback(async (silencioso = false) => {
-    if (!perfil?.club_id) return
+    if (!clubId) return
     if (!silencioso) setErrorMsg('')
 
     await cargarOficialConCache(
-      `oficial:camp:${id}:${perfil.club_id}`,
+      `oficial:camp:${id}:${clubId}`,
       async (): Promise<DatosCamp> => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const db = supabase as any
 
         const { data: c, error: errC } = await db.from('oficial_campeonatos')
           .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
-          .eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
+          .eq('id', id).eq('club_id', clubId).maybeSingle()
 
         if (errC) return { camp: null, eventos: [], programaRows: [], error: errC.message || 'Error al cargar el campeonato' }
         if (!c) return { camp: null, eventos: [], programaRows: [] }
@@ -157,7 +158,7 @@ export default function CampeonatoOficialDetallePage() {
         tieneDatos: () => cargadoRef.current,
       },
     )
-  }, [id, perfil?.club_id, aplicarDatos])
+  }, [id, clubId, aplicarDatos])
 
   useEffect(() => {
     if (authLoading) return

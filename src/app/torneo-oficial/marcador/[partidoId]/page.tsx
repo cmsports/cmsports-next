@@ -55,7 +55,10 @@ export default function MarcadorOficialPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const cargadoRef = useRef(false)
   const estadoRef = useRef(estado)
-  estadoRef.current = estado
+
+  useEffect(() => {
+    estadoRef.current = estado
+  }, [estado])
 
   type DatosMarcador = {
     partido: PartidoRow | null
