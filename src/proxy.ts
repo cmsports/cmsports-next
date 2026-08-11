@@ -26,7 +26,7 @@ const jugadorRoutes = ['/perfil', '/estado-cuenta', '/mi-horario']
 // '/ranking' también quedaba fuera de todas las listas y por eso no
 // redirigía al login desde el servidor. Va acá y no en adminRoutes: el
 // jugador también entra a ver su propio ranking, filtrado por categoría.
-const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada', '/ranking']
+const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada', '/ranking', '/tecnico']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'
