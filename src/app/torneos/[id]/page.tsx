@@ -1079,8 +1079,8 @@ export default function TorneoDetallePage() {
           <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16, flexWrap:'wrap' }}>
             <div style={{ flex:1, background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#3730a3' }}>
               {faseActual === 'grupos'
-                ? '💡 Bracket en paralelo: los grupos cerrados llenan sus cupos. Puedes jugar ramas listas y arrastrar cupos equivalentes aún no jugados.'
-                : '💡 Haz clic para marcar ganador. En la ronda inicial puedes arrastrar cupos equivalentes mientras su rama no esté jugada.'}
+                ? '💡 Bracket en paralelo: los grupos cerrados llenan sus cupos. Puedes jugar ramas listas y arrastrar cualquier cupo aún no jugado a cualquier llave.'
+                : '💡 Haz clic para marcar ganador. En la ronda inicial puedes arrastrar cualquier cupo a cualquier llave mientras no esté jugada.'}
             </div>
             {esAdmin && faseActual === 'grupos' && (
               <button onClick={armarBracketAhora} title="Fuerza el armado/rellenado con los grupos ya cerrados" style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>

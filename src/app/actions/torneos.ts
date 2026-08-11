@@ -1663,13 +1663,6 @@ export async function intercambiarJugadores(params: {
   if (!faseInicial || origen.fase !== faseInicial) return { error: 'Las rondas siguientes deben respetar el árbol de ganadores' }
   if (llaveFueJugada(origen) || llaveFueJugada(destino)) return { error: 'No puedes mover una llave que ya fue jugada' }
 
-  const totalIniciales = (fases || []).filter(p => p.fase === faseInicial).length
-  const mitad = Math.ceil(totalIniciales / 2)
-  if (origen.orden == null || destino.orden == null) return { error: 'El bracket no tiene un orden válido' }
-  if ((origen.orden < mitad) !== (destino.orden < mitad)) {
-    return { error: 'Solo puedes intercambiar jugadores dentro de la misma mitad del cuadro' }
-  }
-
   type Fila = typeof origen
   const leerSlot = (fila: Fila, posicion: 'jugador_a' | 'jugador_b') => posicion === 'jugador_a'
     ? { jugador: fila.jugador_a, grupoId: fila.slot_a_grupo_id, posicion: fila.slot_a_posicion }
