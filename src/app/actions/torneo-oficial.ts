@@ -56,31 +56,34 @@ async function sincronizarTercerLugarOficial(
   db: AdminDb,
   eventoId: string,
   clubId: string,
-): Promise<void> {
-  const { data: semis } = await db.from('oficial_partidos')
+): Promise<string | null> {
+  const { data: semis, error: semisErr } = await db.from('oficial_partidos')
     .select('id, orden, inscrito_a_id, inscrito_b_id, ganador_id')
     .eq('evento_id', eventoId).eq('fase', 'semis').order('orden')
-  if (!semis || semis.length < 2) return
-  if (semis.some((s: { ganador_id: string | null }) => !s.ganador_id)) return
+  if (semisErr) return 'No se pudo revisar las semifinales para 3.er lugar'
+  if (!semis || semis.length < 2) return null
+  if (semis.some((s: { ganador_id: string | null }) => !s.ganador_id)) return null
 
   const perdedores = semis
     .map((s: { inscrito_a_id: string | null; inscrito_b_id: string | null; ganador_id: string | null }) => perdedorPartido(s))
     .filter((id: string | null): id is string => !!id)
-  if (perdedores.length !== 2) return
+  if (perdedores.length !== 2) return null
 
-  const { data: existente } = await db.from('oficial_partidos')
+  const { data: existente, error: exErr } = await db.from('oficial_partidos')
     .select('id, ganador_id')
     .eq('evento_id', eventoId).eq('fase', 'tercer_lugar').maybeSingle()
-  if (existente?.ganador_id) return
+  if (exErr) return 'No se pudo consultar el partido por 3.er lugar'
+  if (existente?.ganador_id) return null
 
   if (existente) {
-    await db.from('oficial_partidos').update({
+    const { error: updErr } = await db.from('oficial_partidos').update({
       inscrito_a_id: perdedores[0],
       inscrito_b_id: perdedores[1],
       actualizado_en: new Date().toISOString(),
     }).eq('id', existente.id)
+    if (updErr) return 'No se pudo actualizar el partido por 3.er lugar'
   } else {
-    await db.from('oficial_partidos').insert({
+    const { error: insErr } = await db.from('oficial_partidos').insert({
       club_id: clubId,
       evento_id: eventoId,
       fase: 'tercer_lugar',
@@ -88,7 +91,9 @@ async function sincronizarTercerLugarOficial(
       inscrito_a_id: perdedores[0],
       inscrito_b_id: perdedores[1],
     })
+    if (insErr) return 'No se pudo crear el partido por 3.er lugar'
   }
+  return null
 }
 
 export async function crearCampeonatoOficial(params: {
@@ -371,7 +376,8 @@ export async function registrarResultadoOficial(params: {
     const errProp = await propagarGanadorPlayoffOficial(db, partido, ganadorId!, perfil.club_id!)
     if (errProp) return { error: errProp }
     if (partido.fase === 'semis') {
-      await sincronizarTercerLugarOficial(db, partido.evento_id, perfil.club_id!)
+      const errTercer = await sincronizarTercerLugarOficial(db, partido.evento_id, perfil.club_id!)
+      if (errTercer) return { error: errTercer }
     }
     await avanzarFaseEventoOficial(db, partido.evento_id, partido.fase)
     if (partido.fase === 'tercer_lugar') {
@@ -965,7 +971,7 @@ export async function corregirResultadoOficial(params: {
   const { error: rpcErr } = await supabase.rpc('corregir_resultado_playoff_oficial_seguro', {
     p_partido_id: params.partidoId,
     p_nuevo_ganador_id: params.nuevoGanadorId,
-    p_sets: sets.length ? sets : undefined,
+    p_sets: sets.length ? sets : [],
   })
   if (rpcErr) {
     const msg = rpcErr.message || ''
@@ -976,7 +982,8 @@ export async function corregirResultadoOficial(params: {
   }
 
   if (partido.fase === 'semis') {
-    await sincronizarTercerLugarOficial(db, partido.evento_id, perfil.club_id!)
+    const errTercer = await sincronizarTercerLugarOficial(db, partido.evento_id, perfil.club_id!)
+    if (errTercer) return { error: errTercer }
   }
 
   if (partido.fase === 'final' && evento?.campeonato_id) {
@@ -1091,22 +1098,9 @@ export async function intercambiarCuposOficial(params: {
     if (!faseSig) continue
     const ordenSig = Math.floor(p.orden / 2)
     const slotField = p.orden % 2 === 0 ? 'inscrito_a_id' : 'inscrito_b_id'
-
-    if (p.ganador_id) {
-      await db.from('oficial_partidos')
-        .update({ [slotField]: p.ganador_id })
-        .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig)
-      continue
-    }
-
-    const { data: siguiente } = await db.from('oficial_partidos')
-      .select('id, ganador_id')
-      .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig).maybeSingle()
-    if (siguiente && !siguiente.ganador_id) {
-      await db.from('oficial_partidos')
-        .update({ [slotField]: null })
-        .eq('id', siguiente.id)
-    }
+    await db.from('oficial_partidos')
+      .update({ [slotField]: p.ganador_id ?? null })
+      .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig)
   }
 
   return {}
