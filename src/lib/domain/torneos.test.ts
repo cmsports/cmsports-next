@@ -211,6 +211,16 @@ describe('seedingSerpenteoConClubes', () => {
     expect(g0).not.toBe(g1)
   })
 
+  it('16 jugadores en 6 grupos nunca produce un grupo de 4', () => {
+    const clubes = ['A', 'B', 'C', 'A', 'B', 'C', 'D', 'D', 'A', 'B', 'C', 'D', 'E', 'E', 'F', 'F']
+    const js = jugadoresConClub(clubes)
+    const asign = seedingSerpenteoConClubes(js, 6)
+    const counts = new Array(6).fill(0)
+    asign.forEach(a => counts[a.grupoIndex]++)
+    expect(Math.max(...counts)).toBeLessThanOrEqual(3)
+    expect(Math.min(...counts)).toBeGreaterThanOrEqual(2)
+  })
+
   it('una cabeza de serie también cuenta como miembro de su club para evitar choques', () => {
     // j0 es cabeza y de club A; j1 también es de club A. No debería caer en el grupo de j0
     // si existe alternativa.

@@ -137,11 +137,18 @@ export function seedingSerpenteoConClubes(
     if (j.club) clubesPorGrupo[i].add(j.club)
   })
 
-  // Resto: para cada jugador, el grupo con menos integrantes que todavía no
-  // tenga su club; si todos los grupos ya tienen ese club, se relaja la
-  // restricción y se usa igual el de menos integrantes.
+  const total = jugadores.length
+  const base = Math.floor(total / numGrupos)
+  const sobrantes = total % numGrupos
+  const maxPorGrupo = new Array(numGrupos).fill(base)
+  for (let i = 0; i < sobrantes; i++) maxPorGrupo[i]++
+
   for (const j of resto) {
     let candidatos = Array.from({ length: numGrupos }, (_, i) => i)
+      .filter(gi => size[gi] < maxPorGrupo[gi])
+    if (!candidatos.length) {
+      candidatos = Array.from({ length: numGrupos }, (_, i) => i)
+    }
     if (j.club) {
       const sinChoque = candidatos.filter(gi => !clubesPorGrupo[gi].has(j.club!))
       if (sinChoque.length) candidatos = sinChoque
