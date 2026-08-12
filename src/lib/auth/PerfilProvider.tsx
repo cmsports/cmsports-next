@@ -59,6 +59,18 @@ export function cargaPerfilSigueVigente(
   return generacionActual === generacionCarga && usuarioCarga === usuarioActual
 }
 
+// Solo estos eventos cambian quién está logueado. `INITIAL_SESSION` y
+// `TOKEN_REFRESHED` también llegan por onAuthStateChange, pero no deben
+// invalidar una carga en curso: si lo hacen, `loading` queda en true para
+// siempre (pantalla "Cargando..." eterna). En el celu se nota más porque
+// no hay cache de perfil en localStorage; en el PC a veces se veía igual
+// el contenido viejo del cache y parecía que "funcionaba".
+export function authEventCambiaSesion(event: string): 'sign-in' | 'sign-out' | null {
+  if (event === 'SIGNED_OUT') return 'sign-out'
+  if (event === 'SIGNED_IN') return 'sign-in'
+  return null
+}
+
 export function PerfilProvider({ children }: { children: React.ReactNode }) {
   const [perfil, setPerfil] = useState<Perfil | null>(() => leerCache())
   const [loading, setLoading] = useState(() => leerCache() === null)
@@ -116,11 +128,24 @@ export function PerfilProvider({ children }: { children: React.ReactNode }) {
       setPerfil(resultado.perfil)
       guardarCache(resultado.perfil)
       setLoading(false)
+    }).catch(() => {
+      // Sin esto un getSession colgado/roto deja "Cargando..." eterno.
+      if (activo && generacionRef.current === generacionCarga) setLoading(false)
     })
     const supabase = createClient()
+    // Solo SIGNED_IN / SIGNED_OUT invalidan o recargan. INITIAL_SESSION y
+    // TOKEN_REFRESHED también disparan onAuthStateChange: si bumpábamos la
+    // generación en todos, la carga inicial se descartaba y nadie volvía a
+    // poner loading=false. En el celu (sin cache de localStorage) eso es
+    // "Cargando..." para siempre; en el PC a menudo el cache tapaba el bug.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      generacionRef.current++
-      if (event === 'SIGNED_OUT') { setPerfil(null); guardarCache(null); clearQueryCache(); setLoading(false) }
+      if (event === 'SIGNED_OUT') {
+        generacionRef.current++
+        setPerfil(null)
+        guardarCache(null)
+        clearQueryCache()
+        setLoading(false)
+      }
       if (event === 'SIGNED_IN') void cargarPerfil()
     })
     return () => {
