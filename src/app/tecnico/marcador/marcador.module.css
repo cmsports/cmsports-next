@@ -58,11 +58,12 @@
 }
 
 .avisoCambio {
-  color: #111827 !important;
+  /* Misma trampa de dark mode: texto forzado claro → fondo oscuro ámbar */
+  color: #fef3c7 !important;
   text-align: center;
-  border: 2px solid #f59e0b;
-  background: linear-gradient(90deg, #fde68a, #fbbf24);
-  box-shadow: 0 4px 20px rgba(245, 158, 11, .3);
+  border: 2px solid #fbbf24;
+  background: linear-gradient(90deg, #78350f, #92400e);
+  box-shadow: 0 4px 20px rgba(245, 158, 11, .35);
 }
 
 /* Arena: una mesa visible, proporcionada y sin ocupar toda la pantalla. */
@@ -269,13 +270,18 @@
   border-radius: 18px;
   background: rgba(3, 7, 18, .72);
 }
+/* Fondo oscuro + texto claro: html.dark body * fuerza color claro y
+   deja ilegible cualquier banner blanco con texto oscuro. */
 .winBanner {
   padding: 17px 24px;
   border-radius: 14px;
-  color: #111827 !important;
-  background: #fff;
+  color: #f8fafc !important;
+  background: linear-gradient(145deg, #166534, #14532d);
+  border: 2px solid #4ade80;
+  box-shadow: 0 10px 32px rgba(22, 163, 74, .4);
   font-size: 19px;
   font-weight: 1000;
+  text-align: center;
 }
 
 /* Toda la información vive sobre superficies oscuras: no queda texto blanco sobre blanco. */
