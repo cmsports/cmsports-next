@@ -7,80 +7,128 @@
 
 Documento para retomar en otro chat: pegar esta ruta.
 
-## Qué se implementó
+## Estado actual del torneo simulado
 
-### Archivar / borrar (mismo patrón que internos/externos)
-- Soft-archive: `oficial_campeonatos.estado = 'archivado'` (+ eventos hijos).
-- Actions: `archivarCampeonatoOficial`, `desarchivarCampeonatoOficial`, `eliminarCampeonatoOficialDefinitivo`.
-- Listado `/torneo-oficial`: toggle **Ver archivados**, Eliminar / Desarchivar / Borrar definitivo (admin).
-- Detalle campeonato: botón **Archivar**.
-- Schema ya tenía `'archivado'` en CHECK (migración 156) → **no hace falta migración 182** para archivar.
+| Campo | Valor |
+|-------|--------|
+| Campeonato | **Simulación Manual JG — 40 inscritos** |
+| ID | `70e9ac10-1b13-4892-855e-f2cd8e9ab948` |
+| Evento | `/torneo-oficial/evento/682cc3a8-81e3-4a4c-928b-7b7ac88cf6c1` |
+| Inscritos | 40 |
+| Grupos | **13** (12×3 + 1×4) — sin grupos de 2 |
+| Partidos grupo | 42 (todos programados, 8 mesas) |
+| Resultados muestra | 14 con `ganador_id` + sets |
+| Marcador bridge | 1 partido con `marcador_id` → `tecnico_partidos` + sets sync |
+| Cuadro esperado | 26 clasificados → llave 32, **6 BYE**, 16vos |
 
-### Simulación N=40 (datos reales en Supabase)
-- Campeonato visible: **Simulación Manual JG — 40 inscritos**
-- Ruta: `/torneo-oficial` → abrir ese campeonato  
-  ID actual (si no se regeneró): `9b2f096f-3d3e-4d16-91e0-b83c717cfe1d`  
-  Evento: `/torneo-oficial/evento/d7bcbb6b-6223-482e-9966-ff871a7311f2`
-- 40 inscritos, 14 grupos, 42 partidos de grupo, programa con 8 mesas (vía script).
+## A — Marcador end-to-end
 
-### Fix de programación
-- `programarPartidosGreedyConInforme` reporta `omitidos`; UI avisa si no cupieron partidos.
+### Veredicto: **sí sirve** (con fixes)
 
-## Migraciones a pegar ANTES de usar features nuevas
+Flujo real:
 
-Orden en SQL Editor de Supabase:
+1. UI 🎯 → `abrirMarcadorOficial` crea/reusa `tecnico_partidos` y guarda `oficial_partidos.marcador_id`
+2. Bridge `/torneo-oficial/marcador/[partidoId]` → `/tecnico/marcador/{id}`
+3. Al cerrar el partido en tablet (`finPartido`) → `sincronizarResultadoDesdeMarcador`
+4. Eso escribe `ganador_id`, `sets`, `tipo_cierre`, dispara standings/llaves (`sincronizarLlavesOficial` en fase grupos) y sync de tarjetas → `oficial_sanciones`
 
-1. `supabase/migrations/179_oficial_marcador_tecnico_fk.sql` (si falta)
-2. `supabase/migrations/180_oficial_cierre_sanciones_programa.sql`  
-   (si quedó a medias: `docs/pegar-recuperar-180-oficial.sql`)
-3. `supabase/migrations/181_oficial_sorteo_numero_arbitro.sql`
+### Bugs fijados (este corte)
 
-**Archivar/borrar:** ninguna migración nueva.  
-**Seed 40 (opcional, si no usás el script):** `docs/pegar-simular-oficial-40-demo.sql`
+| Bug | Fix |
+|-----|-----|
+| Sync usaba `requireAdmin` (solo rol `admin`) y **tragaba** auth con `return {}` | `requireStaffMarcadorOficial` (admin/profesor/superadmin) + `{ error }` visible; core en `aplicarResultadoOficialDb` |
+| Profesor en tablet cerraba partido y **no** anotaba en oficial | Mismo fix de staff |
 
-## Cómo verlo en Demostración
+### Migración 179
 
-1. Pegar 179–181 si aún no están.
-2. Login en club **Demostración TDM**.
-3. Ir a **Torneo oficial** → campeonato **Simulación Manual JG — 40 inscritos**.
-4. Probar Archivar / Ver archivados / Desarchivar / Eliminar en un campeonato de prueba (no borrar la sim si la estás usando).
+Sigue siendo necesaria para el FK `marcador_id → tecnico_partidos`.  
+**Proba en Demostración OK** (vínculo + resultado escritos). Si en otro entorno falla el update de `marcador_id`, pegar `179_oficial_marcador_tecnico_fk.sql`.
 
-## Cómo re-correr el seed
-
-**Preferido (grupos + partidos + programa):**
+Prueba script:
 
 ```bash
 node scripts/simular-oficial-40.mjs --limpiar
-node scripts/simular-oficial-40.mjs
+node scripts/simular-oficial-40.mjs --resultados --probar-marcador
 ```
 
-Requiere `.env.local` con `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
+## B — Grupos según Manual JG §2.2 (CRÍTICO)
 
-**Alternativa SQL (solo campeonato + evento + 40 inscritos):** pegar  
-`docs/pegar-simular-oficial-40-demo.sql` → luego en UI **Formar grupos**.
+### Problema
 
-## Mañas encontradas
+`Math.ceil(N/3)` con N=40 → **14 grupos** → varios de **tamaño 2**. Eso viola el espíritu del manual (~3 jugadores; orden ITTF tipificado para 3 y 4).
 
-| Hallazgo | Estado |
-|----------|--------|
-| `oficial_inscritos.genero` solo admite `V`/`D` (no `varones`) — el seed fallaba | ✅ fijo en script/SQL |
-| Programación greedy omitía partidos en silencio si no cabían | ✅ reporta `omitidos` + aviso UI |
-| Dominio N=40 (14 grupos, llave 32, 4 BYE, 8 mesas) | ✅ tests `oficial-simulacion-40.test.ts` OK |
-| Bracket 32 / tablero densos en mobile | pendiente UX (ya hay scroll + cards) |
-| Excel/PDF con 14 GRP | OK a escala 40; no límite duro |
+### Regla implementada
+
+`calcularNumGruposOficial` en `src/lib/domain/oficial-ittf.ts`:
+
+- Preferir grupos de **3**
+- Usar **4** cuando el resto lo exija
+- **Evitar grupos de 2** (salvo N < 3)
+- Fórmula: `G = floor(N/3)` para N≥3 → tamaños solo en {3,4}
+
+Con **40**: 13 grupos = 12×3 + 1×4.
+
+`formarGruposOficial` usa esa función + `seedingSerpenteoConClubes` (cupos balanceados).  
+Script y modal de inscripción alineados.  
+Tests: `oficial-ittf.test.ts` + `oficial-simulacion-40.test.ts`.
+
+## C — Torneo como real (Demostración)
+
+Hecho en seed:
+
+- Grupos correctos + partidos ITTF + numeración ITTF (si col. 181)
+- Programa greedy 8 mesas (42/42)
+- 13 resultados de muestra (1 por grupo) + 1 vía bridge marcador
+- Listo para seguir cargando resultados / generar llaves desde UI
+
+Pendiente opcional en UI: cerrar resto de grupos → sync llaves → jugar cuadro.
+
+## D — Migraciones a pegar
+
+Orden en SQL Editor:
+
+1. `179_oficial_marcador_tecnico_fk.sql` (si falta)
+2. `180_oficial_cierre_sanciones_programa.sql` (o `docs/pegar-recuperar-180-oficial.sql`)
+3. `181_oficial_sorteo_numero_arbitro.sql`
+
+**No hay migración 182** en este corte (solo dominio/UI/script).
+
+## Cómo verlo
+
+1. Pegar 179–181 si aún no están.
+2. Login club **Demostración TDM**.
+3. **Torneo oficial** → **Simulación Manual JG — 40 inscritos**.
+4. Probar 🎯 en un partido abierto → tablet → cerrar → volver y ver sets/ganador.
+5. Archivar / Ver archivados sigue disponible.
+
+## Re-seed
+
+```bash
+node scripts/simular-oficial-40.mjs --limpiar
+node scripts/simular-oficial-40.mjs --resultados --probar-marcador
+```
+
+SQL solo inscritos: `docs/pegar-simular-oficial-40-demo.sql` → luego **Formar grupos** en UI (usa algoritmo nuevo → 13 grupos).
 
 ## Archivos clave
 
-- `src/app/actions/torneo-oficial.ts` — archivar/borrar + omitidos
-- `src/app/torneo-oficial/page.tsx` — listado archivados
-- `src/app/torneo-oficial/[id]/page.tsx` — Archivar
+- `src/lib/domain/oficial-ittf.ts` — `calcularNumGruposOficial`, `tamanosGruposOficial`
+- `src/app/actions/torneo-oficial.ts` — formar grupos + sync marcador staff
+- `src/components/torneo-oficial/InscripcionOficialModal.tsx` — estimado de grupos
 - `scripts/simular-oficial-40.mjs`
 - `docs/pegar-simular-oficial-40-demo.sql`
-- `src/lib/domain/oficial-simulacion-40.test.ts`
 
 ## Verificación
 
 ```bash
-npx vitest run src/lib/domain/oficial-simulacion-40.test.ts src/lib/domain/programar-oficial.test.ts
-npx tsc --noEmit
+npx vitest run src/lib/domain/oficial-ittf.test.ts src/lib/domain/oficial-simulacion-40.test.ts
+```
+
+## Cómo continuar
+
+```
+Seguir desde docs/avance-simular-oficial-40.md
+Hecho: grupos 3–4, marcador sync staff, seed 40 con resultados
+Opcional UI: terminar grupos → llaves → cuadro
+Deferred: lucky loser; catálogo árbitros; retiro desde tablet
 ```

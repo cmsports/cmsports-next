@@ -51,7 +51,11 @@ function hoyChile() {
 }
 
 function calcularNumGrupos(n) {
-  return Math.max(2, Math.ceil(n / 3))
+  // Manual JG §2.2: preferir ~3; floor(N/3) → solo tamaños 3–4 (evitar 2).
+  // Math.ceil(N/3) con N=40 daba 14 grupos y varios de 2.
+  if (n < 2) return 0
+  if (n < 3) return 1
+  return Math.floor(n / 3)
 }
 
 function nombreGrupo(indice) {
@@ -65,21 +69,48 @@ function nombreGrupo(indice) {
   return nombre
 }
 
-/** Serpiente simple + cabezas en grupos distintos (suficiente para seed). */
+/**
+ * Misma lógica que seedingSerpenteoConClubes del dominio:
+ * cabezas una por grupo; resto llenando cupos 3–4 y separando asociaciones.
+ */
 function seedingSerpenteo(jugadores, numGrupos, cabezaIds) {
   const porId = new Map(jugadores.map((j) => [j.id, j]))
-  const cabezas = [...new Set(cabezaIds)].map((id) => porId.get(id)).filter(Boolean)
-  const cabezasSet = new Set(cabezas.map((j) => j.id))
+  const idsCabeza = [...new Set(cabezaIds)].filter((id) => porId.has(id))
+  const cabezasSet = new Set(idsCabeza)
+  const cabezas = idsCabeza.map((id) => porId.get(id))
   const resto = jugadores.filter((j) => !cabezasSet.has(j.id))
+
+  const size = Array(numGrupos).fill(0)
+  const clubesPorGrupo = Array.from({ length: numGrupos }, () => new Set())
   const out = []
-  cabezas.forEach((j, i) => out.push({ jugadorId: j.id, grupoIndex: i % numGrupos }))
-  let dir = 1
-  let g = 0
+
+  cabezas.forEach((j, i) => {
+    const gi = i % numGrupos
+    out.push({ jugadorId: j.id, grupoIndex: gi })
+    size[gi]++
+    if (j.club) clubesPorGrupo[gi].add(j.club)
+  })
+
+  const base = Math.floor(jugadores.length / numGrupos)
+  const sobrantes = jugadores.length % numGrupos
+  const maxPorGrupo = Array(numGrupos).fill(base)
+  for (let i = 0; i < sobrantes; i++) maxPorGrupo[i]++
+
   for (const j of resto) {
-    out.push({ jugadorId: j.id, grupoIndex: g })
-    g += dir
-    if (g >= numGrupos) { g = numGrupos - 1; dir = -1 }
-    if (g < 0) { g = 0; dir = 1 }
+    let candidatos = Array.from({ length: numGrupos }, (_, i) => i)
+      .filter((gi) => size[gi] < maxPorGrupo[gi])
+    if (!candidatos.length) {
+      candidatos = Array.from({ length: numGrupos }, (_, i) => i)
+    }
+    if (j.club) {
+      const sinChoque = candidatos.filter((gi) => !clubesPorGrupo[gi].has(j.club))
+      if (sinChoque.length) candidatos = sinChoque
+    }
+    candidatos.sort((a, b) => size[a] - size[b] || a - b)
+    const gi = candidatos[0]
+    out.push({ jugadorId: j.id, grupoIndex: gi })
+    size[gi]++
+    if (j.club) clubesPorGrupo[gi].add(j.club)
   }
   return out
 }
@@ -264,7 +295,13 @@ async function main() {
     .map((c) => c.id)
 
   const asignaciones = seedingSerpenteo(jugadores, numGrupos, cabezas)
-  console.log(`Grupos: ${numGrupos}`)
+  const counts = Array(numGrupos).fill(0)
+  asignaciones.forEach((a) => counts[a.grupoIndex]++)
+  console.log(`Grupos: ${numGrupos} · tamaños: ${counts.sort((a, b) => b - a).join(',')}`)
+  if (counts.some((c) => c < 3)) {
+    console.error('ERROR: hay grupos < 3 (viola Manual JG §2.2)')
+    process.exit(1)
+  }
 
   const { data: grupos, error: gErr } = await supabase
     .from('oficial_grupos')
@@ -364,7 +401,152 @@ async function main() {
   console.log(`Inscritos: ${inscritos.length} · Grupos: ${numGrupos} · Partidos grupo: ${partidosDb.length}`)
   console.log(`Programados: ${asignProg.size}${omitidos ? ` · omitidos: ${omitidos}` : ''}`)
   console.log(`Cuadro esperado: ${clasificados} clasif → llave ${tamLlave}, BYEs ${tamLlave - clasificados}`)
+
+  if (process.argv.includes('--resultados')) {
+    await completarAlgunosResultados(evento.id, partidosDb, inscritos)
+  }
+  if (process.argv.includes('--probar-marcador')) {
+    await probarMarcadorSync(evento.id, partidosDb)
+  }
+
   console.log(`\nLimpiar: node scripts/simular-oficial-40.mjs --limpiar`)
+  console.log('Con resultados de muestra: ... --resultados')
+  console.log('Probar bridge marcador: ... --probar-marcador')
+}
+
+/** Cierra ~1 partido por grupo (sets bo5) para validar standings 2/1/0. */
+async function completarAlgunosResultados(eventoId, partidosDb, inscritos) {
+  const porId = new Map(inscritos.map((i) => [i.id, i]))
+  const porGrupo = new Map()
+  for (const p of partidosDb) {
+    if (!p.grupo_id) continue
+    if (!porGrupo.has(p.grupo_id)) porGrupo.set(p.grupo_id, [])
+    porGrupo.get(p.grupo_id).push(p)
+  }
+  let cerrados = 0
+  for (const [, lista] of porGrupo) {
+    const p = lista[0]
+    if (!p?.inscrito_a_id || !p?.inscrito_b_id) continue
+    const rankA = porId.get(p.inscrito_a_id)?.cabeza_numero ?? 99
+    const rankB = porId.get(p.inscrito_b_id)?.cabeza_numero ?? 99
+    // Mejor ranking (número menor / cabeza) gana; si ambos sin cabeza, A gana.
+    const ganador = (rankA || 99) <= (rankB || 99) ? p.inscrito_a_id : p.inscrito_b_id
+    const sets = ganador === p.inscrito_a_id
+      ? [[11, 5], [11, 7], [11, 4]]
+      : [[5, 11], [7, 11], [4, 11]]
+    const patch = {
+      ganador_id: ganador,
+      sets,
+      es_walkover: false,
+      actualizado_en: new Date().toISOString(),
+    }
+    // tipo_cierre solo si existe columna 180
+    const { error } = await supabase.from('oficial_partidos').update({
+      ...patch,
+      tipo_cierre: 'jugado',
+    }).eq('id', p.id).eq('club_id', CLUB_DEMO).is('ganador_id', null)
+    if (error && String(error.message || '').includes('tipo_cierre')) {
+      await supabase.from('oficial_partidos').update(patch).eq('id', p.id).eq('club_id', CLUB_DEMO)
+    } else if (error) {
+      console.warn('resultado', p.id, error.message)
+      continue
+    }
+    cerrados++
+  }
+  console.log(`Resultados de muestra: ${cerrados} partidos de grupo cerrados`)
+}
+
+/**
+ * Simula bridge marcador: crea tecnico_partidos, vincula marcador_id,
+ * aplica resultado como haría sincronizarResultadoDesdeMarcador.
+ */
+async function probarMarcadorSync(eventoId, partidosDb) {
+  const candidato = partidosDb.find((p) => p.inscrito_a_id && p.inscrito_b_id)
+  if (!candidato) {
+    console.warn('Sin partido para probar marcador')
+    return
+  }
+  // Preferir uno aún abierto
+  const { data: abiertos } = await supabase
+    .from('oficial_partidos')
+    .select('id, inscrito_a_id, inscrito_b_id, ganador_id, marcador_id')
+    .eq('evento_id', eventoId)
+    .eq('club_id', CLUB_DEMO)
+    .eq('fase', 'grupos')
+    .is('ganador_id', null)
+    .limit(5)
+  const p = (abiertos && abiertos[0]) || candidato
+
+  if (p.ganador_id) {
+    console.log('Marcador: no hay partidos abiertos; skip')
+    return
+  }
+
+  const { data: tecnico, error: tErr } = await supabase.from('tecnico_partidos').insert({
+    club_id: CLUB_DEMO,
+    titulo: 'SIM40 marcador bridge',
+    ronda: 'Grupos',
+    formato: 'bo5',
+    nombre_a: 'A',
+    nombre_b: 'B',
+    estado: 'finalizado',
+    games_a: 3,
+    games_b: 0,
+    ganador_lado: 'a',
+    historial_sets: [[11, 5], [11, 7], [11, 4]],
+  }).select('id').single()
+
+  if (tErr || !tecnico?.id) {
+    console.error('No se pudo crear tecnico_partidos:', tErr?.message)
+    console.error('(¿módulo técnico / tabla presente?)')
+    return
+  }
+
+  const { error: linkErr } = await supabase.from('oficial_partidos').update({
+    marcador_id: tecnico.id,
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', p.id).eq('club_id', CLUB_DEMO)
+
+  if (linkErr) {
+    console.error('Vínculo marcador_id falló:', linkErr.message)
+    if (String(linkErr.message || '').includes('foreign key') || String(linkErr.message || '').includes('marcador_id')) {
+      console.error('→ Pegar migración 179_oficial_marcador_tecnico_fk.sql')
+    }
+    return
+  }
+
+  const sets = [[11, 5], [11, 7], [11, 4]]
+  const { error: resErr } = await supabase.from('oficial_partidos').update({
+    ganador_id: p.inscrito_a_id,
+    sets,
+    es_walkover: false,
+    tipo_cierre: 'jugado',
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', p.id).eq('club_id', CLUB_DEMO).is('ganador_id', null)
+
+  if (resErr && String(resErr.message || '').includes('tipo_cierre')) {
+    await supabase.from('oficial_partidos').update({
+      ganador_id: p.inscrito_a_id,
+      sets,
+      es_walkover: false,
+      actualizado_en: new Date().toISOString(),
+    }).eq('id', p.id).eq('club_id', CLUB_DEMO)
+  } else if (resErr) {
+    console.error('Sync resultado falló:', resErr.message)
+    return
+  }
+
+  const { data: verif } = await supabase
+    .from('oficial_partidos')
+    .select('id, ganador_id, sets, marcador_id')
+    .eq('id', p.id)
+    .single()
+
+  console.log('Marcador bridge OK:')
+  console.log(`  oficial_partido ${verif?.id}`)
+  console.log(`  marcador_id ${verif?.marcador_id}`)
+  console.log(`  ganador_id ${verif?.ganador_id}`)
+  console.log(`  sets ${JSON.stringify(verif?.sets)}`)
 }
 
 main().catch((e) => {

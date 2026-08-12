@@ -3,6 +3,7 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 import { btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
+import { calcularNumGruposOficial } from '@/lib/domain/oficial-ittf'
 
 type Inscrito = {
   id: string
@@ -48,7 +49,8 @@ export default function InscripcionOficialModal(props: {
   )
 
   const cabezasActuales = cabezasDirty ? cabezas : cabezasDesdeDb
-  const numGruposEstimados = Math.max(1, Math.ceil(props.inscritos.length / 4))
+  // Manual JG §2.2: ~3 por grupo (3–4); no ceil(N/4) ni ceil(N/3).
+  const numGruposEstimados = calcularNumGruposOficial(props.inscritos.length)
   const numCabezas = cabezasActuales.length
 
   const inscritosOrdenados = useMemo(

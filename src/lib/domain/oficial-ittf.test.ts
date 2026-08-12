@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calcularNumGruposOficial,
   clasificarGrupoIttf,
   completarSetsRetiro,
   ganadorDesdeSets,
@@ -7,8 +8,33 @@ import {
   parsearSetsTexto,
   resolverCierrePartido,
   setsSinteticosWalkover,
+  tamanosGruposOficial,
   type PartidoOficialStats,
 } from './oficial-ittf'
+
+describe('calcularNumGruposOficial (Manual JG §2.2)', () => {
+  it('N=40 → 13 grupos (12×3 + 1×4), sin grupos de 2', () => {
+    expect(calcularNumGruposOficial(40)).toBe(13)
+    const sizes = tamanosGruposOficial(40)
+    expect(sizes).toHaveLength(13)
+    expect(sizes.every(s => s === 3 || s === 4)).toBe(true)
+    expect(sizes.filter(s => s === 4)).toHaveLength(1)
+    expect(sizes.reduce((a, b) => a + b, 0)).toBe(40)
+  })
+
+  it('resto 0/1/2 solo produce tamaños 3–4', () => {
+    for (const n of [6, 7, 8, 9, 11, 12, 39, 41, 42]) {
+      const sizes = tamanosGruposOficial(n)
+      expect(sizes.reduce((a, b) => a + b, 0)).toBe(n)
+      expect(sizes.every(s => s >= 3 && s <= 4)).toBe(true)
+    }
+  })
+
+  it('no usa Math.ceil(N/3) (que con 40 fuerza grupos de 2)', () => {
+    expect(Math.ceil(40 / 3)).toBe(14)
+    expect(calcularNumGruposOficial(40)).not.toBe(14)
+  })
+})
 
 describe('clasificarGrupoIttf', () => {
   it('otorga 2 al ganador y 1 al perdedor de partido jugado', () => {

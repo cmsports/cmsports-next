@@ -328,6 +328,34 @@ export function resolverCierrePartido(
 }
 
 /**
+ * Cantidad de grupos según Manual Juez General §2.2 (~3 jugadores).
+ *
+ * Regla: preferir grupos de 3; usar 4 cuando el resto lo exija;
+ * **evitar grupos de 2** (y de 1) salvo N < 3.
+ *
+ * Con `G = floor(N/3)` (N≥3) todos los grupos quedan en {3,4}:
+ * - N=3k   → k grupos de 3
+ * - N=3k+1 → (k-1) de 3 + 1 de 4
+ * - N=3k+2 → (k-2) de 3 + 2 de 4
+ *
+ * `Math.ceil(N/3)` es incorrecto aquí: con N=40 da 14 grupos y fuerza varios de 2.
+ */
+export function calcularNumGruposOficial(numJugadores: number): number {
+  if (numJugadores < 2) return 0
+  if (numJugadores < 3) return 1
+  return Math.floor(numJugadores / 3)
+}
+
+/** Tamaños por grupo (orden estable: primero los más grandes). Solo 3–4 si N≥3. */
+export function tamanosGruposOficial(numJugadores: number): number[] {
+  const g = calcularNumGruposOficial(numJugadores)
+  if (g <= 0) return []
+  const base = Math.floor(numJugadores / g)
+  const rem = numJugadores % g
+  return Array.from({ length: g }, (_, i) => base + (i < rem ? 1 : 0))
+}
+
+/**
  * Orden de juego ITTF / Koidan en grupos de 3 y 4 (§2.2).
  * ids[0]=posición 1, ids[1]=2, …
  * - 3: 1-3, 2-3, 1-2

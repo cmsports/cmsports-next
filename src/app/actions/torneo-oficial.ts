@@ -1,10 +1,10 @@
 'use server'
 
+import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import {
-  calcularNumGrupos,
   construirLlavesLayoutNumerado,
   nombreGrupo,
   seedingSerpenteoConClubes,
@@ -12,6 +12,7 @@ import {
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
 import {
+  calcularNumGruposOficial,
   clasificarGrupoIttf,
   gamesParaGanarFormato,
   ganadorDesdeSets,
@@ -283,7 +284,8 @@ export async function formarGruposOficial(params: { eventoId: string }): Promise
 
   if (!inscritos || inscritos.length < 4) return { error: 'Se necesitan al menos 4 inscritos' }
 
-  const numGrupos = calcularNumGrupos(inscritos.length, 3)
+  // Manual JG §2.2: ~3 por grupo; 3–4; evitar grupos de 2 (no usar Math.ceil(N/3)).
+  const numGrupos = calcularNumGruposOficial(inscritos.length)
   const cabezas = [...inscritos].filter(i => i.cabeza_numero != null)
     .sort((a, b) => (a.cabeza_numero ?? 0) - (b.cabeza_numero ?? 0))
   if (cabezas.length > numGrupos) {
@@ -358,7 +360,7 @@ export async function formarGruposOficial(params: { eventoId: string }): Promise
   return { numGrupos }
 }
 
-export async function registrarResultadoOficial(params: {
+type ParamsResultadoOficial = {
   partidoId: string
   setsTexto?: string
   sets?: SetMarcador[]
@@ -368,14 +370,24 @@ export async function registrarResultadoOficial(params: {
   tipoCierre?: TipoCierreOficial
   motivoCierre?: string
   alcanceSancion?: AlcanceSancionOficial
-}): Promise<Resultado> {
-  const { error, supabase, perfil } = await requireAdmin()
-  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
-  const db = dbOficial(supabase)
+}
 
+/** Staff que puede cerrar desde tablet (admin / profesor / superadmin con club). */
+async function requireStaffMarcadorOficial() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'No autenticado' as const, supabase: null, perfil: null }
+  const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,nombre').eq('id', user.id).single()
+  if (!perfil?.club_id || !['admin', 'profesor', 'superadmin'].includes(perfil.rol ?? '')) {
+    return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
+  }
+  return { error: null, supabase, perfil }
+}
+
+async function aplicarResultadoOficialDb(db: AdminDb, clubId: string, params: ParamsResultadoOficial): Promise<Resultado> {
   const { data: partido } = await db.from('oficial_partidos')
     .select('id, evento_id, fase, orden, grupo_id, inscrito_a_id, inscrito_b_id, ganador_id, sets')
-    .eq('id', params.partidoId).eq('club_id', perfil.club_id).maybeSingle()
+    .eq('id', params.partidoId).eq('club_id', clubId).maybeSingle()
   if (!partido) return { error: 'Partido no encontrado' }
   if (!partido.inscrito_a_id) return { error: 'Faltan jugadores' }
   if (!partido.inscrito_b_id) return { error: 'Los BYE avanzan solos; no se registran manualmente' }
@@ -435,7 +447,7 @@ export async function registrarResultadoOficial(params: {
   if (resuelto.esIncompleto && perdedorId && (alcance === 'evento' || alcance === 'campeonato')) {
     const errAlcance = await aplicarWalkoverAlcance({
       db,
-      clubId: perfil.club_id!,
+      clubId,
       partidoOrigenId: params.partidoId,
       eventoId: partido.evento_id,
       campeonatoId: evento?.campeonato_id ?? null,
@@ -448,10 +460,10 @@ export async function registrarResultadoOficial(params: {
   }
 
   if (partido.fase !== 'grupos') {
-    const errProp = await propagarGanadorPlayoffOficial(db, partido, resuelto.ganadorId, perfil.club_id!)
+    const errProp = await propagarGanadorPlayoffOficial(db, partido, resuelto.ganadorId, clubId)
     if (errProp) return { error: errProp }
     if (partido.fase === 'semis') {
-      const errTercer = await sincronizarTercerLugarOficial(db, partido.evento_id, perfil.club_id!)
+      const errTercer = await sincronizarTercerLugarOficial(db, partido.evento_id, clubId)
       if (errTercer) return { error: errTercer }
     }
     await avanzarFaseEventoOficial(db, partido.evento_id, partido.fase)
@@ -471,13 +483,19 @@ export async function registrarResultadoOficial(params: {
         subcampeon_inscrito_id: subId,
         actualizado_en: new Date().toISOString(),
       }).eq('id', partido.evento_id)
-      if (ev?.campeonato_id) await actualizarEstadoCampeonatoOficial(db, ev.campeonato_id, perfil.club_id!)
+      if (ev?.campeonato_id) await actualizarEstadoCampeonatoOficial(db, ev.campeonato_id, clubId)
     }
   } else if (evento?.fase === 'grupos') {
     await sincronizarLlavesOficial({ eventoId: partido.evento_id })
   }
 
   return {}
+}
+
+export async function registrarResultadoOficial(params: ParamsResultadoOficial): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  return aplicarResultadoOficialDb(dbOficial(supabase), perfil.club_id, params)
 }
 
 /** Aplica W.O. a partidos pendientes del sancionado en evento o campeonato. */
@@ -569,8 +587,8 @@ export async function sincronizarResultadoDesdeMarcador(params: {
   tipoCierre?: TipoCierreOficial
   motivoCierre?: string
 }): Promise<Resultado> {
-  const { error, supabase, perfil } = await requireAdmin()
-  if (error || !supabase || !perfil?.club_id) return {}
+  const { error, supabase, perfil } = await requireStaffMarcadorOficial()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
 
   const { data: oficial } = await db.from('oficial_partidos')
@@ -588,7 +606,7 @@ export async function sincronizarResultadoDesdeMarcador(params: {
   const tipoCierre = params.tipoCierre
     ?? (params.sets.length > 0 && params.motivoCierre ? 'retiro' : 'jugado')
 
-  const res = await registrarResultadoOficial({
+  const res = await aplicarResultadoOficialDb(db, perfil.club_id, {
     partidoId: oficial.id,
     sets: params.sets,
     ganadorId,

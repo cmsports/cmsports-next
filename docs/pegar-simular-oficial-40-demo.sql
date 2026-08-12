@@ -7,10 +7,13 @@
 -- Después del paste:
 --   1) Abrir /torneo-oficial en Demostración
 --   2) Entrar a "Simulación Manual JG — 40 inscritos"
---   3) Evento → Formar grupos (o re-correr: node scripts/simular-oficial-40.mjs --limpiar && node scripts/simular-oficial-40.mjs
---      para grupos + partidos + programa ya armados)
+--   3) Evento → Formar grupos
+--      Esperado Manual JG §2.2: 13 grupos (12×3 + 1×4), SIN grupos de 2.
+--      O re-correr: node scripts/simular-oficial-40.mjs --limpiar
+--                   node scripts/simular-oficial-40.mjs --resultados --probar-marcador
+--      (grupos + partidos + programa + muestra de resultados + bridge marcador)
 --
--- Requiere tablas oficial_* (156+) y preferible 180/181 pegadas.
+-- Requiere tablas oficial_* (156+) y preferible 179/180/181 pegadas.
 
 BEGIN;
 

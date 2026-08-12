@@ -5,15 +5,16 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  calcularNumGrupos,
   construirLlavesLayoutNumerado,
   nombreGrupo,
   seedingSerpenteoConClubes,
   type JugadorTorneo,
 } from './torneos'
 import {
+  calcularNumGruposOficial,
   clasificarGrupoIttf,
   ordenPartidosGrupoIttf,
+  tamanosGruposOficial,
   type PartidoOficialStats,
 } from './oficial-ittf'
 import {
@@ -51,21 +52,24 @@ function ganar(a: string, b: string): string {
 describe('Simulación oficial N=40', () => {
   const inscritos = crearInscritos(N)
   const cabezas = inscritos.slice(0, 8).map(j => j.id) // 8 semillas
-  const numGrupos = calcularNumGrupos(N, 3)
+  // Manual JG §2.2: floor(40/3)=13 → 12×3 + 1×4 (antes ceil daba 14 y grupos de 2)
+  const numGrupos = calcularNumGruposOficial(N)
   const asignaciones = seedingSerpenteoConClubes(inscritos, numGrupos, cabezas)
 
-  it('calcula 14 grupos (40/3)', () => {
-    expect(numGrupos).toBe(14)
-    expect(nombreGrupo(13)).toBe('N')
+  it('calcula 13 grupos (12 de 3 + 1 de 4), sin grupos de 2', () => {
+    expect(numGrupos).toBe(13)
+    expect(nombreGrupo(12)).toBe('M')
+    expect(tamanosGruposOficial(N).every(s => s === 3 || s === 4)).toBe(true)
   })
 
-  it('asigna 40 inscritos sin duplicados y grupos balanceados', () => {
+  it('asigna 40 inscritos sin duplicados y grupos balanceados 3–4', () => {
     expect(asignaciones).toHaveLength(N)
     expect(new Set(asignaciones.map(a => a.jugadorId)).size).toBe(N)
     const counts = Array(numGrupos).fill(0)
     asignaciones.forEach(a => counts[a.grupoIndex]++)
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1)
-    expect(Math.min(...counts)).toBeGreaterThanOrEqual(2) // sin grupos de 1
+    expect(Math.min(...counts)).toBeGreaterThanOrEqual(3)
+    expect(Math.max(...counts)).toBeLessThanOrEqual(4)
   })
 
   it('cabezas caen en grupos distintos', () => {
@@ -112,10 +116,10 @@ describe('Simulación oficial N=40', () => {
     })
   }
 
-  it('genera partidos de grupo ITTF y 28 clasificados (1°+2°)', () => {
+  it('genera partidos de grupo ITTF y 26 clasificados (1°+2°)', () => {
     expect(partidosGrupo.length).toBeGreaterThan(30)
-    expect(clasificados).toHaveLength(14)
-    expect(new Set(clasificados.flatMap(c => [c.primeroId, c.segundoId])).size).toBe(28)
+    expect(clasificados).toHaveLength(13)
+    expect(new Set(clasificados.flatMap(c => [c.primeroId, c.segundoId])).size).toBe(26)
   })
 
   const resumen = resumenSiembraCuadro(clasificados.length * 2)!
@@ -129,9 +133,9 @@ describe('Simulación oficial N=40', () => {
     Array.from({ length: numGrupos }, (_, i) => i),
   )
 
-  it('cuadro: 28 → llave 32, 4 BYE, fase 16vos', () => {
+  it('cuadro: 26 → llave 32, 6 BYE, fase 16vos', () => {
     expect(resumen.tamanoLlave).toBe(32)
-    expect(resumen.byes).toBe(4)
+    expect(resumen.byes).toBe(6)
     expect(resumen.faseInicial).toBe('16vos')
     expect(layout.matches.length).toBeGreaterThan(0)
     expect(layout.faseInicial).toBe('16vos')
