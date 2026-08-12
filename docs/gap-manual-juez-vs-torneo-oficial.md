@@ -28,6 +28,7 @@
 ## Qué ya cubre el módulo oficial
 
 - Campeonato multi-evento; inscripción; siembra; puntos ITTF; sets; BYE; llaves; programa; PDF; bridge marcador (179)
+- **Grupos §2.2:** `calcularNumGruposOficial` = `floor(N/3)` → tamaños 3–4 (evita grupos de 2; N=40 → 13 grupos)
 - **Cierre Jugado / W.O. / Retiro** con sets parciales + sintéticos 11-0 (§2.3.6–2.3.7)
 - **Motivo + alcance** (partido / evento / campeonato) en W.O./retiro
 - **Editor de programa** mesa/hora + alerta conflictos

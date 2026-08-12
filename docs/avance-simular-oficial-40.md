@@ -2,6 +2,8 @@
 
 **Repo:** `cmsports-next`  
 **Última actualización:** 2026-08-11  
+**Commit:** `dff2f87a86a5bd9a4b52d5cec77ccf9a8ca29f69` (pushed `main`)  
+**Deploy:** READY — https://cmsports-next-m93njivo4-cm-sports.vercel.app (prod alias https://www.cmsportschile.cl)  
 **Club demo:** Demostración TDM `0884dbef-798d-4ce3-9e7a-deace0b4aa95`  
 **NO tocar Buin** `ec1ef215-0ab5-43c6-abf4-fc5578b17bcc`
 
