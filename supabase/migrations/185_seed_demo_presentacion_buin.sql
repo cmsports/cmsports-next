@@ -3,6 +3,9 @@
 -- Pegar entero, una vez. Solo ese jugador, solo Buin.
 
 BEGIN;
+-- El SQL Editor a veces marca la migración y no corre el resto.
+-- Borrar la marca permite pegar de nuevo; el seed no duplica filas.
+DELETE FROM _migraciones_aplicadas WHERE nombre = '185_seed_demo_presentacion_buin';
 SELECT _migracion_nueva('185_seed_demo_presentacion_buin');
 
 DROP TABLE IF EXISTS _seed_demo_presentacion_185;
