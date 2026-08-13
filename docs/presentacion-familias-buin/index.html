@@ -3,476 +3,277 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CMsports · Reunión con las familias · Buin y Paine</title>
+  <title>CMsports · Familias Buin y Paine</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --ink: #0f1720;
-      --muted: #5a6570;
-      --hint: #8a939c;
+      --ink: #16324a;
+      --muted: #4d6478;
       --blue: #2e86c1;
-      --blue-deep: #1a5f8a;
       --navy: #0f3651;
       --orange: #f76802;
-      --orange-deep: #c9570c;
-      --card: #f4f7fa;
-      --line: #e4e9ee;
-      --ok: #16a34a;
-      --white: #ffffff;
+      --white: #fff;
+      --sky: #e7f4fd;
+      --peach: #fff0e4;
+      --mint: #e7f7ee;
+      --lilac: #eef1ff;
+      --sand: #fff8f1;
     }
-
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: #d9e2ea; color: var(--ink); font-family: Inter, system-ui, sans-serif; }
-
-    .deck {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 28px;
-      padding: 28px 16px 80px;
-    }
-
+    html, body { background: #cfe0ec; font-family: Nunito, system-ui, sans-serif; color: var(--ink); }
+    .deck { min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 28px; padding: 28px 16px 80px; }
     .slide {
       position: relative;
-      width: 1280px;
-      height: 720px;
+      width: 1280px; height: 720px;
       background: var(--white);
       overflow: hidden;
-      box-shadow: 0 18px 50px rgba(15, 23, 32, 0.16);
       flex-shrink: 0;
+      box-shadow: 0 22px 50px rgba(15, 54, 81, 0.16);
+      border-radius: 4px;
     }
-
     .slide::before {
       content: "";
-      position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 5px;
-      background: linear-gradient(90deg, var(--navy) 0%, var(--blue) 55%, var(--orange) 100%);
+      position: absolute; top: 0; left: 0; right: 0; height: 8px;
+      background: linear-gradient(90deg, var(--navy), var(--blue) 55%, var(--orange));
     }
-
-    .pad { padding: 42px 56px 52px; height: 100%; display: flex; flex-direction: column; }
-
-    .kicker {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--blue);
+    .pad { padding: 48px 64px 56px; height: 100%; display: flex; flex-direction: column; }
+    .kicker { font-size: 18px; font-weight: 800; color: var(--blue); margin-bottom: 10px; }
+    h1 { font-size: 64px; line-height: 1.05; font-weight: 900; letter-spacing: -0.035em; }
+    h2 { font-size: 52px; line-height: 1.08; font-weight: 900; letter-spacing: -0.03em; }
+    .lead { margin-top: 14px; font-size: 26px; line-height: 1.3; color: var(--muted); font-weight: 700; max-width: 900px; }
+    .footer {
+      position: absolute; left: 64px; right: 64px; bottom: 24px;
+      display: flex; justify-content: space-between; color: #8aa0b3; font-size: 16px; font-weight: 800;
+    }
+    .logo { height: 78px; width: auto; }
+    .row { display: grid; gap: 20px; margin-top: 28px; }
+    .row-2 { grid-template-columns: 1fr 1fr; }
+    .row-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .row-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+    .card {
+      border-radius: 28px;
+      padding: 28px 26px 26px;
+      min-height: 0;
+    }
+    .card .emo { font-size: 42px; line-height: 1; margin-bottom: 12px; }
+    .card h3 { font-size: 30px; font-weight: 900; line-height: 1.15; margin-bottom: 8px; }
+    .card p { font-size: 22px; font-weight: 700; color: var(--muted); line-height: 1.3; }
+    .sky { background: var(--sky); }
+    .peach { background: var(--peach); }
+    .mint { background: var(--mint); }
+    .lilac { background: var(--lilac); }
+    .sand { background: var(--sand); }
+    .num {
+      width: 48px; height: 48px; border-radius: 16px;
+      display: grid; place-items: center;
+      font-size: 24px; font-weight: 900; color: #fff; background: var(--blue);
       margin-bottom: 14px;
     }
-
-    h1 {
-      font-size: 44px;
-      line-height: 1.12;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      color: var(--ink);
-      max-width: 920px;
+    .num.or { background: var(--orange); }
+    .who {
+      display: flex; align-items: center; gap: 18px;
     }
-
-    h2 {
-      font-size: 38px;
-      line-height: 1.15;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      color: var(--ink);
+    .avatar {
+      width: 72px; height: 72px; border-radius: 24px;
+      display: grid; place-items: center;
+      font-size: 26px; font-weight: 900; color: #fff; flex-shrink: 0;
     }
-
-    .lead {
-      margin-top: 14px;
-      font-size: 20px;
-      line-height: 1.45;
-      color: var(--muted);
-      max-width: 720px;
-      font-weight: 500;
-    }
-
-    .accent {
-      width: 56px;
-      height: 4px;
-      background: var(--orange);
-      border-radius: 2px;
-      margin: 18px 0 16px;
-    }
-
-    .strong-line {
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--ink);
-      line-height: 1.4;
-      max-width: 640px;
-    }
-
-    .footer {
-      position: absolute;
-      left: 56px;
-      right: 56px;
-      bottom: 22px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-top: 12px;
-      border-top: 1px solid var(--line);
-      font-size: 12px;
-      color: var(--hint);
-      font-weight: 500;
-    }
-
-    .grid-2 { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 36px; flex: 1; min-height: 0; }
-    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
-    .grid-4 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-
-    .card {
-      background: var(--card);
-      border-radius: 16px;
-      padding: 22px 22px 20px;
-    }
-
-    .card h3 {
-      font-size: 18px;
-      font-weight: 800;
-      margin-bottom: 8px;
-      letter-spacing: -0.02em;
-    }
-
-    .card p, .body p {
-      font-size: 16px;
-      line-height: 1.45;
-      color: var(--muted);
-      font-weight: 500;
-    }
-
-    .num {
-      font-size: 15px;
-      font-weight: 800;
-      color: var(--blue);
-      letter-spacing: 0.04em;
-      margin-bottom: 4px;
-    }
-
-    .item { margin-bottom: 18px; }
-    .item h4 {
-      font-size: 20px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      margin-bottom: 4px;
-    }
-    .item p { font-size: 16px; color: var(--muted); font-weight: 500; line-height: 1.4; }
-
-    .tag {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.16em;
-      color: var(--orange-deep);
-      margin-bottom: 8px;
-    }
-
-    .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--blue);
-      border: 3px solid #d6ebf7;
-      flex-shrink: 0;
-      margin-top: 5px;
-    }
-
-    .timeline { display: flex; flex-direction: column; gap: 14px; }
-    .tl { display: grid; grid-template-columns: 12px 1fr; gap: 12px; }
-    .tl strong { display: block; font-size: 16px; font-weight: 800; margin-bottom: 2px; }
-    .tl span { font-size: 15px; color: var(--muted); font-weight: 500; line-height: 1.35; }
-
-    .check { color: var(--ok); font-weight: 800; margin-right: 8px; }
-
-    .names { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 28px; max-width: 760px; }
-    .name-card {
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 16px 18px;
-      background: #fff;
-    }
-    .name-card small { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--blue); margin-bottom: 4px; }
-    .name-card strong { display: block; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-    .name-card span { display: block; font-size: 14px; color: var(--muted); margin-top: 4px; font-weight: 500; }
-
-    .logo {
-      height: 72px;
-      width: auto;
-      object-fit: contain;
-    }
-    .logo-lg { height: 108px; }
-
-    .cover-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-    }
-
-    .meta { margin-top: auto; padding-bottom: 28px; }
-    .meta .org { font-size: 16px; font-weight: 700; color: var(--ink); }
-    .meta .year { font-size: 15px; color: var(--muted); margin-top: 4px; font-weight: 500; }
-
-    .note {
-      font-size: 15px;
-      color: var(--ink);
-      font-weight: 500;
-      line-height: 1.4;
+    .who strong { display: block; font-size: 30px; font-weight: 900; }
+    .who span { display: block; font-size: 20px; font-weight: 700; color: var(--muted); }
+    .q { font-size: 30px; font-weight: 800; line-height: 1.35; }
+    .q em { font-style: normal; color: var(--blue); }
+    .url {
       margin-top: 18px;
-    }
-
-    .link {
-      font-size: 22px;
-      font-weight: 800;
-      color: var(--blue-deep);
+      background: var(--sky);
+      border-radius: 22px;
+      padding: 18px 22px;
+      font-size: 32px;
+      font-weight: 900;
+      color: var(--navy);
       letter-spacing: -0.02em;
-      margin: 8px 0 4px;
     }
-
     .hint-nav {
-      position: fixed;
-      bottom: 16px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--ink);
-      color: #fff;
-      font-size: 13px;
-      padding: 8px 14px;
-      border-radius: 999px;
-      z-index: 20;
-      font-weight: 600;
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: var(--navy); color: #fff; font-size: 14px; font-weight: 800;
+      padding: 10px 16px; border-radius: 999px; z-index: 20;
     }
-
     @media print {
       html, body { background: #fff; }
       .deck { padding: 0; gap: 0; display: block; }
-      .slide {
-        box-shadow: none;
-        page-break-after: always;
-        break-after: page;
-      }
+      .slide { box-shadow: none; border-radius: 0; page-break-after: always; break-after: page; }
       .slide:last-child { page-break-after: auto; }
       .hint-nav { display: none; }
     }
-
     @page { size: 13.333in 7.5in; margin: 0; }
   </style>
 </head>
 <body>
   <div class="deck">
 
-    <!-- 1 PORTADA -->
-    <section class="slide" id="s1">
+    <section class="slide">
       <div class="pad">
-        <div class="cover-top">
-          <img class="logo" src="logo-cmsports.png" alt="CMsports" />
+        <img class="logo" src="logo-cmsports.png" alt="CMsports" />
+        <div style="margin-top: 56px;">
+          <div class="kicker">Reunión con las familias</div>
+          <h1>La app del club.<br>Un hábito de todos.</h1>
         </div>
-        <div style="margin-top: 48px;">
-          <div class="kicker">Reunión con las familias · Carácter informativo</div>
-          <h1>CMsports en el club:<br>un hábito de todos</h1>
-          <p class="lead">Quiénes somos, para qué nos juntamos hoy y cómo la plataforma se vuelve parte del día a día de cada jugador y su familia.</p>
-          <div class="names">
-            <div class="name-card">
-              <small>Presenta</small>
-              <strong>Luis Felipe Muñoz</strong>
-              <span>Fundador · CMsports</span>
+        <div class="row row-2" style="margin-top: auto; padding-bottom: 36px; max-width: 920px;">
+          <div class="card sky">
+            <div class="who">
+              <div class="avatar" style="background:#2e86c1;">LM</div>
+              <div><strong>Luis Felipe Muñoz</strong><span>CMsports</span></div>
             </div>
-            <div class="name-card">
-              <small>Presenta</small>
-              <strong>Benjamín Cárdenas</strong>
-              <span>Fundador · CMsports</span>
+          </div>
+          <div class="card peach">
+            <div class="who">
+              <div class="avatar" style="background:#f76802;">BC</div>
+              <div><strong>Benjamín Cárdenas</strong><span>CMsports</span></div>
             </div>
           </div>
         </div>
-        <div class="meta">
-          <div class="org">Asociación TDM Buin y Paine</div>
-          <div class="year">Agosto 2026 · CMESTUDIOS Limitada · Chile</div>
-        </div>
+        <div class="footer"><span>Asociación TDM Buin y Paine</span><span>01</span></div>
       </div>
     </section>
 
-    <!-- 2 QUIÉNES SOMOS -->
-    <section class="slide" id="s2">
+    <section class="slide">
       <div class="pad">
-        <div class="kicker">01 · Quiénes somos</div>
-        <h2>Qué es CMsports</h2>
-        <div class="grid-2" style="margin-top: 22px;">
-          <div>
-            <p class="lead" style="margin-top:0; max-width:none;">Empresa chilena de tecnología deportiva. Hacemos el software de gestión del club: plantel, asistencia, cobros, horarios y comunicación.</p>
-            <div class="accent"></div>
-            <p class="strong-line">Nos encargamos de la administración, para que el club se concentre en formar deportistas y las familias sepan, con claridad, lo que les corresponde.</p>
-            <p class="note">Hoy ya opera en la Asociación TDM Buin y Paine. Esta reunión es para que jugadores y apoderados la usen con la misma naturalidad que el grupo de WhatsApp.</p>
+        <div class="kicker">Quiénes somos</div>
+        <h2>Hacemos la app<br>de este club.</h2>
+        <div class="row row-4" style="flex:1; margin-top: 36px; padding-bottom: 36px;">
+          <div class="card sky">
+            <div class="emo">✅</div>
+            <h3>Asistencia</h3>
+            <p>Si viniste o no.</p>
           </div>
-          <div class="card">
-            <div class="tag">El equipo de hoy</div>
-            <h3>Con ustedes esta noche</h3>
-            <div style="margin-top: 16px; display:flex; flex-direction:column; gap:14px;">
-              <div>
-                <strong style="font-size:20px;">Luis Felipe Muñoz</strong>
-                <span style="display:block; color:var(--muted); font-size:15px; margin-top:3px; font-weight:500;">Fundador de CMsports</span>
-              </div>
-              <div style="height:1px; background:var(--line);"></div>
-              <div>
-                <strong style="font-size:20px;">Benjamín Cárdenas</strong>
-                <span style="display:block; color:var(--muted); font-size:15px; margin-top:3px; font-weight:500;">Fundador de CMsports</span>
-              </div>
-            </div>
-            <p style="margin-top:18px; font-size:15px; color:var(--muted); font-weight:500; line-height:1.4;">Cualquier duda de acceso, clave o datos de la ficha, se resuelve con el club. Nosotros estamos para mostrarles cómo usarla.</p>
+          <div class="card peach">
+            <div class="emo">🗓️</div>
+            <h3>Horario</h3>
+            <p>Día, hora y sede.</p>
+          </div>
+          <div class="card mint">
+            <div class="emo">📝</div>
+            <h3>Feedback</h3>
+            <p>Lo que vio el profe.</p>
+          </div>
+          <div class="card lilac">
+            <div class="emo">💳</div>
+            <h3>La cuota</h3>
+            <p>Si está pagada.</p>
           </div>
         </div>
-        <div class="footer"><span>CMsports · Gestión deportiva profesional</span><span>02</span></div>
+        <div class="footer"><span>CMsports</span><span>02</span></div>
       </div>
     </section>
 
-    <!-- 3 OBJETIVO -->
-    <section class="slide" id="s3">
+    <section class="slide">
       <div class="pad">
-        <div class="kicker">02 · Objetivo de la reunión</div>
-        <h2>Para qué estamos acá</h2>
-        <div class="grid-2" style="margin-top: 22px;">
-          <div>
-            <div class="item">
-              <div class="num">01</div>
-              <h4>Que cada familia sepa entrar.</h4>
-              <p>Con el link del club y el RUT del jugador aparece el correo de acceso. Se entra con ese correo y la clave.</p>
-            </div>
-            <div class="item">
-              <div class="num">02</div>
-              <h4>Que sepa qué mirar, no las doce pantallas.</h4>
-              <p>Después de entrenar: asistencia, feedback del profe y estado de la mensualidad. El domingo: el horario de la semana.</p>
-            </div>
-            <div class="item" style="margin-bottom:0;">
-              <div class="num">03</div>
-              <h4>Que CMsports quede en el celular.</h4>
-              <p>Como un ícono en el inicio, para no depender del link del grupo cada vez que hace falta.</p>
-            </div>
+        <div class="kicker">Objetivo de hoy</div>
+        <h2>Tres cosas. Nada más.</h2>
+        <div class="row row-3" style="flex: 1; margin-top: 32px; padding-bottom: 36px;">
+          <div class="card sky">
+            <div class="num">1</div>
+            <h3>Saber entrar</h3>
+            <p>Link del club + RUT. Sale el correo. Entras con eso.</p>
           </div>
-          <div class="card">
-            <div class="tag">Esta reunión no es</div>
-            <h3>Tres cosas que dejamos fuera</h3>
-            <div class="timeline" style="margin-top:16px;">
-              <div class="tl"><div class="dot"></div><div><strong>No es un reclamo de cuotas</strong><span>La plata se ve en Estado de cuenta, con calma, en casa.</span></div></div>
-              <div class="tl"><div class="dot"></div><div><strong>No es una clase de informática</strong><span>Si alguien no entra hoy, se anota y se resuelve uno a uno.</span></div></div>
-              <div class="tl"><div class="dot"></div><div><strong>No reemplaza al profe</strong><span>La lista, el comentario y el horario los carga el club. Acá les llegan a ustedes.</span></div></div>
-            </div>
+          <div class="card peach">
+            <div class="num or">2</div>
+            <h3>Saber qué mirar</h3>
+            <p>Asistencia, feedback y la cuota. No las 12 pantallas.</p>
+          </div>
+          <div class="card mint">
+            <div class="num" style="background:#16a34a;">3</div>
+            <h3>Dejarla en el celu</h3>
+            <p>Un ícono en el inicio. Como WhatsApp.</p>
           </div>
         </div>
-        <div class="footer"><span>CMsports · Gestión deportiva profesional</span><span>03</span></div>
+        <div class="footer"><span>CMsports</span><span>03</span></div>
       </div>
     </section>
 
-    <!-- 4 HÁBITO -->
-    <section class="slide" id="s4">
+    <section class="slide">
       <div class="pad">
-        <div class="kicker">03 · El hábito</div>
-        <h2>Cómo esperamos que se use</h2>
-        <div class="grid-2" style="margin-top: 22px;">
-          <div>
-            <p class="lead" style="margin-top:0; max-width:none;">No pedimos entrar todos los días. Pedimos un momento fijo, corto, el día que se entrena.</p>
-            <div class="accent"></div>
-            <div class="item">
-              <h4>El día de entrenamiento</h4>
-              <p>En la casa o en el camino: abrir CMsports. Tres preguntas: ¿me marcaron hoy? ¿hay un feedback nuevo? ¿la mensualidad está al día?</p>
-            </div>
-            <div class="item" style="margin-bottom:0;">
-              <h4>El domingo a la noche</h4>
-              <p>Veinte segundos en Mi horario: sede, día y hora de la semana que viene. Si el profe cambió el grupo, se ve solo.</p>
-            </div>
+        <div class="kicker">El hábito</div>
+        <h2>Ábrela el día que entrenas.</h2>
+        <p class="lead">No todos los días. Ese día, tres preguntas:</p>
+        <div class="card sand" style="margin-top: 28px;">
+          <p class="q">¿Me marcaron hoy?<br>¿Hay un <em>feedback</em> nuevo?<br>¿La cuota está al día?</p>
+        </div>
+        <div class="row row-2" style="margin-top: 20px; padding-bottom: 36px;">
+          <div class="card mint">
+            <div class="emo">✅</div>
+            <h3>El profe pasa lista</h3>
+            <p>Tú no te marcas. Si falta un día, avísale.</p>
           </div>
-          <div class="card">
-            <div class="tag">Día a día</div>
-            <h3>Así se ordena el club</h3>
-            <div class="timeline" style="margin-top:16px;">
-              <div class="tl"><div class="dot"></div><div><strong>En cancha</strong><span>El profesor pasa lista. El jugador no se marca solo.</span></div></div>
-              <div class="tl"><div class="dot"></div><div><strong>Después</strong><span>La familia ve asistencia, comentario del profe y la cuota.</span></div></div>
-              <div class="tl"><div class="dot"></div><div><strong>Cuando hay que pagar</strong><span>Estado de cuenta y Central de Pago, con el WhatsApp del club.</span></div></div>
-              <div class="tl"><div class="dot"></div><div><strong>En la semana</strong><span>Horario propio. Calendario para torneos y feriados.</span></div></div>
-            </div>
+          <div class="card lilac">
+            <div class="emo">🗓️</div>
+            <h3>El domingo, 20 segundos</h3>
+            <p>Mi horario: a qué hora y en qué sede.</p>
           </div>
         </div>
-        <div class="footer"><span>CMsports · Gestión deportiva profesional</span><span>04</span></div>
+        <div class="footer"><span>CMsports</span><span>04</span></div>
       </div>
     </section>
 
-    <!-- 5 PERSONALIZACIÓN -->
-    <section class="slide" id="s5">
+    <section class="slide">
       <div class="pad">
-        <div class="kicker">04 · Lo que gana cada uno</div>
-        <h2>Más personalización por jugador</h2>
-        <p class="lead" style="max-width:900px;">Mientras más se use, más personal se pone: el feedback es suyo, el horario es suyo, la cuenta es de la familia. WhatsApp sigue para avisos del club.</p>
-        <div class="grid-4" style="margin-top: 22px;">
-          <div class="card">
-            <div class="tag">Entrenamiento</div>
-            <h3>Feedbacks del profe</h3>
-            <p>Comentarios sobre <strong style="color:var(--ink);">su</strong> mesa, no un mensaje al grupo. Se leen el mismo día o al día siguiente. Si no se leen, se escriben al aire.</p>
+        <div class="kicker">Lo que gana cada uno</div>
+        <h2>Más personal. Lo tuyo.</h2>
+        <div class="row row-4" style="flex: 1; margin-top: 28px; padding-bottom: 36px;">
+          <div class="card sky">
+            <div class="emo">📝</div>
+            <h3>Feedback</h3>
+            <p>El profe te escribe a ti. No al grupo.</p>
           </div>
-          <div class="card">
-            <div class="tag">Información relevante</div>
-            <h3>Lo suyo, en un solo lugar</h3>
-            <p>Si vino, cuántas sesiones lleva en el mes, a qué hora le toca y cómo va en su categoría. Cada uno ve su ficha, no la del compañero.</p>
+          <div class="card peach">
+            <div class="emo">🏓</div>
+            <h3>Tu info</h3>
+            <p>Si viniste, tu horario, tu ranking.</p>
           </div>
-          <div class="card">
-            <div class="tag">Familia</div>
-            <h3>Contacto y emergencia</h3>
-            <p>Teléfono y contacto de emergencia en la ficha del club, para saber a quién llamar. Si falta o cambió, avísenle al profesor para dejarlo al día.</p>
+          <div class="card mint">
+            <div class="emo">📞</div>
+            <h3>Emergencia</h3>
+            <p>A quién llamar. Si cambió, dile al profe.</p>
           </div>
-          <div class="card">
-            <div class="tag">Plata</div>
-            <h3>Control financiero</h3>
-            <p>Mensualidad del mes, historial, clases extra y matrícula. Cada familia ve solo lo suyo. Para pagar: Central de Pago y el comprobante por WhatsApp.</p>
+          <div class="card lilac">
+            <div class="emo">💳</div>
+            <h3>La cuota</h3>
+            <p>Tu cuenta. Nadie más la ve.</p>
           </div>
         </div>
-        <div class="footer"><span>CMsports · Gestión deportiva profesional</span><span>05</span></div>
+        <div class="footer"><span>CMsports</span><span>05</span></div>
       </div>
     </section>
 
-    <!-- 6 CIERRE -->
-    <section class="slide" id="s6">
+    <section class="slide">
       <div class="pad">
-        <div class="kicker">Próximo paso</div>
-        <h2>Tres cosas para llevarse hoy</h2>
-        <div class="grid-2" style="margin-top: 20px;">
-          <div>
-            <div class="item">
-              <div class="num">01</div>
-              <h4>Entrar con el link del club y el RUT.</h4>
-              <p>La página muestra el correo de acceso. Se entra con ese correo y la clave. Si no recuerdan el correo: el mismo link y el RUT.</p>
-              <div class="link">cmsportschile.cl/mi-acceso/buin</div>
-            </div>
-            <div class="item">
-              <div class="num">02</div>
-              <h4>Dejar el ícono en el inicio del celular.</h4>
-              <p>iPhone, en Safari: Compartir → Agregar a inicio. Android, en Chrome: menú → Instalar aplicación. El nombre: CMsports.</p>
-            </div>
-            <div class="item" style="margin-bottom:0;">
-              <div class="num">03</div>
-              <h4>El próximo entrenamiento, en casa.</h4>
-              <p>Perfil: ¿me marcaron? ¿hay feedback? ¿la cuota está al día?</p>
-            </div>
+        <div class="kicker">Para llevarse hoy</div>
+        <h2>Entra. Déjala. Mírala.</h2>
+        <div class="url">cmsportschile.cl/mi-acceso/buin</div>
+        <div class="row row-3" style="margin-top: 22px; padding-bottom: 36px;">
+          <div class="card sky">
+            <div class="num">1</div>
+            <h3>RUT en el link</h3>
+            <p>Te muestra el correo. Entras con ese correo.</p>
           </div>
-          <div class="card">
-            <div class="tag">Estamos para acompañarlos</div>
-            <h3>CMsports</h3>
-            <p style="margin-bottom:16px;">Cualquier problema de acceso se resuelve con el club. Anoten nombre y RUT al final; no hace falta resolverlo en público.</p>
-            <div style="height:1px; background:var(--line); margin: 4px 0 16px;"></div>
-            <div style="font-size:13px; font-weight:800; letter-spacing:0.12em; text-transform:uppercase; color:var(--blue); margin-bottom:10px;">Fundadores</div>
-            <strong style="display:block; font-size:18px;">Luis Felipe Muñoz</strong>
-            <span style="display:block; color:var(--muted); font-size:14px; margin:2px 0 12px; font-weight:500;">Fundador · CMsports</span>
-            <strong style="display:block; font-size:18px;">Benjamín Cárdenas</strong>
-            <span style="display:block; color:var(--muted); font-size:14px; margin:2px 0 0; font-weight:500;">Fundador · CMsports</span>
+          <div class="card peach">
+            <div class="num or">2</div>
+            <h3>Ícono en el inicio</h3>
+            <p>Safari o Chrome: agregar al inicio.</p>
+          </div>
+          <div class="card mint">
+            <div class="num" style="background:#16a34a;">3</div>
+            <h3>Próximo entreno</h3>
+            <p>¿Me marcaron? ¿Feedback? ¿Cuota?</p>
           </div>
         </div>
-        <div class="footer"><span>CMsports · Gestión deportiva profesional</span><span>06</span></div>
+        <div class="footer"><span>Luis Felipe Muñoz · Benjamín Cárdenas</span><span>06</span></div>
       </div>
     </section>
 
   </div>
-
-  <div class="hint-nav">Clic o flechas para pasar · F para pantalla completa · P para imprimir PDF</div>
-
+  <div class="hint-nav">Flechas para pasar · F pantalla completa</div>
   <script>
     const slides = [...document.querySelectorAll('.slide')]
     let i = 0
@@ -488,7 +289,6 @@
       if (e.key === 'f' || e.key === 'F') document.documentElement.requestFullscreen?.()
       if (e.key === 'p' || e.key === 'P') window.print()
     })
-    slides.forEach((s, idx) => s.addEventListener('click', () => go(idx + 1)))
   </script>
 </body>
 </html>
