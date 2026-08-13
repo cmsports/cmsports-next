@@ -42,14 +42,14 @@ export async function listarCredenciales(): Promise<{ error?: string; filas?: Fi
 
   // Cualquier usuario sin espejo, o con un espejo cuyo login de tipo email ya
   // no coincide con `perfiles.email` (la fuente de verdad de auth), se
-  // sincroniza en el acto: se le arma `nombreapellido123` y se aplica en auth.
+  // sincroniza en el acto.
   //
-  // El segundo caso es el real: un reset —individual o masivo— cambia el
-  // email/clave en auth y en `perfiles`, pero si el upsert del espejo falla
-  // (se cuenta como "fallida" y sigue, no reintenta), el reporte queda
-  // mostrando el login viejo para siempre —el admin ve datos que nunca más
-  // van a servir para entrar, sin ninguna forma de notarlo salvo que alguien
-  // se queje de que no puede loguearse.
+  // Sin espejo: se genera `nombreapellido123` y se aplica en auth. Es el alta
+  // silenciosa para que el admin nunca vea "no la tenemos".
+  //
+  // Con espejo y login viejo: SOLO se corrige `usuario_login`. Regenerar la
+  // contraseña por abrir el informe era el caso Colomba: el admin bajaba el
+  // PDF y le cambiaba la clave a todo el que tenía el correo desfasado.
   //
   // No se compara para tipo celular/rut: ahí el login que se muestra es el
   // número o RUT crudo, no el email sintético que vive en `perfiles.email`
@@ -72,11 +72,20 @@ export async function listarCredenciales(): Promise<{ error?: string; filas?: Fi
   const faltantes = (perfiles ?? []).filter(p => p.rol !== 'superadmin' && desalineado(p))
   const nuevosEspejos: Array<{ usuario_id: string; club_id: string; password_plano: string; usuario_login: string; tipo_login: string; actualizado_en: string }> = []
   for (const p of faltantes as { id: string; nombre: string; email: string | null; jugador_id: string | null }[]) {
+    const jug = p.jugador_id ? jugPorIdSync.get(p.jugador_id) : null
+    const { login, tipo } = usuarioLoginDe({ email: p.email, telefono: jug?.telefono ?? null, rut: jug?.rut ?? null })
+    const esp = espejoPorId.get(p.id)
+    if (esp) {
+      await admin.from('credencial_visible').update({
+        usuario_login: login, tipo_login: tipo,
+      }).eq('usuario_id', p.id)
+      esp.usuario_login = login
+      esp.tipo_login = tipo
+      continue
+    }
     const password = generarPasswordInicial(p.nombre)
     const { error: upErr } = await admin.auth.admin.updateUserById(p.id, { password })
     if (upErr) continue
-    const jug = p.jugador_id ? jugPorIdSync.get(p.jugador_id) : null
-    const { login, tipo } = usuarioLoginDe({ email: p.email, telefono: jug?.telefono ?? null, rut: jug?.rut ?? null })
     nuevosEspejos.push({
       usuario_id: p.id, club_id: clubId!, password_plano: password,
       usuario_login: login, tipo_login: tipo, actualizado_en: new Date().toISOString(),

@@ -23,7 +23,7 @@ nombres y RUT coinciden, los 116 tienen cuenta y clave espejada.
 
 Incoherencias (no bloquean el lookup, pero conviene saberlas):
 
-1. RUT con dígito verificador inválido — **corregidos en 182** (hay que pegarla):
+1. RUT con dígito verificador inválido — **corregidos en 182** (ya pegada):
    - Alan máximo Imilqueo Altamirano `23208195-7` → `23208195-3`
    - Randy Leonardo Rivera Morales `2405786-K` → `2405786-0`
    - VICTOR SOTO `17168286-1` → `17168286-K`
@@ -43,24 +43,28 @@ Incoherencias (no bloquean el lookup, pero conviene saberlas):
 6. **Ficha = credencial = Auth** en los 116 (migración `184` + corrida en
    producción). Ningún correo de login repetido.
 
-## Qué falta — pegar migraciones
+## PDF admin y cambios de perfil (2026-08-13, tarde)
 
-En el SQL Editor de Supabase, en este orden:
+Los 116 de Buin ya estaban alineados. El hueco era hacia adelante:
 
-1. `supabase/migrations/180_consultar_credencial_por_rut.sql` (el link)
-2. `supabase/migrations/182_corregir_rut_dv_buin.sql` (los 3 RUT)
-3. `supabase/migrations/183_alinear_login_con_auth_buin.sql` (login = correo real)
+1. Abrir/descargar Credenciales **regeneraba la clave** si el espejo tenía un
+   login distinto de `perfiles.email` (caso Colomba). Ahora, si ya hay espejo,
+   solo corrige `usuario_login`. La clave nueva se genera solo si no hay espejo.
+2. Cambiar la contraseña en Configuración iba directo a Auth y **no tocaba el
+   espejo**. `/crear-contrasena` sí usaba `cambiarPasswordPropia`. Configuración
+   ahora también.
+3. Cambiar el correo en el perfil actualizaba Auth, `perfiles` y `jugadores`,
+   **no** `credencial_visible.usuario_login`. `sincronizarEmailAuth` ahora
+   alinea el espejo siempre, aunque Auth no haya cambiado. Lo usa el perfil,
+   editar ficha y el reset.
 
-Ojo: hay **otro** archivo `180_oficial_cierre_sanciones_programa.sql`. El del
-link es el que se llama `180_consultar_credencial_por_rut`.
-
-Después, en producción el link queda:
-
-`https://www.cmsportschile.cl/mi-acceso/ec1ef215-0ab5-43c6-abf4-fc5578b17bcc`
-
-Desde Credenciales (admin): **Copiar link** o **Copiar mensaje para WhatsApp**.
+Migraciones: no hay SQL nuevo. Las 180/182/183/184 ya están pegadas.
 
 ## Cómo seguir
 
-Pegá este archivo en el chat nuevo. Si la 180 ya está aplicada, el siguiente
-paso es desplegar y probar el link con un RUT de prueba.
+Link público:
+
+`https://www.cmsportschile.cl/mi-acceso/ec1ef215-0ab5-43c6-abf4-fc5578b17bcc`
+
+RUT de prueba: Colomba `19313040-2`, Agustín Calderón `24171067-K`.
+

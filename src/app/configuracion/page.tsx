@@ -8,6 +8,7 @@ import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import { actualizarClubAction } from '@/app/actions/club'
+import { cambiarPasswordPropia } from '@/app/actions/credenciales'
 import { subirLogoAction, actualizarInfoClubAction } from '@/app/actions/redes-sociales'
 import { Building2, Upload, Loader2, Check, Lock } from 'lucide-react'
 import GestionProfesores from '@/components/configuracion/GestionProfesores'
@@ -127,10 +128,12 @@ export default function ConfiguracionPage() {
       return
     }
 
-    const { error: updateError } = await supabase.auth.updateUser({ password: pwNueva })
+    // Pasa por la server action, no por `updateUser` directo: si no, Auth
+    // cambia y el PDF / lookup por RUT siguen mostrando la clave vieja.
+    const res = await cambiarPasswordPropia(pwNueva)
     setCambiandoPw(false)
-    if (updateError) {
-      setPwError(updateError.message)
+    if (res.error) {
+      setPwError(res.error)
       return
     }
 

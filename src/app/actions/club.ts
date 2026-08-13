@@ -3,6 +3,7 @@
 import { requireAdminClub } from '@/lib/auth/require'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sincronizarEmailAuth } from '@/lib/credencialesAuth'
 import { z } from 'zod'
 
 export async function actualizarClubAction(datos: {
@@ -93,6 +94,14 @@ export async function actualizarPerfilPersonalAction(input: z.infer<typeof perfi
       return { error: 'No se pudieron actualizar los datos del profesor; se restauraron los datos anteriores' }
     }
   }
+
+  // El reporte y el lookup por RUT leen `credencial_visible`, no `perfiles`.
+  // Sin esto, cambiar el correo en Configuración deja un usuario viejo en el PDF.
+  await sincronizarEmailAuth(admin, user.id, email, {
+    email,
+    telefono: data.telefono || null,
+    rut: data.rut || null,
+  })
 
   return { success: true }
 }

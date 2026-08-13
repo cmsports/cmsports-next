@@ -95,3 +95,24 @@ describe('crearAccesoJugador deja las tres puntas alineadas', () => {
     expect(cuerpo).toContain('usuario: login')
   })
 })
+
+describe('cambiar correo o clave desde el perfil actualiza el informe', () => {
+  it('Configuración no toca Auth directo: pasa por la action que espeja la clave', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const pagina = readFileSync(resolve(process.cwd(), 'src/app/configuracion/page.tsx'), 'utf8')
+    expect(pagina).toContain('cambiarPasswordPropia')
+    expect(pagina).not.toMatch(/updateUser\(\{\s*password/)
+  })
+
+  it('sincronizarEmailAuth alinea el espejo aunque Auth no haya cambiado', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const src = readFileSync(resolve(process.cwd(), 'src/lib/credencialesAuth.ts'), 'utf8')
+    expect(src).toContain("from('credencial_visible')")
+    expect(src).toContain('usuario_login')
+    // Si Auth ya coincidía, igual se escribe el login visible. El `return null`
+    // temprano era el hueco: el PDF se quedaba con el correo viejo.
+    expect(src).not.toMatch(/if \(!nuevo \|\| nuevo === emailActual\) return null/)
+  })
+})

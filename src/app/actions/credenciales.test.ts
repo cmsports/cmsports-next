@@ -67,20 +67,22 @@ describe('listarCredenciales', () => {
   // El caso real: un reset (individual o masivo) cambió el email en auth y en
   // `perfiles`, pero el espejo se quedó con el login viejo —pasa cuando el
   // upsert del espejo falla y el reset no reintenta—. El reporte tiene que
-  // notar que el login ya no sirve y regenerarlo, no repetir el dato viejo
-  // para siempre.
-  it('si el espejo quedó con un login que ya no coincide con perfiles.email, lo regenera', async () => {
+  // notar que el login ya no sirve y corregirlo, no repetir el dato viejo
+  // para siempre. La clave espejada se conserva: abrir el PDF no es un reset.
+  it('si el espejo quedó con un login que ya no coincide con perfiles.email, corrige el usuario y no toca la clave', async () => {
     const perfiles = {
       select: () => ({ eq: () => ({ order: () => ({ order: () => Promise.resolve({ data: [
         { id: 'u-j1', nombre: 'Agustin', email: 'agustin@cmsports.cl', rol: 'jugador', jugador_id: 'j1' },
       ] }) }) }) }),
     }
+    const updateEq = vi.fn().mockResolvedValue({ error: null })
     const espejos = {
       select: () => ({ eq: () => Promise.resolve({ data: [
         // Login viejo, de antes del reset: ya no coincide con perfiles.email.
         { usuario_id: 'u-j1', password_plano: 'agustin1234', usuario_login: 'franciscoqhuelquen@gmail.com', tipo_login: 'email', actualizado_en: '2026-07-30' },
       ] }) }),
       upsert: vi.fn().mockResolvedValue({ error: null }),
+      update: vi.fn().mockReturnValue({ eq: updateEq }),
     }
     const jugadores = {
       select: () => ({ eq: () => Promise.resolve({ data: [{ id: 'j1', telefono: null, rut: null }] }) }),
@@ -93,13 +95,13 @@ describe('listarCredenciales', () => {
 
     const r = await listarCredenciales()
 
-    // El login se regenera a partir de perfiles.email (la fuente de verdad de
-    // auth), no del que quedó guardado en el espejo.
-    expect(r.filas![0]).toMatchObject({ usuarioLogin: 'agustin@cmsports.cl', passwordPlano: 'agustin123' })
-    expect(updateUserById).toHaveBeenCalledWith('u-j1', { password: 'agustin123' })
-    expect(espejos.upsert).toHaveBeenCalledWith([expect.objectContaining({
-      usuario_id: 'u-j1', usuario_login: 'agustin@cmsports.cl', tipo_login: 'email',
-    })])
+    // El login se alinea a perfiles.email; la clave que ya tenía el espejo se
+    // deja: el admin no pidió un reset, solo abrió el informe.
+    expect(r.filas![0]).toMatchObject({ usuarioLogin: 'agustin@cmsports.cl', passwordPlano: 'agustin1234' })
+    expect(updateUserById).not.toHaveBeenCalled()
+    expect(espejos.upsert).not.toHaveBeenCalled()
+    expect(espejos.update).toHaveBeenCalledWith({ usuario_login: 'agustin@cmsports.cl', tipo_login: 'email' })
+    expect(updateEq).toHaveBeenCalledWith('usuario_id', 'u-j1')
   })
 
   it('sin admin no lista nada', async () => {
@@ -133,7 +135,10 @@ describe('resetearCredencial', () => {
         if (tabla === 'jugadores') return {
           select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { email: null, telefono: '958730364', rut: null } }) }) }),
         }
-        if (tabla === 'credencial_visible') return { upsert: espejoUpsert }
+        if (tabla === 'credencial_visible') return {
+          upsert: espejoUpsert,
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        }
         return {}
       }),
     })
@@ -169,7 +174,10 @@ describe('resetearCredencial', () => {
         if (tabla === 'jugadores') return {
           select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { email: 'franciscoqhuelquen@gmail.com', telefono: '958730364', rut: null } }) }) }),
         }
-        if (tabla === 'credencial_visible') return { upsert: espejoUpsert }
+        if (tabla === 'credencial_visible') return {
+          upsert: espejoUpsert,
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        }
         return {}
       }),
     })
@@ -247,7 +255,10 @@ describe('resetearTodasLasCredenciales', () => {
           }),
           update: perfilesUpdate,
         }
-        if (tabla === 'credencial_visible') return { upsert: espejoUpsert }
+        if (tabla === 'credencial_visible') return {
+          upsert: espejoUpsert,
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        }
         return {}
       }),
     })

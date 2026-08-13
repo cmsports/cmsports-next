@@ -74,9 +74,13 @@ describe('acciones de configuración del club', () => {
     const perfilesEq = vi.fn().mockResolvedValue({ error: null })
     const jugadoresClubEq = vi.fn().mockResolvedValue({ error: null })
     const jugadoresIdEq = vi.fn(() => ({ eq: jugadoresClubEq }))
-    const adminFrom = vi.fn((tabla: string) => ({
-      update: vi.fn(() => ({ eq: tabla === 'jugadores' ? jugadoresIdEq : perfilesEq })),
-    }))
+    const credencialEq = vi.fn().mockResolvedValue({ error: null })
+    const credencialUpdate = vi.fn(() => ({ eq: credencialEq }))
+    const adminFrom = vi.fn((tabla: string) => {
+      if (tabla === 'jugadores') return { update: vi.fn(() => ({ eq: jugadoresIdEq })) }
+      if (tabla === 'credencial_visible') return { update: credencialUpdate }
+      return { update: vi.fn(() => ({ eq: perfilesEq })) }
+    })
     const updateUserById = vi.fn().mockResolvedValue({ error: null })
     mocks.createAdminClient.mockReturnValue({
       auth: { admin: { updateUserById } },
@@ -91,5 +95,11 @@ describe('acciones de configuración del club', () => {
     expect(updateUserById).toHaveBeenCalledWith('user-1', expect.objectContaining({ email: 'nuevo@example.com' }))
     expect(jugadoresIdEq).toHaveBeenCalledWith('id', 'jugador-1')
     expect(jugadoresClubEq).toHaveBeenCalledWith('club_id', 'club-1')
+    // El PDF y el lookup por RUT leen el espejo: sin esto el correo nuevo
+    // queda en Auth y el informe sigue mostrando el viejo.
+    expect(credencialUpdate).toHaveBeenCalledWith({
+      usuario_login: 'nuevo@example.com', tipo_login: 'email',
+    })
+    expect(credencialEq).toHaveBeenCalledWith('usuario_id', 'user-1')
   })
 })
