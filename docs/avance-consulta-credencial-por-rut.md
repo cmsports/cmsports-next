@@ -1,0 +1,59 @@
+# Consulta de credencial por RUT (Buin)
+
+Documento para retomar en otro chat. Última actualización: 2026-08-13.
+
+## Qué hicimos
+
+Link público (como el de inscripción): el jugador pone su RUT y ve **su**
+usuario y contraseña. El admin copia el link desde Credenciales y lo manda
+al grupo, en vez del PDF con todas las claves.
+
+## Archivos
+
+- Página: `src/app/mi-acceso/[clubId]/page.tsx`
+- RPC: `supabase/migrations/180_consultar_credencial_por_rut.sql`
+- Botón en admin: `src/app/credenciales/page.tsx`
+- Proxy: `src/proxy.ts` (deja pasar `/mi-acceso/...` sin sesión)
+- Cruce Excel/PDF/base: hecho el 2026-08-13
+
+## Match Excel + PDF + base (Buin)
+
+Excel 116 = PDF 116 jugadores = DB 116 internos. Nadie faltó, nadie de más,
+nombres y RUT coinciden, los 116 tienen cuenta y clave espejada.
+
+Incoherencias (no bloquean el lookup, pero conviene saberlas):
+
+1. RUT con dígito verificador inválido — **corregidos en 182** (hay que pegarla):
+   - Alan máximo Imilqueo Altamirano `23208195-7` → `23208195-3`
+   - Randy Leonardo Rivera Morales `2405786-K` → `2405786-0`
+   - VICTOR SOTO `17168286-1` → `17168286-K`
+2. Usuario sintético de RUT (entran con ese correo, no con un gmail):
+   - Alberto HONORES → `72016734@rut.cmsports.cl`
+   - MATIAS RIVAS → `237483561@rut.cmsports.cl`
+3. Typo en el correo de login (así está en la cuenta):
+   - Juan pablo Parra Gonzalez → `vivian.andregon@gmail.co` (falta la m)
+   - Victor Rodríguez Mardones → `vsrm0196@gmail.con` (n en vez de m)
+4. Tres jugadores bloqueados (igual pueden consultar la clave; al entrar
+   van a `/cuenta-bloqueada`): Alberto Andrés Vergara Sánchez, Alvaro Moya
+   Obregón, Juan Carlos Kania Kuhl.
+
+## Qué falta — pegar migraciones
+
+En el SQL Editor de Supabase, en este orden:
+
+1. `supabase/migrations/180_consultar_credencial_por_rut.sql` (el link)
+2. `supabase/migrations/182_corregir_rut_dv_buin.sql` (los 3 RUT)
+
+Ojo: hay **otro** archivo `180_oficial_cierre_sanciones_programa.sql`. El del
+link es el que se llama `180_consultar_credencial_por_rut`.
+
+Después, en producción el link queda:
+
+`https://www.cmsportschile.cl/mi-acceso/ec1ef215-0ab5-43c6-abf4-fc5578b17bcc`
+
+Desde Credenciales (admin): **Copiar link** o **Copiar mensaje para WhatsApp**.
+
+## Cómo seguir
+
+Pegá este archivo en el chat nuevo. Si la 180 ya está aplicada, el siguiente
+paso es desplegar y probar el link con un RUT de prueba.

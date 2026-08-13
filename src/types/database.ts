@@ -1988,6 +1988,16 @@ export interface Database {
         Args: { p_club_id: string; p_rut: string; p_token: string }
         Returns: { jugador_nombre: string; hora_registro: string; ya_registrada: boolean }[]
       }
+      consultar_credencial_por_rut: {
+        Args: { p_club_id: string; p_rut: string }
+        Returns: {
+          encontrado: boolean
+          limitado: boolean
+          nombre: string | null
+          usuario_login: string | null
+          password_plano: string | null
+        }[]
+      }
       autorizar_kiosco_asistencia: {
         Args: { p_club_id: string; p_token: string }
         Returns: { club_nombre: string; kiosco_nombre: string }[]

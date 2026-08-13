@@ -41,7 +41,10 @@ export async function proxy(request: NextRequest) {
 
   // El marcador por club usa un RPC seguro y debe funcionar en el dispositivo
   // de recepción sin iniciar sesión. La portada /asistencia sigue protegida.
-  if (/^\/asistencia\/[^/]+$/.test(pathname)) {
+  // /mi-acceso es el link del grupo: el jugador pone su RUT y ve su clave,
+  // sin sesión. Si lo metemos en publicRoutes, un admin logueado no podría
+  // abrir el link para probarlo — lo rebotaría al dashboard.
+  if (/^\/asistencia\/[^/]+$/.test(pathname) || /^\/mi-acceso\/[^/]+$/.test(pathname)) {
     return supabaseResponse
   }
 

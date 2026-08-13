@@ -10,7 +10,7 @@ import { listarCredenciales, resetearCredencial, resetearTodasLasCredenciales, t
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
-import { ArrowLeft, Check, Copy, Download, KeyRound, Loader2, RefreshCw, Eye, EyeOff, MessageCircle } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Download, KeyRound, Link2, Loader2, RefreshCw, Eye, EyeOff, MessageCircle } from 'lucide-react'
 
 const modalOverlay = { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }
 const modalCard = { background: '#fff', borderRadius: 16, padding: 24, width: '100%', maxWidth: 460, maxHeight: '86vh', overflowY: 'auto' as const, boxShadow: '0 20px 60px rgba(15,23,42,0.25)' } as const
@@ -150,6 +150,7 @@ export default function CredencialesPage() {
   const [verAdmins, setVerAdmins] = useState(true)
   const [verProfes, setVerProfes] = useState(true)
   const [verJugadores, setVerJugadores] = useState(true)
+  const [copiadoGrupo, setCopiadoGrupo] = useState<'link' | 'mensaje' | null>(null)
 
   const cargar = useCallback(async () => {
     const r = await listarCredenciales()
@@ -196,6 +197,18 @@ export default function CredencialesPage() {
   async function copiar(texto: string, key: string) {
     const ok = await copiarTexto(texto)
     if (ok) { setCopiado(key); setTimeout(() => setCopiado(null), 1600) }
+  }
+
+  const pathGrupo = perfil?.club_id ? `/mi-acceso/${perfil.club_id}` : ''
+
+  async function copiarGrupo(cual: 'link' | 'mensaje') {
+    if (!pathGrupo) return
+    const url = `${window.location.origin}${pathGrupo}`
+    const texto = cual === 'link'
+      ? url
+      : `Hola! Para entrar a CmSports, abrí este link, poné tu RUT y vas a ver tu usuario y tu contraseña (solo los tuyos):\n\n${url}\n\nDespués ingresá en ${window.location.origin}/login\n\nNo compartas tus datos.`
+    const ok = await copiarTexto(texto)
+    if (ok) { setCopiadoGrupo(cual); setTimeout(() => setCopiadoGrupo(null), 1600) }
   }
 
   async function resetear(usuarioId: string, nombre: string) {
@@ -353,6 +366,28 @@ export default function CredencialesPage() {
           {error}
         </div>
       )}
+
+      <div style={{ background: C.skyL, border: `1px solid ${C.skyD}`, borderRadius: 10, padding: '12px 14px', fontSize: 13, color: C.skyD, marginBottom: 12, lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Link2 size={15} /> Link para el grupo
+        </div>
+        En vez de mandar el PDF o la lista de claves, copiá este link. Cada jugador pone su RUT y ve solo sus datos.
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          <button onClick={() => void copiarGrupo('link')}
+            style={{ background: C.sky, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {copiadoGrupo === 'link' ? <><Check size={13} /> Copiado</> : <><Copy size={13} /> Copiar link</>}
+          </button>
+          <button onClick={() => void copiarGrupo('mensaje')}
+            style={{ background: '#25D366', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {copiadoGrupo === 'mensaje' ? <><Check size={13} /> Copiado</> : <><MessageCircle size={13} /> Copiar mensaje para WhatsApp</>}
+          </button>
+        </div>
+        {pathGrupo && (
+          <div style={{ marginTop: 8, fontSize: 11, color: C.muted, wordBreak: 'break-all', fontFamily: 'ui-monospace, monospace' }}>
+            {pathGrupo}
+          </div>
+        )}
+      </div>
 
       <div style={{ background: C.orangeL, border: `1px solid ${C.orangeD}`, borderRadius: 10, padding: '10px 14px', fontSize: 12, color: C.orangeD, marginBottom: 12, lineHeight: 1.5 }}>
         <strong>Documento confidencial.</strong> Contiene las contraseñas de acceso al sistema. No compartir públicamente. Recomendale a cada persona cambiarla después del primer ingreso.
