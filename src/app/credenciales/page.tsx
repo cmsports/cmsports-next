@@ -8,6 +8,7 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import { copiarTexto } from '@/lib/clipboard'
 import { listarCredenciales, resetearCredencial, resetearTodasLasCredenciales, type FilaCredencial } from '@/app/actions/credenciales'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { pathMiAcceso } from '@/lib/domain/clubSlug'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { ArrowLeft, Check, Copy, Download, KeyRound, Link2, Loader2, RefreshCw, Eye, EyeOff, MessageCircle } from 'lucide-react'
@@ -199,7 +200,7 @@ export default function CredencialesPage() {
     if (ok) { setCopiado(key); setTimeout(() => setCopiado(null), 1600) }
   }
 
-  const pathGrupo = perfil?.club_id ? `/mi-acceso/${perfil.club_id}` : ''
+  const pathGrupo = perfil?.club_id ? pathMiAcceso(perfil.club_id) : ''
 
   async function copiarGrupo(cual: 'link' | 'mensaje') {
     if (!pathGrupo) return

@@ -36,7 +36,12 @@ describe('consulta pública de credencial por RUT', () => {
   })
 
   it('el admin puede copiar el link del grupo desde Credenciales', () => {
-    expect(credenciales).toContain('/mi-acceso/')
+    expect(credenciales).toContain('pathMiAcceso')
     expect(credenciales).toContain('Copiar mensaje para WhatsApp')
+  })
+
+  it('el UUID de Buin se acorta a /mi-acceso/buin', () => {
+    expect(proxy).toContain('pathCanonicoMiAcceso')
+    expect(pagina).toContain('clubIdDesdeParametro')
   })
 })

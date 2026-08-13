@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { copiarTexto } from '@/lib/clipboard'
+import { clubIdDesdeParametro } from '@/lib/domain/clubSlug'
 import { Check, Copy } from 'lucide-react'
 
 const supabase = createClient()
@@ -25,7 +26,7 @@ function formatRutPuntos(value: string): string {
 
 export default function MiAccesoPage() {
   const params = useParams()
-  const clubId = params.clubId as string
+  const clubId = clubIdDesdeParametro(params.clubId as string)
   const [rut, setRut] = useState('')
   const [estado, setEstado] = useState<Estado>('idle')
   const [mensaje, setMensaje] = useState('')
@@ -37,6 +38,11 @@ export default function MiAccesoPage() {
     if (limpio.length < 8) {
       setEstado('error')
       setMensaje('Ingresá tu RUT completo')
+      return
+    }
+    if (!clubId) {
+      setEstado('error')
+      setMensaje(mensajeGenerico)
       return
     }
     setEstado('loading')

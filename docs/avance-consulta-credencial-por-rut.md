@@ -8,6 +8,8 @@ Link público (como el de inscripción): el jugador pone su RUT y ve **su**
 usuario y contraseña. El admin copia el link desde Credenciales y lo manda
 al grupo, en vez del PDF con todas las claves.
 
+URL corta: `/mi-acceso/buin`. El UUID viejo redirige ahí.
+
 ## Archivos
 
 - Página: `src/app/mi-acceso/[clubId]/page.tsx`
@@ -64,7 +66,8 @@ Migraciones: no hay SQL nuevo. Las 180/182/183/184 ya están pegadas.
 
 Link público:
 
-`https://www.cmsportschile.cl/mi-acceso/ec1ef215-0ab5-43c6-abf4-fc5578b17bcc`
+`https://www.cmsportschile.cl/mi-acceso/buin`
 
-RUT de prueba: Colomba `19313040-2`, Agustín Calderón `24171067-K`.
+El UUID viejo redirige a ese. RUT de prueba: Colomba `19313040-2`,
+Agustín Calderón `24171067-K`.
 

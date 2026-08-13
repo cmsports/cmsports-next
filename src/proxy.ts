@@ -4,6 +4,7 @@ import { updateSession } from '@/lib/supabase/proxy'
 import { MODULOS_CLUB, puedeAccederModulo } from '@/lib/auth/modulos-rutas'
 import { esAdminDeClub } from '@/lib/auth/roles'
 import { esCuentaDemo } from '@/lib/auth/demo'
+import { pathCanonicoMiAcceso } from '@/lib/domain/clubSlug'
 import type { Database } from '@/types/database'
 
 const publicRoutes = ['/login', '/registro']
@@ -44,6 +45,15 @@ export async function proxy(request: NextRequest) {
   // /mi-acceso es el link del grupo: el jugador pone su RUT y ve su clave,
   // sin sesión. Si lo metemos en publicRoutes, un admin logueado no podría
   // abrir el link para probarlo — lo rebotaría al dashboard.
+  //
+  // El UUID de Buin redirige a /mi-acceso/buin: el link viejo no se rompe y
+  // el que se copia al grupo se puede leer en voz alta.
+  const miAccesoCorto = pathCanonicoMiAcceso(pathname)
+  if (miAccesoCorto && miAccesoCorto !== pathname) {
+    const url = request.nextUrl.clone()
+    url.pathname = miAccesoCorto
+    return NextResponse.redirect(url)
+  }
   if (/^\/asistencia\/[^/]+$/.test(pathname) || /^\/mi-acceso\/[^/]+$/.test(pathname)) {
     return supabaseResponse
   }
