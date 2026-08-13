@@ -36,6 +36,12 @@ Incoherencias (no bloquean el lookup, pero conviene saberlas):
 4. Tres jugadores bloqueados (igual pueden consultar la clave; al entrar
    van a `/cuenta-bloqueada`): Alberto Andrés Vergara Sánchez, Alvaro Moya
    Obregón, Juan Carlos Kania Kuhl.
+5. **8 logins desalineados** (el lookup mostraba `@cmsports.cl` y Auth tenía
+   el gmail/hotmail de la ficha). Corregidos en producción el 2026-08-13;
+   migración `183_alinear_login_con_auth_buin.sql`. Incluye a Colomba
+   (`nayareth2901@gmail.com`, único).
+6. **Ficha = credencial = Auth** en los 116 (migración `184` + corrida en
+   producción). Ningún correo de login repetido.
 
 ## Qué falta — pegar migraciones
 
@@ -43,6 +49,7 @@ En el SQL Editor de Supabase, en este orden:
 
 1. `supabase/migrations/180_consultar_credencial_por_rut.sql` (el link)
 2. `supabase/migrations/182_corregir_rut_dv_buin.sql` (los 3 RUT)
+3. `supabase/migrations/183_alinear_login_con_auth_buin.sql` (login = correo real)
 
 Ojo: hay **otro** archivo `180_oficial_cierre_sanciones_programa.sql`. El del
 link es el que se llama `180_consultar_credencial_por_rut`.
