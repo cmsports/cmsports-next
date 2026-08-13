@@ -4,7 +4,7 @@ Guion para llevar la reunión. Duración sugerida: **25–30 minutos** + pregunt
 Público: jugadores (y papás si hay). Un celular con la cuenta demo ya abierta basta.
 
 **Diapos para proyectar (6, 16:9, mismo formato que la institucional):**
-`docs/presentacion-familias-buin/CMsports-familias-Buin.pdf`
+`docs/CMsports-familias-Buin.pdf`
 
 Para presentar en el navegador: abrir `docs/presentacion-familias-buin/index.html` en Chrome,
 tecla **F** pantalla completa, flechas para pasar.
