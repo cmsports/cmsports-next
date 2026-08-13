@@ -1,8 +1,13 @@
 # Presentación CmSports — chicos de Buin
 
 Guion para llevar la reunión. Duración sugerida: **25–30 minutos** + preguntas.
-Público: jugadores (y papás si hay). Un celular con la cuenta demo ya abierta basta;
-proyector es extra, no obligatorio.
+Público: jugadores (y papás si hay). Un celular con la cuenta demo ya abierta basta.
+
+**Diapos para proyectar (6, 16:9, mismo formato que la institucional):**
+`docs/presentacion-familias-buin/CMsports-familias-Buin.pdf`
+
+Para presentar en el navegador: abrir `docs/presentacion-familias-buin/index.html` en Chrome,
+tecla **F** pantalla completa, flechas para pasar.
 
 Hoy es 13 de agosto de 2026. La demo tiene asistencias hasta **ayer** a propósito:
 hoy aparece “todavía sin asistencia” para que se vea cómo queda cuando el profe
