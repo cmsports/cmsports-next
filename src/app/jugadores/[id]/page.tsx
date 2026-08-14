@@ -12,7 +12,7 @@ import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador, registra
 import { credencialDelJugador } from '@/app/actions/credenciales'
 import { formatRut } from '@/lib/rut'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento, categoriaLabel } from '@/lib/domain/categoriaBuin'
-import { calcularRankingInterno } from '@/lib/domain/rankingInterno'
+import { calcularRankingInterno, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
 import { sumarDias } from '@/lib/domain/panoramaAsistencia'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
@@ -598,17 +598,18 @@ export default function JugadorDetallePage() {
         (supabase as any).from('clubes').select('ranking_reiniciado_en').eq('id', jugador.club_id).single(),
       ])
 
-      // Los torneos que cuentan para el ranking, con los mismos tres criterios
-      // que usa la pantalla de Ranking. Si acá difieren, la ficha y el Ranking
+      // Los torneos que cuentan para el ranking, con los mismos criterios que
+      // usa la pantalla de Ranking. Si acá difieren, la ficha y el Ranking
       // muestran dos números distintos para lo mismo:
-      //  · `neq('cancelado')` y no `eq('finalizado')` — un torneo en curso ya
-      //    tiene partidos jugados y esos puntos ya se ven en el Ranking.
+      //  · solo terminados — los puntos salen del puesto final, y un torneo en
+      //    curso todavía no tiene puestos.
       //  · `ranking_reiniciado_en` — sin esto, "Reiniciar Ranking" limpiaba el
       //    Ranking y dejaba la ficha arrastrando los torneos viejos.
       const reinicioTs = (club as { ranking_reiniciado_en?: string } | null)?.ranking_reiniciado_en ?? null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let queryTorneos = (supabase as any).from('torneos')
-        .select('id,categoria').eq('club_id', jugador.club_id).eq('tipo', 'interno').neq('estado', 'cancelado')
+        .select('id,categoria').eq('club_id', jugador.club_id).eq('tipo', 'interno')
+        .in('estado', ['finalizado', 'archivado'])
       if (reinicioTs) queryTorneos = queryTorneos.gt('creado_en', reinicioTs)
       const { data: torneosClub } = await queryTorneos
 
@@ -652,17 +653,23 @@ export default function JugadorDetallePage() {
           (torneosClub || []).map((t: any) => [t.id as string, (t.categoria as string) || 'Sin categoría']),
         )
 
-        const partidosPorCategoria: Record<string, { jugador_a: string; jugador_b: string; ganador: string; fase: string | null }[]> = {}
+        // Por categoría, y adentro por torneo: el puesto —y con él los puntos—
+        // solo existe dentro de un torneo.
+        const porCategoria: Record<string, Map<string, TorneoConPartidos>> = {}
         for (const p of (todosPartidos || [])) {
-          const cat = categoriaDelTorneo.get(p.torneo_id as string) ?? 'Sin categoría'
-          ;(partidosPorCategoria[cat] ??= []).push({
+          const torneoId = p.torneo_id as string
+          const cat = categoriaDelTorneo.get(torneoId) ?? 'Sin categoría'
+          const porTorneo = (porCategoria[cat] ??= new Map())
+          const acc = porTorneo.get(torneoId) ?? { torneoId, partidos: [] }
+          acc.partidos.push({
             jugador_a: p.jugador_a as string, jugador_b: p.jugador_b as string,
             ganador: p.ganador as string, fase: p.fase as string | null,
           })
+          porTorneo.set(torneoId, acc)
         }
 
-        for (const [categoria, partidos] of Object.entries(partidosPorCategoria)) {
-          const tabla = calcularRankingInterno(partidos, () => '')
+        for (const [categoria, porTorneo] of Object.entries(porCategoria)) {
+          const tabla = calcularRankingInterno([...porTorneo.values()], () => '')
           const suya = tabla.find(f => f.jugadorId === jugadorId)
           if (!suya) continue
           rankingsPorCategoria.push({

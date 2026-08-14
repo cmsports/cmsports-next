@@ -1,20 +1,4 @@
-import { CONFIG, type FaseOrden } from '@/lib/config'
-
-/**
- * Puntos por ganar un partido en cada fase: se duplican por ronda superada
- * (2 elevado a la posición de la fase en `FASES_ORDEN`). Avanzar profundo en
- * un cuadro grande pesa mucho más que ganar el primer partido, y a diferencia
- * de "3 pts fijos por victoria" los totales dejan de caer todos en múltiplos
- * de 3 — que era la principal causa de los empates.
- *
- * Una fase que no está en la lista (dato viejo o corrupto) da el mínimo, no
- * cero: perder la fase no debería borrar la victoria.
- */
-export function puntosPorFase(fase: string | null): number {
-  const idx = fase ? CONFIG.FASES_ORDEN.indexOf(fase as FaseOrden) : -1
-  if (idx < 0) return 1
-  return 2 ** idx
-}
+import { puestosDelTorneo, type PartidoDelTorneo } from './puntajeTorneo'
 
 export type ResultadoJugadorRanking = {
   jugadorId: string
@@ -23,50 +7,75 @@ export type ResultadoJugadorRanking = {
   victorias: number
   derrotas: number
   jugados: number
+  /** En cuántos torneos de la categoría participó. */
+  torneos: number
   /** Puesto compartido: dos jugadores con los mismos puntos tienen el mismo
    *  rank (1, 1, 3 — no 1, 2, 3). Ver `calcularRankingInterno`. */
   rank: number
 }
 
+/** Los partidos de un torneo, juntos: el puesto solo existe dentro de uno. */
+export type TorneoConPartidos = {
+  torneoId: string
+  partidos: PartidoDelTorneo[]
+}
+
 /**
- * Arma el ranking a partir de partidos ya jugados (con ganador definido).
- * Nadie pierde puntos por perder, así que jugar más torneos nunca puede bajar
- * la posición de nadie — solo suma oportunidades.
+ * Arma el ranking acumulado de una categoría, torneo por torneo.
  *
- * El puesto se calcula solo por puntos: compartirlos es correcto cuando dos
- * jugadores empataron de verdad, y mostrarlo como "1°, 2°" sin serlo sería
- * inventar un orden que los datos no tienen. Victorias y derrotas ordenan la
- * lista dentro del empate de puntos, para que la tabla tenga un orden estable
- * de mostrar, pero no cambian el número de puesto.
+ * Los puntos salen del PUESTO en que terminó cada jugador en cada torneo —100
+ * el campeón, 90 el finalista, y así hasta 9 por quedarse en la fase de
+ * grupos—, y se suman entre todos los torneos de la categoría. Antes se pagaba
+ * por partido ganado, duplicando por ronda; el club pasó a premiar dónde
+ * terminaste, no cuántos partidos ganaste para llegar ahí.
+ *
+ * Por eso hay que recibir los partidos AGRUPADOS POR TORNEO: el puesto no
+ * existe fuera de uno. Con todos los partidos mezclados no se puede saber
+ * quién ganó qué final.
+ *
+ * Nadie pierde puntos por perder, así que jugar más torneos nunca baja a nadie
+ * — solo suma oportunidades.
+ *
+ * El puesto en la tabla se calcula solo por puntos: compartirlos es correcto
+ * cuando dos jugadores empataron de verdad, y mostrarlo como "1°, 2°" sin
+ * serlo sería inventar un orden que los datos no tienen. Victorias y derrotas
+ * ordenan la lista dentro del empate, pero no cambian el número de puesto.
  */
 export function calcularRankingInterno(
-  partidos: Array<{ jugador_a: string; jugador_b: string; ganador: string; fase: string | null }>,
+  torneos: TorneoConPartidos[],
   nombreDe: (jugadorId: string) => string,
 ): ResultadoJugadorRanking[] {
-  const stats = new Map<string, { pts: number; victorias: number; derrotas: number }>()
+  const stats = new Map<string, { pts: number; victorias: number; derrotas: number; torneos: number }>()
   const fila = (id: string) => {
     let s = stats.get(id)
-    if (!s) { s = { pts: 0, victorias: 0, derrotas: 0 }; stats.set(id, s) }
+    if (!s) { s = { pts: 0, victorias: 0, derrotas: 0, torneos: 0 }; stats.set(id, s) }
     return s
   }
 
-  for (const p of partidos) {
-    const a = fila(p.jugador_a)
-    const b = fila(p.jugador_b)
-    if (p.ganador === p.jugador_a) {
-      a.victorias++; b.derrotas++
-      a.pts += puntosPorFase(p.fase)
-    } else if (p.ganador === p.jugador_b) {
-      b.victorias++; a.derrotas++
-      b.pts += puntosPorFase(p.fase)
+  for (const torneo of torneos) {
+    // Victorias y derrotas siguen contándose partido a partido: ya no dan
+    // puntos, pero son lo que se muestra en la tabla y lo que desempata.
+    for (const p of torneo.partidos) {
+      if (!p.jugador_b || !p.ganador) continue
+      const a = fila(p.jugador_a)
+      const b = fila(p.jugador_b)
+      if (p.ganador === p.jugador_a) { a.victorias++; b.derrotas++ }
+      else if (p.ganador === p.jugador_b) { b.victorias++; a.derrotas++ }
+      // ganador que no calza con ninguno de los dos: partido mal cargado, se
+      // ignora en vez de reventar el ranking de todos los demás.
     }
-    // ganador que no calza con ninguno de los dos: partido mal cargado, se
-    // ignora en vez de reventar el ranking de todos los demás.
+
+    for (const [jugadorId, puesto] of puestosDelTorneo(torneo.partidos)) {
+      const s = fila(jugadorId)
+      s.pts += puesto.puntos
+      s.torneos++
+    }
   }
 
   const filas: ResultadoJugadorRanking[] = [...stats.entries()].map(([jugadorId, s]) => ({
     jugadorId, nombre: nombreDe(jugadorId),
-    pts: s.pts, victorias: s.victorias, derrotas: s.derrotas, jugados: s.victorias + s.derrotas,
+    pts: s.pts, victorias: s.victorias, derrotas: s.derrotas,
+    jugados: s.victorias + s.derrotas, torneos: s.torneos,
     rank: 0,
   }))
 

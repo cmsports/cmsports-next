@@ -7,8 +7,8 @@ import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
-import { calcularRankingInterno, puntosPorFase, type ResultadoJugadorRanking } from '@/lib/domain/rankingInterno'
-import { CONFIG } from '@/lib/config'
+import { calcularRankingInterno, type ResultadoJugadorRanking, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
+import { TABLA_PUNTAJE } from '@/lib/domain/puntajeTorneo'
 import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
@@ -69,13 +69,19 @@ export default function RankingPage() {
     const reinicioTs = club?.ranking_reiniciado_en ?? null
     setReiniciadoEn(reinicioTs)
 
-    // 2. Torneos internos del club
+    // 2. Torneos internos del club, solo los que ya terminaron.
+    //
+    // Los puntos salen del puesto final, y un torneo en curso todavía no tiene
+    // puestos: el que hoy va en semifinales puede terminar campeón o cuarto.
+    // Se cuentan cuando se cierran. Los archivados también: archivar es
+    // guardar un torneo terminado, no anularlo — si no, archivar le movería el
+    // ranking a todo el mundo.
     let queryT = sb
       .from('torneos')
       .select('id,categoria,genero,fecha_fin,creado_en')
       .eq('club_id', perfil.club_id)
       .eq('tipo', 'interno')
-      .neq('estado', 'cancelado')
+      .in('estado', ['finalizado', 'archivado'])
     if (reinicioTs) queryT = queryT.gt('creado_en', reinicioTs)
 
     const { data: torneos } = await queryT
@@ -93,8 +99,11 @@ export default function RankingPage() {
     const torneoIds = Object.keys(torneoMeta)
 
     // 4. Todos los partidos de esos torneos (1 sola query). `fase` es lo que
-    // deja pesar distinto una victoria en semifinal que una en la primera
-    // ronda de un cuadro grande — ver calcularRankingInterno.
+    // dice hasta dónde llegó cada jugador, y de ahí sale su puesto y sus
+    // puntos — ver calcularRankingInterno.
+    //
+    // Los de la fase de grupos entran igual: son los que dicen quién participó
+    // sin clasificar a la llave, que también suma.
     const { data: partidos } = await supabase
       .from('torneo_partidos')
       .select('torneo_id,jugador_a,jugador_b,ganador,fase')
@@ -104,18 +113,22 @@ export default function RankingPage() {
 
     if (!partidos?.length) { setRankingPorCategoria([]); setLoading(false); return }
 
-    // 5. Agrupar los partidos por categoria + genero
-    const partidosPorClave: Record<string, { jugador_a: string; jugador_b: string; ganador: string; fase: string | null }[]> = {}
+    // 5. Agrupar por categoria + genero, y adentro por torneo: el puesto solo
+    // existe dentro de un torneo, así que no se pueden mezclar.
+    const torneosPorClave: Record<string, Map<string, TorneoConPartidos>> = {}
     const jugadoresIds = new Set<string>()
 
     for (const p of partidos) {
-      const meta = torneoMeta[p.torneo_id as string]
+      const torneoId = p.torneo_id as string
+      const meta = torneoMeta[torneoId]
       const clave = `${meta?.categoria ?? 'Sin categoría'}||${meta?.genero ?? ''}`
-      if (!partidosPorClave[clave]) partidosPorClave[clave] = []
-      partidosPorClave[clave].push({
+      const porTorneo = (torneosPorClave[clave] ??= new Map())
+      const acc = porTorneo.get(torneoId) ?? { torneoId, partidos: [] }
+      acc.partidos.push({
         jugador_a: p.jugador_a as string, jugador_b: p.jugador_b as string,
         ganador: p.ganador as string, fase: p.fase as string | null,
       })
+      porTorneo.set(torneoId, acc)
       jugadoresIds.add(p.jugador_a as string)
       jugadoresIds.add(p.jugador_b as string)
     }
@@ -131,9 +144,9 @@ export default function RankingPage() {
 
     // 7. Construir ranking por categoria + genero
     const conDatos: Record<string, CategoriaRanking> = {}
-    for (const [clave, partidosDeClave] of Object.entries(partidosPorClave)) {
+    for (const [clave, porTorneo] of Object.entries(torneosPorClave)) {
       const [categoria, genero] = clave.split('||')
-      const filas = calcularRankingInterno(partidosDeClave, id => nombreMap[id] || 'Desconocido')
+      const filas = calcularRankingInterno([...porTorneo.values()], id => nombreMap[id] || 'Desconocido')
       conDatos[clave] = { categoria, genero: genero || null, filas }
     }
 
@@ -186,7 +199,7 @@ export default function RankingPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: text }}>Ranking</h1>
-            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Por categoría y género · torneos internos · puntos duplican por ronda</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Por categoría y género · torneos internos · puntos según el puesto final</div>
             {reiniciadoEn && (
               <div style={{ fontSize: 11, color: hint, marginTop: 3 }}>
                 Desde: {new Date(reiniciadoEn).toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -210,14 +223,18 @@ export default function RankingPage() {
             ℹ️ ¿Cómo se calculan los puntos?
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-            {CONFIG.FASES_ORDEN.map(fase => (
-              <div key={fase} style={{ background: '#ede9fe', borderRadius: 8, padding: '5px 10px', fontSize: 11, color: '#3730a3', fontWeight: 600 }}>
-                {CONFIG.FASE_LABELS[fase]} = <strong>{puntosPorFase(fase)} pts</strong>
+            {TABLA_PUNTAJE.map(({ puesto, puntos }) => (
+              <div key={puesto} style={{ background: '#ede9fe', borderRadius: 8, padding: '5px 10px', fontSize: 11, color: '#3730a3', fontWeight: 600 }}>
+                {puesto} = <strong>{puntos} pts</strong>
               </div>
             ))}
           </div>
           <div style={{ fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
-            Ganar un partido suma los puntos de la ronda en la que se jugó — se <strong>duplican</strong> a cada ronda, así que avanzar profundo pesa mucho más que ganar un solo partido temprano. Perder no resta nada. Los puntos se acumulan de <strong>todos los torneos internos</strong>. Cada categoría tiene su propio ranking, separado por Varones y Damas. Dos jugadores con los mismos puntos comparten puesto.
+            Cada torneo reparte puntos según <strong>dónde terminó</strong> cada jugador, no por cuántos partidos ganó.
+            Los dos que caen en semifinales quedan 3-4 y se llevan lo mismo; los cuatro que caen en cuartos, 5-8.
+            El que participa y no pasa de la fase de grupos igual suma. Perder no resta nada.
+            Los puntos se <strong>acumulan entre todos los torneos</strong> de esa categoría, y se actualizan cuando el torneo termina.
+            Cada categoría tiene su propio ranking, separado por Varones, Damas y Mixto. Dos jugadores con los mismos puntos comparten puesto.
           </div>
         </div>
 
