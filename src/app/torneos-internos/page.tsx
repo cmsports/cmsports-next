@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
@@ -58,6 +58,8 @@ export default function TorneosInternosPage() {
   const [textoCategoriaNueva, setTextoCategoriaNueva] = useState('')
   const [guardandoCategoriaNueva, setGuardandoCategoriaNueva] = useState(false)
   const [borrandoCategoria, setBorrandoCategoria] = useState<string | null>(null)
+  const [selectorAbierto, setSelectorAbierto] = useState(false)
+  const cajaSelector = useRef<HTMLDivElement>(null)
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -73,6 +75,24 @@ export default function TorneosInternosPage() {
       setLoading(false)
     }
   }, [authLoading, perfil, mostrarArchivados])
+
+  // Cerrar el desplegable al tocar afuera o con Escape: un <select> lo hace
+  // solo, uno hecho a mano no.
+  useEffect(() => {
+    if (!selectorAbierto) return
+    function afuera(e: MouseEvent) {
+      if (!cajaSelector.current?.contains(e.target as Node)) setSelectorAbierto(false)
+    }
+    function escape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSelectorAbierto(false)
+    }
+    document.addEventListener('mousedown', afuera)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', afuera)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [selectorAbierto])
 
   async function cargarTorneos(cid?: string) {
     const id = cid || clubId
@@ -339,19 +359,59 @@ export default function TorneosInternosPage() {
             <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Los resultados se acumularán en el Ranking del club por categoría</div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>Categoría <span style={{ color: '#dc2626' }}>*</span></label>
-              <select
-                value={categoriaSeleccionada}
-                onChange={e => setCategoriaSeleccionada(e.target.value)}
-                style={{ width: '100%', background: '#f4f7fa', border: `1px solid ${categoriaSeleccionada ? '#c4b5fd' : '#e2e8f0'}`, borderRadius: 8, padding: '10px 12px', color: categoriaSeleccionada ? text : hint, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
-              >
-                <option value="">Seleccionar categoría...</option>
-                {categorias.map(c => <option key={c} value={c}>{categoriaLabel(c)}</option>)}
-              </select>
+              {/* Desplegable propio y no un <select>: adentro de un <option>
+                  el navegador solo deja texto, y acá cada categoría inventada
+                  necesita su ✕ al lado para poder sacarla desde la misma lista
+                  donde se elige. */}
+              <div ref={cajaSelector} style={{ position: 'relative' }}>
+                <button type="button" onClick={() => setSelectorAbierto(a => !a)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                    background: '#f4f7fa', border: `1px solid ${categoriaSeleccionada ? '#c4b5fd' : '#e2e8f0'}`, borderRadius: 8,
+                    padding: '10px 12px', color: categoriaSeleccionada ? text : hint, fontSize: 13, cursor: 'pointer',
+                    textAlign: 'left', boxSizing: 'border-box' }}>
+                  <span>{categoriaSeleccionada ? categoriaLabel(categoriaSeleccionada) : 'Seleccionar categoría...'}</span>
+                  <span style={{ color: hint, fontSize: 11, transform: selectorAbierto ? 'rotate(180deg)' : 'none' }}>▾</span>
+                </button>
+
+                {selectorAbierto && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4,
+                    background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,23,42,0.16)',
+                    maxHeight: 260, overflowY: 'auto' }}>
+                    {categorias.length === 0 && (
+                      <div style={{ padding: '10px 12px', fontSize: 12, color: hint }}>Todavía no hay categorías</div>
+                    )}
+                    {categorias.map(c => {
+                      const propia = categoriasPropias.includes(c)
+                      const elegida = c === categoriaSeleccionada
+                      return (
+                        <div key={c} style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #f1f5f9',
+                          background: elegida ? '#f5f3ff' : '#fff' }}>
+                          <button type="button"
+                            onClick={() => { setCategoriaSeleccionada(c); setSelectorAbierto(false) }}
+                            style={{ flex: 1, background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer',
+                              padding: '9px 12px', fontSize: 13, color: elegida ? '#5b21b6' : text, fontWeight: elegida ? 600 : 400 }}>
+                            {categoriaLabel(c)}
+                          </button>
+                          {propia && (
+                            <button type="button" onClick={() => void borrarCategoria(c)} disabled={borrandoCategoria === c}
+                              title={`Borrar ${c}`}
+                              style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: 13, lineHeight: 1,
+                                padding: '0 12px', cursor: borrandoCategoria === c ? 'wait' : 'pointer',
+                                opacity: borrandoCategoria === c ? 0.4 : 1 }}>
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
 
               {/* Una categoría que no está en la tabla por edad —"MASTER Z", lo
                   que el club quiera—. Queda guardada y arma su propio ranking. */}
               {!formCategoriaAbierto ? (
-                <button type="button" onClick={() => setFormCategoriaAbierto(true)}
+                <button type="button" onClick={() => { setFormCategoriaAbierto(true); setSelectorAbierto(false) }}
                   style={{ background: 'none', border: 'none', padding: '7px 0 0', fontSize: 12, fontWeight: 600, color: '#7c3aed', cursor: 'pointer' }}>
                   ＋ Agregar categoría
                 </button>
@@ -377,31 +437,6 @@ export default function TorneosInternosPage() {
                       {guardandoCategoriaNueva ? 'Guardando...' : 'Guardar'}
                     </button>
                   </div>
-
-                  {/* Solo las inventadas se pueden sacar. Las que salen de las
-                      fichas de los jugadores no: esas se van solas cuando nadie
-                      las tiene puesta. */}
-                  {categoriasPropias.length > 0 && (
-                    <div style={{ marginTop: 12, borderTop: '1px solid #ddd6fe', paddingTop: 10 }}>
-                      <div style={{ fontSize: 11, color: '#5b21b6', fontWeight: 600, marginBottom: 6 }}>
-                        Categorías que creaste
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {categoriasPropias.map(c => (
-                          <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff',
-                            border: '1px solid #ddd6fe', borderRadius: 20, padding: '4px 6px 4px 11px', fontSize: 12, color: text }}>
-                            {c}
-                            <button type="button" onClick={() => void borrarCategoria(c)} disabled={borrandoCategoria === c}
-                              title={`Sacar ${c}`}
-                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: borrandoCategoria === c ? 'wait' : 'pointer',
-                                fontSize: 13, lineHeight: 1, padding: '0 3px', opacity: borrandoCategoria === c ? 0.4 : 1 }}>
-                              ✕
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
