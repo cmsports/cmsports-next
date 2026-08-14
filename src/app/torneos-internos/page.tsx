@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
-import { archivarTorneo, crearTorneo as crearTorneoAction, crearCategoriaPersonalizada, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
+import { archivarTorneo, crearTorneo as crearTorneoAction, crearCategoriaPersonalizada, eliminarCategoriaPersonalizada, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
@@ -16,6 +16,13 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 const cache: Record<string, any[]> = {}
+
+/** Los géneros que puede tener un torneo interno, con cómo se pintan. */
+const GENEROS_TORNEO = [
+  { valor: 'varones' as const, label: 'Varones', simbolo: '♂', color: '#1e40af', fondo: '#eff6ff' },
+  { valor: 'damas'   as const, label: 'Damas',   simbolo: '♀', color: '#9d174d', fondo: '#fdf2f8' },
+  { valor: 'mixto'   as const, label: 'Mixto',   simbolo: '⚥', color: '#5b21b6', fondo: '#f5f3ff' },
+]
 
 /**
  * Junta categorías de distintas fuentes sin repetir, ignorando mayúsculas.
@@ -39,16 +46,18 @@ export default function TorneosInternosPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [torneos, setTorneos] = useState<any[]>([])
   const [categorias, setCategorias] = useState<string[]>([])
+  const [categoriasPropias, setCategoriasPropias] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
   const [cuota, setCuota] = useState('0')
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('')
-  const [generoSeleccionado, setGeneroSeleccionado] = useState<'varones' | 'damas' | ''>('')
+  const [generoSeleccionado, setGeneroSeleccionado] = useState<'varones' | 'damas' | 'mixto' | ''>('')
   const [formCategoriaAbierto, setFormCategoriaAbierto] = useState(false)
   const [textoCategoriaNueva, setTextoCategoriaNueva] = useState('')
   const [guardandoCategoriaNueva, setGuardandoCategoriaNueva] = useState(false)
+  const [borrandoCategoria, setBorrandoCategoria] = useState<string | null>(null)
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -90,10 +99,11 @@ export default function TorneosInternosPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('categorias_personalizadas').select('nombre').eq('club_id', id),
     ])
-    setCategorias(unirCategorias([
-      ...(jugCats || []).map(j => j.categoria),
-      ...(catsPropias || []).map((c: { nombre: string }) => c.nombre),
-    ]))
+    // Las inventadas van aparte porque son las únicas que se pueden borrar: las
+    // otras salen de las fichas y desaparecen solas cuando nadie las tiene.
+    const propias = unirCategorias((catsPropias || []).map((c: { nombre: string }) => c.nombre))
+    setCategoriasPropias(propias)
+    setCategorias(unirCategorias([...(jugCats || []).map(j => j.categoria), ...propias]))
 
     if (!torneosData?.length) return
 
@@ -145,9 +155,25 @@ export default function TorneosInternosPage() {
     if (res.error) { alert(res.error); return }
     // Queda elegida al toque: se creó para usarla en este torneo.
     setCategorias(prev => unirCategorias([...prev, limpio]))
+    setCategoriasPropias(prev => unirCategorias([...prev, limpio]))
     setCategoriaSeleccionada(limpio)
     setTextoCategoriaNueva('')
     setFormCategoriaAbierto(false)
+  }
+
+  async function borrarCategoria(nombreCat: string) {
+    if (!confirm(`¿Sacar "${nombreCat}" del listado de categorías?\n\nLos torneos que ya la usan y su ranking no se tocan.`)) return
+    setBorrandoCategoria(nombreCat)
+    const res = await eliminarCategoriaPersonalizada(nombreCat)
+    setBorrandoCategoria(null)
+    if (res.error) { alert(res.error); return }
+    setCategorias(prev => prev.filter(c => c !== nombreCat))
+    setCategoriasPropias(prev => prev.filter(c => c !== nombreCat))
+    // Si estaba elegida para este torneo, deja de estarlo: ya no es una opción.
+    setCategoriaSeleccionada(prev => (prev === nombreCat ? '' : prev))
+    if (res.torneosQueLaUsan) {
+      alert(`Listo. Ojo: ${res.torneosQueLaUsan} torneo${res.torneosQueLaUsan === 1 ? '' : 's'} ya la usa${res.torneosQueLaUsan === 1 ? '' : 'n'}. Esos torneos y su ranking quedan como están; la categoría solo deja de aparecer para torneos nuevos.`)
+    }
   }
 
   const esAdmin = perfil?.rol === 'admin'
@@ -215,16 +241,15 @@ export default function TorneosInternosPage() {
                           {categoriaLabel(t.categoria)}
                         </span>
                       )}
-                      {t.genero === 'varones' && (
-                        <span style={{ background: '#eff6ff', color: '#1e40af', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
-                          ♂ Varones
-                        </span>
-                      )}
-                      {t.genero === 'damas' && (
-                        <span style={{ background: '#fdf2f8', color: '#9d174d', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
-                          ♀ Damas
-                        </span>
-                      )}
+                      {(() => {
+                        const g = GENEROS_TORNEO.find(x => x.valor === t.genero)
+                        if (!g) return null
+                        return (
+                          <span style={{ background: g.fondo, color: g.color, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20 }}>
+                            {g.simbolo} {g.label}
+                          </span>
+                        )
+                      })()}
                     </div>
                   )}
                 </div>
@@ -352,26 +377,51 @@ export default function TorneosInternosPage() {
                       {guardandoCategoriaNueva ? 'Guardando...' : 'Guardar'}
                     </button>
                   </div>
+
+                  {/* Solo las inventadas se pueden sacar. Las que salen de las
+                      fichas de los jugadores no: esas se van solas cuando nadie
+                      las tiene puesta. */}
+                  {categoriasPropias.length > 0 && (
+                    <div style={{ marginTop: 12, borderTop: '1px solid #ddd6fe', paddingTop: 10 }}>
+                      <div style={{ fontSize: 11, color: '#5b21b6', fontWeight: 600, marginBottom: 6 }}>
+                        Categorías que creaste
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {categoriasPropias.map(c => (
+                          <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff',
+                            border: '1px solid #ddd6fe', borderRadius: 20, padding: '4px 6px 4px 11px', fontSize: 12, color: text }}>
+                            {c}
+                            <button type="button" onClick={() => void borrarCategoria(c)} disabled={borrandoCategoria === c}
+                              title={`Sacar ${c}`}
+                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: borrandoCategoria === c ? 'wait' : 'pointer',
+                                fontSize: 13, lineHeight: 1, padding: '0 3px', opacity: borrandoCategoria === c ? 0.4 : 1 }}>
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 8 }}>Género <span style={{ color: '#dc2626' }}>*</span></label>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setGeneroSeleccionado('varones')}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${generoSeleccionado === 'varones' ? '#1e40af' : '#e2e8f0'}`, background: generoSeleccionado === 'varones' ? '#eff6ff' : '#f4f7fa', color: generoSeleccionado === 'varones' ? '#1e40af' : muted, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  ♂ Varones
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGeneroSeleccionado('damas')}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${generoSeleccionado === 'damas' ? '#9d174d' : '#e2e8f0'}`, background: generoSeleccionado === 'damas' ? '#fdf2f8' : '#f4f7fa', color: generoSeleccionado === 'damas' ? '#9d174d' : muted, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  ♀ Damas
-                </button>
+                {GENEROS_TORNEO.map(g => {
+                  const activo = generoSeleccionado === g.valor
+                  return (
+                    <button key={g.valor} type="button"
+                      onClick={() => setGeneroSeleccionado(g.valor)}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 8,
+                        border: `2px solid ${activo ? g.color : '#e2e8f0'}`,
+                        background: activo ? g.fondo : '#f4f7fa',
+                        color: activo ? g.color : muted,
+                        fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      {g.simbolo} {g.label}
+                    </button>
+                  )
+                })}
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>

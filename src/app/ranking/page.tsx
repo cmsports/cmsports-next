@@ -141,8 +141,8 @@ export default function RankingPage() {
     resultado.sort((a, b) => {
       const catCmp = a.categoria.localeCompare(b.categoria, 'es')
       if (catCmp !== 0) return catCmp
-      // varones primero, damas después, sin género al final
-      const gOrder = (g: string | null) => g === 'varones' ? 0 : g === 'damas' ? 1 : 2
+      // varones, damas, mixto, y sin género al final
+      const gOrder = (g: string | null) => g === 'varones' ? 0 : g === 'damas' ? 1 : g === 'mixto' ? 2 : 3
       return gOrder(a.genero) - gOrder(b.genero)
     })
 
@@ -251,7 +251,7 @@ export default function RankingPage() {
                   {categoriaLabel(r.categoria)}
                   {r.genero && (
                     <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.85 }}>
-                      {r.genero === 'varones' ? '♂' : '♀'}
+                      {r.genero === 'varones' ? '♂' : r.genero === 'damas' ? '♀' : '⚥'}
                     </span>
                   )}
                   <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.8 }}>({r.filas.length})</span>
@@ -262,7 +262,7 @@ export default function RankingPage() {
             {/* Tabla del ranking activo */}
             {rankingActivo && rankingActivo.filas.length === 0 && (
               <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
-                Sin partidos registrados en <strong style={{ color: muted }}>{categoriaLabel(rankingActivo.categoria)}{rankingActivo.genero ? ` · ${rankingActivo.genero === 'varones' ? 'Varones' : 'Damas'}` : ''}</strong>
+                Sin partidos registrados en <strong style={{ color: muted }}>{categoriaLabel(rankingActivo.categoria)}{rankingActivo.genero ? ` · ${rankingActivo.genero === 'varones' ? 'Varones' : rankingActivo.genero === 'damas' ? 'Damas' : 'Mixto'}` : ''}</strong>
               </div>
             )}
             {rankingActivo && rankingActivo.filas.length > 0 && (

@@ -89,7 +89,7 @@ export async function crearTorneo(params: {
   cuota: number
   tipo?: 'interno' | 'externo'
   categoria?: string
-  genero?: 'varones' | 'damas'
+  genero?: 'varones' | 'damas' | 'mixto'
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -104,7 +104,7 @@ export async function crearTorneo(params: {
   if (!fechaValida) return { error: 'Ingresa una fecha válida' }
   if (!Number.isSafeInteger(cuota) || cuota < 0) return { error: 'La cuota debe ser un monto igual o mayor a $0' }
   if (params.tipo === 'interno' && !params.categoria) return { error: 'Selecciona la categoría del torneo interno' }
-  if (params.tipo === 'interno' && !params.genero) return { error: 'Selecciona si es Varones o Damas' }
+  if (params.tipo === 'interno' && !params.genero) return { error: 'Selecciona Varones, Damas o Mixto' }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('torneos').insert({
@@ -153,6 +153,37 @@ export async function crearCategoriaPersonalizada(nombre: string) {
   // 23505 = el índice único por (club_id, lower(nombre)) de la migración 143.
   if (error) return { error: error.code === '23505' ? 'Esa categoría ya existe' : error.message }
   return { success: true, nombre: limpio }
+}
+
+/**
+ * Saca una categoría inventada del selector. Sirve para los tipeos.
+ *
+ * No toca los torneos que ya la usan: `torneos.categoria` guarda la palabra
+ * escrita, no una referencia, así que esos torneos y su ranking siguen igual.
+ * Se devuelve cuántos son para poder decirlo en pantalla.
+ */
+export async function eliminarCategoriaPersonalizada(nombre: string) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+  if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
+
+  const limpio = nombre.trim()
+  if (!limpio) return { error: 'Falta la categoría' }
+
+  // `categoria` no está en los tipos generados —se agregó en la 056 y nunca se
+  // regeneraron—, por eso el `any`, igual que el resto del archivo.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { count } = await (supabase as any)
+    .from('torneos')
+    .select('id', { count: 'exact', head: true })
+    .eq('club_id', perfil.club_id).eq('categoria', limpio)
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('categorias_personalizadas')
+    .delete().eq('club_id', perfil.club_id).eq('nombre', limpio)
+
+  if (error) return { error: error.message }
+  return { success: true, torneosQueLaUsan: count ?? 0 }
 }
 
 async function calcularClasificadosDesdeBD(
