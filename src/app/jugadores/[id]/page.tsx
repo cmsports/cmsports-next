@@ -13,6 +13,7 @@ import { credencialDelJugador } from '@/app/actions/credenciales'
 import { formatRut } from '@/lib/rut'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento, categoriaLabel } from '@/lib/domain/categoriaBuin'
 import { calcularRankingInterno } from '@/lib/domain/rankingInterno'
+import { sumarDias } from '@/lib/domain/panoramaAsistencia'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
 import { linkWhatsApp } from '@/lib/whatsapp'
@@ -583,9 +584,11 @@ export default function JugadorDetallePage() {
   async function generarReportePDF() {
     setGenerandoReporte(true)
     try {
-      const hace3meses = new Date()
-      hace3meses.setMonth(hace3meses.getMonth() - 3)
-      const desde = hace3meses.toISOString().split('T')[0]
+      // Anclado a Chile: `new Date().toISOString()` da la fecha de Londres, así
+      // que un PDF generado después de las 20:00 de acá arrancaba el rango un
+      // día más adelante. Son los mismos 90 días que dibuja el calendario de
+      // abajo, contando hoy.
+      const desde = sumarDias(fechaChile(), -89)
 
       // Asistencia, mensualidades y ranking en paralelo
       const [{ data: asist }, { data: mens3 }, { data: club }] = await Promise.all([
@@ -676,11 +679,16 @@ export default function JugadorDetallePage() {
 
       const fechasAsistencia = new Set((asist || []).map((a: any) => a.fecha))
 
-      // Calendario de asistencias (últimos 90 días)
+      // Calendario de asistencias (últimos 90 días).
+      //
+      // Cada casilla se etiqueta con la fecha de Chile. Con `toISOString()` el
+      // PDF generado de noche corría el calendario entero un día, y como las
+      // fechas de `asistencia` sí vienen en hora de Chile, los puntitos caían
+      // en el casillero equivocado.
       const dias: { fecha: string; asistio: boolean }[] = []
+      const hoyCal = fechaChile()
       for (let i = 89; i >= 0; i--) {
-        const d = new Date(); d.setDate(d.getDate() - i)
-        const iso = d.toISOString().split('T')[0]
+        const iso = sumarDias(hoyCal, -i)
         dias.push({ fecha: iso, asistio: fechasAsistencia.has(iso) })
       }
       const totalAsist = fechasAsistencia.size
