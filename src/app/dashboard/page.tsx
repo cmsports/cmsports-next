@@ -450,6 +450,7 @@ export default function DashboardPage() {
             label="💰 Ingresos este mes"
             value={errorDatos ? '—' : fmt(kpis.ingresos || 0)}
             valueColor={C.green}
+            href="/finanzas?tab=movimientos"
             tooltip={tooltip} tooltipId="ingresos" setTooltip={setTooltip}
             tooltipText="Suma de todos los movimientos de tipo ingreso del mes actual."
           />
@@ -669,7 +670,7 @@ export default function DashboardPage() {
 }
 
 /* ── KpiCard ── */
-function KpiCard({ icon, iconBg, label, value, valueColor, tooltip, tooltipId, setTooltip, tooltipText, sub, footer }: {
+function KpiCard({ icon, iconBg, label, value, valueColor, tooltip, tooltipId, setTooltip, tooltipText, sub, footer, href }: {
   icon: React.ReactNode
   iconBg: string
   label: string
@@ -681,14 +682,24 @@ function KpiCard({ icon, iconBg, label, value, valueColor, tooltip, tooltipId, s
   tooltipText: string
   sub?: React.ReactNode
   footer?: React.ReactNode
+  /** Si viene, la tarjeta lleva a esa pantalla al tocarla. */
+  href?: string
 }) {
+  const router = useRouter()
   return (
-    <div className="tocable" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 18, position: 'relative', boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+    <div className="tocable"
+      onClick={href ? () => router.push(href) : undefined}
+      style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 18, position: 'relative', boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: href ? 'pointer' : undefined }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ width: 36, height: 36, borderRadius: 8, background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {icon}
         </div>
-        <TooltipBtn id={tooltipId} tooltip={tooltip} setTooltip={setTooltip} texto={tooltipText} />
+        {/* El "?" abre la ayuda, no navega: sin esto tocarlo se llevaba la
+            tarjeta entera a otra pantalla y la explicación no se alcanzaba a
+            leer. */}
+        <div onClick={e => e.stopPropagation()}>
+          <TooltipBtn id={tooltipId} tooltip={tooltip} setTooltip={setTooltip} texto={tooltipText} />
+        </div>
       </div>
       <div style={{ fontSize: 26, fontWeight: 600, color: valueColor, fontVariantNumeric: 'tabular-nums' }}>
         {value}
