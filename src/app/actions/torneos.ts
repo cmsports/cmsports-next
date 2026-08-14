@@ -156,19 +156,15 @@ export async function crearCategoriaPersonalizada(nombre: string) {
 }
 
 /**
- * Saca una categoría inventada del selector. Sirve para los tipeos.
+ * Cuántos torneos usan una categoría. Se pregunta ANTES de borrarla.
  *
- * No toca los torneos que ya la usan: `torneos.categoria` guarda la palabra
- * escrita, no una referencia, así que esos torneos y su ranking siguen igual.
- * Se devuelve cuántos son para poder decirlo en pantalla.
+ * La pantalla necesita el número para poder advertir qué se está por perder:
+ * la categoría sola no se lleva nada, pero borrarla junto con sus torneos sí.
  */
-export async function eliminarCategoriaPersonalizada(nombre: string) {
+export async function contarTorneosDeCategoria(nombre: string) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
-
-  const limpio = nombre.trim()
-  if (!limpio) return { error: 'Falta la categoría' }
 
   // `categoria` no está en los tipos generados —se agregó en la 056 y nunca se
   // regeneraron—, por eso el `any`, igual que el resto del archivo.
@@ -176,14 +172,52 @@ export async function eliminarCategoriaPersonalizada(nombre: string) {
   const { count } = await (supabase as any)
     .from('torneos')
     .select('id', { count: 'exact', head: true })
-    .eq('club_id', perfil.club_id).eq('categoria', limpio)
+    .eq('club_id', perfil.club_id).eq('categoria', nombre.trim())
+
+  return { success: true, torneos: count ?? 0 }
+}
+
+/**
+ * Borra una categoría inventada y, si se pide, los torneos que la usan.
+ *
+ * `torneos.categoria` guarda la palabra escrita, no una referencia, así que
+ * sacar la fila del catálogo por sí sola no toca ningún torneo: el ranking de
+ * esa categoría se sigue armando mientras exista un torneo con ese texto. Para
+ * que el ranking desaparezca de verdad hay que borrar esos torneos, y eso es lo
+ * que hace `conTorneos`.
+ *
+ * La plata NO se borra: `movimientos.torneo_id` es ON DELETE SET NULL desde la
+ * migración 024, así que las inscripciones cobradas siguen sumando en Finanzas
+ * aunque el torneo ya no esté. Misma regla que al dar de baja a un jugador.
+ */
+export async function eliminarCategoriaPersonalizada(nombre: string, conTorneos = false) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+  if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
+
+  const limpio = nombre.trim()
+  if (!limpio) return { error: 'Falta la categoría' }
+
+  let torneosBorrados = 0
+  if (conTorneos) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: suyos } = await (supabase as any)
+      .from('torneos').select('id')
+      .eq('club_id', perfil.club_id).eq('categoria', limpio)
+
+    for (const t of (suyos ?? []) as { id: string }[]) {
+      const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
+      if (res.error) return { error: `No se pudo borrar un torneo: ${res.error}` }
+      torneosBorrados++
+    }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase as any).from('categorias_personalizadas')
     .delete().eq('club_id', perfil.club_id).eq('nombre', limpio)
 
   if (error) return { error: error.message }
-  return { success: true, torneosQueLaUsan: count ?? 0 }
+  return { success: true, torneosBorrados }
 }
 
 async function calcularClasificadosDesdeBD(
@@ -1947,7 +1981,7 @@ export async function quitarJugadorDeMesa(params: { torneoId: string; jugadorId:
 }
 
 export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
 
   const { torneoId } = params
@@ -1958,6 +1992,11 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
     .eq('id', torneoId)
     .single()
   if (!torneo) return { error: 'Torneo no encontrado' }
+  // El club_id ya se leía pero no se comparaba con nada: el admin de un club
+  // podía borrar el torneo de otro pasando su id. El RLS lo frenaba, pero eso
+  // es la última barrera, no la primera — y los DELETE de abajo son seis, uno
+  // por tabla. Mismo chequeo que hace `crearGrupoManual`.
+  if (torneo.club_id !== perfil.club_id) return { error: 'Acceso denegado' }
 
   const { data: grupos } = await supabase
     .from('torneo_grupos').select('id').eq('torneo_id', torneoId)

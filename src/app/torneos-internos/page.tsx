@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
-import { archivarTorneo, crearTorneo as crearTorneoAction, crearCategoriaPersonalizada, eliminarCategoriaPersonalizada, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
+import { archivarTorneo, crearTorneo as crearTorneoAction, crearCategoriaPersonalizada, contarTorneosDeCategoria, eliminarCategoriaPersonalizada, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
@@ -182,17 +182,33 @@ export default function TorneosInternosPage() {
   }
 
   async function borrarCategoria(nombreCat: string) {
-    if (!confirm(`¿Sacar "${nombreCat}" del listado de categorías?\n\nLos torneos que ya la usan y su ranking no se tocan.`)) return
     setBorrandoCategoria(nombreCat)
-    const res = await eliminarCategoriaPersonalizada(nombreCat)
+    // Primero se pregunta cuántos torneos se lleva puestos: sin ese número la
+    // advertencia sería "puede que borres algo", que no ayuda a decidir.
+    const cuenta = await contarTorneosDeCategoria(nombreCat)
+    if (cuenta.error) { setBorrandoCategoria(null); alert(cuenta.error); return }
+
+    const n = cuenta.torneos ?? 0
+    const aviso = n === 0
+      ? `¿Borrar la categoría "${nombreCat}"?\n\nNo la usa ningún torneo.`
+      : `¿Borrar "${nombreCat}" y sus ${n} torneo${n === 1 ? '' : 's'}?\n\n`
+        + `Se borra${n === 1 ? '' : 'n'} el torneo${n === 1 ? '' : 's'} con sus partidos, inscritos y resultados, `
+        + `y el ranking de esta categoría desaparece.\n\n`
+        + `La plata ya registrada en Finanzas NO se borra.\n\nEsto no se puede deshacer.`
+
+    if (!confirm(aviso)) { setBorrandoCategoria(null); return }
+
+    const res = await eliminarCategoriaPersonalizada(nombreCat, n > 0)
     setBorrandoCategoria(null)
     if (res.error) { alert(res.error); return }
+
     setCategorias(prev => prev.filter(c => c !== nombreCat))
     setCategoriasPropias(prev => prev.filter(c => c !== nombreCat))
     // Si estaba elegida para este torneo, deja de estarlo: ya no es una opción.
     setCategoriaSeleccionada(prev => (prev === nombreCat ? '' : prev))
-    if (res.torneosQueLaUsan) {
-      alert(`Listo. Ojo: ${res.torneosQueLaUsan} torneo${res.torneosQueLaUsan === 1 ? '' : 's'} ya la usa${res.torneosQueLaUsan === 1 ? '' : 'n'}. Esos torneos y su ranking quedan como están; la categoría solo deja de aparecer para torneos nuevos.`)
+    if (res.torneosBorrados) {
+      delete cache[`int:${clubId}:${mostrarArchivados}`]
+      await cargarTorneos()
     }
   }
 
