@@ -91,8 +91,11 @@ describe('acciones de configuración del club', () => {
       nombre: 'Nombre Nuevo', email: 'NUEVO@example.com', telefono: '+56911111111', rut: '12.345.678-9', especialidad: '',
     })
 
-    expect(resultado).toEqual({ success: true })
-    expect(updateUserById).toHaveBeenCalledWith('user-1', expect.objectContaining({ email: 'nuevo@example.com' }))
+    expect(resultado).toEqual({ success: true, nombre: 'Nombre Nuevo', email: 'nuevo@example.com' })
+    expect(updateUserById).toHaveBeenCalledWith('user-1', expect.objectContaining({
+      email: 'nuevo@example.com',
+      user_metadata: expect.objectContaining({ nombre: 'Nombre Nuevo' }),
+    }))
     expect(jugadoresIdEq).toHaveBeenCalledWith('id', 'jugador-1')
     expect(jugadoresClubEq).toHaveBeenCalledWith('club_id', 'club-1')
     // El PDF y el lookup por RUT leen el espejo: sin esto el correo nuevo
@@ -117,13 +120,17 @@ describe('acciones de configuración del club', () => {
       from: vi.fn(() => perfilQuery),
     })
 
+    const updatePerfiles = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }))
+    const updateCredencial = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }))
     const updateJugadores = vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }))
+    const updateUserById = vi.fn().mockResolvedValue({ error: null })
     const adminFrom = vi.fn((tabla: string) => {
       if (tabla === 'jugadores') return { update: updateJugadores }
-      return { update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }
+      if (tabla === 'credencial_visible') return { update: updateCredencial }
+      return { update: updatePerfiles }
     })
     mocks.createAdminClient.mockReturnValue({
-      auth: { admin: { updateUserById: vi.fn().mockResolvedValue({ error: null }) } },
+      auth: { admin: { updateUserById } },
       from: adminFrom,
     })
 
@@ -147,7 +154,7 @@ describe('acciones de configuración del club', () => {
       talla_short: 'S',
     })
 
-    expect(resultado).toEqual({ success: true })
+    expect(resultado).toEqual({ success: true, nombre: 'Colomba Pérez Soto', email: 'colomba@cmsports.cl' })
     expect(updateJugadores).toHaveBeenCalledWith(expect.objectContaining({
       nombre: 'Colomba Pérez Soto',
       nombres: 'Colomba',
@@ -165,6 +172,16 @@ describe('acciones de configuración del club', () => {
     }))
     expect(updateJugadores.mock.calls[0][0]).not.toHaveProperty('foto_path')
     expect(updateJugadores.mock.calls[0][0]).not.toHaveProperty('foto_url')
+    // Una sola escritura: Auth, perfiles y el espejo de login quedan con el
+    // compuesto, no con el nombre viejo del form.
+    expect(updatePerfiles).toHaveBeenCalledWith({ nombre: 'Colomba Pérez Soto', email: 'colomba@cmsports.cl' })
+    const nombresAuth = updateUserById.mock.calls
+      .map(([, payload]: [string, { user_metadata?: { nombre?: string } }]) => payload.user_metadata?.nombre)
+      .filter(Boolean)
+    expect(nombresAuth).toEqual(['Colomba Pérez Soto'])
+    expect(updateCredencial).toHaveBeenCalledWith({
+      usuario_login: 'colomba@cmsports.cl', tipo_login: 'email',
+    })
   })
 
   it('rechaza una talla que no existe', async () => {

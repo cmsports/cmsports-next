@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -13,11 +13,41 @@ import { firmarUrl } from '@/lib/supabase/privado'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
+import { useEnVivo } from '@/lib/useEnVivo'
+
+const CAMPOS_FICHA = 'id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite,foto_path,rut,email,telefono,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,talla_polera,talla_short'
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+function fechaLarga(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const [y, m, d] = iso.slice(0, 10).split('-')
+  if (!y || !m || !d) return iso
+  return `${Number(d)} de ${MESES[Number(m) - 1] ?? m} de ${y}`
+}
+
+function edadDesde(fecha: string | null | undefined): number | null {
+  if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha.slice(0, 10))) return null
+  const [y, m, d] = fecha.slice(0, 10).split('-').map(Number)
+  const [hy, hm, hd] = fechaChile().split('-').map(Number)
+  let edad = hy - y
+  if (hm < m || (hm === m && hd < d)) edad--
+  return edad
+}
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
+
+function Dato({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px 0', borderBottom: '1px solid #f1f5f9', gap: 12 }}>
+      <span style={{ fontSize: 12, color: muted, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, color: value ? text : hint, fontWeight: 500, textAlign: 'right', wordBreak: 'break-word' }}>{value || '—'}</span>
+    </div>
+  )
+}
 
 // El perfil ya no sigue el torneo en vivo: se fueron el banner, los avisos
 // animados, las felicitaciones al campeón y las tres suscripciones en tiempo
@@ -44,68 +74,69 @@ export default function PerfilPage() {
 
   const hoy = fechaChile()
 
-  useEffect(() => {
-    async function cargar() {
-      if (authLoading) return
-      if (!perfil) { router.push('/login'); return }
+  const cargar = useCallback(async () => {
+    if (authLoading) return
+    if (!perfil) { router.push('/login'); return }
 
-      if (perfil.jugador_id) {
-        const mesActual = new Date().getMonth() + 1
-        const anioActual = new Date().getFullYear()
+    if (perfil.jugador_id) {
+      const mesActual = new Date().getMonth() + 1
+      const anioActual = new Date().getFullYear()
 
-        // Todo lo suyo, en paralelo.
-        const resultados = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite,foto_path').eq('id', perfil.jugador_id).single(),
-          // Solo presencias: la lista se llama "Últimas asistencias" y el aviso
-          // de hoy dice "¡Buen entrenamiento!" — una falta registrada no es eso.
-          supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).eq('estado', 'presente').order('fecha', { ascending: false }).limit(10),
-          supabase.from('mensualidades').select('id,mes,anio,monto,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
-          supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy).eq('estado', 'presente'),
-          // Las clases extra impagas también son deuda. Sin esto el hero decía
-          // "✅ Pagado" mientras Mi Estado de Cuenta —la pantalla de al lado—
-          // decía "Pendiente $3.000" del mismo jugador el mismo día.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (supabase as any).from('clases_extraordinarias').select('id,fecha,monto,pagada_en').eq('jugador_id', perfil.jugador_id).is('pagada_en', null),
-        ])
+      // Todo lo suyo, en paralelo.
+      const resultados = await Promise.all([
+        supabase.from('jugadores').select(CAMPOS_FICHA).eq('id', perfil.jugador_id).single(),
+        // Solo presencias: la lista se llama "Últimas asistencias" y el aviso
+        // de hoy dice "¡Buen entrenamiento!" — una falta registrada no es eso.
+        supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).eq('estado', 'presente').order('fecha', { ascending: false }).limit(10),
+        supabase.from('mensualidades').select('id,mes,anio,monto,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
+        supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy).eq('estado', 'presente'),
+        // Las clases extra impagas también son deuda. Sin esto el hero decía
+        // "✅ Pagado" mientras Mi Estado de Cuenta —la pantalla de al lado—
+        // decía "Pendiente $3.000" del mismo jugador el mismo día.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any).from('clases_extraordinarias').select('id,fecha,monto,pagada_en').eq('jugador_id', perfil.jugador_id).is('pagada_en', null),
+      ])
 
-        const errorInicial = resultados.find(resultado => resultado.error)?.error
-        if (errorInicial) {
-          setMensaje({ tipo: 'error', texto: `No se pudo cargar el perfil: ${errorInicial.message}` })
-          setLoading(false)
-          return
-        }
-
-        const [
-          { data: j },
-          { data: a },
-          { data: mens },
-          { data: asistHoy },
-          { data: ex },
-        ] = resultados
-
-        setJugador(j)
-        setFotoUrl(await firmarUrl((j as any)?.foto_path))
-        setAsistencias(a || [])
-        setMensualidadActual(mens)
-        setYaRegistroHoy((asistHoy || []).length > 0)
-        setExtrasImpagas((ex ?? []) as ClaseExtraJugador[])
-
-        // Las sesiones del mes salen del calendario de sus bloques, igual que
-        // en Asistencia Histórica, para que las dos pantallas no puedan decir
-        // números distintos.
-        if (perfil.club_id) {
-          // El mes entero, no hasta hoy: el límite incluye los días que faltan,
-          // y un feriado ya cargado para el 20 tiene que descontarse desde ya.
-          const desde = `${hoy.slice(0, 7)}-01`
-          const hasta = `${hoy.slice(0, 7)}-${new Date(anioActual, mesActual, 0).getDate()}`
-          const historial = await cargarHistorialJugador(perfil.club_id, perfil.jugador_id, desde, hasta)
-          setSesiones(sesionesDelMes(perfil.jugador_id, { ...historial, hoy }, hoy))
-        }
+      const errorInicial = resultados.find(resultado => resultado.error)?.error
+      if (errorInicial) {
+        setMensaje({ tipo: 'error', texto: `No se pudo cargar el perfil: ${errorInicial.message}` })
+        setLoading(false)
+        return
       }
-      setLoading(false)
+
+      const [
+        { data: j },
+        { data: a },
+        { data: mens },
+        { data: asistHoy },
+        { data: ex },
+      ] = resultados
+
+      setJugador(j)
+      setFotoUrl(await firmarUrl((j as any)?.foto_path))
+      setAsistencias(a || [])
+      setMensualidadActual(mens)
+      setYaRegistroHoy((asistHoy || []).length > 0)
+      setExtrasImpagas((ex ?? []) as ClaseExtraJugador[])
+
+      // Las sesiones del mes salen del calendario de sus bloques, igual que
+      // en Asistencia Histórica, para que las dos pantallas no puedan decir
+      // números distintos.
+      if (perfil.club_id) {
+        // El mes entero, no hasta hoy: el límite incluye los días que faltan,
+        // y un feriado ya cargado para el 20 tiene que descontarse desde ya.
+        const desde = `${hoy.slice(0, 7)}-01`
+        const hasta = `${hoy.slice(0, 7)}-${new Date(anioActual, mesActual, 0).getDate()}`
+        const historial = await cargarHistorialJugador(perfil.club_id, perfil.jugador_id, desde, hasta)
+        setSesiones(sesionesDelMes(perfil.jugador_id, { ...historial, hoy }, hoy))
+      }
     }
-    cargar()
+    setLoading(false)
   }, [authLoading, perfil, hoy, router, supabase])
+
+  useEffect(() => { void cargar() }, [cargar])
+  // Si el jugador (o el admin) cambia la ficha, esta pantalla se actualiza sola.
+  useEnVivo(['jugadores'], perfil?.club_id ?? null, cargar, { conClub: ['jugadores'] })
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
@@ -135,6 +166,13 @@ export default function PerfilPage() {
     : 'pendiente'
   const mensLabel = estadoCuenta === 'pagado' ? '✅ Pagado' : estadoCuenta === 'atrasado' ? '❌ Atrasado' : estadoCuenta === 'pendiente' ? '⚠️ Pendiente' : '—'
   const mensColor = estadoCuenta === 'pagado' ? '#86efac' : estadoCuenta === 'atrasado' ? '#fca5a5' : estadoCuenta === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
+  const edad = edadDesde(jugador.fecha_nacimiento)
+  const nacimiento = fechaLarga(jugador.fecha_nacimiento)
+  const nacimientoLabel = nacimiento ? (edad !== null ? `${nacimiento} (${edad} años)` : nacimiento) : null
+  const tallasLabel = [jugador.talla_polera && `Polera ${jugador.talla_polera}`, jugador.talla_short && `Short ${jugador.talla_short}`].filter(Boolean).join(' · ') || null
+  const direccionLabel = [jugador.direccion, jugador.comuna].filter(Boolean).join(', ') || null
+  const emergenciaLabel = [jugador.contacto_emergencia_nombre, jugador.contacto_emergencia_telefono].filter(Boolean).join(' · ') || null
+  const indicaciones = jugador.indicaciones_medicas && jugador.indicaciones_medicas.toLowerCase() !== 'no' ? jugador.indicaciones_medicas : null
 
   return (
     <AppLayout perfil={perfil}>
@@ -182,6 +220,31 @@ export default function PerfilPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Ficha: los mismos datos que se editan en Configuración. Sin esto el
+          jugador guardaba el RUT y volvía acá y no veía nada. */}
+      <div style={{ ...card, overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #e2e8f0' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text }}>Mis datos</div>
+          <button
+            onClick={() => router.push('/configuracion')}
+            style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: muted, cursor: 'pointer', fontWeight: 600 }}
+          >
+            Editar
+          </button>
+        </div>
+        <div style={{ padding: '4px 20px 8px' }}>
+          <Dato label="Nombre" value={jugador.nombre} />
+          <Dato label="RUT" value={jugador.rut} />
+          <Dato label="Nacimiento" value={nacimientoLabel} />
+          <Dato label="Correo" value={jugador.email} />
+          <Dato label="Teléfono" value={jugador.telefono} />
+          <Dato label="Dirección" value={direccionLabel} />
+          <Dato label="Tallas" value={tallasLabel} />
+          <Dato label="Emergencia" value={emergenciaLabel} />
+          {indicaciones && <Dato label="Indicaciones médicas" value={indicaciones} />}
+        </div>
       </div>
 
       {/* Auspiciadores — los mismos tres logos que ve el admin en su dashboard.

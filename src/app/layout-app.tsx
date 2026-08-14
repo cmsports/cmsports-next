@@ -356,7 +356,7 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             </div>
             <div style={{ overflow: 'hidden', flex: 1 }}>
               <div style={{ fontSize: 11, color: '#0f172a', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {perfil?.email}
+                {perfil?.nombre || perfil?.email}
               </div>
               <div style={{ fontSize: 10, color: '#94a3b8' }}>{rolLabel}</div>
             </div>
