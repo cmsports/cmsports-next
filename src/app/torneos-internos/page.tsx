@@ -17,6 +17,24 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 const cache: Record<string, any[]> = {}
 
+/**
+ * Junta categorías de distintas fuentes sin repetir, ignorando mayúsculas.
+ *
+ * Un `new Set` a secas deja pasar "Juvenil" y "JUVENIL" como dos, y en el
+ * selector eso son dos opciones que arman dos rankings separados para lo que
+ * el club considera una sola categoría. Gana la primera forma que aparece.
+ */
+function unirCategorias(nombres: (string | null | undefined)[]): string[] {
+  const vistas = new Map<string, string>()
+  for (const n of nombres) {
+    const limpio = n?.trim()
+    if (!limpio) continue
+    const clave = limpio.toLowerCase()
+    if (!vistas.has(clave)) vistas.set(clave, limpio)
+  }
+  return [...vistas.values()].sort((a, b) => a.localeCompare(b, 'es'))
+}
+
 export default function TorneosInternosPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [torneos, setTorneos] = useState<any[]>([])
@@ -72,11 +90,10 @@ export default function TorneosInternosPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase as any).from('categorias_personalizadas').select('nombre').eq('club_id', id),
     ])
-    const cats = [...new Set([
+    setCategorias(unirCategorias([
       ...(jugCats || []).map(j => j.categoria),
       ...(catsPropias || []).map((c: { nombre: string }) => c.nombre),
-    ].filter((c): c is string => !!c))].sort()
-    setCategorias(cats)
+    ]))
 
     if (!torneosData?.length) return
 
@@ -127,7 +144,7 @@ export default function TorneosInternosPage() {
     setGuardandoCategoriaNueva(false)
     if (res.error) { alert(res.error); return }
     // Queda elegida al toque: se creó para usarla en este torneo.
-    setCategorias(prev => [...new Set([...prev, limpio])].sort())
+    setCategorias(prev => unirCategorias([...prev, limpio]))
     setCategoriaSeleccionada(limpio)
     setTextoCategoriaNueva('')
     setFormCategoriaAbierto(false)

@@ -588,11 +588,26 @@ export default function JugadorDetallePage() {
       const desde = hace3meses.toISOString().split('T')[0]
 
       // Asistencia, mensualidades y ranking en paralelo
-      const [{ data: asist }, { data: mens3 }, { data: torneosClub }] = await Promise.all([
+      const [{ data: asist }, { data: mens3 }, { data: club }] = await Promise.all([
         supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', desde).order('fecha'),
         supabase.from('mensualidades').select('mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(3),
-        supabase.from('torneos').select('id,categoria').eq('club_id', jugador.club_id).eq('tipo', 'interno').eq('estado', 'finalizado'),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any).from('clubes').select('ranking_reiniciado_en').eq('id', jugador.club_id).single(),
       ])
+
+      // Los torneos que cuentan para el ranking, con los mismos tres criterios
+      // que usa la pantalla de Ranking. Si acá difieren, la ficha y el Ranking
+      // muestran dos números distintos para lo mismo:
+      //  · `neq('cancelado')` y no `eq('finalizado')` — un torneo en curso ya
+      //    tiene partidos jugados y esos puntos ya se ven en el Ranking.
+      //  · `ranking_reiniciado_en` — sin esto, "Reiniciar Ranking" limpiaba el
+      //    Ranking y dejaba la ficha arrastrando los torneos viejos.
+      const reinicioTs = (club as { ranking_reiniciado_en?: string } | null)?.ranking_reiniciado_en ?? null
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let queryTorneos = (supabase as any).from('torneos')
+        .select('id,categoria').eq('club_id', jugador.club_id).eq('tipo', 'interno').neq('estado', 'cancelado')
+      if (reinicioTs) queryTorneos = queryTorneos.gt('creado_en', reinicioTs)
+      const { data: torneosClub } = await queryTorneos
 
       // Las sesiones del mes salen del calendario de sus bloques, no de las
       // columnas de `jugadores`: esas arrastran el total del mes anterior.
