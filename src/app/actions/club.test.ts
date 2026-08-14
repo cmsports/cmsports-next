@@ -122,8 +122,16 @@ describe('acciones de configuración del club', () => {
 
     const updatePerfiles = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }))
     const updateCredencial = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }))
-    const updateJugadores = vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }))
-    const updateUserById = vi.fn().mockResolvedValue({ error: null })
+    // Los parámetros van declarados aunque el mock no los use: sin ellos
+    // TypeScript infiere que se llama sin argumentos, y `mock.calls[0][0]` deja
+    // de existir para el chequeo de tipos aunque en ejecución esté ahí.
+    const updateJugadores = vi.fn((_payload: Record<string, unknown>) => ({
+      eq: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })),
+    }))
+    const updateUserById = vi.fn(
+      (_id: string, _payload: { email?: string; user_metadata?: { nombre?: string } }) =>
+        Promise.resolve({ error: null }),
+    )
     const adminFrom = vi.fn((tabla: string) => {
       if (tabla === 'jugadores') return { update: updateJugadores }
       if (tabla === 'credencial_visible') return { update: updateCredencial }
