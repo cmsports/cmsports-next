@@ -102,4 +102,80 @@ describe('acciones de configuración del club', () => {
     })
     expect(credencialEq).toHaveBeenCalledWith('usuario_id', 'user-1')
   })
+
+  it('guarda en la ficha los mismos datos del ingreso, menos la foto', async () => {
+    const perfil = {
+      id: 'user-1', club_id: 'club-1', rol: 'jugador', jugador_id: 'jugador-1',
+      nombre: 'Colomba', email: 'colomba@cmsports.cl',
+    }
+    const perfilQuery = {
+      select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: perfil }),
+    }
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1', user_metadata: {} } } }) },
+      from: vi.fn(() => perfilQuery),
+    })
+
+    const updateJugadores = vi.fn(() => ({ eq: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }))
+    const adminFrom = vi.fn((tabla: string) => {
+      if (tabla === 'jugadores') return { update: updateJugadores }
+      return { update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) }
+    })
+    mocks.createAdminClient.mockReturnValue({
+      auth: { admin: { updateUserById: vi.fn().mockResolvedValue({ error: null }) } },
+      from: adminFrom,
+    })
+
+    const resultado = await actualizarPerfilPersonalAction({
+      nombre: 'Colomba Pérez',
+      email: 'colomba@cmsports.cl',
+      telefono: '+56911111111',
+      rut: '19313040-2',
+      especialidad: '',
+      nombres: 'Colomba',
+      apellido1: 'Pérez',
+      apellido2: 'Soto',
+      apellido3: 'no',
+      fecha_nacimiento: '2010-05-12',
+      direccion: 'Calle 123',
+      comuna: 'Buin',
+      contacto_emergencia_nombre: 'Mamá Pérez',
+      contacto_emergencia_telefono: '+56922222222',
+      indicaciones_medicas: 'Asma',
+      talla_polera: 'M',
+      talla_short: 'S',
+    })
+
+    expect(resultado).toEqual({ success: true })
+    expect(updateJugadores).toHaveBeenCalledWith(expect.objectContaining({
+      nombre: 'Colomba Pérez Soto',
+      nombres: 'Colomba',
+      apellido1: 'Pérez',
+      apellido2: 'Soto',
+      apellido3: 'no',
+      fecha_nacimiento: '2010-05-12',
+      direccion: 'Calle 123',
+      comuna: 'Buin',
+      contacto_emergencia_nombre: 'Mamá Pérez',
+      contacto_emergencia_telefono: '+56922222222',
+      indicaciones_medicas: 'Asma',
+      talla_polera: 'M',
+      talla_short: 'S',
+    }))
+    expect(updateJugadores.mock.calls[0][0]).not.toHaveProperty('foto_path')
+    expect(updateJugadores.mock.calls[0][0]).not.toHaveProperty('foto_url')
+  })
+
+  it('rechaza una talla que no existe', async () => {
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+    })
+    const resultado = await actualizarPerfilPersonalAction({
+      nombre: 'Colomba Pérez', email: 'colomba@cmsports.cl', telefono: '', rut: '', especialidad: '',
+      talla_polera: 'XXXL',
+    })
+    expect(resultado).toEqual({ error: 'Talla inválida' })
+    expect(mocks.createAdminClient).not.toHaveBeenCalled()
+  })
 })
