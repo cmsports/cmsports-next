@@ -11,7 +11,8 @@ import { useTextoMonto } from '@/components/Monto'
 import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador, registrarMatricula, desmarcarMatricula } from '@/app/actions/jugadores'
 import { credencialDelJugador } from '@/app/actions/credenciales'
 import { formatRut } from '@/lib/rut'
-import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
+import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento, categoriaLabel } from '@/lib/domain/categoriaBuin'
+import { calcularRankingInterno } from '@/lib/domain/rankingInterno'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
 import { linkWhatsApp } from '@/lib/whatsapp'
@@ -605,48 +606,58 @@ export default function JugadorDetallePage() {
       )
       const sesiones = sesionesDelMes(jugadorId, { ...historialMes, hoy: hoyISO }, hoyISO)
 
-      // Calcular ranking del jugador en su categoría
-      let rankingPos: number | null = null
-      let rankingVictorias = 0
-      let rankingDerrotas = 0
-      let rankingJugados = 0
-      let rankingTotal = 0
+      // El ranking del jugador en CADA categoría donde jugó.
+      //
+      // Antes se miraba solo la categoría de su ficha, así que los puntos que
+      // ganaba en un torneo de otra categoría no aparecían por ningún lado —y
+      // la pantalla de Ranking sí los mostraba, porque agrupa por la categoría
+      // del torneo. Un jugador puede competir donde el club lo inscriba.
+      //
+      // Los puntos salen de `calcularRankingInterno`, el mismo motor que la
+      // pantalla de Ranking: acá había una segunda fórmula (3·v − d) que daba
+      // otro número para lo mismo.
+      const rankingsPorCategoria: {
+        categoria: string; rank: number; total: number
+        victorias: number; derrotas: number; jugados: number; pts: number
+      }[] = []
 
       const torneoIds = (torneosClub || []).map((t: any) => t.id)
-      if (torneoIds.length > 0 && jugador.categoria) {
-        const torneosDeCat = (torneosClub || []).filter((t: any) => t.categoria === jugador.categoria).map((t: any) => t.id)
-        if (torneosDeCat.length > 0) {
-          const { data: todosPartidos } = await supabase
-            .from('torneo_partidos')
-            .select('jugador_a,jugador_b,ganador')
-            .in('torneo_id', torneosDeCat)
-            .not('ganador', 'is', null)
+      if (torneoIds.length > 0) {
+        const { data: todosPartidos } = await supabase
+          .from('torneo_partidos')
+          .select('torneo_id,jugador_a,jugador_b,ganador,fase')
+          .in('torneo_id', torneoIds)
+          .not('jugador_b', 'is', null)
+          .not('ganador', 'is', null)
 
-          // Acumular stats por jugador
-          const stats: Record<string, { v: number; d: number }> = {}
-          for (const p of (todosPartidos || [])) {
-            const a = p.jugador_a as string, b = p.jugador_b as string, g = p.ganador as string
-            if (!stats[a]) stats[a] = { v: 0, d: 0 }
-            if (!stats[b]) stats[b] = { v: 0, d: 0 }
-            if (g === a) { stats[a].v++; stats[b].d++ }
-            else if (g === b) { stats[b].v++; stats[a].d++ }
-          }
+        const categoriaDelTorneo = new Map<string, string>(
+          (torneosClub || []).map((t: any) => [t.id as string, (t.categoria as string) || 'Sin categoría']),
+        )
 
-          // Ordenar por (3*v - d) desc para obtener posición
-          const ranking = Object.entries(stats)
-            .map(([id, s]) => ({ id, pts: 3 * s.v - s.d, v: s.v, d: s.d }))
-            .sort((a, b) => b.pts - a.pts || b.v - a.v)
-
-          const posIdx = ranking.findIndex(r => r.id === jugadorId)
-          if (posIdx >= 0) {
-            rankingPos = posIdx + 1
-            rankingVictorias = ranking[posIdx].v
-            rankingDerrotas = ranking[posIdx].d
-            rankingJugados = ranking[posIdx].v + ranking[posIdx].d
-            rankingTotal = ranking.length
-          }
+        const partidosPorCategoria: Record<string, { jugador_a: string; jugador_b: string; ganador: string; fase: string | null }[]> = {}
+        for (const p of (todosPartidos || [])) {
+          const cat = categoriaDelTorneo.get(p.torneo_id as string) ?? 'Sin categoría'
+          ;(partidosPorCategoria[cat] ??= []).push({
+            jugador_a: p.jugador_a as string, jugador_b: p.jugador_b as string,
+            ganador: p.ganador as string, fase: p.fase as string | null,
+          })
         }
+
+        for (const [categoria, partidos] of Object.entries(partidosPorCategoria)) {
+          const tabla = calcularRankingInterno(partidos, () => '')
+          const suya = tabla.find(f => f.jugadorId === jugadorId)
+          if (!suya) continue
+          rankingsPorCategoria.push({
+            categoria, rank: suya.rank, total: tabla.length,
+            victorias: suya.victorias, derrotas: suya.derrotas, jugados: suya.jugados, pts: suya.pts,
+          })
+        }
+        rankingsPorCategoria.sort((a, b) => a.rank - b.rank || a.categoria.localeCompare(b.categoria, 'es'))
       }
+
+      // La tarjeta de arriba tiene lugar para un número solo, así que va el
+      // mejor puesto. El detalle por categoría va en su tabla, más abajo.
+      const mejorRanking = rankingsPorCategoria[0] ?? null
 
       const fechasAsistencia = new Set((asist || []).map((a: any) => a.fecha))
 
@@ -684,7 +695,9 @@ export default function JugadorDetallePage() {
 
       y = filaTarjetas(doc, y, [
         { valor: String(totalAsist), etiqueta: 'Asistencias (90 días)', color: COLOR.primario },
-        { valor: rankingPos ? `#${rankingPos} / ${rankingTotal}` : '—', etiqueta: `Ranking ${jugador.categoria || ''}`, color: COLOR.verde },
+        { valor: mejorRanking ? `#${mejorRanking.rank} / ${mejorRanking.total}` : '—',
+          etiqueta: mejorRanking ? `Mejor ranking · ${categoriaLabel(mejorRanking.categoria)}` : 'Ranking',
+          color: COLOR.verde },
         { valor: jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : 'Por asignar', etiqueta: 'Mensualidad', color: COLOR.celeste },
       ])
 
@@ -751,12 +764,15 @@ export default function JugadorDetallePage() {
         y = (doc as any).lastAutoTable.finalY + 10
       }
 
-      // Ranking
-      if (rankingPos) {
-        y = tituloSeccion(doc, y, `Ranking interno — ${jugador.categoria || ''}`)
+      // Ranking: una fila por cada categoría en la que compitió.
+      if (rankingsPorCategoria.length > 0) {
+        y = tituloSeccion(doc, y, 'Ranking interno')
         autoTable(doc, {
-          startY: y, head: [['Posición', 'Victorias', 'Derrotas', 'Jugados', 'Puntos']],
-          body: [[`#${rankingPos} de ${rankingTotal}`, `${rankingVictorias}`, `${rankingDerrotas}`, `${rankingJugados}`, `${3 * rankingVictorias - rankingDerrotas}`]],
+          startY: y, head: [['Categoría', 'Posición', 'Victorias', 'Derrotas', 'Jugados', 'Puntos']],
+          body: rankingsPorCategoria.map(r => [
+            categoriaLabel(r.categoria), `#${r.rank} de ${r.total}`,
+            `${r.victorias}`, `${r.derrotas}`, `${r.jugados}`, `${r.pts}`,
+          ]),
           theme: 'striped', headStyles: { fillColor: COLOR.morado, textColor: COLOR.blanco, fontStyle: 'bold' },
           styles: { fontSize: 9, halign: 'center', lineColor: COLOR.borde, lineWidth: 0.1 }, margin: { left: 14, right: 14 },
         })

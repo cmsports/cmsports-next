@@ -126,6 +126,35 @@ export async function crearTorneo(params: {
   return { success: true, torneoId: data.id }
 }
 
+/**
+ * Inventa una categoría de torneo que no está en la tabla por edad.
+ *
+ * El selector del torneo interno ofrecía solo las categorías que algún jugador
+ * ya tuviera escritas en su ficha, así que armar un "MASTER Z" obligaba a
+ * ensuciar la ficha de alguien primero. Esto la guarda por su cuenta: queda en
+ * el selector para siempre, tenga o no jugadores, y no toca la categoría de
+ * nadie.
+ */
+export async function crearCategoriaPersonalizada(nombre: string) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+  if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
+
+  const limpio = nombre.trim()
+  if (!limpio) return { error: 'Ingresa el nombre de la categoría' }
+  if (limpio.length > 40) return { error: 'El nombre es demasiado largo' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('categorias_personalizadas').insert({
+    club_id: perfil.club_id,
+    nombre: limpio,
+  })
+
+  // 23505 = el índice único por (club_id, lower(nombre)) de la migración 143.
+  if (error) return { error: error.code === '23505' ? 'Esa categoría ya existe' : error.message }
+  return { success: true, nombre: limpio }
+}
+
 async function calcularClasificadosDesdeBD(
   supabase: AdminSupabase,
   torneoId: string,

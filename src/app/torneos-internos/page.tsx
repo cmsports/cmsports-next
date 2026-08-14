@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
-import { archivarTorneo, crearTorneo as crearTorneoAction, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
+import { archivarTorneo, crearTorneo as crearTorneoAction, crearCategoriaPersonalizada, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
@@ -28,6 +28,9 @@ export default function TorneosInternosPage() {
   const [cuota, setCuota] = useState('0')
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('')
   const [generoSeleccionado, setGeneroSeleccionado] = useState<'varones' | 'damas' | ''>('')
+  const [formCategoriaAbierto, setFormCategoriaAbierto] = useState(false)
+  const [textoCategoriaNueva, setTextoCategoriaNueva] = useState('')
+  const [guardandoCategoriaNueva, setGuardandoCategoriaNueva] = useState(false)
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -57,14 +60,22 @@ export default function TorneosInternosPage() {
     const { data: torneosData } = await query
     if (!torneosData?.length) { setTorneos([]); }
 
-    // Cargar categorías del club
-    const { data: jugCats } = await supabase
-      .from('jugadores')
-      .select('categoria')
-      .eq('club_id', id)
-      .or('es_externo.is.null,es_externo.eq.false')
-      .not('categoria', 'is', null)
-    const cats = [...new Set((jugCats || []).map(j => j.categoria).filter((c): c is string => !!c))].sort()
+    // Cargar categorías del club: las que algún jugador ya tiene puestas, más
+    // las que el club inventó para torneos. Las segundas existen aunque nadie
+    // las tenga en su ficha, que es justamente para lo que se creó la tabla.
+    const [{ data: jugCats }, { data: catsPropias }] = await Promise.all([
+      supabase.from('jugadores')
+        .select('categoria')
+        .eq('club_id', id)
+        .or('es_externo.is.null,es_externo.eq.false')
+        .not('categoria', 'is', null),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).from('categorias_personalizadas').select('nombre').eq('club_id', id),
+    ])
+    const cats = [...new Set([
+      ...(jugCats || []).map(j => j.categoria),
+      ...(catsPropias || []).map((c: { nombre: string }) => c.nombre),
+    ].filter((c): c is string => !!c))].sort()
     setCategorias(cats)
 
     if (!torneosData?.length) return
@@ -106,6 +117,20 @@ export default function TorneosInternosPage() {
     setModalOpen(false)
     setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado('')
     router.push(`/torneos/${res.torneoId}`)
+  }
+
+  async function guardarCategoriaNueva() {
+    const limpio = textoCategoriaNueva.trim()
+    if (!limpio) return
+    setGuardandoCategoriaNueva(true)
+    const res = await crearCategoriaPersonalizada(limpio)
+    setGuardandoCategoriaNueva(false)
+    if (res.error) { alert(res.error); return }
+    // Queda elegida al toque: se creó para usarla en este torneo.
+    setCategorias(prev => [...new Set([...prev, limpio])].sort())
+    setCategoriaSeleccionada(limpio)
+    setTextoCategoriaNueva('')
+    setFormCategoriaAbierto(false)
   }
 
   const esAdmin = perfil?.rol === 'admin'
@@ -280,6 +305,38 @@ export default function TorneosInternosPage() {
                 <option value="">Seleccionar categoría...</option>
                 {categorias.map(c => <option key={c} value={c}>{categoriaLabel(c)}</option>)}
               </select>
+
+              {/* Una categoría que no está en la tabla por edad —"MASTER Z", lo
+                  que el club quiera—. Queda guardada y arma su propio ranking. */}
+              {!formCategoriaAbierto ? (
+                <button type="button" onClick={() => setFormCategoriaAbierto(true)}
+                  style={{ background: 'none', border: 'none', padding: '7px 0 0', fontSize: 12, fontWeight: 600, color: '#7c3aed', cursor: 'pointer' }}>
+                  ＋ Agregar categoría
+                </button>
+              ) : (
+                <div style={{ marginTop: 8, background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 8, padding: 10 }}>
+                  <div style={{ fontSize: 11, color: '#5b21b6', marginBottom: 6 }}>
+                    Queda disponible para siempre y tiene su propio ranking. No cambia la categoría de ningún jugador.
+                  </div>
+                  <input
+                    autoFocus value={textoCategoriaNueva}
+                    onChange={e => setTextoCategoriaNueva(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void guardarCategoriaNueva() } }}
+                    placeholder="Ej: MASTER Z" maxLength={40}
+                    style={{ width: '100%', background: '#fff', border: '1px solid #ddd6fe', borderRadius: 8, padding: '9px 11px', color: text, fontSize: 13, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
+                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => { setFormCategoriaAbierto(false); setTextoCategoriaNueva('') }}
+                      style={{ flex: 1, background: '#fff', color: muted, border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 0', fontSize: 12, cursor: 'pointer' }}>
+                      Cancelar
+                    </button>
+                    <button type="button" onClick={guardarCategoriaNueva} disabled={!textoCategoriaNueva.trim() || guardandoCategoriaNueva}
+                      style={{ flex: 1, background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 0', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: (!textoCategoriaNueva.trim() || guardandoCategoriaNueva) ? 0.5 : 1 }}>
+                      {guardandoCategoriaNueva ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 8 }}>Género <span style={{ color: '#dc2626' }}>*</span></label>
@@ -323,7 +380,7 @@ export default function TorneosInternosPage() {
               />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado('') }}
+              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado(''); setFormCategoriaAbierto(false); setTextoCategoriaNueva('') }}
                 style={{ flex: 1, background: '#f4f7fa', color: muted, border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, cursor: 'pointer' }}>
                 Cancelar
               </button>
