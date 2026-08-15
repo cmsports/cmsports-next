@@ -1,4 +1,15 @@
--- El torneo "RANKING SUB 13" pasa a contar para el ranking.
+-- El torneo "RANKING SUB 13" pasa a contar para el ranking, y los torneos
+-- mixtos dejan de ser imposibles.
+--
+-- ── Por qué son dos cosas en una migración ────────────────────────────────
+-- La segunda no es un agregado: sin ella la primera no puede correr. El primer
+-- intento de esta migración abortó con
+--
+--     new row for relation "torneos" violates check constraint
+--     "torneos_genero_check"
+--
+-- porque la restricción era `genero = ANY (ARRAY['varones','damas'])` y este
+-- torneo es mixto. Van juntas o no va ninguna.
 --
 -- ── Qué pasó ──────────────────────────────────────────────────────────────
 -- El torneo está entero y bien cargado: sus 14 partidos, con las fases
@@ -61,6 +72,36 @@
 BEGIN;
 
 SELECT _migracion_nueva('191_ranking_sub13_agosto_2026');
+
+-- ── 0. Que un torneo pueda ser mixto ──────────────────────────────────────
+-- La columna `genero` de `torneos` se agregó desde el dashboard y no por
+-- migración, así que su CHECK no estaba en ningún archivo del repo. Decía:
+--
+--     CHECK (genero = ANY (ARRAY['varones', 'damas']))
+--
+-- Pero /torneos-internos ofrece TRES botones —Varones, Damas y Mixto—, y
+-- 'mixto' está en el tipo de `crearTorneo`. O sea que el formulario ofrece una
+-- opción que la base rechaza: hasta hoy, crear un torneo mixto desde la app
+-- revienta al guardar. Cuadra con los datos, donde no hay un solo torneo mixto
+-- en ningún club.
+--
+-- Y no es un detalle cosmético: las cinco categorías del ranking del papel
+-- —SUB13, SUB15, SUB19, TC"A" y TCB— son mixtas, confirmado por la asociación
+-- cuando se armó la 189, y el saldo se cargó con genero = 'mixto'. Con la
+-- restricción vieja, NINGÚN torneo de esas categorías podía sumarle nunca al
+-- ranking del papel: no es solo el SUB13 de agosto, es todo lo que venga.
+--
+-- El NULL sigue permitido, como hasta ahora. Antes lo estaba de rebote —en SQL
+-- `NULL = ANY (...)` da NULL, y un CHECK deja pasar lo que no da FALSE—, y acá
+-- queda dicho con todas las letras para que no dependa de eso. Hace falta: los
+-- torneos externos no llevan género.
+ALTER TABLE public.torneos DROP CONSTRAINT IF EXISTS torneos_genero_check;
+ALTER TABLE public.torneos ADD CONSTRAINT torneos_genero_check
+  CHECK (genero IS NULL OR genero = ANY (ARRAY['varones', 'damas', 'mixto']));
+
+-- `categoria` no tiene CHECK —se verificó en pg_constraint—, así que 'SUB13'
+-- entra sin tocar nada más. Y no debería tenerlo nunca: las categorías salen
+-- de `categorias_personalizadas`, que cada club arma como quiere.
 
 -- ── 1. Que el torneo esté como lo dejamos ─────────────────────────────────
 -- Si alguien ya lo finalizó o lo corrigió a mano desde la app entremedio, esta
@@ -175,6 +216,11 @@ COMMIT;
 
 
 -- ── Verificación ──────────────────────────────────────────────────────────
+
+-- 0) La restricción, que ahora tiene que nombrar a 'mixto'.
+SELECT pg_get_constraintdef(oid) AS definicion
+FROM pg_constraint
+WHERE conrelid = 'public.torneos'::regclass AND conname = 'torneos_genero_check';
 
 -- 1) La fila del torneo, ya corregida.
 SELECT nombre, tipo, estado, fase, categoria, genero, fecha_fin,
