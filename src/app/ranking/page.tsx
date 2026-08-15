@@ -352,97 +352,132 @@ export default function RankingPage() {
               </div>
             )}
             {rankingActivo && rankingActivo.filas.length > 0 && (() => {
-              // El podio se arma por PUESTO, no por posición en la lista: si
-              // tres empatan en el primer lugar, los tres son primeros y no hay
-              // segundo. Por eso se agrupa por `rank` en vez de cortar en 3.
-              // Con muchos empatados arriba el podio deja de ser un podio: si
-              // ocho comparten el primer puesto —pasa cuando casi todos se
-              // fueron en grupos y tienen los mismos 9 puntos— serían ocho
-              // tarjetas gigantes. Ahí conviene la lista pareja.
-              const candidatos = rankingActivo.filas.filter(f => f.rank <= 3)
-              const hayPodio = candidatos.length <= 4
-              const podio = hayPodio ? candidatos : []
-              const resto = hayPodio
-                ? rankingActivo.filas.filter(f => f.rank > 3)
-                : rankingActivo.filas
-              const tope = rankingActivo.filas[0]?.pts || 1
-              // Orden visual del podio: el primero al medio, como un podio real.
-              const primeros = podio.filter(f => f.rank === 1)
-              const segundos = podio.filter(f => f.rank === 2)
-              const terceros = podio.filter(f => f.rank === 3)
-              const enPodio = [...segundos, ...primeros, ...terceros]
+              const filas = rankingActivo.filas
+              // Todo se agrupa por PUESTO y no por posición en la lista: si tres
+              // empatan primeros, los tres son primeros y no hay segundo.
+              const lideres = filas.filter(f => f.rank === 1)
+              const escoltas = filas.filter(f => f.rank === 2 || f.rank === 3)
+              // Con muchos empatados arriba el podio deja de serlo —pasa cuando
+              // casi todos se fueron en grupos con los mismos 9 puntos—, así que
+              // ahí se muestra la lista pareja y nada más.
+              const destacar = lideres.length <= 2 && lideres.length + escoltas.length <= 4
+              const resto = destacar ? filas.filter(f => f.rank > 3) : filas
+              const tope = filas[0]?.pts || 1
+              // Cuánto le falta a cada uno para pasar al puesto de más arriba.
+              const faltaPara = (pts: number) => {
+                const arriba = filas.find(f => f.pts > pts)
+                return arriba ? arriba.pts - pts : 0
+              }
 
               return (
                 <>
-                  {/* ── Podio ── */}
-                  <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-                    gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-                    {enPodio.map(fila => {
-                      const oro = fila.rank === 1
-                      return (
+                  {destacar && lideres.map(lider => (
+                    <div key={lider.jugadorId}
+                      onClick={() => router.push(`/jugadores/${lider.jugadorId}`)}
+                      style={{ background: '#422006', borderRadius: 16, padding: 20, marginBottom: 14,
+                        display: 'flex', alignItems: 'center', gap: 18, cursor: 'pointer',
+                        border: lider.jugadorId === perfil?.jugador_id ? '2px solid #fbbf24' : 'none' }}>
+                      <Retrato url={fotoPorJugador[lider.jugadorId]} nombre={lider.nombre} tam={74} destacado />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10, letterSpacing: 1.5, color: '#f59e0b', fontWeight: 700, marginBottom: 5 }}>
+                          {lideres.length > 1 ? 'LIDERES DE LA CATEGORÍA' : 'LÍDER DE LA CATEGORÍA'}
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#fef3c7', lineHeight: 1.25, marginBottom: 8 }}>
+                          {lider.nombre}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                          <span style={{ fontSize: 32, fontWeight: 800, color: '#fbbf24', lineHeight: 1,
+                            fontVariantNumeric: 'tabular-nums' }}>{lider.pts}</span>
+                          <span style={{ fontSize: 12, color: '#f59e0b' }}>puntos</span>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 40, flexShrink: 0 }}>🏆</div>
+                    </div>
+                  ))}
+
+                  {destacar && escoltas.length > 0 && (
+                    <div style={{ display: 'grid', gap: 12, marginBottom: 18,
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+                      {escoltas.map(fila => (
                         <div key={fila.jugadorId}
                           onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
-                          style={{ flex: '1 1 0', minWidth: 96, maxWidth: 210, cursor: 'pointer', textAlign: 'center' }}>
-                          <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre}
-                            tam={oro ? 64 : 50} destacado={oro} />
-                          <div style={{ fontSize: oro ? 13 : 12, fontWeight: 600, color: text,
-                            margin: '8px 0 6px', lineHeight: 1.3, minHeight: 32 }}>
-                            {fila.nombre}
-                          </div>
-                          <div style={{ background: oro ? '#fef3c7' : '#f1f5f9',
-                            borderRadius: '10px 10px 0 0',
-                            padding: oro ? '18px 8px 20px' : '10px 8px 12px' }}>
-                            <div style={{ fontSize: oro ? 28 : 20, fontWeight: 800, lineHeight: 1,
-                              color: oro ? '#78350f' : text, fontVariantNumeric: 'tabular-nums' }}>
-                              {fila.pts}
-                            </div>
-                            <div style={{ fontSize: 10, marginTop: 5, color: oro ? '#a16207' : hint, fontWeight: 600 }}>
+                          style={{ ...card, padding: 14, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                            border: fila.jugadorId === perfil?.jugador_id ? '2px solid #7c3aed' : '1px solid #e2e8f0' }}>
+                          <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre} tam={46} />
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 10, color: hint, fontWeight: 700, marginBottom: 2 }}>
                               {medallas[fila.rank - 1]} {fila.rank}° lugar
                             </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {/* ── El resto ── */}
-                  {resto.length > 0 && (
-                    <div style={{ ...card, overflow: 'hidden' }}>
-                      {resto.map((fila, idx) => (
-                        <div
-                          key={fila.jugadorId}
-                          onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
-                            borderBottom: idx < resto.length - 1 ? '1px solid #f1f5f9' : 'none', cursor: 'pointer' }}
-                        >
-                          <div style={{ width: 24, fontSize: 13, color: hint, fontWeight: 600, flexShrink: 0,
-                            fontVariantNumeric: 'tabular-nums' }}>
-                            {fila.rank}
-                          </div>
-                          <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre} tam={32} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 4,
+                            <div style={{ fontSize: 13, fontWeight: 600, color: text, lineHeight: 1.25, marginBottom: 3,
                               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {fila.nombre}
                             </div>
-                            {/* La barra mide contra el puntero: de un vistazo se
-                                ve la distancia real, sin tener que restar. */}
-                            <div style={{ height: 4, background: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
-                              <div style={{ width: `${Math.round((fila.pts / tope) * 100)}%`, height: '100%',
-                                background: '#a78bfa', borderRadius: 2 }} />
+                            <div style={{ fontSize: 17, fontWeight: 800, color: text, fontVariantNumeric: 'tabular-nums' }}>
+                              {fila.pts}
                             </div>
-                          </div>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: '#7c3aed', flexShrink: 0,
-                            fontVariantNumeric: 'tabular-nums' }}>
-                            {fila.pts}
                           </div>
                         </div>
                       ))}
                     </div>
                   )}
+
+                  {resto.length > 0 && (
+                    <div style={{ ...card, overflow: 'hidden' }}>
+                      {destacar && (
+                        <div style={{ padding: '10px 16px', borderBottom: '1px solid #e2e8f0',
+                          fontSize: 10, letterSpacing: 1, color: hint, fontWeight: 700 }}>
+                          PERSIGUEN
+                        </div>
+                      )}
+                      {resto.map((fila, idx) => {
+                        const soyYo = fila.jugadorId === perfil?.jugador_id
+                        const falta = faltaPara(fila.pts)
+                        return (
+                          <div
+                            key={fila.jugadorId}
+                            onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
+                              borderBottom: idx < resto.length - 1 ? '1px solid #f1f5f9' : 'none', cursor: 'pointer',
+                              // Su propia fila, para no buscarse entre treinta.
+                              background: soyYo ? '#f5f3ff' : undefined,
+                              borderLeft: soyYo ? '3px solid #7c3aed' : '3px solid transparent' }}
+                          >
+                            <div style={{ width: 22, fontSize: 13, fontWeight: 600, flexShrink: 0, textAlign: 'center',
+                              color: soyYo ? '#7c3aed' : hint, fontVariantNumeric: 'tabular-nums' }}>
+                              {fila.rank}
+                            </div>
+                            <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre} tam={34} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 5,
+                                color: soyYo ? '#5b21b6' : text,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {fila.nombre}
+                                {soyYo && <span style={{ fontSize: 11, fontWeight: 500, color: '#7c3aed' }}> · vos</span>}
+                              </div>
+                              <div style={{ height: 5, background: soyYo ? '#ddd6fe' : '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
+                                <div style={{ width: `${Math.round((fila.pts / tope) * 100)}%`, height: '100%',
+                                  background: soyYo ? '#7c3aed' : '#a78bfa', borderRadius: 3 }} />
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <div style={{ fontSize: 16, fontWeight: 800, lineHeight: 1,
+                                color: soyYo ? '#5b21b6' : '#7c3aed', fontVariantNumeric: 'tabular-nums' }}>
+                                {fila.pts}
+                              </div>
+                              {/* Lo que engancha: cuánto falta para subir. */}
+                              {falta > 0 && (
+                                <div style={{ fontSize: 10, color: hint, marginTop: 3 }}>a {falta}</div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </>
               )
             })()}
+
           </>
         )}
       </div>
