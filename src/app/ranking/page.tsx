@@ -455,8 +455,13 @@ export default function RankingPage() {
                                     {col.medalla}
                                   </span>
                                 </div>
+                                {/* Dos líneas y corta: "Agustín Edison Leonel
+                                    Calderón Vera" son 35 caracteres y en una
+                                    columna de 150px se comía cuatro renglones,
+                                    dejando las tres cabezas a distinta altura. */}
                                 <div style={{ fontSize: esCampeon ? 13 : 11.5, fontWeight: 700, color: '#fff',
-                                  lineHeight: 1.25, marginBottom: 3, minHeight: 32,
+                                  lineHeight: 1.25, marginBottom: 3, height: 32, overflow: 'hidden',
+                                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                                   textShadow: '0 1px 8px rgba(0,0,0,0.35)' }}>
                                   {enBonito(f.nombre)}
                                 </div>

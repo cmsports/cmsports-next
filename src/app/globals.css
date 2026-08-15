@@ -238,13 +238,17 @@ body {
 }
 
 /* El podio sube desde abajo, como si se armara. Cada columna con su demora:
-   primero los costados, después el campeón. */
+   primero los costados, después el campeón.
+
+   Sube deslizándose y no con `scaleY`: escalar el escalón escala también el
+   puntaje y el "1° LUGAR" que lleva adentro, y el número se veía aplastado y
+   estirándose durante medio segundo. Deslizar mueve el bloque entero sin
+   deformar nada. El recorte lo hace el `overflow: hidden` del podio. */
 @keyframes subeColumna {
-  from { transform: scaleY(0); opacity: 0; }
-  to   { transform: scaleY(1); opacity: 1; }
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
 }
 .columna-podio {
-  transform-origin: bottom center;
   animation: subeColumna 520ms var(--curva) both;
 }
 .columna-podio.plata  { animation-delay: 60ms; }
