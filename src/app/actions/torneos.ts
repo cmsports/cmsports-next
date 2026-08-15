@@ -156,41 +156,53 @@ export async function crearCategoriaPersonalizada(nombre: string) {
 }
 
 /**
- * Cuántos torneos usan una categoría. Se pregunta ANTES de borrarla.
+ * Qué se lleva puesto borrar una categoría. Se pregunta ANTES de borrarla.
  *
- * La pantalla necesita el número para poder advertir qué se está por perder:
- * la categoría sola no se lleva nada, pero borrarla junto con sus torneos sí.
+ * La pantalla necesita los números para poder advertir qué se está por perder:
+ * la fila del catálogo sola no se lleva nada, pero sus torneos y su ranking
+ * traído en papel sí.
  */
 export async function contarTorneosDeCategoria(nombre: string) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
+  const limpio = nombre.trim()
+
   // `categoria` no está en los tipos generados —se agregó en la 056 y nunca se
   // regeneraron—, por eso el `any`, igual que el resto del archivo.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { count } = await (supabase as any)
+  const sb = supabase as any
+  const { count: torneos } = await sb
     .from('torneos')
     .select('id', { count: 'exact', head: true })
-    .eq('club_id', perfil.club_id).eq('categoria', nombre.trim())
+    .eq('club_id', perfil.club_id).eq('categoria', limpio)
 
-  return { success: true, torneos: count ?? 0 }
+  // El saldo del ranking en papel cuenta aparte: una categoría puede no tener
+  // ningún torneo cargado y aun así tener ranking, que es justo el caso de las
+  // cinco de Buin recién importadas.
+  const { count: saldos } = await sb
+    .from('ranking_saldo_inicial')
+    .select('id', { count: 'exact', head: true })
+    .eq('club_id', perfil.club_id).eq('categoria', limpio)
+
+  return { success: true, torneos: torneos ?? 0, saldos: saldos ?? 0 }
 }
 
 /**
- * Borra una categoría inventada y, si se pide, los torneos que la usan.
+ * Borra una categoría inventada y, si se pide, todo su ranking.
  *
  * `torneos.categoria` guarda la palabra escrita, no una referencia, así que
  * sacar la fila del catálogo por sí sola no toca ningún torneo: el ranking de
- * esa categoría se sigue armando mientras exista un torneo con ese texto. Para
- * que el ranking desaparezca de verdad hay que borrar esos torneos, y eso es lo
- * que hace `conTorneos`.
+ * esa categoría se sigue armando mientras exista un torneo con ese texto —o un
+ * saldo del ranking en papel—. Para que desaparezca de verdad hay que borrar
+ * las dos cosas, y eso es lo que hace `conRanking`.
  *
  * La plata NO se borra: `movimientos.torneo_id` es ON DELETE SET NULL desde la
  * migración 024, así que las inscripciones cobradas siguen sumando en Finanzas
  * aunque el torneo ya no esté. Misma regla que al dar de baja a un jugador.
  */
-export async function eliminarCategoriaPersonalizada(nombre: string, conTorneos = false) {
+export async function eliminarCategoriaPersonalizada(nombre: string, conRanking = false) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
@@ -199,9 +211,11 @@ export async function eliminarCategoriaPersonalizada(nombre: string, conTorneos 
   if (!limpio) return { error: 'Falta la categoría' }
 
   let torneosBorrados = 0
-  if (conTorneos) {
+  let saldosBorrados = 0
+  if (conRanking) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: suyos } = await (supabase as any)
+    const sb = supabase as any
+    const { data: suyos } = await sb
       .from('torneos').select('id')
       .eq('club_id', perfil.club_id).eq('categoria', limpio)
 
@@ -210,6 +224,16 @@ export async function eliminarCategoriaPersonalizada(nombre: string, conTorneos 
       if (res.error) return { error: `No se pudo borrar un torneo: ${res.error}` }
       torneosBorrados++
     }
+
+    // Sin esto la categoría se iba del selector pero su ranking seguía en pie,
+    // sostenido por el saldo del papel: se borraban los torneos y la tabla
+    // quedaba igual de llena.
+    const { data: borrados, error: errSaldo } = await sb
+      .from('ranking_saldo_inicial').delete()
+      .eq('club_id', perfil.club_id).eq('categoria', limpio)
+      .select('id')
+    if (errSaldo) return { error: `No se pudo borrar el ranking: ${errSaldo.message}` }
+    saldosBorrados = (borrados ?? []).length
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,7 +241,7 @@ export async function eliminarCategoriaPersonalizada(nombre: string, conTorneos 
     .delete().eq('club_id', perfil.club_id).eq('nombre', limpio)
 
   if (error) return { error: error.message }
-  return { success: true, torneosBorrados }
+  return { success: true, torneosBorrados, saldosBorrados }
 }
 
 async function calcularClasificadosDesdeBD(

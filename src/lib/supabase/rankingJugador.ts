@@ -5,11 +5,15 @@ const supabase = createClient()
 
 export type PuestoEnCategoria = {
   categoria: string
+  /** varones | damas | mixto | null. Separa rankings distintos con igual nombre. */
+  genero: string | null
   /** Puesto compartido: dos con los mismos puntos tienen el mismo número. */
   rank: number
   /** Cuántos jugadores hay en esa categoría. */
   total: number
   pts: number
+  /** Puntos del puntero de esa categoría. Es contra esto que se mide la barra. */
+  ptsLider: number
   victorias: number
   derrotas: number
   jugados: number
@@ -43,30 +47,39 @@ export async function cargarRankingDeJugador(
   const reinicioTs: string | null = club?.ranking_reiniciado_en ?? null
 
   let queryTorneos = sb.from('torneos')
-    .select('id,categoria').eq('club_id', clubId).eq('tipo', 'interno')
+    .select('id,categoria,genero').eq('club_id', clubId).eq('tipo', 'interno')
     .in('estado', ['finalizado', 'archivado'])
   if (reinicioTs) queryTorneos = queryTorneos.gt('creado_en', reinicioTs)
   const { data: torneos } = await queryTorneos
 
   const { data: saldos } = await sb
     .from('ranking_saldo_inicial')
-    .select('jugador_id,categoria,puntos,creado_en')
+    .select('jugador_id,categoria,genero,puntos,creado_en')
     .eq('club_id', clubId)
 
-  type FilaSaldo = { jugador_id: string; categoria: string; puntos: number; creado_en: string }
-  const saldoPorCategoria = new Map<string, Map<string, number>>()
+  // La clave incluye el género, igual que en /ranking. Si acá se agrupara solo
+  // por categoría, un club con "TC varones" y "TC damas" vería un puesto en la
+  // ficha y otro distinto en el Ranking, porque la ficha los estaría mezclando
+  // en una sola tabla. Es el mismo desajuste que ya apareció una vez.
+  const clave = (categoria: string, genero: string | null) => `${categoria}||${genero ?? ''}`
+
+  type FilaSaldo = { jugador_id: string; categoria: string; genero: string | null; puntos: number; creado_en: string }
+  const saldoPorClave = new Map<string, Map<string, number>>()
   for (const s of ((saldos ?? []) as FilaSaldo[])) {
     if (reinicioTs && s.creado_en <= reinicioTs) continue
-    const porJugador = saldoPorCategoria.get(s.categoria) ?? new Map<string, number>()
+    const k = clave(s.categoria, s.genero)
+    const porJugador = saldoPorClave.get(k) ?? new Map<string, number>()
     porJugador.set(s.jugador_id, (porJugador.get(s.jugador_id) ?? 0) + s.puntos)
-    saldoPorCategoria.set(s.categoria, porJugador)
+    saldoPorClave.set(k, porJugador)
   }
 
-  const categoriaDe = new Map<string, string>(
+  const claveDe = new Map<string, string>(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ((torneos ?? []) as any[]).map(t => [t.id as string, (t.categoria as string) || 'Sin categoría']),
+    ((torneos ?? []) as any[]).map(t => [
+      t.id as string, clave((t.categoria as string) || 'Sin categoría', (t.genero as string) ?? null),
+    ]),
   )
-  const torneoIds = [...categoriaDe.keys()]
+  const torneoIds = [...claveDe.keys()]
 
   const { data: partidos } = torneoIds.length
     ? await supabase.from('torneo_partidos')
@@ -76,14 +89,14 @@ export async function cargarRankingDeJugador(
         .not('ganador', 'is', null)
     : { data: [] }
 
-  // Por categoría, y adentro por torneo: el puesto —y con él los puntos— solo
-  // existe dentro de un torneo.
-  const porCategoria: Record<string, Map<string, TorneoConPartidos>> = {}
-  for (const categoria of saldoPorCategoria.keys()) porCategoria[categoria] ??= new Map()
+  // Por categoría+género, y adentro por torneo: el puesto —y con él los
+  // puntos— solo existe dentro de un torneo.
+  const porClave: Record<string, Map<string, TorneoConPartidos>> = {}
+  for (const k of saldoPorClave.keys()) porClave[k] ??= new Map()
   for (const p of (partidos ?? [])) {
     const torneoId = p.torneo_id as string
-    const cat = categoriaDe.get(torneoId) ?? 'Sin categoría'
-    const porTorneo = (porCategoria[cat] ??= new Map())
+    const k = claveDe.get(torneoId) ?? 'Sin categoría||'
+    const porTorneo = (porClave[k] ??= new Map())
     const acc = porTorneo.get(torneoId) ?? { torneoId, partidos: [] }
     acc.partidos.push({
       jugador_a: p.jugador_a as string, jugador_b: p.jugador_b as string,
@@ -93,18 +106,21 @@ export async function cargarRankingDeJugador(
   }
 
   const salida: PuestoEnCategoria[] = []
-  for (const [categoria, porTorneo] of Object.entries(porCategoria)) {
+  for (const [k, porTorneo] of Object.entries(porClave)) {
     const tabla = calcularRankingInterno(
-      [...porTorneo.values()], () => '', saldoPorCategoria.get(categoria),
+      [...porTorneo.values()], () => '', saldoPorClave.get(k),
     )
     const suya = tabla.find(f => f.jugadorId === jugadorId)
     if (!suya) continue
 
+    const [categoria, generoRaw] = k.split('||')
     // El de más arriba es el primero con MÁS puntos: si tres empatan en el 5°,
     // subir no es alcanzar al de al lado, es pasar al 4°.
     const arriba = tabla.find(f => f.pts > suya.pts)
     salida.push({
-      categoria, rank: suya.rank, total: tabla.length, pts: suya.pts,
+      categoria, genero: generoRaw || null,
+      rank: suya.rank, total: tabla.length, pts: suya.pts,
+      ptsLider: tabla[0]?.pts ?? suya.pts,
       victorias: suya.victorias, derrotas: suya.derrotas, jugados: suya.jugados,
       faltanParaSubir: arriba ? arriba.pts - suya.pts : 0,
     })

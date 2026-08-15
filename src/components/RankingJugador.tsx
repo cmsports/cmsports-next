@@ -49,10 +49,6 @@ export default function RankingJugador({ clubId, jugadorId, titulo = 'Ranking' }
     )
   }
 
-  // La barra mide contra el puntero de su categoría, no contra el máximo
-  // posible: lo que importa es cuánto le falta a quien va ganando.
-  const maximo = Math.max(...puestos.map(p => p.pts), 1)
-
   return (
     <div style={{ ...card, padding: 18 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
@@ -65,7 +61,7 @@ export default function RankingJugador({ clubId, jugadorId, titulo = 'Ranking' }
       {puestos.map((p, i) => {
         const podio = p.rank <= 3
         return (
-          <div key={p.categoria}
+          <div key={`${p.categoria}||${p.genero ?? ''}`}
             style={{ display: 'flex', alignItems: 'center', gap: 16,
               padding: i === 0 ? '0 0 14px' : '14px 0',
               borderTop: i === 0 ? 'none' : '1px solid #f1f5f9' }}>
@@ -81,9 +77,20 @@ export default function RankingJugador({ clubId, jugadorId, titulo = 'Ranking' }
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 5 }}>
                 {categoriaLabel(p.categoria)}
+                {/* Dos categorías pueden llamarse igual y ser rankings
+                    distintos —"TC varones" y "TC damas"—, así que el género va
+                    al lado o no se sabe cuál de las dos es. */}
+                {p.genero && (
+                  <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 500, color: hint }}>
+                    {p.genero === 'varones' ? '♂' : p.genero === 'damas' ? '♀' : '⚥'}
+                  </span>
+                )}
               </div>
+              {/* Mide contra el PUNTERO de esa categoría, no contra el mejor
+                  puntaje del propio jugador: comparar sus categorías entre sí
+                  le dibujaba la barra llena al que va noveno. */}
               <div style={{ height: 5, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden', marginBottom: 6 }}>
-                <div style={{ width: `${Math.round((p.pts / maximo) * 100)}%`, height: '100%',
+                <div style={{ width: `${Math.round((p.pts / Math.max(p.ptsLider, 1)) * 100)}%`, height: '100%',
                   background: podio ? '#f59e0b' : morado, borderRadius: 3 }} />
               </div>
               <div style={{ fontSize: 11, color: muted }}>

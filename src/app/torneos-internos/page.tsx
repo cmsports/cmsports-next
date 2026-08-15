@@ -189,16 +189,22 @@ export default function TorneosInternosPage() {
     if (cuenta.error) { setBorrandoCategoria(null); alert(cuenta.error); return }
 
     const n = cuenta.torneos ?? 0
-    const aviso = n === 0
-      ? `¿Borrar la categoría "${nombreCat}"?\n\nNo la usa ningún torneo.`
-      : `¿Borrar "${nombreCat}" y sus ${n} torneo${n === 1 ? '' : 's'}?\n\n`
-        + `Se borra${n === 1 ? '' : 'n'} el torneo${n === 1 ? '' : 's'} con sus partidos, inscritos y resultados, `
-        + `y el ranking de esta categoría desaparece.\n\n`
+    const s = cuenta.saldos ?? 0
+
+    const partes: string[] = []
+    if (n > 0) partes.push(`${n} torneo${n === 1 ? '' : 's'} con sus partidos, inscritos y resultados`)
+    if (s > 0) partes.push(`el ranking de ${s} jugador${s === 1 ? '' : 'es'} traído en papel`)
+
+    const aviso = partes.length === 0
+      ? `¿Borrar la categoría "${nombreCat}"?\n\nNo tiene torneos ni ranking cargado.`
+      : `¿Borrar "${nombreCat}" y todo su ranking?\n\n`
+        + `Se borra: ${partes.join(', y ')}.\n\n`
+        + `La categoría desaparece del Ranking, del perfil de cada jugador y de su ficha.\n\n`
         + `La plata ya registrada en Finanzas NO se borra.\n\nEsto no se puede deshacer.`
 
     if (!confirm(aviso)) { setBorrandoCategoria(null); return }
 
-    const res = await eliminarCategoriaPersonalizada(nombreCat, n > 0)
+    const res = await eliminarCategoriaPersonalizada(nombreCat, n > 0 || s > 0)
     setBorrandoCategoria(null)
     if (res.error) { alert(res.error); return }
 

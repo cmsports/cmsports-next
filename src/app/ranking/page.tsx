@@ -218,7 +218,17 @@ export default function RankingPage() {
   }
 
   async function handleReiniciar() {
-    if (!confirm('¿Reiniciar ranking? Se borrará el historial acumulado y comenzará desde cero con los torneos futuros.')) return
+    // El reinicio no borra filas: guarda una fecha y el cálculo ignora todo lo
+    // anterior. Pero para el club el efecto es el mismo que borrar, y arrastra
+    // el ranking que se importó del papel —que costó dos rondas de preguntas a
+    // la asociación—, así que el aviso lo dice con todas las letras.
+    if (!confirm(
+      '¿Reiniciar el ranking?\n\n'
+      + 'Todos vuelven a cero: se dejan de contar los torneos ya jugados Y el ranking '
+      + 'que se cargó desde la planilla del club.\n\n'
+      + 'Cambia en el Ranking, en el perfil de cada jugador y en su ficha.\n\n'
+      + 'Esto no se puede deshacer.',
+    )) return
     setReiniciando(true)
     const res = await reiniciarRanking()
     setReiniciando(false)
@@ -345,8 +355,16 @@ export default function RankingPage() {
               // El podio se arma por PUESTO, no por posición en la lista: si
               // tres empatan en el primer lugar, los tres son primeros y no hay
               // segundo. Por eso se agrupa por `rank` en vez de cortar en 3.
-              const podio = rankingActivo.filas.filter(f => f.rank <= 3)
-              const resto = rankingActivo.filas.filter(f => f.rank > 3)
+              // Con muchos empatados arriba el podio deja de ser un podio: si
+              // ocho comparten el primer puesto —pasa cuando casi todos se
+              // fueron en grupos y tienen los mismos 9 puntos— serían ocho
+              // tarjetas gigantes. Ahí conviene la lista pareja.
+              const candidatos = rankingActivo.filas.filter(f => f.rank <= 3)
+              const hayPodio = candidatos.length <= 4
+              const podio = hayPodio ? candidatos : []
+              const resto = hayPodio
+                ? rankingActivo.filas.filter(f => f.rank > 3)
+                : rankingActivo.filas
               const tope = rankingActivo.filas[0]?.pts || 1
               // Orden visual del podio: el primero al medio, como un podio real.
               const primeros = podio.filter(f => f.rank === 1)
