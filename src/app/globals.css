@@ -165,6 +165,68 @@ body {
 .anim-lista > *:nth-child(9)  { animation-delay: 200ms; }
 .anim-lista > *:nth-child(n+10) { animation-delay: 225ms; }
 
+/* ── Ranking ──────────────────────────────────────────────────────────────
+   El Ranking sí usa `transform`, a diferencia del resto: acá ninguna tarjeta
+   lleva un modal adentro, que es lo que obligaba a limitarse a la opacidad.
+   Es la pantalla donde el movimiento cuenta algo —una barra que crece dice
+   cuánta ventaja hay— así que se paga el costo. */
+
+/* La barra crece desde la izquierda. Va con scaleX y no con width porque
+   width recalcula el layout en cada cuadro y con treinta filas se nota. */
+@keyframes creceBarra {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.barra-ranking {
+  transform-origin: left center;
+  animation: creceBarra 700ms var(--curva) both;
+}
+
+/* Las filas suben una tras otra. El escalonado se corta a las doce: con
+   treinta jugadores, esperar a que entre el último sería eterno. */
+@keyframes subeFila {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+.lista-ranking > * { animation: subeFila 320ms var(--curva) both; }
+.lista-ranking > *:nth-child(1)  { animation-delay: 40ms; }
+.lista-ranking > *:nth-child(2)  { animation-delay: 70ms; }
+.lista-ranking > *:nth-child(3)  { animation-delay: 100ms; }
+.lista-ranking > *:nth-child(4)  { animation-delay: 130ms; }
+.lista-ranking > *:nth-child(5)  { animation-delay: 160ms; }
+.lista-ranking > *:nth-child(6)  { animation-delay: 190ms; }
+.lista-ranking > *:nth-child(7)  { animation-delay: 220ms; }
+.lista-ranking > *:nth-child(8)  { animation-delay: 250ms; }
+.lista-ranking > *:nth-child(9)  { animation-delay: 280ms; }
+.lista-ranking > *:nth-child(10) { animation-delay: 310ms; }
+.lista-ranking > *:nth-child(11) { animation-delay: 340ms; }
+.lista-ranking > *:nth-child(n+12) { animation-delay: 370ms; }
+
+/* La portada del líder entra con algo más de recorrido: es lo primero que se
+   mira y conviene que se note que llegó. */
+@keyframes entraPortada {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+.portada-ranking { animation: entraPortada 480ms var(--curva) both; }
+
+/* El 2° y el 3°, apenas después de la portada. */
+@keyframes entraEscolta {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+.escolta-ranking { animation: entraEscolta 420ms var(--curva) both; }
+.escolta-ranking:nth-child(1) { animation-delay: 120ms; }
+.escolta-ranking:nth-child(2) { animation-delay: 190ms; }
+
+/* Quien pide no tener animaciones no las tiene. Es una pantalla decorativa:
+   sin el movimiento se entiende igual. */
+@media (prefers-reduced-motion: reduce) {
+  .barra-ranking, .lista-ranking > *, .portada-ranking, .escolta-ranking {
+    animation: none;
+  }
+}
+
 /* Que un toque se sienta. En el celular es lo único que confirma que el dedo
    registró, porque no hay puntero que cambie de forma. */
 button:not(:disabled),
