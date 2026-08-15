@@ -9,6 +9,8 @@ import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 import { calcularRankingInterno, faltaParaSubir, type ResultadoJugadorRanking, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
 import { TABLA_PUNTAJE } from '@/lib/domain/puntajeTorneo'
+import { enBonito } from '@/lib/domain/nombreJugador'
+import { exportarRankingPdf } from '@/lib/ranking-pdf'
 import { firmarUrls } from '@/lib/supabase/privado'
 import { useEnVivo } from '@/lib/useEnVivo'
 
@@ -45,20 +47,6 @@ const SERPENTINA = [
   { left: '96%', color: '#60a5fa', delay: '2.3s',  dur: '3.4s' },
 ]
 
-/**
- * El nombre como para mostrarlo.
- *
- * En la base conviven "JORGE GONZALEZ NUÑEZ" —de las altas por planilla— con
- * "alejandro garces", que salió de escribirlo a mano al inscribir a un torneo.
- * Puestos uno debajo del otro en el podio se ve el desorden, así que se
- * empareja acá: la ficha no se toca.
- */
-function enBonito(nombre: string): string {
-  return nombre.trim().toLowerCase().split(/\s+/)
-    .map(p => p.charAt(0).toUpperCase() + p.slice(1))
-    .join(' ')
-}
-
 export default function RankingPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [rankingPorCategoria, setRankingPorCategoria] = useState<CategoriaRanking[]>([])
@@ -66,6 +54,8 @@ export default function RankingPage() {
   const [loading, setLoading] = useState(true)
   const [reiniciando, setReiniciando] = useState(false)
   const [reiniciadoEn, setReiniciadoEn] = useState<string | null>(null)
+  const [clubNombre, setClubNombre] = useState('')
+  const [exportando, setExportando] = useState(false)
   const [fotoPorJugador, setFotoPorJugador] = useState<Record<string, string>>({})
   const [ayudaAbierta, setAyudaAbierta] = useState(false)
   const router = useRouter()
@@ -96,14 +86,16 @@ export default function RankingPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
 
-    // 1. Timestamp de reinicio del club
+    // 1. Timestamp de reinicio del club. El nombre viene en la misma consulta:
+    // lo necesita el encabezado del PDF.
     const { data: club } = await sb
       .from('clubes')
-      .select('ranking_reiniciado_en')
+      .select('nombre,ranking_reiniciado_en')
       .eq('id', perfil.club_id)
       .single()
     const reinicioTs = club?.ranking_reiniciado_en ?? null
     setReiniciadoEn(reinicioTs)
+    setClubNombre(club?.nombre ?? '')
 
     // 2. Torneos internos del club, solo los que ya terminaron.
     //
@@ -273,6 +265,22 @@ export default function RankingPage() {
   const esAdmin = perfil?.rol === 'admin'
   const rankingActivo = rankingPorCategoria.find(r => `${r.categoria}||${r.genero ?? ''}` === categoriaActiva)
 
+  // Exporta la categoría que se está mirando, no todas: el ranking se muestra
+  // y se imprime de a una, y un PDF con las cinco juntas no es lo que se pega
+  // en el mural. Lo puede bajar cualquiera —el jugador incluido—, porque es la
+  // misma tabla que ya tiene delante; el jugador solo ve la suya.
+  async function handlePdf() {
+    if (!rankingActivo) return
+    setExportando(true)
+    try {
+      await exportarRankingPdf(rankingActivo, { clubNombre, reiniciadoEn })
+    } catch (e) {
+      alert(`No se pudo generar el PDF: ${e instanceof Error ? e.message : e}`)
+    } finally {
+      setExportando(false)
+    }
+  }
+
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
       <div style={{ color: hint }}>Cargando ranking...</div>
@@ -307,15 +315,26 @@ export default function RankingPage() {
               </div>
             )}
           </div>
-          {esAdmin && (
-            <button
-              onClick={handleReiniciar}
-              disabled={reiniciando}
-              style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
-            >
-              {reiniciando ? 'Reiniciando...' : '↺ Reiniciar'}
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            {rankingActivo && rankingActivo.filas.length > 0 && (
+              <button
+                onClick={handlePdf}
+                disabled={exportando}
+                style={{ background: '#f5f3ff', color: '#6d28d9', border: '1px solid #ddd6fe', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: exportando ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
+              >
+                {exportando ? 'Generando...' : '↓ PDF'}
+              </button>
+            )}
+            {esAdmin && (
+              <button
+                onClick={handleReiniciar}
+                disabled={reiniciando}
+                style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+              >
+                {reiniciando ? 'Reiniciando...' : '↺ Reiniciar'}
+              </button>
+            )}
+          </div>
         </div>
 
         {ayudaAbierta && (
