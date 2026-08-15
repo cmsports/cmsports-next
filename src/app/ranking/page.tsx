@@ -316,8 +316,12 @@ export default function RankingPage() {
             )}
             {rankingActivo && rankingActivo.filas.length > 0 && (
               <div style={{ ...card, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 60px 60px 60px 60px', gap: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px' }}>
-                  {['#', 'Jugador', 'PTS', 'V', 'D', 'PJ'].map(h => (
+                {/* Solo puesto, nombre y puntos. Las victorias y derrotas se
+                    sacaron: los puntos salen del PUESTO en que terminó cada
+                    torneo, no de cuántos partidos ganó, así que mostrarlas
+                    invitaba a buscarle una relación al número que no existe. */}
+                <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 70px', gap: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px' }}>
+                  {['#', 'Jugador', 'PTS'].map(h => (
                     <div key={h} style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
                   ))}
                 </div>
@@ -327,7 +331,7 @@ export default function RankingPage() {
                     onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '40px 1fr 60px 60px 60px 60px',
+                      gridTemplateColumns: '40px 1fr 70px',
                       gap: 0,
                       padding: '14px 16px',
                       borderBottom: idx < rankingActivo.filas.length - 1 ? '1px solid #f1f5f9' : 'none',
@@ -343,17 +347,10 @@ export default function RankingPage() {
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: text, alignSelf: 'center' }}>{fila.nombre}</div>
                     <div style={{ fontSize: 15, fontWeight: 800, color: '#7c3aed', alignSelf: 'center' }}>{fila.pts}</div>
-                    <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 600, alignSelf: 'center' }}>{fila.victorias}</div>
-                    <div style={{ fontSize: 13, color: '#dc2626', fontWeight: 600, alignSelf: 'center' }}>{fila.derrotas}</div>
-                    <div style={{ fontSize: 13, color: muted, alignSelf: 'center' }}>{fila.jugados}</div>
                   </div>
                 ))}
               </div>
             )}
-
-            <div style={{ marginTop: 12, fontSize: 11, color: hint, textAlign: 'center' }}>
-              PTS = puntos · V = victorias · D = derrotas · PJ = partidos jugados
-            </div>
           </>
         )}
       </div>
