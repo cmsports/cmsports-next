@@ -381,7 +381,11 @@ export default function RankingPage() {
                       cajas grises. La foto del líder va de fondo, tapada por un
                       velo, para que la cara esté sin robarle el número. */}
                   {destacar && (
-                    <div className="portada-ranking" style={{ position: 'relative', overflow: 'hidden',
+                    // La `key` con la categoría fuerza el remonte al cambiar de
+                    // pestaña: sin eso React reutiliza los mismos nodos, las
+                    // animaciones CSS no se vuelven a disparar y la categoría
+                    // nueva aparece de golpe, quieta.
+                    <div key={categoriaActiva} className="portada-ranking" style={{ position: 'relative', overflow: 'hidden',
                       borderRadius: 20, marginBottom: 16, padding: '26px 22px 22px',
                       background: 'linear-gradient(140deg, #1e1b4b 0%, #312e81 45%, #4c1d95 100%)',
                       boxShadow: '0 18px 40px rgba(49,46,129,0.35)' }}>
@@ -389,7 +393,9 @@ export default function RankingPage() {
                       {lideres.length === 1 && fotoPorJugador[lideres[0].jugadorId] && (
                         <>
                           <div aria-hidden style={{ position: 'absolute', inset: 0,
-                            backgroundImage: `url(${fotoPorJugador[lideres[0].jugadorId]})`,
+                            // Entre comillas: la URL firmada lleva el nombre del
+                            // archivo, y uno con paréntesis rompería el url().
+                            backgroundImage: `url("${fotoPorJugador[lideres[0].jugadorId]}")`,
                             backgroundSize: 'cover', backgroundPosition: 'center 22%', opacity: 0.3 }} />
                           <div aria-hidden style={{ position: 'absolute', inset: 0,
                             background: 'linear-gradient(100deg, rgba(30,27,75,0.97) 30%, rgba(49,46,129,0.72) 70%, rgba(76,29,149,0.55) 100%)' }} />
@@ -478,7 +484,7 @@ export default function RankingPage() {
                           </span>
                         </div>
                       )}
-                      <div className="lista-ranking">
+                      <div key={categoriaActiva} className="lista-ranking">
                         {resto.map((fila, idx) => {
                           const soyYo = fila.jugadorId === perfil?.jugador_id
                           const falta = faltaPara(fila.pts)
