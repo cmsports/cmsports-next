@@ -640,14 +640,33 @@ export default function JugadorDetallePage() {
         victorias: number; derrotas: number; jugados: number; pts: number
       }[] = []
 
+      // El ranking que el club traía en papel (migración 188). Va agrupado solo
+      // por categoría, igual que el resto de esta pantalla: la ficha no separa
+      // por género, así que sumarlo por categoría es lo consistente acá.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: saldos } = await (supabase as any)
+        .from('ranking_saldo_inicial')
+        .select('jugador_id,categoria,puntos,creado_en')
+        .eq('club_id', jugador.club_id)
+
+      const saldoPorCategoria = new Map<string, Map<string, number>>()
+      for (const s of ((saldos ?? []) as { jugador_id: string; categoria: string; puntos: number; creado_en: string }[])) {
+        if (reinicioTs && s.creado_en <= reinicioTs) continue
+        const porJugador = saldoPorCategoria.get(s.categoria) ?? new Map<string, number>()
+        porJugador.set(s.jugador_id, (porJugador.get(s.jugador_id) ?? 0) + s.puntos)
+        saldoPorCategoria.set(s.categoria, porJugador)
+      }
+
       const torneoIds = (torneosClub || []).map((t: any) => t.id)
-      if (torneoIds.length > 0) {
-        const { data: todosPartidos } = await supabase
-          .from('torneo_partidos')
-          .select('torneo_id,jugador_a,jugador_b,ganador,fase')
-          .in('torneo_id', torneoIds)
-          .not('jugador_b', 'is', null)
-          .not('ganador', 'is', null)
+      if (torneoIds.length > 0 || saldoPorCategoria.size > 0) {
+        const { data: todosPartidos } = torneoIds.length
+          ? await supabase
+              .from('torneo_partidos')
+              .select('torneo_id,jugador_a,jugador_b,ganador,fase')
+              .in('torneo_id', torneoIds)
+              .not('jugador_b', 'is', null)
+              .not('ganador', 'is', null)
+          : { data: [] }
 
         const categoriaDelTorneo = new Map<string, string>(
           (torneosClub || []).map((t: any) => [t.id as string, (t.categoria as string) || 'Sin categoría']),
@@ -656,6 +675,9 @@ export default function JugadorDetallePage() {
         // Por categoría, y adentro por torneo: el puesto —y con él los puntos—
         // solo existe dentro de un torneo.
         const porCategoria: Record<string, Map<string, TorneoConPartidos>> = {}
+        // Una categoría con saldo pero sin torneos jugados todavía también es
+        // una categoría del ranking del jugador.
+        for (const categoria of saldoPorCategoria.keys()) porCategoria[categoria] ??= new Map()
         for (const p of (todosPartidos || [])) {
           const torneoId = p.torneo_id as string
           const cat = categoriaDelTorneo.get(torneoId) ?? 'Sin categoría'
@@ -669,7 +691,9 @@ export default function JugadorDetallePage() {
         }
 
         for (const [categoria, porTorneo] of Object.entries(porCategoria)) {
-          const tabla = calcularRankingInterno([...porTorneo.values()], () => '')
+          const tabla = calcularRankingInterno(
+            [...porTorneo.values()], () => '', saldoPorCategoria.get(categoria),
+          )
           const suya = tabla.find(f => f.jugadorId === jugadorId)
           if (!suya) continue
           rankingsPorCategoria.push({

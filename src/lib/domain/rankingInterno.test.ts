@@ -127,4 +127,50 @@ describe('calcularRankingInterno', () => {
     expect(ana.jugados).toBe(3)
     expect(ana.pts).toBe(90)   // perdió la final
   })
+
+  describe('saldo inicial del ranking en papel', () => {
+    it('se suma a lo que gane en los torneos del sistema', () => {
+      const r = calcularRankingInterno(
+        [torneo('t1', [{ jugador_a: 'a', jugador_b: 'b', ganador: 'a', fase: 'final' }])],
+        nombreDe,
+        new Map([['a', 240]]),
+      )
+      expect(r.find(f => f.jugadorId === 'a')!.pts).toBe(340)  // 240 traídos + 100 del título
+      expect(r.find(f => f.jugadorId === 'b')!.pts).toBe(90)   // sin saldo, solo lo suyo
+    })
+
+    it('quien solo tiene saldo aparece igual en la tabla', () => {
+      // Es su posición de hoy: todavía no jugó ningún torneo en el sistema.
+      const r = calcularRankingInterno([], nombreDe, new Map([['c', 400]]))
+      expect(r).toHaveLength(1)
+      expect(r[0]).toMatchObject({ jugadorId: 'c', nombre: 'Cami', pts: 400, rank: 1, torneos: 0, jugados: 0 })
+    })
+
+    it('el saldo no cuenta como torneo jugado', () => {
+      const r = calcularRankingInterno(
+        [torneo('t1', [{ jugador_a: 'a', jugador_b: 'b', ganador: 'a', fase: 'final' }])],
+        nombreDe,
+        new Map([['a', 50]]),
+      )
+      expect(r.find(f => f.jugadorId === 'a')!.torneos).toBe(1)
+    })
+
+    it('el saldo ordena la tabla como cualquier punto', () => {
+      // Beto ganó el único torneo, pero Ana llega con más arrastre: va primera.
+      const r = calcularRankingInterno(
+        [torneo('t1', [{ jugador_a: 'b', jugador_b: 'd', ganador: 'b', fase: 'final' }])],
+        nombreDe,
+        new Map([['a', 400]]),
+      )
+      expect(r[0].jugadorId).toBe('a')
+      expect(r[0].rank).toBe(1)
+      expect(r[1].jugadorId).toBe('b')
+    })
+
+    it('sin saldo se comporta igual que antes', () => {
+      const partidos = [torneo('t1', [{ jugador_a: 'a', jugador_b: 'b', ganador: 'a', fase: 'final' }])]
+      expect(calcularRankingInterno(partidos, nombreDe))
+        .toEqual(calcularRankingInterno(partidos, nombreDe, new Map()))
+    })
+  })
 })

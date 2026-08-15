@@ -85,7 +85,26 @@ export default function RankingPage() {
     if (reinicioTs) queryT = queryT.gt('creado_en', reinicioTs)
 
     const { data: torneos } = await queryT
-    if (!torneos?.length) {
+
+    // 2b. El ranking que el club traía en papel (migración 188). Se suma a lo
+    // que se juegue en el sistema. Se descarta si el reinicio es posterior a la
+    // carga: si no, "Reiniciar Ranking" dejaría todo en cero salvo el arrastre.
+    const { data: saldos } = await sb
+      .from('ranking_saldo_inicial')
+      .select('jugador_id,categoria,genero,puntos,creado_en')
+      .eq('club_id', perfil.club_id)
+
+    type FilaSaldo = { jugador_id: string; categoria: string; genero: string | null; puntos: number; creado_en: string }
+    const saldoPorClave = new Map<string, Map<string, number>>()
+    for (const s of ((saldos ?? []) as FilaSaldo[])) {
+      if (reinicioTs && s.creado_en <= reinicioTs) continue
+      const clave = `${s.categoria}||${s.genero ?? ''}`
+      const porJugador = saldoPorClave.get(clave) ?? new Map<string, number>()
+      porJugador.set(s.jugador_id, (porJugador.get(s.jugador_id) ?? 0) + s.puntos)
+      saldoPorClave.set(clave, porJugador)
+    }
+
+    if (!torneos?.length && saldoPorClave.size === 0) {
       setRankingPorCategoria([])
       setLoading(false)
       return
@@ -93,7 +112,7 @@ export default function RankingPage() {
 
     // 3. Mapear torneoId → { categoria, genero }
     const torneoMeta: Record<string, { categoria: string; genero: string | null }> = {}
-    for (const t of (torneos as { id: string; categoria: string | null; genero: string | null }[])) {
+    for (const t of ((torneos ?? []) as { id: string; categoria: string | null; genero: string | null }[])) {
       torneoMeta[t.id] = { categoria: t.categoria ?? 'Sin categoría', genero: t.genero ?? null }
     }
     const torneoIds = Object.keys(torneoMeta)
@@ -104,21 +123,30 @@ export default function RankingPage() {
     //
     // Los de la fase de grupos entran igual: son los que dicen quién participó
     // sin clasificar a la llave, que también suma.
-    const { data: partidos } = await supabase
-      .from('torneo_partidos')
-      .select('torneo_id,jugador_a,jugador_b,ganador,fase')
-      .in('torneo_id', torneoIds)
-      .not('jugador_b', 'is', null)
-      .not('ganador', 'is', null)
+    const { data: partidos } = torneoIds.length
+      ? await supabase
+          .from('torneo_partidos')
+          .select('torneo_id,jugador_a,jugador_b,ganador,fase')
+          .in('torneo_id', torneoIds)
+          .not('jugador_b', 'is', null)
+          .not('ganador', 'is', null)
+      : { data: [] }
 
-    if (!partidos?.length) { setRankingPorCategoria([]); setLoading(false); return }
+    if (!partidos?.length && saldoPorClave.size === 0) { setRankingPorCategoria([]); setLoading(false); return }
 
     // 5. Agrupar por categoria + genero, y adentro por torneo: el puesto solo
     // existe dentro de un torneo, así que no se pueden mezclar.
     const torneosPorClave: Record<string, Map<string, TorneoConPartidos>> = {}
     const jugadoresIds = new Set<string>()
 
-    for (const p of partidos) {
+    // Las categorías que solo tienen saldo también son categorías del ranking:
+    // sin esto, una que todavía no jugó ningún torneo en el sistema no saldría.
+    for (const [clave, porJugador] of saldoPorClave) {
+      torneosPorClave[clave] ??= new Map()
+      for (const jugadorId of porJugador.keys()) jugadoresIds.add(jugadorId)
+    }
+
+    for (const p of (partidos ?? [])) {
       const torneoId = p.torneo_id as string
       const meta = torneoMeta[torneoId]
       const clave = `${meta?.categoria ?? 'Sin categoría'}||${meta?.genero ?? ''}`
@@ -146,7 +174,11 @@ export default function RankingPage() {
     const conDatos: Record<string, CategoriaRanking> = {}
     for (const [clave, porTorneo] of Object.entries(torneosPorClave)) {
       const [categoria, genero] = clave.split('||')
-      const filas = calcularRankingInterno([...porTorneo.values()], id => nombreMap[id] || 'Desconocido')
+      const filas = calcularRankingInterno(
+        [...porTorneo.values()],
+        id => nombreMap[id] || 'Desconocido',
+        saldoPorClave.get(clave),
+      )
       conDatos[clave] = { categoria, genero: genero || null, filas }
     }
 

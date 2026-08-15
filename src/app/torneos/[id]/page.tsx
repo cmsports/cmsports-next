@@ -180,13 +180,19 @@ export default function TorneoDetallePage() {
       .then(({ data }) => setTorneosActivos(data || []))
   }, [perfil?.club_id, torneoId])
 
-  // Precarga todos los jugadores del club al abrir la mesa en torneos internos
+  // Precarga los jugadores para la mesa de un torneo interno.
+  //
+  // Van también las visitas (`es_externo`): juegan el torneo y suman ranking
+  // como cualquiera, solo que no son socios y no tienen cuenta en la app. Antes
+  // quedaban fuera de esta lista, así que para inscribirlas había que escribir
+  // el nombre a mano — y eso creaba una ficha nueva cada vez. Así aparecieron
+  // siete fichas sueltas de socios que YA existían, cada una con la mitad del
+  // ranking de esa persona. Mostrarlas acá es lo que evita seguir partiéndolo.
   useEffect(() => {
     if (!mesaOpen || torneo?.tipo !== 'interno' || !perfil?.club_id) { setJugadoresPorCategoria([]); return }
     supabase.from('jugadores')
-      .select('id,nombre,rut,categoria')
+      .select('id,nombre,rut,categoria,es_externo')
       .eq('club_id', perfil.club_id)
-      .or('es_externo.is.null,es_externo.eq.false')
       .eq('estado', 'activo')
       .order('nombre')
       .then(({ data }) => setJugadoresPorCategoria(data || []))
@@ -1687,12 +1693,12 @@ export default function TorneoDetallePage() {
             {/* Input inscripción */}
             {torneo?.tipo === 'interno' && (
               <div style={{ background:'#ede9fe', borderRadius:8, padding:'6px 10px', marginBottom:8, fontSize:11, color:'#5b21b6', fontWeight:600 }}>
-                🏠 Torneo interno — solo jugadores del club
+                🏠 Torneo interno — jugadores del club y visitas ya registradas
               </div>
             )}
             <div style={{ position:'relative', marginBottom:10 }}>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                placeholder={torneo?.tipo === 'interno' ? 'Buscar jugador del club...' : 'Buscar jugador del club o escribir nombre nuevo...'}
+                placeholder={torneo?.tipo === 'interno' ? 'Buscar jugador o visita...' : 'Buscar jugador del club o escribir nombre nuevo...'}
                 value={busquedaMesa}
                 onFocus={() => {
                   if (torneo?.tipo === 'interno' && jugadoresPorCategoria.length > 0) setJugSuggestions(jugadoresPorCategoria)
@@ -1734,7 +1740,11 @@ export default function TorneoDetallePage() {
                           {!torneo?.categoria && <span style={{ color: muted, fontSize:11, marginLeft:8 }}>{j.categoria}</span>}
                           {yaInscrito
                             ? <span style={{ background:'#ede9fe', color:'#5b21b6', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Ya inscrito</span>
-                            : <span style={{ background:'#f0fdf4', color:'#16a34a', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
+                            : j.es_externo
+                              // Se distingue del socio para que quien inscribe
+                              // note cuando hay dos fichas de la misma persona.
+                              ? <span style={{ background:'#fef9c3', color:'#713f12', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Visita</span>
+                              : <span style={{ background:'#f0fdf4', color:'#16a34a', fontSize:10, padding:'1px 6px', borderRadius:10, marginLeft:8 }}>Del club</span>
                           }
                         </div>
                       )
@@ -1749,7 +1759,7 @@ export default function TorneoDetallePage() {
               )}
               {torneo?.tipo === 'interno' && busquedaMesa.length >= 1 && !jugadorIdSeleccionado && jugSuggestions.length === 0 && (
                 <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>
-                  No se encontró ningún jugador con ese nombre en el club
+                  No hay ningún jugador ni visita con ese nombre. Si es alguien nuevo, se agrega desde Jugadores.
                 </div>
               )}
             </div>

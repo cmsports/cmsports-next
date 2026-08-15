@@ -44,12 +44,29 @@ export type TorneoConPartidos = {
 export function calcularRankingInterno(
   torneos: TorneoConPartidos[],
   nombreDe: (jugadorId: string) => string,
+  /**
+   * Puntos con los que arranca cada jugador, de un ranking anterior al sistema.
+   *
+   * La Asociación Buin-Paine venía con su ranking en planilla y esos torneos no
+   * están cargados, así que sus puntos no se pueden recalcular. Entran acá como
+   * arrastre y lo que se juegue después suma encima.
+   *
+   * Quien solo tiene saldo aparece igual en la tabla, aunque todavía no haya
+   * jugado ningún torneo en el sistema: es justamente su posición de hoy.
+   */
+  saldoInicial?: Map<string, number>,
 ): ResultadoJugadorRanking[] {
   const stats = new Map<string, { pts: number; victorias: number; derrotas: number; torneos: number }>()
   const fila = (id: string) => {
     let s = stats.get(id)
     if (!s) { s = { pts: 0, victorias: 0, derrotas: 0, torneos: 0 }; stats.set(id, s) }
     return s
+  }
+
+  // El saldo va primero para que quien solo lo tiene no quede fuera de la tabla.
+  // No cuenta como torneo jugado: son puntos traídos, no partidos del sistema.
+  if (saldoInicial) {
+    for (const [jugadorId, puntos] of saldoInicial) fila(jugadorId).pts += puntos
   }
 
   for (const torneo of torneos) {
