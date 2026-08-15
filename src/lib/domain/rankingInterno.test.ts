@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calcularRankingInterno, type TorneoConPartidos } from './rankingInterno'
+import { calcularRankingInterno, faltaParaSubir, type TorneoConPartidos } from './rankingInterno'
 
 const nombreDe = (id: string) => ({ a: 'Ana', b: 'Beto', c: 'Cami', d: 'Dario' }[id] ?? id)
 
@@ -172,5 +172,39 @@ describe('calcularRankingInterno', () => {
       expect(calcularRankingInterno(partidos, nombreDe))
         .toEqual(calcularRankingInterno(partidos, nombreDe, new Map()))
     })
+  })
+})
+
+describe('faltaParaSubir', () => {
+  // La tabla siempre llega ordenada de mayor a menor, como la devuelve
+  // calcularRankingInterno.
+  const tabla = [190, 180, 120, 110, 100, 100, 100, 90, 89, 89, 80].map(pts => ({ pts }))
+
+  it('mide contra el de ARRIBA, no contra el que va ganando', () => {
+    // El caso que estaba mal: con 89 puntos y el de arriba en 90, falta 1.
+    // Un `.find(f => f.pts > 89)` sobre esta lista devuelve 190 —el primero que
+    // cumple— y respondía 101.
+    expect(faltaParaSubir(tabla, 89)).toBe(1)
+  })
+
+  it('salta por encima de los que empatan con uno', () => {
+    // Con 100 hay otros dos en 100: subir no es alcanzarlos, es pasar al de 110.
+    expect(faltaParaSubir(tabla, 100)).toBe(10)
+  })
+
+  it('el que va primero no tiene a quién alcanzar', () => {
+    expect(faltaParaSubir(tabla, 190)).toBe(0)
+  })
+
+  it('el que comparte el primer puesto tampoco', () => {
+    expect(faltaParaSubir([{ pts: 50 }, { pts: 50 }, { pts: 20 }], 50)).toBe(0)
+  })
+
+  it('el último mide contra el que tiene justo encima', () => {
+    expect(faltaParaSubir(tabla, 80)).toBe(9)
+  })
+
+  it('una tabla vacía no rompe', () => {
+    expect(faltaParaSubir([], 10)).toBe(0)
   })
 })

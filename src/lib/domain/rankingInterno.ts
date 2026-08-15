@@ -21,6 +21,26 @@ export type TorneoConPartidos = {
 }
 
 /**
+ * Cuántos puntos le faltan a alguien para pasar al puesto de ARRIBA.
+ *
+ * Es el que MENOS ventaja le saca, no el que va ganando. La tabla viene
+ * ordenada de mayor a menor, así que un `.find(f => f.pts > mios)` devuelve al
+ * líder —es el primero de la lista que cumple— y no al que tiene justo encima.
+ * Ese fue exactamente el error: alguien a un punto del octavo veía "a 101",
+ * porque le estaba midiendo la distancia al primero.
+ *
+ * Devuelve 0 si ya va primero o comparte el primer puesto.
+ */
+export function faltaParaSubir(tabla: { pts: number }[], mios: number): number {
+  let arriba: number | null = null
+  for (const f of tabla) {
+    if (f.pts > mios) arriba = f.pts
+    else break
+  }
+  return arriba === null ? 0 : arriba - mios
+}
+
+/**
  * Arma el ranking acumulado de una categoría, torneo por torneo.
  *
  * Los puntos salen del PUESTO en que terminó cada jugador en cada torneo —100

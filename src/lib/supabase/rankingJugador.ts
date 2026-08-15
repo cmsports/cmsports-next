@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
-import { calcularRankingInterno, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
+import { calcularRankingInterno, faltaParaSubir, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
 
 const supabase = createClient()
 
@@ -114,15 +114,12 @@ export async function cargarRankingDeJugador(
     if (!suya) continue
 
     const [categoria, generoRaw] = k.split('||')
-    // El de más arriba es el primero con MÁS puntos: si tres empatan en el 5°,
-    // subir no es alcanzar al de al lado, es pasar al 4°.
-    const arriba = tabla.find(f => f.pts > suya.pts)
     salida.push({
       categoria, genero: generoRaw || null,
       rank: suya.rank, total: tabla.length, pts: suya.pts,
       ptsLider: tabla[0]?.pts ?? suya.pts,
       victorias: suya.victorias, derrotas: suya.derrotas, jugados: suya.jugados,
-      faltanParaSubir: arriba ? arriba.pts - suya.pts : 0,
+      faltanParaSubir: faltaParaSubir(tabla, suya.pts),
     })
   }
 

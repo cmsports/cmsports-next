@@ -7,7 +7,7 @@ import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
-import { calcularRankingInterno, type ResultadoJugadorRanking, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
+import { calcularRankingInterno, faltaParaSubir, type ResultadoJugadorRanking, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
 import { TABLA_PUNTAJE } from '@/lib/domain/puntajeTorneo'
 import { firmarUrls } from '@/lib/supabase/privado'
 import { useEnVivo } from '@/lib/useEnVivo'
@@ -363,11 +363,7 @@ export default function RankingPage() {
               const destacar = lideres.length <= 2 && lideres.length + escoltas.length <= 4
               const resto = destacar ? filas.filter(f => f.rank > 3) : filas
               const tope = filas[0]?.pts || 1
-              // Cuánto le falta a cada uno para pasar al puesto de más arriba.
-              const faltaPara = (pts: number) => {
-                const arriba = filas.find(f => f.pts > pts)
-                return arriba ? arriba.pts - pts : 0
-              }
+              const faltaPara = (pts: number) => faltaParaSubir(filas, pts)
 
               return (
                 <>
