@@ -16,6 +16,7 @@ import { calcularRankingInterno, type TorneoConPartidos } from '@/lib/domain/ran
 import { sumarDias } from '@/lib/domain/panoramaAsistencia'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
+import RankingJugador from '@/components/RankingJugador'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
@@ -1130,6 +1131,15 @@ export default function JugadorDetallePage() {
           <div style={cardStyle}>
             <CardHeader title="Asistencia" />
             <ResumenAsistenciaJugador clubId={jugador.club_id} jugadorId={jugadorId} />
+          </div>
+        )}
+
+        {/* Su posición en el ranking. Hasta ahora el ranking del jugador solo
+            se calculaba dentro del PDF del informe: en pantalla no se veía en
+            ninguna parte, ni para él ni para su entrenador. */}
+        {jugador.club_id && (
+          <div style={{ marginBottom: 16 }}>
+            <RankingJugador clubId={jugador.club_id} jugadorId={jugadorId} />
           </div>
         )}
 

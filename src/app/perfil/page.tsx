@@ -14,6 +14,7 @@ import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
 import { useEnVivo } from '@/lib/useEnVivo'
+import RankingJugador from '@/components/RankingJugador'
 
 const CAMPOS_FICHA = 'id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite,foto_path,rut,email,telefono,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,talla_polera,talla_short'
 
@@ -297,6 +298,15 @@ export default function PerfilPage() {
       </div>
 
 
+
+      {/* Su posición en el ranking. Antes solo existía en la pantalla Ranking y
+          dentro del PDF del informe, así que el jugador tenía que ir a buscarse
+          en una lista de treinta para saber cómo va. */}
+      {perfil?.club_id && perfil?.jugador_id && (
+        <div style={{ marginBottom: 16 }}>
+          <RankingJugador clubId={perfil.club_id} jugadorId={perfil.jugador_id} titulo="Mi ranking" />
+        </div>
+      )}
 
       {/* Documentos firmados — el jugador puede subir los suyos */}
       {perfil?.jugador_id && (

@@ -9,6 +9,7 @@ import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 import { calcularRankingInterno, type ResultadoJugadorRanking, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
 import { TABLA_PUNTAJE } from '@/lib/domain/puntajeTorneo'
+import { firmarUrls } from '@/lib/supabase/privado'
 import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
@@ -32,6 +33,8 @@ export default function RankingPage() {
   const [loading, setLoading] = useState(true)
   const [reiniciando, setReiniciando] = useState(false)
   const [reiniciadoEn, setReiniciadoEn] = useState<string | null>(null)
+  const [fotoPorJugador, setFotoPorJugador] = useState<Record<string, string>>({})
+  const [ayudaAbierta, setAyudaAbierta] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -161,14 +164,24 @@ export default function RankingPage() {
       jugadoresIds.add(p.jugador_b as string)
     }
 
-    // 6. Cargar nombres de jugadores (1 sola query)
-    const { data: jugadores } = await supabase
+    // 6. Nombres y fotos, en una sola consulta. Las fotos se firman todas
+    // juntas con `firmarUrls`: una petición por jugador dejaría la pantalla
+    // inusable con treinta en la lista.
+    const { data: jugadores } = await sb
       .from('jugadores')
-      .select('id,nombre')
+      .select('id,nombre,foto_path')
       .in('id', [...jugadoresIds])
 
     const nombreMap: Record<string, string> = {}
     for (const j of (jugadores || [])) nombreMap[j.id] = j.nombre
+
+    const firmadas = await firmarUrls((jugadores ?? []).map((j: { foto_path?: string | null }) => j.foto_path))
+    const fotos: Record<string, string> = {}
+    for (const j of ((jugadores ?? []) as { id: string; foto_path?: string | null }[])) {
+      const url = j.foto_path ? firmadas[j.foto_path] : null
+      if (url) fotos[j.id] = url
+    }
+    setFotoPorJugador(fotos)
 
     // 7. Construir ranking por categoria + genero
     const conDatos: Record<string, CategoriaRanking> = {}
@@ -228,10 +241,23 @@ export default function RankingPage() {
       <div style={{ maxWidth: 700, margin: '0 auto' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: text }}>Ranking</h1>
-            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Por categoría y género · torneos internos · puntos según el puesto final</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h1 style={{ fontSize: 20, fontWeight: 700, color: text }}>Ranking</h1>
+              {/* La explicación del puntaje ocupaba media pantalla arriba de
+                  todo y se lee una vez en la vida. Ahora vive detrás del "?". */}
+              <button onClick={() => setAyudaAbierta(a => !a)}
+                aria-label="Cómo se calculan los puntos"
+                style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                  border: `1px solid ${ayudaAbierta ? '#7c3aed' : '#cbd5e1'}`,
+                  background: ayudaAbierta ? '#7c3aed' : 'transparent',
+                  color: ayudaAbierta ? '#fff' : hint,
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer', lineHeight: 1, padding: 0 }}>
+                ?
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Torneos internos · puntos según el puesto final</div>
             {reiniciadoEn && (
               <div style={{ fontSize: 11, color: hint, marginTop: 3 }}>
                 Desde: {new Date(reiniciadoEn).toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -242,33 +268,34 @@ export default function RankingPage() {
             <button
               onClick={handleReiniciar}
               disabled={reiniciando}
-              style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+              style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', flexShrink: 0 }}
             >
-              {reiniciando ? 'Reiniciando...' : '↺ Reiniciar Ranking'}
+              {reiniciando ? 'Reiniciando...' : '↺ Reiniciar'}
             </button>
           )}
         </div>
 
-        {/* Cuadrito informativo */}
-        <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            ℹ️ ¿Cómo se calculan los puntos?
+        {ayudaAbierta && (
+          <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6', marginBottom: 8 }}>
+              ¿Cómo se calculan los puntos?
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {TABLA_PUNTAJE.map(({ puesto, puntos }) => (
+                <div key={puesto} style={{ background: '#ede9fe', borderRadius: 8, padding: '5px 10px', fontSize: 11, color: '#3730a3', fontWeight: 600 }}>
+                  {puesto} = <strong>{puntos} pts</strong>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
+              Cada torneo reparte puntos según <strong>dónde terminó</strong> cada jugador, no por cuántos partidos ganó.
+              Los dos que caen en semifinales quedan 3-4 y se llevan lo mismo; los cuatro que caen en cuartos, 5-8.
+              El que participa y no pasa de la fase de grupos igual suma. Perder no resta nada.
+              Los puntos se <strong>acumulan entre todos los torneos</strong> de esa categoría, y se actualizan cuando el torneo termina.
+              Dos jugadores con los mismos puntos comparten puesto.
+            </div>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-            {TABLA_PUNTAJE.map(({ puesto, puntos }) => (
-              <div key={puesto} style={{ background: '#ede9fe', borderRadius: 8, padding: '5px 10px', fontSize: 11, color: '#3730a3', fontWeight: 600 }}>
-                {puesto} = <strong>{puntos} pts</strong>
-              </div>
-            ))}
-          </div>
-          <div style={{ fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
-            Cada torneo reparte puntos según <strong>dónde terminó</strong> cada jugador, no por cuántos partidos ganó.
-            Los dos que caen en semifinales quedan 3-4 y se llevan lo mismo; los cuatro que caen en cuartos, 5-8.
-            El que participa y no pasa de la fase de grupos igual suma. Perder no resta nada.
-            Los puntos se <strong>acumulan entre todos los torneos</strong> de esa categoría, y se actualizan cuando el torneo termina.
-            Cada categoría tiene su propio ranking, separado por Varones, Damas y Mixto. Dos jugadores con los mismos puntos comparten puesto.
-          </div>
-        </div>
+        )}
 
         {rankingPorCategoria.length === 0 ? (
           <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
@@ -314,46 +341,124 @@ export default function RankingPage() {
                 Sin partidos registrados en <strong style={{ color: muted }}>{categoriaLabel(rankingActivo.categoria)}{rankingActivo.genero ? ` · ${rankingActivo.genero === 'varones' ? 'Varones' : rankingActivo.genero === 'damas' ? 'Damas' : 'Mixto'}` : ''}</strong>
               </div>
             )}
-            {rankingActivo && rankingActivo.filas.length > 0 && (
-              <div style={{ ...card, overflow: 'hidden' }}>
-                {/* Solo puesto, nombre y puntos. Las victorias y derrotas se
-                    sacaron: los puntos salen del PUESTO en que terminó cada
-                    torneo, no de cuántos partidos ganó, así que mostrarlas
-                    invitaba a buscarle una relación al número que no existe. */}
-                <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 70px', gap: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '10px 16px' }}>
-                  {['#', 'Jugador', 'PTS'].map(h => (
-                    <div key={h} style={{ fontSize: 11, fontWeight: 700, color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</div>
-                  ))}
-                </div>
-                {rankingActivo.filas.map((fila, idx) => (
-                  <div
-                    key={fila.jugadorId}
-                    onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '40px 1fr 70px',
-                      gap: 0,
-                      padding: '14px 16px',
-                      borderBottom: idx < rankingActivo.filas.length - 1 ? '1px solid #f1f5f9' : 'none',
-                      cursor: 'pointer',
-                      // El color de podio sigue el puesto compartido (rank), no
-                      // la posición en la lista: si dos empatan en 1°, los dos
-                      // se ven dorados.
-                      background: fila.rank === 1 ? '#fffbeb' : fila.rank === 2 ? '#f8fafc' : fila.rank === 3 ? '#fdf4ff' : '#fff',
-                    }}
-                  >
-                    <div style={{ fontSize: 16 }}>
-                      {medallas[fila.rank - 1] ?? <span style={{ fontSize: 13, color: muted, fontWeight: 600 }}>{fila.rank}</span>}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: text, alignSelf: 'center' }}>{fila.nombre}</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#7c3aed', alignSelf: 'center' }}>{fila.pts}</div>
+            {rankingActivo && rankingActivo.filas.length > 0 && (() => {
+              // El podio se arma por PUESTO, no por posición en la lista: si
+              // tres empatan en el primer lugar, los tres son primeros y no hay
+              // segundo. Por eso se agrupa por `rank` en vez de cortar en 3.
+              const podio = rankingActivo.filas.filter(f => f.rank <= 3)
+              const resto = rankingActivo.filas.filter(f => f.rank > 3)
+              const tope = rankingActivo.filas[0]?.pts || 1
+              // Orden visual del podio: el primero al medio, como un podio real.
+              const primeros = podio.filter(f => f.rank === 1)
+              const segundos = podio.filter(f => f.rank === 2)
+              const terceros = podio.filter(f => f.rank === 3)
+              const enPodio = [...segundos, ...primeros, ...terceros]
+
+              return (
+                <>
+                  {/* ── Podio ── */}
+                  <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                    gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
+                    {enPodio.map(fila => {
+                      const oro = fila.rank === 1
+                      return (
+                        <div key={fila.jugadorId}
+                          onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
+                          style={{ flex: '1 1 0', minWidth: 96, maxWidth: 210, cursor: 'pointer', textAlign: 'center' }}>
+                          <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre}
+                            tam={oro ? 64 : 50} destacado={oro} />
+                          <div style={{ fontSize: oro ? 13 : 12, fontWeight: 600, color: text,
+                            margin: '8px 0 6px', lineHeight: 1.3, minHeight: 32 }}>
+                            {fila.nombre}
+                          </div>
+                          <div style={{ background: oro ? '#fef3c7' : '#f1f5f9',
+                            borderRadius: '10px 10px 0 0',
+                            padding: oro ? '18px 8px 20px' : '10px 8px 12px' }}>
+                            <div style={{ fontSize: oro ? 28 : 20, fontWeight: 800, lineHeight: 1,
+                              color: oro ? '#78350f' : text, fontVariantNumeric: 'tabular-nums' }}>
+                              {fila.pts}
+                            </div>
+                            <div style={{ fontSize: 10, marginTop: 5, color: oro ? '#a16207' : hint, fontWeight: 600 }}>
+                              {medallas[fila.rank - 1]} {fila.rank}° lugar
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
+
+                  {/* ── El resto ── */}
+                  {resto.length > 0 && (
+                    <div style={{ ...card, overflow: 'hidden' }}>
+                      {resto.map((fila, idx) => (
+                        <div
+                          key={fila.jugadorId}
+                          onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px',
+                            borderBottom: idx < resto.length - 1 ? '1px solid #f1f5f9' : 'none', cursor: 'pointer' }}
+                        >
+                          <div style={{ width: 24, fontSize: 13, color: hint, fontWeight: 600, flexShrink: 0,
+                            fontVariantNumeric: 'tabular-nums' }}>
+                            {fila.rank}
+                          </div>
+                          <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre} tam={32} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 4,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {fila.nombre}
+                            </div>
+                            {/* La barra mide contra el puntero: de un vistazo se
+                                ve la distancia real, sin tener que restar. */}
+                            <div style={{ height: 4, background: '#f1f5f9', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ width: `${Math.round((fila.pts / tope) * 100)}%`, height: '100%',
+                                background: '#a78bfa', borderRadius: 2 }} />
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: '#7c3aed', flexShrink: 0,
+                            fontVariantNumeric: 'tabular-nums' }}>
+                            {fila.pts}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </>
         )}
       </div>
     </AppLayout>
+  )
+}
+
+/**
+ * La cara del jugador en el ranking, o sus iniciales si todavía no subió foto.
+ *
+ * La foto es la misma de su ficha: el jugador la sube desde su perfil y acá
+ * solo se lee. No hay una segunda carga de fotos para el ranking.
+ */
+function Retrato({ url, nombre, tam, destacado = false }: {
+  url?: string
+  nombre: string
+  tam: number
+  destacado?: boolean
+}) {
+  const borde = destacado ? '2px solid #f59e0b' : '1px solid #e2e8f0'
+  if (url) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt={nombre}
+      style={{ width: tam, height: tam, borderRadius: '50%', objectFit: 'cover',
+        border: borde, flexShrink: 0, margin: '0 auto', display: 'block' }} />
+  }
+  const iniciales = nombre.trim().split(/\s+/).slice(0, 2).map(p => p[0] ?? '').join('').toUpperCase()
+  return (
+    <div style={{ width: tam, height: tam, borderRadius: '50%', flexShrink: 0, margin: '0 auto',
+      background: destacado ? '#fef3c7' : '#ede9fe', border: borde,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: Math.round(tam * 0.36), fontWeight: 700,
+      color: destacado ? '#a16207' : '#5b21b6' }}>
+      {iniciales}
+    </div>
   )
 }
