@@ -35,96 +35,102 @@
 -- tablas que cuelgan de `jugadores` van en cascada: borrar a ciegas una ficha
 -- que empezó a usarse se llevaría por delante datos reales.
 --
+-- ── Nota de ejecución (2026-08-15) ───────────────────────────────────────
+-- Esta migración YA SE APLICÓ y las siete fichas están borradas. Se deja el
+-- archivo como registro de qué se hizo y por qué.
+--
+-- Al correrla, el SQL Editor devolvió «la relación "_fichas_duplicadas" no
+-- existe» DESPUÉS de haber borrado: la tabla `TEMP ... ON COMMIT DROP` se
+-- destruye en el COMMIT, y las consultas de verificación que venían debajo ya
+-- no la encontraban. El borrado sí se confirmó; el error era de la comprobación
+-- final. Se reescribió sin tabla temporal —todo dentro de un DO, que es atómico
+-- por sí solo— para que la próxima que copie este patrón no se lleve el susto.
+--
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
--- Corrida el: ____________  (anotar la fecha al aplicarla)
+-- Corrida el: 2026-08-15
 
 BEGIN;
 
 SELECT _migracion_nueva('190_borrar_fichas_duplicadas_buin');
 
-CREATE TEMP TABLE _fichas_duplicadas (id uuid, nombre_esperado text) ON COMMIT DROP;
-INSERT INTO _fichas_duplicadas (id, nombre_esperado) VALUES
-  ('5ac11d1f-c67f-44f4-9e92-77a6f6e1a370', 'Agustin Quinteros'),
-  ('830bd948-8d16-47c0-9cd4-355e0a73abc2', 'Renato Amigo'),
-  ('b9989d5a-6aef-4fde-a895-2fb6371ddd97', 'ivan loyola'),
-  ('b3f4da1a-88da-43e9-90e3-2e19555d0d49', 'Benjamin gaete'),
-  ('ac026997-3782-409c-9d96-c16bc07cf38b', 'matias vasquez'),
-  ('eba45be9-48e2-4098-81b6-d1bde6420cb5', 'Fernando Urriola'),
-  ('bd757887-8496-49d2-af23-f482927eca3d', 'alvaro labrin');
-
--- 1) Que sean las que creemos: del club correcto, externas y sin RUT. Si el id
---    apunta a otra persona, esto lo caza antes de borrar a nadie.
+-- Todo en un solo DO: es atómico por sí mismo y no necesita tabla temporal.
+-- La versión anterior usaba `TEMP ... ON COMMIT DROP` y el SQL Editor la
+-- destruía antes de las comprobaciones finales.
 DO $$
-DECLARE malas text;
+DECLARE
+  ficha   record;
+  usos    text;
+  cuantas int := 0;
 BEGIN
-  SELECT string_agg(coalesce(j.nombre, '(no existe)') || ' <> ' || d.nombre_esperado, ' | ')
-    INTO malas
-  FROM _fichas_duplicadas d
-  LEFT JOIN public.jugadores j ON j.id = d.id
-  WHERE j.id IS NULL
-     OR j.nombre IS DISTINCT FROM d.nombre_esperado
-     OR j.club_id <> 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
-     OR coalesce(j.es_externo, false) = false
-     OR j.rut IS NOT NULL;
-  IF malas IS NOT NULL THEN
-    RAISE EXCEPTION 'Alguna ficha no es la esperada: %', malas;
-  END IF;
-END $$;
+  FOR ficha IN
+    SELECT * FROM (VALUES
+      ('5ac11d1f-c67f-44f4-9e92-77a6f6e1a370'::uuid, 'Agustin Quinteros'),
+      ('830bd948-8d16-47c0-9cd4-355e0a73abc2'::uuid, 'Renato Amigo'),
+      ('b9989d5a-6aef-4fde-a895-2fb6371ddd97'::uuid, 'ivan loyola'),
+      ('b3f4da1a-88da-43e9-90e3-2e19555d0d49'::uuid, 'Benjamin gaete'),
+      ('ac026997-3782-409c-9d96-c16bc07cf38b'::uuid, 'matias vasquez'),
+      ('eba45be9-48e2-4098-81b6-d1bde6420cb5'::uuid, 'Fernando Urriola'),
+      ('bd757887-8496-49d2-af23-f482927eca3d'::uuid, 'alvaro labrin')
+    ) AS t(id, nombre_esperado)
+  LOOP
+    -- 1) Que sea la que creemos: del club correcto, externa y sin RUT. Si el
+    --    id apunta a otra persona, esto lo caza antes de borrar a nadie.
+    IF NOT EXISTS (
+      SELECT 1 FROM public.jugadores j
+      WHERE j.id = ficha.id
+        AND j.nombre = ficha.nombre_esperado
+        AND j.club_id = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
+        AND coalesce(j.es_externo, false) = true
+        AND j.rut IS NULL
+    ) THEN
+      -- Ya borrada en una pasada anterior: se salta, no es un error.
+      IF NOT EXISTS (SELECT 1 FROM public.jugadores j WHERE j.id = ficha.id) THEN
+        CONTINUE;
+      END IF;
+      RAISE EXCEPTION 'La ficha % no es la esperada (%)', ficha.id, ficha.nombre_esperado;
+    END IF;
 
--- 2) Que sigan vacías. Cualquier dato colgando y no se borra nada.
-DO $$
-DECLARE con_datos text;
-BEGIN
-  SELECT string_agg(nombre || ' (' || fuente || ')', ', ') INTO con_datos FROM (
-    SELECT j.nombre, x.fuente
-    FROM _fichas_duplicadas d
-    JOIN public.jugadores j ON j.id = d.id
-    CROSS JOIN LATERAL (
+    -- 2) Que siga vacía. Cualquier dato colgando y aborta todo: varias de las
+    --    tablas que cuelgan de `jugadores` van en cascada, así que borrar una
+    --    ficha que empezó a usarse se llevaría datos reales por delante.
+    SELECT string_agg(fuente, ', ') INTO usos FROM (
       SELECT 'partidos' AS fuente WHERE EXISTS (
         SELECT 1 FROM public.torneo_partidos p
-        WHERE p.jugador_a = d.id OR p.jugador_b = d.id OR p.ganador = d.id)
+        WHERE p.jugador_a = ficha.id OR p.jugador_b = ficha.id OR p.ganador = ficha.id)
       UNION ALL SELECT 'inscripciones' WHERE EXISTS (
-        SELECT 1 FROM public.torneo_jugadores t WHERE t.jugador_id = d.id)
+        SELECT 1 FROM public.torneo_jugadores x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'grupos' WHERE EXISTS (
-        SELECT 1 FROM public.grupo_jugadores g WHERE g.jugador_id = d.id)
+        SELECT 1 FROM public.grupo_jugadores x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'pagos de torneo' WHERE EXISTS (
-        SELECT 1 FROM public.torneo_pagos tp WHERE tp.jugador_id = d.id)
+        SELECT 1 FROM public.torneo_pagos x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'ranking' WHERE EXISTS (
-        SELECT 1 FROM public.ranking_saldo_inicial r WHERE r.jugador_id = d.id)
+        SELECT 1 FROM public.ranking_saldo_inicial x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'asistencia' WHERE EXISTS (
-        SELECT 1 FROM public.asistencia a WHERE a.jugador_id = d.id)
+        SELECT 1 FROM public.asistencia x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'mensualidades' WHERE EXISTS (
-        SELECT 1 FROM public.mensualidades m WHERE m.jugador_id = d.id)
+        SELECT 1 FROM public.mensualidades x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'movimientos' WHERE EXISTS (
-        SELECT 1 FROM public.movimientos mv WHERE mv.jugador_id = d.id)
+        SELECT 1 FROM public.movimientos x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'bloques' WHERE EXISTS (
-        SELECT 1 FROM public.bloque_jugadores b WHERE b.jugador_id = d.id)
+        SELECT 1 FROM public.bloque_jugadores x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'cuenta de usuario' WHERE EXISTS (
-        SELECT 1 FROM public.perfiles pe WHERE pe.jugador_id = d.id)
+        SELECT 1 FROM public.perfiles x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'clases extra' WHERE EXISTS (
-        SELECT 1 FROM public.clases_extraordinarias ce WHERE ce.jugador_id = d.id)
+        SELECT 1 FROM public.clases_extraordinarias x WHERE x.jugador_id = ficha.id)
       UNION ALL SELECT 'documentos' WHERE EXISTS (
-        SELECT 1 FROM public.jugador_documentos jd WHERE jd.jugador_id = d.id)
-    ) x
-  ) t;
-  IF con_datos IS NOT NULL THEN
-    RAISE EXCEPTION 'Estas fichas ya no están vacías, no se borra nada: %', con_datos;
-  END IF;
-END $$;
+        SELECT 1 FROM public.jugador_documentos x WHERE x.jugador_id = ficha.id)
+    ) t;
 
-DELETE FROM public.jugadores
-WHERE id IN (SELECT id FROM _fichas_duplicadas);
+    IF usos IS NOT NULL THEN
+      RAISE EXCEPTION 'La ficha "%" ya no está vacía (%), no se borra nada',
+        ficha.nombre_esperado, usos;
+    END IF;
 
--- 3) Las siete, ni una más.
-DO $$
-DECLARE borradas int;
-BEGIN
-  SELECT count(*) INTO borradas
-  FROM _fichas_duplicadas d
-  WHERE NOT EXISTS (SELECT 1 FROM public.jugadores j WHERE j.id = d.id);
-  IF borradas <> 7 THEN
-    RAISE EXCEPTION 'Se esperaban 7 fichas borradas y fueron %', borradas;
-  END IF;
+    DELETE FROM public.jugadores WHERE id = ficha.id;
+    cuantas := cuantas + 1;
+  END LOOP;
+
+  RAISE NOTICE 'Fichas duplicadas borradas: %', cuantas;
 END $$;
 
 COMMIT;
