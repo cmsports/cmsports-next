@@ -219,12 +219,54 @@ body {
 .escolta-ranking:nth-child(1) { animation-delay: 120ms; }
 .escolta-ranking:nth-child(2) { animation-delay: 190ms; }
 
+/* Serpentina cayendo detrás del podio. Son doce papelitos con `left`, color y
+   demora propios; el resto lo hace este keyframe. Puro adorno: van con
+   aria-hidden y no tapan nada porque no reciben el puntero. */
+@keyframes caeSerpentina {
+  0%   { transform: translateY(-30px) rotate(0deg);    opacity: 0; }
+  12%  { opacity: 0.9; }
+  100% { transform: translateY(260px) rotate(680deg);  opacity: 0; }
+}
+.serpentina {
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  pointer-events: none;
+  animation: caeSerpentina 3.2s linear infinite;
+}
+
+/* El podio sube desde abajo, como si se armara. Cada columna con su demora:
+   primero los costados, después el campeón. */
+@keyframes subeColumna {
+  from { transform: scaleY(0); opacity: 0; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+.columna-podio {
+  transform-origin: bottom center;
+  animation: subeColumna 520ms var(--curva) both;
+}
+.columna-podio.plata  { animation-delay: 60ms; }
+.columna-podio.oro    { animation-delay: 220ms; }
+.columna-podio.bronce { animation-delay: 140ms; }
+
+/* La medalla del campeón late una vez al aparecer. */
+@keyframes saltaMedalla {
+  0%   { transform: scale(0) rotate(-30deg); }
+  60%  { transform: scale(1.25) rotate(8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.medalla-campeon { animation: saltaMedalla 620ms var(--curva) 380ms both; }
+
 /* Quien pide no tener animaciones no las tiene. Es una pantalla decorativa:
    sin el movimiento se entiende igual. */
 @media (prefers-reduced-motion: reduce) {
-  .barra-ranking, .lista-ranking > *, .portada-ranking, .escolta-ranking {
+  .barra-ranking, .lista-ranking > *, .portada-ranking, .escolta-ranking,
+  .serpentina, .columna-podio, .medalla-campeon {
     animation: none;
   }
+  .serpentina { display: none; }
 }
 
 /* Que un toque se sienta. En el celular es lo único que confirma que el dedo

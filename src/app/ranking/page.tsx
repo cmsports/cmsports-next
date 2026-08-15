@@ -24,6 +24,41 @@ type CategoriaRanking = {
   filas: ResultadoJugadorRanking[]
 }
 
+/**
+ * Los papelitos que caen detrás del podio.
+ *
+ * Fijos y no al azar: con Math.random() el servidor y el navegador dibujarían
+ * posiciones distintas y React se quejaría de que el HTML no coincide.
+ */
+const SERPENTINA = [
+  { left: '6%',  color: '#fbbf24', delay: '0s',    dur: '3.1s' },
+  { left: '14%', color: '#f472b6', delay: '0.7s',  dur: '3.6s' },
+  { left: '23%', color: '#34d399', delay: '1.4s',  dur: '3.2s' },
+  { left: '31%', color: '#60a5fa', delay: '0.3s',  dur: '3.9s' },
+  { left: '40%', color: '#fbbf24', delay: '2.1s',  dur: '3.3s' },
+  { left: '48%', color: '#f472b6', delay: '1.1s',  dur: '3.7s' },
+  { left: '57%', color: '#34d399', delay: '2.6s',  dur: '3.1s' },
+  { left: '65%', color: '#60a5fa', delay: '0.5s',  dur: '3.5s' },
+  { left: '74%', color: '#fbbf24', delay: '1.8s',  dur: '3.8s' },
+  { left: '82%', color: '#f472b6', delay: '2.9s',  dur: '3.2s' },
+  { left: '90%', color: '#34d399', delay: '0.9s',  dur: '3.6s' },
+  { left: '96%', color: '#60a5fa', delay: '2.3s',  dur: '3.4s' },
+]
+
+/**
+ * El nombre como para mostrarlo.
+ *
+ * En la base conviven "JORGE GONZALEZ NUÑEZ" —de las altas por planilla— con
+ * "alejandro garces", que salió de escribirlo a mano al inscribir a un torneo.
+ * Puestos uno debajo del otro en el podio se ve el desorden, así que se
+ * empareja acá: la ficha no se toca.
+ */
+function enBonito(nombre: string): string {
+  return nombre.trim().toLowerCase().split(/\s+/)
+    .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ')
+}
+
 export default function RankingPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [rankingPorCategoria, setRankingPorCategoria] = useState<CategoriaRanking[]>([])
@@ -362,110 +397,94 @@ export default function RankingPage() {
               const filas = rankingActivo.filas
               // Todo se agrupa por PUESTO y no por posición en la lista: si tres
               // empatan primeros, los tres son primeros y no hay segundo.
-              const lideres = filas.filter(f => f.rank === 1)
-              const escoltas = filas.filter(f => f.rank === 2 || f.rank === 3)
-              // Con muchos empatados arriba el podio deja de serlo —pasa cuando
-              // casi todos se fueron en grupos con los mismos 9 puntos—, así que
-              // ahí se muestra la lista pareja y nada más.
-              const destacar = lideres.length <= 2 && lideres.length + escoltas.length <= 4
-              const resto = destacar ? filas.filter(f => f.rank > 3) : filas
+              const oro = filas.filter(f => f.rank === 1)
+              const plata = filas.filter(f => f.rank === 2)
+              const bronce = filas.filter(f => f.rank === 3)
+              // El podio solo tiene sentido con un ganador claro. Si empatan
+              // varios arriba —pasa cuando casi todos se fueron en grupos con
+              // los mismos 9 puntos— se muestra la lista pareja y nada más.
+              const hayPodio = oro.length === 1 && plata.length <= 1 && bronce.length <= 1
+              const resto = hayPodio ? filas.filter(f => f.rank > 3) : filas
               const tope = filas[0]?.pts || 1
               const faltaPara = (pts: number) => faltaParaSubir(filas, pts)
 
               return (
                 <>
-                  {/* ── La arena ──────────────────────────────────────────
-                      Un bloque oscuro que se despega del resto de la app a
-                      propósito: es la única pantalla de competencia que hay, y
-                      con el fondo claro de siempre el podio se leía como tres
-                      cajas grises. La foto del líder va de fondo, tapada por un
-                      velo, para que la cara esté sin robarle el número. */}
-                  {destacar && (
-                    // La `key` con la categoría fuerza el remonte al cambiar de
-                    // pestaña: sin eso React reutiliza los mismos nodos, las
-                    // animaciones CSS no se vuelven a disparar y la categoría
-                    // nueva aparece de golpe, quieta.
+                  {hayPodio && (
                     <div key={categoriaActiva} className="portada-ranking" style={{ position: 'relative', overflow: 'hidden',
-                      borderRadius: 20, marginBottom: 16, padding: '26px 22px 22px',
-                      background: 'linear-gradient(140deg, #1e1b4b 0%, #312e81 45%, #4c1d95 100%)',
-                      boxShadow: '0 18px 40px rgba(49,46,129,0.35)' }}>
+                      borderRadius: 22, marginBottom: 18, padding: '22px 18px 0',
+                      background: 'linear-gradient(160deg,#1e1b4b 0%,#312e81 55%,#5b21b6 100%)',
+                      boxShadow: '0 20px 44px rgba(49,46,129,0.38)' }}>
 
-                      {lideres.length === 1 && fotoPorJugador[lideres[0].jugadorId] && (
-                        <>
-                          <div aria-hidden style={{ position: 'absolute', inset: 0,
-                            // Entre comillas: la URL firmada lleva el nombre del
-                            // archivo, y uno con paréntesis rompería el url().
-                            backgroundImage: `url("${fotoPorJugador[lideres[0].jugadorId]}")`,
-                            backgroundSize: 'cover', backgroundPosition: 'center 22%', opacity: 0.3 }} />
-                          <div aria-hidden style={{ position: 'absolute', inset: 0,
-                            background: 'linear-gradient(100deg, rgba(30,27,75,0.97) 30%, rgba(49,46,129,0.72) 70%, rgba(76,29,149,0.55) 100%)' }} />
-                        </>
-                      )}
+                      {/* Serpentina: doce papelitos cayendo. Solo adorno. */}
+                      {SERPENTINA.map((s, i) => (
+                        <span key={i} aria-hidden className="serpentina"
+                          style={{ left: s.left, background: s.color,
+                            animationDelay: s.delay, animationDuration: s.dur }} />
+                      ))}
 
-                      <div style={{ position: 'relative' }}>
-                        {lideres.map(lider => (
-                          <div key={lider.jugadorId}
-                            onClick={() => router.push(`/jugadores/${lider.jugadorId}`)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 18, cursor: 'pointer',
-                              marginBottom: escoltas.length > 0 ? 22 : 0 }}>
-                            <div style={{ position: 'relative', flexShrink: 0 }}>
-                              <Retrato url={fotoPorJugador[lider.jugadorId]} nombre={lider.nombre} tam={82} destacado />
-                              <div aria-hidden style={{ position: 'absolute', bottom: -4, right: -4, width: 30, height: 30,
-                                borderRadius: '50%', background: '#fbbf24', display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', fontSize: 15, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>🏆</div>
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: 'inline-block', background: 'rgba(251,191,36,0.16)',
-                                border: '1px solid rgba(251,191,36,0.45)', color: '#fcd34d', borderRadius: 20,
-                                padding: '3px 11px', fontSize: 9.5, fontWeight: 800, letterSpacing: 1.2, marginBottom: 8 }}>
-                                {lideres.length > 1 ? 'LIDERAN' : 'LIDERA LA CATEGORÍA'}
-                              </div>
-                              <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', lineHeight: 1.2,
-                                marginBottom: 6, textShadow: '0 1px 12px rgba(0,0,0,0.4)' }}>
-                                {lider.nombre}
-                                {lider.jugadorId === perfil?.jugador_id && (
-                                  <span style={{ fontSize: 12, fontWeight: 600, color: '#c4b5fd' }}> · vos</span>
+                      <div style={{ position: 'relative', textAlign: 'center' }}>
+                        <div style={{ fontSize: 11, letterSpacing: 2, color: 'rgba(196,181,253,0.85)',
+                          fontWeight: 800, marginBottom: 16 }}>
+                          🏓 PODIO
+                        </div>
+
+                        {/* Podio de verdad: tres columnas al ras del piso, con
+                            alturas distintas. El campeón al medio y más alto —se
+                            entiende quién ganó sin leer un número. */}
+                        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 8 }}>
+                          {[
+                            { fila: plata[0], alto: 74, medalla: '🥈', tono: '#cbd5e1', fondo: 'linear-gradient(180deg,#e2e8f0,#94a3b8)', clase: 'plata', foto: 54 },
+                            { fila: oro[0], alto: 108, medalla: '🥇', tono: '#fde68a', fondo: 'linear-gradient(180deg,#fcd34d,#f59e0b)', clase: 'oro', foto: 72 },
+                            { fila: bronce[0], alto: 56, medalla: '🥉', tono: '#fdba74', fondo: 'linear-gradient(180deg,#fdba74,#c2703a)', clase: 'bronce', foto: 54 },
+                          ].map(col => {
+                            if (!col.fila) return <div key={col.clase} style={{ flex: 1, maxWidth: 150 }} />
+                            const f = col.fila
+                            const esCampeon = col.clase === 'oro'
+                            const soyYo = f.jugadorId === perfil?.jugador_id
+                            return (
+                              <div key={col.clase} onClick={() => router.push(`/jugadores/${f.jugadorId}`)}
+                                style={{ flex: 1, maxWidth: 150, cursor: 'pointer' }}>
+                                <div style={{ position: 'relative', display: 'inline-block', marginBottom: 8 }}>
+                                  <Retrato url={fotoPorJugador[f.jugadorId]} nombre={f.nombre}
+                                    tam={col.foto} destacado={esCampeon} />
+                                  <span className={esCampeon ? 'medalla-campeon' : undefined}
+                                    style={{ position: 'absolute', bottom: -6, right: -6,
+                                      fontSize: esCampeon ? 26 : 20, lineHeight: 1,
+                                      filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }}>
+                                    {col.medalla}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: esCampeon ? 13 : 11.5, fontWeight: 700, color: '#fff',
+                                  lineHeight: 1.25, marginBottom: 3, minHeight: 32,
+                                  textShadow: '0 1px 8px rgba(0,0,0,0.35)' }}>
+                                  {enBonito(f.nombre)}
+                                </div>
+                                {soyYo && (
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#c4b5fd', marginBottom: 3 }}>· vos ·</div>
                                 )}
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
-                                <Contador hasta={lider.pts} style={{ fontSize: 44, fontWeight: 900, lineHeight: 1,
-                                  color: '#fbbf24', letterSpacing: -1.5, fontVariantNumeric: 'tabular-nums',
-                                  textShadow: '0 2px 20px rgba(251,191,36,0.35)' }} />
-                                <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(253,230,138,0.75)' }}>puntos</span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-
-                        {escoltas.length > 0 && (
-                          <div style={{ display: 'grid', gap: 10,
-                            gridTemplateColumns: `repeat(${escoltas.length}, minmax(0,1fr))` }}>
-                            {escoltas.map(fila => (
-                              <div key={fila.jugadorId} className="escolta-ranking"
-                                onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
-                                style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-                                  background: 'rgba(255,255,255,0.09)', borderRadius: 14, padding: '10px 12px',
-                                  border: fila.jugadorId === perfil?.jugador_id
-                                    ? '1px solid rgba(196,181,253,0.9)' : '1px solid rgba(255,255,255,0.14)' }}>
-                                <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre} tam={38} />
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.8,
-                                    color: fila.rank === 2 ? '#e2e8f0' : '#fdba74', marginBottom: 2 }}>
-                                    {fila.rank}° LUGAR
-                                  </div>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.92)',
-                                    lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {fila.nombre}
-                                  </div>
-                                </div>
-                                <div style={{ fontSize: 20, fontWeight: 900, color: '#fff', flexShrink: 0,
-                                  fontVariantNumeric: 'tabular-nums', letterSpacing: -0.5 }}>
-                                  {fila.pts}
+                                {/* La columna del podio */}
+                                <div className={`columna-podio ${col.clase}`}
+                                  style={{ height: col.alto, background: col.fondo,
+                                    borderRadius: '10px 10px 0 0', display: 'flex', flexDirection: 'column',
+                                    alignItems: 'center', justifyContent: 'center', gap: 2,
+                                    boxShadow: 'inset 0 2px 0 rgba(255,255,255,0.45)' }}>
+                                  {esCampeon
+                                    ? <Contador hasta={f.pts} style={{ fontSize: 34, fontWeight: 900,
+                                        color: '#422006', lineHeight: 1, letterSpacing: -1,
+                                        fontVariantNumeric: 'tabular-nums' }} />
+                                    : <span style={{ fontSize: 22, fontWeight: 900, lineHeight: 1,
+                                        color: col.clase === 'plata' ? '#1e293b' : '#4a1b0c',
+                                        fontVariantNumeric: 'tabular-nums' }}>{f.pts}</span>}
+                                  <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
+                                    color: col.clase === 'plata' ? '#475569' : esCampeon ? '#78350f' : '#6b3410' }}>
+                                    {f.rank}° LUGAR
+                                  </span>
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        )}
+                            )
+                          })}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -473,17 +492,13 @@ export default function RankingPage() {
                   {/* ── Los que persiguen ─────────────────────────────── */}
                   {resto.length > 0 && (
                     <div style={{ ...card, overflow: 'hidden' }}>
-                      {destacar && (
-                        <div style={{ padding: '11px 18px', borderBottom: '1px solid #e2e8f0',
-                          display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: 10, letterSpacing: 1.4, color: muted, fontWeight: 800 }}>
-                            PERSIGUEN
-                          </span>
-                          <span style={{ fontSize: 11, color: hint }}>
-                            {filas.length} compiten
-                          </span>
-                        </div>
-                      )}
+                      <div style={{ padding: '12px 18px', borderBottom: '1px solid #e2e8f0',
+                        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 10.5, letterSpacing: 1.4, color: muted, fontWeight: 800 }}>
+                          {hayPodio ? '🏓 EN CARRERA' : '🏓 TABLA'}
+                        </span>
+                        <span style={{ fontSize: 11, color: hint }}>{filas.length} compiten</span>
+                      </div>
                       <div key={categoriaActiva} className="lista-ranking">
                         {resto.map((fila, idx) => {
                           const soyYo = fila.jugadorId === perfil?.jugador_id
@@ -492,50 +507,46 @@ export default function RankingPage() {
                             <div
                               key={fila.jugadorId}
                               onClick={() => router.push(`/jugadores/${fila.jugadorId}`)}
-                              style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 13,
-                                padding: '13px 18px', overflow: 'hidden', cursor: 'pointer',
+                              style={{ display: 'flex', alignItems: 'center', gap: 13,
+                                padding: '13px 18px', cursor: 'pointer',
                                 borderBottom: idx < resto.length - 1 ? '1px solid #f1f5f9' : 'none',
-                                background: soyYo ? 'linear-gradient(90deg,#f5f3ff,#faf5ff)' : undefined,
+                                background: soyYo ? 'linear-gradient(90deg,#f5f3ff,#fdfbff)' : undefined,
                                 borderLeft: soyYo ? '3px solid #7c3aed' : '3px solid transparent' }}
                             >
-                              {/* El puesto, enorme y casi transparente detrás de
-                                  todo: da peso a la fila sin pelearle al nombre. */}
-                              <div aria-hidden style={{ position: 'absolute', right: 76, top: '50%',
-                                transform: 'translateY(-50%)', fontSize: 46, fontWeight: 900,
-                                color: soyYo ? 'rgba(124,58,237,0.09)' : 'rgba(15,23,42,0.045)',
-                                lineHeight: 1, pointerEvents: 'none', fontVariantNumeric: 'tabular-nums' }}>
+                              {/* El puesto en su medallón, que es lo que hace
+                                  que la lista se lea de un vistazo. */}
+                              <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: 12, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                                background: soyYo ? '#7c3aed' : '#f1f5f9',
+                                color: soyYo ? '#fff' : muted }}>
                                 {fila.rank}
                               </div>
-
-                              <div style={{ width: 20, fontSize: 13, fontWeight: 800, flexShrink: 0, textAlign: 'center',
-                                color: soyYo ? '#7c3aed' : hint, fontVariantNumeric: 'tabular-nums' }}>
-                                {fila.rank}
-                              </div>
-                              <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre} tam={38} />
-                              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                              <Retrato url={fotoPorJugador[fila.jugadorId]} nombre={fila.nombre} tam={40} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6,
                                   color: soyYo ? '#5b21b6' : text,
                                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {fila.nombre}
+                                  {enBonito(fila.nombre)}
                                   {soyYo && <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed' }}> · vos</span>}
                                 </div>
-                                <div style={{ height: 6, background: '#eef2f7', borderRadius: 4, overflow: 'hidden' }}>
+                                <div style={{ height: 7, background: '#eef2f7', borderRadius: 4, overflow: 'hidden' }}>
                                   <div className="barra-ranking" style={{
-                                    width: `${Math.max(Math.round((fila.pts / tope) * 100), 3)}%`, height: '100%',
+                                    width: `${Math.max(Math.round((fila.pts / tope) * 100), 4)}%`, height: '100%',
                                     borderRadius: 4,
                                     background: soyYo
-                                      ? 'linear-gradient(90deg,#7c3aed,#a78bfa)'
-                                      : 'linear-gradient(90deg,#a78bfa,#c4b5fd)' }} />
+                                      ? 'linear-gradient(90deg,#6d28d9,#a78bfa)'
+                                      : 'linear-gradient(90deg,#8b5cf6,#c4b5fd)' }} />
                                 </div>
                               </div>
-                              <div style={{ textAlign: 'right', flexShrink: 0, position: 'relative', minWidth: 44 }}>
+                              <div style={{ textAlign: 'right', flexShrink: 0, minWidth: 46 }}>
                                 <div style={{ fontSize: 19, fontWeight: 900, lineHeight: 1, letterSpacing: -0.5,
                                   color: soyYo ? '#5b21b6' : text, fontVariantNumeric: 'tabular-nums' }}>
                                   {fila.pts}
                                 </div>
                                 {/* Lo que engancha: cuánto falta para subir. */}
                                 {falta > 0 && (
-                                  <div style={{ fontSize: 10, fontWeight: 600, color: '#a78bfa', marginTop: 3 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#8b5cf6', marginTop: 3 }}>
                                     ▲ {falta}
                                   </div>
                                 )}
@@ -549,6 +560,7 @@ export default function RankingPage() {
                 </>
               )
             })()}
+
 
 
           </>
