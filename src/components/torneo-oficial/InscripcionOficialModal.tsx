@@ -4,7 +4,7 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 import { btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
 import { calcularNumGruposOficial } from '@/lib/domain/oficial-ittf'
-import { parsearListaOficial, type FilaImportOficial } from '@/lib/domain/oficial-import-lista'
+import { elegirMejorHojaLista, parsearListaOficial, type FilaImportOficial } from '@/lib/domain/oficial-import-lista'
 
 type Inscrito = {
   id: string
@@ -20,7 +20,11 @@ export default function InscripcionOficialModal(props: {
   eventoNombre: string
   inscribiendo: boolean
   formando: boolean
-  onInscribir: (nombre: string, asociacion?: string) => Promise<{ error?: string }>
+  onInscribir: (
+    nombre: string,
+    asociacion?: string,
+    extra?: { codigoFederativo?: string; ranking?: number },
+  ) => Promise<{ error?: string }>
   onFormarGrupos: () => Promise<{ error?: string }>
   onGuardarCabezas: (jugadorIds: string[]) => Promise<{ error?: string | null }>
   onImportarLote?: (filas: FilaImportOficial[], sugerirCabezas: boolean) => Promise<{
@@ -32,12 +36,19 @@ export default function InscripcionOficialModal(props: {
 }) {
   const [nombre, setNombre] = useState('')
   const [asociacion, setAsociacion] = useState('')
+  const [codigo, setCodigo] = useState('')
+  const [rankingManual, setRankingManual] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [okMsg, setOkMsg] = useState('')
   const [cabezas, setCabezas] = useState<CabezaSerieJugador[]>([])
   const [cabezasDirty, setCabezasDirty] = useState(false)
   const [textoLista, setTextoLista] = useState('')
   const [sugerirCabezas, setSugerirCabezas] = useState(true)
+
+  const previewLista = useMemo(
+    () => (textoLista.trim() ? parsearListaOficial(textoLista) : null),
+    [textoLista],
+  )
 
   const candidatos = useMemo(
     () => props.inscritos.map(i => ({
@@ -73,10 +84,20 @@ export default function InscripcionOficialModal(props: {
   async function handleInscribir() {
     setErrorMsg('')
     setOkMsg('')
-    const res = await props.onInscribir(nombre.trim(), asociacion.trim() || undefined)
+    const ranking = Number(rankingManual.replace(/[^\d.-]/g, ''))
+    const res = await props.onInscribir(
+      nombre.trim(),
+      asociacion.trim() || undefined,
+      {
+        codigoFederativo: codigo.trim() || undefined,
+        ranking: Number.isFinite(ranking) && ranking > 0 ? Math.round(ranking) : undefined,
+      },
+    )
     if (res.error) { setErrorMsg(res.error); return }
     setNombre('')
     setAsociacion('')
+    setCodigo('')
+    setRankingManual('')
   }
 
   async function importarTexto(texto: string) {
@@ -103,9 +124,16 @@ export default function InscripcionOficialModal(props: {
     if (nombre.endsWith('.xlsx') || nombre.endsWith('.xls')) {
       const XLSX = await import('xlsx')
       const wb = XLSX.read(await file.arrayBuffer())
-      const sheet = wb.Sheets[wb.SheetNames[0]]
-      const csv = XLSX.utils.sheet_to_csv(sheet)
-      await importarTexto(csv)
+      const hojas = wb.SheetNames.map(n => ({
+        nombre: n,
+        csv: XLSX.utils.sheet_to_csv(wb.Sheets[n]),
+      }))
+      const mejor = elegirMejorHojaLista(hojas)
+      if (!mejor) {
+        setErrorMsg('El Excel no tiene una hoja con jugadores')
+        return
+      }
+      await importarTexto(mejor.csv)
       return
     }
     await importarTexto(await file.text())
@@ -170,7 +198,10 @@ export default function InscripcionOficialModal(props: {
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: torneoUi.text, marginBottom: 6 }}>Importar lista</div>
             <p style={{ margin: '0 0 8px', fontSize: 11, color: torneoUi.muted }}>
-              Pegá CSV/Excel o subí xlsx. Columnas: nombre, asociación (o COD), código, ranking.
+              Pegá o subí la lista aunque venga desordenada. El sistema busca nombre,
+              asociación, código/ID y ranking (también si el Excel tiene varias hojas).
+              Revisá la vista previa antes de importar. O inscribí uno por uno abajo,
+              sin Excel.
             </p>
             <textarea
               value={textoLista}
@@ -179,6 +210,42 @@ export default function InscripcionOficialModal(props: {
               rows={4}
               style={{ ...inputStyle, width: '100%', fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
             />
+            {previewLista && previewLista.filas.length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 11, color: torneoUi.muted }}>
+                <div style={{ marginBottom: 4 }}>
+                  Detectados <strong style={{ color: torneoUi.text }}>{previewLista.filas.length}</strong> jugadores
+                  {previewLista.columnas.nombre ? ` · nombre: ${previewLista.columnas.nombre}` : ''}
+                  {previewLista.columnas.asociacion ? ` · asoc.: ${previewLista.columnas.asociacion}` : ''}
+                  {previewLista.columnas.codigo ? ` · ID: ${previewLista.columnas.codigo}` : ''}
+                  {previewLista.columnas.ranking ? ` · rk: ${previewLista.columnas.ranking}` : ''}
+                </div>
+                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', textAlign: 'left' }}>
+                        <th style={{ padding: '4px 8px' }}>Nombre</th>
+                        <th style={{ padding: '4px 8px' }}>Asociación</th>
+                        <th style={{ padding: '4px 8px' }}>ID</th>
+                        <th style={{ padding: '4px 8px' }}>Rk</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewLista.filas.slice(0, 6).map(f => (
+                        <tr key={f.nombre}>
+                          <td style={{ padding: '4px 8px', color: torneoUi.text }}>{f.nombre}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.asociacion || '—'}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.codigoFederativo || '—'}</td>
+                          <td style={{ padding: '4px 8px' }}>{f.ranking ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {previewLista.filas.length > 6 && (
+                  <div style={{ marginTop: 4 }}>…y {previewLista.filas.length - 6} más</div>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button
                 type="button"
@@ -221,7 +288,22 @@ export default function InscripcionOficialModal(props: {
             value={asociacion}
             onChange={e => setAsociacion(e.target.value)}
             placeholder="Asociación (opc.)"
-            style={{ ...inputStyle, flex: '1 1 120px' }}
+            style={{ ...inputStyle, flex: '1 1 100px' }}
+            onKeyDown={e => e.key === 'Enter' && void handleInscribir()}
+          />
+          <input
+            value={codigo}
+            onChange={e => setCodigo(e.target.value)}
+            placeholder="ID / código (opc.)"
+            style={{ ...inputStyle, flex: '1 1 90px' }}
+            onKeyDown={e => e.key === 'Enter' && void handleInscribir()}
+          />
+          <input
+            value={rankingManual}
+            onChange={e => setRankingManual(e.target.value)}
+            placeholder="Ranking (opc.)"
+            inputMode="numeric"
+            style={{ ...inputStyle, flex: '0 1 88px' }}
             onKeyDown={e => e.key === 'Enter' && void handleInscribir()}
           />
           <button type="button" onClick={() => void handleInscribir()}
@@ -342,7 +424,7 @@ const modalCard: CSSProperties = {
   borderRadius: 16,
   padding: 24,
   width: '100%',
-  maxWidth: 560,
+  maxWidth: 640,
   maxHeight: '90vh',
   overflowY: 'auto',
   boxShadow: '0 8px 32px rgba(15,23,42,0.14)',

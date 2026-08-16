@@ -489,9 +489,19 @@ export default function EventoOficialPage() {
     return { programaCeldas: celdas, programaSinUbicar: sin }
   }, [partidos, nombrePorId])
 
-  async function inscribirDesdeModal(nombre: string, asociacion?: string) {
+  async function inscribirDesdeModal(
+    nombre: string,
+    asociacion?: string,
+    extra?: { codigoFederativo?: string; ranking?: number },
+  ) {
     setInscribiendo(true)
-    const res = await inscribirJugadorOficial({ eventoId: id, nombre, asociacion })
+    const res = await inscribirJugadorOficial({
+      eventoId: id,
+      nombre,
+      asociacion,
+      codigoFederativo: extra?.codigoFederativo,
+      ranking: extra?.ranking,
+    })
     setInscribiendo(false)
     if (!res.error) recargarEvento()
     return res
