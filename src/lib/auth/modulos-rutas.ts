@@ -39,6 +39,8 @@ function coincideRuta(pathname: string, ruta: string) {
 }
 
 export function moduloRequeridoPorRuta(pathname: string): ModuloClub | null {
+  // Programa público del zonal: jugadores sin sesión / sin módulo oficial.
+  if (pathname === '/torneo-oficial/vivo' || pathname.startsWith('/torneo-oficial/vivo/')) return null
   for (const grupo of RUTAS_POR_MODULO) {
     if (grupo.rutas.some(ruta => coincideRuta(pathname, ruta))) return grupo.modulo
   }

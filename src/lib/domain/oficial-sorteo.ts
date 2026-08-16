@@ -227,3 +227,113 @@ export function etiquetaFaseCorta(fase: string): string {
   const labels = CONFIG.FASE_LABELS as Record<string, string>
   return labels[fase] || fase
 }
+
+export const TAMANOS_CUADRO = [8, 16, 32, 64] as const
+export type TamanoCuadro = (typeof TAMANOS_CUADRO)[number]
+
+export function esTamanoCuadro(v: unknown): v is TamanoCuadro {
+  return v === 8 || v === 16 || v === 32 || v === 64
+}
+
+export type PlanPreLlave = {
+  tamanoCuadro: number
+  numGrupos: number
+  partidosAvance: number
+  segundosDirectos: number
+  segundosEnAvance: number
+}
+
+/**
+ * Si 2×grupos no cabe en el cuadro, los 2.os de más abajo juegan `avance`.
+ * Cada partido de avance elimina a uno; los ganadores llenan los cupos que faltan.
+ */
+export function planificarPreLlave(numGrupos: number, tamanoCuadro: number): PlanPreLlave | { error: string } | null {
+  if (numGrupos < 2) return { error: 'Se requieren al menos 2 grupos' }
+  if (!esTamanoCuadro(tamanoCuadro)) return { error: 'El cuadro debe ser 8, 16, 32 o 64' }
+  const clasificados = numGrupos * 2
+  if (clasificados <= tamanoCuadro) return null
+  const extra = clasificados - tamanoCuadro
+  const enAvance = extra * 2
+  if (enAvance > numGrupos) {
+    return { error: `El cuadro de ${tamanoCuadro} es chico para ${numGrupos} grupos. Sube el tamaño o forma menos grupos.` }
+  }
+  return {
+    tamanoCuadro,
+    numGrupos,
+    partidosAvance: extra,
+    segundosDirectos: numGrupos - enAvance,
+    segundosEnAvance: enAvance,
+  }
+}
+
+export type LadoCuadro = {
+  grupoIdx: number | null
+  pos: 1 | 2
+  avanceOrden: number | null
+}
+
+export type CruceCuadro = {
+  orden: number
+  a: LadoCuadro
+  b: LadoCuadro
+}
+
+function ladoVacio(): LadoCuadro {
+  return { grupoIdx: null, pos: 2, avanceOrden: null }
+}
+
+/**
+ * Semillas 1..G en posiciones ITTF; el resto, 2.os directos y cupos de avance.
+ */
+export function colocarCuadroConPreLlave(plan: PlanPreLlave): CruceCuadro[] {
+  const T = plan.tamanoCuadro
+  const G = plan.numGrupos
+  const posSemilla = posicionesSemillaIttf(T)
+  const lados: LadoCuadro[] = Array.from({ length: T }, () => ladoVacio())
+
+  for (let seed = 1; seed <= G; seed++) {
+    const pos = posSemilla[seed - 1]
+    if (pos == null || pos < 0 || pos >= T) continue
+    lados[pos] = { grupoIdx: seed - 1, pos: 1, avanceOrden: null }
+  }
+
+  const pool: LadoCuadro[] = [
+    ...Array.from({ length: plan.segundosDirectos }, (_, i) => ({
+      grupoIdx: i,
+      pos: 2 as const,
+      avanceOrden: null,
+    })),
+    ...Array.from({ length: plan.partidosAvance }, (_, i) => ({
+      grupoIdx: null,
+      pos: 2 as const,
+      avanceOrden: i,
+    })),
+  ]
+
+  const vacios = lados.map((_, i) => i).filter(i => lados[i].grupoIdx == null && lados[i].avanceOrden == null)
+  const usados = new Set<number>()
+  for (const pos of vacios) {
+    const rival = lados[pos ^ 1]
+    let idx = pool.findIndex((p, k) =>
+      !usados.has(k)
+      && (p.grupoIdx == null || p.grupoIdx !== rival.grupoIdx)
+      && !(p.avanceOrden != null && rival.avanceOrden != null),
+    )
+    if (idx < 0) {
+      idx = pool.findIndex((p, k) =>
+        !usados.has(k) && (p.grupoIdx == null || p.grupoIdx !== rival.grupoIdx),
+      )
+    }
+    if (idx < 0) idx = pool.findIndex((_, k) => !usados.has(k))
+    if (idx < 0) continue
+    usados.add(idx)
+    lados[pos] = pool[idx]
+  }
+
+  const matches: CruceCuadro[] = []
+  for (let orden = 0; orden < T / 2; orden++) {
+    matches.push({ orden, a: lados[orden * 2], b: lados[orden * 2 + 1] })
+  }
+  return matches
+}
+

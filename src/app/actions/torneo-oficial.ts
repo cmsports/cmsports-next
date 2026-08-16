@@ -6,6 +6,7 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import {
   construirLlavesLayoutNumerado,
+  determinarFaseInicial,
   nombreGrupo,
   seedingSerpenteoConClubes,
   siguienteFase,
@@ -16,6 +17,7 @@ import {
   clasificarGrupoIttf,
   gamesParaGanarFormato,
   ganadorDesdeSets,
+  OFICIAL_MAX_GRUPOS,
   ordenPartidosGrupoIttf,
   parsearSetsTexto,
   resolverCierrePartido,
@@ -27,14 +29,18 @@ import {
 import {
   conflictosAlAsignar,
   detectarConflictosProgramaMulti,
-  prioridadPartidoOficial,
-  programarPartidosGreedyConInforme,
+  programarCampeonatoPorDias,
 } from '@/lib/domain/programar-oficial'
 import {
   aplicarModoSorteoLlave,
   asignarNumerosIttf,
+  colocarCuadroConPreLlave,
   esModoSorteoLlave,
+  esTamanoCuadro,
+  planificarPreLlave,
   type ModoSorteoLlave,
+  type PlanPreLlave,
+  type TamanoCuadro,
 } from '@/lib/domain/oficial-sorteo'
 
 type Resultado<T extends object = object> =
@@ -168,18 +174,24 @@ export async function crearEventoOficial(params: {
   categoria: string
   genero: 'varones' | 'damas' | 'mixto'
   formatoPartido?: 'bo3' | 'bo5' | 'bo7'
+  fechaJuego?: string
+  tamanoCuadro?: TamanoCuadro | null
 }): Promise<Resultado<{ id: string }>> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
 
-  const { data: camp } = await db.from('oficial_campeonatos').select('id')
+  const { data: camp } = await db.from('oficial_campeonatos').select('id, fecha_inicio')
     .eq('id', params.campeonatoId).eq('club_id', perfil.club_id).maybeSingle()
   if (!camp) return { error: 'Campeonato no encontrado' }
 
   const nombre = params.nombre.trim()
   const categoria = params.categoria.trim()
   if (!nombre || !categoria) return { error: 'Nombre y categoría son obligatorios' }
+  const fechaJuego = params.fechaJuego && /^\d{4}-\d{2}-\d{2}$/.test(params.fechaJuego)
+    ? params.fechaJuego
+    : camp.fecha_inicio
+  const tamano = params.tamanoCuadro && esTamanoCuadro(params.tamanoCuadro) ? params.tamanoCuadro : null
 
   const { data, error: err } = await db.from('oficial_eventos').insert({
     club_id: perfil.club_id,
@@ -190,6 +202,8 @@ export async function crearEventoOficial(params: {
     formato_partido: params.formatoPartido || 'bo5',
     fase: 'inscripcion',
     estado: 'en_curso',
+    fecha_juego: fechaJuego,
+    tamano_cuadro: tamano,
   }).select('id').single()
 
   if (err || !data) return { error: err?.message || 'No se pudo crear el evento' }
@@ -237,6 +251,108 @@ export async function inscribirJugadorOficial(params: {
     return { error: err?.message || 'No se pudo inscribir' }
   }
   return { id: data.id }
+}
+
+export async function inscribirLoteOficial(params: {
+  eventoId: string
+  filas: Array<{
+    nombre: string
+    asociacion?: string
+    codigoFederativo?: string
+    ranking?: number
+  }>
+  sugerirCabezas?: boolean
+}): Promise<Resultado<{ inscritos: number; omitidos: number; errores: string[] }>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: evento } = await db.from('oficial_eventos').select('id, fase')
+    .eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!evento) return { error: 'Evento no encontrado' }
+  if (evento.fase !== 'inscripcion') return { error: 'La inscripción ya está cerrada' }
+
+  const filas = params.filas.slice(0, 400)
+  if (!filas.length) return { error: 'No hay filas para importar' }
+
+  const { count } = await db.from('oficial_inscritos').select('id', { count: 'exact', head: true })
+    .eq('evento_id', params.eventoId)
+  let orden = (count ?? 0) + 1
+  let inscritos = 0
+  let omitidos = 0
+  const errores: string[] = []
+  const idsConRanking: Array<{ id: string; ranking: number }> = []
+
+  for (const f of filas) {
+    const nombre = f.nombre.trim()
+    if (!nombre) { omitidos++; continue }
+    const { data, error: err } = await db.from('oficial_inscritos').insert({
+      club_id: perfil.club_id,
+      evento_id: params.eventoId,
+      nombre,
+      asociacion: f.asociacion?.trim() || null,
+      codigo_federativo: f.codigoFederativo?.trim() || null,
+      ranking: f.ranking ?? null,
+      orden_inscripcion: orden,
+    }).select('id, ranking').single()
+    if (err || !data) {
+      if (err?.code === '23505') {
+        omitidos++
+        continue
+      }
+      errores.push(`${nombre}: ${err?.message || 'error'}`)
+      omitidos++
+      continue
+    }
+    orden++
+    inscritos++
+    if (typeof data.ranking === 'number' && data.ranking > 0) {
+      idsConRanking.push({ id: data.id, ranking: data.ranking })
+    }
+  }
+
+  if (params.sugerirCabezas && idsConRanking.length) {
+    const total = (count ?? 0) + inscritos
+    const nCabezas = Math.min(calcularNumGruposOficial(total), idsConRanking.length, 16)
+    idsConRanking.sort((a, b) => a.ranking - b.ranking)
+    for (let i = 0; i < nCabezas; i++) {
+      await db.from('oficial_inscritos').update({ cabeza_numero: i + 1 })
+        .eq('id', idsConRanking[i].id)
+    }
+  }
+
+  return { inscritos, omitidos, errores }
+}
+
+export async function actualizarEventoOficial(params: {
+  eventoId: string
+  fechaJuego?: string
+  tamanoCuadro?: TamanoCuadro | null
+}): Promise<Resultado> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+  const { data: evento } = await db.from('oficial_eventos').select('id')
+    .eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!evento) return { error: 'Evento no encontrado' }
+  const upd: Record<string, unknown> = { actualizado_en: new Date().toISOString() }
+  if (params.fechaJuego) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(params.fechaJuego)) return { error: 'Fecha de juego inválida' }
+    upd.fecha_juego = params.fechaJuego
+  }
+  if (params.tamanoCuadro === null) upd.tamano_cuadro = null
+  else if (params.tamanoCuadro != null) {
+    if (!esTamanoCuadro(params.tamanoCuadro)) return { error: 'Cuadro inválido' }
+    upd.tamano_cuadro = params.tamanoCuadro
+  }
+  const { error: err } = await db.from('oficial_eventos').update(upd).eq('id', params.eventoId)
+  if (err) {
+    if (String(err.message || '').includes('fecha_juego') || String(err.message || '').includes('tamano_cuadro')) {
+      return { error: 'Falta aplicar la migración 195_oficial_zonal_programa_y_publico en Supabase.' }
+    }
+    return { error: err.message || 'No se pudo actualizar el evento' }
+  }
+  return {}
 }
 
 export async function configurarCabezasOficial(params: {
@@ -462,6 +578,9 @@ async function aplicarResultadoOficialDb(db: AdminDb, clubId: string, params: Pa
   if (partido.fase !== 'grupos') {
     const errProp = await propagarGanadorPlayoffOficial(db, partido, resuelto.ganadorId, clubId)
     if (errProp) return { error: errProp }
+    if (partido.fase === 'avance') {
+      return {}
+    }
     if (partido.fase === 'semis') {
       const errTercer = await sincronizarTercerLugarOficial(db, partido.evento_id, clubId)
       if (errTercer) return { error: errTercer }
@@ -880,6 +999,32 @@ async function calcularClasificadosOficial(
   return { clasificados }
 }
 
+async function llenarCupoAvanceOficial(
+  db: AdminDb,
+  eventoId: string,
+  avanceOrden: number,
+  ganadorId: string,
+): Promise<string | null> {
+  const { data: slot, error } = await db.from('oficial_partidos')
+    .select('id, inscrito_a_id, inscrito_b_id')
+    .eq('evento_id', eventoId)
+    .eq('avance_origen_orden', avanceOrden)
+    .maybeSingle()
+  if (error) {
+    if (String(error.message || '').includes('avance_origen_orden')) return null
+    return 'No se pudo ubicar el cupo de pre-llave'
+  }
+  if (!slot) return null
+  const campo = !slot.inscrito_a_id ? 'inscrito_a_id' : !slot.inscrito_b_id ? 'inscrito_b_id' : null
+  if (!campo) return null
+  const { error: upd } = await db.from('oficial_partidos').update({
+    [campo]: ganadorId,
+    actualizado_en: new Date().toISOString(),
+  }).eq('id', slot.id)
+  if (upd) return 'No se pudo cargar el ganador de avance al cuadro'
+  return null
+}
+
 async function propagarGanadorPlayoffOficial(
   db: AdminDb,
   partido: { evento_id: string; fase: string; orden: number },
@@ -887,6 +1032,9 @@ async function propagarGanadorPlayoffOficial(
   clubId: string,
 ): Promise<string | null> {
   if (!partido.evento_id || partido.fase === 'grupos') return null
+  if (partido.fase === 'avance') {
+    return llenarCupoAvanceOficial(db, partido.evento_id, partido.orden, ganadorId)
+  }
   const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
   if (!faseSiguiente) return null
 
@@ -948,6 +1096,131 @@ async function avanzarFaseEventoOficial(db: AdminDb, eventoId: string, faseActua
     .eq('id', eventoId)
 }
 
+async function sincronizarPreLlaveOficial(params: {
+  db: AdminDb
+  clubId: string
+  eventoId: string
+  eventoFase: string
+  grupos: Array<{ id: string; orden: number }>
+  clasificados: ClasificadoGrupo[]
+  plan: PlanPreLlave
+}): Promise<Resultado<{ faseInicial?: string; bracketCreado?: boolean }>> {
+  const { db, clubId, eventoId, grupos, clasificados, plan } = params
+  const porGrupo = new Map(clasificados.map(c => [c.grupoId, c]))
+  const ordenados = grupos.map(g => porGrupo.get(g.id)).filter((c): c is ClasificadoGrupo => !!c)
+  if (ordenados.length !== plan.numGrupos) {
+    return { error: 'Faltan clasificados para armar la pre-llave' }
+  }
+
+  const { data: bracketExistente } = await db.from('oficial_partidos')
+    .select('id, fase, ganador_id, inscrito_a_id, inscrito_b_id')
+    .eq('evento_id', eventoId).neq('fase', 'grupos')
+  const hayLlavesJugadas = !!bracketExistente?.some(llaveFueJugada)
+
+  if (bracketExistente?.length && !hayLlavesJugadas) {
+    await db.from('oficial_partidos').delete().eq('evento_id', eventoId).neq('fase', 'grupos')
+  }
+
+  const { data: avanceExistente } = await db.from('oficial_partidos')
+    .select('id, orden, inscrito_a_id, inscrito_b_id, ganador_id')
+    .eq('evento_id', eventoId).eq('fase', 'avance')
+
+  if (!avanceExistente?.length) {
+    const insertsAvance: Array<Record<string, unknown>> = []
+    for (let i = 0; i < plan.partidosAvance; i++) {
+      const a = ordenados[plan.segundosDirectos + i * 2]
+      const b = ordenados[plan.segundosDirectos + i * 2 + 1]
+      if (!a || !b) return { error: 'No se pudieron armar los cruces de avance' }
+      insertsAvance.push({
+        club_id: clubId,
+        evento_id: eventoId,
+        fase: 'avance',
+        orden: i,
+        inscrito_a_id: a.segundoId,
+        inscrito_b_id: b.segundoId,
+        ganador_id: null,
+      })
+    }
+    if (insertsAvance.length) {
+      const { error: insAv } = await db.from('oficial_partidos').insert(insertsAvance)
+      if (insAv) return { error: insAv.message || 'No se pudo crear la pre-llave' }
+    }
+  }
+
+  const faseInicial = determinarFaseInicial(plan.tamanoCuadro)
+  const cruces = colocarCuadroConPreLlave(plan)
+  const inscritoDe = (lado: { grupoIdx: number | null; pos: 1 | 2; avanceOrden: number | null }): string | null => {
+    if (lado.avanceOrden != null) return null
+    if (lado.grupoIdx == null) return null
+    const c = ordenados[lado.grupoIdx]
+    if (!c) return null
+    return lado.pos === 1 ? c.primeroId : c.segundoId
+  }
+
+  const { data: cuadroExistente } = await db.from('oficial_partidos')
+    .select('id, orden, inscrito_a_id, inscrito_b_id, ganador_id, avance_origen_orden')
+    .eq('evento_id', eventoId).eq('fase', faseInicial)
+
+  if (!cuadroExistente?.length) {
+    const inserts = cruces.map(m => {
+      const esperaAvance = m.a.avanceOrden != null || m.b.avanceOrden != null
+      const a = inscritoDe(m.a)
+      const b = inscritoDe(m.b)
+      const grupoA = m.a.grupoIdx != null ? grupos[m.a.grupoIdx]?.id ?? null : null
+      const grupoB = m.b.grupoIdx != null ? grupos[m.b.grupoIdx]?.id ?? null : null
+      return {
+        club_id: clubId,
+        evento_id: eventoId,
+        fase: faseInicial,
+        orden: m.orden,
+        inscrito_a_id: a,
+        inscrito_b_id: b,
+        ganador_id: !esperaAvance && a && !b ? a : null,
+        slot_a_grupo_id: grupoA,
+        slot_a_posicion: m.a.pos,
+        slot_b_grupo_id: grupoB,
+        slot_b_posicion: m.b.pos,
+        avance_origen_orden: m.a.avanceOrden ?? m.b.avanceOrden ?? null,
+      }
+    })
+    const { error: insErr } = await db.from('oficial_partidos').insert(inserts)
+    if (insErr) {
+      if (String(insErr.message || '').includes('avance_origen_orden')) {
+        return { error: 'Falta aplicar la migración 195_oficial_zonal_programa_y_publico en Supabase.' }
+      }
+      return { error: insErr.message || 'No se pudo crear el cuadro con pre-llave' }
+    }
+  }
+
+  const { data: avances } = await db.from('oficial_partidos')
+    .select('orden, ganador_id')
+    .eq('evento_id', eventoId).eq('fase', 'avance')
+  for (const av of avances || []) {
+    if (av.ganador_id) {
+      const errFill = await llenarCupoAvanceOficial(db, eventoId, av.orden, av.ganador_id)
+      if (errFill) return { error: errFill }
+    }
+  }
+
+  const { data: rondaInicial } = await db.from('oficial_partidos')
+    .select('evento_id, fase, orden, ganador_id, inscrito_b_id')
+    .eq('evento_id', eventoId).eq('fase', faseInicial).order('orden')
+  for (const p of rondaInicial || []) {
+    if (p.ganador_id && !p.inscrito_b_id) {
+      const errProp = await propagarGanadorPlayoffOficial(db, p, p.ganador_id, clubId)
+      if (errProp) return { error: errProp }
+    }
+  }
+
+  if (params.eventoFase === 'grupos') {
+    await db.from('oficial_eventos').update({ fase: 'llaves', actualizado_en: new Date().toISOString() })
+      .eq('id', eventoId)
+  }
+
+  await renumerarPartidosEventoDb(db, eventoId)
+  return { faseInicial, bracketCreado: true }
+}
+
 export async function sincronizarLlavesOficial(params: { eventoId: string }): Promise<Resultado<{ faseInicial?: string; bracketCreado?: boolean }>> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
@@ -969,22 +1242,54 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
   }
 
   const { data: eventoRaw, error: evSelErr } = await db.from('oficial_eventos')
-    .select('fase, clasifican_por_grupo, modo_sorteo_llave')
+    .select('fase, clasifican_por_grupo, modo_sorteo_llave, tamano_cuadro')
     .eq('id', params.eventoId).maybeSingle()
-  let evento = eventoRaw as { fase: string; clasifican_por_grupo: number; modo_sorteo_llave?: string } | null
-  if (evSelErr && String(evSelErr.message || '').includes('modo_sorteo_llave')) {
+  let evento = eventoRaw as {
+    fase: string; clasifican_por_grupo: number; modo_sorteo_llave?: string; tamano_cuadro?: number | null
+  } | null
+  if (evSelErr && String(evSelErr.message || '').includes('tamano_cuadro')) {
+    const { data: ev2, error: err2 } = await db.from('oficial_eventos')
+      .select('fase, clasifican_por_grupo, modo_sorteo_llave')
+      .eq('id', params.eventoId).maybeSingle()
+    if (err2 && String(err2.message || '').includes('modo_sorteo_llave')) {
+      const { data: ev3 } = await db.from('oficial_eventos')
+        .select('fase, clasifican_por_grupo')
+        .eq('id', params.eventoId).maybeSingle()
+      evento = ev3 ? { ...ev3, modo_sorteo_llave: 'fijo', tamano_cuadro: null } : null
+    } else {
+      evento = ev2 ? { ...ev2, tamano_cuadro: null } : null
+    }
+  } else if (evSelErr && String(evSelErr.message || '').includes('modo_sorteo_llave')) {
     const { data: ev2 } = await db.from('oficial_eventos')
       .select('fase, clasifican_por_grupo')
       .eq('id', params.eventoId).maybeSingle()
-    evento = ev2 ? { ...ev2, modo_sorteo_llave: 'fijo' } : null
+    evento = ev2 ? { ...ev2, modo_sorteo_llave: 'fijo', tamano_cuadro: null } : null
   }
   if (!evento) return { error: 'Evento no encontrado' }
 
   const { data: grupos } = await db.from('oficial_grupos').select('id, orden').eq('evento_id', params.eventoId).order('orden')
   const numGrupos = grupos?.length ?? 0
   if (numGrupos < 2) return { error: 'Se requieren al menos 2 grupos' }
-  if (numGrupos > CONFIG.TORNEO_MAX_GRUPOS) {
-    return { error: `El bracket admite hasta ${CONFIG.TORNEO_MAX_GRUPOS} grupos` }
+  if (numGrupos > OFICIAL_MAX_GRUPOS) {
+    return { error: `El bracket admite hasta ${OFICIAL_MAX_GRUPOS} grupos` }
+  }
+
+  const tamano = esTamanoCuadro(evento.tamano_cuadro) ? evento.tamano_cuadro : null
+  const planPre = tamano ? planificarPreLlave(numGrupos, tamano) : null
+  if (planPre && 'error' in planPre) return { error: planPre.error }
+  if (planPre) {
+    if (clasificados.length !== numGrupos) {
+      return { bracketCreado: false }
+    }
+    return sincronizarPreLlaveOficial({
+      db,
+      clubId: perfil.club_id!,
+      eventoId: params.eventoId,
+      eventoFase: evento.fase,
+      grupos: grupos || [],
+      clasificados,
+      plan: planPre,
+    })
   }
 
   const { data: inscritosCabezas } = await db.from('oficial_inscritos')
@@ -1133,24 +1438,35 @@ export async function actualizarConfigProgramacionOficial(params: {
   mesasCount: number
   bloqueMinutos: number
   horaInicio: string
+  bloqueGrupoMinutos?: number
 }): Promise<Resultado> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
 
   if (params.mesasCount < 1 || params.mesasCount > 64) return { error: 'Mesas inválidas (1–64)' }
-  if (params.bloqueMinutos < 10 || params.bloqueMinutos > 120) return { error: 'Bloque inválido (10–120 min)' }
+  if (params.bloqueMinutos < 10 || params.bloqueMinutos > 120) return { error: 'Bloque de llaves inválido (10–120 min)' }
   if (!/^\d{2}:\d{2}(:\d{2})?$/.test(params.horaInicio)) return { error: 'Hora de inicio inválida' }
+  if (params.bloqueGrupoMinutos != null && (params.bloqueGrupoMinutos < 20 || params.bloqueGrupoMinutos > 180)) {
+    return { error: 'Bloque de grupo inválido (20–180 min)' }
+  }
 
-  const { error: err } = await db.from('oficial_campeonatos').update({
+  const upd: Record<string, unknown> = {
     mesas_count: params.mesasCount,
     bloque_minutos: params.bloqueMinutos,
     hora_inicio: params.horaInicio.length === 5 ? `${params.horaInicio}:00` : params.horaInicio,
     actualizado_en: new Date().toISOString(),
-  }).eq('id', params.campeonatoId).eq('club_id', perfil.club_id)
+  }
+  if (params.bloqueGrupoMinutos != null) upd.bloque_grupo_minutos = params.bloqueGrupoMinutos
+
+  const { error: err } = await db.from('oficial_campeonatos').update(upd)
+    .eq('id', params.campeonatoId).eq('club_id', perfil.club_id)
 
   if (err) {
     const msg = err.message || ''
+    if (msg.includes('bloque_grupo_minutos')) {
+      return { error: 'Falta aplicar la migración 195_oficial_zonal_programa_y_publico en Supabase.' }
+    }
     if (msg.includes('mesas_count') || msg.includes('hora_inicio') || msg.includes('bloque_minutos')) {
       return { error: 'Falta aplicar la migración 158_torneo_oficial_llaves_programacion en Supabase (config de mesas).' }
     }
@@ -1159,47 +1475,164 @@ export async function actualizarConfigProgramacionOficial(params: {
   return {}
 }
 
+const TIPOS_BLOQUE_ESPECIAL = ['apertura', 'receso', 'premiacion', 'otro'] as const
+type TipoBloqueEspecial = (typeof TIPOS_BLOQUE_ESPECIAL)[number]
+
+function esTipoBloqueEspecial(v: unknown): v is TipoBloqueEspecial {
+  return TIPOS_BLOQUE_ESPECIAL.includes(v as TipoBloqueEspecial)
+}
+
+export async function reemplazarBloquesEspecialesOficial(params: {
+  campeonatoId: string
+  bloques: Array<{
+    fecha: string
+    hora: string
+    duracionMin?: number
+    tipo?: string
+    etiqueta: string
+  }>
+}): Promise<Resultado<{ total: number }>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: camp } = await db.from('oficial_campeonatos').select('id')
+    .eq('id', params.campeonatoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!camp) return { error: 'Campeonato no encontrado' }
+
+  const filas: Array<Record<string, unknown>> = []
+  for (const b of params.bloques) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(b.fecha)) return { error: 'Fecha de bloque inválida' }
+    if (!/^\d{2}:\d{2}(:\d{2})?$/.test(b.hora)) return { error: 'Hora de bloque inválida' }
+    const etiqueta = b.etiqueta.trim()
+    if (!etiqueta) return { error: 'La etiqueta del bloque es obligatoria' }
+    const tipo = b.tipo && esTipoBloqueEspecial(b.tipo) ? b.tipo : 'receso'
+    const duracion = b.duracionMin ?? 40
+    if (duracion < 5 || duracion > 180) return { error: 'Duración de bloque inválida (5–180 min)' }
+    filas.push({
+      club_id: perfil.club_id,
+      campeonato_id: params.campeonatoId,
+      fecha: b.fecha,
+      hora: b.hora.length === 5 ? `${b.hora}:00` : b.hora,
+      duracion_min: duracion,
+      tipo,
+      etiqueta,
+    })
+  }
+
+  await db.from('oficial_bloques_especiales').delete()
+    .eq('campeonato_id', params.campeonatoId).eq('club_id', perfil.club_id)
+  if (filas.length) {
+    const { error: ins } = await db.from('oficial_bloques_especiales').insert(filas)
+    if (ins) {
+      if (String(ins.message || '').includes('oficial_bloques_especiales')) {
+        return { error: 'Falta aplicar la migración 195_oficial_zonal_programa_y_publico en Supabase.' }
+      }
+      return { error: ins.message || 'No se pudieron guardar los bloques' }
+    }
+  }
+  return { total: filas.length }
+}
+
 export async function programarCampeonatoOficial(params: {
   campeonatoId: string
   fecha?: string
+  eventoId?: string
 }): Promise<Resultado<{ programados: number; omitidos: number }>> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
 
-  const { data: camp } = await db.from('oficial_campeonatos')
-    .select('id, fecha_inicio, mesas_count, bloque_minutos, hora_inicio')
+  const { data: campRaw, error: campErr } = await db.from('oficial_campeonatos')
+    .select('id, fecha_inicio, mesas_count, bloque_minutos, bloque_grupo_minutos, hora_inicio')
     .eq('id', params.campeonatoId).eq('club_id', perfil.club_id).maybeSingle()
+  let camp = campRaw as {
+    id: string; fecha_inicio: string; mesas_count: number; bloque_minutos: number
+    bloque_grupo_minutos?: number; hora_inicio: string
+  } | null
+  if (campErr && String(campErr.message || '').includes('bloque_grupo_minutos')) {
+    const { data: c2 } = await db.from('oficial_campeonatos')
+      .select('id, fecha_inicio, mesas_count, bloque_minutos, hora_inicio')
+      .eq('id', params.campeonatoId).eq('club_id', perfil.club_id).maybeSingle()
+    camp = c2 ? { ...c2, bloque_grupo_minutos: 70 } : null
+  }
   if (!camp) return { error: 'Campeonato no encontrado' }
 
-  const fecha = params.fecha || camp.fecha_inicio
-  const hora = String(camp.hora_inicio || '09:00:00').slice(0, 8)
-  const inicio = new Date(`${fecha}T${hora}-03:00`)
-
-  const { data: eventos } = await db.from('oficial_eventos').select('id').eq('campeonato_id', params.campeonatoId)
-  const eventoIds = (eventos || []).map((e: { id: string }) => e.id)
+  const { data: eventosRaw, error: evErr } = await db.from('oficial_eventos')
+    .select('id, fecha_juego').eq('campeonato_id', params.campeonatoId)
+  let eventos = (eventosRaw || []) as Array<{ id: string; fecha_juego?: string | null }>
+  if (evErr && String(evErr.message || '').includes('fecha_juego')) {
+    const { data: ev2 } = await db.from('oficial_eventos').select('id').eq('campeonato_id', params.campeonatoId)
+    eventos = (ev2 || []).map((e: { id: string }) => ({ id: e.id, fecha_juego: camp!.fecha_inicio }))
+  }
+  const eventoIds = eventos.map(e => e.id).filter(id => !params.eventoId || id === params.eventoId)
   if (!eventoIds.length) return { error: 'No hay eventos en el campeonato' }
+  const fechaPorEvento = new Map(eventos.map(e => [e.id, e.fecha_juego || camp.fecha_inicio]))
+
+  const qEsp = await db.from('oficial_bloques_especiales')
+    .select('fecha, hora, duracion_min').eq('campeonato_id', params.campeonatoId)
+  const especiales = qEsp.error
+    ? []
+    : (qEsp.data || []).map((b: { fecha: string; hora: string; duracion_min: number }) => ({
+      fecha: b.fecha,
+      hora: String(b.hora),
+      duracionMin: b.duracion_min,
+    }))
+
+  const { data: inscritos } = await db.from('oficial_inscritos')
+    .select('id, nombre, jugador_id').in('evento_id', eventoIds)
+  const clavePorInscrito = new Map((inscritos || []).map((i: { id: string; nombre: string; jugador_id: string | null }) => [
+    i.id,
+    i.jugador_id ? `jid:${i.jugador_id}` : `nom:${i.nombre.trim().toLowerCase()}`,
+  ]))
+
+  const { data: yaRows } = await db.from('oficial_partidos')
+    .select('mesa, programado_en')
+    .in('evento_id', eventos.map(e => e.id))
+    .not('programado_en', 'is', null)
+    .not('mesa', 'is', null)
+  const yaProgramados = (yaRows || [])
+    .filter((p: { mesa: number | null; programado_en: string | null }) => p.mesa && p.programado_en)
+    .map((p: { mesa: number; programado_en: string }) => ({
+      mesa: p.mesa,
+      programadoEn: new Date(p.programado_en),
+    }))
 
   const { data: partidos } = await db.from('oficial_partidos')
-    .select('id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, programado_en')
+    .select('id, evento_id, fase, orden, grupo_id, inscrito_a_id, inscrito_b_id, programado_en')
     .in('evento_id', eventoIds)
     .is('programado_en', null)
     .not('inscrito_a_id', 'is', null)
 
-  const pendientes = (partidos || []).filter((p: { inscrito_b_id: string | null }) => p.inscrito_b_id)
+  const pendientes = (partidos || []).filter((p: { inscrito_b_id: string | null; evento_id: string }) => {
+    if (!p.inscrito_b_id) return false
+    const fecha = fechaPorEvento.get(p.evento_id) || camp.fecha_inicio
+    if (params.fecha && fecha !== params.fecha) return false
+    return true
+  })
   if (!pendientes.length) return { programados: 0, omitidos: 0 }
 
-  const { asignaciones, omitidos } = programarPartidosGreedyConInforme(
-    pendientes.map((p: { id: string; inscrito_a_id: string; inscrito_b_id: string; fase: string; orden: number }) => ({
+  const { asignaciones, omitidos } = programarCampeonatoPorDias(
+    pendientes.map((p: {
+      id: string; evento_id: string; fase: string; orden: number; grupo_id: string | null
+      inscrito_a_id: string; inscrito_b_id: string
+    }) => ({
       id: p.id,
+      fechaJuego: fechaPorEvento.get(p.evento_id) || camp.fecha_inicio,
+      fase: p.fase,
+      orden: p.orden,
+      grupoId: p.grupo_id,
       inscritoA: p.inscrito_a_id,
       inscritoB: p.inscrito_b_id,
-      prioridad: prioridadPartidoOficial(p.fase, p.orden),
+      clavesJugadores: [clavePorInscrito.get(p.inscrito_a_id), clavePorInscrito.get(p.inscrito_b_id)].filter(Boolean) as string[],
     })),
     {
       mesas: camp.mesas_count ?? 8,
-      bloqueMinutos: camp.bloque_minutos ?? 25,
-      inicio,
+      bloqueGrupoMinutos: camp.bloque_grupo_minutos ?? 70,
+      bloqueLlaveMinutos: camp.bloque_minutos ?? 25,
+      horaInicio: String(camp.hora_inicio || '09:00:00'),
+      especiales,
+      yaProgramados,
     },
   )
 
@@ -1219,48 +1652,21 @@ export async function programarEventoOficial(params: { eventoId: string; fecha?:
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
 
-  const { data: evento } = await db.from('oficial_eventos')
-    .select('id, campeonato_id').eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+  const { data: eventoRaw, error: evErr } = await db.from('oficial_eventos')
+    .select('id, campeonato_id, fecha_juego').eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+  let evento = eventoRaw as { id: string; campeonato_id: string; fecha_juego?: string | null } | null
+  if (evErr && String(evErr.message || '').includes('fecha_juego')) {
+    const { data: ev2 } = await db.from('oficial_eventos')
+      .select('id, campeonato_id').eq('id', params.eventoId).eq('club_id', perfil.club_id).maybeSingle()
+    evento = ev2 ? { ...ev2, fecha_juego: null } : null
+  }
   if (!evento) return { error: 'Evento no encontrado' }
 
-  const { data: camp } = await db.from('oficial_campeonatos')
-    .select('fecha_inicio, mesas_count, bloque_minutos, hora_inicio')
-    .eq('id', evento.campeonato_id).maybeSingle()
-  if (!camp) return { error: 'Campeonato no encontrado' }
-
-  const fecha = params.fecha || camp.fecha_inicio
-  const hora = String(camp.hora_inicio || '09:00:00').slice(0, 8)
-  const inicio = new Date(`${fecha}T${hora}-03:00`)
-
-  const { data: partidos } = await db.from('oficial_partidos')
-    .select('id, fase, orden, inscrito_a_id, inscrito_b_id')
-    .eq('evento_id', params.eventoId)
-    .is('programado_en', null)
-    .not('inscrito_a_id', 'is', null)
-
-  const pendientes = (partidos || []).filter((p: { inscrito_b_id: string | null }) => p.inscrito_b_id)
-  const { asignaciones, omitidos } = programarPartidosGreedyConInforme(
-    pendientes.map((p: { id: string; inscrito_a_id: string; inscrito_b_id: string; fase: string; orden: number }) => ({
-      id: p.id,
-      inscritoA: p.inscrito_a_id,
-      inscritoB: p.inscrito_b_id,
-      prioridad: prioridadPartidoOficial(p.fase, p.orden),
-    })),
-    {
-      mesas: camp.mesas_count ?? 8,
-      bloqueMinutos: camp.bloque_minutos ?? 25,
-      inicio,
-    },
-  )
-
-  for (const [partidoId, slot] of asignaciones) {
-    await db.from('oficial_partidos').update({
-      mesa: slot.mesa,
-      programado_en: slot.programadoEn.toISOString(),
-    }).eq('id', partidoId)
-  }
-
-  return { programados: asignaciones.size, omitidos: omitidos.length }
+  return programarCampeonatoOficial({
+    campeonatoId: evento.campeonato_id,
+    fecha: params.fecha || evento.fecha_juego || undefined,
+    eventoId: evento.id,
+  })
 }
 
 async function actualizarEstadoCampeonatoOficial(db: AdminDb, campeonatoId: string, clubId: string) {

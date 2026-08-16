@@ -358,18 +358,20 @@ export function tamanosGruposOficial(numJugadores: number): number[] {
 /**
  * Orden de juego ITTF / Koidan en grupos de 3 y 4 (§2.2).
  * ids[0]=posición 1, ids[1]=2, …
- * - 3: 1-3, 2-3, 1-2
+ * - 3: 1-3, 1-2, 2-3 (plantilla Koidan al saltar el 4.º; último 2 vs 3 si clasifican dos, §2.2.2)
  * - 4: 1-3, 2-4, 1-2, 3-4, 1-4, 2-3 (secuencia Excel compañero)
  * Otros tamaños: round-robin por índice (i < j).
  */
+export const OFICIAL_MAX_GRUPOS = 48
+
 export function ordenPartidosGrupoIttf(ids: string[]): Array<[string, string]> {
   const n = ids.length
   if (n < 2) return []
   if (n === 3) {
     return [
       [ids[0], ids[2]],
-      [ids[1], ids[2]],
       [ids[0], ids[1]],
+      [ids[1], ids[2]],
     ]
   }
   if (n === 4) {

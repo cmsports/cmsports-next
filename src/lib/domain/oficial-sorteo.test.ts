@@ -5,6 +5,8 @@ import {
   aplicarSerpienteSegundos,
   aplicarSorteoSegundos,
   asignarNumerosIttf,
+  colocarCuadroConPreLlave,
+  planificarPreLlave,
   posicionesSemillaIttf,
   resumenSiembraCuadro,
 } from './oficial-sorteo'
@@ -68,5 +70,32 @@ describe('asignarNumerosIttf', () => {
     expect(map.get('g2')).toBe(2)
     expect(map.get('sf')).toBe(3)
     expect(map.get('f1')).toBe(4)
+  })
+})
+
+describe('planificarPreLlave', () => {
+  it('null si 2×grupos cabe en el cuadro', () => {
+    expect(planificarPreLlave(13, 32)).toBeNull()
+  })
+
+  it('37 grupos en 64: 10 partidos de avance', () => {
+    const p = planificarPreLlave(37, 64)
+    expect(p && !('error' in p) && p.partidosAvance).toBe(10)
+    if (p && !('error' in p)) {
+      expect(p.segundosDirectos).toBe(17)
+      expect(p.segundosEnAvance).toBe(20)
+    }
+  })
+
+  it('coloca 1.os en semillas y no enfrenta dos avances en R1 si puede', () => {
+    const plan = planificarPreLlave(37, 64)
+    expect(plan && !('error' in plan)).toBe(true)
+    if (!plan || 'error' in plan) return
+    const cruces = colocarCuadroConPreLlave(plan)
+    expect(cruces).toHaveLength(32)
+    const primeros = cruces.flatMap(c => [c.a, c.b]).filter(l => l.pos === 1 && l.grupoIdx != null)
+    expect(primeros).toHaveLength(37)
+    const avancesJuntos = cruces.filter(c => c.a.avanceOrden != null && c.b.avanceOrden != null)
+    expect(avancesJuntos).toHaveLength(0)
   })
 })

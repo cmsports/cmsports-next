@@ -4,6 +4,7 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 import { btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
 import { calcularNumGruposOficial } from '@/lib/domain/oficial-ittf'
+import { parsearListaOficial, type FilaImportOficial } from '@/lib/domain/oficial-import-lista'
 
 type Inscrito = {
   id: string
@@ -22,12 +23,21 @@ export default function InscripcionOficialModal(props: {
   onInscribir: (nombre: string, asociacion?: string) => Promise<{ error?: string }>
   onFormarGrupos: () => Promise<{ error?: string }>
   onGuardarCabezas: (jugadorIds: string[]) => Promise<{ error?: string | null }>
+  onImportarLote?: (filas: FilaImportOficial[], sugerirCabezas: boolean) => Promise<{
+    error?: string
+    inscritos?: number
+    omitidos?: number
+  }>
+  importando?: boolean
 }) {
   const [nombre, setNombre] = useState('')
   const [asociacion, setAsociacion] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [okMsg, setOkMsg] = useState('')
   const [cabezas, setCabezas] = useState<CabezaSerieJugador[]>([])
   const [cabezasDirty, setCabezasDirty] = useState(false)
+  const [textoLista, setTextoLista] = useState('')
+  const [sugerirCabezas, setSugerirCabezas] = useState(true)
 
   const candidatos = useMemo(
     () => props.inscritos.map(i => ({
@@ -62,10 +72,43 @@ export default function InscripcionOficialModal(props: {
 
   async function handleInscribir() {
     setErrorMsg('')
+    setOkMsg('')
     const res = await props.onInscribir(nombre.trim(), asociacion.trim() || undefined)
     if (res.error) { setErrorMsg(res.error); return }
     setNombre('')
     setAsociacion('')
+  }
+
+  async function importarTexto(texto: string) {
+    setErrorMsg('')
+    setOkMsg('')
+    if (!props.onImportarLote) return
+    const parsed = parsearListaOficial(texto)
+    if (!parsed.filas.length) {
+      setErrorMsg(parsed.errores[0] || 'No hay filas para importar')
+      return
+    }
+    const res = await props.onImportarLote(parsed.filas, sugerirCabezas)
+    if (res.error) { setErrorMsg(res.error); return }
+    const extra = parsed.errores.length ? ` · ${parsed.errores.length} aviso(s) en el archivo` : ''
+    setOkMsg(`Importados ${res.inscritos ?? parsed.filas.length}` +
+      (res.omitidos ? `, omitidos ${res.omitidos}` : '') + extra)
+    setTextoLista('')
+  }
+
+  async function handleArchivo(file: File) {
+    setErrorMsg('')
+    setOkMsg('')
+    const nombre = file.name.toLowerCase()
+    if (nombre.endsWith('.xlsx') || nombre.endsWith('.xls')) {
+      const XLSX = await import('xlsx')
+      const wb = XLSX.read(await file.arrayBuffer())
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      const csv = XLSX.utils.sheet_to_csv(sheet)
+      await importarTexto(csv)
+      return
+    }
+    await importarTexto(await file.text())
   }
 
   async function handleFormarGrupos() {
@@ -115,6 +158,54 @@ export default function InscripcionOficialModal(props: {
         {errorMsg && (
           <div style={{ background: '#fef2f2', color: torneoUi.danger, padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
             {errorMsg}
+          </div>
+        )}
+        {okMsg && (
+          <div style={{ background: '#f0fdf4', color: torneoUi.success, padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
+            {okMsg}
+          </div>
+        )}
+
+        {props.onImportarLote && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: torneoUi.text, marginBottom: 6 }}>Importar lista</div>
+            <p style={{ margin: '0 0 8px', fontSize: 11, color: torneoUi.muted }}>
+              Pegá CSV/Excel o subí xlsx. Columnas: nombre, asociación (o COD), código, ranking.
+            </p>
+            <textarea
+              value={textoLista}
+              onChange={e => setTextoLista(e.target.value)}
+              placeholder={'nombre,asociacion,codigo,ranking\nCAMPOS Julian,SMG,601,12'}
+              rows={4}
+              style={{ ...inputStyle, width: '100%', fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button
+                type="button"
+                disabled={props.importando || !textoLista.trim()}
+                onClick={() => void importarTexto(textoLista)}
+                style={{ ...btnInscribir, background: '#4338ca', opacity: props.importando || !textoLista.trim() ? 0.6 : 1 }}
+              >
+                {props.importando ? 'Importando…' : 'Importar pegado'}
+              </button>
+              <label style={{ ...btnInscribir, background: '#eef2ff', color: '#3730a3', cursor: 'pointer' }}>
+                Subir CSV / xlsx
+                <input
+                  type="file"
+                  accept=".csv,.tsv,.txt,.xlsx,.xls"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) void handleArchivo(f)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              <label style={{ fontSize: 12, color: torneoUi.muted, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="checkbox" checked={sugerirCabezas} onChange={e => setSugerirCabezas(e.target.checked)} />
+                Sugerir cabezas por ranking
+              </label>
+            </div>
           </div>
         )}
 

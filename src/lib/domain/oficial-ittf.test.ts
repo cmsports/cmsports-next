@@ -143,11 +143,11 @@ describe('setsSinteticosWalkover / completarSetsRetiro', () => {
 })
 
 describe('ordenPartidosGrupoIttf', () => {
-  it('grupo de 3: 1-3, 2-3, 1-2', () => {
+  it('grupo de 3: 1-3, 1-2, 2-3 (último 2 vs 3)', () => {
     expect(ordenPartidosGrupoIttf(['1', '2', '3'])).toEqual([
       ['1', '3'],
-      ['2', '3'],
       ['1', '2'],
+      ['2', '3'],
     ])
   })
 

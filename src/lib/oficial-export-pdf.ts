@@ -124,3 +124,64 @@ export async function exportarLlavesOficialPdf(params: {
   piePagina(doc, params.club)
   doc.save(params.nombreArchivo)
 }
+
+export type CeldaMuralPdf = {
+  mesa: number
+  hora: string
+  etiqueta: string
+  tipo: 'grupo' | 'partido' | 'especial'
+  detalle?: string
+}
+
+/** Grilla mural (hora × mesa) para pegar en la pared. */
+export async function exportarProgramaMuralPdf(params: {
+  titulo: string
+  subtitulo?: string
+  club: string
+  mesasCount: number
+  celdas: CeldaMuralPdf[]
+  nombreArchivo: string
+}) {
+  const { default: jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+  const { encabezado, piePagina, estiloTabla, sinDatos } = await import('@/lib/pdf/estilo')
+
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: params.subtitulo })
+  const mesas = Array.from({ length: Math.max(params.mesasCount, 1) }, (_, i) => i + 1)
+  const horas = [...new Set(params.celdas.map(c => c.hora))].sort()
+  const porCelda = new Map<string, CeldaMuralPdf>()
+  for (const c of params.celdas) {
+    if (c.tipo === 'especial') porCelda.set(`esp|${c.hora}`, c)
+    else porCelda.set(`${c.mesa}|${c.hora}`, c)
+  }
+
+  if (!horas.length) {
+    sinDatos(doc, y, 'No hay partidos programados')
+  } else {
+    autoTable(doc, {
+      startY: y,
+      head: [['Hora', ...mesas.map(m => `Mesa ${m}`)]],
+      body: horas.map(h => {
+        const esp = porCelda.get(`esp|${h}`)
+        if (esp) {
+          return [h, ...mesas.map((_, i) => (i === 0 ? esp.etiqueta : ''))]
+        }
+        return [
+          h,
+          ...mesas.map(m => {
+            const c = porCelda.get(`${m}|${h}`)
+            if (!c) return ''
+            return c.detalle ? `${c.etiqueta}\n${c.detalle}` : c.etiqueta
+          }),
+        ]
+      }),
+      ...estiloTabla(),
+      styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+      columnStyles: { 0: { cellWidth: 16, fontStyle: 'bold' } },
+    })
+  }
+
+  piePagina(doc, params.club)
+  doc.save(params.nombreArchivo)
+}

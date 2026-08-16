@@ -3,6 +3,8 @@ import {
   conflictosAlAsignar,
   detectarConflictosPrograma,
   detectarConflictosProgramaMulti,
+  programarCampeonatoPorDias,
+  programarGruposEnOlas,
   programarPartidosGreedyConInforme,
   type PartidoProgramaMulti,
   type PartidoProgramaSlot,
@@ -79,5 +81,59 @@ describe('programarPartidosGreedyConInforme', () => {
     })
     expect(asignaciones.size).toBe(5)
     expect(omitidos).toHaveLength(15)
+  })
+})
+
+describe('programarGruposEnOlas', () => {
+  it('un grupo ocupa una mesa y todos sus partidos la misma hora', () => {
+    const { asignaciones, omitidosGrupos } = programarGruposEnOlas(
+      [
+        { grupoId: 'A', partidoIds: ['a1', 'a2', 'a3'] },
+        { grupoId: 'B', partidoIds: ['b1', 'b2', 'b3'] },
+      ],
+      { mesas: 2, bloqueMinutos: 70, inicio: new Date('2026-06-20T09:00:00-04:00') },
+    )
+    expect(omitidosGrupos).toHaveLength(0)
+    expect(asignaciones.get('a1')?.mesa).toBe(1)
+    expect(asignaciones.get('a3')?.mesa).toBe(1)
+    expect(asignaciones.get('b1')?.mesa).toBe(2)
+    expect(asignaciones.get('a1')?.programadoEn.getTime()).toBe(asignaciones.get('a2')?.programadoEn.getTime())
+  })
+
+  it('salta un receso y no pone dos grupos con el mismo jugador en la misma ola', () => {
+    const inicio = new Date('2026-08-15T09:00:00-03:00')
+    const recesoInicio = new Date('2026-08-15T10:10:00-03:00')
+    const { asignaciones, fin } = programarGruposEnOlas(
+      [
+        { grupoId: 'A', partidoIds: ['a1'], clavesJugadores: ['juan'] },
+        { grupoId: 'B', partidoIds: ['b1'], clavesJugadores: ['juan'] },
+      ],
+      {
+        mesas: 2,
+        bloqueMinutos: 70,
+        inicio,
+        intervalosBloqueados: [{ inicio: recesoInicio, fin: new Date('2026-08-15T10:50:00-03:00') }],
+      },
+    )
+    expect(asignaciones.get('a1')?.programadoEn.getTime()).toBe(inicio.getTime())
+    expect(asignaciones.get('b1')?.programadoEn.getTime()).toBeGreaterThan(inicio.getTime())
+    expect(fin.getTime()).toBeGreaterThan(recesoInicio.getTime())
+  })
+})
+
+describe('programarCampeonatoPorDias', () => {
+  it('grupos comparten mesa/hora; llaves empiezan después', () => {
+    const { asignaciones, omitidos } = programarCampeonatoPorDias(
+      [
+        { id: 'g1', fechaJuego: '2026-08-15', fase: 'grupos', orden: 0, grupoId: 'GA', inscritoA: 'a', inscritoB: 'b' },
+        { id: 'g2', fechaJuego: '2026-08-15', fase: 'grupos', orden: 1, grupoId: 'GA', inscritoA: 'a', inscritoB: 'c' },
+        { id: 'l1', fechaJuego: '2026-08-15', fase: '8vos', orden: 0, grupoId: null, inscritoA: 'a', inscritoB: 'x' },
+      ],
+      { mesas: 8, bloqueGrupoMinutos: 70, bloqueLlaveMinutos: 25, horaInicio: '09:00' },
+    )
+    expect(omitidos).toHaveLength(0)
+    expect(asignaciones.get('g1')?.mesa).toBe(asignaciones.get('g2')?.mesa)
+    expect(asignaciones.get('g1')?.programadoEn.getTime()).toBe(asignaciones.get('g2')?.programadoEn.getTime())
+    expect(asignaciones.get('l1')?.programadoEn.getTime()).toBeGreaterThan(asignaciones.get('g1')!.programadoEn.getTime())
   })
 })

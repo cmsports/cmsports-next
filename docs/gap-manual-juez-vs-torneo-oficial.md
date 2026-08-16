@@ -1,6 +1,6 @@
 # Gap: Manual Juez General vs Torneo Oficial
 
-**Estado:** must-have + nice-to-have aplicables implementados en código (2026-08-11). Pegar migraciones antes de demo.  
+**Estado:** zonal para Coydán (grupos + llaves + pre-llave + mural) en código (2026-08-16). Pegar migraciones antes de demo.  
 **Avance operativo:** `docs/avance-manual-juez-oficial.md`
 
 ## Fuentes
@@ -22,8 +22,8 @@
 | Resultado | Solo ganador | Sets y/o marcador en vivo |
 | Puntos grupo | 2 / 0 | 2 / 1 / 0 (ITTF) |
 | Desempate | H2H o manual | pts → ratio juegos → ratio puntos |
-| Pagos / vivo público | Sí | No |
-| Migraciones | — | 156–161, 179, **180**, **181** |
+| Pagos / vivo público | Sí | Programa mural `/torneo-oficial/vivo/CODIGO` (sin pagos) |
+| Migraciones | — | 156–161, 179, **180**, **181**, **194**, **195** |
 
 ## Qué ya cubre el módulo oficial
 
@@ -40,6 +40,12 @@
 - **Panel conflictos multi-evento** en campeonato (mismo `jugador_id` o mesa, §4.3)
 - **Numeración ITTF** `numero_ittf` en programa / Excel / PDF (§4.5)
 - **Árbitro** texto libre por partido (`arbitro_nombre`)
+
+- **Programa por grupo** (ola ~70 min en una mesa) y **día por evento** (sáb/dom)
+- **PDF mural** grilla hora × mesa (además de la lista)
+- **Importar lista** CSV/xlsx en inscripción
+- **Pre-llave (`avance`)** si 2×grupos no cabe en `tamano_cuadro`
+- **Vivo público** `/torneo-oficial/vivo/[codigo]`
 
 ## Gaps priorizados
 
@@ -63,7 +69,7 @@
 | Panel conflictos multi-evento campeonato | ✅ hecho |
 | Numeración ITTF | ✅ hecho |
 | Árbitros básicos | ✅ hecho (texto; sin catálogo) |
-| Lucky loser / clasificatorias aparte | ⏸ deferred (§2.4.4; grupos = previa) |
+| Lucky loser / clasificatorias aparte | ✅ cubierto como pre-llave `avance` cuando el cuadro es chico; cut lucky-loser sigue deferred |
 | Botón «Retiro» en tablet técnico | ⏸ deferred (retiro desde UI oficial Sets) |
 
 ### Later
@@ -75,6 +81,8 @@
 1. `supabase/migrations/179_oficial_marcador_tecnico_fk.sql` — si aún no está  
 2. `supabase/migrations/180_oficial_cierre_sanciones_programa.sql` — tipo_cierre, motivo, alcance, `oficial_sanciones` + realtime  
 3. **`supabase/migrations/181_oficial_sorteo_numero_arbitro.sql`** — `modo_sorteo_llave`, `numero_ittf`, `arbitro_nombre`
+4. **`supabase/migrations/194_club_juez_met2.sql`** — club Juez MET2 Costa (no Buin)
+5. **`supabase/migrations/195_oficial_zonal_programa_y_publico.sql`** — día, bloque grupo, especiales, código público, RPC mural
 
 ## Cómo continuar
 

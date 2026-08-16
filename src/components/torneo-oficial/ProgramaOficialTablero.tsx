@@ -29,7 +29,11 @@ export type CeldaProgramaOficial = {
   jugadorB: string
   resultado?: string
   eventoNombre?: string
-  estado: 'pendiente' | 'finalizado' | 'walkover' | 'retiro'
+  estado: 'pendiente' | 'finalizado' | 'walkover' | 'retiro' | 'especial'
+  etiqueta?: string
+  tipo?: 'grupo' | 'partido' | 'especial'
+  detalle?: string
+  eventoId?: string
 }
 
 export type SinProgramarOficial = {
@@ -46,6 +50,7 @@ type Props = {
   emptyMessage?: string
   /** Si hay config de campeonato, rellena columnas de mesa vacías 1..N */
   mesasCount?: number
+  onCelda?: (celda: CeldaProgramaOficial) => void
 }
 
 export default function ProgramaOficialTablero({
@@ -53,6 +58,7 @@ export default function ProgramaOficialTablero({
   sinProgramar = [],
   emptyMessage = 'Sin partidos programados. Usa «Auto-programar» (configura mesas en el campeonato).',
   mesasCount,
+  onCelda,
 }: Props) {
   const { bloques, mesas } = useMemo(() => {
     const horas = [...new Set(celdas.map(c => c.hora))].sort()
@@ -69,7 +75,16 @@ export default function ProgramaOficialTablero({
   const porCelda = useMemo(() => {
     const map = new Map<string, CeldaProgramaOficial>()
     for (const c of celdas) {
+      if (c.tipo === 'especial') continue
       if (c.mesa > 0 && c.hora) map.set(`${c.mesa}|${c.hora}`, c)
+    }
+    return map
+  }, [celdas])
+
+  const especialPorHora = useMemo(() => {
+    const map = new Map<string, CeldaProgramaOficial>()
+    for (const c of celdas) {
+      if (c.tipo === 'especial' && c.hora) map.set(c.hora, c)
     }
     return map
   }, [celdas])
@@ -96,7 +111,7 @@ export default function ProgramaOficialTablero({
             Programa · mesa × horario
           </div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>
-            {celdas.length} partido{celdas.length !== 1 ? 's' : ''} programado{celdas.length !== 1 ? 's' : ''}
+            {celdas.filter(c => c.tipo !== 'especial').length} bloque{celdas.length !== 1 ? 's' : ''} en grilla
             {sinProgramar.length > 0 ? ` · ${sinProgramar.length} sin ubicar` : ''}
           </div>
         </div>
@@ -123,7 +138,24 @@ export default function ProgramaOficialTablero({
               </tr>
             </thead>
             <tbody>
-              {bloques.map((bloque, bIdx) => (
+              {bloques.map((bloque, bIdx) => {
+                const especial = especialPorHora.get(bloque)
+                if (especial) {
+                  return (
+                    <tr key={bloque} style={{ borderBottom: '1px solid #f1f5f9', background: '#fffbeb' }}>
+                      <td style={{ ...tdHora, background: '#fffbeb' }}>{bloque}</td>
+                      <td colSpan={Math.max(mesas.length, 1)} style={{ ...tdCelda, textAlign: 'center' }}>
+                        <div style={{
+                          borderRadius: 12, padding: '12px 16px', fontWeight: 800, color: '#92400e',
+                          background: 'linear-gradient(135deg,#fef3c7,#fde68a)', border: '1px solid #fcd34d',
+                        }}>
+                          {especial.etiqueta || especial.faseLabel}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                }
+                return (
                 <tr key={bloque} style={{ borderBottom: '1px solid #f1f5f9', background: bIdx % 2 === 0 ? '#ffffff' : '#fafbff' }}>
                   <td style={{
                     ...tdHora,
@@ -135,12 +167,21 @@ export default function ProgramaOficialTablero({
                     const p = porCelda.get(`${mesa}|${bloque}`)
                     return (
                       <td key={mesa} style={tdCelda}>
-                        {p ? <PartidoCard p={p} /> : <div style={celdaVacia} />}
+                        {p ? (
+                          <div
+                            role={onCelda ? 'button' : undefined}
+                            onClick={onCelda ? () => onCelda(p) : undefined}
+                            style={onCelda ? { cursor: 'pointer' } : undefined}
+                          >
+                            <PartidoCard p={p} />
+                          </div>
+                        ) : <div style={celdaVacia} />}
                       </td>
                     )
                   })}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -153,6 +194,7 @@ export default function ProgramaOficialTablero({
 
 function PartidoCard({ p }: { p: CeldaProgramaOficial }) {
   const dc = colorFase(p.eventoNombre || p.faseLabel)
+  const esGrupo = p.tipo === 'grupo' || (!!p.etiqueta && p.tipo !== 'partido')
   const bg = p.estado === 'finalizado'
     ? 'linear-gradient(135deg,#f0fdf4,#dcfce7)'
     : p.estado === 'walkover' || p.estado === 'retiro'
@@ -160,6 +202,19 @@ function PartidoCard({ p }: { p: CeldaProgramaOficial }) {
       : '#ffffff'
   const border = p.estado === 'finalizado' ? '#86efac'
     : p.estado === 'walkover' || p.estado === 'retiro' ? '#fcd34d' : '#e8edf5'
+
+  if (esGrupo && p.etiqueta) {
+    return (
+      <div style={{
+        borderRadius: 12, background: bg, border: `1px solid ${border}`, borderLeft: `4px solid ${dc}`,
+        padding: '12px 12px', boxShadow: '0 2px 8px rgba(15,23,42,0.06)',
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: torneoUi.text }}>{p.etiqueta}</div>
+        {p.detalle ? <div style={{ fontSize: 11, color: torneoUi.muted, marginTop: 4 }}>{p.detalle}</div> : null}
+        {p.estado === 'finalizado' && <div style={{ marginTop: 6, fontSize: 11, color: '#15803d', fontWeight: 700 }}>✓ Cerrado</div>}
+      </div>
+    )
+  }
 
   return (
     <div style={{

@@ -13,9 +13,12 @@ import {
   crearEventoOficial,
   listarConflictosProgramaOficial,
   programarCampeonatoOficial,
+  reemplazarBloquesEspecialesOficial,
 } from '@/app/actions/torneo-oficial'
 import { formatearSets, type SetMarcador } from '@/lib/domain/oficial-ittf'
-import { exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
+import { armarCeldasMural, type CeldaMuralOficial, type PartidoParaMural } from '@/lib/domain/programar-oficial'
+import { TAMANOS_CUADRO, type TamanoCuadro } from '@/lib/domain/oficial-sorteo'
+import { exportarProgramaMuralPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
 import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 import ProgramaOficialTablero, { type CeldaProgramaOficial } from '@/components/torneo-oficial/ProgramaOficialTablero'
 import { btnOutlineIndigo, btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
@@ -30,6 +33,8 @@ type Evento = {
   fase: string
   formato_partido: string
   campeon_inscrito_id: string | null
+  fecha_juego?: string | null
+  tamano_cuadro?: number | null
 }
 
 type Campeonato = {
@@ -42,7 +47,17 @@ type Campeonato = {
   estado: string
   mesas_count: number
   bloque_minutos: number
+  bloque_grupo_minutos: number
   hora_inicio: string
+  codigo_publico?: string | null
+}
+
+type BloqueEspecial = {
+  fecha: string
+  hora: string
+  duracionMin: number
+  tipo: string
+  etiqueta: string
 }
 
 const card = torneoUi.card
@@ -68,13 +83,19 @@ export default function CampeonatoOficialDetallePage() {
   const [genero, setGenero] = useState<'varones' | 'damas' | 'mixto'>('varones')
   const [formato, setFormato] = useState<'bo3' | 'bo5' | 'bo7'>('bo5')
   const [nombre, setNombre] = useState('')
+  const [fechaJuegoNuevo, setFechaJuegoNuevo] = useState('')
+  const [tamanoCuadroNuevo, setTamanoCuadroNuevo] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [programando, setProgramando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
   const [mesas, setMesas] = useState('8')
   const [bloque, setBloque] = useState('25')
+  const [bloqueGrupo, setBloqueGrupo] = useState('70')
   const [horaInicio, setHoraInicio] = useState('09:00')
+  const [diaSel, setDiaSel] = useState('')
+  const [especiales, setEspeciales] = useState<BloqueEspecial[]>([])
+  const [muralCeldas, setMuralCeldas] = useState<CeldaMuralOficial[]>([])
   const [conflictosCamp, setConflictosCamp] = useState<Array<{ motivo: string; labelA?: string; labelB?: string; tipo: string }>>([])
   const cargadoRef = useRef(false)
 
@@ -86,6 +107,8 @@ export default function CampeonatoOficialDetallePage() {
       resultado?: string; numeroIttf?: number | null; arbitro?: string | null
     }>
     programaCeldas: CeldaProgramaOficial[]
+    muralCeldas: CeldaMuralOficial[]
+    especiales: BloqueEspecial[]
     error?: string
   }
 
@@ -95,10 +118,14 @@ export default function CampeonatoOficialDetallePage() {
     setEventos(d.eventos)
     setProgramaRows(d.programaRows)
     setProgramaCeldas(d.programaCeldas)
+    setMuralCeldas(d.muralCeldas || [])
+    setEspeciales(d.especiales || [])
     if (d.camp) {
       setMesas(String(d.camp.mesas_count))
       setBloque(String(d.camp.bloque_minutos))
+      setBloqueGrupo(String(d.camp.bloque_grupo_minutos ?? 70))
       setHoraInicio(String(d.camp.hora_inicio).slice(0, 5))
+      setDiaSel(prev => prev || d.camp!.fecha_inicio)
     }
     cargadoRef.current = true
   }, [])
@@ -117,44 +144,79 @@ export default function CampeonatoOficialDetallePage() {
           .select('id,nombre,sede,zona,fecha_inicio,fecha_fin,estado')
           .eq('id', id).eq('club_id', clubId).maybeSingle()
 
-        if (errC) return { camp: null, eventos: [], programaRows: [], programaCeldas: [], error: errC.message || 'Error al cargar el campeonato' }
-        if (!c) return { camp: null, eventos: [], programaRows: [], programaCeldas: [] }
+        if (errC) return { camp: null, eventos: [], programaRows: [], programaCeldas: [], muralCeldas: [], especiales: [], error: errC.message || 'Error al cargar el campeonato' }
+        if (!c) return { camp: null, eventos: [], programaRows: [], programaCeldas: [], muralCeldas: [], especiales: [] }
 
         let mesas_count = 8
         let bloque_minutos = 25
+        let bloque_grupo_minutos = 70
         let hora_inicio = '09:00:00'
+        let codigo_publico: string | null = null
         const { data: cfg, error: errCfg } = await db.from('oficial_campeonatos')
-          .select('mesas_count,bloque_minutos,hora_inicio')
+          .select('mesas_count,bloque_minutos,bloque_grupo_minutos,hora_inicio,codigo_publico')
           .eq('id', id).maybeSingle()
-        if (!errCfg && cfg) {
+        if (errCfg && String(errCfg.message || '').includes('bloque_grupo')) {
+          const { data: cfg2 } = await db.from('oficial_campeonatos')
+            .select('mesas_count,bloque_minutos,hora_inicio')
+            .eq('id', id).maybeSingle()
+          if (cfg2) {
+            mesas_count = cfg2.mesas_count ?? mesas_count
+            bloque_minutos = cfg2.bloque_minutos ?? bloque_minutos
+            hora_inicio = cfg2.hora_inicio ?? hora_inicio
+          }
+        } else if (!errCfg && cfg) {
           mesas_count = cfg.mesas_count ?? mesas_count
           bloque_minutos = cfg.bloque_minutos ?? bloque_minutos
+          bloque_grupo_minutos = cfg.bloque_grupo_minutos ?? bloque_grupo_minutos
           hora_inicio = cfg.hora_inicio ?? hora_inicio
+          codigo_publico = cfg.codigo_publico ?? null
         }
 
-        const campCompleto = { ...c, mesas_count, bloque_minutos, hora_inicio } as Campeonato
+        const campCompleto = { ...c, mesas_count, bloque_minutos, bloque_grupo_minutos, hora_inicio, codigo_publico } as Campeonato
 
-        const { data: ev } = await db.from('oficial_eventos')
-          .select('id,nombre,categoria,genero,fase,formato_partido,campeon_inscrito_id')
+        const qEv = await db.from('oficial_eventos')
+          .select('id,nombre,categoria,genero,fase,formato_partido,campeon_inscrito_id,fecha_juego,tamano_cuadro')
           .eq('campeonato_id', id).order('creado_en')
-        const eventosList = (ev || []) as Evento[]
+        let eventosList = (qEv.data || []) as Evento[]
+        if (qEv.error && (String(qEv.error.message || '').includes('fecha_juego') || String(qEv.error.message || '').includes('tamano_cuadro'))) {
+          const { data: ev2 } = await db.from('oficial_eventos')
+            .select('id,nombre,categoria,genero,fase,formato_partido,campeon_inscrito_id')
+            .eq('campeonato_id', id).order('creado_en')
+          eventosList = (ev2 || []) as Evento[]
+        }
+
+        const qEsp = await db.from('oficial_bloques_especiales')
+          .select('fecha,hora,duracion_min,tipo,etiqueta')
+          .eq('campeonato_id', id).order('fecha').order('hora')
+        const especialesList: BloqueEspecial[] = qEsp.error ? [] : (qEsp.data || []).map((b: {
+          fecha: string; hora: string; duracion_min: number; tipo: string; etiqueta: string
+        }) => ({
+          fecha: b.fecha,
+          hora: String(b.hora).slice(0, 5),
+          duracionMin: b.duracion_min,
+          tipo: b.tipo,
+          etiqueta: b.etiqueta,
+        }))
 
         const eventoIds = eventosList.map(e => e.id)
         let programaRows: DatosCamp['programaRows'] = []
         let programaCeldas: CeldaProgramaOficial[] = []
+        let muralCeldas: CeldaMuralOficial[] = []
         if (eventoIds.length) {
           const { data: ins } = await db.from('oficial_inscritos').select('id,nombre,asociacion').in('evento_id', eventoIds)
           const nombreMap = new Map((ins || []).map((i: { id: string; nombre: string; asociacion: string | null }) =>
             [i.id, i.asociacion ? `${i.nombre} (${i.asociacion})` : i.nombre]))
           const eventoMap = new Map(eventosList.map(e => [e.id, e.nombre]))
+          const { data: gruposRows } = await db.from('oficial_grupos').select('id,nombre,evento_id').in('evento_id', eventoIds)
+          const grupoNombre = new Map((gruposRows || []).map((g: { id: string; nombre: string }) => [g.id, g.nombre]))
 
           const qPar = await db.from('oficial_partidos')
-            .select('id,evento_id,fase,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,mesa,programado_en,numero_ittf,arbitro_nombre')
+            .select('id,evento_id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,tipo_cierre,mesa,programado_en,numero_ittf,arbitro_nombre')
             .in('evento_id', eventoIds).not('programado_en', 'is', null).order('programado_en')
           let parRows = qPar.data || []
-          if (qPar.error && String(qPar.error.message || '').includes('numero_ittf')) {
+          if (qPar.error && (String(qPar.error.message || '').includes('numero_ittf') || String(qPar.error.message || '').includes('tipo_cierre'))) {
             const q2 = await db.from('oficial_partidos')
-              .select('id,evento_id,fase,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,mesa,programado_en')
+              .select('id,evento_id,fase,grupo_id,inscrito_a_id,inscrito_b_id,ganador_id,sets,es_walkover,mesa,programado_en')
               .in('evento_id', eventoIds).not('programado_en', 'is', null).order('programado_en')
             parRows = q2.data || []
           }
@@ -164,7 +226,7 @@ export default function CampeonatoOficialDetallePage() {
             ganador_id: string | null; sets: SetMarcador[]; es_walkover: boolean; mesa: number; programado_en: string
             numero_ittf?: number | null; arbitro_nombre?: string | null
           }) => ({
-            hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Santiago' }),
             mesa: p.mesa ?? 0,
             evento: eventoMap.get(p.evento_id) || '',
             fase: FASE_LABELS[p.fase] || p.fase,
@@ -174,26 +236,50 @@ export default function CampeonatoOficialDetallePage() {
             arbitro: p.arbitro_nombre,
           }))
 
-          programaCeldas = parRows.filter((p: { mesa: number | null; inscrito_a_id: string | null }) => p.mesa && p.inscrito_a_id).map((p: {
-            id: string; evento_id: string; fase: string; inscrito_a_id: string; inscrito_b_id: string | null
-            ganador_id: string | null; sets: SetMarcador[]; es_walkover: boolean; mesa: number; programado_en: string
+          const paraMural: PartidoParaMural[] = parRows.filter((p: { mesa: number | null }) => p.mesa).map((p: {
+            id: string; evento_id: string; fase: string; grupo_id: string | null
+            inscrito_a_id: string | null; inscrito_b_id: string | null
+            ganador_id: string | null; tipo_cierre?: string | null; es_walkover: boolean
+            mesa: number; programado_en: string
           }) => ({
             id: p.id,
             mesa: p.mesa,
-            hora: new Date(p.programado_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false }),
-            faseLabel: FASE_LABELS[p.fase] || p.fase,
-            jugadorA: nombreMap.get(p.inscrito_a_id) || '?',
+            programadoEn: p.programado_en,
+            fase: p.fase,
+            grupoId: p.grupo_id,
+            grupoNombre: p.grupo_id ? grupoNombre.get(p.grupo_id) ?? null : null,
+            eventoNombre: eventoMap.get(p.evento_id) || null,
+            eventoId: p.evento_id,
+            jugadorA: p.inscrito_a_id ? (nombreMap.get(p.inscrito_a_id) || '?') : '?',
             jugadorB: p.inscrito_b_id ? (nombreMap.get(p.inscrito_b_id) || '?') : 'BYE',
-            resultado: p.ganador_id ? formatearSets((p.sets || []) as SetMarcador[]) : undefined,
-            eventoNombre: eventoMap.get(p.evento_id) || undefined,
-            estado: p.es_walkover ? 'walkover' as const : p.ganador_id ? 'finalizado' as const : 'pendiente' as const,
+            ganadorId: p.ganador_id,
+            tipoCierre: p.tipo_cierre,
+            esWalkover: p.es_walkover,
+          }))
+          muralCeldas = armarCeldasMural(paraMural, especialesList.map(e => ({
+            fecha: e.fecha, hora: e.hora, etiqueta: e.etiqueta,
+          })))
+
+          programaCeldas = muralCeldas.map(m => ({
+            id: m.partidoIds[0] || `esp-${m.fecha}-${m.hora}`,
+            mesa: m.mesa,
+            hora: m.hora,
+            faseLabel: m.tipo === 'especial' ? m.etiqueta : m.tipo === 'grupo' ? 'Grupos' : m.etiqueta,
+            jugadorA: m.tipo === 'partido' ? (m.detalle?.split(' vs ')[0] ?? m.etiqueta) : m.etiqueta,
+            jugadorB: m.tipo === 'partido' ? (m.detalle?.split(' vs ')[1] ?? '') : (m.detalle || ''),
+            eventoNombre: m.eventoNombre,
+            eventoId: m.eventoId,
+            estado: m.estado === 'especial' ? 'especial' as const : m.estado,
+            etiqueta: m.etiqueta,
+            tipo: m.tipo,
+            detalle: m.detalle,
           }))
         }
 
-        return { camp: campCompleto, eventos: eventosList, programaRows, programaCeldas }
+        return { camp: campCompleto, eventos: eventosList, programaRows, programaCeldas, muralCeldas, especiales: especialesList }
       },
       {
-        tablas: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos', 'oficial_inscritos'],
+        tablas: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos', 'oficial_inscritos', 'oficial_bloques_especiales'],
         silencioso,
         aplicar: aplicarDatos,
         setLoading,
@@ -209,10 +295,10 @@ export default function CampeonatoOficialDetallePage() {
   }, [authLoading, perfil, cargar, router])
 
   useEnVivo(
-    ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos'],
+    ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos', 'oficial_bloques_especiales'],
     perfil?.club_id ?? null,
     () => { void cargar(true) },
-    { conClub: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos'] },
+    { conClub: ['oficial_campeonatos', 'oficial_eventos', 'oficial_partidos', 'oficial_bloques_especiales'] },
   )
 
   const refrescarConflictosCamp = useCallback(async () => {
@@ -234,6 +320,30 @@ export default function CampeonatoOficialDetallePage() {
     if (cargadoRef.current && programaCeldas.length) void refrescarConflictosCamp()
   }, [programaCeldas.length, refrescarConflictosCamp])
 
+  const dias = useMemo(() => {
+    if (!camp) return []
+    const set = new Set<string>()
+    set.add(camp.fecha_inicio)
+    if (camp.fecha_fin) set.add(camp.fecha_fin)
+    for (const e of eventos) if (e.fecha_juego) set.add(e.fecha_juego)
+    return [...set].sort()
+  }, [camp, eventos])
+
+  const celdasDelDia = useMemo(() => {
+    const fecha = diaSel || camp?.fecha_inicio
+    if (!fecha) return programaCeldas
+    const ids = new Set(
+      muralCeldas.filter(c => c.fecha === fecha).flatMap(c => c.partidoIds.length ? c.partidoIds : [c.etiqueta + c.hora]),
+    )
+    return programaCeldas.filter(c => {
+      if (c.tipo === 'especial') {
+        const m = muralCeldas.find(x => x.tipo === 'especial' && x.hora === c.hora && x.etiqueta === c.etiqueta)
+        return !m || m.fecha === fecha
+      }
+      return c.id ? muralCeldas.some(m => m.fecha === fecha && m.partidoIds.includes(c.id)) : ids.has(c.id)
+    })
+  }, [programaCeldas, muralCeldas, diaSel, camp?.fecha_inicio])
+
   const resumen = useMemo(() => ({
     total: eventos.length,
     finalizados: eventos.filter(e => e.fase === 'finalizado').length,
@@ -247,6 +357,8 @@ export default function CampeonatoOficialDetallePage() {
       campeonatoId: id,
       nombre: nombre || `${categoria} ${genero === 'varones' ? 'Varones' : genero === 'damas' ? 'Damas' : 'Mixto'}`,
       categoria, genero, formatoPartido: formato,
+      fechaJuego: fechaJuegoNuevo || undefined,
+      tamanoCuadro: tamanoCuadroNuevo ? Number(tamanoCuadroNuevo) as TamanoCuadro : null,
     })
     setGuardando(false)
     if (res.error) { setErrorMsg(res.error); return }
@@ -260,6 +372,7 @@ export default function CampeonatoOficialDetallePage() {
       campeonatoId: id,
       mesasCount: Number(mesas),
       bloqueMinutos: Number(bloque),
+      bloqueGrupoMinutos: Number(bloqueGrupo),
       horaInicio,
     })
     if (res.error) setErrorMsg(res.error)
@@ -272,10 +385,11 @@ export default function CampeonatoOficialDetallePage() {
       campeonatoId: id,
       mesasCount: Number(mesas),
       bloqueMinutos: Number(bloque),
+      bloqueGrupoMinutos: Number(bloqueGrupo),
       horaInicio,
     })
     if (cfg.error) { setErrorMsg(cfg.error); setProgramando(false); return }
-    const res = await programarCampeonatoOficial({ campeonatoId: id })
+    const res = await programarCampeonatoOficial({ campeonatoId: id, fecha: diaSel || undefined })
     setProgramando(false)
     if (res.error) setErrorMsg(res.error)
     else {
@@ -300,6 +414,27 @@ export default function CampeonatoOficialDetallePage() {
     })
   }
 
+  async function exportarMural() {
+    if (!camp) return
+    const fecha = diaSel || camp.fecha_inicio
+    const celdas = muralCeldas.filter(c => c.fecha === fecha)
+    await exportarProgramaMuralPdf({
+      titulo: `Mural — ${camp.nombre}`,
+      subtitulo: `${fecha}${camp.sede ? ` · ${camp.sede}` : ''}`,
+      club: camp.nombre,
+      mesasCount: camp.mesas_count,
+      celdas: celdas.map(c => ({ mesa: c.mesa, hora: c.hora, etiqueta: c.etiqueta, tipo: c.tipo, detalle: c.detalle })),
+      nombreArchivo: `${camp.nombre.replace(/\s+/g, '_')}_mural_${fecha}.pdf`,
+    })
+  }
+
+  async function guardarEspeciales() {
+    setErrorMsg('')
+    const res = await reemplazarBloquesEspecialesOficial({ campeonatoId: id, bloques: especiales })
+    if (res.error) setErrorMsg(res.error)
+    else void cargar()
+  }
+
   async function archivar() {
     if (!camp || !clubId) return
     if (!confirm(`¿Archivar "${camp.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
@@ -315,7 +450,7 @@ export default function CampeonatoOficialDetallePage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px 80px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px 80px' }}>
         <button type="button" onClick={() => router.push('/torneo-oficial')} style={btnBack}>← Volver</button>
         {loading && !camp ? (
           <p style={{ color: torneoUi.hint }}>Cargando…</p>
@@ -332,6 +467,9 @@ export default function CampeonatoOficialDetallePage() {
                 </p>
                 <p style={{ margin: '4px 0 0', color: torneoUi.muted, fontSize: 12 }}>
                   {resumen.total} evento(s) · {resumen.enGrupos} en grupos · {resumen.enLlaves} en llaves · {resumen.finalizados} finalizados
+                  {camp.codigo_publico ? (
+                    <> · vivo: <a href={`/torneo-oficial/vivo/${camp.codigo_publico}`} style={{ color: '#4338ca' }}>{camp.codigo_publico}</a></>
+                  ) : null}
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -379,31 +517,83 @@ export default function CampeonatoOficialDetallePage() {
 
             <div style={{ ...card, padding: 16, marginBottom: 16 }}>
               <h2 style={{ margin: '0 0 12px', fontSize: 16, color: torneoUi.text }}>Programación de mesas</h2>
+              {dias.length > 1 && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {dias.map(d => (
+                    <button key={d} type="button" onClick={() => setDiaSel(d)}
+                      style={{
+                        ...btnOutlineIndigo,
+                        background: (diaSel || camp.fecha_inicio) === d ? '#eef2ff' : '#fff',
+                        borderColor: (diaSel || camp.fecha_inicio) === d ? '#6366f1' : '#e2e8f0',
+                      }}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
                 <div><label style={labelStyle}>Mesas</label>
                   <input type="number" min={1} max={64} value={mesas} onChange={e => setMesas(e.target.value)} style={inputStyle} /></div>
-                <div><label style={labelStyle}>Min/bloque</label>
+                <div><label style={labelStyle}>Min/grupo</label>
+                  <input type="number" min={20} max={180} value={bloqueGrupo} onChange={e => setBloqueGrupo(e.target.value)} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Min/llave</label>
                   <input type="number" min={10} max={120} value={bloque} onChange={e => setBloque(e.target.value)} style={inputStyle} /></div>
                 <div><label style={labelStyle}>Hora inicio</label>
                   <input type="time" value={horaInicio} onChange={e => setHoraInicio(e.target.value)} style={inputStyle} /></div>
               </div>
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: torneoUi.text, marginBottom: 8 }}>Bloques especiales</div>
+                {especiales.map((b, i) => (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 1fr 1fr auto', gap: 6, marginBottom: 6 }}>
+                    <input type="date" value={b.fecha} onChange={e => {
+                      const next = [...especiales]; next[i] = { ...b, fecha: e.target.value }; setEspeciales(next)
+                    }} style={inputStyle} />
+                    <input type="time" value={b.hora} onChange={e => {
+                      const next = [...especiales]; next[i] = { ...b, hora: e.target.value }; setEspeciales(next)
+                    }} style={inputStyle} />
+                    <input type="number" min={5} max={180} value={b.duracionMin} onChange={e => {
+                      const next = [...especiales]; next[i] = { ...b, duracionMin: Number(e.target.value) }; setEspeciales(next)
+                    }} style={inputStyle} />
+                    <select value={b.tipo} onChange={e => {
+                      const next = [...especiales]; next[i] = { ...b, tipo: e.target.value }; setEspeciales(next)
+                    }} style={inputStyle}>
+                      <option value="apertura">Apertura</option>
+                      <option value="receso">Receso</option>
+                      <option value="premiacion">Premiación</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                    <input value={b.etiqueta} onChange={e => {
+                      const next = [...especiales]; next[i] = { ...b, etiqueta: e.target.value }; setEspeciales(next)
+                    }} placeholder="Etiqueta" style={inputStyle} />
+                    <button type="button" onClick={() => setEspeciales(especiales.filter((_, j) => j !== i))} style={btnOutlineIndigo}>✕</button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setEspeciales([...especiales, {
+                  fecha: diaSel || camp.fecha_inicio, hora: '13:00', duracionMin: 40, tipo: 'receso', etiqueta: 'Receso',
+                }])} style={{ ...btnOutlineIndigo, marginRight: 8 }}>+ Bloque</button>
+                <button type="button" onClick={() => void guardarEspeciales()} style={btnOutlineIndigo}>Guardar bloques</button>
+              </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                 <button type="button" onClick={() => void guardarConfig()} style={btnOutlineIndigo}>Guardar config</button>
                 <button type="button" onClick={() => void programarTodo()} disabled={programando} style={{ ...btnPrimaryIndigo, opacity: programando ? 0.6 : 1 }}>
-                  {programando ? 'Programando…' : 'Programar todos los eventos'}
+                  {programando ? 'Programando…' : 'Auto-programar campeonato'}
                 </button>
+                {celdasDelDia.length > 0 && (
+                  <button type="button" onClick={() => void exportarMural()} style={btnOutlineIndigo}>PDF mural</button>
+                )}
                 {programaRows.length > 0 && (
-                  <button type="button" onClick={() => void exportarPrograma()} style={btnOutlineIndigo}>PDF programa completo</button>
+                  <button type="button" onClick={() => void exportarPrograma()} style={btnOutlineIndigo}>PDF lista</button>
                 )}
               </div>
             </div>
 
-            {programaCeldas.length > 0 && (
+            {celdasDelDia.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <ProgramaOficialTablero
-                  celdas={programaCeldas}
+                  celdas={celdasDelDia}
                   mesasCount={camp.mesas_count}
-                  emptyMessage="Sin partidos programados. Guarda la config y pulsa «Programar todos los eventos»."
+                  emptyMessage="Sin partidos programados. Guarda la config y pulsa «Auto-programar campeonato»."
+                  onCelda={c => { if (c.eventoId) router.push(`/torneo-oficial/evento/${c.eventoId}`) }}
                 />
               </div>
             )}
@@ -418,6 +608,8 @@ export default function CampeonatoOficialDetallePage() {
                     <strong style={{ color: torneoUi.text }}>{e.nombre}</strong>
                     <div style={{ fontSize: 13, color: torneoUi.muted, marginTop: 4 }}>
                       {e.categoria} · {e.genero} · {e.formato_partido.toUpperCase()} · fase {e.fase}
+                      {e.fecha_juego ? ` · ${e.fecha_juego}` : ''}
+                      {e.tamano_cuadro ? ` · cuadro ${e.tamano_cuadro}` : ''}
                       {e.fase === 'finalizado' ? ' · 🏆' : ''}
                     </div>
                   </button>
@@ -442,6 +634,13 @@ export default function CampeonatoOficialDetallePage() {
               </select>
               <label style={labelStyle}>Nombre visible (opc.)</label>
               <input value={nombre} onChange={e => setNombre(e.target.value)} style={inputStyle} />
+              <label style={labelStyle}>Fecha de juego</label>
+              <input type="date" value={fechaJuegoNuevo} onChange={e => setFechaJuegoNuevo(e.target.value)} style={inputStyle} />
+              <label style={labelStyle}>Tamaño de cuadro (pre-llave si no caben)</label>
+              <select value={tamanoCuadroNuevo} onChange={e => setTamanoCuadroNuevo(e.target.value)} style={inputStyle}>
+                <option value="">Automático</option>
+                {TAMANOS_CUADRO.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
               {errorMsg && <p style={{ color: torneoUi.danger, fontSize: 13 }}>{errorMsg}</p>}
               <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
                 <button type="button" onClick={() => setModal(false)} style={{ ...btnOutlineIndigo, flex: 1 }}>Cancelar</button>

@@ -30,4 +30,10 @@ describe('protección de rutas por módulos del club', () => {
   it('permite la URL directa cuando el módulo fue asignado', () => {
     expect(puedeAccederModulo('/torneos/nuevo', ['torneos'])).toBe(true)
   })
+
+  it('deja público el mural oficial /torneo-oficial/vivo', () => {
+    expect(moduloRequeridoPorRuta('/torneo-oficial/vivo/JUEZ-01')).toBeNull()
+    expect(puedeAccederModulo('/torneo-oficial/vivo/JUEZ-01', [])).toBe(true)
+    expect(moduloRequeridoPorRuta('/torneo-oficial/evento/abc')).toBe('torneo_oficial')
+  })
 })

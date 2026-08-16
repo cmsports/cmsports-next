@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { CONFIG } from '@/lib/config'
+import { determinarFaseInicial } from '@/lib/domain/torneos'
 import {
   actualizarArbitroPartidoOficial,
   actualizarModoSorteoLlaveOficial,
@@ -15,6 +16,8 @@ import {
   corregirResultadoOficial,
   formarGruposOficial,
   inscribirJugadorOficial,
+  inscribirLoteOficial,
+  actualizarEventoOficial,
   intercambiarCuposOficial,
   listarConflictosProgramaOficial,
   programarEventoOficial,
@@ -36,7 +39,10 @@ import {
 import {
   MODO_SORTEO_LLAVE_LABEL,
   resumenSiembraCuadro,
+  TAMANOS_CUADRO,
+  planificarPreLlave,
   type ModoSorteoLlave,
+  type TamanoCuadro,
 } from '@/lib/domain/oficial-sorteo'
 import BracketOficial from '@/components/torneo-oficial/BracketOficial'
 import InscripcionOficialModal from '@/components/torneo-oficial/InscripcionOficialModal'
@@ -65,6 +71,8 @@ type Evento = {
   campeon_inscrito_id: string | null
   tercer_inscrito_id: string | null
   modo_sorteo_llave?: ModoSorteoLlave
+  fecha_juego?: string | null
+  tamano_cuadro?: TamanoCuadro | null
 }
 
 type Campeonato = { id: string; nombre: string; mesas_count?: number }
@@ -147,6 +155,10 @@ export default function EventoOficialPage() {
   const [syncLlaves, setSyncLlaves] = useState(false)
   const [programando, setProgramando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [importando, setImportando] = useState(false)
+  const [fechaJuego, setFechaJuego] = useState('')
+  const [tamanoCuadro, setTamanoCuadro] = useState<string>('')
+  const [guardandoEvento, setGuardandoEvento] = useState(false)
 
   const [guardandoRes, setGuardandoRes] = useState<string | null>(null)
   const [reiniciando, setReiniciando] = useState(false)
@@ -180,6 +192,8 @@ export default function EventoOficialPage() {
     setPartidos(d.partidos)
     setSanciones(d.sanciones)
     if (d.evento?.modo_sorteo_llave) setModoSorteo(d.evento.modo_sorteo_llave)
+    if (d.evento?.fecha_juego) setFechaJuego(d.evento.fecha_juego)
+    setTamanoCuadro(d.evento?.tamano_cuadro ? String(d.evento.tamano_cuadro) : '')
     cargadoRef.current = true
   }, [])
 
@@ -193,10 +207,21 @@ export default function EventoOficialPage() {
         const db = supabase as any
 
         const qEv = await db.from('oficial_eventos')
-          .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id,tercer_inscrito_id,modo_sorteo_llave')
+          .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id,tercer_inscrito_id,modo_sorteo_llave,fecha_juego,tamano_cuadro')
           .eq('id', id).eq('club_id', clubId).maybeSingle()
         let ev = (qEv.data || null) as Evento | null
-        if (qEv.error && String(qEv.error.message || '').includes('modo_sorteo_llave')) {
+        if (qEv.error && (String(qEv.error.message || '').includes('fecha_juego') || String(qEv.error.message || '').includes('tamano_cuadro'))) {
+          const q2 = await db.from('oficial_eventos')
+            .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id,tercer_inscrito_id,modo_sorteo_llave')
+            .eq('id', id).eq('club_id', clubId).maybeSingle()
+          ev = q2.data ? { ...q2.data, fecha_juego: null, tamano_cuadro: null } : null
+          if (q2.error && String(q2.error.message || '').includes('modo_sorteo_llave')) {
+            const { data: ev2 } = await db.from('oficial_eventos')
+              .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id,tercer_inscrito_id')
+              .eq('id', id).eq('club_id', clubId).maybeSingle()
+            ev = ev2 ? { ...ev2, modo_sorteo_llave: 'fijo' as ModoSorteoLlave, fecha_juego: null, tamano_cuadro: null } : null
+          }
+        } else if (qEv.error && String(qEv.error.message || '').includes('modo_sorteo_llave')) {
           const { data: ev2 } = await db.from('oficial_eventos')
             .select('id,nombre,categoria,genero,fase,formato_partido,campeonato_id,campeon_inscrito_id,tercer_inscrito_id')
             .eq('id', id).eq('club_id', clubId).maybeSingle()
@@ -360,7 +385,7 @@ export default function EventoOficialPage() {
   [partidos])
 
   const faseInicialLlaves = useMemo(
-    () => CONFIG.FASES_ORDEN.find(f => partidosPlayoff.some(p => p.fase === f)) ?? null,
+    () => CONFIG.FASES_ORDEN.find(f => f !== 'avance' && partidosPlayoff.some(p => p.fase === f)) ?? null,
     [partidosPlayoff],
   )
 
@@ -409,9 +434,22 @@ export default function EventoOficialPage() {
   [partidos, evento, nombrePorId])
 
   const resumenCuadro = useMemo(() => {
+    if (evento?.tamano_cuadro && grupos.length >= 2) {
+      const plan = planificarPreLlave(grupos.length, evento.tamano_cuadro)
+      if (plan && 'error' in plan) return { error: plan.error }
+      if (plan) {
+        return {
+          clasificados: grupos.length * 2,
+          tamanoLlave: plan.tamanoCuadro,
+          byes: 0,
+          faseInicial: determinarFaseInicial(plan.tamanoCuadro),
+          preLlave: plan.partidosAvance,
+        }
+      }
+    }
     const clasificados = grupos.length * 2
     return resumenSiembraCuadro(clasificados)
-  }, [grupos.length])
+  }, [grupos.length, evento?.tamano_cuadro])
 
   const { programaCeldas, programaSinUbicar } = useMemo(() => {
     const celdas: CeldaProgramaOficial[] = []
@@ -456,6 +494,28 @@ export default function EventoOficialPage() {
     setInscribiendo(false)
     if (!res.error) recargarEvento()
     return res
+  }
+
+  async function importarLoteModal(filas: Array<{ nombre: string; asociacion?: string; codigoFederativo?: string; ranking?: number }>, sugerirCabezas: boolean) {
+    setImportando(true)
+    const res = await inscribirLoteOficial({ eventoId: id, filas, sugerirCabezas })
+    setImportando(false)
+    if (!res.error) recargarEvento()
+    return res
+  }
+
+  async function guardarMetaEvento() {
+    setErrorMsg('')
+    setGuardandoEvento(true)
+    const tamano = tamanoCuadro === '' ? null : Number(tamanoCuadro) as TamanoCuadro
+    const res = await actualizarEventoOficial({
+      eventoId: id,
+      fechaJuego: fechaJuego || undefined,
+      tamanoCuadro: tamano,
+    })
+    setGuardandoEvento(false)
+    if (res.error) setErrorMsg(res.error)
+    else recargarEvento()
   }
 
   async function guardarCabezasModal(jugadorIds: string[]) {
@@ -773,6 +833,8 @@ export default function EventoOficialPage() {
                 <h1 style={{ margin: 0, fontSize: 22, color: text }}>{evento.nombre}</h1>
                 <p style={{ margin: '6px 0 0', color: muted, fontSize: 13 }}>
                   {evento.categoria} · {evento.genero} · {evento.formato_partido.toUpperCase()} · fase {evento.fase}
+                  {evento.fecha_juego ? ` · juega ${evento.fecha_juego}` : ''}
+                  {evento.tamano_cuadro ? ` · cuadro ${evento.tamano_cuadro}` : ''}
                   {campeonNombre ? ` · 🏆 ${campeonNombre}` : ''}
                   {tercerNombre ? ` · 🥉 ${tercerNombre}` : ''}
                 </p>
@@ -786,6 +848,33 @@ export default function EventoOficialPage() {
 
             {errorMsg && (
               <div style={{ ...card, padding: 12, marginBottom: 14, color: torneoUi.danger, fontSize: 13 }}>{errorMsg}</div>
+            )}
+
+            {esAdmin && evento.fase !== 'finalizado' && (
+              <div style={{ ...card, padding: 14, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 8 }}>Día y cuadro</div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: muted, marginBottom: 4 }}>Fecha de juego</label>
+                    <input type="date" value={fechaJuego} onChange={e => setFechaJuego(e.target.value)}
+                      style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: muted, marginBottom: 4 }}>Tamaño de cuadro</label>
+                    <select value={tamanoCuadro} onChange={e => setTamanoCuadro(e.target.value)}
+                      style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}>
+                      <option value="">Automático (2×grupos)</option>
+                      {TAMANOS_CUADRO.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                  <button type="button" disabled={guardandoEvento} onClick={() => void guardarMetaEvento()} style={btnOutlineIndigo}>
+                    {guardandoEvento ? 'Guardando…' : 'Guardar'}
+                  </button>
+                </div>
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: hint }}>
+                  Sábado vs domingo, y pre-llave (1/64) si 2×grupos no cabe en el cuadro.
+                </p>
+              </div>
             )}
 
             {enInscripcion && inscritos.length > 0 && (
@@ -840,7 +929,9 @@ export default function EventoOficialPage() {
               eventoNombre={evento.nombre}
               inscribiendo={inscribiendo}
               formando={formando}
+              importando={importando}
               onInscribir={inscribirDesdeModal}
+              onImportarLote={importarLoteModal}
               onFormarGrupos={async () => {
                 setFormando(true)
                 const res = await formarGruposOficial({ eventoId: id })
@@ -951,10 +1042,16 @@ export default function EventoOficialPage() {
                         Renumerar ITTF
                       </button>
                     </div>
-                    {resumenCuadro && (
+                    {resumenCuadro && 'error' in resumenCuadro && (
+                      <p style={{ margin: '10px 0 0', fontSize: 12, color: torneoUi.danger }}>{resumenCuadro.error}</p>
+                    )}
+                    {resumenCuadro && !('error' in resumenCuadro) && (
                       <p style={{ margin: '10px 0 0', fontSize: 12, color: hint }}>
                         Cuadro: {resumenCuadro.clasificados} clasificados → llave de {resumenCuadro.tamanoLlave}
                         {resumenCuadro.byes > 0 ? ` · ${resumenCuadro.byes} BYE` : ''}
+                        {'preLlave' in resumenCuadro && resumenCuadro.preLlave
+                          ? ` · ${resumenCuadro.preLlave} partidos de avance (1/64)`
+                          : ''}
                         {' · '}fase inicial {FASE_LABELS[resumenCuadro.faseInicial] || resumenCuadro.faseInicial}
                         {' · '}previas = fase de grupos
                       </p>
@@ -979,7 +1076,7 @@ export default function EventoOficialPage() {
                   <div style={{ ...card, padding: 16, marginBottom: 16 }}>
                     <h2 style={{ margin: '0 0 12px', fontSize: 16, color: text }}>Cuadro eliminatorio</h2>
                     <BracketOficial
-                      partidos={partidosPlayoff}
+                      partidos={partidosPlayoff.filter(p => p.fase !== 'avance')}
                       nombrePorId={nombrePorId}
                       esAdmin={esAdmin}
                       faseInicial={faseInicialLlaves}
