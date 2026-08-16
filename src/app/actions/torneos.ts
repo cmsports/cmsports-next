@@ -1100,23 +1100,27 @@ export async function sincronizarLlaves(params: {
   if (new Set(gruposDeCabezas).size !== gruposDeCabezas.length) {
     return { error: 'No pueden quedar dos cabezas de serie en el mismo grupo' }
   }
-  const grupoIdDeCabeza = new Map(cabezas.map(c => [c.jugadorId, (miembros || []).find(m => m.jugador_id === c.jugadorId)?.grupo_id]))
-
+  // Dónde está parada una cabeza de serie HOY. Si su grupo todavía no cerró,
+  // devuelve null: no se le inventa un puesto.
+  //
+  // Antes esto asumía que la cabeza saldría 1° de su grupo —"la premisa de ser
+  // cabeza de serie"— para poder congelar las mitades desde temprano. Ser
+  // cabeza de serie es una expectativa al sembrar, no un resultado: si esa
+  // persona terminaba 2°, el cuadro ya estaba escrito con ella en la mitad
+  // equivocada, y si además ya se había jugado una llave quedaba congelado así.
+  // Es el mismo vicio que dejó el sub19 con 1° contra 1°: escribir en el cuadro
+  // algo que la cancha todavía no había dicho.
+  //
+  // Sin la suposición, una cabeza entra al sembrado recién cuando su grupo
+  // cierra y se sabe si es 1° o 2°. Mientras tanto el cuadro se arma con lo que
+  // de verdad se sabe y se reordena solo, en cada llamada, hasta que se juegue
+  // el primer partido de la llave.
   const slotDe = (jid?: string | null): { grupoIdx: number; pos: 1 | 2 } | null => {
     if (!jid) return null
     const clasificado = clasificados.find(c => c.primeroId === jid || c.segundoId === jid)
-    if (clasificado) {
-      const grupoIdx = idxByGrupoId.get(clasificado.grupoId)
-      return grupoIdx == null ? null : { grupoIdx, pos: clasificado.primeroId === jid ? 1 : 2 }
-    }
-    // El grupo de esta cabeza todavía no cierra: se asume 1° provisoriamente
-    // (la premisa de ser cabeza de serie) para poder congelar mitades desde
-    // ya. Mientras no se juegue ningún partido de bracket esto se recalcula
-    // solo con cada llamada, así que si el resultado real difiere (queda 2°)
-    // se corrige antes de que importe.
-    const grupoId = grupoIdDeCabeza.get(jid)
-    const grupoIdx = grupoId ? idxByGrupoId.get(grupoId) : null
-    return grupoIdx == null ? null : { grupoIdx, pos: 1 }
+    if (!clasificado) return null
+    const grupoIdx = idxByGrupoId.get(clasificado.grupoId)
+    return grupoIdx == null ? null : { grupoIdx, pos: clasificado.primeroId === jid ? 1 : 2 }
   }
   const cabezasSlots = cabezas.map(c => {
     const slot = slotDe(c.jugadorId)

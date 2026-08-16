@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calcularStatsGrupo, grupoTieneSusDosCuposDecididos } from './torneos'
+import { calcularStatsGrupo, grupoTieneSusDosCuposDecididos, construirLlavesLayoutNumerado } from './torneos'
 
 // Arma stats + partidos pendientes a partir de una lista de partidos, igual que
 // lo hace calcularClasificadosDesdeBD en el servidor.
@@ -97,5 +97,38 @@ describe('grupoTieneSusDosCuposDecididos', () => {
       { jugadorA: 'ana', jugadorB: 'cami', ganador: 'ana' },
       { jugadorA: 'beto', jugadorB: 'cami', ganador: 'beto' },
     ])).toBe(true)
+  })
+})
+
+// Antes, si el grupo de una cabeza de serie no habia cerrado, el servidor la
+// daba por 1° de su grupo para poder sembrarla igual. Eso se elimino: ser
+// cabeza de serie es una expectativa al sembrar, no un resultado. Una cabeza
+// entra al sembrado recien cuando su grupo cierra; hasta entonces simplemente
+// no se la posiciona. Estos casos fijan que el cuadro sale bien igual.
+describe('el cuadro se arma sin suponer el puesto de nadie', () => {
+  const puestos = (cabezas: { numero: number; grupoIdx: number; pos: 1 | 2 }[]) => {
+    const l = construirLlavesLayoutNumerado(8, cabezas, [0, 1, 2, 3, 4, 5, 6, 7])
+    return l.matches.filter(m => m.a && m.b)
+  }
+
+  it('sin ninguna cabeza sembrada, igual cruza 1° contra 2°', () => {
+    const primeraRonda = puestos([])
+    expect(primeraRonda).toHaveLength(8)
+    expect(primeraRonda.filter(m => m.a!.pos === m.b!.pos)).toHaveLength(0)
+  })
+
+  it('nunca enfrenta al 1° y al 2° del mismo grupo en la ronda inicial', () => {
+    for (const cabezas of [[], [{ numero: 1, grupoIdx: 0, pos: 1 as const }]]) {
+      const mismoGrupo = puestos(cabezas).filter(m => m.a!.grupoIdx === m.b!.grupoIdx)
+      expect(mismoGrupo).toHaveLength(0)
+    }
+  })
+
+  it('una cabeza que resulto 2° de su grupo se siembra como 2°, no como 1°', () => {
+    // Es el caso que antes se suponia al reves. El cuadro tiene que aceptarlo
+    // y seguir cruzando 1° contra 2°.
+    const primeraRonda = puestos([{ numero: 1, grupoIdx: 3, pos: 2 }])
+    expect(primeraRonda).toHaveLength(8)
+    expect(primeraRonda.filter(m => m.a!.pos === m.b!.pos)).toHaveLength(0)
   })
 })
