@@ -576,7 +576,7 @@ html.dark [style*="background-color:white"] {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(99, 102, 241, 0.05) !important;
 }
 
-/* Grises muy claros → fondo hundido (#f1f5f9, #f8fafc, #f4f7fa, #f4f6f8, #f0f4f8, #f0f4ff, #e8edf4) */
+/* Grises muy claros → fondo hundido (#f1f5f9, #f8fafc, #f4f7fa, #f4f6f8, #f0f4f8, #f0f4ff, #e8edf4, #eef2f7) */
 html.dark [style*="background:#f1f5f9"],
 html.dark [style*="background: #f1f5f9"],
 html.dark [style*="background-color:#f1f5f9"],
@@ -611,7 +611,12 @@ html.dark [style*="background:#e8edf4"],
 html.dark [style*="background: #e8edf4"],
 html.dark [style*="background-color:#e8edf4"],
 html.dark [style*="background: rgb(232, 237, 244)"],
-html.dark [style*="background-color: rgb(232, 237, 244)"] {
+html.dark [style*="background-color: rgb(232, 237, 244)"],
+html.dark [style*="background:#eef2f7"],
+html.dark [style*="background: #eef2f7"],
+html.dark [style*="background-color:#eef2f7"],
+html.dark [style*="background: rgb(238, 242, 247)"],
+html.dark [style*="background-color: rgb(238, 242, 247)"] {
   background: #0e1629 !important;
 }
 
