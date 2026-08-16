@@ -1676,7 +1676,7 @@ export async function generarGruposTardios(params: {
 export async function actualizarEstadoPago(params: {
   torneoId: string
   jugadorId: string
-  estado: 'pagado' | 'pendiente'
+  estado: 'pagado' | 'pendiente' | 'exento'
   metodoPago?: 'efectivo' | 'transferencia'
 }) {
   const { error: authErr, supabase } = await requireAdmin()

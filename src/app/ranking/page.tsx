@@ -248,7 +248,8 @@ export default function RankingPage() {
     // el ranking que se importó del papel —que costó dos rondas de preguntas a
     // la asociación—, así que el aviso lo dice con todas las letras.
     if (!confirm(
-      '¿Reiniciar el ranking?\n\n'
+      '¿ESTÁS SEGURO DE LO QUE QUIERES HACER?\n\n'
+      + '¿Reiniciar el ranking?\n\n'
       + 'Todos vuelven a cero: se dejan de contar los torneos ya jugados Y el ranking '
       + 'que se cargó desde la planilla del club.\n\n'
       + 'Cambia en el Ranking, en el perfil de cada jugador y en su ficha.\n\n'

@@ -553,7 +553,8 @@ export default function TorneoDetallePage() {
   const recaudadoEfectivo = recaudado - recaudadoTransferencia
   const pagosPendientesDeSubir = pagos.filter(p => p.estado === 'pagado' && !p.subido_a_finanzas)
   const recaudadoPendiente = pagosPendientesDeSubir.length * cuota
-  const proyectado = totalInscritos * cuota
+  const exentos = pagos.filter(p => p.estado === 'exento')
+  const proyectado = (totalInscritos - exentos.length) * cuota
   // Respeta el ojito: todo lo que este `fmt` dibuja va a pantalla.
   const fmt = useTextoMonto()
 
@@ -1555,12 +1556,12 @@ export default function TorneoDetallePage() {
 
           {jugadoresUnicos.filter((j: any) => {
             const pago = pagos.find(p => p.jugador_id === j.jugador_id)
-            return !pago || pago.estado !== 'pagado'
+            return !pago || (pago.estado !== 'pagado' && pago.estado !== 'exento')
           }).length === 0
             ? (pagosPendientesDeSubir.length === 0 && <p style={{ fontSize:13, color:'#16a34a' }}>✓ Todos han pagado y están subidos a Finanzas</p>)
             : jugadoresUnicos.filter((j: any) => {
                 const pago = pagos.find(p => p.jugador_id === j.jugador_id)
-                return !pago || pago.estado !== 'pagado'
+                return !pago || (pago.estado !== 'pagado' && pago.estado !== 'exento')
               }).map((j: any) => (
               <div key={j.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
                 <div style={{ flex:1, fontSize:13, color: text }}>{j.jugadores?.nombre||'—'}</div>
@@ -1580,9 +1581,48 @@ export default function TorneoDetallePage() {
                     {pagoLoading === j.jugador_id ? '...' : metodo === 'efectivo' ? '💵 Efectivo' : '💳 Transferencia'}
                   </button>
                 ))}
+                <button disabled={pagoLoading === j.jugador_id} title="El jugador se retiró: no se le cobra la inscripción" onClick={async () => {
+                  if (pagoLoading) return
+                  if (!confirm(`¿${j.jugadores?.nombre || 'Este jugador'} se retiró del torneo? No se le va a cobrar la inscripción.`)) return
+                  setPagoLoading(j.jugador_id)
+                  try {
+                    const res = await actualizarEstadoPago({ torneoId, jugadorId: j.jugador_id, estado: 'exento' })
+                    if (res.error) { alert(res.error); return }
+                    await cargarTorneo()
+                  } catch (e) {
+                    alert('Error al registrar el retiro: ' + (e instanceof Error ? e.message : String(e)))
+                  } finally { setPagoLoading(null) }
+                }} style={{ background:'#f8fafc', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor: pagoLoading === j.jugador_id ? 'not-allowed' : 'pointer', opacity: pagoLoading === j.jugador_id ? 0.5 : 1 }}>
+                  {pagoLoading === j.jugador_id ? '...' : '🚪 Se retiró'}
+                </button>
               </div>
             ))
           }
+
+          {exentos.length > 0 && (
+            <div style={{ marginTop:14, paddingTop:12, borderTop:'1px solid #f1f5f9' }}>
+              <div style={{ fontSize:11, color: muted, marginBottom:8 }}>Se retiraron (no se les cobra)</div>
+              {exentos.map(p => {
+                const j = jugadoresUnicos.find((x: any) => x.jugador_id === p.jugador_id)
+                return (
+                  <div key={p.jugador_id} style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 0' }}>
+                    <div style={{ flex:1, fontSize:13, color: muted }}>{j?.jugadores?.nombre || '—'}</div>
+                    <button disabled={pagoLoading === p.jugador_id} onClick={async () => {
+                      if (pagoLoading) return
+                      setPagoLoading(p.jugador_id)
+                      try {
+                        const res = await actualizarEstadoPago({ torneoId, jugadorId: p.jugador_id, estado: 'pendiente' })
+                        if (res.error) { alert(res.error); return }
+                        await cargarTorneo()
+                      } finally { setPagoLoading(null) }
+                    }} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:11, cursor:'pointer', textDecoration:'underline' }}>
+                      Deshacer
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
