@@ -580,7 +580,6 @@ export default function JugadorDetallePage() {
     }, 'image/jpeg', 0.92)
   }
   const edad = jugador.fecha_nacimiento ? new Date().getFullYear() - parseInt(jugador.fecha_nacimiento.slice(0, 4)) : null
-  const tieneEmergencia = jugador.contacto_emergencia_nombre || jugador.indicaciones_medicas
 
   async function generarReportePDF() {
     setGenerandoReporte(true)
@@ -1075,29 +1074,18 @@ export default function JugadorDetallePage() {
       {/* ── Tarjetas de información ── */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))', gap:16, marginBottom:24 }}>
 
-        {/* Información personal */}
+        {/* Contacto rápido. RUT, dirección, tallas y el resto viven en Editar. */}
         <div style={cardStyle}>
-          <CardHeader title="Información personal" onEdit={puedeEditar ? abrirEditContacto : undefined} />
+          <CardHeader title="Contacto" onEdit={puedeEditar ? abrirEditContacto : undefined} />
           <div style={{ padding:'4px 20px 16px' }}>
-            <InfoRow label="Nombre" value={jugador.nombre} />
-            <InfoRow label="RUT" value={jugador.rut} />
-            <InfoRow label="Email" value={jugador.email} />
             <InfoRow label="Teléfono" value={jugador.telefono} tel />
-            <InfoRow
-              label={(jugador.categorias?.length ?? 0) > 1 ? 'Categorías' : 'Categoría'}
-              value={(jugador.categorias?.length ?? 0) > 0 ? jugador.categorias.join(' · ') : jugador.categoria}
-            />
-            {jugador.fecha_nacimiento && <InfoRow label="Nacimiento" value={jugador.fecha_nacimiento} />}
-            <InfoRow label="Grupo" value={grupoLabel(jugador.grupo)} />
-            <InfoRow label="Sede" value={sedeLabel(jugador.sede)} />
-            {jugador.horario && <InfoRow label="Horario" value={jugador.horario} />}
-            {esClubBuin && <InfoRow label="Federado" value={jugador.federado ? 'Sí' : jugador.federado === false ? 'No' : '—'} />}
-            {(jugador.talla_polera || jugador.talla_short) && (
-              <InfoRow label="Tallas" value={[jugador.talla_polera && `Polera ${jugador.talla_polera}`, jugador.talla_short && `Short ${jugador.talla_short}`].filter(Boolean).join(' · ')} />
+            <InfoRow label="Email" value={jugador.email} />
+            {!jugador.telefono && !jugador.email && (
+              <div style={{ padding:'12px 0', fontSize:12, color: hint }}>
+                {puedeEditar ? 'Sin teléfono ni email — Editar' : 'Sin teléfono ni email'}
+              </div>
             )}
             {(() => {
-              // Si el número no es un celular chileno válido no se muestra el
-              // botón: abría WhatsApp diciendo que el número no existe.
               const waApoderado = linkWhatsApp(jugador.contacto_emergencia_telefono)
               const waJugador   = linkWhatsApp(jugador.telefono)
               const esMenor     = edad !== null && edad < 18
@@ -1123,6 +1111,12 @@ export default function JugadorDetallePage() {
                 </div>
               )
             })()}
+            {jugador.indicaciones_medicas && (
+              <div style={{ marginTop:12, background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'12px 14px' }}>
+                <div style={{ fontSize:11, color:'#dc2626', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Indicaciones médicas</div>
+                <div style={{ fontSize:13, color:'#991b1b', lineHeight:1.5 }}>{jugador.indicaciones_medicas}</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1254,42 +1248,6 @@ export default function JugadorDetallePage() {
           <CardHeader title="Documentos" />
           <DocumentosJugador jugadorId={jugadorId} puedeEditar={puedeSubirDocumentos} />
         </div>
-
-        {/* Ubicación (si hay datos) */}
-        {(jugador.direccion || jugador.comuna) && (
-          <div style={cardStyle}>
-            <CardHeader title="Ubicación" onEdit={puedeEditar ? abrirEditContacto : undefined} />
-            <div style={{ padding:'4px 20px 16px' }}>
-              <InfoRow label="Dirección" value={jugador.direccion} />
-              <InfoRow label="Comuna" value={jugador.comuna} />
-            </div>
-          </div>
-        )}
-
-        {/* Emergencia & Salud */}
-        {(esClubBuin || tieneEmergencia) && (
-          <div style={cardStyle}>
-            <CardHeader title="Emergencia & Salud" onEdit={puedeEditar ? abrirEditContacto : undefined} />
-            <div style={{ padding:'4px 20px 16px' }}>
-              {jugador.contacto_emergencia_nombre ? (
-                <>
-                  <InfoRow label="Contacto" value={jugador.contacto_emergencia_nombre} />
-                  <InfoRow label="Tel. emergencia" value={jugador.contacto_emergencia_telefono} tel />
-                </>
-              ) : (
-                <div style={{ padding:'12px 0', fontSize:12, color: hint }}>Sin contacto de emergencia registrado</div>
-              )}
-              {jugador.indicaciones_medicas ? (
-                <div style={{ marginTop:12, background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'12px 14px' }}>
-                  <div style={{ fontSize:11, color:'#dc2626', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Indicaciones médicas</div>
-                  <div style={{ fontSize:13, color:'#991b1b', lineHeight:1.5 }}>{jugador.indicaciones_medicas}</div>
-                </div>
-              ) : esClubBuin ? (
-                <div style={{ padding:'12px 0', fontSize:12, color: hint }}>Sin indicaciones médicas</div>
-              ) : null}
-            </div>
-          </div>
-        )}
 
       </div>
 
