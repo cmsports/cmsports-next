@@ -194,7 +194,7 @@ function MarcadorPartidoContent() {
     const historial = [...(partido.historial_sets ?? [])]
     if (r.setCompletado) historial.push(r.setCompletado)
 
-    let patch: Partial<PartidoTecnico> = {
+    const patch: Partial<PartidoTecnico> = {
       puntos_a: r.puntos_a,
       puntos_b: r.puntos_b,
       games_a: r.games_a,

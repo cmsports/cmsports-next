@@ -46,6 +46,7 @@ export default function OficialVivoPage() {
   const [snap, setSnap] = useState<Snap | null>(null)
   const [estado, setEstado] = useState<'cargando' | 'ok' | 'no-encontrado'>('cargando')
   const [diaSel, setDiaSel] = useState('')
+  const [ahoraMs, setAhoraMs] = useState(0)
 
   const cargar = useCallback(async () => {
     if (!codigo) return
@@ -61,8 +62,12 @@ export default function OficialVivoPage() {
   }, [codigo])
 
   useEffect(() => {
-    void cargar()
-    const t = setInterval(() => { void cargar() }, 15_000)
+    const tick = () => {
+      setAhoraMs(Date.now())
+      void cargar()
+    }
+    tick()
+    const t = setInterval(tick, 15_000)
     return () => clearInterval(t)
   }, [cargar])
 
@@ -123,12 +128,12 @@ export default function OficialVivoPage() {
   }, [mural, diaSel, snap])
 
   const proximo = useMemo(() => {
-    const ahora = Date.now()
     const pend = (snap?.partidos || [])
       .filter(p => p.programado_en && !p.ganador_id && p.inscrito_a_id && p.inscrito_b_id)
       .sort((a, b) => new Date(a.programado_en!).getTime() - new Date(b.programado_en!).getTime())
-    return pend.find(p => new Date(p.programado_en!).getTime() >= ahora - 20 * 60_000) || pend[0] || null
-  }, [snap])
+    if (!ahoraMs) return pend[0] || null
+    return pend.find(p => new Date(p.programado_en!).getTime() >= ahoraMs - 20 * 60_000) || pend[0] || null
+  }, [snap, ahoraMs])
 
   if (estado === 'cargando') {
     return <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Cargando programa…</div>

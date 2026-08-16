@@ -123,6 +123,23 @@ const hint = torneoUi.hint
 
 const FASE_LABELS = CONFIG.FASE_LABELS as Record<string, string>
 
+function resumenCuadroDelEvento(numGrupos: number, tamanoCuadro: TamanoCuadro | null | undefined) {
+  if (tamanoCuadro && numGrupos >= 2) {
+    const plan = planificarPreLlave(numGrupos, tamanoCuadro)
+    if (plan && 'error' in plan) return { error: plan.error }
+    if (plan) {
+      return {
+        clasificados: numGrupos * 2,
+        tamanoLlave: plan.tamanoCuadro,
+        byes: 0,
+        faseInicial: determinarFaseInicial(plan.tamanoCuadro),
+        preLlave: plan.partidosAvance,
+      }
+    }
+  }
+  return resumenSiembraCuadro(numGrupos * 2)
+}
+
 export default function EventoOficialPage() {
   const { id } = useParams<{ id: string }>()
   const { perfil, loading: authLoading } = usePerfil()
@@ -433,23 +450,7 @@ export default function EventoOficialPage() {
       })),
   [partidos, evento, nombrePorId])
 
-  const resumenCuadro = useMemo(() => {
-    if (evento?.tamano_cuadro && grupos.length >= 2) {
-      const plan = planificarPreLlave(grupos.length, evento.tamano_cuadro)
-      if (plan && 'error' in plan) return { error: plan.error }
-      if (plan) {
-        return {
-          clasificados: grupos.length * 2,
-          tamanoLlave: plan.tamanoCuadro,
-          byes: 0,
-          faseInicial: determinarFaseInicial(plan.tamanoCuadro),
-          preLlave: plan.partidosAvance,
-        }
-      }
-    }
-    const clasificados = grupos.length * 2
-    return resumenSiembraCuadro(clasificados)
-  }, [grupos.length, evento?.tamano_cuadro])
+  const resumenCuadro = resumenCuadroDelEvento(grupos.length, evento?.tamano_cuadro)
 
   const { programaCeldas, programaSinUbicar } = useMemo(() => {
     const celdas: CeldaProgramaOficial[] = []

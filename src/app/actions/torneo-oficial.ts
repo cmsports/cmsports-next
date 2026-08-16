@@ -520,7 +520,7 @@ async function aplicarResultadoOficialDb(db: AdminDb, clubId: string, params: Pa
     sets = parsed
   }
 
-  let tipoCierre: TipoCierreOficial = params.tipoCierre
+  const tipoCierre: TipoCierreOficial = params.tipoCierre
     ?? (params.esWalkover ? 'walkover' : 'jugado')
 
   const resuelto = resolverCierrePartido({
