@@ -12,5 +12,6 @@ export async function obtenerLinkInvitacion() {
     const { data: newInv } = await supabase.from('invitaciones').select('codigo').eq('club_id', clubId).eq('activa', true).limit(1)
     inv = newInv
   }
-  return { codigo: inv?.[0]?.codigo || '', clubId }
+  const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
+  return { codigo: inv?.[0]?.codigo || '', clubId, clubNombre: club?.nombre || '' }
 }

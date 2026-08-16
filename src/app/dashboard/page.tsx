@@ -11,7 +11,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useModulos } from '@/lib/hooks/useModulos'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
-  Link2, Mail, X, HelpCircle, Copy, Check, UserX, ClipboardCheck,
+  Link2, Mail, X, HelpCircle, Copy, Check, UserX, ClipboardCheck, QrCode,
 } from 'lucide-react'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
@@ -61,6 +61,7 @@ const dashboardCache: Record<string, {
 }> = {}
 
 const linkCache: Record<string, string> = {}
+const clubNombreCache: Record<string, string> = {}
 
 function scheduleIdle(cb: () => void) {
   if (typeof window === 'undefined') return cb()
@@ -827,16 +828,19 @@ function AsistenciaHoyCard({ data, totalActivos }: { data: { total: number; nomb
 function LinkInvitacion({ clubId }: { clubId: string }) {
   const [linkCargado, setLinkCargado] = useState<{ clubId: string; valor: string } | null>(null)
   const [copiado, setCopiado] = useState(false)
+  const [generandoQr, setGenerandoQr] = useState(false)
   const link = linkCache[clubId] || (linkCargado?.clubId === clubId ? linkCargado.valor : '')
+  const clubNombre = clubNombreCache[clubId] || ''
 
   useEffect(() => {
     if (!clubId) return
     if (linkCache[clubId]) return
     async function cargar() {
-      const { codigo } = await obtenerLinkInvitacion()
+      const { codigo, clubNombre: nombre } = await obtenerLinkInvitacion()
       const origin = typeof window !== 'undefined' ? window.location.origin : ''
       const invitacion = `${origin}/registro?club=${clubId}&code=${codigo || ''}`
       linkCache[clubId] = invitacion
+      clubNombreCache[clubId] = nombre || ''
       setLinkCargado({ clubId, valor: invitacion })
     }
     scheduleIdle(cargar)
@@ -848,6 +852,17 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
     if (!ok) return
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
+  }
+
+  async function generarQr() {
+    if (!link || generandoQr) return
+    setGenerandoQr(true)
+    try {
+      const { descargarQrInvitacionPdf } = await import('@/lib/qr-invitacion-pdf')
+      await descargarQrInvitacionPdf(clubNombre, link)
+    } finally {
+      setGenerandoQr(false)
+    }
   }
 
   return (
@@ -864,8 +879,21 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
         fontSize: 12, cursor: 'pointer', fontWeight: 500,
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         transition: 'all 0.2s',
+        marginBottom: 8,
       }}>
         {copiado ? <><Check size={14} /> Copiado!</> : <><Copy size={14} /> Copiar link</>}
+      </button>
+      <button onClick={generarQr} disabled={!link || generandoQr} style={{
+        width: '100%',
+        background: '#fff',
+        color: '#3730a3',
+        border: '1px solid #c4b5fd',
+        borderRadius: 8, padding: '9px',
+        fontSize: 12, cursor: (!link || generandoQr) ? 'not-allowed' : 'pointer', fontWeight: 500,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+        opacity: (!link || generandoQr) ? 0.6 : 1,
+      }}>
+        <QrCode size={14} /> {generandoQr ? 'Generando...' : 'Generar QR para imprimir'}
       </button>
     </div>
   )
