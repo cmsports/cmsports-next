@@ -46,7 +46,8 @@ function CalendarioContent() {
   const [torneos, setTorneos] = useState<any[]>([])
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(fechaInicial)
   const [modalEvento, setModalEvento] = useState(false)
-  const [form, setForm] = useState({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
+  const [eventoEditandoId, setEventoEditandoId] = useState<string | null>(null)
+  const [form, setForm] = useState({ titulo:'', tipo:'entrenamiento', fecha:'', horaInicio:'', horaFin:'', descripcion:'' })
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -128,19 +129,55 @@ function CalendarioContent() {
     setAnio(nuevoAnio)
   }
 
-  async function agregarEvento() {
-    if (!form.titulo || !diaSeleccionado) return
-    const { error } = await supabase.from('eventos').insert({
-      club_id: clubId, titulo: form.titulo, tipo: form.tipo,
-      fecha_inicio: diaSeleccionado, hora_inicio: form.horaInicio || null,
-      hora_fin: form.horaFin || null, descripcion: form.descripcion || null
+  function formVacio(fecha = diaSeleccionado || '') {
+    return { titulo:'', tipo:'entrenamiento', fecha, horaInicio:'', horaFin:'', descripcion:'' }
+  }
+
+  function abrirNuevoEvento() {
+    setEventoEditandoId(null)
+    setForm(formVacio())
+    setModalEvento(true)
+  }
+
+  function abrirEditarEvento(ev: { id: string; titulo?: string; tipo?: string; fecha_inicio?: string; hora_inicio?: string | null; hora_fin?: string | null; descripcion?: string | null }) {
+    setEventoEditandoId(ev.id)
+    setForm({
+      titulo: ev.titulo || '',
+      tipo: ev.tipo || 'entrenamiento',
+      fecha: ev.fecha_inicio?.slice(0, 10) || diaSeleccionado || '',
+      horaInicio: ev.hora_inicio?.slice(0, 5) || '',
+      horaFin: ev.hora_fin?.slice(0, 5) || '',
+      descripcion: ev.descripcion || '',
     })
+    setModalEvento(true)
+  }
+
+  async function guardarEvento() {
+    if (!form.titulo.trim() || !form.fecha) return
+    const payload = {
+      titulo: form.titulo.trim(),
+      tipo: form.tipo,
+      fecha_inicio: form.fecha,
+      hora_inicio: form.horaInicio || null,
+      hora_fin: form.horaFin || null,
+      descripcion: form.descripcion.trim() || null,
+    }
+    const { error } = eventoEditandoId
+      ? await supabase.from('eventos').update(payload).eq('id', eventoEditandoId).eq('club_id', clubId!)
+      : await supabase.from('eventos').insert({ ...payload, club_id: clubId })
     if (error) {
       setMensaje({ tipo: 'error', texto: error.message })
       return
     }
     setModalEvento(false)
-    setForm({ titulo:'', tipo:'entrenamiento', horaInicio:'', horaFin:'', descripcion:'' })
+    setEventoEditandoId(null)
+    setForm(formVacio())
+    if (form.fecha !== diaSeleccionado) {
+      const [a, m] = form.fecha.split('-').map(Number)
+      setAnio(a)
+      setMes(m - 1)
+      setDiaSeleccionado(form.fecha)
+    }
     cargarMes()
   }
 
@@ -276,9 +313,9 @@ function CalendarioContent() {
               <button onClick={() => setDiaSeleccionado(null)} style={{ background:'transparent', border:'none', color: muted, cursor:'pointer', fontSize:18 }}>✕</button>
             </div>
 
-            {itemsDelDia.filter(i => i.tipo_item === 'evento').map((ev, i) => (
-              <div key={i} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:`3px solid ${coloresEvento[ev.tipo] || '#64748b'}` }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+            {itemsDelDia.filter(i => i.tipo_item === 'evento').map((ev) => (
+              <div key={ev.id} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:`3px solid ${coloresEvento[ev.tipo] || '#64748b'}` }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
                   <div>
                     <div style={{ fontSize:13, fontWeight:600, color: text }}>{ev.titulo}</div>
                     <div style={{ fontSize:11, color: muted, marginTop:2 }}>
@@ -286,7 +323,12 @@ function CalendarioContent() {
                     </div>
                     {ev.descripcion && <div style={{ fontSize:11, color: muted, marginTop:4 }}>{ev.descripcion}</div>}
                   </div>
-                  {puedeEditarEventos && <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#dc2626', cursor:'pointer', fontSize:14 }}>✕</button>}
+                  {puedeEditarEventos && (
+                    <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+                      <button onClick={() => abrirEditarEvento(ev)} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:6, color: muted, cursor:'pointer', fontSize:11, fontWeight:600, padding:'4px 8px' }}>Editar</button>
+                      <button onClick={() => eliminarEvento(ev.id)} style={{ background:'transparent', border:'none', color:'#dc2626', cursor:'pointer', fontSize:14 }}>✕</button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -306,7 +348,7 @@ function CalendarioContent() {
             )}
 
             {puedeEditarEventos && (
-              <button onClick={() => setModalEvento(true)} style={{ width:'100%', padding:10, background:'#f43f5e', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', marginTop:8 }}>
+              <button onClick={abrirNuevoEvento} style={{ width:'100%', padding:10, background:'#f43f5e', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', marginTop:8 }}>
                 + Agregar evento
               </button>
             )}
@@ -319,12 +361,17 @@ function CalendarioContent() {
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:400, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:20 }}>
-              Nuevo evento — {diaSeleccionado && new Date(diaSeleccionado+'T12:00:00').toLocaleDateString('es-CL')}
+              {eventoEditandoId ? 'Editar evento' : 'Nuevo evento'}
             </div>
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Título</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 placeholder="Nombre del evento" value={form.titulo} onChange={e => setForm(f => ({ ...f, titulo: e.target.value }))} />
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha</label>
+              <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
+                type="date" value={form.fecha} onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} />
             </div>
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Tipo</label>
@@ -351,8 +398,8 @@ function CalendarioContent() {
                 placeholder="Detalles del evento" value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
             </div>
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalEvento(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button onClick={agregarEvento} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>Guardar</button>
+              <button onClick={() => { setModalEvento(false); setEventoEditandoId(null) }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={guardarEvento} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>Guardar</button>
             </div>
           </div>
         </div>
