@@ -55,6 +55,7 @@ import { descargarExcelOficialKoidan } from '@/lib/oficial-export-excel'
 import { exportarGruposOficialPdf, exportarLlavesOficialPdf, exportarProgramaOficialPdf } from '@/lib/oficial-export-pdf'
 import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 import { btnOutlineIndigo, btnPrimaryIndigo, tabUnderline, torneoUi } from '@/lib/torneos/ui-tokens'
+import Link from 'next/link'
 
 const supabase = createClient()
 
@@ -840,11 +841,16 @@ export default function EventoOficialPage() {
                   {tercerNombre ? ` · 🥉 ${tercerNombre}` : ''}
                 </p>
               </div>
-              {enInscripcion && esAdmin && (
-                <button type="button" onClick={() => setModalInscripcion(true)} style={btnPrimaryIndigo}>
-                  🪑 Inscripción ({inscritos.length})
-                </button>
-              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <Link href="/torneo-oficial/manual" style={{ ...btnOutlineIndigo, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                  Manual
+                </Link>
+                {enInscripcion && esAdmin && (
+                  <button type="button" onClick={() => setModalInscripcion(true)} style={btnPrimaryIndigo}>
+                    🪑 Inscripción ({inscritos.length})
+                  </button>
+                )}
+              </div>
             </div>
 
             {errorMsg && (

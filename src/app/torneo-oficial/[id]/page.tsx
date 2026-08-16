@@ -22,6 +22,7 @@ import { exportarProgramaMuralPdf, exportarProgramaOficialPdf } from '@/lib/ofic
 import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 import ProgramaOficialTablero, { type CeldaProgramaOficial } from '@/components/torneo-oficial/ProgramaOficialTablero'
 import { btnOutlineIndigo, btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
+import Link from 'next/link'
 
 const supabase = createClient()
 
@@ -473,6 +474,9 @@ export default function CampeonatoOficialDetallePage() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <Link href="/torneo-oficial/manual" style={{ ...btnOutlineIndigo, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                  Manual
+                </Link>
                 {esAdmin && camp.estado !== 'archivado' && (
                   <button
                     type="button"

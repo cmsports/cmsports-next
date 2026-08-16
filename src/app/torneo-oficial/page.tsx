@@ -15,6 +15,7 @@ import {
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarOficialConCache, invalidarCacheOficial } from '@/lib/torneo-oficial/carga-cliente'
 import { btnOutlineIndigo, btnPrimaryIndigo, modalOverlay, torneoUi } from '@/lib/torneos/ui-tokens'
+import ManualOficialCuerpo, { type TabManualOficial } from '@/components/torneo-oficial/ManualOficialCuerpo'
 
 const supabase = createClient()
 
@@ -45,6 +46,7 @@ export default function TorneoOficialPage() {
   const [guardando, setGuardando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
+  const [vista, setVista] = useState<'lista' | TabManualOficial>('lista')
   const cargadoRef = useRef(false)
   const esAdmin = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
 
@@ -131,7 +133,7 @@ export default function TorneoOficialPage() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {esAdmin && (
+            {esAdmin && vista === 'lista' && (
               <button
                 type="button"
                 onClick={() => {
@@ -153,7 +155,36 @@ export default function TorneoOficialPage() {
           </div>
         </div>
 
-        {loading && lista.length === 0 ? (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 18, borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+          {([
+            { id: 'lista' as const, label: 'Campeonatos' },
+            { id: 'uso' as const, label: 'Cómo usar la app' },
+            { id: 'reglas' as const, label: 'Reglas / bases' },
+          ]).map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setVista(t.id)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: vista === t.id ? '#4f46e5' : '#64748b',
+                borderBottom: vista === t.id ? '2px solid #4f46e5' : '2px solid transparent',
+                padding: '10px 14px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                marginBottom: -1,
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {vista !== 'lista' ? (
+          <ManualOficialCuerpo tab={vista} onTab={t => setVista(t)} ocultarTabs />
+        ) : loading && lista.length === 0 ? (
           <p style={{ color: torneoUi.hint }}>Cargando…</p>
         ) : lista.length === 0 ? (
           <div style={{ ...card, padding: 28, textAlign: 'center', color: torneoUi.muted }}>
