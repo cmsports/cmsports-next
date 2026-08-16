@@ -9,6 +9,7 @@ import {
   calcularNumGrupos,
   calcularNumGruposTardios,
   calcularStatsGrupo,
+  grupoTieneSusDosCuposDecididos,
   derivarPodioFinal,
   nombreGrupo,
   type JugadorTorneo,
@@ -296,25 +297,18 @@ async function calcularClasificadosDesdeBD(
       })),
     )
 
-    // Si no se jugaron todos los partidos, verificar cierre matemático:
-    // el 3° lugar no puede alcanzar los puntos del 2°, aunque gane todo lo que falta.
+    // El grupo solo se vuelca a la llave cuando están decididos sus DOS cupos:
+    // quiénes pasan y además cuál es 1° y cuál 2°. Ver la explicación (y el caso
+    // que lo motivó) en `grupoTieneSusDosCuposDecididos`.
     const todosJugados = partidosJugados.length === partidosGrupo.length
-    if (!todosJugados) {
-      if (stats.length < 2) continue
-      const pts2 = stats[1].pts
-      const restantes = new Map<string, number>()
-      for (const j of jugadoresGrupo) restantes.set(j.id, 0)
-      for (const p of partidosGrupo) {
-        if (!p.ganador) {
-          if (p.jugador_a) restantes.set(p.jugador_a, (restantes.get(p.jugador_a) ?? 0) + 1)
-          if (p.jugador_b) restantes.set(p.jugador_b, (restantes.get(p.jugador_b) ?? 0) + 1)
-        }
-      }
-      const alguienPuedeLlegarA2 = stats.slice(2).some(s =>
-        s.pts + 2 * (restantes.get(s.jugadorId) ?? 0) >= pts2
-      )
-      if (alguienPuedeLlegarA2) continue
+    const pendientesPorJugador = new Map<string, number>()
+    for (const j of jugadoresGrupo) pendientesPorJugador.set(j.id, 0)
+    for (const p of partidosGrupo) {
+      if (p.ganador) continue
+      if (p.jugador_a) pendientesPorJugador.set(p.jugador_a, (pendientesPorJugador.get(p.jugador_a) ?? 0) + 1)
+      if (p.jugador_b) pendientesPorJugador.set(p.jugador_b, (pendientesPorJugador.get(p.jugador_b) ?? 0) + 1)
     }
+    if (!grupoTieneSusDosCuposDecididos(stats, pendientesPorJugador, todosJugados)) continue
     if (hayTripleEmpate) {
       const idsGrupo = new Set(jugadoresGrupo.map(j => j.id))
       const puntosCorte = stats[1]?.pts

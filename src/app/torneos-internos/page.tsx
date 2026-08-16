@@ -59,6 +59,7 @@ export default function TorneosInternosPage() {
   const [guardandoCategoriaNueva, setGuardandoCategoriaNueva] = useState(false)
   const [borrandoCategoria, setBorrandoCategoria] = useState<string | null>(null)
   const [selectorAbierto, setSelectorAbierto] = useState(false)
+  const [verTodasCategorias, setVerTodasCategorias] = useState(false)
   const cajaSelector = useRef<HTMLDivElement>(null)
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
@@ -231,6 +232,19 @@ export default function TorneosInternosPage() {
     llaves: '🥊 Playoffs', semis: '🏅 Semifinal', final: '🏆 Final', finalizado: '🎉 Finalizado'
   }
 
+  // Un torneo se juega en las categorías que el club definió (SUB13, SUB15,
+  // ..., en `categorias_personalizadas`), no en las que salen de la ficha de
+  // cada jugador por año de nacimiento (PENECA, JUVENIL, MASTER A…). Esas
+  // últimas llenaban el desplegable con una docena de opciones que nadie usa
+  // para armar torneos, y se elegían por error.
+  //
+  // No se borra ninguna: siguen en las fichas y se pueden ver con el botón del
+  // final de la lista. Si el club todavía no definió las suyas se muestran
+  // todas, o el selector quedaría vacío y no se podría crear ningún torneo
+  // —hoy solo Buin tiene categorías propias—.
+  const hayCategoriasEscondidas = categoriasPropias.length > 0 && categorias.length > categoriasPropias.length
+  const categoriasVisibles = hayCategoriasEscondidas && !verTodasCategorias ? categoriasPropias : categorias
+
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
       <div style={{ color: hint }}>Cargando...</div>
@@ -399,10 +413,10 @@ export default function TorneosInternosPage() {
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4,
                     background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,23,42,0.16)',
                     maxHeight: 260, overflowY: 'auto' }}>
-                    {categorias.length === 0 && (
+                    {categoriasVisibles.length === 0 && (
                       <div style={{ padding: '10px 12px', fontSize: 12, color: hint }}>Todavía no hay categorías</div>
                     )}
-                    {categorias.map(c => {
+                    {categoriasVisibles.map(c => {
                       const propia = categoriasPropias.includes(c)
                       const elegida = c === categoriaSeleccionada
                       return (
@@ -426,6 +440,18 @@ export default function TorneosInternosPage() {
                         </div>
                       )
                     })}
+                    {/* Las de las fichas no se borran, solo quedan guardadas
+                        detrás de este botón. Si el club no definió las suyas
+                        no aparece: ahí `categoriasVisibles` ya son todas. */}
+                    {hayCategoriasEscondidas && (
+                      <button type="button" onClick={() => setVerTodasCategorias(v => !v)}
+                        style={{ width: '100%', background: '#f8fafc', border: 'none', borderTop: '1px solid #e2e8f0',
+                          padding: '9px 12px', fontSize: 11.5, color: '#64748b', cursor: 'pointer', textAlign: 'left' }}>
+                        {verTodasCategorias
+                          ? '▴ Ver solo las categorías del club'
+                          : `▾ Ver todas las categorías (${categorias.length - categoriasPropias.length} más, por edad)`}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

@@ -175,6 +175,55 @@ export function generarRoundRobin(jugadorIds: string[]): Array<[string, string]>
 
 // ─── Stats de grupo ────────────────────────────────────────────────────────
 
+/**
+ * ¿Se pueden volcar ya los dos cupos de este grupo a la llave?
+ *
+ * No basta con saber QUIÉNES clasifican: hay que saber también CUÁL es 1° y
+ * cuál 2°, porque de eso depende contra quién le toca a cada uno.
+ *
+ * El sub19 de Buin (2026-08-16) salió con 1° contra 1° y 2° contra 2° en los
+ * octavos justamente por esto: en el grupo B, tras dos partidos, Randy y
+ * Vicente iban 2 pts cada uno y todavía no se habían enfrentado, mientras el
+ * tercero ya estaba eliminado. Con solo la primera condición el grupo se daba
+ * por cerrado, y como los dos punteros estaban empatados con su partido directo
+ * sin jugar, `calcularStatsGrupo` los desempató por orden de siembra: Randy
+ * quedó 1° y Vicente 2°. Esos cupos se escribieron en el cuadro, después
+ * Vicente le ganó a Randy y el orden real se dio vuelta — pero la llave ya
+ * estaba armada.
+ *
+ * Devolver `false` frena SOLO los dos cupos de este grupo: los grupos ya
+ * cerrados siguen armando su rama y pueden jugarla mientras tanto.
+ *
+ * @param stats      Tabla del grupo ya ordenada (la que devuelve `calcularStatsGrupo`).
+ * @param pendientes Partidos sin jugar que le quedan a cada jugador.
+ * @param todosJugados Si el grupo ya jugó todos sus partidos (ahí siempre está decidido).
+ */
+export function grupoTieneSusDosCuposDecididos(
+  stats: { jugadorId: string; pts: number }[],
+  pendientes: Map<string, number>,
+  todosJugados: boolean,
+): boolean {
+  if (stats.length < 2) return false
+  if (todosJugados) return true
+
+  const restantesDe = (id: string) => pendientes.get(id) ?? 0
+
+  // 1) QUIÉNES pasan: nadie del 3° para abajo puede alcanzar al 2°.
+  const pts2 = stats[1].pts
+  const alguienPuedeLlegarA2 = stats.slice(2).some(s => s.pts + 2 * restantesDe(s.jugadorId) >= pts2)
+  if (alguienPuedeLlegarA2) return false
+
+  // 2) CUÁL es cuál: si a alguno de los dos primeros le quedan partidos y al 2°
+  //    le alcanza para igualar o pasar al 1°, el orden todavía puede darse
+  //    vuelta. (Empatar basta para dudar: con empate manda el partido directo,
+  //    y si ese partido es justamente el que falta, no hay nada decidido.)
+  const restantePrimero = restantesDe(stats[0].jugadorId)
+  const restanteSegundo = restantesDe(stats[1].jugadorId)
+  const puedenCambiarDeOrden = (restantePrimero > 0 || restanteSegundo > 0)
+    && stats[1].pts + 2 * restanteSegundo >= stats[0].pts
+  return !puedenCambiarDeOrden
+}
+
 export function calcularStatsGrupo(
   jugadores: JugadorTorneo[],
   partidos: Array<{
