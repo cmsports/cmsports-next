@@ -8,6 +8,7 @@ import { archivarTorneo, crearTorneo as crearTorneoAction, crearCategoriaPersona
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
+import ManualTorneos from '@/components/torneos/ManualTorneos'
 
 const supabase = createClient()
 
@@ -277,6 +278,8 @@ export default function TorneosInternosPage() {
           )}
         </div>
       </div>
+
+      <ManualTorneos tipo="interno" />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {torneos.map(t => {

@@ -7,6 +7,7 @@ import AppLayout from '../layout-app'
 import { archivarTorneo, crearTorneo as crearTorneoAction, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
+import ManualTorneos from '@/components/torneos/ManualTorneos'
 
 const supabase = createClient()
 
@@ -146,6 +147,7 @@ export default function TorneosPage() {
           )}
         </div>
       </div>
+      <ManualTorneos tipo="externo" />
       {mostrarArchivados && (
         <div style={{ marginBottom:14, background:'#fffbeb', color:'#92400e', border:'1px solid #fde68a', borderRadius:8, padding:'10px 12px', fontSize:12 }}>
           Torneos archivados: quedan guardados para consulta histórica y no se descuentan de Finanzas.

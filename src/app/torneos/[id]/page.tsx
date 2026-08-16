@@ -39,6 +39,7 @@ import { useTextoMonto } from '@/components/Monto'
 import dynamic from 'next/dynamic'
 const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.QRCodeSVG })), { ssr: false })
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
+import ManualTorneos from '@/components/torneos/ManualTorneos'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -48,6 +49,13 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
+
+function seccionManualSegunFase(fase: string | undefined): string | undefined {
+  if (!fase || fase === 'inscripcion') return undefined
+  if (fase === 'grupos') return 'grupos'
+  if (fase === 'finalizado') return 'cierre'
+  return 'llaves'
+}
 
 export default function TorneoDetallePage() {
   const { perfil, loading: authLoading } = usePerfil()
@@ -715,6 +723,12 @@ export default function TorneoDetallePage() {
           ))}
         </div>
       )}
+
+      <ManualTorneos
+        tipo={torneo?.tipo === 'interno' ? 'interno' : 'externo'}
+        compacto={faseActual !== 'inscripcion'}
+        seccionInicial={seccionManualSegunFase(faseActual)}
+      />
 
       {/* Control financiero */}
       {esAdmin && cuota > 0 && (
