@@ -404,7 +404,7 @@ export default function LandingPublica() {
             Lo que viene y lo que ya podemos cotizar según el club.
           </p>
           <div className={styles.futureGrid}>
-            {FUTUROS.map((item, i) => {
+            {FUTUROS.map((item) => {
               const Icon = item.icon
               return (
                 <motion.article
