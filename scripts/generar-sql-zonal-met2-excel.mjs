@@ -307,7 +307,7 @@ for (const e of EVENTOS) {
 }
 
 L(``)
-L(`  INSERT INTO oficial_grupo_inscritos (club_id, grupo_id, inscrito_id, orden)`)
+L(`  INSERT INTO oficial_grupo_inscritos (club_id, grupo_id, inscrito_id, orden) VALUES`)
 const miem = []
 for (const e of EVENTOS) {
   const js = jugadores.filter(j => j.clave === e.clave)
@@ -329,7 +329,7 @@ L(miem.join(',\n') + ';')
 
 L(``)
 L(`  -- Partidos de grupo, orden ITTF`)
-L(`  INSERT INTO oficial_partidos (club_id, evento_id, grupo_id, fase, orden, inscrito_a_id, inscrito_b_id)`)
+L(`  INSERT INTO oficial_partidos (club_id, evento_id, grupo_id, fase, orden, inscrito_a_id, inscrito_b_id) VALUES`)
 const parts = []
 for (const e of EVENTOS) {
   const js = jugadores.filter(j => j.clave === e.clave)
@@ -383,7 +383,7 @@ L(especiales.map(e =>
 if (pre.length) {
   L(``)
   L(`  -- Pre-llave Juv V (hoja Pre llave)`)
-  L(`  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, avance_origen_orden)`)
+  L(`  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, avance_origen_orden) VALUES`)
   L(pre.map(m =>
     `    (v_club, v_JuvV, 'avance', ${m.orden}, ${sqlInscrito('Juv V', m.a)}, ${sqlInscrito('Juv V', m.b)}, ${m.orden})`,
   ).join(',\n') + ';')
@@ -397,7 +397,7 @@ for (const e of EVENTOS) {
   koByEvent.set(e.clave, kos)
   L(``)
   L(`  -- Llaves ${e.nombre} (${e.koSheet})`)
-  L(`  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa)`)
+  L(`  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa) VALUES`)
   L(kos.map(m =>
     `    (v_club, v_${varn(e.clave)}, '${m.fase}', ${m.orden}, ${sqlInscrito(e.clave, m.a)}, ${sqlInscrito(e.clave, m.b)}, ${m.mesa ?? 'NULL'})`,
   ).join(',\n') + ';')

@@ -634,7 +634,7 @@ BEGIN
   INSERT INTO oficial_grupos (club_id, evento_id, nombre, orden)
   VALUES (v_club, v_PinfD, '5', 4);
 
-  INSERT INTO oficial_grupo_inscritos (club_id, grupo_id, inscrito_id, orden)
+  INSERT INTO oficial_grupo_inscritos (club_id, grupo_id, inscrito_id, orden) VALUES
     (v_club, (SELECT id FROM oficial_grupos WHERE evento_id = v_JuvV AND nombre = '1'), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '601' LIMIT 1), 0),
     (v_club, (SELECT id FROM oficial_grupos WHERE evento_id = v_JuvV AND nombre = '1'), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '602' LIMIT 1), 1),
     (v_club, (SELECT id FROM oficial_grupos WHERE evento_id = v_JuvV AND nombre = '1'), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '603' LIMIT 1), 2),
@@ -956,7 +956,7 @@ BEGIN
     (v_club, (SELECT id FROM oficial_grupos WHERE evento_id = v_PinfD AND nombre = '5'), (SELECT id FROM oficial_inscritos WHERE evento_id = v_PinfD AND codigo_federativo = '136' LIMIT 1), 3);
 
   -- Partidos de grupo, orden ITTF
-  INSERT INTO oficial_partidos (club_id, evento_id, grupo_id, fase, orden, inscrito_a_id, inscrito_b_id)
+  INSERT INTO oficial_partidos (club_id, evento_id, grupo_id, fase, orden, inscrito_a_id, inscrito_b_id) VALUES
     (v_club, v_JuvV, (SELECT id FROM oficial_grupos WHERE evento_id = v_JuvV AND nombre = '1'), 'grupos', 0, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '601' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '603' LIMIT 1)),
     (v_club, v_JuvV, (SELECT id FROM oficial_grupos WHERE evento_id = v_JuvV AND nombre = '1'), 'grupos', 1, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '601' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '602' LIMIT 1)),
     (v_club, v_JuvV, (SELECT id FROM oficial_grupos WHERE evento_id = v_JuvV AND nombre = '1'), 'grupos', 2, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '602' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '603' LIMIT 1)),
@@ -1635,7 +1635,7 @@ BEGIN
     (v_club, v_camp, '2026-06-21', '19:40', 40, 'premiacion', 'TÉRMINO Y PREMIACIÓN');
 
   -- Pre-llave Juv V (hoja Pre llave)
-  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, avance_origen_orden)
+  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, avance_origen_orden) VALUES
     (v_club, v_JuvV, 'avance', 1, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '698' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '651' LIMIT 1), 1),
     (v_club, v_JuvV, 'avance', 2, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '708' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '647' LIMIT 1), 2),
     (v_club, v_JuvV, 'avance', 3, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '680' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '617' LIMIT 1), 3),
@@ -1648,7 +1648,7 @@ BEGIN
     (v_club, v_JuvV, 'avance', 10, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '659' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '671' LIMIT 1), 10);
 
   -- Llaves Juv V (JUV V)
-  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa)
+  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa) VALUES
     (v_club, v_JuvV, '32vos', 1, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '601' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '612' LIMIT 1), 11),
     (v_club, v_JuvV, '32vos', 2, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '702' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '655' LIMIT 1), 12),
     (v_club, v_JuvV, '32vos', 3, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '658' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '651' LIMIT 1), 7),
@@ -1715,7 +1715,7 @@ BEGIN
     (v_club, v_JuvV, 'final', 64, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '601' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvV AND codigo_federativo = '610' LIMIT 1), NULL);
 
   -- Llaves Juv D (JUV D)
-  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa)
+  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa) VALUES
     (v_club, v_JuvD, '8vos', 1, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '501' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '514' LIMIT 1), 11),
     (v_club, v_JuvD, '8vos', 2, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '505' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '520' LIMIT 1), 2),
     (v_club, v_JuvD, '8vos', 3, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '516' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '509' LIMIT 1), 3),
@@ -1734,7 +1734,7 @@ BEGIN
     (v_club, v_JuvD, 'final', 16, (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '501' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_JuvD AND codigo_federativo = '504' LIMIT 1), 8);
 
   -- Llaves Pen V (PEN V)
-  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa)
+  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa) VALUES
     (v_club, v_PenV, '8vos', 1, (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenV AND codigo_federativo = '21' LIMIT 1), NULL, NULL),
     (v_club, v_PenV, '8vos', 2, (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenV AND codigo_federativo = '36' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenV AND codigo_federativo = '40' LIMIT 1), 2),
     (v_club, v_PenV, '8vos', 3, (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenV AND codigo_federativo = '35' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenV AND codigo_federativo = '28' LIMIT 1), 4),
@@ -1753,7 +1753,7 @@ BEGIN
     (v_club, v_PenV, 'final', 16, (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenV AND codigo_federativo = '21' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenV AND codigo_federativo = '27' LIMIT 1), 3);
 
   -- Llaves Pen D (PEN D)
-  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa)
+  INSERT INTO oficial_partidos (club_id, evento_id, fase, orden, inscrito_a_id, inscrito_b_id, mesa) VALUES
     (v_club, v_PenD, '8vos', 1, (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenD AND codigo_federativo = '1' LIMIT 1), NULL, NULL),
     (v_club, v_PenD, '8vos', 2, (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenD AND codigo_federativo = '5' LIMIT 1), (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenD AND codigo_federativo = '15' LIMIT 1), 7),
     (v_club, v_PenD, '8vos', 3, (SELECT id FROM oficial_inscritos WHERE evento_id = v_PenD AND codigo_federativo = '8' LIMIT 1), NULL, NULL),
