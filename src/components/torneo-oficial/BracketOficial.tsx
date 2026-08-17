@@ -247,7 +247,7 @@ export default function BracketOficial(props: {
                 </div>
                 {ps.map((p, i) => {
                   const eN = expectedN[fase] ?? ps.length
-                  const top = cy(p.orden ?? i, eN) - CARD_H / 2
+                  const top = cy(i, eN) - CARD_H / 2
                   const esBye = !p.inscrito_b_id
                   const ganoA = p.ganador_id === p.inscrito_a_id
                   const ganoB = p.ganador_id === p.inscrito_b_id
