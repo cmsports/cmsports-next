@@ -67,11 +67,21 @@ export default function BracketOficial(props: {
   if (!playoff.length) return null
 
   const fases = fasesBracket(playoff)
-  const fasesMain = fases.filter(f => f !== 'tercer_lugar')
+  const fasesMainAll = fases.filter(f => f !== 'tercer_lugar')
   const porFase = new Map<string, PartidoBracket[]>()
   for (const f of fases) {
     porFase.set(f, playoff.filter(p => p.fase === f).sort((a, b) => a.orden - b.orden))
   }
+  // El árbol de 32avos queda enorme y vacío: el cuadro visual arranca
+  // en la primera ronda con 8 cruces o menos (8vos en un cuadro de 64).
+  const idxArbol = fasesMainAll.findIndex(f => {
+    const n = porFase.get(f)?.length || 0
+    return n > 0 && n <= 8
+  })
+  const fasesMain = idxArbol >= 0 ? fasesMainAll.slice(idxArbol) : []
+  const rondasOcultas = idxArbol > 0
+    ? fasesMainAll.slice(0, idxArbol)
+    : idxArbol < 0 ? fasesMainAll : []
 
   async function soltar(partidoId: string, posicion: 'inscrito_a' | 'inscrito_b') {
     if (!dragSlot || !props.onIntercambiar) return
@@ -92,9 +102,17 @@ export default function BracketOficial(props: {
     )
   }
 
-  const hintDrag = props.esAdmin && props.faseInicial && props.onIntercambiar && (
+  const hintDrag = props.esAdmin && props.faseInicial && props.onIntercambiar
+    && fasesMain.includes(props.faseInicial) && (
     <p style={{ fontSize: 12, color: torneoUi.muted, margin: '0 0 10px' }}>
       Arrastra jugadores en la ronda inicial para intercambiar cupos.
+    </p>
+  )
+  const hintOcultas = rondasOcultas.length > 0 && (
+    <p style={{ fontSize: 12, color: torneoUi.muted, margin: '0 0 10px' }}>
+      {fasesMain.length
+        ? `Cuadro desde ${FASE_LABELS[fasesMain[0]] || fasesMain[0]}. ${rondasOcultas.map(f => FASE_LABELS[f] || f).join(', ')} se ven con el filtro de arriba.`
+        : 'Este cuadro es grande: usá los filtros de ronda (32vos, 16vos…) para cargar resultados.'}
     </p>
   )
 
@@ -103,7 +121,8 @@ export default function BracketOficial(props: {
     return (
       <div>
         {hintDrag}
-        {fases.map(fase => {
+        {hintOcultas}
+        {[...fasesMain, ...(porFase.get('tercer_lugar')?.length ? ['tercer_lugar'] : [])].map(fase => {
           const ps = porFase.get(fase) || []
           if (!ps.length) return null
           return (
@@ -189,10 +208,10 @@ export default function BracketOficial(props: {
   }
 
   // —— Desktop: cuadro con conectores SVG ——
-  const CARD_H = 80
-  const SLOT_H = 96
-  const COL_W = 190
-  const CONN_W = 22
+  const CARD_H = 56
+  const SLOT_H = 64
+  const COL_W = 168
+  const CONN_W = 16
 
   const byFase: Record<string, PartidoBracket[]> = {}
   for (const f of fasesMain) byFase[f] = porFase.get(f) || []
@@ -208,7 +227,9 @@ export default function BracketOficial(props: {
   return (
     <div>
       {hintDrag}
-      <div style={{ overflowX: 'auto', paddingBottom: 16, paddingTop: 44 }}>
+      {hintOcultas}
+      {fasesMain.length > 0 && (
+      <div style={{ overflowX: 'auto', paddingBottom: 12, paddingTop: 36 }}>
         <div style={{ display: 'flex', minWidth: 'max-content' }}>
           {fasesMain.flatMap((fase, pi) => {
             const ps = byFase[fase] || []
@@ -342,6 +363,7 @@ export default function BracketOficial(props: {
           })}
         </div>
       </div>
+      )}
 
       {tercer.length > 0 && (
         <div style={{ marginTop: 8 }}>

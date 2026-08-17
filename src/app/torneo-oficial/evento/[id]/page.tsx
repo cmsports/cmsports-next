@@ -141,6 +141,17 @@ function resumenCuadroDelEvento(numGrupos: number, tamanoCuadro: TamanoCuadro | 
   return resumenSiembraCuadro(numGrupos * 2)
 }
 
+const FASE_LLAVE_CORTA: Record<string, string> = {
+  avance: 'Avance',
+  '32vos': '32vos',
+  '16vos': '16vos',
+  '8vos': '8vos',
+  cuartos: 'Cuartos',
+  semis: 'Semis',
+  tercer_lugar: '3°',
+  final: 'Final',
+}
+
 export default function EventoOficialPage() {
   const { id } = useParams<{ id: string }>()
   const { perfil, loading: authLoading } = usePerfil()
@@ -166,6 +177,7 @@ export default function EventoOficialPage() {
   const [sancionForm, setSancionForm] = useState({ inscritoId: '', tipo: 'amarilla', detalle: '', partidoId: '' })
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('grupos')
+  const [faseLlave, setFaseLlave] = useState<string>('auto')
 
   const [modalInscripcion, setModalInscripcion] = useState(false)
   const [inscribiendo, setInscribiendo] = useState(false)
@@ -329,6 +341,8 @@ export default function EventoOficialPage() {
     if (perfil.club_id) void cargar()
   }, [authLoading, perfil, cargar, router])
 
+  useEffect(() => { setFaseLlave('auto') }, [id])
+
   useEnVivo(
     ['oficial_eventos', 'oficial_inscritos', 'oficial_grupos', 'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_sanciones'],
     perfil?.club_id ?? null,
@@ -429,6 +443,14 @@ export default function EventoOficialPage() {
     }
     return map
   }, [partidosPlayoff])
+
+  const faseLlaveEfectiva = useMemo(() => {
+    if (faseLlave !== 'auto') return faseLlave
+    const pendiente = fasesPlayoffOrdenadas.find(f =>
+      (partidosPorFase.get(f) || []).some(p => p.inscrito_b_id && !p.ganador_id),
+    )
+    return pendiente || fasesPlayoffOrdenadas[0] || 'cuadro'
+  }, [faseLlave, fasesPlayoffOrdenadas, partidosPorFase])
 
   const programaFilas = useMemo(() =>
     [...partidos]
@@ -1020,9 +1042,11 @@ export default function EventoOficialPage() {
             {tab === 'llaves' && (
               <>
                 {esAdmin && evento.fase !== 'finalizado' && (
-                  <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 8 }}>Sorteo 2ª fase</div>
-                    <p style={{ margin: '0 0 10px', fontSize: 12, color: muted }}>
+                  <details style={{ ...card, padding: 12, marginBottom: 12 }}>
+                    <summary style={{ fontSize: 13, fontWeight: 600, color: text, cursor: 'pointer' }}>
+                      Sorteo 2ª fase
+                    </summary>
+                    <p style={{ margin: '8px 0 10px', fontSize: 12, color: muted }}>
                       Alternativa al cruzamiento fijo 1°×2° (§3.7). Guardar re-sincroniza las llaves no jugadas.
                     </p>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1060,10 +1084,9 @@ export default function EventoOficialPage() {
                           ? ` · ${resumenCuadro.preLlave} partidos de avance (1/64)`
                           : ''}
                         {' · '}fase inicial {FASE_LABELS[resumenCuadro.faseInicial] || resumenCuadro.faseInicial}
-                        {' · '}previas = fase de grupos
                       </p>
                     )}
-                  </div>
+                  </details>
                 )}
               {partidosPlayoff.length === 0 ? (
                 <div style={{ ...card, padding: 24, color: muted, textAlign: 'center' }}>
@@ -1071,7 +1094,6 @@ export default function EventoOficialPage() {
                 </div>
               ) : (
                 <>
-                  {/* Campeón banner */}
                   {evento.fase === 'finalizado' && campeonNombre && (
                     <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 16, padding: 24, textAlign: 'center', marginBottom: 16 }}>
                       <div style={{ fontSize: 48, marginBottom: 8 }}>🏆</div>
@@ -1080,51 +1102,100 @@ export default function EventoOficialPage() {
                     </div>
                   )}
 
-                  <div style={{ ...card, padding: 16, marginBottom: 16 }}>
-                    <h2 style={{ margin: '0 0 12px', fontSize: 16, color: text }}>Cuadro eliminatorio</h2>
-                    <BracketOficial
-                      partidos={partidosPlayoff.filter(p => p.fase !== 'avance')}
-                      nombrePorId={nombrePorId}
-                      esAdmin={esAdmin}
-                      faseInicial={faseInicialLlaves}
-                      onIntercambiar={esAdmin ? intercambiarCupos : undefined}
-                    />
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
+                    {fasesPlayoffOrdenadas.map(fase => {
+                      const lista = partidosPorFase.get(fase) ?? []
+                      const cerrados = lista.filter(p => p.ganador_id || !p.inscrito_b_id).length
+                      const activa = faseLlaveEfectiva === fase
+                      return (
+                        <button
+                          key={fase}
+                          type="button"
+                          onClick={() => setFaseLlave(fase)}
+                          style={{
+                            ...btnOutlineIndigo,
+                            background: activa ? '#eef2ff' : '#fff',
+                            borderColor: activa ? '#6366f1' : '#e2e8f0',
+                            color: activa ? '#3730a3' : text,
+                            fontWeight: activa ? 700 : 500,
+                            padding: '6px 10px',
+                            fontSize: 12,
+                          }}
+                        >
+                          {FASE_LLAVE_CORTA[fase] || FASE_LABELS[fase] || fase}
+                          <span style={{ marginLeft: 6, fontSize: 10, color: activa ? '#4338ca' : muted }}>
+                            {cerrados}/{lista.length}
+                          </span>
+                        </button>
+                      )
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => setFaseLlave('cuadro')}
+                      style={{
+                        ...btnOutlineIndigo,
+                        background: faseLlaveEfectiva === 'cuadro' ? '#eef2ff' : '#fff',
+                        borderColor: faseLlaveEfectiva === 'cuadro' ? '#6366f1' : '#e2e8f0',
+                        color: faseLlaveEfectiva === 'cuadro' ? '#3730a3' : text,
+                        fontWeight: faseLlaveEfectiva === 'cuadro' ? 700 : 500,
+                        padding: '6px 10px',
+                        fontSize: 12,
+                      }}
+                    >
+                      Cuadro
+                    </button>
                   </div>
 
-                  {/* Sets / 🎯 por fase — PartidoOficialRow (bridge marcador); cuadro visual arriba */}
-                  {fasesPlayoffOrdenadas.map(fase => {
-                    const lista = partidosPorFase.get(fase) ?? []
-                    if (!lista.length) return null
-                    return (
-                      <div key={fase} style={{ ...card, padding: 16, marginBottom: 16 }}>
-                        <h2 style={{ margin: '0 0 12px', fontSize: 16, color: text }}>{FASE_LABELS[fase] || fase}</h2>
-                        <div style={{ display: 'grid', gap: 4 }}>
-                          {lista.sort((a, b) => a.orden - b.orden).map(p => {
-                            const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
-                            const esBye = !p.inscrito_b_id
-                            const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
-                            const ganadorNombre = p.ganador_id ? nombrePorId.get(p.ganador_id) || null : null
-                            return (
-                              <PartidoOficialRow
-                                key={p.id}
-                                partido={p}
-                                eventoId={id}
-                                nombreA={nombreA}
-                                nombreB={nombreB}
-                                esBye={esBye}
-                                ganadorNombre={ganadorNombre}
-                                puedeCorregir={esAdmin && evento.fase !== 'finalizado'}
-                                guardando={guardandoRes === p.id}
-                                sancionesResumen={sancionesDePartido(p.id)}
-                                onGuardar={(opts) => guardarResultado(p.id, opts)}
-                                onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
-                              />
-                            )
-                          })}
+                  {faseLlaveEfectiva === 'cuadro' ? (
+                    <div style={{ ...card, padding: 16, marginBottom: 16 }}>
+                      <h2 style={{ margin: '0 0 8px', fontSize: 15, color: text }}>Cuadro eliminatorio</h2>
+                      <BracketOficial
+                        partidos={partidosPlayoff.filter(p => p.fase !== 'avance')}
+                        nombrePorId={nombrePorId}
+                        esAdmin={esAdmin}
+                        faseInicial={faseInicialLlaves}
+                        onIntercambiar={esAdmin ? intercambiarCupos : undefined}
+                      />
+                    </div>
+                  ) : (
+                    (() => {
+                      const fase = faseLlaveEfectiva
+                      const lista = [...(partidosPorFase.get(fase) ?? [])].sort((a, b) => a.orden - b.orden)
+                      const cerrados = lista.filter(p => p.ganador_id || !p.inscrito_b_id).length
+                      return (
+                        <div style={{ ...card, padding: 12, marginBottom: 16 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                            <h2 style={{ margin: 0, fontSize: 15, color: text }}>{FASE_LABELS[fase] || fase}</h2>
+                            <span style={{ fontSize: 12, color: muted }}>{cerrados} de {lista.length} cerrados</span>
+                          </div>
+                          <div style={{ display: 'grid', gap: 2 }}>
+                            {lista.map(p => {
+                              const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
+                              const esBye = !p.inscrito_b_id
+                              const nombreB = esBye ? 'BYE' : (p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) || '?' : '?')
+                              const ganadorNombre = p.ganador_id ? nombrePorId.get(p.ganador_id) || null : null
+                              return (
+                                <PartidoOficialRow
+                                  key={p.id}
+                                  partido={p}
+                                  eventoId={id}
+                                  nombreA={nombreA}
+                                  nombreB={nombreB}
+                                  esBye={esBye}
+                                  ganadorNombre={ganadorNombre}
+                                  puedeCorregir={esAdmin && evento.fase !== 'finalizado'}
+                                  guardando={guardandoRes === p.id}
+                                  sancionesResumen={sancionesDePartido(p.id)}
+                                  onGuardar={(opts) => guardarResultado(p.id, opts)}
+                                  onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
+                                />
+                              )
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })()
+                  )}
                 </>
               )}
               </>
