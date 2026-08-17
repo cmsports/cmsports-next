@@ -1,8 +1,29 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 const BUCKET = 'bibliografia-buin'
 
+// Este endpoint usa el cliente admin, que se salta RLS, y hasta ahora no pedía
+// sesión: cualquiera podía listar todos los archivos de la bibliografía del
+// club. El bucket es público, así que el contenido ya era alcanzable con la
+// URL — lo que se filtraba era la ENUMERACIÓN, o sea saber qué archivos hay.
+// Sus tres hermanos (upload, delete y el de libro-profe) sí piden sesión; este
+// se había quedado afuera.
+//
+// Se pide sesión pero NO rol de admin a propósito: la bibliografía la leen los
+// profesores y jugadores desde su propia pantalla, y exigir admin la dejaría
+// vacía para ellos. Escribir y borrar siguen siendo solo de admin.
 export async function GET() {
+  const cookieStore = await cookies()
+  const supabaseAuth = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+  )
+  const { data: { user } } = await supabaseAuth.auth.getUser()
+  if (!user) return Response.json({ error: 'No autenticado' }, { status: 401 })
+
   const supabase = createAdminClient()
   const { data, error } = await supabase.storage
     .from(BUCKET)
@@ -17,7 +38,9 @@ export async function GET() {
       url: supabase.storage.from(BUCKET).getPublicUrl(f.name).data.publicUrl,
     }))
 
+  // El listado depende de quién pregunta, así que la caché va privada: con
+  // `public` un proxy podría guardarlo y servírselo a alguien sin sesión.
   return Response.json(archivos, {
-    headers: { 'Cache-Control': 'public, max-age=30' },
+    headers: { 'Cache-Control': 'private, max-age=30' },
   })
 }
