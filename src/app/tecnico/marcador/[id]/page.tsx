@@ -114,9 +114,10 @@ function MarcadorPartidoContent() {
     const db = supabase as any
     const { data, error: err } = await db.from('tecnico_partidos').select('*').eq('id', id).eq('club_id', perfil.club_id).maybeSingle()
     if (err || !data) {
-      setError(err?.message?.includes('sorteo') || err?.message?.includes('lado_mesa')
-        ? 'Falta aplicar migración 159_marcador_sorteo_lados en Supabase.'
-        : 'No se encontró el partido.')
+      const raw = err?.message || ''
+      setError(raw.includes('sorteo') || raw.includes('lado_mesa')
+        ? 'Falta aplicar la migración 177_marcador_sorteo_lados en Supabase.'
+        : (raw || 'No se encontró el partido.'))
       setPartido(null)
       return
     }

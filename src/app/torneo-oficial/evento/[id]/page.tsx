@@ -579,32 +579,46 @@ export default function EventoOficialPage() {
       return { error: 'Indica el motivo' }
     }
     setGuardandoRes(partidoId)
-    const res = await registrarResultadoOficial({
-      partidoId,
-      setsTexto: tipo === 'walkover' ? undefined : opts?.setsTexto,
-      esWalkover: tipo === 'walkover',
-      tipoCierre: tipo,
-      ganadorId: opts?.ganadorId,
-      motivoCierre: opts?.motivoCierre,
-      alcanceSancion: opts?.alcanceSancion,
-    })
-    setGuardandoRes(null)
-    if (res.error) { setErrorMsg(res.error); return res }
-    recargarEvento()
-    return res
+    try {
+      const res = await registrarResultadoOficial({
+        partidoId,
+        setsTexto: tipo === 'walkover' ? undefined : opts?.setsTexto,
+        esWalkover: tipo === 'walkover',
+        tipoCierre: tipo,
+        ganadorId: opts?.ganadorId,
+        motivoCierre: opts?.motivoCierre,
+        alcanceSancion: opts?.alcanceSancion,
+      })
+      if (res.error) { setErrorMsg(res.error); return res }
+      recargarEvento()
+      return res
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No se pudo guardar el resultado'
+      setErrorMsg(msg)
+      return { error: msg }
+    } finally {
+      setGuardandoRes(null)
+    }
   }
 
   async function corregir(partidoId: string, ganadorId: string, setsTexto?: string) {
     setGuardandoRes(partidoId)
-    const res = await corregirResultadoOficial({
-      partidoId,
-      nuevoGanadorId: ganadorId,
-      setsTexto,
-    })
-    setGuardandoRes(null)
-    if (res.error) { setErrorMsg(res.error); return res }
-    recargarEvento()
-    return res
+    try {
+      const res = await corregirResultadoOficial({
+        partidoId,
+        nuevoGanadorId: ganadorId,
+        setsTexto,
+      })
+      if (res.error) { setErrorMsg(res.error); return res }
+      recargarEvento()
+      return res
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'No se pudo corregir el resultado'
+      setErrorMsg(msg)
+      return { error: msg }
+    } finally {
+      setGuardandoRes(null)
+    }
   }
 
   async function reiniciarLlaves() {
@@ -643,54 +657,58 @@ export default function EventoOficialPage() {
 
   async function exportarExcel() {
     if (!evento || !camp) return
-    const inscritosPorG = new Map<string, string[]>()
-    for (const m of miembrosGrupo) {
-      const lista = inscritosPorG.get(m.grupo_id) ?? []
-      lista.push(m.inscrito_id)
-      inscritosPorG.set(m.grupo_id, lista)
+    try {
+      const inscritosPorG = new Map<string, string[]>()
+      for (const m of miembrosGrupo) {
+        const lista = inscritosPorG.get(m.grupo_id) ?? []
+        lista.push(m.inscrito_id)
+        inscritosPorG.set(m.grupo_id, lista)
+      }
+      await descargarExcelOficialKoidan({
+        eventoNombre: evento.nombre,
+        campeonatoNombre: camp.nombre,
+        inscritos: inscritos.map(i => ({
+          id: i.id,
+          nombre: i.nombre,
+          asociacion: i.asociacion,
+          cabezaNumero: i.cabeza_numero,
+          ordenInscripcion: i.orden_inscripcion,
+        })),
+        grupos: grupos.map(g => ({
+          id: g.id,
+          nombre: g.nombre,
+          orden: g.orden,
+          inscritoIds: inscritosPorG.get(g.id) ?? [],
+        })),
+        partidos: partidos.map(p => ({
+          id: p.id,
+          fase: p.fase,
+          orden: p.orden,
+          grupoId: p.grupo_id,
+          inscritoA: p.inscrito_a_id,
+          inscritoB: p.inscrito_b_id,
+          ganadorId: p.ganador_id,
+          sets: p.sets,
+          esWalkover: p.es_walkover,
+          tipoCierre: p.tipo_cierre,
+          mesa: p.mesa,
+          programadoEn: p.programado_en,
+          numeroIttf: p.numero_ittf,
+          arbitroNombre: p.arbitro_nombre,
+        })),
+        statsPorGrupo: (grupoId) => statsGrupo(grupoId).map(s => ({
+          inscritoId: s.inscritoId,
+          pts: s.pts,
+          pg: s.pg,
+          pp: s.pp,
+          juegosGanados: s.juegosGanados,
+          juegosPerdidos: s.juegosPerdidos,
+        })),
+        nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_oficial.xlsx`,
+      })
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'No se pudo generar el Excel')
     }
-    await descargarExcelOficialKoidan({
-      eventoNombre: evento.nombre,
-      campeonatoNombre: camp.nombre,
-      inscritos: inscritos.map(i => ({
-        id: i.id,
-        nombre: i.nombre,
-        asociacion: i.asociacion,
-        cabezaNumero: i.cabeza_numero,
-        ordenInscripcion: i.orden_inscripcion,
-      })),
-      grupos: grupos.map(g => ({
-        id: g.id,
-        nombre: g.nombre,
-        orden: g.orden,
-        inscritoIds: inscritosPorG.get(g.id) ?? [],
-      })),
-      partidos: partidos.map(p => ({
-        id: p.id,
-        fase: p.fase,
-        orden: p.orden,
-        grupoId: p.grupo_id,
-        inscritoA: p.inscrito_a_id,
-        inscritoB: p.inscrito_b_id,
-        ganadorId: p.ganador_id,
-        sets: p.sets,
-        esWalkover: p.es_walkover,
-        tipoCierre: p.tipo_cierre,
-        mesa: p.mesa,
-        programadoEn: p.programado_en,
-        numeroIttf: p.numero_ittf,
-        arbitroNombre: p.arbitro_nombre,
-      })),
-      statsPorGrupo: (grupoId) => statsGrupo(grupoId).map(s => ({
-        inscritoId: s.inscritoId,
-        pts: s.pts,
-        pg: s.pg,
-        pp: s.pp,
-        juegosGanados: s.juegosGanados,
-        juegosPerdidos: s.juegosPerdidos,
-      })),
-      nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_oficial.xlsx`,
-    })
   }
 
   async function refrescarConflictos() {
@@ -789,45 +807,57 @@ export default function EventoOficialPage() {
 
   async function exportarGruposPdf() {
     if (!evento || !camp) return
-    await exportarGruposOficialPdf({
-      titulo: evento.nombre,
-      club: camp.nombre,
-      grupos: grupos.map(g => ({
-        nombre: g.nombre,
-        filas: statsGrupo(g.id).map((s, idx) => ({
-          pos: idx + 1,
-          nombre: nombrePorId.get(s.inscritoId) || s.inscritoId,
-          pts: s.pts,
-          pg: s.pg,
-          pp: s.pp,
+    try {
+      await exportarGruposOficialPdf({
+        titulo: evento.nombre,
+        club: camp.nombre,
+        grupos: grupos.map(g => ({
+          nombre: g.nombre,
+          filas: statsGrupo(g.id).map((s, idx) => ({
+            pos: idx + 1,
+            nombre: nombrePorId.get(s.inscritoId) || s.inscritoId,
+            pts: s.pts,
+            pg: s.pg,
+            pp: s.pp,
+          })),
         })),
-      })),
-      nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_grupos.pdf`,
-    })
+        nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_grupos.pdf`,
+      })
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'No se pudo generar el PDF de grupos')
+    }
   }
 
   async function exportarProgramaPdf() {
     if (!evento || !camp) return
-    await exportarProgramaOficialPdf({
-      titulo: `Programa — ${evento.nombre}`,
-      club: camp.nombre,
-      filas: programaFilas,
-      nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_programa.pdf`,
-    })
+    try {
+      await exportarProgramaOficialPdf({
+        titulo: `Programa — ${evento.nombre}`,
+        club: camp.nombre,
+        filas: programaFilas,
+        nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_programa.pdf`,
+      })
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'No se pudo generar el PDF del programa')
+    }
   }
 
   async function exportarLlavesPdf() {
     if (!evento || !camp) return
-    await exportarLlavesOficialPdf({
-      titulo: `Llaves — ${evento.nombre}`,
-      club: camp.nombre,
-      filas: partidosPlayoff.map(p => ({
-        fase: FASE_LABELS[p.fase] || p.fase,
-        partido: `${nombrePorId.get(p.inscrito_a_id!) || '?'} vs ${p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) : 'BYE'}`,
-        resultado: p.ganador_id ? `${formatearSets(p.sets)}${p.es_walkover ? ' W.O.' : ''}` : '—',
-      })),
-      nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_llaves.pdf`,
-    })
+    try {
+      await exportarLlavesOficialPdf({
+        titulo: `Llaves — ${evento.nombre}`,
+        club: camp.nombre,
+        filas: partidosPlayoff.map(p => ({
+          fase: FASE_LABELS[p.fase] || p.fase,
+          partido: `${nombrePorId.get(p.inscrito_a_id!) || '?'} vs ${p.inscrito_b_id ? nombrePorId.get(p.inscrito_b_id) : 'BYE'}`,
+          resultado: p.ganador_id ? `${formatearSets(p.sets)}${p.es_walkover ? ' W.O.' : ''}` : '—',
+        })),
+        nombreArchivo: `${evento.nombre.replace(/\s+/g, '_')}_llaves.pdf`,
+      })
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'No se pudo generar el PDF de llaves')
+    }
   }
 
   const enInscripcion = evento?.fase === 'inscripcion'
@@ -876,7 +906,16 @@ export default function EventoOficialPage() {
             </div>
 
             {errorMsg && (
-              <div style={{ ...card, padding: 12, marginBottom: 14, color: torneoUi.danger, fontSize: 13 }}>{errorMsg}</div>
+              <div style={{
+                ...card,
+                padding: 12,
+                marginBottom: 14,
+                color: '#9f1239',
+                background: '#fff1f2',
+                border: '1px solid #fecdd3',
+                fontSize: 13,
+                fontWeight: 600,
+              }}>{errorMsg}</div>
             )}
 
             {esAdmin && evento.fase !== 'finalizado' && (
@@ -1033,6 +1072,7 @@ export default function EventoOficialPage() {
                               sancionesResumen={sancionesDePartido(p.id)}
                               onGuardar={(opts) => guardarResultado(p.id, opts)}
                               onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
+                              onError={setErrorMsg}
                             />
                           )
                         })}
@@ -1194,6 +1234,7 @@ export default function EventoOficialPage() {
                                   sancionesResumen={sancionesDePartido(p.id)}
                                   onGuardar={(opts) => guardarResultado(p.id, opts)}
                                   onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
+                                  onError={setErrorMsg}
                                 />
                               )
                             })}

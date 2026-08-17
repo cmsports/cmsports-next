@@ -42,6 +42,7 @@ import {
   type PlanPreLlave,
   type TamanoCuadro,
 } from '@/lib/domain/oficial-sorteo'
+import { traducirErrorMarcadorTecnico } from '@/lib/torneo-oficial/marcador-tecnico'
 
 type Resultado<T extends object = object> =
   | { error: string; [key: string]: unknown }
@@ -612,9 +613,13 @@ async function aplicarResultadoOficialDb(db: AdminDb, clubId: string, params: Pa
 }
 
 export async function registrarResultadoOficial(params: ParamsResultadoOficial): Promise<Resultado> {
-  const { error, supabase, perfil } = await requireAdmin()
-  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
-  return aplicarResultadoOficialDb(dbOficial(supabase), perfil.club_id, params)
+  try {
+    const { error, supabase, perfil } = await requireAdmin()
+    if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+    return await aplicarResultadoOficialDb(dbOficial(supabase), perfil.club_id, params)
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'No se pudo guardar el resultado' }
+  }
 }
 
 /** Aplica W.O. a partidos pendientes del sancionado en evento o campeonato. */
@@ -828,100 +833,133 @@ async function sincronizarSancionesDesdeMarcador(params: {
 export async function abrirMarcadorOficial(params: {
   partidoId: string
 }): Promise<Resultado<{ marcadorId: string; eventoId: string }>> {
-  const { error, supabase, perfil } = await requireAdmin()
-  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
-  const db = dbOficial(supabase)
+  try {
+    const { error, supabase, perfil } = await requireAdmin()
+    if (error || !supabase || !perfil?.club_id) {
+      return { error: traducirErrorMarcadorTecnico(error || 'Acceso denegado') }
+    }
+    const db = dbOficial(supabase)
 
-  const { data: partido } = await db.from('oficial_partidos')
-    .select('id, evento_id, fase, marcador_id, inscrito_a_id, inscrito_b_id, ganador_id')
-    .eq('id', params.partidoId)
-    .eq('club_id', perfil.club_id)
-    .maybeSingle()
-
-  if (!partido) return { error: 'Partido no encontrado' }
-  if (!partido.inscrito_a_id || !partido.inscrito_b_id) {
-    return { error: 'El partido necesita ambos jugadores para abrir el marcador' }
-  }
-
-  if (partido.marcador_id) {
-    return { marcadorId: partido.marcador_id as string, eventoId: partido.evento_id as string }
-  }
-
-  const { data: evento } = await db.from('oficial_eventos')
-    .select('id, nombre, formato_partido')
-    .eq('id', partido.evento_id)
-    .eq('club_id', perfil.club_id)
-    .maybeSingle()
-  if (!evento) return { error: 'Evento no encontrado' }
-
-  const { data: inscritos } = await db.from('oficial_inscritos')
-    .select('id, nombre, asociacion')
-    .in('id', [partido.inscrito_a_id, partido.inscrito_b_id])
-
-  const porId = new Map<string, { nombre: string; asociacion: string | null }>(
-    (inscritos || []).map((i: { id: string; nombre: string; asociacion: string | null }) => [
-      i.id,
-      { nombre: i.nombre, asociacion: i.asociacion },
-    ]),
-  )
-
-  function etiqueta(inscritoId: string): string {
-    const row = porId.get(inscritoId)
-    if (!row) return 'Jugador'
-    return row.asociacion ? `${row.nombre} (${row.asociacion})` : row.nombre
-  }
-
-  const formatoRaw = String(evento.formato_partido || 'bo5')
-  const formato = formatoRaw === 'bo3' || formatoRaw === 'bo5' || formatoRaw === 'bo7'
-    ? formatoRaw
-    : 'bo5'
-
-  const faseLabel = (CONFIG.FASE_LABELS as Record<string, string>)[partido.fase] || partido.fase
-
-  const { data: tecnico, error: insErr } = await db.from('tecnico_partidos').insert({
-    club_id: perfil.club_id,
-    titulo: evento.nombre || 'Torneo oficial',
-    ronda: faseLabel || null,
-    formato,
-    nombre_a: etiqueta(partido.inscrito_a_id),
-    nombre_b: etiqueta(partido.inscrito_b_id),
-    estado: 'preparacion',
-    creado_por: perfil.id ?? null,
-  }).select('id').single()
-
-  if (insErr || !tecnico?.id) {
-    return { error: insErr?.message || 'No se pudo crear el marcador técnico' }
-  }
-
-  const { data: vinculado, error: updErr } = await db.from('oficial_partidos')
-    .update({
-      marcador_id: tecnico.id,
-      actualizado_en: new Date().toISOString(),
-    })
-    .eq('id', partido.id)
-    .eq('club_id', perfil.club_id)
-    .is('marcador_id', null)
-    .select('marcador_id')
-    .maybeSingle()
-
-  if (updErr) {
-    await db.from('tecnico_partidos').delete().eq('id', tecnico.id).eq('club_id', perfil.club_id)
-    return { error: updErr.message || 'No se pudo vincular el marcador' }
-  }
-
-  // Carrera: otro proceso ya vinculó; reutilizar el existente y descartar el huérfano.
-  if (!vinculado?.marcador_id) {
-    const { data: actual } = await db.from('oficial_partidos')
-      .select('marcador_id')
-      .eq('id', partido.id)
+    const sel = await db.from('oficial_partidos')
+      .select('id, evento_id, fase, marcador_id, inscrito_a_id, inscrito_b_id, ganador_id')
+      .eq('id', params.partidoId)
       .eq('club_id', perfil.club_id)
       .maybeSingle()
-    await db.from('tecnico_partidos').delete().eq('id', tecnico.id).eq('club_id', perfil.club_id)
-    if (!actual?.marcador_id) return { error: 'No se pudo vincular el marcador' }
-    return { marcadorId: actual.marcador_id as string, eventoId: partido.evento_id as string }
-  }
 
-  return { marcadorId: vinculado.marcador_id as string, eventoId: partido.evento_id as string }
+    if (sel.error) return { error: traducirErrorMarcadorTecnico(sel.error.message) }
+    const partido = sel.data
+    if (!partido) return { error: 'Partido no encontrado' }
+    if (!partido.inscrito_a_id || !partido.inscrito_b_id) {
+      return { error: 'El partido necesita ambos jugadores para abrir el marcador' }
+    }
+
+    if (partido.marcador_id) {
+      const { data: existente } = await db.from('tecnico_partidos')
+        .select('id')
+        .eq('id', partido.marcador_id)
+        .eq('club_id', perfil.club_id)
+        .maybeSingle()
+      if (existente?.id) {
+        return { marcadorId: existente.id as string, eventoId: partido.evento_id as string }
+      }
+    }
+
+    const { data: evento } = await db.from('oficial_eventos')
+      .select('id, nombre, formato_partido')
+      .eq('id', partido.evento_id)
+      .eq('club_id', perfil.club_id)
+      .maybeSingle()
+    if (!evento) return { error: 'Evento no encontrado' }
+
+    const { data: inscritos } = await db.from('oficial_inscritos')
+      .select('id, nombre, asociacion')
+      .in('id', [partido.inscrito_a_id, partido.inscrito_b_id])
+
+    const porId = new Map<string, { nombre: string; asociacion: string | null }>(
+      (inscritos || []).map((i: { id: string; nombre: string; asociacion: string | null }) => [
+        i.id,
+        { nombre: i.nombre, asociacion: i.asociacion },
+      ]),
+    )
+
+    function etiqueta(inscritoId: string): string {
+      const row = porId.get(inscritoId)
+      if (!row) return 'Jugador'
+      return row.asociacion ? `${row.nombre} (${row.asociacion})` : row.nombre
+    }
+
+    const formatoRaw = String(evento.formato_partido || 'bo5')
+    const formato = formatoRaw === 'bo3' || formatoRaw === 'bo5' || formatoRaw === 'bo7'
+      ? formatoRaw
+      : 'bo5'
+
+    const faseLabel = (CONFIG.FASE_LABELS as Record<string, string>)[partido.fase] || partido.fase
+
+    const payload: Record<string, unknown> = {
+      club_id: perfil.club_id,
+      titulo: evento.nombre || 'Torneo oficial',
+      ronda: faseLabel || null,
+      formato,
+      nombre_a: etiqueta(partido.inscrito_a_id),
+      nombre_b: etiqueta(partido.inscrito_b_id),
+      estado: 'preparacion',
+      creado_por: perfil.id ?? null,
+    }
+
+    let ins = await db.from('tecnico_partidos').insert(payload).select('id').single()
+    if (ins.error && /creado_por|foreign key/i.test(ins.error.message || '')) {
+      const sinCreador = { ...payload }
+      delete sinCreador.creado_por
+      ins = await db.from('tecnico_partidos').insert(sinCreador).select('id').single()
+    }
+
+    if (ins.error || !ins.data?.id) {
+      return { error: traducirErrorMarcadorTecnico(ins.error?.message || 'No se pudo crear el marcador técnico') }
+    }
+    const tecnico = ins.data
+
+    let upd = db.from('oficial_partidos')
+      .update({
+        marcador_id: tecnico.id,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', partido.id)
+      .eq('club_id', perfil.club_id)
+    if (partido.marcador_id) {
+      upd = upd.eq('marcador_id', partido.marcador_id)
+    } else {
+      upd = upd.is('marcador_id', null)
+    }
+    const { data: vinculado, error: updErr } = await upd.select('marcador_id').maybeSingle()
+
+    if (updErr) {
+      await db.from('tecnico_partidos').delete().eq('id', tecnico.id).eq('club_id', perfil.club_id)
+      return { error: traducirErrorMarcadorTecnico(updErr.message || 'No se pudo vincular el marcador') }
+    }
+
+    // Carrera: otro proceso ya vinculó; reutilizar el existente y descartar el huérfano.
+    if (!vinculado?.marcador_id) {
+      const { data: actual } = await db.from('oficial_partidos')
+        .select('marcador_id')
+        .eq('id', partido.id)
+        .eq('club_id', perfil.club_id)
+        .maybeSingle()
+      await db.from('tecnico_partidos').delete().eq('id', tecnico.id).eq('club_id', perfil.club_id)
+      if (actual?.marcador_id) {
+        const { data: vivo } = await db.from('tecnico_partidos')
+          .select('id').eq('id', actual.marcador_id).eq('club_id', perfil.club_id).maybeSingle()
+        if (vivo?.id) {
+          return { marcadorId: vivo.id as string, eventoId: partido.evento_id as string }
+        }
+      }
+      return { error: 'No se pudo vincular el marcador' }
+    }
+
+    return { marcadorId: vinculado.marcador_id as string, eventoId: partido.evento_id as string }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'No se pudo abrir el marcador técnico'
+    return { error: traducirErrorMarcadorTecnico(msg) }
+  }
 }
 
 export async function hoyChileOficial(): Promise<string> {

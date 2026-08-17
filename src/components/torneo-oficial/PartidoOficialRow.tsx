@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, type CSSProperties } from 'react'
-import { useRouter } from 'next/navigation'
-import { abrirMarcadorOficial } from '@/app/actions/torneo-oficial'
 import {
   etiquetaCierreOficial,
   formatearSets,
@@ -45,8 +43,8 @@ export default function PartidoOficialRow(props: {
   sancionesResumen?: string
   onGuardar: (opts?: GuardarResultadoOpts) => Promise<{ error?: string } | void>
   onCorregir: (ganadorId: string, setsTexto?: string) => Promise<{ error?: string } | void>
+  onError?: (msg: string) => void
 }) {
-  const router = useRouter()
   const { partido: p, esBye, guardando } = props
   const cerrado = Boolean(p.ganador_id)
   const [modalOpen, setModalOpen] = useState(false)
@@ -57,9 +55,14 @@ export default function PartidoOficialRow(props: {
   const [motivo, setMotivo] = useState('')
   const [alcance, setAlcance] = useState<AlcanceSancionOficial>('partido')
   const [abriendoMarcador, setAbriendoMarcador] = useState(false)
-  const [errorMarcador, setErrorMarcador] = useState('')
+  const [errorFila, setErrorFila] = useState('')
 
   const etiqueta = etiquetaCierreOficial(p.tipo_cierre, p.es_walkover)
+
+  function mostrarError(msg: string) {
+    setErrorFila(msg)
+    props.onError?.(msg)
+  }
 
   function abrirModal(corregir = false) {
     setModoCorregir(corregir)
@@ -68,6 +71,7 @@ export default function PartidoOficialRow(props: {
     setMotivo('')
     setAlcance('partido')
     setGanadorWo('a')
+    setErrorFila('')
     setModalOpen(true)
   }
 
@@ -77,34 +81,30 @@ export default function PartidoOficialRow(props: {
     setModoCorregir(false)
   }
 
-  async function irAlMarcador() {
+  function irAlMarcador() {
     if (abriendoMarcador) return
-    setErrorMarcador('')
+    setErrorFila('')
     setAbriendoMarcador(true)
-    const res = await abrirMarcadorOficial({ partidoId: p.id })
-    setAbriendoMarcador(false)
-    if (res.error || !res.marcadorId) {
-      setErrorMarcador(res.error || 'No se pudo abrir el marcador')
-      return
-    }
-    const eventoId = res.eventoId || props.eventoId
-    const vuelta = encodeURIComponent(`/torneo-oficial/evento/${eventoId}`)
-    router.push(`/tecnico/marcador/${res.marcadorId}?vuelta=${vuelta}`)
+    window.location.assign(`/torneo-oficial/marcador/${p.id}`)
   }
 
   async function guardarCierre() {
-    if (modoCierre === 'jugado') {
-      return props.onGuardar({ setsTexto, tipoCierre: 'jugado' })
+    try {
+      if (modoCierre === 'jugado') {
+        return await props.onGuardar({ setsTexto, tipoCierre: 'jugado' })
+      }
+      const ganadorId = ganadorWo === 'a' ? p.inscrito_a_id! : p.inscrito_b_id!
+      return await props.onGuardar({
+        tipoCierre: modoCierre,
+        walkover: modoCierre === 'walkover',
+        ganadorId,
+        setsTexto: modoCierre === 'retiro' ? setsTexto : undefined,
+        motivoCierre: motivo,
+        alcanceSancion: alcance,
+      })
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : 'No se pudo guardar el resultado' }
     }
-    const ganadorId = ganadorWo === 'a' ? p.inscrito_a_id! : p.inscrito_b_id!
-    return props.onGuardar({
-      tipoCierre: modoCierre,
-      walkover: modoCierre === 'walkover',
-      ganadorId,
-      setsTexto: modoCierre === 'retiro' ? setsTexto : undefined,
-      motivoCierre: motivo,
-      alcanceSancion: alcance,
-    })
   }
 
   return (
@@ -145,7 +145,7 @@ export default function PartidoOficialRow(props: {
           <span style={{ fontSize: 10, color: torneoUi.muted, flexShrink: 0, marginLeft: 'auto' }}>BYE</span>
         ) : props.puedeCorregir ? (
           <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginLeft: 'auto' }}>
-            <button type="button" onClick={() => void irAlMarcador()} disabled={abriendoMarcador} style={btnMarcador} title="Marcador en vivo (tablet técnico)">
+            <button type="button" onClick={() => irAlMarcador()} disabled={abriendoMarcador} style={btnMarcador} title="Marcador en vivo (tablet técnico)">
               {abriendoMarcador ? '…' : '🎯 En vivo'}
             </button>
             <button type="button" onClick={() => abrirModal(false)} style={btnSets} title="Cargar sets a mano">
@@ -163,8 +163,8 @@ export default function PartidoOficialRow(props: {
         </p>
       )}
 
-      {errorMarcador && (
-        <p style={{ margin: '0 0 6px', fontSize: 11, color: '#e11d48', textAlign: 'right' }}>{errorMarcador}</p>
+      {errorFila && (
+        <p style={{ margin: '0 0 6px', fontSize: 11, color: '#e11d48', textAlign: 'right' }}>{errorFila}</p>
       )}
 
       {modalOpen && (
@@ -261,8 +261,13 @@ export default function PartidoOficialRow(props: {
                   {p.inscrito_a_id && (
                     <button type="button" disabled={guardando}
                       onClick={async () => {
-                        const res = await props.onCorregir(p.inscrito_a_id!, setsTexto)
-                        if (!res?.error) cerrarModal()
+                        try {
+                          const res = await props.onCorregir(p.inscrito_a_id!, setsTexto)
+                          if (res?.error) { mostrarError(res.error); return }
+                          cerrarModal()
+                        } catch (e) {
+                          mostrarError(e instanceof Error ? e.message : 'No se pudo corregir')
+                        }
                       }}
                       style={{ ...btnPrimaryIndigo, opacity: guardando ? 0.6 : 1 }}>
                       Gana A
@@ -271,8 +276,13 @@ export default function PartidoOficialRow(props: {
                   {p.inscrito_b_id && (
                     <button type="button" disabled={guardando}
                       onClick={async () => {
-                        const res = await props.onCorregir(p.inscrito_b_id!, setsTexto)
-                        if (!res?.error) cerrarModal()
+                        try {
+                          const res = await props.onCorregir(p.inscrito_b_id!, setsTexto)
+                          if (res?.error) { mostrarError(res.error); return }
+                          cerrarModal()
+                        } catch (e) {
+                          mostrarError(e instanceof Error ? e.message : 'No se pudo corregir')
+                        }
                       }}
                       style={{ ...btnPrimaryIndigo, opacity: guardando ? 0.6 : 1 }}>
                       Gana B
@@ -285,7 +295,8 @@ export default function PartidoOficialRow(props: {
                   disabled={guardando || (modoCierre === 'jugado' && !setsTexto.trim()) || ((modoCierre === 'walkover' || modoCierre === 'retiro') && !motivo.trim())}
                   onClick={async () => {
                     const res = await guardarCierre()
-                    if (!res?.error) cerrarModal()
+                    if (res?.error) { mostrarError(res.error); return }
+                    cerrarModal()
                   }}
                   style={{
                     ...btnPrimaryIndigo,
@@ -298,10 +309,14 @@ export default function PartidoOficialRow(props: {
               <button type="button" onClick={cerrarModal} style={btnOutlineIndigo}>Cancelar</button>
             </div>
 
+            {errorFila && (
+              <p style={{ margin: '10px 0 0', fontSize: 12, color: '#e11d48' }}>{errorFila}</p>
+            )}
+
             {!modoCorregir && (
               <button type="button"
                 disabled={abriendoMarcador}
-                onClick={() => { cerrarModal(); void irAlMarcador() }}
+                onClick={() => { cerrarModal(); irAlMarcador() }}
                 style={{ ...btnOutlineIndigo, width: '100%', marginTop: 10, opacity: abriendoMarcador ? 0.6 : 1 }}>
                 {abriendoMarcador ? 'Abriendo marcador…' : 'Abrir marcador en vivo'}
               </button>
