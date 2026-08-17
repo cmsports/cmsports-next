@@ -163,14 +163,16 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
   {
     id: 'grupos',
     titulo: 'Formación de grupos',
-    resumen: 'Objetivo: grupos de ~3. Mínimo 2 grupos. Todos contra todos dentro del grupo.',
+    resumen: 'Grupos de 3 o 4, nunca de 2. Mínimo 2 grupos. Todos contra todos dentro del grupo.',
     bloques: [
       {
         subtitulo: 'Cuántos grupos',
         items: [
-          'Fórmula: el entero más cercano hacia arriba de (jugadores ÷ 3), con mínimo 2.',
-          'Ejemplos: 4 jugadores → 2 grupos; 6 → 2; 7 → 3; 9 → 3; 12 → 4.',
-          'Tope: 32 grupos.',
+          'Se elige mirando el cuadro que viene después, no solo el tamaño del grupo: entre los repartos que dejan grupos de 3 o 4, se toma el que deje menos BYEs en la llave.',
+          'Nunca se arman grupos de 2. En un grupo de 2 clasifican los dos —porque clasifican 2 por grupo—, así que ese partido no decidiría nada más que el orden.',
+          'Ejemplos: 6 jugadores → 2 grupos; 7 → 2; 9 → 3; 12 → 4; 24 → 8; 50 → 16; 100 → 32.',
+          'Con 50, 64 o 100 jugadores el cuadro queda exacto, sin ningún BYE.',
+          'Tope: 32 grupos, que alcanza justo para 100 jugadores.',
         ],
       },
       {
