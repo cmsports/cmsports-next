@@ -726,7 +726,6 @@ export default function TorneoDetallePage() {
 
       <ManualTorneos
         tipo={torneo?.tipo === 'interno' ? 'interno' : 'externo'}
-        compacto={faseActual !== 'inscripcion'}
         seccionInicial={seccionManualSegunFase(faseActual)}
       />
 

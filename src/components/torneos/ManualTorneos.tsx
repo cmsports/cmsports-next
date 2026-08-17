@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { TABLA_PUNTAJE } from '@/lib/domain/puntajeTorneo'
 import {
   introSegunTipo,
@@ -9,71 +9,39 @@ import {
   type TipoManualTorneo,
 } from '@/lib/torneos/manual-contenido'
 
-const STORAGE = 'cmsports:manual-torneos'
-
 type Props = {
   tipo: TipoManualTorneo
-  /** En el listado va abierto. En el torneo en curso, cerrado en una barra. */
-  compacto?: boolean
-  /** Filtra esta sección al montar (fase actual). */
+  /** Filtra esta sección al abrir (fase actual del torneo). */
   seccionInicial?: string
 }
 
-export default function ManualTorneos({ tipo, compacto = false, seccionInicial }: Props) {
+export default function ManualTorneos({ tipo, seccionInicial }: Props) {
   const intro = introSegunTipo(tipo)
-  const [abierto, setAbierto] = useState(!compacto)
+  const [abierto, setAbierto] = useState(false)
   const [seccion, setSeccion] = useState<string | null>(seccionInicial ?? null)
 
-  useEffect(() => {
-    if (compacto) return
-    try {
-      const v = sessionStorage.getItem(`${STORAGE}:${tipo}`)
-      if (v === 'cerrado') setAbierto(false)
-      if (v === 'abierto') setAbierto(true)
-    } catch { /* noop */ }
-  }, [compacto, tipo])
-
-  function togglePanel() {
-    const siguiente = !abierto
-    setAbierto(siguiente)
-    if (!compacto) {
-      try { sessionStorage.setItem(`${STORAGE}:${tipo}`, siguiente ? 'abierto' : 'cerrado') } catch { /* noop */ }
-    }
-  }
-
   return (
-    <div style={{
-      background: abierto ? '#fff' : '#f8fafc',
-      border: `1px solid ${abierto ? '#c4b5fd' : '#e2e8f0'}`,
-      borderRadius: 14,
-      marginBottom: 16,
-      overflow: 'hidden',
-      boxShadow: abierto ? '0 4px 16px rgba(76,29,149,0.08)' : 'none',
-    }}>
+    <div style={{ marginBottom: abierto ? 16 : 12 }}>
       <button
         type="button"
-        onClick={togglePanel}
+        onClick={() => setAbierto(a => !a)}
         aria-expanded={abierto}
         style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
-          background: abierto ? 'linear-gradient(135deg,#4c1d95,#6d28d9)' : '#fff',
-          color: abierto ? '#fff' : '#0f172a', border: 0, padding: '12px 16px', cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          background: abierto ? '#6d28d9' : '#fff',
+          color: abierto ? '#fff' : '#5b21b6',
+          border: `1px solid ${abierto ? '#6d28d9' : '#c4b5fd'}`,
+          borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
         }}
       >
-        <span style={{ fontSize: 16 }} aria-hidden>📖</span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'block', fontSize: 14, fontWeight: 800 }}>
-            Manual de torneos · reglas y uso
-          </span>
-          <span style={{ display: 'block', fontSize: 11, opacity: abierto ? 0.85 : 0.65, marginTop: 2 }}>
-            {intro.titulo} · {abierto ? 'Cómo se arma, BYEs, ranking, plata y en vivo' : 'Toca para ver todas las reglas'}
-          </span>
-        </span>
-        <span style={{ fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{abierto ? 'Cerrar' : 'Abrir'}</span>
+        📖 Manual de reglas {abierto ? '▴' : '▾'}
       </button>
 
       {abierto && (
-        <div style={{ padding: '14px 16px 18px' }}>
+        <div style={{
+          marginTop: 10, background: '#fff', border: '1px solid #c4b5fd', borderRadius: 14,
+          padding: '14px 16px 18px', boxShadow: '0 4px 16px rgba(76,29,149,0.08)',
+        }}>
           <div style={{
             background: tipo === 'interno' ? '#f5f3ff' : '#fff7ed',
             border: `1px solid ${tipo === 'interno' ? '#ddd6fe' : '#fed7aa'}`,
