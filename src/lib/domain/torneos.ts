@@ -47,11 +47,59 @@ export function derivarPodioFinal(final: {
 
 // ─── Grupos ────────────────────────────────────────────────────────────────
 
+/**
+ * Cuántos grupos hacer con `numJugadores`.
+ *
+ * Antes era `ceil(N / 3)`, que mira solo el tamaño del grupo y se desentiende
+ * del cuadro que viene después. Eso arrastraba dos problemas:
+ *
+ *  1. **Grupos de 2.** Con 40 jugadores daba 14 grupos, o sea grupos de 2 y 3.
+ *     Un grupo de 2 es un partido suelto, no un grupo. El módulo de Torneo
+ *     Oficial ya documenta esta fórmula como incorrecta por lo mismo.
+ *
+ *  2. **Cuadros con medio bracket vacío.** Como clasifican 2 por grupo, el
+ *     cuadro mide `2 × grupos` redondeado a la potencia de 2 de arriba. Si ese
+ *     número queda apenas por encima de una potencia de 2, el cuadro se va al
+ *     escalón siguiente y se llena de BYEs. Medido sobre 6 a 100 jugadores:
+ *     50 jugadores daban 47% del cuadro en BYEs, 56 daban 41%, 100 daban 47%.
+ *     Con 50 jugadores eso eran 30 BYEs de 64, y 13 segundos de grupo pasando
+ *     de ronda sin jugar mientras varios primeros sí jugaban.
+ *
+ * Ahora se eligen los grupos mirando el cuadro: entre todos los repartos que
+ * dejan grupos de 3 o 4, se toma el que deje menos BYEs. A igualdad de BYEs se
+ * prefieren más grupos, porque grupos más chicos son menos partidos que jugar.
+ *
+ * Los casos malos quedan en cero: 50, 56, 64 y 100 jugadores pasan a armar un
+ * cuadro exacto, sin un solo BYE. Y el máximo de grupos para 100 jugadores baja
+ * a 32, que es justo el tope que ya permitía CONFIG.TORNEO_MAX_GRUPOS.
+ *
+ * Los pocos tamaños que igual dejan BYEs son los que caen justo debajo de una
+ * potencia de 2 (9 a 11, 21 a 23, 41 a 47, 85 a 95). Ahí el arreglo de fondo es
+ * la ronda de avance —que `CONFIG.FASES_ORDEN` ya tiene reservada y nunca se
+ * generó—, para que los sobrantes jueguen por entrar en vez de recibir un BYE.
+ */
 export function calcularNumGrupos(
   numJugadores: number,
   jugadoresPorGrupo: number = CONFIG.TORNEO_JUGADORES_POR_GRUPO,
 ): number {
-  return Math.max(2, Math.ceil(numJugadores / jugadoresPorGrupo))
+  const tamMin = Math.max(2, jugadoresPorGrupo)
+  const tamMax = tamMin + 1
+
+  let mejor: { grupos: number; byes: number } | null = null
+  for (let grupos = 2; grupos <= Math.floor(numJugadores / tamMin); grupos++) {
+    const menor = Math.floor(numJugadores / grupos)
+    const mayor = numJugadores % grupos ? menor + 1 : menor
+    if (menor < tamMin || mayor > tamMax) continue
+    const clasificados = grupos * 2
+    const byes = calcularTamanoBracket(clasificados) - clasificados
+    if (!mejor || byes < mejor.byes || (byes === mejor.byes && grupos > mejor.grupos)) {
+      mejor = { grupos, byes }
+    }
+  }
+
+  // Con muy pocos jugadores no hay reparto posible en grupos de 3 o 4 (ej. 4
+  // jugadores). Ahí se conserva el comportamiento de siempre.
+  return mejor?.grupos ?? Math.max(2, Math.ceil(numJugadores / tamMin))
 }
 
 // Los tardíos forman grupos independientes de hasta cuatro jugadores.

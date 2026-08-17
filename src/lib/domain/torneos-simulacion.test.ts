@@ -50,8 +50,11 @@ describe('Simulación torneo 50 jugadores', () => {
   // Paso 1: Calcular grupos
   const numGrupos = calcularNumGrupos(TOTAL_INICIALES)
 
-  it('genera ~17 grupos para 50 jugadores (50/3 ≈ 17)', () => {
-    expect(numGrupos).toBe(17)
+  // Antes eran 17 grupos (50/3), que dejaba grupos de 2 y un cuadro de 64 con
+  // 30 BYEs. Ahora se eligen los grupos mirando el cuadro: 16 grupos de 3-4
+  // dejan 32 clasificados, o sea un cuadro exacto y sin un solo BYE.
+  it('genera 16 grupos para 50 jugadores, para que el cuadro quede exacto', () => {
+    expect(numGrupos).toBe(16)
   })
 
   // Paso 2: Distribuir con serpenteo
@@ -83,10 +86,10 @@ describe('Simulación torneo 50 jugadores', () => {
     grupos.push({ id: `grupo_${String.fromCharCode(65 + g)}`, jugadores: jugs })
   }
 
-  it('cada grupo tiene 2-3 jugadores', () => {
+  it('cada grupo tiene 3-4 jugadores, nunca 2', () => {
     for (const g of grupos) {
-      expect(g.jugadores.length).toBeGreaterThanOrEqual(2)
-      expect(g.jugadores.length).toBeLessThanOrEqual(3)
+      expect(g.jugadores.length).toBeGreaterThanOrEqual(3)
+      expect(g.jugadores.length).toBeLessThanOrEqual(4)
     }
   })
 
@@ -129,11 +132,11 @@ describe('Simulación torneo 50 jugadores', () => {
     segundos.push(stats.stats[1].jugador)
   }
 
-  it('se clasifican exactamente 34 jugadores (17 grupos × 2)', () => {
-    expect(primeros.length).toBe(17)
-    expect(segundos.length).toBe(17)
+  it('se clasifican exactamente 32 jugadores (16 grupos × 2)', () => {
+    expect(primeros.length).toBe(16)
+    expect(segundos.length).toBe(16)
     const todosClasificados = [...primeros, ...segundos]
-    expect(new Set(todosClasificados.map(j => j.id)).size).toBe(34)
+    expect(new Set(todosClasificados.map(j => j.id)).size).toBe(32)
   })
 
   it('cabezas de serie clasifican como primeros de su grupo', () => {
@@ -143,28 +146,31 @@ describe('Simulación torneo 50 jugadores', () => {
 
   // Paso 6: Generar bracket con regla espejo
   const bracket = generarBracketConAvance(primeros, segundos, cabeza1.id, cabeza2.id)
-  const tamBracket = calcularTamanoBracket(34)
+  const tamBracket = calcularTamanoBracket(primeros.length + segundos.length)
   const faseInicial = determinarFaseInicial(tamBracket)
 
-  it('bracket tiene tamaño 64 (siguiente potencia de 2 ≥ 34)', () => {
-    expect(tamBracket).toBe(64)
+  // La frontera entre las dos mitades sale del propio cuadro. Estaba fijada en
+  // 16 —correcto solo para un cuadro de 64— y al cambiar el reparto de grupos
+  // rompía por el número, no porque la regla espejo fallara.
+  const mitadDe = (orden: number) => (orden < bracket.length / 2 ? 'sup' : 'inf')
+
+  it('bracket tiene tamaño 32 (32 clasificados, potencia de 2 exacta)', () => {
+    expect(tamBracket).toBe(32)
   })
 
-  it('fase inicial es 32vos', () => {
-    expect(faseInicial).toBe('32vos')
+  it('fase inicial es 16vos', () => {
+    expect(faseInicial).toBe('16vos')
   })
 
-  it('bracket genera 32 partidos (64/2)', () => {
-    expect(bracket.length).toBe(32)
+  it('bracket genera 16 partidos (32/2)', () => {
+    expect(bracket.length).toBe(16)
   })
 
-  it('BYEs correctos: 30 partidos sin BYE (34-30=4 partidos que no son bye... 64-34=30 byes)', () => {
+  it('no hay ni un BYE: los 32 clasificados llenan el cuadro', () => {
     const conBye = bracket.filter(p => p.jugadorB === null)
     const sinBye = bracket.filter(p => p.jugadorB !== null)
-    expect(conBye.length).toBe(30) // 64-34=30 BYEs
-    expect(sinBye.length).toBe(2)  // solo 4 jugadores juegan en 32vos (2 partidos reales)
-    // Los BYE tienen ganador automático
-    expect(conBye.every(p => p.ganador != null)).toBe(true)
+    expect(conBye.length).toBe(0)
+    expect(sinBye.length).toBe(16)
   })
 
   it('cabezas de serie en mitades opuestas del bracket', () => {
@@ -172,9 +178,7 @@ describe('Simulación torneo 50 jugadores', () => {
     const matchC2 = bracket.find(p => p.jugadorA === cabeza2.id)
     expect(matchC1).toBeDefined()
     expect(matchC2).toBeDefined()
-    const mitadC1 = matchC1!.orden < 16 ? 'sup' : 'inf'
-    const mitadC2 = matchC2!.orden < 16 ? 'sup' : 'inf'
-    expect(mitadC1).not.toBe(mitadC2)
+    expect(mitadDe(matchC1!.orden)).not.toBe(mitadDe(matchC2!.orden))
   })
 
   it('regla espejo: 1° y 2° del mismo grupo en mitades opuestas', () => {
@@ -183,9 +187,7 @@ describe('Simulación torneo 50 jugadores', () => {
       const p2 = segundos[g]
       const posP1 = bracket.find(p => p.jugadorA === p1.id || p.jugadorB === p1.id)!
       const posP2 = bracket.find(p => p.jugadorA === p2.id || p.jugadorB === p2.id)!
-      const mitadP1 = posP1.orden < 16 ? 'sup' : 'inf'
-      const mitadP2 = posP2.orden < 16 ? 'sup' : 'inf'
-      expect(mitadP1).not.toBe(mitadP2)
+      expect(mitadDe(posP1.orden)).not.toBe(mitadDe(posP2.orden))
     }
   })
 
@@ -293,29 +295,31 @@ describe('Simulación torneo 50 jugadores', () => {
       }
     })
 
-    it('bracket se regenera correctamente con 18 grupos (17+1 tardío)', () => {
+    it('bracket se regenera correctamente con 17 grupos (16+1 tardío)', () => {
       // Simula el bracket con el grupo extra
-      const numGruposConTardios = numGrupos + 1 // 18
+      const numGruposConTardios = numGrupos + 1 // 17
 
       // Agregar clasificados del grupo tardío
       const primerosTodos = [...primeros, { id: 'j53', nombre: 'Jugador 53' }]
       const segundosTodos = [...segundos, { id: 'j52', nombre: 'Jugador 52' }]
 
       const totalClasificados = primerosTodos.length + segundosTodos.length
-      expect(totalClasificados).toBe(36) // 18×2
+      expect(totalClasificados).toBe(34) // 17×2
 
+      // Un grupo tardío desbalancea el cuadro: 34 clasificados no caben en 32 y
+      // saltan a 64, con 30 BYEs. Es exactamente el caso que la ronda de avance
+      // viene a resolver.
       const tamNuevo = calcularTamanoBracket(totalClasificados)
-      expect(tamNuevo).toBe(64) // sigue siendo 64
+      expect(tamNuevo).toBe(64)
 
       const bracketNuevo = generarBracketConAvance(
         primerosTodos, segundosTodos, cabeza1.id, cabeza2.id
       )
 
-      // 64 slots, 36 jugadores, 28 BYEs
       const conBye = bracketNuevo.filter(p => p.jugadorB === null)
       const sinBye = bracketNuevo.filter(p => p.jugadorB !== null)
-      expect(conBye.length).toBe(28)
-      expect(sinBye.length).toBe(4) // 36-28=8 jugadores en 4 partidos reales
+      expect(conBye.length).toBe(30)
+      expect(sinBye.length).toBe(2) // 34-30=4 jugadores en 2 partidos reales
 
       // BYEs tienen ganador automático
       expect(conBye.every(p => p.ganador != null)).toBe(true)
@@ -391,8 +395,19 @@ describe('Simulación torneo 50 jugadores', () => {
   // ─── Paso 10: Verificar la prellave (BYEs avanzan) ──────────────────────
 
   describe('prellave / BYEs', () => {
+    // El cuadro principal de esta simulación ya no tiene BYEs: 50 jugadores
+    // arman 16 grupos y sus 32 clasificados llenan un cuadro de 32 exacto.
+    // Para seguir probando la mecánica del BYE se usa un escenario que sí los
+    // produce —17 grupos, 34 clasificados en un cuadro de 64—, que es
+    // justamente el caso que la ronda de avance tiene que venir a reemplazar.
+    const primeros17 = [...primeros, { id: 'j53', nombre: 'Jugador 53' }]
+    const segundos17 = [...segundos, { id: 'j52', nombre: 'Jugador 52' }]
+    const bracketConByes = generarBracketConAvance(
+      primeros17, segundos17, cabeza1.id, cabeza2.id,
+    )
+
     it('jugadores con BYE avanzan automáticamente a la siguiente ronda', () => {
-      const byeMatches = bracket.filter(p => p.jugadorB === null)
+      const byeMatches = bracketConByes.filter(p => p.jugadorB === null)
       // Todos tienen ganador = jugadorA
       expect(byeMatches.every(p => p.ganador === p.jugadorA)).toBe(true)
       expect(byeMatches.length).toBeGreaterThan(0)
@@ -401,8 +416,8 @@ describe('Simulación torneo 50 jugadores', () => {
     it('los cabezas de serie reciben BYE (son los sembrados más fuertes)', () => {
       // 34 jugadores en bracket 64 = 30 BYEs. Los 2 cabezas (sembrados 1 y 2)
       // reciben BYE y avanzan automáticamente.
-      const matchCabeza1 = bracket.find(p => p.jugadorA === cabeza1.id)
-      const matchCabeza2 = bracket.find(p => p.jugadorA === cabeza2.id)
+      const matchCabeza1 = bracketConByes.find(p => p.jugadorA === cabeza1.id)
+      const matchCabeza2 = bracketConByes.find(p => p.jugadorA === cabeza2.id)
       expect(matchCabeza1).toBeDefined()
       expect(matchCabeza2).toBeDefined()
       expect(matchCabeza1!.jugadorB).toBeNull()
@@ -412,8 +427,8 @@ describe('Simulación torneo 50 jugadores', () => {
     })
 
     it('en 16vos todos los que tenían BYE ya tienen rival', () => {
-      const byeGanadores = bracket.filter(p => p.ganador).map(p => p.ganador!)
-      const sinByeGanadores = bracket.filter(p => !p.ganador && p.jugadorB).map(p => {
+      const byeGanadores = bracketConByes.filter(p => p.ganador).map(p => p.ganador!)
+      const sinByeGanadores = bracketConByes.filter(p => !p.ganador && p.jugadorB).map(p => {
         // Simular: gana el de mayor número
         const numA = parseInt(p.jugadorA.replace('j', ''))
         const numB = parseInt(p.jugadorB!.replace('j', ''))
