@@ -1,4 +1,5 @@
--- Ensayo zonal (2 eventos, 12+12 inscritos) en el club juez MET2 Costa.
+-- Ensayo chico (2 eventos × 12). Para el zonal completo estilo Excel:
+--   docs/pegar-zonal-met2-excel.sql
 -- NO toca Buin. Idempotente: borra el campeonato de ensayo y lo recrea.
 -- NO usa _migracion_nueva (seed de datos).
 --
