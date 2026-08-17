@@ -1,5 +1,5 @@
--- Ensayo chico (2 eventos × 12). Para el zonal completo estilo Excel:
---   docs/pegar-zonal-met2-excel.sql
+-- Ensayo chico (2 eventos × 12). Para el zonal REAL del Excel Koidan:
+--   docs/pegar-zonal-met2-excel.sql  (319 inscritos, ver en /torneo-oficial/vivo/MET2-20)
 -- NO toca Buin. Idempotente: borra el campeonato de ensayo y lo recrea.
 -- NO usa _migracion_nueva (seed de datos).
 --
