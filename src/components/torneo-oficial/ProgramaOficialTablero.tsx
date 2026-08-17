@@ -231,7 +231,9 @@ function PartidoCard({ p }: { p: CeldaProgramaOficial }) {
       }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: dc, flexShrink: 0 }} />
         <span style={{ fontSize: 10, color: dc, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-          {p.eventoNombre ? `${p.eventoNombre} · ${p.faseLabel}` : p.faseLabel}
+          {p.eventoNombre && !String(p.faseLabel).includes(p.eventoNombre)
+            ? `${p.eventoNombre} · ${p.faseLabel}`
+            : p.faseLabel}
         </span>
       </div>
 
@@ -301,7 +303,9 @@ function SinProgramarLista({ items }: { items: SinProgramarOficial[] }) {
               background: '#f8fafc', padding: '8px 12px', minWidth: 170,
             }}>
               <div style={{ fontSize: 10, color: dc, fontWeight: 700, textTransform: 'uppercase', marginBottom: 3 }}>
-                {p.eventoNombre ? `${p.eventoNombre} · ${p.faseLabel}` : p.faseLabel}
+                {p.eventoNombre && !String(p.faseLabel).includes(p.eventoNombre)
+            ? `${p.eventoNombre} · ${p.faseLabel}`
+            : p.faseLabel}
               </div>
               <div style={{ fontSize: 12, fontWeight: 600, color: torneoUi.text }}>
                 {p.jugadorA} vs {p.jugadorB}

@@ -47,6 +47,35 @@ describe('conflictosAlAsignar', () => {
 })
 
 describe('detectarConflictosProgramaMulti', () => {
+  it('no marca conflicto los partidos del mismo grupo a la misma hora', () => {
+    const t = '2026-06-20T12:00:00.000Z'
+    const partidos: PartidoProgramaMulti[] = [
+      { id: 'g1', inscritoA: 'ia', inscritoB: 'ib', mesa: 3, programadoEn: t, grupoId: 'G', claveJugadorA: 'rios', claveJugadorB: 'arancibia' },
+      { id: 'g2', inscritoA: 'ia', inscritoB: 'ic', mesa: 3, programadoEn: t, grupoId: 'G', claveJugadorA: 'rios', claveJugadorB: 'ugas' },
+      { id: 'g3', inscritoA: 'ib', inscritoB: 'ic', mesa: 3, programadoEn: t, grupoId: 'G', claveJugadorA: 'arancibia', claveJugadorB: 'ugas' },
+    ]
+    expect(detectarConflictosProgramaMulti(partidos)).toHaveLength(0)
+  })
+
+  it('grupo de 4 en dos mesas a la misma hora tampoco es conflicto', () => {
+    const t = '2026-06-20T14:00:00.000Z'
+    const partidos: PartidoProgramaMulti[] = [
+      { id: 'a1', inscritoA: 'p1', inscritoB: 'p2', mesa: 11, programadoEn: t, grupoId: 'G37', claveJugadorA: 'a', claveJugadorB: 'b' },
+      { id: 'a2', inscritoA: 'p3', inscritoB: 'p4', mesa: 12, programadoEn: t, grupoId: 'G37', claveJugadorA: 'c', claveJugadorB: 'd' },
+      { id: 'a3', inscritoA: 'p1', inscritoB: 'p3', mesa: 11, programadoEn: t, grupoId: 'G37', claveJugadorA: 'a', claveJugadorB: 'c' },
+    ]
+    expect(detectarConflictosProgramaMulti(partidos)).toHaveLength(0)
+  })
+
+  it('sigue marcando dos grupos distintos en la misma mesa', () => {
+    const t = '2026-06-20T12:00:00.000Z'
+    const partidos: PartidoProgramaMulti[] = [
+      { id: 'g1', inscritoA: 'a', inscritoB: 'b', mesa: 3, programadoEn: t, grupoId: 'G1', claveJugadorA: 'a', claveJugadorB: 'b' },
+      { id: 'h1', inscritoA: 'c', inscritoB: 'd', mesa: 3, programadoEn: t, grupoId: 'G2', claveJugadorA: 'c', claveJugadorB: 'd' },
+    ]
+    expect(detectarConflictosProgramaMulti(partidos).some(x => x.tipo === 'mesa')).toBe(true)
+  })
+
   it('detecta mismo jugador_id entre eventos distintos', () => {
     const partidos: PartidoProgramaMulti[] = [
       {

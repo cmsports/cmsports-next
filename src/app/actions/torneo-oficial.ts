@@ -2063,13 +2063,14 @@ export async function listarConflictosProgramaOficial(params: {
   }
 
   const { data: todos } = await db.from('oficial_partidos')
-    .select('id, evento_id, inscrito_a_id, inscrito_b_id, mesa, programado_en, numero_ittf')
+    .select('id, evento_id, grupo_id, inscrito_a_id, inscrito_b_id, mesa, programado_en, numero_ittf')
     .eq('club_id', perfil.club_id)
     .in('evento_id', eventoIds)
     .not('programado_en', 'is', null)
 
   const conflictos = detectarConflictosProgramaMulti((todos || []).map((p: {
-    id: string; evento_id: string; inscrito_a_id: string | null; inscrito_b_id: string | null
+    id: string; evento_id: string; grupo_id: string | null
+    inscrito_a_id: string | null; inscrito_b_id: string | null
     mesa: number | null; programado_en: string | null; numero_ittf?: number | null
   }) => {
     const na = p.inscrito_a_id ? (nombrePorInscrito.get(p.inscrito_a_id) || '?') : '?'
@@ -2078,6 +2079,7 @@ export async function listarConflictosProgramaOficial(params: {
     return {
       id: p.id,
       eventoId: p.evento_id,
+      grupoId: p.grupo_id,
       inscritoA: p.inscrito_a_id,
       inscritoB: p.inscrito_b_id,
       mesa: p.mesa,

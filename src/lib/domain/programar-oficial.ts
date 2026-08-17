@@ -144,9 +144,10 @@ export function detectarConflictosPrograma(partidos: PartidoProgramaSlot[]): Con
 
       const pairKey = [a.id, b.id].sort().join('|')
       if (visto.has(pairKey)) continue
+      // Un grupo ocupa la mesa ~70 min: los 3/6 partidos comparten hora de inicio.
+      if (a.grupoId && b.grupoId && a.grupoId === b.grupoId) continue
 
       if (a.mesa === b.mesa) {
-        if (a.grupoId && b.grupoId && a.grupoId === b.grupoId) continue
         visto.add(pairKey)
         out.push({
           partidoId: a.id,
@@ -238,9 +239,10 @@ export function detectarConflictosProgramaMulti(
 
       const pairKey = [a.id, b.id].sort().join('|')
       if (visto.has(pairKey)) continue
+      // Bloque de grupo (Prog Koidan): no es conflicto que los tres se sienten a la misma hora.
+      if (a.grupoId && b.grupoId && a.grupoId === b.grupoId) continue
 
       if (a.mesa === b.mesa) {
-        if (a.grupoId && b.grupoId && a.grupoId === b.grupoId) continue
         visto.add(pairKey)
         out.push({
           partidoId: a.id,
