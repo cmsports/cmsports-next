@@ -111,15 +111,17 @@ export default function PartidoOficialRow(props: {
     <>
       <div style={fila}>
         <span style={{
-          flex: 1, textAlign: 'right', fontSize: 12,
+          flex: '1 1 80px', minWidth: 0, textAlign: 'right', fontSize: 12,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           color: p.ganador_id === p.inscrito_a_id ? torneoUi.success : torneoUi.text,
           fontWeight: p.ganador_id === p.inscrito_a_id ? 600 : 400,
         }}>
           {props.nombreA}
         </span>
-        <span style={{ color: torneoUi.hint, fontSize: 10, padding: '0 4px' }}>vs</span>
+        <span style={{ color: torneoUi.hint, fontSize: 10, padding: '0 4px', flexShrink: 0 }}>vs</span>
         <span style={{
-          flex: 1, fontSize: 12,
+          flex: '1 1 80px', minWidth: 0, fontSize: 12,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           color: p.ganador_id === p.inscrito_b_id ? torneoUi.success : torneoUi.text,
           fontWeight: p.ganador_id === p.inscrito_b_id ? 600 : 400,
         }}>
@@ -127,11 +129,11 @@ export default function PartidoOficialRow(props: {
         </span>
 
         {p.mesa ? (
-          <span style={{ fontSize: 10, color: torneoUi.muted, minWidth: 28 }}>M{p.mesa}</span>
-        ) : <span style={{ minWidth: 28 }} />}
+          <span style={{ fontSize: 10, color: torneoUi.muted, flexShrink: 0 }}>M{p.mesa}</span>
+        ) : null}
 
         {cerrado ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 120, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 'auto' }}>
             <span style={{ fontSize: 10, color: torneoUi.success }} title={p.motivo_cierre || undefined}>
               ✓ {formatearSets(p.sets)}{etiqueta ? ` ${etiqueta}` : ''}
             </span>
@@ -140,9 +142,9 @@ export default function PartidoOficialRow(props: {
             )}
           </div>
         ) : esBye ? (
-          <span style={{ fontSize: 10, color: torneoUi.muted, minWidth: 120, textAlign: 'right' }}>BYE</span>
+          <span style={{ fontSize: 10, color: torneoUi.muted, flexShrink: 0, marginLeft: 'auto' }}>BYE</span>
         ) : props.puedeCorregir ? (
-          <div style={{ display: 'flex', gap: 4, minWidth: 120, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginLeft: 'auto' }}>
             <button type="button" onClick={() => void irAlMarcador()} disabled={abriendoMarcador} style={btnMarcador} title="Marcador en vivo (tablet técnico)">
               {abriendoMarcador ? '…' : '🎯 En vivo'}
             </button>
@@ -151,7 +153,7 @@ export default function PartidoOficialRow(props: {
             </button>
           </div>
         ) : (
-          <span style={{ fontSize: 10, color: torneoUi.hint, minWidth: 120, textAlign: 'right' }}>Pendiente</span>
+          <span style={{ fontSize: 10, color: torneoUi.hint, flexShrink: 0, marginLeft: 'auto' }}>Pendiente</span>
         )}
       </div>
 
@@ -314,9 +316,11 @@ export default function PartidoOficialRow(props: {
 const fila: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 8,
+  flexWrap: 'wrap',
+  gap: 6,
   padding: '6px 0',
   borderBottom: '1px solid #f1f5f9',
+  minWidth: 0,
 }
 
 const btnMarcador: CSSProperties = {

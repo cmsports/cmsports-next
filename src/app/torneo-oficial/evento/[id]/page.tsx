@@ -840,7 +840,7 @@ export default function EventoOficialPage() {
 
   return (
     <AppLayout perfil={perfil}>
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: '24px 16px 80px' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px 80px', width: '100%', boxSizing: 'border-box' }}>
         <button type="button" onClick={() => router.push(camp ? `/torneo-oficial/${camp.id}` : '/torneo-oficial')} style={btnBack}>
           ← {camp?.nombre || 'Volver'}
         </button>
@@ -980,14 +980,19 @@ export default function EventoOficialPage() {
                     {' '}o <strong style={{ color: text }}>Sets</strong> a mano — ambos válidos.
                   </p>
                 )}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))',
+                gap: 16,
+                marginBottom: 16,
+              }}>
                 {grupos.map(g => {
                   const stats = statsGrupo(g.id)
                   const partidosG = partidosPorGrupo.get(g.id) ?? []
                   const todosCerrados = partidosG.length > 0 && partidosG.every(p => p.ganador_id)
                   return (
-                    <div key={g.id} style={{ ...card, overflow: 'hidden' }}>
-                      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={g.id} style={{ ...card, minWidth: 0, overflow: 'visible' }}>
+                      <div style={{ padding: '12px 14px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: 14, fontWeight: 600, color: text }}>Grupo {g.nombre}</span>
                         {todosCerrados && (
                           <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '2px 8px', borderRadius: 10, fontSize: 10 }}>✓ Cerrado</span>
@@ -995,18 +1000,19 @@ export default function EventoOficialPage() {
                       </div>
                       {stats.map((s, idx) => (
                         <div key={s.inscritoId} style={{
-                          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+                          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
                           borderBottom: '1px solid #f1f5f9',
                           borderLeft: `3px solid ${idx === 0 ? '#d97706' : idx === 1 ? '#94a3b8' : 'transparent'}`,
+                          minWidth: 0,
                         }}>
                           <span style={{ fontSize: 14 }}>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '—'}</span>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 13, color: text }}>{nombrePorId.get(s.inscritoId)}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, color: text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombrePorId.get(s.inscritoId)}</div>
                             <div style={{ fontSize: 10, color: muted }}>{s.pg}G {s.pp}P · {s.pts}pts</div>
                           </div>
                         </div>
                       ))}
-                      <div style={{ padding: '8px 16px' }}>
+                      <div style={{ padding: '8px 10px' }}>
                         {partidosG.map(p => {
                           const nombreA = p.inscrito_a_id ? nombrePorId.get(p.inscrito_a_id) || '?' : '?'
                           const esBye = !p.inscrito_b_id
