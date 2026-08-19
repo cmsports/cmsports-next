@@ -191,6 +191,49 @@ mismo_dia_repetido AS (
     HAVING count(*) > 1
   ) q
   HAVING count(*) > 0
+),
+
+-- ── 12. CENTINELA: cerrar vigencia con hoy ───────────────────────────────
+-- Generaliza el bug de traspasar_jugador (migracion 202). vigente_hasta es el
+-- ULTIMO dia en que vale, asi que cerrar con hoy deja a la persona viva hasta
+-- medianoche y aparece en dos bloques a la vez. Se cierra con AYER.
+cierre_con_hoy AS (
+  SELECT '2 REVISAR',
+         'Funcion cierra vigencia con hoy (debe ser ayer)',
+         p.proname::text,
+         'cerrar con hoy no saca a nadie: ver src/lib/domain/vigencia.ts'::text
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.prokind = 'f'
+    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+    AND pg_get_functiondef(p.oid) ~* 'vigente_hastas*=s*(current_date|now())'
+),
+
+-- ── 13. CENTINELA: fechas de vigencia invertidas ─────────────────────────
+-- Si aparece, algo cerro una fila antes de que empezara a valer.
+vigencia_invertida AS (
+  SELECT '1 CRITICO',
+         'Vigencia con fechas invertidas',
+         (count(*)::text || ' filas en bloque_jugadores'),
+         'vigente_hasta anterior a vigente_desde'::text
+  FROM bloque_jugadores
+  WHERE vigente_hasta IS NOT NULL AND vigente_hasta < vigente_desde
+  HAVING count(*) > 0
+),
+
+-- ── 14. CENTINELA: respaldos con politica de acceso ──────────────────────
+-- Las tablas _respaldo_* guardan la plata rescatada del desastre de la 089.
+-- No deben tener ninguna politica: solo se leen con la service key, que se
+-- salta RLS. Una politica ahi es una puerta que no deberia existir.
+respaldo_con_politica AS (
+  SELECT '1 CRITICO',
+         'Tabla de respaldo con politica de acceso',
+         (cls.relname || '.' || pol.polname)::text,
+         'los respaldos no se leen por la API, solo con service_role'::text
+  FROM pg_policy pol
+  JOIN pg_class cls ON cls.oid = pol.polrelid
+  JOIN pg_namespace n ON n.oid = cls.relnamespace
+  WHERE n.nspname = 'public' AND cls.relname LIKE '_respaldo_%'
 )
 
 SELECT * FROM sin_rls
@@ -204,4 +247,27 @@ UNION ALL SELECT * FROM fecha_utc
 UNION ALL SELECT * FROM movimiento_huerfano
 UNION ALL SELECT * FROM pago_sin_ingreso
 UNION ALL SELECT * FROM mismo_dia_repetido
+UNION ALL SELECT * FROM cierre_con_hoy
+UNION ALL SELECT * FROM vigencia_invertida
+UNION ALL SELECT * FROM respaldo_con_politica
 ORDER BY 1, 2, 3;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  CONSULTA APARTE — correr por separado, DESPUES de la de arriba.
+--
+--  Va suelta a proposito: lee auth.users, y si tu version de Supabase no
+--  tuviera la columna is_anonymous, esto falla. Dentro de la consulta
+--  principal, ese fallo se llevaria puestos los otros 14 chequeos.
+--
+--  Que busca: el codigo NUNCA llama signInAnonymously (verificado con grep
+--  sobre todo src/). Si aparecen usuarios anonimos, es que el inicio de
+--  sesion anonimo esta prendido en el panel y alguien lo uso.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+SELECT count(*) AS usuarios_anonimos,
+       CASE WHEN count(*) > 0
+            THEN 'Revisar Authentication > Sign In / Providers'
+            ELSE 'sin usuarios anonimos' END AS que_hacer
+FROM auth.users
+WHERE is_anonymous IS TRUE;
