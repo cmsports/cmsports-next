@@ -162,7 +162,7 @@ export default function LandingPublica() {
   return (
     <div className={styles.page} data-landing>
       <header className={`${styles.header} ${scrolled ? styles.headerScrolled : ''}`}>
-        <Link href="/vitrina" className={styles.brand} onClick={cerrarMenu}>
+        <Link href="/" className={styles.brand} onClick={cerrarMenu}>
           <Image
             src="/logo.png"
             alt="CMsports"

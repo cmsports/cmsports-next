@@ -2,7 +2,7 @@
   "name": "CmSports",
   "short_name": "CmSports",
   "description": "Plataforma de gestión deportiva para clubes de tenis de mesa",
-  "start_url": "/",
+  "start_url": "/login",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
