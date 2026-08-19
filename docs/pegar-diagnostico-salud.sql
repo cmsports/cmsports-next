@@ -172,19 +172,22 @@ pago_sin_ingreso AS (
   HAVING count(*) > 0
 ),
 
--- ── 11. REGLA DEL PROYECTO: jugador en dos bloques a la vez ───────────────
--- Los bloques son la fuente de verdad de días y sede. Estar vigente en dos a
--- la vez descuadra la asistencia y el cobro.
-doble_bloque AS (
+-- ── 11. REGLA DEL PROYECTO: jugador repetido en el MISMO dia ─────────────
+-- Ojo: tener varios bloques vigentes es NORMAL —uno por cada dia que entrena—,
+-- asi que contar bloques a secas no dice nada. Lo que si es un error es estar
+-- dos veces en el MISMO dia: eso descuadra la lista de asistencia de esa
+-- jornada. (La primera version de este chequeo marcaba 116 jugadores sanos.)
+mismo_dia_repetido AS (
   SELECT '2 REVISAR',
-         'Jugador vigente en 2+ bloques',
-         (count(*)::text || ' jugadores'),
-         'los bloques definen dias y sede: no puede estar en dos'::text
+         'Jugador con 2 bloques el mismo dia',
+         (count(*)::text || ' casos'),
+         'descuadra la lista de asistencia de esa jornada'::text
   FROM (
-    SELECT bj.jugador_id
+    SELECT bj.jugador_id, bh.dia_semana
     FROM bloque_jugadores bj
-    WHERE bj.vigente_hasta IS NULL
-    GROUP BY bj.jugador_id
+    JOIN bloques_horario bh ON bh.id = bj.bloque_id
+    WHERE bj.vigente_hasta IS NULL AND bh.vigente_hasta IS NULL
+    GROUP BY bj.jugador_id, bh.dia_semana
     HAVING count(*) > 1
   ) q
   HAVING count(*) > 0
@@ -200,5 +203,5 @@ UNION ALL SELECT * FROM realtime_sin_pk
 UNION ALL SELECT * FROM fecha_utc
 UNION ALL SELECT * FROM movimiento_huerfano
 UNION ALL SELECT * FROM pago_sin_ingreso
-UNION ALL SELECT * FROM doble_bloque
+UNION ALL SELECT * FROM mismo_dia_repetido
 ORDER BY 1, 2, 3;
