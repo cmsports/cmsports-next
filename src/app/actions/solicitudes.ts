@@ -4,6 +4,7 @@ import { requireAdminClub } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { usuarioLoginDe } from '@/lib/domain/credenciales'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 export async function aprobarSolicitud(params: {
   solicitudId: string
@@ -34,16 +35,32 @@ export async function aprobarSolicitud(params: {
   matriculaPagada?: boolean
   /** Monto cobrado. 0 = se le eximió. Solo se usa si matriculaPagada. */
   matriculaMonto?: number | null
+  /**
+   * Primer mes que se le cobra, como 'YYYY-MM'. Si no viene, el mes en curso.
+   *
+   * No se deduce de la fecha de la ficha a propósito: desde que una visita que
+   * se hace socia conserva su ficha (para no perder ranking ni pagos), esa
+   * ficha puede tener meses de antigüedad. Quien jugó un torneo en junio y se
+   * hace socio en septiembre no debe arrastrar cuotas desde junio.
+   */
+  cobrarDesde?: string
 }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
+
+  // Día 1 del mes elegido. Se valida el formato en vez de confiar: un valor
+  // suelto acá decide desde cuándo se le cobra a una persona.
+  const mesElegido = params.cobrarDesde?.trim()
+  const primerMesCobrable = /^\d{4}-\d{2}$/.test(mesElegido ?? '')
+    ? `${mesElegido}-01`
+    : `${fechaChile().slice(0, 7)}-01`
 
   const {
     solicitudId, nombre, rut, email, telefono,
     fecha_nacimiento, direccion, comuna,
     contacto_emergencia_nombre, contacto_emergencia_telefono, indicaciones_medicas,
     talla_polera, talla_short,
-    password, bloqueIds, matriculaPagada, matriculaMonto,
+    password, bloqueIds, matriculaPagada, matriculaMonto, cobrarDesde,
     ...planFields
   } = params
   const emailNormalizado = email.trim().toLowerCase()
@@ -76,6 +93,7 @@ export async function aprobarSolicitud(params: {
     ...planFields,
     estado: 'activo',
     es_externo: false,
+    cobrar_desde: primerMesCobrable,
     // A diferencia de los jugadores que ya venían (que la migración 138 dio
     // por pagada), el que entra ahora solo queda marcado si de verdad la pagó
     // en este momento. El ingreso en Finanzas se registra más abajo con el RPC.

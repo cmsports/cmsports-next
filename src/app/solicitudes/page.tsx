@@ -81,6 +81,10 @@ export default function SolicitudesPage() {
   // si la pagó en este momento. Los jugadores que ya venían quedaron marcados
   // por la migración 138, que es otra cosa.
   const [matriculaForm, setMatriculaForm] = useState({ pagada: false, monto: '' })
+  // Desde qué mes se le empieza a cobrar. Por defecto el mes en curso, que es
+  // lo normal, pero se puede correr: alguien que entra a fin de mes y arranca
+  // en septiembre no tiene por qué pagar agosto.
+  const [cobrarDesde, setCobrarDesde] = useState(fechaChile().slice(0, 7))
   // Los grupos se eligen al aprobar: si entra sin bloque queda invisible para
   // la asistencia y no puede marcarse solo desde la app.
   const [bloquesClub, setBloquesClub] = useState<BloqueHorario[]>([])
@@ -166,6 +170,7 @@ export default function SolicitudesPage() {
       bloqueIds: [...bloquesSel],
       matriculaPagada: matriculaForm.pagada,
       matriculaMonto: matriculaForm.pagada ? montoIngresado(matriculaForm.monto) : null,
+      cobrarDesde,
     })
     setAprobando(false)
     if (res.error) { setErrorAprobar(res.error); return }
@@ -484,6 +489,22 @@ export default function SolicitudesPage() {
               </div>
               <input type="number" placeholder="Monto personalizado" style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
                 value={planForm.mensualidad} onChange={e => setPlanForm(f => ({ ...f, mensualidad: e.target.value }))} />
+
+              {/* Desde cuándo se le cobra. Se pregunta acá y no se deduce de
+                  la fecha de la ficha: desde que una visita que se hace socia
+                  conserva su ficha, esa fecha puede ser de hace meses y le
+                  arrastraría cuotas que nunca le tocaron. */}
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #e2e8f0' }}>
+                <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5 }}>
+                  Primera cuota que se le cobra
+                </label>
+                <input type="month" value={cobrarDesde}
+                  onChange={e => setCobrarDesde(e.target.value)}
+                  style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none' }} />
+                <div style={{ fontSize: 11, color: hint, marginTop: 5 }}>
+                  No se le generan cuotas de meses anteriores a este.
+                </div>
+              </div>
 
               {/* Matrícula: se pregunta acá porque es el momento en que se
                   cobra. Si no la paga ahora, la ficha queda pendiente y se

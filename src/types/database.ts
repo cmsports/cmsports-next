@@ -202,6 +202,7 @@ export interface Database {
           talla_short: string | null
           matricula_pagada: boolean
           matricula_monto: number | null
+          cobrar_desde: string | null
           matricula_fecha: string | null
         }
         Insert: {
@@ -242,6 +243,7 @@ export interface Database {
           talla_short?: string | null
           matricula_pagada?: boolean
           matricula_monto?: number | null
+          cobrar_desde?: string | null
           matricula_fecha?: string | null
         }
         Update: {
@@ -282,6 +284,7 @@ export interface Database {
           talla_short?: string | null
           matricula_pagada?: boolean
           matricula_monto?: number | null
+          cobrar_desde?: string | null
           matricula_fecha?: string | null
         }
         Relationships: [
