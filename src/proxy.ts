@@ -99,6 +99,17 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Vitrina pública en la raíz. No va en publicRoutes: startsWith('/')
+  // matchearía todas las rutas. Con sesión, el usuario va a su pantalla.
+  if (pathname === '/') {
+    if (user) {
+      const url = request.nextUrl.clone()
+      url.pathname = getRolRedirect(perfil?.rol ?? null)
+      return NextResponse.redirect(url)
+    }
+    return supabaseResponse
+  }
+
   // Public routes — allow without auth
   if (publicRoutes.some((r) => pathname.startsWith(r))) {
     if (user) {

@@ -27,6 +27,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  async redirects() {
+    return [
+      // La vitrina quedó en /; el link viejo del PR de preview sigue funcionando.
+      { source: '/vitrina', destination: '/', permanent: true },
+    ]
+  },
   async headers() {
     return [
       {

@@ -5,6 +5,7 @@ import CampoContrasena from '@/components/CampoContrasena'
 import { createClient } from '@/lib/supabase/client'
 import { Mail, Lock, ArrowRight, Loader2, Phone, IdCard } from 'lucide-react'
 import Image from 'next/image'
+import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
 
 export default function LoginPage() {
@@ -70,15 +71,17 @@ export default function LoginPage() {
         <div style={{ position: 'absolute', top: '40%', right: 40, width: 80, height: 80, borderRadius: '50%', background: 'rgba(249,115,22,0.4)' }} />
 
         <div style={{ position: 'relative', textAlign: 'center', maxWidth: 360 }}>
-          <div style={{
-            width: 72, height: 72, borderRadius: 16,
-            background: 'rgba(255,255,255,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 24px',
-          }}>
-            <Image src="/logo.png" alt="CmSports" width={44} height={44} style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
-          </div>
-          <h1 style={{ fontSize: 32, fontWeight: 700, color: '#ffffff', marginBottom: 8 }}>CmSports</h1>
+          <Link href="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: 16,
+              background: 'rgba(255,255,255,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 24px',
+            }}>
+              <Image src="/logo.png" alt="CmSports" width={44} height={44} style={{ objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+            </div>
+            <h1 style={{ fontSize: 32, fontWeight: 700, color: '#ffffff', marginBottom: 8 }}>CmSports</h1>
+          </Link>
           <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.6 }}>
             Plataforma de gestión deportiva para clubes
           </p>
@@ -111,6 +114,16 @@ export default function LoginPage() {
       }} className="login-form-panel">
         <div style={{ width: '100%', maxWidth: 340 }}>
           <div style={{ marginBottom: 32 }}>
+            <Link
+              href="/"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 12, fontWeight: 600, color: '#64748b',
+                textDecoration: 'none', marginBottom: 16,
+              }}
+            >
+              ← Inicio
+            </Link>
             <h2 style={{ fontSize: 22, fontWeight: 600, color: '#0f172a', marginBottom: 6 }}>Bienvenido</h2>
             <p style={{ fontSize: 13, color: '#64748b' }}>Ingresa tus credenciales para continuar</p>
           </div>
