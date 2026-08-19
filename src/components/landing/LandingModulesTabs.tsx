@@ -59,7 +59,7 @@ function MockFinanzas() {
         </div>
         <div>
           <small>Pendiente</small>
-          <strong className={styles.warn}>$340mil</strong>
+          <strong className={styles.warn}>$340 mil</strong>
         </div>
       </div>
       <div className={styles.bars}>
@@ -92,7 +92,7 @@ function MockTorneos() {
           <b>3</b>
         </div>
       </div>
-      <p className={styles.live}>● Público puede seguir sin cuenta</p>
+      <p className={styles.live}>● El público puede seguir sin cuenta</p>
     </div>
   )
 }
@@ -148,11 +148,11 @@ const TABS = [
     value: 'asistencia',
     content: (
       <Panel
-        title="Lista en cancha"
-        description="El profesor pasa lista desde el celular. El club ve historial y alertas."
+        title="Lista de asistencia"
+        description="El profesor toma lista desde el celular. El club ve historial y alertas."
         points={[
-          'Pase de lista por grupos',
-          'Clases extraordinarias y sin clase',
+          'Tomar lista por grupos',
+          'Clases extra y sin clase',
           'Kiosco por RUT (opcional)',
         ]}
         visual={<MockAsistencia />}
@@ -183,7 +183,7 @@ const TABS = [
         title="Competencia y ranking"
         description="Torneos internos y externos, llaves, ranking y vista en vivo."
         points={[
-          'Grupos, playoffs y final',
+          'Grupos, eliminatorias y final',
           'Espectadores sin crear cuenta',
           'Ranking general e interno',
         ]}

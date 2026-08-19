@@ -53,7 +53,7 @@ const BENEFICIOS = [
   },
   {
     title: 'Acceso web',
-    text: 'Celular, tablet o computador. Sin instalar nada.',
+    text: 'Celular, tablet o PC. Sin instalar nada.',
     icon: Smartphone,
   },
 ]
@@ -62,14 +62,14 @@ const IMPLEMENTACION = [
   { n: '01', t: 'Reunión de inicio', d: 'Levantamos datos del club, módulos y responsables.' },
   { n: '02', t: 'Configuración', d: 'Espacio del club, usuarios, parámetros y accesos.' },
   { n: '03', t: 'Carga de base', d: 'Plantel, bloques, finanzas y estructura operativa.' },
-  { n: '04', t: 'Capacitación', d: 'Charlas a administradores (y profesores si el club lo pide).' },
+  { n: '04', t: 'Capacitación', d: 'Charlas con administradores (y profesores si el club lo pide).' },
   { n: '05', t: 'Marcha blanca', d: 'Sistema listo, soporte activo y uso diario.' },
 ]
 
 const RESULTADOS = [
   {
     when: '3 meses',
-    title: 'Arranque ordenado',
+    title: 'Inicio ordenado',
     items: [
       'Plantel y accesos cargados en la plataforma',
       'Asistencia y cobros operando en el día a día',
@@ -81,7 +81,7 @@ const RESULTADOS = [
     title: 'Operación estable',
     items: [
       'Menos planillas y chats para lo operativo',
-      'Morosidad y asistencia visibles, no a ojo',
+      'Mora y asistencia visibles, no a ojo',
       'Admin y profesores con la misma información',
     ],
   },
@@ -122,12 +122,12 @@ const FUTUROS = [
 const FUNDADORES = [
   {
     nombre: 'Luis Muñoz',
-    rol: 'Co-founder',
+    rol: 'Cofundador',
     email: 'lmunozs@fen.uchile.cl',
   },
   {
     nombre: 'Benjamín Cárdenas',
-    rol: 'Co-founder',
+    rol: 'Cofundador',
     email: 'bcardenasc@fen.uchile.cl',
   },
 ]
@@ -294,7 +294,7 @@ export default function LandingPublica() {
                 />
               </CardItem>
               <CardItem translateZ={50} as="p" className={styles.card3dHint}>
-                Pasá el mouse sobre la tarjeta
+                Pase el cursor sobre la tarjeta
               </CardItem>
             </CardBody>
           </CardContainer>
@@ -307,7 +307,7 @@ export default function LandingPublica() {
           <p className={styles.sectionLabel}>El cambio</p>
           <h2 className={styles.sectionTitle}>De la planilla al sistema</h2>
           <p className={styles.sectionIntro}>
-            Dejar Excel, chats y cuadernos. Pasar a una sola plataforma para la operación del club.
+            Dejen Excel, chats y cuadernos. Pásen a una sola plataforma para la operación del club.
           </p>
           <AntesDespues />
         </div>
@@ -317,9 +317,9 @@ export default function LandingPublica() {
       <section id="demo" className={styles.section}>
         <div className={styles.sectionInner}>
           <p className={styles.sectionLabel}>Demo</p>
-          <h2 className={styles.sectionTitle}>Mirá CMsports en acción</h2>
+          <h2 className={styles.sectionTitle}>Vea CMsports en acción</h2>
           <p className={styles.sectionIntro}>
-            Dos recorridos cortos de la plataforma. Podés reproducirlos con audio o en silencio.
+            Dos recorridos cortos de la plataforma. Puede reproducirlos con audio o en silencio.
           </p>
           <VideoDemos />
         </div>
@@ -359,7 +359,7 @@ export default function LandingPublica() {
           <p className={styles.sectionLabel}>Plataforma</p>
           <h2 className={styles.sectionTitle}>Módulos desde el día uno</h2>
           <p className={styles.sectionIntro}>
-            Elegí un módulo para ver qué hace. Se activan según la necesidad del club.
+            Elija un módulo para ver qué hace. Se activan según la necesidad del club.
           </p>
           <LandingModulesTabs />
         </div>
@@ -368,10 +368,10 @@ export default function LandingPublica() {
       {/* IMPLEMENTACIÓN */}
       <section id="implementacion" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Arranque</p>
+          <p className={styles.sectionLabel}>Implementación</p>
           <h2 className={styles.sectionTitle}>Implementación sencilla</h2>
           <p className={styles.sectionIntro}>
-            Un proceso claro, con capacitación y acompañamiento. Sin fricción innecesaria.
+            Un proceso claro, con capacitación y acompañamiento. Sin vueltas innecesarias.
           </p>
           <ol className={styles.implList}>
             {IMPLEMENTACION.map((step, i) => (
@@ -400,7 +400,7 @@ export default function LandingPublica() {
           <p className={styles.sectionLabel}>Horizonte</p>
           <h2 className={styles.sectionTitle}>Resultados esperados</h2>
           <p className={styles.sectionIntro}>
-            Así debería verse un club que adopta CMsports como hábito, no como respaldo paralelo.
+            Así debería verse un club que adopta CMsports como hábito, no como un sistema aparte.
           </p>
           <div className={styles.timeline}>
             {RESULTADOS.map((block, i) => (
@@ -431,7 +431,7 @@ export default function LandingPublica() {
       {/* FUTURO */}
       <section id="futuro" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Roadmap</p>
+          <p className={styles.sectionLabel}>Próximos pasos</p>
           <h2 className={styles.sectionTitle}>Servicios adicionales</h2>
           <p className={styles.sectionIntro}>
             Lo que viene y lo que ya podemos cotizar según el club.
