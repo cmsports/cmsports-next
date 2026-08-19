@@ -60,8 +60,7 @@ export async function aprobarSolicitud(params: {
   if (!emailNormalizado) return { error: 'La solicitud no tiene un correo válido' }
   if (!password || password.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
 
-  const { data: nuevoJugador, error: insertErr } = await supabase.from('jugadores').insert({
-    club_id: clubId,
+  const datosFicha = {
     nombre: nombre.trim(),
     rut: rut || null,
     email: emailNormalizado,
@@ -75,19 +74,67 @@ export async function aprobarSolicitud(params: {
     talla_polera: talla_polera || null,
     talla_short: talla_short || null,
     ...planFields,
-    sesiones_usadas: 0,
     estado: 'activo',
     es_externo: false,
     // A diferencia de los jugadores que ya venían (que la migración 138 dio
     // por pagada), el que entra ahora solo queda marcado si de verdad la pagó
     // en este momento. El ingreso en Finanzas se registra más abajo con el RPC.
     matricula_pagada: !!matriculaPagada,
-  }).select('id').single()
-  if (insertErr || !nuevoJugador) return { error: 'Error al crear jugador: ' + (insertErr?.message ?? '') }
+  }
+
+  const admin = createAdminClient()
+
+  // Una visita de ranking o de torneo ya tiene ficha (con puntos, partidos,
+  // pagos). Insertar otra choca con el RUT único y además partiría el
+  // historial. Se reutiliza esa fila: se le pone plan, correo y acceso.
+  let jugadorId: string | null = null
+  let fichaNueva = false
+
+  if (rut.trim()) {
+    const { data: existente } = await supabase.from('jugadores')
+      .select('id')
+      .eq('club_id', clubId)
+      .eq('rut', rut.trim())
+      .maybeSingle()
+
+    if (existente) {
+      const { data: yaTieneCuenta } = await admin.from('perfiles')
+        .select('id').eq('jugador_id', existente.id).maybeSingle()
+      if (yaTieneCuenta) {
+        return { error: 'Este RUT ya está en el club y tiene cuenta. Abrí su ficha para cambiar el plan.' }
+      }
+
+      const { error: updateErr } = await supabase.from('jugadores')
+        .update(datosFicha)
+        .eq('id', existente.id)
+        .eq('club_id', clubId)
+      if (updateErr) return { error: 'Error al actualizar el jugador: ' + updateErr.message }
+      jugadorId = existente.id
+    }
+  }
+
+  if (!jugadorId) {
+    const { data: nuevoJugador, error: insertErr } = await supabase.from('jugadores').insert({
+      club_id: clubId,
+      ...datosFicha,
+      sesiones_usadas: 0,
+    }).select('id').single()
+    if (insertErr || !nuevoJugador) {
+      const duplicado = insertErr?.message?.includes('jugadores_rut_key') || insertErr?.code === '23505'
+      return { error: duplicado
+        ? 'Este RUT ya tiene ficha. Si es una visita del club, recargá e intentá de nuevo.'
+        : 'Error al crear jugador: ' + (insertErr?.message ?? '') }
+    }
+    jugadorId = nuevoJugador.id
+    fichaNueva = true
+  }
+
+  const revertirFichaNueva = async () => {
+    if (fichaNueva && jugadorId) await supabase.from('jugadores').delete().eq('id', jugadorId)
+  }
 
   const jugador = { nombre: nombre.trim(), email: emailNormalizado, telefono: telefono || null }
 
-  const admin = createAdminClient()
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
     email: emailNormalizado,
     password,
@@ -97,18 +144,18 @@ export async function aprobarSolicitud(params: {
 
   const userId = creado?.user?.id
   if (createError || !userId) {
-    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    await revertirFichaNueva()
     return { error: createError?.message?.toLowerCase().includes('already')
       ? 'Ese correo ya tiene una cuenta. Usa otro correo.'
       : 'No se pudo crear la cuenta de acceso del jugador.' }
   }
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
-    id: userId, club_id: clubId, nombre: nombre.trim(), email: emailNormalizado, rol: 'jugador', jugador_id: nuevoJugador.id,
+    id: userId, club_id: clubId, nombre: nombre.trim(), email: emailNormalizado, rol: 'jugador', jugador_id: jugadorId,
   })
   if (perfilError) {
     await admin.auth.admin.deleteUser(userId)
-    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    await revertirFichaNueva()
     return { error: 'No se pudo vincular el perfil de acceso del jugador.' }
   }
 
@@ -125,7 +172,7 @@ export async function aprobarSolicitud(params: {
   // Los grupos van al final: si algo falla acá el jugador ya existe y se puede
   // arreglar desde su ficha, mientras que deshacer la cuenta creada no.
   if (bloqueIds?.length) {
-    await asignarBloquesJugador({ jugadorId: nuevoJugador.id, bloqueIds })
+    await asignarBloquesJugador({ jugadorId, bloqueIds })
   }
 
   // La matrícula, si la pagó al entrar. Va después del alta y con su propio
@@ -134,7 +181,7 @@ export async function aprobarSolicitud(params: {
   // desde su ficha, que es mucho mejor que perder la cuenta recién creada.
   if (matriculaPagada && (matriculaMonto ?? 0) > 0) {
     await supabase.rpc('registrar_pago_matricula_atomico', {
-      p_jugador_id: nuevoJugador.id,
+      p_jugador_id: jugadorId,
       p_monto: Math.round(matriculaMonto as number),
       p_idempotency_key: crypto.randomUUID(),
     })
@@ -144,7 +191,7 @@ export async function aprobarSolicitud(params: {
     .update({ estado: 'aprobado' }).eq('id', solicitudId).eq('club_id', clubId)
   if (aprobarError) {
     await admin.auth.admin.deleteUser(userId)
-    await supabase.from('jugadores').delete().eq('id', nuevoJugador.id)
+    await revertirFichaNueva()
     return { error: 'No se pudo finalizar la aprobación. Intenta nuevamente.' }
   }
 
