@@ -164,7 +164,10 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       .from('mensualidades')
       .select('id,jugador_id,mes,anio,monto,estado')
       .eq('club_id', id)
-      .neq('estado', 'pagado')
+      // 'exento' tampoco es deuda: es un mes que el club decidio no cobrar.
+      // Sin esto, el boton "No vino" sacaba la cuota del mes pero la dejaba
+      // sumando en la deuda acumulada, que es justo lo que venia a evitar.
+      .not('estado', 'in', '("pagado","exento")')
       .order('anio').order('mes')
     const deudas = data || []
     setImpagas(deudas)
@@ -615,7 +618,7 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                     </td>
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                        {estado !== 'pagado' && (
+                        {estado !== 'pagado' && !exento && (
                           <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); const esperado = montoEsperado(j, mens); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado }); setMontoPago(esperado == null ? '' : String(esperado)); setErrorPago('') }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
                             ✅ Marcar pagado

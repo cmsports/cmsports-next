@@ -64,8 +64,13 @@ export function cuentaDelJugador(
   mensualidad: MensualidadJugador,
   extras: ClaseExtraJugador[] | null | undefined,
 ): CuentaJugador {
+  // 'exento' es un mes que el club decidio no cobrar ("no vino este mes"), asi
+  // que al jugador no se le muestra como deuda igual que uno pagado. Lo unico
+  // que los distingue es que el exento no genero ingreso en Finanzas.
   const debeMensualidad =
-    mensualidad?.estado === 'pagado' ? 0 : Number(mensualidad?.monto ?? 0)
+    mensualidad?.estado === 'pagado' || mensualidad?.estado === 'exento'
+      ? 0
+      : Number(mensualidad?.monto ?? 0)
 
   const porCobrar: ClaseExtraJugador[] = []
   const sinCargo: ClaseExtraJugador[] = []

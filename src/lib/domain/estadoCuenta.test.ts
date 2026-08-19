@@ -196,3 +196,30 @@ describe('las dos pantallas del jugador no pueden contradecirse', () => {
     expect(perfilPage).not.toMatch(/mensLabel = mensEstado === 'pagado'/)
   })
 })
+
+describe('mes exento: "no vino este mes"', () => {
+  // El club decide no cobrar un mes. La cuota tiene que desaparecer de la deuda
+  // igual que una pagada; lo unico que las distingue es que la exenta no genero
+  // ingreso en Finanzas. La primera version de esta funcion solo miraba
+  // 'pagado', asi que un mes eximido le seguia apareciendo como deuda al
+  // jugador aunque el admin ya lo hubiera perdonado.
+  it('no le cobra al jugador un mes eximido', () => {
+    const cuenta = cuentaDelJugador({ monto: 30000, estado: 'exento' }, [])
+    expect(cuenta.mensualidad).toBe(0)
+    expect(cuenta.total).toBe(0)
+  })
+
+  it('el mes exento no tapa las clases extra que si debe', () => {
+    const cuenta = cuentaDelJugador(
+      { monto: 30000, estado: 'exento' },
+      [extra({ id: 'e1', monto: 3000 })],
+    )
+    expect(cuenta.mensualidad).toBe(0)
+    expect(cuenta.total).toBe(3000)
+  })
+
+  it('un mes pendiente sigue siendo deuda', () => {
+    const cuenta = cuentaDelJugador({ monto: 30000, estado: 'pendiente' }, [])
+    expect(cuenta.mensualidad).toBe(30000)
+  })
+})
