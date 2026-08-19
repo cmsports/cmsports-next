@@ -11,11 +11,20 @@ describe('aprobarSolicitud', () => {
   const createUser = vi.fn()
   const deleteUser = vi.fn()
   const perfilUpsert = vi.fn()
+  const jugadorInsert = vi.fn()
+  const jugadorUpdate = vi.fn()
   const jugadorDeleteEq = vi.fn().mockResolvedValue({ error: null })
   const solicitudUpdateClubEq = vi.fn().mockResolvedValue({ error: null })
+  const perfilPorJugador = vi.fn()
 
-  beforeEach(() => {
-    vi.clearAllMocks()
+  function mockear({
+    ficha = null as { id: string } | null,
+    perfil = null as { id: string } | null,
+  } = {}) {
+    jugadorInsert.mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'jugador-id' }, error: null }) }) })
+    jugadorUpdate.mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) })
+    perfilPorJugador.mockResolvedValue({ data: perfil, error: null })
+
     const supabase = {
       from: vi.fn((tabla: string) => {
         if (tabla === 'solicitudes_jugador') return {
@@ -23,17 +32,33 @@ describe('aprobarSolicitud', () => {
           update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: solicitudUpdateClubEq }) }),
         }
         if (tabla === 'jugadores') return {
-          insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'jugador-id' }, error: null }) }) }),
+          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle: vi.fn().mockResolvedValue({ data: ficha, error: null }) }) }) }),
+          insert: jugadorInsert,
+          update: jugadorUpdate,
           delete: vi.fn().mockReturnValue({ eq: jugadorDeleteEq }),
         }
         throw new Error(`Tabla inesperada: ${tabla}`)
       }),
     }
     mocks.requireAdminClub.mockResolvedValue({ error: null, supabase, clubId: 'club-id' })
+    mocks.createAdminClient.mockReturnValue({
+      auth: { admin: { createUser, deleteUser } },
+      from: vi.fn((tabla: string) => {
+        if (tabla === 'perfiles') return {
+          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle: perfilPorJugador }) }),
+          upsert: perfilUpsert,
+        }
+        return { upsert: perfilUpsert }
+      }),
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
     createUser.mockResolvedValue({ data: { user: { id: 'usuario-id' } }, error: null })
     perfilUpsert.mockResolvedValue({ error: null })
-    mocks.createAdminClient.mockReturnValue({ auth: { admin: { createUser, deleteUser } }, from: vi.fn(() => ({ upsert: perfilUpsert })) })
     mocks.asignarBloques.mockResolvedValue({ success: true })
+    mockear()
   })
 
   const input = {
@@ -91,5 +116,39 @@ describe('aprobarSolicitud', () => {
 
     expect(mocks.asignarBloques).not.toHaveBeenCalled()
   })
-})
 
+  it('reutiliza la ficha de visita: plan y acceso, sin borrar ranking ni pagos', async () => {
+    mockear({ ficha: { id: 'visita-id' } })
+
+    const resultado = await aprobarSolicitud({ ...input, nombre: 'José Croff', rut: '13905776-7' })
+
+    expect(resultado).toEqual(expect.objectContaining({ success: true, cuentaCreada: true }))
+    expect(jugadorInsert).not.toHaveBeenCalled()
+    expect(jugadorUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      nombre: 'José Croff',
+      email: 'pedrito@email.cl',
+      es_externo: false,
+      mensualidad: 25000,
+    }))
+    expect(perfilUpsert).toHaveBeenCalledWith(expect.objectContaining({ jugador_id: 'visita-id' }))
+    expect(jugadorDeleteEq).not.toHaveBeenCalled()
+  })
+
+  it('no borra la ficha reutilizada si falla el alta de la cuenta', async () => {
+    mockear({ ficha: { id: 'visita-id' } })
+    createUser.mockResolvedValue({ data: { user: null }, error: { message: 'Auth failed' } })
+
+    await expect(aprobarSolicitud(input)).resolves.toEqual({ error: 'No se pudo crear la cuenta de acceso del jugador.' })
+    expect(jugadorDeleteEq).not.toHaveBeenCalled()
+  })
+
+  it('no pisa una ficha que ya tiene cuenta', async () => {
+    mockear({ ficha: { id: 'visita-id' }, perfil: { id: 'usuario-previo' } })
+
+    const resultado = await aprobarSolicitud(input)
+
+    expect(resultado).toEqual({ error: 'Este RUT ya está en el club y tiene cuenta. Abrí su ficha para cambiar el plan.' })
+    expect(jugadorUpdate).not.toHaveBeenCalled()
+    expect(createUser).not.toHaveBeenCalled()
+  })
+})
