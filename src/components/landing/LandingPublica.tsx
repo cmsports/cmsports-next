@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { motion } from 'motion/react'
@@ -135,6 +135,30 @@ const FUNDADORES = [
 export default function LandingPublica() {
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const page = pageRef.current
+    const header = headerRef.current
+    if (!page || !header) return
+
+    const syncHeaderHeight = () => {
+      page.style.setProperty('--landing-header-h', `${header.offsetHeight}px`)
+    }
+
+    syncHeaderHeight()
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(syncHeaderHeight)
+      : null
+    observer?.observe(header)
+    window.addEventListener('resize', syncHeaderHeight)
+
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', syncHeaderHeight)
+    }
+  }, [])
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12)
@@ -169,8 +193,8 @@ export default function LandingPublica() {
   }
 
   return (
-    <div className={styles.page} data-landing>
-      <header className={`${styles.header} ${scrolled ? styles.headerScrolled : ''}`}>
+    <div ref={pageRef} className={styles.page} data-landing>
+      <header ref={headerRef} className={`${styles.header} ${scrolled ? styles.headerScrolled : ''}`}>
         <Link href="/" className={styles.brand} onClick={cerrarMenu}>
           <Image
             src="/logo.png"
