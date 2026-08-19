@@ -198,8 +198,10 @@ export default function EstadoCuentaPage() {
         {historial.length === 0 && cuenta.pagadas.length === 0 ? (
           <div style={{ padding:30, textAlign:'center', color: hint, fontSize:13 }}>Sin historial</div>
         ) : historial.map(h => {
-          const col = h.estado === 'pagado' ? '#16a34a' : h.estado === 'atrasado' ? '#dc2626' : '#d97706'
-          const colBg = h.estado === 'pagado' ? '#f0fdf4' : h.estado === 'atrasado' ? '#fef2f2' : '#fffbeb'
+          // Un mes exento no es deuda: el club decidio no cobrarlo. Se pinta
+          // distinto de pendiente para que el jugador no crea que debe.
+          const col = h.estado === 'pagado' ? '#16a34a' : h.estado === 'atrasado' ? '#dc2626' : h.estado === 'exento' ? '#7c3aed' : '#d97706'
+          const colBg = h.estado === 'pagado' ? '#f0fdf4' : h.estado === 'atrasado' ? '#fef2f2' : h.estado === 'exento' ? '#f5f3ff' : '#fffbeb'
           return (
             <div key={h.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 20px', borderBottom:'1px solid #f1f5f9' }}>
               <div>
@@ -208,7 +210,7 @@ export default function EstadoCuentaPage() {
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 {h.monto && <span style={{ fontSize:14, fontWeight:700, color:'#3730a3', fontFamily:'monospace' }}>${h.monto.toLocaleString('es-CL')}</span>}
-                <span style={{ background: colBg, color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{h.estado}</span>
+                <span style={{ background: colBg, color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{h.estado === 'exento' ? 'no vino' : h.estado}</span>
               </div>
             </div>
           )

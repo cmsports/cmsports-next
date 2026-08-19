@@ -503,14 +503,16 @@ function FinanzasContent() {
                 </thead>
                 <tbody>
                   {historialJugador.map((m,i) => {
-                    const col = m.estado==='pagado'?'#16a34a':m.estado==='atrasado'?'#dc2626':'#d97706'
+                    // 'exento' es un mes que el club decidio no cobrar. Sin este caso
+                    // caia en el generico y se leia "Pendiente", o sea deuda que no existe.
+                    const col = m.estado==='pagado'?'#16a34a':m.estado==='atrasado'?'#dc2626':m.estado==='exento'?'#7c3aed':'#d97706'
                     return (
                       <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
                         <td style={{ padding:'8px 12px', fontSize:13, color: text }}>{mesesN[m.mes-1]}</td>
                         <td style={{ padding:'8px 12px', fontSize:13, color: muted }}>{m.anio}</td>
                         <td style={{ padding:'8px 12px' }}>
                           <span style={{ background:col+'22', color:col, padding:'2px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                            {m.estado==='pagado'?'Pagado':m.estado==='atrasado'?'Atrasado':'Pendiente'}
+                            {m.estado==='pagado'?'Pagado':m.estado==='atrasado'?'Atrasado':m.estado==='exento'?'No vino':'Pendiente'}
                           </span>
                         </td>
                         <td style={{ padding:'8px 12px', fontSize:12, color: muted }}>{m.fecha_pago||'—'}</td>
