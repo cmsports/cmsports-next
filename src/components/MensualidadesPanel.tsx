@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTextoMonto } from '@/components/Monto'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago } from '@/app/actions/mensualidades'
+import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago, eximirMensualidad, revertirExencion } from '@/app/actions/mensualidades'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import FiltroMultiSelect from '@/components/FiltroMultiSelect'
@@ -230,6 +230,25 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     cargarMensualidades()
   }
 
+  // "No vino este mes": la cuota deja de cobrarse. Se pide confirmación porque
+  // saca al jugador de los pendientes y deja rastro en Finanzas.
+  async function eximir(mensId: string, nombre: string) {
+    if (!confirm(`¿${nombre} no vino este mes?
+
+La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite normal.`)) return
+    const res = await eximirMensualidad({ mensualidadId: mensId })
+    if (res.error) { alert(res.error); return }
+    cargarMensualidades()
+    onPagoRegistrado?.()
+  }
+
+  async function deshacerExencion(mensId: string) {
+    const res = await revertirExencion({ mensualidadId: mensId })
+    if (res.error) { alert(res.error); return }
+    cargarMensualidades()
+    onPagoRegistrado?.()
+  }
+
   async function marcarPendiente(mensId: string, jugadorId: string) {
     await revertirPago({ mensualidadId: mensId, jugadorId, mes, anio })
     cargarMensualidades()
@@ -266,10 +285,10 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     const mensualidadPorJugador = new Map(mensualidades.map(m => [m.jugador_id, m]))
     const datosMes = jugadores.map(j => {
       const mens = mensualidadPorJugador.get(j.id)
-      const estado = mens?.estado || 'pendiente'
+      const estado = mens?.estado || 'sin_cuota'
       return {
         'Nombre': j.nombre, 'RUT': j.rut || '', 'Plan': `${j.sesiones_limite} sesiones`,
-        'Estado': estado === 'pagado' ? 'Pagado' : estado === 'atrasado' ? 'Atrasado' : 'Pendiente',
+        'Estado': estado === 'pagado' ? 'Pagado' : estado === 'atrasado' ? 'Atrasado' : estado === 'sin_cuota' ? 'No correspondía' : 'Pendiente',
         'Fecha pago': mens?.fecha_pago || '', 'Monto': mens?.monto || '', 'Método': mens?.metodo_pago || '',
       }
     })
@@ -338,9 +357,15 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     return coincideBusqueda && coincideCat && coincideGrupo && coincideSede
   }
 
+  // Un jugador SIN fila de mensualidad para el mes elegido no debe nada: no es
+  // que esté pendiente, es que ese mes no le correspondía. Asumir 'pendiente'
+  // hacía aparecer debiendo julio a los doce que entraron en agosto, cuando en
+  // la base no existe ninguna cuota suya de ese mes.
+  const estadoDe = (mens?: { estado?: string | null }) => mens?.estado || 'sin_cuota'
+
   const jugadoresFiltrados = jugadores.filter(j => {
     const mens = mensualidades.find(m => m.jugador_id === j.id)
-    const estado = mens?.estado || 'pendiente'
+    const estado = estadoDe(mens)
     const coincideEstado = filtroEstado === 'todos' || estado === filtroEstado
     return coincideEstado && coincidePerfil(j)
   })
@@ -534,14 +559,16 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
             <tbody>
               {jugadoresFiltrados.map(j => {
                 const mens = mensualidades.find(m => m.jugador_id === j.id)
-                const estado = mens?.estado || 'pendiente'
-                const col = estado === 'pagado' ? '#16a34a' : estado === 'atrasado' ? '#dc2626' : '#d97706'
-                const colBg = estado === 'pagado' ? '#f0fdf4' : estado === 'atrasado' ? '#fef2f2' : '#fffbeb'
+                const estado = estadoDe(mens)
+                const sinCuota = estado === 'sin_cuota'
+                const exento = estado === 'exento'
+                const col = estado === 'pagado' ? '#16a34a' : estado === 'atrasado' ? '#dc2626' : exento ? '#7c3aed' : sinCuota ? '#94a3b8' : '#d97706'
+                const colBg = estado === 'pagado' ? '#f0fdf4' : estado === 'atrasado' ? '#fef2f2' : exento ? '#f5f3ff' : sinCuota ? '#f8fafc' : '#fffbeb'
                 return (
                   <tr key={j.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
                     <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>
                       {j.nombre}
-                      {estado !== 'pagado' && (() => {
+                      {estado !== 'pagado' && !sinCuota && !exento && (() => {
                         const url = linkWhatsApp(j.telefono, `Hola ${j.nombre.split(' ')[0]}! 👋 Te contactamos desde ${clubNombre || 'el club'}. Tu mensualidad de ${mesesN[mes-1]} ${anio}${mens?.monto ? ` ($${Number(mens.monto).toLocaleString('es-CL')})` : ''} figura como *${estado === 'atrasado' ? 'atrasada ⚠️' : 'pendiente ⏳'}*. Por favor regularizá tu pago cuando puedas. ¡Gracias! 🏓`)
                         return url ? <WhatsAppBtn href={url} variant="compact" style={{ marginLeft:8 }} /> : null
                       })()}
@@ -549,7 +576,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{j.sesiones_limite} ses.</td>
                     <td style={{ padding:'12px 16px' }}>
                       <span style={{ background: colBg, color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                        {estado === 'pagado' ? '✅ Pagado' : estado === 'atrasado' ? '⚠️ Atrasado' : '⏳ Pendiente'}
+                        {estado === 'pagado' ? '✅ Pagado' : estado === 'atrasado' ? '⚠️ Atrasado' : exento ? '🎫 No vino' : sinCuota ? '— No correspondía' : '⏳ Pendiente'}
                       </span>
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>
@@ -592,6 +619,19 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
                           <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); const esperado = montoEsperado(j, mens); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado }); setMontoPago(esperado == null ? '' : String(esperado)); setErrorPago('') }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
                             ✅ Marcar pagado
+                          </button>
+                        )}
+                        {(estado === 'pendiente' || estado === 'atrasado') && mens?.id && (
+                          <button onClick={() => eximir(mens.id, j.nombre)}
+                            title="El jugador no vino este mes: la cuota no se cobra"
+                            style={{ background:'#f5f3ff', color:'#7c3aed', border:'none', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
+                            🎫 No vino
+                          </button>
+                        )}
+                        {exento && mens?.id && (
+                          <button onClick={() => deshacerExencion(mens.id)}
+                            style={{ background:'transparent', color:'#94a3b8', border:'none', fontSize:11, cursor:'pointer', textDecoration:'underline', whiteSpace:'nowrap' }}>
+                            Deshacer
                           </button>
                         )}
                         {estado === 'pendiente' && mens?.id && (

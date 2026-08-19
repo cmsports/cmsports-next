@@ -54,6 +54,20 @@ export const generarMensualidadesSchema = z.object({
 
 export const mensualidadIdSchema = z.object({ mensualidadId: UUID })
 
+// Eximir es "no vino este mes": la cuota deja de cobrarse sin decir que se pago.
+// La clave de idempotencia es obligatoria, no opcional: sin ella un doble clic
+// generaria dos movimientos por la misma cuota.
+export const eximirMensualidadSchema = z.object({
+  mensualidadId: UUID,
+  motivo: z.string().trim().max(200, 'Motivo demasiado largo').optional(),
+  idempotencyKey: UUID,
+})
+
+export const revertirExencionSchema = z.object({
+  mensualidadId: UUID,
+  idempotencyKey: UUID,
+})
+
 export const revertirMensualidadSchema = z.object({
   mensualidadId: UUID,
   jugadorId: UUID.optional(),

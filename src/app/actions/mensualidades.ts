@@ -2,9 +2,11 @@
 
 import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
 import {
+  eximirMensualidadSchema,
   generarMensualidadesSchema,
   mensualidadIdSchema,
   pagoMensualidadSchema,
+  revertirExencionSchema,
   revertirMensualidadSchema,
   validationError,
 } from '@/lib/validation/finanzas'
@@ -138,4 +140,62 @@ export async function corregirMensualidad(params: {
   if (error) return { error: error.message }
 
   return { ok: true }
+}
+
+/**
+ * "No vino este mes": la cuota deja de cobrarse.
+ *
+ * Sale de lo pendiente del jugador y de la tasa de morosidad, pero NO se
+ * registra como pagada, porque no entró plata. Deja una línea en Finanzas con
+ * monto 0 para que el mes exento quede visible en el libro y no solo en la
+ * ficha.
+ *
+ * Es de ese mes y de ninguno más: el siguiente se emite normal.
+ */
+export async function eximirMensualidad(params: {
+  mensualidadId: string
+  motivo?: string
+  idempotencyKey?: string
+}) {
+  const validacion = eximirMensualidadSchema.safeParse({
+    ...params,
+    idempotencyKey: params.idempotencyKey ?? crypto.randomUUID(),
+  })
+  if (!validacion.success) return { error: validationError(validacion.error) }
+
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  const input = validacion.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('eximir_mensualidad_atomico', {
+    p_mensualidad_id: input.mensualidadId,
+    p_motivo: input.motivo ?? null,
+    p_idempotency_key: input.idempotencyKey,
+  })
+  if (error || !data) return { error: error?.message ?? 'No se pudo eximir la cuota' }
+  return { success: true }
+}
+
+/** Deshace la exención: la cuota vuelve a estar pendiente. */
+export async function revertirExencion(params: {
+  mensualidadId: string
+  idempotencyKey?: string
+}) {
+  const validacion = revertirExencionSchema.safeParse({
+    ...params,
+    idempotencyKey: params.idempotencyKey ?? crypto.randomUUID(),
+  })
+  if (!validacion.success) return { error: validationError(validacion.error) }
+
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('revertir_exencion_mensualidad', {
+    p_mensualidad_id: validacion.data.mensualidadId,
+    p_idempotency_key: validacion.data.idempotencyKey,
+  })
+  if (error || !data) return { error: error?.message ?? 'No se pudo deshacer la exención' }
+  return { success: true }
 }
