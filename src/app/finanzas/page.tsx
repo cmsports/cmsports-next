@@ -760,13 +760,118 @@ function FinanzasContent() {
 
 type CategoriaReporte = 'general' | 'jugador' | 'finanzas' | 'asistencia' | 'torneos'
 
-const categoriasReporte: { key: CategoriaReporte; label: string; desc: string }[] = [
-  { key: 'general', label: 'General', desc: 'Resumen completo del club' },
-  { key: 'jugador', label: 'Jugador', desc: 'Info detallada de un jugador' },
-  { key: 'finanzas', label: 'Finanzas', desc: 'Ingresos, gastos y mensualidades' },
-  { key: 'asistencia', label: 'Asistencia', desc: 'Asistencia general y tendencias' },
-  { key: 'torneos', label: 'Torneos y Ligas', desc: 'Competencias y sus finanzas' },
+// `desc` dice para quién es el reporte y `trae` qué sale en el PDF. Los dos
+// renglones existen porque "General" y "Finanzas" se parecían tanto que nadie
+// sabía cuál pedir: ahora General es el reporte de dirección (cómo va el club)
+// y Finanzas el contable (estado de resultados y cuentas por cobrar).
+const categoriasReporte: { key: CategoriaReporte; label: string; desc: string; trae: string; emoji: string }[] = [
+  { key: 'general',    emoji: '📊', label: 'General',         desc: 'Cómo va el club',        trae: 'Hallazgos, plata y gente, a quién cobrarle, plantel con asistencia' },
+  { key: 'finanzas',   emoji: '💰', label: 'Finanzas',        desc: 'Contable',               trae: 'Estado de resultados vs período anterior, deuda por antigüedad, libro de movimientos' },
+  { key: 'asistencia', emoji: '📋', label: 'Asistencia',      desc: 'Operación de las clases', trae: 'La semana, top asistentes, todos los activos con su porcentaje' },
+  { key: 'jugador',    emoji: '🏓', label: 'Jugador',         desc: 'Estado de cuenta',       trae: 'Ficha, deuda, historial de cuotas y las fechas exactas que asistió' },
+  { key: 'torneos',    emoji: '🏆', label: 'Torneos y ligas', desc: 'Competencia',            trae: 'Torneos por estado, ligas con inscritos y lo recaudado en inscripciones' },
 ]
+
+// El análisis del reporte General vive acá y no dentro del PDF porque lo usan
+// los dos lados: la vista previa en pantalla y el papel. Cuando estaba
+// duplicado, la pantalla decía una cosa y el PDF otra —y el que manda es el
+// PDF, que es el que se imprime y se manda al directorio.
+//
+// `tono` es semántico, no un color: la pantalla lo pinta con hex y el PDF con
+// RGB, y cada uno usa su paleta sin que este archivo sepa de ninguna.
+type Tono = 'bien' | 'ojo' | 'mal' | 'info' | 'neutro'
+export type Dato = { etiqueta: string; valor: string; detalle?: string; tono: Tono }
+export type Hallazgo = { texto: string; tono: Tono }
+
+const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+
+export function analizarGeneral(p: any, fmt: (n: number) => string) {
+  const pct = (parte: number, total: number) => (total > 0 ? `${Math.round((parte / total) * 100)}%` : '—')
+  const mayor = (d: Record<string, number>) => Object.entries(d || {}).sort((a, b) => b[1] - a[1])[0]
+  const nombreCat = (c: string) => catLabel[c] || c
+
+  const balance = p.ingresos - p.gastos
+  const balancePrev = (p.ingresosPrev ?? 0) - (p.gastosPrev ?? 0)
+  const activos = p.activos.length
+  const inactivos = p.jugadores.length - activos
+
+  const impagas = (p.mensualidades || []).filter((m: any) => m.estado === 'pendiente' || m.estado === 'atrasado')
+  const deudaPeriodo = impagas.reduce((s: number, m: any) => s + (m.monto || 0), 0)
+  const cobrado = (p.mensualidades || []).filter((m: any) => m.estado === 'pagado').reduce((s: number, m: any) => s + (m.monto || 0), 0)
+  const emitido = cobrado + deudaPeriodo
+  const cobranza = emitido > 0 ? Math.round((cobrado / emitido) * 100) : 0
+
+  const asistPorJug = new Map<string, number>()
+  for (const a of (p.asistencias || [])) asistPorJug.set(a.jugador_id, (asistPorJug.get(a.jugador_id) ?? 0) + 1)
+  const sinVenir = p.activos.filter((j: any) => !asistPorJug.has(j.id))
+  const morososQueVienen = p.morosos.filter((j: any) => (asistPorJug.get(j.id) ?? 0) > 0).length
+  const ocupacion = activos > 0 ? Math.round((p.promedioAsist / activos) * 100) : 0
+
+  const conClase = (Object.entries(p.porDiaSemana || {}) as [string, number][]).filter(([, v]) => v > 0)
+  const diaFuerte = [...conClase].sort((a, b) => b[1] - a[1])[0]
+  const diaFlojo = [...conClase].sort((a, b) => a[1] - b[1])[0]
+
+  const topIngreso = mayor(p.desgloseIngresos)
+  const topGasto = mayor(p.desgloseGastos)
+  const varia = (actual: number, previo: number) => {
+    if (!previo) return { texto: 'sin período anterior con qué comparar', sube: true }
+    const v = Math.round(((actual - previo) / Math.abs(previo)) * 100)
+    return { texto: `${v >= 0 ? '+' : ''}${v}% vs ${p.tituloPrev}`, sube: v >= 0, pct: v }
+  }
+  const vBalance = varia(balance, balancePrev)
+  const vIngresos = varia(p.ingresos, p.ingresosPrev ?? 0)
+  const vGastos = varia(p.gastos, p.gastosPrev ?? 0)
+  const vAsist = varia(p.asistencias.length, p.asistPrev ?? 0)
+
+  // Solo entra el hallazgo que el dato justifica. Si no hay nada que decir, se
+  // dice eso mismo: un reporte que no afirma nada es peor que uno corto.
+  const hallazgos: Hallazgo[] = []
+  if (balance < 0) hallazgos.push({ texto: `El período cerró en rojo: faltaron ${fmt(Math.abs(balance))} para cubrir los gastos.`, tono: 'mal' })
+  else if ((p.ingresosPrev ?? 0) > 0 && !vBalance.sube) hallazgos.push({ texto: `El resultado bajó ${vBalance.texto}, aunque el período cerró a favor.`, tono: 'ojo' })
+  if (topIngreso && p.ingresos > 0 && topIngreso[1] / p.ingresos > 0.5)
+    hallazgos.push({ texto: `${nombreCat(topIngreso[0])} aporta el ${pct(topIngreso[1], p.ingresos)} de los ingresos: el club depende casi por completo de una sola entrada.`, tono: 'ojo' })
+  if (topGasto && p.gastos > 0)
+    hallazgos.push({ texto: `${nombreCat(topGasto[0])} se lleva el ${pct(topGasto[1], p.gastos)} de los gastos (${fmt(topGasto[1])}).`, tono: 'neutro' })
+  if (deudaPeriodo > 0)
+    hallazgos.push({ texto: `Quedaron ${fmt(deudaPeriodo)} sin cobrar en ${impagas.length} cuotas: se cobró el ${cobranza}% de lo emitido.`, tono: cobranza >= 90 ? 'ojo' : 'mal' })
+  if (morososQueVienen > 0)
+    hallazgos.push({ texto: `${morososQueVienen} de los ${p.morosos.length} que deben siguen entrenando: se les puede cobrar en la cancha.`, tono: 'ojo' })
+  if (sinVenir.length > 0)
+    hallazgos.push({ texto: `${sinVenir.length} jugadores activos (${pct(sinVenir.length, activos)} del plantel) no aparecieron ni una vez.`, tono: 'mal' })
+  if ((p.asistPrev ?? 0) > 0 && !vAsist.sube)
+    hallazgos.push({ texto: `La asistencia bajó ${vAsist.texto}.`, tono: 'mal' })
+  if (diaFuerte && diaFlojo && diaFuerte[0] !== diaFlojo[0] && diaFlojo[1] * 2 < diaFuerte[1])
+    hallazgos.push({ texto: `${DIAS_SEMANA[+diaFuerte[0]]} concentra ${diaFuerte[1]} asistencias y ${DIAS_SEMANA[+diaFlojo[0]]} apenas ${diaFlojo[1]}: hay horario desaprovechado.`, tono: 'info' })
+  if (hallazgos.length === 0)
+    hallazgos.push({ texto: 'Sin deuda pendiente, sin ausentes totales y con el período cerrado a favor.', tono: 'bien' })
+
+  const plata: Dato[] = [
+    { etiqueta: 'Ingresos', valor: fmt(p.ingresos), detalle: vIngresos.texto, tono: 'bien' },
+    { etiqueta: 'Gastos', valor: fmt(p.gastos), detalle: vGastos.texto, tono: 'mal' },
+    { etiqueta: 'Resultado', valor: fmt(balance), detalle: `antes: ${fmt(balancePrev)}`, tono: balance >= 0 ? 'bien' : 'mal' },
+    { etiqueta: 'Principal ingreso', valor: topIngreso ? nombreCat(topIngreso[0]) : '—', detalle: topIngreso ? `${fmt(topIngreso[1])} · ${pct(topIngreso[1], p.ingresos)} del total` : 'sin ingresos', tono: 'bien' },
+    { etiqueta: 'Principal gasto', valor: topGasto ? nombreCat(topGasto[0]) : '—', detalle: topGasto ? `${fmt(topGasto[1])} · ${pct(topGasto[1], p.gastos)} del total` : 'sin gastos', tono: 'mal' },
+    { etiqueta: 'Cobranza del período', valor: `${cobranza}%`, detalle: `${fmt(cobrado)} de ${fmt(emitido)} emitido`, tono: cobranza >= 90 ? 'bien' : cobranza >= 70 ? 'ojo' : 'mal' },
+    { etiqueta: 'Por cobrar', valor: fmt(deudaPeriodo), detalle: `${impagas.length} cuotas · ${p.morosos.length} jugadores`, tono: deudaPeriodo > 0 ? 'mal' : 'bien' },
+    { etiqueta: 'Deja cada alumno', valor: activos > 0 ? fmt(Math.round(p.ingresos / activos)) : '—', detalle: activos > 0 ? `y cuesta ${fmt(Math.round(p.gastos / activos))}` : 'sin activos', tono: 'info' },
+    { etiqueta: 'Margen por alumno', valor: activos > 0 ? fmt(Math.round(balance / activos)) : '—', detalle: `sobre ${activos} activos`, tono: balance >= 0 ? 'bien' : 'mal' },
+  ]
+
+  const gente: Dato[] = [
+    { etiqueta: 'Plantel activo', valor: String(activos), detalle: `${p.jugadores.length} fichas en total`, tono: 'info' },
+    { etiqueta: 'Fuera del plantel', valor: String(inactivos), detalle: 'inactivos, retirados o suspendidos', tono: inactivos > 0 ? 'ojo' : 'bien' },
+    { etiqueta: 'Días con clase', valor: String(p.diasConAsist), detalle: 'días con asistencia registrada', tono: 'info' },
+    { etiqueta: 'Asistencias', valor: String(p.asistencias.length), detalle: vAsist.texto, tono: vAsist.sube ? 'bien' : 'mal' },
+    { etiqueta: 'Promedio por clase', valor: `${p.promedioAsist} jugadores`, detalle: `ocupación ${ocupacion}% del plantel`, tono: ocupacion >= 50 ? 'bien' : ocupacion >= 30 ? 'ojo' : 'mal' },
+    { etiqueta: 'No vinieron nunca', valor: String(sinVenir.length), detalle: activos > 0 ? `${pct(sinVenir.length, activos)} de los activos` : '—', tono: sinVenir.length > 0 ? 'mal' : 'bien' },
+    { etiqueta: 'Día más fuerte', valor: diaFuerte ? DIAS_SEMANA[+diaFuerte[0]] : '—', detalle: diaFuerte ? `${diaFuerte[1]} asistencias` : 'sin registros', tono: 'info' },
+    { etiqueta: 'Día más flojo', valor: diaFlojo ? DIAS_SEMANA[+diaFlojo[0]] : '—', detalle: diaFlojo ? `${diaFlojo[1]} asistencias` : 'sin registros', tono: 'ojo' },
+    { etiqueta: 'Competencia', valor: `${p.torneos.length} torneos`, detalle: p.torneos.length > 0 ? p.torneos.map((t: any) => t.nombre).slice(0, 2).join(' · ') : 'ninguno en el período', tono: 'info' },
+  ]
+
+  return { balance, balancePrev, activos, deudaPeriodo, impagas, cobranza, asistPorJug, sinVenir, morososQueVienen, ocupacion, hallazgos, plata, gente, pct }
+}
+
 
 function ReportesTab({ clubId }: { clubId: string | null }) {
   // Dos formateadores a propósito: `fmt` (el de arriba) para el PDF, que lleva
@@ -783,10 +888,14 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
   const [generando, setGenerando] = useState(false)
   const [jugadores, setJugadores] = useState<any[]>([])
   const [jugadorId, setJugadorId] = useState('')
+  // El PDF llevaba "CmSports" impreso en la barra de todas las páginas. El
+  // reporte que se manda al directorio tiene que decir el nombre del club.
+  const [clubNombre, setClubNombre] = useState('')
 
   useEffect(() => {
     if (!clubId) return
     supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).order('nombre').then(({ data }) => setJugadores(data || []))
+    supabase.from('clubes').select('nombre').eq('id', clubId).single().then(({ data }) => setClubNombre(data?.nombre || ''))
   }, [clubId])
 
   useEffect(() => { setPreview(null) }, [categoriaRep, tipo, mes, trimestre, semestre, anio, jugadorId])
@@ -807,6 +916,23 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     return { inicio:`${anio}-01-01`, fin:`${anio}-12-31`, titulo:`Año ${anio}` }
   }
 
+  // El período inmediatamente anterior, del mismo largo. Sin esto, un reporte
+  // dice "entraron $1.900.000" y no responde lo único que importa saber:
+  // si eso es mejor o peor que el mes pasado.
+  function getRangoAnterior() {
+    const { inicio, fin } = getRango()
+    const ini = new Date(inicio + 'T12:00:00')
+    const f = new Date(fin + 'T12:00:00')
+    const largo = (f.getFullYear() - ini.getFullYear()) * 12 + (f.getMonth() - ini.getMonth()) + 1
+    const desde = new Date(ini.getFullYear(), ini.getMonth() - largo, 1)
+    const hasta = new Date(ini.getFullYear(), ini.getMonth(), 0)
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const titulo = largo === 1
+      ? `${mesesN[desde.getMonth()]} ${desde.getFullYear()}`
+      : `${mesesN[desde.getMonth()]} ${desde.getFullYear()} – ${mesesN[hasta.getMonth()]} ${hasta.getFullYear()}`
+    return { inicio: iso(desde), fin: iso(hasta), titulo, largo }
+  }
+
   async function generarPreview() {
     if (!clubId) return
     if (categoriaRep === 'jugador' && !jugadorId) return
@@ -819,12 +945,15 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     let datos: any = null
 
     if (categoriaRep === 'general') {
-      const [{ data: jug }, { data: mov }, { data: asist }, { data: torn }, { data: mens }] = await Promise.all([
+      const prev = getRangoAnterior()
+      const [{ data: jug }, { data: mov }, { data: asist }, { data: torn }, { data: mens }, { data: movPrev }, { count: asistPrev }] = await Promise.all([
         supabase.from('jugadores').select('id,nombre,estado,categoria').eq('club_id', clubId),
         supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('asistencia').select('jugador_id,fecha').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin),
         supabase.from('torneos').select('id,nombre,estado,fecha_inicio').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-        supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes)
+        supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes),
+        supabase.from('movimientos').select('tipo,monto').eq('club_id', clubId).gte('fecha', prev.inicio).lte('fecha', prev.fin),
+        supabase.from('asistencia').select('*', { count: 'exact', head: true }).eq('club_id', clubId).eq('estado', 'presente').gte('fecha', prev.inicio).lte('fecha', prev.fin),
       ])
       const activos = (jug || []).filter(j => j.estado === 'activo')
       const ingresos = (mov || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
@@ -840,12 +969,24 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       const promedioAsist = diasConAsist > 0 ? Math.round((asist || []).length / diasConAsist) : 0
       const mensMap = new Map((mens || []).map(m => [m.jugador_id, m]))
       const morosos = activos.filter(j => { const m = mensMap.get(j.id); return m?.estado === 'pendiente' || m?.estado === 'atrasado' })
-      datos = { jugadores: jug || [], activos, movimientos: mov || [], ingresos, gastos, desgloseIngresos, desgloseGastos, asistencias: asist || [], promedioAsist, torneos: torn || [], morosos, mensualidades: mens || [] }
+      const porDiaSemanaG: Record<number, number> = { 0:0,1:0,2:0,3:0,4:0,5:0,6:0 }
+      ;(asist || []).forEach(a => { porDiaSemanaG[new Date(a.fecha + 'T12:00:00').getDay()]++ })
+      datos = {
+        jugadores: jug || [], activos, movimientos: mov || [], ingresos, gastos, desgloseIngresos, desgloseGastos,
+        asistencias: asist || [], promedioAsist, torneos: torn || [], morosos, mensualidades: mens || [],
+        diasConAsist, porDiaSemana: porDiaSemanaG,
+        ingresosPrev: (movPrev || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0),
+        gastosPrev: (movPrev || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0),
+        asistPrev: asistPrev ?? 0,
+        tituloPrev: prev.titulo,
+      }
     }
 
     if (categoriaRep === 'jugador') {
       const [{ data: jugador }, { data: mens }, { data: asist }, { data: torneoJug }, { data: ligaJug }] = await Promise.all([
-        supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,foto_url,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('id', jugadorId).single(),
+        // `estado` va en el select porque el reporte lo imprime: sin él la
+        // ficha del PDF mostraba "undefined" en el estado del jugador.
+        supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,estado,foto_url,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('id', jugadorId).single(),
         supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }),
         supabase.from('asistencia').select('id,jugador_id,fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('torneo_jugadores').select('id,torneo_id,torneos(id,nombre,fecha_inicio,estado)').eq('jugador_id', jugadorId),
@@ -858,10 +999,15 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     }
 
     if (categoriaRep === 'finanzas') {
-      const [{ data: mov }, { data: mens }, { data: jug }] = await Promise.all([
+      const prev = getRangoAnterior()
+      const [{ data: mov }, { data: mens }, { data: jug }, { data: movPrev }, { data: porCobrar }] = await Promise.all([
         supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('mensualidades').select('id,mes,anio,monto,estado,jugadores(nombre,categoria)').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes),
-        supabase.from('jugadores').select('id,nombre,estado').eq('club_id', clubId).eq('estado', 'activo')
+        supabase.from('jugadores').select('id,nombre,estado').eq('club_id', clubId).eq('estado', 'activo'),
+        supabase.from('movimientos').select('tipo,monto,categoria').eq('club_id', clubId).gte('fecha', prev.inicio).lte('fecha', prev.fin),
+        // Toda la deuda viva del club, no solo la del período: la pregunta
+        // "cuánto hay en la calle" no se contesta mirando un mes.
+        supabase.from('mensualidades').select('id,mes,anio,monto,estado,jugadores(nombre,categoria)').eq('club_id', clubId).in('estado', ['pendiente', 'atrasado']),
       ])
       const ingresos = (mov || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
       const gastos = (mov || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0)
@@ -879,7 +1025,28 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         if (m.tipo === 'ingreso') porMes[mk].ingresos += m.monto
         else porMes[mk].gastos += m.monto
       })
-      datos = { movimientos: mov || [], ingresos, gastos, desgloseIngresos, desgloseGastos, mensualidades: mens || [], pagadas, pendientes, totalMensPagado: pagadas.reduce((s, m) => s + (m.monto || 0), 0), totalMensPendiente: pendientes.reduce((s, m) => s + (m.monto || 0), 0), porMes, activos: jug || [] }
+      // El desglose del período anterior por categoría: es lo que convierte el
+      // estado de resultados en algo que se puede leer ("el arriendo subió 40%")
+      // en vez de una foto suelta.
+      const prevIngresos: Record<string, number> = {}, prevGastos: Record<string, number> = {}
+      ;(movPrev || []).forEach(m => {
+        const d = m.tipo === 'ingreso' ? prevIngresos : prevGastos
+        d[m.categoria] = (d[m.categoria] || 0) + m.monto
+      })
+      datos = {
+        movimientos: mov || [], ingresos, gastos, desgloseIngresos, desgloseGastos,
+        mensualidades: mens || [], pagadas, pendientes,
+        totalMensPagado: pagadas.reduce((s, m) => s + (m.monto || 0), 0),
+        totalMensPendiente: pendientes.reduce((s, m) => s + (m.monto || 0), 0),
+        porMes, activos: jug || [],
+        porCobrar: porCobrar || [],
+        totalPorCobrar: (porCobrar || []).reduce((s, m) => s + (m.monto || 0), 0),
+        ingresosPrev: (movPrev || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0),
+        gastosPrev: (movPrev || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0),
+        prevIngresos, prevGastos,
+        tituloPrev: prev.titulo,
+        finAnio, finMes,
+      }
     }
 
     if (categoriaRep === 'asistencia') {
@@ -923,172 +1090,544 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     const catInfo = categoriasReporte.find(c => c.key === categoriaRep)!
     const { default: jsPDF } = await import('jspdf')
     const { default: autoTable } = await import('jspdf-autotable')
-    const { COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion, sinDatos, estiloTabla } = await import('@/lib/pdf/estilo')
+    const {
+      COLOR, MARGEN, encabezado, piePagina, filaTarjetas, tituloSeccion, sinDatos, estiloTabla,
+      asegurarEspacio, trasTabla, panelDatos, barrasCategoria, barrasColumnas, franjaTotal,
+      colorEstado, panelIndicadores, altoIndicadores, listaHallazgos, variacion, tinte,
+    } = await import('@/lib/pdf/estilo')
     const doc = new jsPDF()
+    const club = clubNombre || 'CmSports'
+    const hoy = new Date().toLocaleDateString('es-CL')
+    const cab = { club, titulo: `Reporte ${catInfo.label}`, subtitulo: `${titulo}  ·  generado el ${hoy}` }
 
-    let y = encabezado(doc, {
-      club: 'CmSports',
-      titulo: `Reporte ${catInfo.label}`,
-      subtitulo: `${titulo}  ·  Generado el ${new Date().toLocaleDateString('es-CL')}`,
+    const nombreMes = (mk: string) => `${mesesN[parseInt(mk.slice(5, 7)) - 1]} ${mk.slice(0, 4)}`
+    const mesDe = (m: any) => (m?.mes ? `${mesesN[m.mes - 1]} ${m.anio}` : '—')
+    const pct = (parte: number, total: number) => (total > 0 ? `${Math.round((parte / total) * 100)}%` : '—')
+    const mayor = (d: Record<string, number>) => Object.entries(d).sort((a, b) => b[1] - a[1])[0]
+    // Las columnas de estado se pintan con el color del estado en vez de dejar
+    // la palabra en negro: en una lista de 100 cuotas, buscar "atrasado"
+    // leyendo texto gris no lo hace nadie.
+    const pintaEstado = (col: number) => ({
+      didParseCell: (d: any) => {
+        if (d.section === 'body' && d.column.index === col) {
+          d.cell.styles.textColor = colorEstado(String(d.cell.raw ?? ''))
+          d.cell.styles.fontStyle = 'bold'
+        }
+      },
     })
 
+    let y = encabezado(doc, cab)
+
+    // ── GENERAL ───────────────────────────────────────────────────────────
+    // El reporte de directorio: no repite el desglose contable (ese es el de
+    // Finanzas), responde las preguntas que se hacen antes de abrir el sistema.
     if (categoriaRep === 'general') {
-      const balance = preview.ingresos - preview.gastos
-      y = filaTarjetas(doc, y, [
-        { valor: fmt(preview.ingresos), etiqueta: 'Ingresos totales', color: COLOR.verde },
-        { valor: fmt(preview.gastos), etiqueta: 'Gastos totales', color: COLOR.rojo },
-        { valor: fmt(balance), etiqueta: 'Balance neto', color: balance >= 0 ? COLOR.verde : COLOR.rojo },
-        { valor: String(preview.activos.length), etiqueta: 'Jugadores activos', color: COLOR.primario },
-      ])
+      const a = analizarGeneral(preview, fmt)
+      const tonoPdf: Record<string, any> = { bien: COLOR.verde, ojo: COLOR.ambar, mal: COLOR.rojo, info: COLOR.celeste, neutro: COLOR.mutado }
+      const aPdf = (d: any) => ({ etiqueta: d.etiqueta, valor: d.valor, detalle: d.detalle, color: tonoPdf[d.tono] })
 
-      y = tituloSeccion(doc, y, 'Ingresos por categoría')
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseIngresos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.verde), columnStyles: { 1: { halign: 'right' } } })
-      y = (doc as any).lastAutoTable.finalY + 10
+      y = franjaTotal(doc, y, a.balance >= 0 ? 'Resultado del período — a favor' : 'Resultado del período — en contra',
+        fmt(a.balance), a.balance >= 0 ? COLOR.verde : COLOR.rojo)
 
-      y = tituloSeccion(doc, y, 'Gastos por categoría')
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseGastos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.rojo), columnStyles: { 1: { halign: 'right' } } })
+      y = tituloSeccion(doc, y, 'Lo que hay que mirar', `comparado con ${preview.tituloPrev}`)
+      y = listaHallazgos(doc, y, a.hallazgos.map((h: any) => ({ texto: h.texto, color: tonoPdf[h.tono] })), cab)
 
-      doc.addPage(); y = encabezado(doc, { club: 'CmSports', titulo: `Reporte ${catInfo.label} — Jugadores y asistencia`, subtitulo: titulo })
+      y = asegurarEspacio(doc, y, altoIndicadores(a.plata.length) + 12, cab)
+      y = tituloSeccion(doc, y, 'La plata')
+      y = panelIndicadores(doc, y, a.plata.map(aPdf), cab)
 
-      y = tituloSeccion(doc, y, 'Jugadores activos')
-      // Asistencias del período, no "sesiones del mes": el reporte cubre el
-      // rango elegido y el contador mensual del jugador no dice nada acá.
-      // Antes salía "undefined/undefined": la consulta de activos ni siquiera
-      // trae esas columnas.
-      const asistPorJug = new Map<string, number>()
-      for (const a of (preview.asistencias || [])) {
-        asistPorJug.set(a.jugador_id, (asistPorJug.get(a.jugador_id) ?? 0) + 1)
+      y = asegurarEspacio(doc, y, altoIndicadores(a.gente.length) + 12, cab)
+      y = tituloSeccion(doc, y, 'La gente')
+      y = panelIndicadores(doc, y, a.gente.map(aPdf), cab)
+
+      // El respaldo de las respuestas 9 y 10, con nombre y apellido: es lo que
+      // se imprime para salir a cobrar. Antes solo salía el número de morosos.
+      if (preview.morosos.length > 0) {
+        const impagasPorJug = new Map<string, { meses: string[]; monto: number }>()
+        for (const m of a.impagas) {
+          const acc = impagasPorJug.get(m.jugador_id) ?? { meses: [], monto: 0 }
+          acc.meses.push(mesDe(m))
+          acc.monto += m.monto || 0
+          impagasPorJug.set(m.jugador_id, acc)
+        }
+        const filas = preview.morosos
+          .map((j: any) => ({ j, d: impagasPorJug.get(j.id) ?? { meses: [], monto: 0 }, clases: a.asistPorJug.get(j.id) ?? 0 }))
+          .sort((a: any, b: any) => b.d.monto - a.d.monto)
+
+        doc.addPage()
+        y = encabezado(doc, { ...cab, titulo: 'A quién cobrarle' })
+        y = franjaTotal(doc, y, `${filas.length} jugadores con cuotas a.impagas`, fmt(a.deudaPeriodo), COLOR.rojo)
+        y = tituloSeccion(doc, y, 'Deuda del período', 'ordenado por monto', COLOR.rojo)
+        autoTable(doc, {
+          startY: y,
+          head: [['Jugador', 'Categoría', 'Meses impagos', 'Clases', 'Debe']],
+          body: filas.map((f: any) => [f.j.nombre, f.j.categoria || '—', f.d.meses.join(', ') || '—', String(f.clases), fmt(f.d.monto)]),
+          foot: [['Total', '', '', '', fmt(a.deudaPeriodo)]],
+          ...estiloTabla(COLOR.rojo),
+          columnStyles: { 1: { cellWidth: 28 }, 2: { cellWidth: 46 }, 3: { cellWidth: 18, halign: 'right' }, 4: { cellWidth: 28, halign: 'right', fontStyle: 'bold' } },
+        })
+        y = trasTabla(doc)
       }
-      autoTable(doc, { startY: y, head: [['Nombre', 'Categoría', 'Asistencias', 'Estado']], body: preview.activos.sort((a: any, b: any) => a.nombre.localeCompare(b.nombre)).map((j: any) => [j.nombre, j.categoria, String(asistPorJug.get(j.id) ?? 0), j.estado]), ...estiloTabla() })
-      y = (doc as any).lastAutoTable.finalY + 10
 
-      y = tituloSeccion(doc, y, 'Asistencia y morosos')
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)], ['Promedio por día', String(preview.promedioAsist)], ['Morosos', String(preview.morosos.length)], ['Tasa morosidad', preview.activos.length > 0 ? `${Math.round((preview.morosos.length / preview.activos.length) * 100)}%` : '0%']], ...estiloTabla() })
+      // El plantel completo con su asistencia: la respuesta 16 y 17 en detalle.
+      doc.addPage()
+      y = encabezado(doc, { ...cab, titulo: 'Plantel y asistencia' })
+      const filasJug = [...preview.activos].sort((a: any, b: any) =>
+        (a.asistPorJug.get(b.id) ?? 0) - (a.asistPorJug.get(a.id) ?? 0) || a.nombre.localeCompare(b.nombre))
+      y = tituloSeccion(doc, y, 'Jugadores activos', `${filasJug.length} · ordenados por asistencia`)
+      autoTable(doc, {
+        startY: y,
+        head: [['#', 'Nombre', 'Categoría', 'Clases', '% de los días']],
+        body: filasJug.map((j: any, i: number) => {
+          const n = a.asistPorJug.get(j.id) ?? 0
+          return [String(i + 1), j.nombre, j.categoria || '—', String(n), a.pct(n, preview.diasConAsist)]
+        }),
+        foot: [['', 'Total', '', String(preview.asistencias.length), '']],
+        ...estiloTabla(),
+        columnStyles: { 0: { cellWidth: 10, halign: 'right', textColor: COLOR.tenue }, 2: { cellWidth: 34 }, 3: { cellWidth: 22, halign: 'right' }, 4: { cellWidth: 28, halign: 'right' } },
+        didParseCell: (d: any) => {
+          if (d.section !== 'body' || d.column.index !== 4) return
+          const n = a.asistPorJug.get(filasJug[d.row.index]?.id) ?? 0
+          const p = preview.diasConAsist > 0 ? (n / preview.diasConAsist) * 100 : 0
+          d.cell.styles.fontStyle = 'bold'
+          d.cell.styles.textColor = n === 0 ? COLOR.rojo : p >= 60 ? COLOR.verde : p >= 30 ? COLOR.ambar : COLOR.rojo
+        },
+      })
+      y = trasTabla(doc)
+
       if (preview.torneos.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Torneos')
-        autoTable(doc, { startY: y, head: [['Nombre', 'Fecha', 'Estado']], body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado]), ...estiloTabla(COLOR.naranja) })
+        y = asegurarEspacio(doc, y, 45, cab)
+        y = tituloSeccion(doc, y, 'Torneos del período', String(preview.torneos.length), COLOR.naranja)
+        autoTable(doc, {
+          startY: y,
+          head: [['Nombre', 'Fecha', 'Estado']],
+          body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado]),
+          ...estiloTabla(COLOR.naranja),
+          ...pintaEstado(2),
+          columnStyles: { 1: { cellWidth: 32 }, 2: { cellWidth: 32, halign: 'center' } },
+        })
       }
     }
 
+    // ── JUGADOR ───────────────────────────────────────────────────────────
+    // Estado de cuenta individual: lo que se le manda al apoderado.
     if (categoriaRep === 'jugador' && preview.jugador) {
       const j = preview.jugador
-      y = tituloSeccion(doc, y, `Ficha — ${j.nombre}`)
-      autoTable(doc, { startY: y, head: [['Campo', 'Valor']], body: [['Nombre', j.nombre], ['RUT', j.rut || '—'], ['Email', j.email || '—'], ['Teléfono', j.telefono || '—'], ['Categoría', j.categoria || '—'], ['Estado', j.estado || '—'], ['Plan', j.tipo_plan || '—'], ['Asistencias (periodo)', String((preview.asistencias || []).length)], ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—']], ...estiloTabla() })
-      y = (doc as any).lastAutoTable.finalY + 10
+      const saldo = preview.totalPendiente
 
-      y = tituloSeccion(doc, y, 'Mensualidades (período)')
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total pagado', fmt(preview.totalPagado)], ['Total pendiente', fmt(preview.totalPendiente)], ['Pagados', String(preview.pagadas.length)], ['Pendientes', String(preview.pendientes.length)]], ...estiloTabla(COLOR.verde) })
-      if (preview.mensualidades.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Historial completo')
-        autoTable(doc, { startY: y, head: [['Fecha', 'Monto', 'Estado']], body: preview.mensualidades.map((m: any) => [m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), ...estiloTabla() })
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(17)
+      doc.setTextColor(...COLOR.texto)
+      doc.text(j.nombre, MARGEN, y + 2)
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
+      doc.setTextColor(...COLOR.mutado)
+      doc.text(`${j.categoria || 'Sin categoría'}  ·  ${j.tipo_plan || 'sin plan'}`, MARGEN, y + 8)
+      y += 16
+
+      y = panelDatos(doc, y, [
+        ['RUT', j.rut || '—'],
+        ['Estado', j.estado || '—'],
+        ['Plan', j.tipo_plan || '—'],
+        ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—'],
+        ['Email', j.email || '—'],
+        ['Teléfono', j.telefono || '—'],
+      ], 3)
+
+      y = filaTarjetas(doc, y, [
+        { valor: fmt(preview.totalPagado), etiqueta: 'Pagado en el período', color: COLOR.verde },
+        { valor: fmt(saldo), etiqueta: 'Pendiente', color: saldo > 0 ? COLOR.rojo : COLOR.verde },
+        { valor: String(preview.asistencias.length), etiqueta: 'Clases asistidas', color: COLOR.primario },
+        { valor: `${preview.pagadas.length}/${preview.mensPeriodo.length}`, etiqueta: 'Cuotas al día', color: preview.pendientes.length === 0 ? COLOR.verde : COLOR.ambar },
+      ])
+
+      if (saldo > 0) {
+        y = franjaTotal(doc, y, `Deuda vigente — ${preview.pendientes.length} cuotas`, fmt(saldo), COLOR.rojo)
       }
-      y = (doc as any).lastAutoTable.finalY + 10
-      y = tituloSeccion(doc, y, 'Asistencia (período)')
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total asistencias', String(preview.asistencias.length)]], ...estiloTabla() })
+
+      y = asegurarEspacio(doc, y, 55, cab)
+      y = tituloSeccion(doc, y, 'Historial de mensualidades', `${preview.mensualidades.length} registros`)
+      if (preview.mensualidades.length === 0) {
+        y = sinDatos(doc, y, 'Este jugador no tiene mensualidades registradas.')
+      } else {
+        autoTable(doc, {
+          startY: y,
+          head: [['Mes', 'Monto', 'Estado', 'Fecha de pago']],
+          // Esta columna decía "undefined" en cada fila: la consulta trae mes y
+          // año, no una fecha, y el PDF pedía `m.fecha`, que no existe.
+          body: preview.mensualidades.map((m: any) => [mesDe(m), m.monto ? fmt(m.monto) : '—', m.estado, m.fecha_pago || '—']),
+          ...estiloTabla(),
+          ...pintaEstado(2),
+          columnStyles: { 1: { cellWidth: 34, halign: 'right' }, 2: { cellWidth: 30, halign: 'center' }, 3: { cellWidth: 34, halign: 'center' } },
+        })
+        y = trasTabla(doc)
+      }
+
+      if (preview.asistencias.length > 0) {
+        y = asegurarEspacio(doc, y, 60, cab)
+        y = tituloSeccion(doc, y, 'Asistencia del período', `${preview.asistencias.length} clases`, COLOR.verde)
+        const porMesAsist: Record<string, number> = {}
+        for (const a of preview.asistencias) porMesAsist[a.fecha.slice(0, 7)] = (porMesAsist[a.fecha.slice(0, 7)] || 0) + 1
+        y = barrasColumnas(doc, y, Object.entries(porMesAsist).sort().map(([mk, v]) => ({ etiqueta: nombreMes(mk).slice(0, 3), valor: v })), COLOR.verde)
+
+        // Los días exactos: si el apoderado reclama por una clase, la lista es
+        // la respuesta y evita entrar al sistema a buscarla.
+        const lineas = doc.splitTextToSize(preview.asistencias.map((a: any) => a.fecha).join('   '), doc.internal.pageSize.getWidth() - 2 * MARGEN - 10)
+        y = asegurarEspacio(doc, y, lineas.length * 4.2 + 16, cab)
+        doc.setFillColor(...COLOR.fondoSuave)
+        doc.roundedRect(MARGEN, y - 4, doc.internal.pageSize.getWidth() - 2 * MARGEN, lineas.length * 4.2 + 9, 2, 2, 'F')
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
+        doc.setTextColor(...COLOR.mutado)
+        doc.text(lineas, MARGEN + 5, y + 1)
+        y += lineas.length * 4.2 + 15
+      }
+
       if (preview.torneos.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Torneos')
-        autoTable(doc, { startY: y, head: [['Torneo', 'Posición', 'Puntos']], body: preview.torneos.map((t: any) => [(t as any).torneos?.nombre || '—', t.posicion ?? '—', t.puntos ?? '—']), ...estiloTabla(COLOR.naranja) })
+        y = asegurarEspacio(doc, y, 45, cab)
+        y = tituloSeccion(doc, y, 'Torneos', String(preview.torneos.length), COLOR.naranja)
+        autoTable(doc, {
+          startY: y,
+          head: [['Torneo', 'Fecha', 'Estado']],
+          body: preview.torneos.map((t: any) => [t.torneos?.nombre || '—', t.torneos?.fecha_inicio || '—', t.torneos?.estado || '—']),
+          ...estiloTabla(COLOR.naranja),
+          ...pintaEstado(2),
+          columnStyles: { 1: { cellWidth: 32 }, 2: { cellWidth: 32, halign: 'center' } },
+        })
+        y = trasTabla(doc)
       }
+
       if (preview.ligas.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Ligas')
-        autoTable(doc, { startY: y, head: [['Liga', 'División']], body: preview.ligas.map((l: any) => [(l as any).liga_divisiones?.ligas?.nombre || '—', (l as any).liga_divisiones?.nombre || '—']), ...estiloTabla(COLOR.morado) })
+        y = asegurarEspacio(doc, y, 45, cab)
+        y = tituloSeccion(doc, y, 'Ligas', String(preview.ligas.length), COLOR.morado)
+        autoTable(doc, {
+          startY: y,
+          head: [['Liga', 'División']],
+          body: preview.ligas.map((l: any) => [l.liga_divisiones?.ligas?.nombre || '—', l.liga_divisiones?.nombre || '—']),
+          ...estiloTabla(COLOR.morado),
+          columnStyles: { 1: { cellWidth: 60 } },
+        })
       }
     }
 
+    // ── FINANZAS ──────────────────────────────────────────────────────────
+    // Estado de resultados y cuentas por cobrar. No repite el tablero del
+    // reporte General: acá la pregunta es contable, no de dirección.
     if (categoriaRep === 'finanzas') {
       const balance = preview.ingresos - preview.gastos
-      y = filaTarjetas(doc, y, [
-        { valor: fmt(preview.ingresos), etiqueta: 'Ingresos totales', color: COLOR.verde },
-        { valor: fmt(preview.gastos), etiqueta: 'Gastos totales', color: COLOR.rojo },
-        { valor: fmt(balance), etiqueta: 'Balance neto', color: balance >= 0 ? COLOR.verde : COLOR.rojo },
-        { valor: preview.activos.length > 0 ? fmt(Math.round(preview.gastos / preview.activos.length)) : '$0', etiqueta: 'Costo por alumno', color: COLOR.primario },
-      ])
+      const balancePrev = preview.ingresosPrev - preview.gastosPrev
+      const margen = preview.ingresos > 0 ? Math.round((balance / preview.ingresos) * 100) : 0
+      const meses = Object.entries(preview.porMes).sort() as [string, any][]
 
-      y = tituloSeccion(doc, y, 'Ingresos por categoría')
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseIngresos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.verde), columnStyles: { 1: { halign: 'right' } } })
-      y = (doc as any).lastAutoTable.finalY + 10
+      const linea = (cats: Record<string, number>, prev: Record<string, number>, base: number) =>
+        Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([c, v]) => {
+          const antes = prev[c] || 0
+          const delta = antes === 0 ? (v > 0 ? 'nuevo' : '—') : `${v - antes >= 0 ? '+' : ''}${Math.round(((v - antes) / antes) * 100)}%`
+          return [`   ${catLabel[c] || c}`, fmt(v), pct(v, base), fmt(antes), delta]
+        })
 
-      y = tituloSeccion(doc, y, 'Gastos por categoría')
-      autoTable(doc, { startY: y, head: [['Categoría', 'Monto']], body: Object.entries(preview.desgloseGastos).map(([c, t]) => [catLabel[c] || c, fmt(t as number)]), ...estiloTabla(COLOR.rojo), columnStyles: { 1: { halign: 'right' } } })
-      y = (doc as any).lastAutoTable.finalY + 10
+      const filasIngreso = linea(preview.desgloseIngresos, preview.prevIngresos, preview.ingresos)
+      const filasGasto = linea(preview.desgloseGastos, preview.prevGastos, preview.gastos)
 
-      y = tituloSeccion(doc, y, 'Mensualidades')
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Recaudado', fmt(preview.totalMensPagado)], ['Pendiente', fmt(preview.totalMensPendiente)], ['Pagadas', String(preview.pagadas.length)], ['Pendientes', String(preview.pendientes.length)]], ...estiloTabla() })
-      if (Object.keys(preview.porMes).length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Desglose por mes')
-        autoTable(doc, { startY: y, head: [['Mes', 'Ingresos', 'Gastos', 'Balance']], body: Object.entries(preview.porMes).sort().map(([mk, v]: any) => [mesesN[parseInt(mk.slice(5, 7)) - 1] + ' ' + mk.slice(0, 4), fmt(v.ingresos), fmt(v.gastos), fmt(v.ingresos - v.gastos)]), ...estiloTabla() })
+      y = franjaTotal(doc, y, `Resultado del período  ·  margen ${margen}%`, fmt(balance), balance >= 0 ? COLOR.verde : COLOR.rojo)
+
+      y = tituloSeccion(doc, y, 'Estado de resultados', `vs ${preview.tituloPrev}`)
+      const cuerpo: any[] = [
+        ['INGRESOS', '', '', '', ''],
+        ...filasIngreso,
+        ['Total ingresos', fmt(preview.ingresos), '100%', fmt(preview.ingresosPrev), variacion(preview.ingresos, preview.ingresosPrev).texto.split(' ')[0]],
+        ['GASTOS', '', '', '', ''],
+        ...filasGasto,
+        ['Total gastos', fmt(preview.gastos), '100%', fmt(preview.gastosPrev), variacion(preview.gastos, preview.gastosPrev).texto.split(' ')[0]],
+      ]
+      // Los renglones de sección y subtotal se marcan por texto, no por índice:
+      // el número de categorías cambia en cada período.
+      const esTitulo = (t: string) => t === 'INGRESOS' || t === 'GASTOS'
+      const esSubtotal = (t: string) => t.startsWith('Total ')
+      autoTable(doc, {
+        startY: y,
+        head: [['Cuenta', 'Monto', '% del total', preview.tituloPrev, 'Var.']],
+        body: cuerpo,
+        foot: [['RESULTADO DEL PERÍODO', fmt(balance), `margen ${margen}%`, fmt(balancePrev), variacion(balance, balancePrev).texto.split(' ')[0]]],
+        ...estiloTabla(),
+        columnStyles: {
+          1: { cellWidth: 30, halign: 'right' }, 2: { cellWidth: 24, halign: 'right' },
+          3: { cellWidth: 30, halign: 'right', textColor: COLOR.mutado }, 4: { cellWidth: 20, halign: 'right' },
+        },
+        didParseCell: (d: any) => {
+          if (d.section !== 'body') return
+          const etiqueta = String(cuerpo[d.row.index][0]).trim()
+          const esIngreso = d.row.index <= filasIngreso.length + 1
+          if (esTitulo(etiqueta)) {
+            d.cell.styles.fillColor = tinte(esIngreso ? COLOR.verde : COLOR.rojo, 0.12)
+            d.cell.styles.fontStyle = 'bold'
+            d.cell.styles.textColor = esIngreso ? COLOR.verde : COLOR.rojo
+          } else if (esSubtotal(etiqueta)) {
+            d.cell.styles.fontStyle = 'bold'
+            d.cell.styles.fillColor = COLOR.blanco
+          }
+          if (d.column.index === 4 && !esTitulo(etiqueta)) {
+            const t = String(d.cell.raw)
+            d.cell.styles.textColor = t.startsWith('+') ? (esIngreso ? COLOR.verde : COLOR.rojo)
+              : t.startsWith('-') ? (esIngreso ? COLOR.rojo : COLOR.verde) : COLOR.tenue
+          }
+        },
+      })
+      y = trasTabla(doc)
+
+      if (meses.length > 1) {
+        y = asegurarEspacio(doc, y, 75, cab)
+        y = tituloSeccion(doc, y, 'Resultado mes a mes', `${meses.length} meses`)
+        y = barrasColumnas(doc, y, meses.map(([mk, v]) => ({ etiqueta: nombreMes(mk).slice(0, 3), valor: v.ingresos - v.gastos })), COLOR.primario)
+        y = asegurarEspacio(doc, y, 45, cab)
+        autoTable(doc, {
+          startY: y,
+          head: [['Mes', 'Ingresos', 'Gastos', 'Resultado', 'Margen']],
+          body: meses.map(([mk, v]) => [nombreMes(mk), fmt(v.ingresos), fmt(v.gastos), fmt(v.ingresos - v.gastos), pct(v.ingresos - v.gastos, v.ingresos)]),
+          foot: [['Total', fmt(preview.ingresos), fmt(preview.gastos), fmt(balance), `${margen}%`]],
+          ...estiloTabla(),
+          columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 22, halign: 'right' } },
+          didParseCell: (d: any) => {
+            if (d.column.index !== 3 || d.section === 'head') return
+            const neto = d.section === 'foot' ? balance : (meses[d.row.index]?.[1].ingresos ?? 0) - (meses[d.row.index]?.[1].gastos ?? 0)
+            d.cell.styles.textColor = neto < 0 ? COLOR.rojo : COLOR.verde
+          },
+        })
+        y = trasTabla(doc)
       }
-      if (preview.pendientes.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Detalle pendientes')
-        autoTable(doc, { startY: y, head: [['Jugador', 'Fecha', 'Monto', 'Estado']], body: preview.pendientes.map((m: any) => [(m as any).jugadores?.nombre || '—', m.fecha, m.monto ? fmt(m.monto) : '—', m.estado]), ...estiloTabla(COLOR.rojo) })
+
+      // Cuentas por cobrar con antigüedad. Toda la deuda viva del club, no solo
+      // la del período: una cuota de hace cuatro meses no deja de existir
+      // porque el reporte sea de agosto.
+      const refe = preview.finAnio * 12 + preview.finMes
+      const tramos = [
+        { nombre: 'Del período en curso', min: 0, max: 0, color: COLOR.ambar },
+        { nombre: '1 mes de atraso', min: 1, max: 1, color: COLOR.naranja },
+        { nombre: '2 meses de atraso', min: 2, max: 2, color: COLOR.rojo },
+        { nombre: '3 meses o más', min: 3, max: 999, color: COLOR.rojo },
+      ]
+      const edad = (m: any) => refe - (m.anio * 12 + m.mes)
+      const porTramo = tramos.map(t => {
+        const filas = preview.porCobrar.filter((m: any) => { const e = edad(m); return e >= t.min && e <= t.max })
+        return { ...t, filas, monto: filas.reduce((s: number, m: any) => s + (m.monto || 0), 0) }
+      }).filter(t => t.filas.length > 0)
+
+      doc.addPage()
+      y = encabezado(doc, { ...cab, titulo: 'Cuentas por cobrar' })
+      y = franjaTotal(doc, y, `${preview.porCobrar.length} cuotas impagas en total`, fmt(preview.totalPorCobrar), preview.totalPorCobrar > 0 ? COLOR.rojo : COLOR.verde)
+
+      if (preview.porCobrar.length === 0) {
+        y = sinDatos(doc, y, 'No hay mensualidades pendientes. Todo cobrado.')
+      } else {
+        y = tituloSeccion(doc, y, 'Antigüedad de la deuda', 'toda la deuda viva del club', COLOR.rojo)
+        y = barrasCategoria(doc, y, porTramo.map(t => ({
+          etiqueta: t.nombre, valor: t.monto, texto: `${fmt(t.monto)} · ${t.filas.length}`, color: t.color,
+        })), COLOR.rojo, cab)
+
+        y = asegurarEspacio(doc, y, 50, cab)
+        y = tituloSeccion(doc, y, 'Detalle por jugador', `${preview.porCobrar.length} cuotas`, COLOR.rojo)
+        autoTable(doc, {
+          startY: y,
+          head: [['Jugador', 'Categoría', 'Mes', 'Atraso', 'Monto', 'Estado']],
+          body: [...preview.porCobrar]
+            .sort((a: any, b: any) => edad(b) - edad(a) || (a.jugadores?.nombre || '').localeCompare(b.jugadores?.nombre || ''))
+            .map((m: any) => {
+              const e = edad(m)
+              return [m.jugadores?.nombre || '—', m.jugadores?.categoria || '—', mesDe(m),
+                e <= 0 ? 'al día' : e === 1 ? '1 mes' : `${e} meses`, m.monto ? fmt(m.monto) : '—', m.estado]
+            }),
+          foot: [['Total', '', '', '', fmt(preview.totalPorCobrar), '']],
+          ...estiloTabla(COLOR.rojo),
+          ...pintaEstado(5),
+          columnStyles: { 1: { cellWidth: 26 }, 2: { cellWidth: 26 }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }, 5: { cellWidth: 22, halign: 'center' } },
+        })
+      }
+
+      // El libro del período, movimiento por movimiento: es lo que se revisa
+      // cuando un total no cuadra, y era justo lo que el reporte no traía.
+      if (preview.movimientos.length > 0) {
+        doc.addPage()
+        y = encabezado(doc, { ...cab, titulo: 'Libro de movimientos' })
+        y = tituloSeccion(doc, y, 'Todos los movimientos del período', `${preview.movimientos.length} registros`)
+        autoTable(doc, {
+          startY: y,
+          head: [['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Monto']],
+          body: preview.movimientos.map((m: any) => [
+            m.fecha, m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto',
+            catLabel[m.categoria] || m.categoria, m.descripcion || '—',
+            (m.tipo === 'ingreso' ? '+' : '-') + fmt(m.monto),
+          ]),
+          foot: [['', '', '', 'Resultado del período', fmt(balance)]],
+          ...estiloTabla(),
+          columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 20, halign: 'center' }, 2: { cellWidth: 34 }, 4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' } },
+          didParseCell: (d: any) => {
+            if (d.section === 'body' && (d.column.index === 1 || d.column.index === 4)) {
+              d.cell.styles.textColor = preview.movimientos[d.row.index]?.tipo === 'ingreso' ? COLOR.verde : COLOR.rojo
+            }
+            if (d.section === 'foot' && d.column.index === 4) d.cell.styles.textColor = balance < 0 ? COLOR.rojo : COLOR.verde
+          },
+        })
       }
     }
 
+    // ── ASISTENCIA ────────────────────────────────────────────────────────
     if (categoriaRep === 'asistencia') {
+      const activos = preview.activos.length
+      const cobertura = activos > 0 ? Math.round((preview.promedioDiario / activos) * 100) : 0
+      const conClase = Object.entries(preview.porDiaSemana).filter(([, v]) => (v as number) > 0) as [string, number][]
+      const flojo = [...conClase].sort((a, b) => a[1] - b[1])[0]
+
       y = filaTarjetas(doc, y, [
-        { valor: String(preview.totalAsist), etiqueta: 'Total asistencias', color: COLOR.primario },
-        { valor: String(preview.diasUnicos), etiqueta: 'Días con registro', color: COLOR.primario },
-        { valor: String(preview.promedioDiario), etiqueta: 'Promedio diario', color: COLOR.verde },
-        { valor: String(preview.activos.length), etiqueta: 'Jugadores activos', color: COLOR.primario },
+        { valor: String(preview.totalAsist), etiqueta: 'Asistencias', color: COLOR.primario },
+        { valor: String(preview.diasUnicos), etiqueta: 'Días con clase', color: COLOR.celeste },
+        { valor: String(preview.promedioDiario), etiqueta: 'Promedio por clase', color: COLOR.verde },
+        { valor: String(preview.sinAsistencia.length), etiqueta: 'Activos que no vinieron', color: preview.sinAsistencia.length > 0 ? COLOR.rojo : COLOR.verde },
       ])
-      y = tituloSeccion(doc, y, 'Resumen')
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [...(preview.diaMasAsistido ? [['Día más asistido', `${preview.diaMasAsistido[0]} (${preview.diaMasAsistido[1]})`]] : []), ...(preview.diaSemanaMax ? [['Día favorito', `${preview.diaSemanaMax.dia} (${preview.diaSemanaMax.count})`]] : [])], ...estiloTabla() })
-      y = (doc as any).lastAutoTable.finalY + 10
-      y = tituloSeccion(doc, y, 'Por día de semana')
-      autoTable(doc, { startY: y, head: [['Día', 'Asistencias']], body: preview.diasSemana.map((d: string, i: number) => [d, String(preview.porDiaSemana[i])]), ...estiloTabla() })
-      y = (doc as any).lastAutoTable.finalY + 10
-      y = tituloSeccion(doc, y, 'Top 10 asistentes')
-      autoTable(doc, { startY: y, head: [['Jugador', 'Asistencias']], body: preview.topJugadores.map((j: any) => [j.nombre, String(j.count)]), ...estiloTabla(COLOR.verde) })
+
+      y = tituloSeccion(doc, y, 'La semana', 'asistencias por día', COLOR.primario)
+      y = barrasColumnas(doc, y, preview.diasSemana.map((d: string, i: number) => ({ etiqueta: d.slice(0, 3), valor: preview.porDiaSemana[i] })), COLOR.primario)
+
+      y = asegurarEspacio(doc, y, 45, cab)
+      y = panelDatos(doc, y, [
+        ['Día más lleno', preview.diaMasAsistido ? `${preview.diaMasAsistido[0]} (${preview.diaMasAsistido[1]})` : '—'],
+        ['Día de semana fuerte', preview.diaSemanaMax ? `${preview.diaSemanaMax.dia} (${preview.diaSemanaMax.count})` : '—'],
+        ['Día de semana flojo', flojo ? `${preview.diasSemana[parseInt(flojo[0])]} (${flojo[1]})` : '—'],
+        ['Plantel activo', String(activos)],
+        ['Ocupación media', `${cobertura}%`],
+        ['Nunca vinieron', `${preview.sinAsistencia.length} (${pct(preview.sinAsistencia.length, activos)})`],
+      ], 3)
+
+      y = asegurarEspacio(doc, y, 60, cab)
+      y = tituloSeccion(doc, y, 'Los que más entrenaron', 'top 10', COLOR.verde)
+      y = barrasCategoria(doc, y, preview.topJugadores.map((j: any) => ({ etiqueta: j.nombre, valor: j.count, texto: `${j.count} clases` })), COLOR.verde, cab)
+
+      // El plantel completo, no el top 10: el reporte sirve para ver quién se
+      // está descolgando, y para eso hay que ver a todos.
+      doc.addPage()
+      y = encabezado(doc, { ...cab, titulo: 'Asistencia jugador por jugador' })
+      const conteo = new Map<string, number>()
+      for (const j of preview.activos) conteo.set(j.id, preview.porJugador[j.id]?.count ?? 0)
+      const filasAsist = [...preview.activos].sort((a: any, b: any) =>
+        (conteo.get(b.id) ?? 0) - (conteo.get(a.id) ?? 0) || a.nombre.localeCompare(b.nombre))
+      y = tituloSeccion(doc, y, 'Todos los activos', `${filasAsist.length} jugadores · ${preview.diasUnicos} días con clase`)
+      autoTable(doc, {
+        startY: y,
+        head: [['#', 'Jugador', 'Categoría', 'Clases', '% de los días']],
+        body: filasAsist.map((j: any, i: number) => {
+          const n = conteo.get(j.id) ?? 0
+          return [String(i + 1), j.nombre, j.categoria || '—', String(n), pct(n, preview.diasUnicos)]
+        }),
+        foot: [['', 'Total', '', String(preview.totalAsist), '']],
+        ...estiloTabla(),
+        columnStyles: { 0: { cellWidth: 10, halign: 'right', textColor: COLOR.tenue }, 2: { cellWidth: 34 }, 3: { cellWidth: 22, halign: 'right' }, 4: { cellWidth: 28, halign: 'right' } },
+        didParseCell: (d: any) => {
+          if (d.section !== 'body' || d.column.index !== 4) return
+          const n = conteo.get(filasAsist[d.row.index]?.id) ?? 0
+          const p = preview.diasUnicos > 0 ? (n / preview.diasUnicos) * 100 : 0
+          d.cell.styles.fontStyle = 'bold'
+          d.cell.styles.textColor = n === 0 ? COLOR.rojo : p >= 60 ? COLOR.verde : p >= 30 ? COLOR.ambar : COLOR.rojo
+        },
+      })
+      y = trasTabla(doc)
+
       if (preview.sinAsistencia.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Sin asistencia')
-        autoTable(doc, { startY: y, head: [['Jugador', 'Categoría']], body: preview.sinAsistencia.map((j: any) => [j.nombre, j.categoria || '—']), ...estiloTabla(COLOR.rojo) })
+        y = asegurarEspacio(doc, y, 50, cab)
+        y = tituloSeccion(doc, y, 'No asistieron ni una vez', String(preview.sinAsistencia.length), COLOR.rojo)
+        autoTable(doc, {
+          startY: y,
+          head: [['Jugador', 'Categoría']],
+          body: preview.sinAsistencia.map((j: any) => [j.nombre, j.categoria || '—']),
+          ...estiloTabla(COLOR.rojo),
+          columnStyles: { 1: { cellWidth: 60 } },
+        })
       }
     }
 
+    // ── TORNEOS Y LIGAS ───────────────────────────────────────────────────
     if (categoriaRep === 'torneos') {
-      y = tituloSeccion(doc, y, 'Resumen de torneos')
-      autoTable(doc, { startY: y, head: [['Concepto', 'Valor']], body: [['Total torneos', String(preview.torneos.length)], ['Ingresos inscripción', fmt(preview.ingresosInscripcion)], ...Object.entries(preview.torneosPorEstado).map(([e, c]) => [`Estado: ${e}`, String(c)])], ...estiloTabla(COLOR.naranja) })
+      const jugadoresEnLigas = preview.ligas.reduce((s: number, l: any) =>
+        s + (l.liga_divisiones || []).reduce((t: number, d: any) => t + (d.liga_division_jugadores || []).length, 0), 0)
+
+      y = filaTarjetas(doc, y, [
+        { valor: String(preview.torneos.length), etiqueta: 'Torneos del período', color: COLOR.naranja },
+        { valor: String(preview.ligas.length), etiqueta: 'Ligas', color: COLOR.morado },
+        { valor: String(jugadoresEnLigas), etiqueta: 'Inscritos en ligas', color: COLOR.celeste },
+        { valor: fmt(preview.ingresosInscripcion), etiqueta: 'Ingresos por inscripción', color: COLOR.verde },
+      ])
+
+      if (Object.keys(preview.torneosPorEstado).length > 0) {
+        y = tituloSeccion(doc, y, 'Torneos por estado', String(preview.torneos.length), COLOR.naranja)
+        y = barrasCategoria(doc, y, Object.entries(preview.torneosPorEstado)
+          .map(([e, c]) => ({ etiqueta: e, valor: c as number, texto: String(c), color: colorEstado(e) })), COLOR.naranja, cab)
+      }
+
       if (preview.torneos.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Detalle')
-        autoTable(doc, { startY: y, head: [['Nombre', 'Fecha', 'Estado', 'Fase']], body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.estado, t.fase || '—']), ...estiloTabla() })
+        y = asegurarEspacio(doc, y, 50, cab)
+        y = tituloSeccion(doc, y, 'Detalle de torneos')
+        autoTable(doc, {
+          startY: y,
+          head: [['Nombre', 'Fecha', 'Tipo', 'Estado']],
+          // "Fase" salía siempre en raya: es columna de torneo_partidos, no de
+          // torneos. En su lugar va el tipo, que sí viene en la consulta.
+          body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.tipo || '—', t.estado]),
+          ...estiloTabla(COLOR.naranja),
+          ...pintaEstado(3),
+          columnStyles: { 1: { cellWidth: 28 }, 2: { cellWidth: 30 }, 3: { cellWidth: 30, halign: 'center' } },
+        })
+        y = trasTabla(doc)
       }
+
       if (preview.ligas.length > 0) {
-        y = (doc as any).lastAutoTable.finalY + 10
-        y = tituloSeccion(doc, y, 'Ligas')
-        autoTable(doc, { startY: y, head: [['Liga', 'Estado', 'Divisiones', 'Fechas', 'Partidos']], body: preview.ligas.map((l: any) => [l.nombre, l.estado, (l.liga_divisiones || []).length, (l.liga_fechas || [{ count: 0 }])[0]?.count || 0, (l.liga_partidos || [{ count: 0 }])[0]?.count || 0]), ...estiloTabla(COLOR.morado) })
+        y = asegurarEspacio(doc, y, 50, cab)
+        y = tituloSeccion(doc, y, 'Ligas', String(preview.ligas.length), COLOR.morado)
+        autoTable(doc, {
+          startY: y,
+          head: [['Liga', 'Estado', 'Divisiones', 'Jugadores', 'Fechas', 'Partidos']],
+          body: preview.ligas.map((l: any) => [
+            l.nombre, l.estado,
+            String((l.liga_divisiones || []).length),
+            String((l.liga_divisiones || []).reduce((s: number, d: any) => s + (d.liga_division_jugadores || []).length, 0)),
+            String((l.liga_fechas || [{ count: 0 }])[0]?.count || 0),
+            String((l.liga_partidos || [{ count: 0 }])[0]?.count || 0),
+          ]),
+          ...estiloTabla(COLOR.morado),
+          ...pintaEstado(1),
+          columnStyles: { 1: { cellWidth: 26, halign: 'center' }, 2: { cellWidth: 24, halign: 'right' }, 3: { cellWidth: 24, halign: 'right' }, 4: { cellWidth: 20, halign: 'right' }, 5: { cellWidth: 22, halign: 'right' } },
+        })
       }
+
       if (preview.torneos.length === 0 && preview.ligas.length === 0) sinDatos(doc, y)
     }
 
-    piePagina(doc, `CmSports · Reporte ${catInfo.label} · ${titulo}`)
+    piePagina(doc, `${club}  ·  Reporte ${catInfo.label}  ·  ${titulo}`)
     const jn = categoriaRep === 'jugador' && preview.jugador ? `_${preview.jugador.nombre.replace(/ /g, '_')}` : ''
     doc.save(`reporte_${categoriaRep}${jn}_${titulo.replace(/ /g, '_')}.pdf`)
     setGenerando(false)
   }
 
   const { titulo } = getRango()
+  // Las mensualidades se guardan por mes y año, no por fecha: la vista pedía
+  // `m.fecha` y mostraba una columna entera de "undefined".
+  const mesDeVista = (m: any) => (m?.mes ? `${mesesN[m.mes - 1]} ${m.anio}` : '—')
 
   return (
     <div>
       {/* Selector de tipo de reporte */}
       <div style={{ ...card, padding:20, marginBottom:16 }}>
-        <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Tipo de reporte</div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(140px, 1fr))', gap:8 }}>
-          {categoriasReporte.map(c => (
-            <button key={c.key} onClick={() => setCategoriaRep(c.key)}
-              style={{ padding:'12px 10px', borderRadius:10, border: categoriaRep === c.key ? '2px solid #4f46e5' : '1px solid #e2e8f0', background: categoriaRep === c.key ? '#ede9fe' : '#f8fafc', cursor:'pointer', textAlign:'left' }}>
-              <div style={{ fontSize:13, fontWeight:600, color: categoriaRep === c.key ? '#4f46e5' : text }}>{c.label}</div>
-              <div style={{ fontSize:11, color: muted, marginTop:2 }}>{c.desc}</div>
-            </button>
-          ))}
+        <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>¿Qué reporte necesitas?</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:10 }}>
+          {categoriasReporte.map(c => {
+            const activa = categoriaRep === c.key
+            return (
+              <button key={c.key} onClick={() => setCategoriaRep(c.key)}
+                style={{ padding:'14px 14px', borderRadius:12, border: activa ? '2px solid #4f46e5' : '1px solid #e2e8f0', background: activa ? '#ede9fe' : '#f8fafc', cursor:'pointer', textAlign:'left', display:'flex', flexDirection:'column', gap:4, transition:'all .15s' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                  <span style={{ fontSize:15 }}>{c.emoji}</span>
+                  <span style={{ fontSize:13.5, fontWeight:700, color: activa ? '#3730a3' : text }}>{c.label}</span>
+                </div>
+                <div style={{ fontSize:11, fontWeight:600, color: activa ? '#4f46e5' : muted }}>{c.desc}</div>
+                {/* Sin este renglón nadie sabía qué iba a salir hasta bajar el PDF. */}
+                <div style={{ fontSize:10.5, color: hint, lineHeight:1.35 }}>{c.trae}</div>
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -1143,62 +1682,95 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
             </select>
           </div>
         )}
-        <div style={{ display:'flex', gap:10 }}>
+        {/* Los dos botones tenían el mismo peso visual y colores que se peleaban
+            (lila contra rosa). Son dos pasos de lo mismo: primero se mira, y el
+            PDF recién se habilita cuando hay algo que bajar. */}
+        <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
           <button onClick={generarPreview} disabled={generando || (categoriaRep === 'jugador' && !jugadorId)}
-            style={{ flex:1, padding:12, background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, fontSize:13, fontWeight:600, cursor: (categoriaRep === 'jugador' && !jugadorId) ? 'not-allowed' : 'pointer', opacity: (categoriaRep === 'jugador' && !jugadorId) ? 0.5 : 1 }}>
-            {generando ? 'Cargando...' : 'Vista previa'}
+            style={{ flex:'1 1 200px', padding:'13px 18px', background: (categoriaRep === 'jugador' && !jugadorId) ? '#e2e8f0' : 'linear-gradient(135deg, #4f46e5, #6366f1)', color: (categoriaRep === 'jugador' && !jugadorId) ? hint : 'white', border:'none', borderRadius:10, fontSize:13.5, fontWeight:700, cursor: (categoriaRep === 'jugador' && !jugadorId) ? 'not-allowed' : 'pointer' }}>
+            {generando ? 'Cargando…' : preview ? '↻ Actualizar vista' : 'Ver el reporte'}
           </button>
-          <button onClick={exportarPDF} disabled={generando||!preview}
-            style={{ flex:1, padding:12, background:preview?'#f43f5e':'#e2e8f0', color:preview?'white': hint, border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:preview?'pointer':'not-allowed' }}>
-            {generando ? 'Generando...' : 'Exportar PDF'}
+          <button onClick={exportarPDF} disabled={generando || !preview}
+            style={{ flex:'1 1 200px', padding:'13px 18px', background: preview ? '#ffffff' : '#f8fafc', color: preview ? '#3730a3' : hint, border: `1.5px solid ${preview ? '#c4b5fd' : '#e2e8f0'}`, borderRadius:10, fontSize:13.5, fontWeight:700, cursor: preview ? 'pointer' : 'not-allowed' }}>
+            {generando ? 'Generando…' : '📄 Descargar PDF'}
           </button>
+          {!preview && (
+            <div style={{ flexBasis:'100%', fontSize:11.5, color: hint }}>
+              {categoriaRep === 'jugador' && !jugadorId
+                ? 'Elige un jugador para poder generar el reporte.'
+                : 'Primero mira el reporte en pantalla; el PDF se habilita al tenerlo listo.'}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Vista previa — General */}
-      {preview && categoriaRep === 'general' && (
-        <div>
-          <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — General — {titulo}</div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
-            {[{ label:'Ingresos', value:fmtVista(preview.ingresos), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }, { label:'Gastos', value:fmtVista(preview.gastos), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' }, { label:'Balance', value:fmtVista(preview.ingresos - preview.gastos), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' }].map(s => (
-              <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:16 }}>
-                <div style={{ fontSize:20, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
-                <div style={{ fontSize:12, color:s.color, marginTop:4 }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-            {[{ label:'Activos', value:preview.activos.length, color:text }, { label:'Asistencias', value:preview.asistencias.length, color:'#16a34a' }, { label:'Torneos', value:preview.torneos.length, color:'#d97706' }, { label:'Morosos', value:preview.morosos.length, color:'#dc2626' }].map(s => (
-              <div key={s.label} style={{ ...card, padding:16, textAlign:'center' }}>
-                <div style={{ fontSize:24, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
-                <div style={{ fontSize:11, color: muted, marginTop:4 }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-            <div style={{ ...card, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Ingresos por categoría</div>
-              {Object.entries(preview.desgloseIngresos).map(([cat, total]) => (
-                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
-                  <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
-                  <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmtVista(total as number)}</span>
-                </div>
-              ))}
-              {Object.keys(preview.desgloseIngresos).length === 0 && <p style={{ fontSize:12, color: hint }}>Sin ingresos</p>}
-            </div>
-            <div style={{ ...card, padding:16 }}>
-              <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Gastos por categoría</div>
-              {Object.entries(preview.desgloseGastos).map(([cat, total]) => (
-                <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
-                  <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
-                  <span style={{ color:'#dc2626', fontFamily:'monospace' }}>{fmt(total as number)}</span>
-                </div>
-              ))}
-              {Object.keys(preview.desgloseGastos).length === 0 && <p style={{ fontSize:12, color: hint }}>Sin gastos</p>}
+      {/* Vista previa — General. Es el mismo análisis que imprime el PDF
+          (`analizarGeneral`), para que lo que se ve en pantalla y lo que sale
+          en papel no puedan decir cosas distintas. */}
+      {preview && categoriaRep === 'general' && (() => {
+        const a = analizarGeneral(preview, fmtVista)
+        const tonoBg: Record<string, { bg: string; borde: string; color: string }> = {
+          bien:   { bg:'#f0fdf4', borde:'#bbf7d0', color:'#16a34a' },
+          ojo:    { bg:'#fffbeb', borde:'#fde68a', color:'#d97706' },
+          mal:    { bg:'#fef2f2', borde:'#fecaca', color:'#dc2626' },
+          info:   { bg:'#eff6ff', borde:'#bfdbfe', color:'#2563eb' },
+          neutro: { bg:'#f8fafc', borde:'#e2e8f0', color: muted },
+        }
+        const Bloque = ({ titulo: t, datos }: { titulo: string; datos: any[] }) => (
+          <div style={{ marginBottom:16 }}>
+            <div style={{ fontSize:13, fontWeight:700, color: text, marginBottom:10 }}>{t}</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(190px, 1fr))', gap:12 }}>
+              {datos.map(d => {
+                const c = tonoBg[d.tono]
+                return (
+                  <div key={d.etiqueta} style={{ background:c.bg, border:`1px solid ${c.borde}`, borderRadius:12, padding:'14px 15px' }}>
+                    <div style={{ fontSize:10.5, fontWeight:700, color: muted, letterSpacing:.3, textTransform:'uppercase' }}>{d.etiqueta}</div>
+                    <div style={{ fontSize:19, fontWeight:700, color:c.color, marginTop:5, wordBreak:'break-word' }}>{d.valor}</div>
+                    {d.detalle && <div style={{ fontSize:11, color: hint, marginTop:4, lineHeight:1.35 }}>{d.detalle}</div>}
+                  </div>
+                )
+              })}
             </div>
           </div>
-        </div>
-      )}
+        )
+        return (
+          <div>
+            <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>{titulo} — cómo va el club</div>
+
+            <div style={{ background: a.balance >= 0 ? '#f0fdf4' : '#fef2f2', border:`1px solid ${a.balance >= 0 ? '#bbf7d0' : '#fecaca'}`, borderRadius:14, padding:'16px 18px', marginBottom:16, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+              <div style={{ fontSize:13, color: muted }}>Resultado del período {a.balance >= 0 ? '— a favor' : '— en contra'}</div>
+              <div style={{ fontSize:26, fontWeight:700, color: a.balance >= 0 ? '#16a34a' : '#dc2626', fontFamily:'monospace' }}>{fmtVista(a.balance)}</div>
+            </div>
+
+            <div style={{ ...card, padding:18, marginBottom:16 }}>
+              <div style={{ fontSize:13, fontWeight:700, color: text, marginBottom:10 }}>Lo que hay que mirar</div>
+              {a.hallazgos.map((h, i) => (
+                <div key={i} style={{ display:'flex', gap:9, alignItems:'flex-start', padding:'7px 0', borderBottom: i < a.hallazgos.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                  <span style={{ width:8, height:8, borderRadius:'50%', background: tonoBg[h.tono].color, marginTop:5, flexShrink:0 }} />
+                  <span style={{ fontSize:12.5, color: text, lineHeight:1.45 }}>{h.texto}</span>
+                </div>
+              ))}
+            </div>
+
+            <Bloque titulo="La plata" datos={a.plata} />
+            <Bloque titulo="La gente" datos={a.gente} />
+
+            {preview.morosos.length > 0 && (
+              <div style={{ ...card, padding:16 }}>
+                <div style={{ fontSize:13, fontWeight:700, color:'#dc2626', marginBottom:10 }}>A quién cobrarle ({preview.morosos.length})</div>
+                <div style={{ fontSize:11.5, color: hint, marginBottom:8 }}>En el PDF va con los meses impagos, el monto de cada uno y si sigue entrenando.</div>
+                {preview.morosos.slice(0, 8).map((j: any) => (
+                  <div key={j.id} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
+                    <span style={{ color: text }}>{j.nombre}</span>
+                    <span style={{ color: muted }}>{a.asistPorJug.get(j.id) ?? 0} clases en el período</span>
+                  </div>
+                ))}
+                {preview.morosos.length > 8 && <div style={{ fontSize:11.5, color: hint, paddingTop:8 }}>y {preview.morosos.length - 8} más en el PDF.</div>}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Vista previa — Jugador */}
       {preview && categoriaRep === 'jugador' && preview.jugador && (
@@ -1206,7 +1778,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — {preview.jugador.nombre} — {titulo}</div>
           <div style={{ ...card, padding:20, marginBottom:16 }}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, fontSize:13 }}>
-              {([['Categoría', preview.jugador.categoria || '—'], ['Estado', preview.jugador.estado || '—'], ['Plan', preview.jugador.tipo_plan || '—'], ['Asistencias (período)', String((preview.asistencias || []).length)], ['Mensualidad', preview.jugador.mensualidad ? fmt(preview.jugador.mensualidad) : '—'], ['RUT', preview.jugador.rut || '—'], ['Email', preview.jugador.email || '—']] as [string, any][]).map(([l, v]) => (
+              {([['Categoría', preview.jugador.categoria || '—'], ['Estado', preview.jugador.estado || '—'], ['Plan', preview.jugador.tipo_plan || '—'], ['Asistencias (período)', String((preview.asistencias || []).length)], ['Mensualidad', preview.jugador.mensualidad ? fmtVista(preview.jugador.mensualidad) : '—'], ['RUT', preview.jugador.rut || '—'], ['Email', preview.jugador.email || '—']] as [string, any][]).map(([l, v]) => (
                 <div key={l} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
                   <span style={{ color: muted }}>{l}</span>
                   <span style={{ color: text, fontWeight:500 }}>{v}</span>
@@ -1215,7 +1787,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
             </div>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
-            {[{ label:'Pagado (período)', value:fmt(preview.totalPagado), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }, { label:'Pendiente', value:fmt(preview.totalPendiente), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' }, { label:'Asistencias', value:String(preview.asistencias.length), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' }].map(s => (
+            {[{ label:'Pagado (período)', value:fmtVista(preview.totalPagado), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }, { label:'Pendiente', value:fmtVista(preview.totalPendiente), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' }, { label:'Asistencias', value:String(preview.asistencias.length), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' }].map(s => (
               <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:16, textAlign:'center' }}>
                 <div style={{ fontSize:20, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
                 <div style={{ fontSize:12, color:s.color, marginTop:4 }}>{s.label}</div>
@@ -1230,8 +1802,8 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
                   <thead><tr style={{ borderBottom:'2px solid #e2e8f0' }}><th style={{ textAlign:'left', padding:'8px 6px', color: muted }}>Fecha</th><th style={{ textAlign:'right', padding:'8px 6px', color: muted }}>Monto</th><th style={{ textAlign:'center', padding:'8px 6px', color: muted }}>Estado</th></tr></thead>
                   <tbody>{preview.mensualidades.map((m: any, i: number) => (
                     <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
-                      <td style={{ padding:'8px 6px', color: text }}>{m.fecha}</td>
-                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color: text }}>{m.monto ? fmt(m.monto) : '—'}</td>
+                      <td style={{ padding:'8px 6px', color: text }}>{mesDeVista(m)}</td>
+                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color: text }}>{m.monto ? fmtVista(m.monto) : '—'}</td>
                       <td style={{ padding:'8px 6px', textAlign:'center' }}>
                         <span style={{ padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:600, background: m.estado === 'pagado' ? '#dcfce7' : m.estado === 'atrasado' ? '#fef2f2' : '#fef9c3', color: m.estado === 'pagado' ? '#16a34a' : m.estado === 'atrasado' ? '#dc2626' : '#d97706' }}>{m.estado}</span>
                       </td>
@@ -1271,7 +1843,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         <div>
           <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — Finanzas — {titulo}</div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
-            {[{ label:'Ingresos', value:fmt(preview.ingresos), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }, { label:'Gastos', value:fmt(preview.gastos), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' }, { label:'Balance', value:fmt(preview.ingresos - preview.gastos), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' }].map(s => (
+            {[{ label:'Ingresos', value:fmtVista(preview.ingresos), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }, { label:'Gastos', value:fmtVista(preview.gastos), color:'#dc2626', bg:'#fef2f2', border:'#fecaca' }, { label:'Balance', value:fmtVista(preview.ingresos - preview.gastos), color:'#3730a3', bg:'#ede9fe', border:'#c4b5fd' }].map(s => (
               <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:16 }}>
                 <div style={{ fontSize:20, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
                 <div style={{ fontSize:12, color:s.color, marginTop:4 }}>{s.label}</div>
@@ -1280,11 +1852,11 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:16 }}>
             <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:12, padding:16, textAlign:'center' }}>
-              <div style={{ fontSize:20, fontWeight:700, color:'#16a34a', fontFamily:'monospace' }}>{fmt(preview.totalMensPagado)}</div>
+              <div style={{ fontSize:20, fontWeight:700, color:'#16a34a', fontFamily:'monospace' }}>{fmtVista(preview.totalMensPagado)}</div>
               <div style={{ fontSize:12, color:'#16a34a', marginTop:4 }}>Mensualidades cobradas</div>
             </div>
             <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:12, padding:16, textAlign:'center' }}>
-              <div style={{ fontSize:20, fontWeight:700, color:'#dc2626', fontFamily:'monospace' }}>{fmt(preview.totalMensPendiente)}</div>
+              <div style={{ fontSize:20, fontWeight:700, color:'#dc2626', fontFamily:'monospace' }}>{fmtVista(preview.totalMensPendiente)}</div>
               <div style={{ fontSize:12, color:'#dc2626', marginTop:4 }}>Mensualidades pendientes</div>
             </div>
           </div>
@@ -1294,7 +1866,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               {Object.entries(preview.desgloseIngresos).map(([cat, total]) => (
                 <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
                   <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
-                  <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                  <span style={{ color:'#16a34a', fontFamily:'monospace' }}>{fmtVista(total as number)}</span>
                 </div>
               ))}
               {Object.keys(preview.desgloseIngresos).length === 0 && <p style={{ fontSize:12, color: hint }}>Sin ingresos</p>}
@@ -1304,7 +1876,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               {Object.entries(preview.desgloseGastos).map(([cat, total]) => (
                 <div key={cat} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
                   <span style={{ color: muted }}>{catLabel[cat] || cat}</span>
-                  <span style={{ color:'#dc2626', fontFamily:'monospace' }}>{fmt(total as number)}</span>
+                  <span style={{ color:'#dc2626', fontFamily:'monospace' }}>{fmtVista(total as number)}</span>
                 </div>
               ))}
               {Object.keys(preview.desgloseGastos).length === 0 && <p style={{ fontSize:12, color: hint }}>Sin gastos</p>}
@@ -1319,9 +1891,9 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
                   <tbody>{Object.entries(preview.porMes).sort().map(([mk, v]: any) => (
                     <tr key={mk} style={{ borderBottom:'1px solid #f1f5f9' }}>
                       <td style={{ padding:'8px 6px', color: text }}>{mesesN[parseInt(mk.slice(5, 7)) - 1]} {mk.slice(0, 4)}</td>
-                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color:'#16a34a' }}>{fmt(v.ingresos)}</td>
-                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color:'#dc2626' }}>{fmt(v.gastos)}</td>
-                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color: v.ingresos - v.gastos >= 0 ? '#16a34a' : '#dc2626', fontWeight:600 }}>{fmt(v.ingresos - v.gastos)}</td>
+                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color:'#16a34a' }}>{fmtVista(v.ingresos)}</td>
+                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color:'#dc2626' }}>{fmtVista(v.gastos)}</td>
+                      <td style={{ padding:'8px 6px', textAlign:'right', fontFamily:'monospace', color: v.ingresos - v.gastos >= 0 ? '#16a34a' : '#dc2626', fontWeight:600 }}>{fmtVista(v.ingresos - v.gastos)}</td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -1334,7 +1906,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               {preview.pendientes.map((m: any, i: number) => (
                 <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
                   <span style={{ color: text }}>{(m as any).jugadores?.nombre || '—'}</span>
-                  <span><span style={{ color: muted, marginRight:8 }}>{m.fecha}</span><span style={{ fontFamily:'monospace', color:'#dc2626' }}>{m.monto ? fmt(m.monto) : '—'}</span></span>
+                  <span><span style={{ color: muted, marginRight:8 }}>{mesDeVista(m)}</span><span style={{ fontFamily:'monospace', color:'#dc2626' }}>{m.monto ? fmtVista(m.monto) : '—'}</span></span>
                 </div>
               ))}
             </div>
@@ -1414,7 +1986,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         <div>
           <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>Vista previa — Torneos y Ligas — {titulo}</div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14, marginBottom:16 }}>
-            {[{ label:'Torneos', value:String(preview.torneos.length), color:'#d97706', bg:'#fffbeb', border:'#fde68a' }, { label:'Ligas', value:String(preview.ligas.length), color:'#7c3aed', bg:'#f5f3ff', border:'#ddd6fe' }, { label:'Ingresos inscripción', value:fmt(preview.ingresosInscripcion), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }].map(s => (
+            {[{ label:'Torneos', value:String(preview.torneos.length), color:'#d97706', bg:'#fffbeb', border:'#fde68a' }, { label:'Ligas', value:String(preview.ligas.length), color:'#7c3aed', bg:'#f5f3ff', border:'#ddd6fe' }, { label:'Ingresos inscripción', value:fmtVista(preview.ingresosInscripcion), color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0' }].map(s => (
               <div key={s.label} style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:12, padding:16, textAlign:'center' }}>
                 <div style={{ fontSize:24, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
                 <div style={{ fontSize:12, color:s.color, marginTop:4 }}>{s.label}</div>
@@ -1426,7 +1998,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>Torneos del período</div>
               <div style={{ overflowX:'auto' }}>
                 <table style={{ width:'100%', fontSize:12, borderCollapse:'collapse' }}>
-                  <thead><tr style={{ borderBottom:'2px solid #e2e8f0' }}><th style={{ textAlign:'left', padding:'8px 6px', color: muted }}>Nombre</th><th style={{ textAlign:'left', padding:'8px 6px', color: muted }}>Fecha</th><th style={{ textAlign:'center', padding:'8px 6px', color: muted }}>Estado</th><th style={{ textAlign:'center', padding:'8px 6px', color: muted }}>Fase</th></tr></thead>
+                  <thead><tr style={{ borderBottom:'2px solid #e2e8f0' }}><th style={{ textAlign:'left', padding:'8px 6px', color: muted }}>Nombre</th><th style={{ textAlign:'left', padding:'8px 6px', color: muted }}>Fecha</th><th style={{ textAlign:'center', padding:'8px 6px', color: muted }}>Estado</th><th style={{ textAlign:'center', padding:'8px 6px', color: muted }}>Tipo</th></tr></thead>
                   <tbody>{preview.torneos.map((t: any, i: number) => (
                     <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
                       <td style={{ padding:'8px 6px', color: text, fontWeight:500 }}>{t.nombre}</td>
@@ -1434,7 +2006,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
                       <td style={{ padding:'8px 6px', textAlign:'center' }}>
                         <span style={{ padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:600, background: t.estado === 'finalizado' ? '#dcfce7' : t.estado === 'en_curso' ? '#dbeafe' : '#fef9c3', color: t.estado === 'finalizado' ? '#16a34a' : t.estado === 'en_curso' ? '#2563eb' : '#d97706' }}>{t.estado}</span>
                       </td>
-                      <td style={{ padding:'8px 6px', textAlign:'center', color: muted }}>{t.fase || '—'}</td>
+                      <td style={{ padding:'8px 6px', textAlign:'center', color: muted }}>{t.tipo || '—'}</td>
                     </tr>
                   ))}</tbody>
                 </table>
