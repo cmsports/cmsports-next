@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { crearFeedback, editarFeedback, eliminarFeedback } from '@/app/actions/feedback'
+import { crearFeedback, crearFeedbackMasivo, editarFeedback, eliminarFeedback } from '@/app/actions/feedback'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import FiltroMultiSelect from '@/components/FiltroMultiSelect'
 
@@ -50,6 +50,14 @@ export default function PanelFeedback({ clubId, userId, puedeTodo }: {
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
   const [cargando, setCargando]   = useState(false)
   const [mensaje, setMensaje]     = useState('')
+
+  // Envío masivo: selección de varios alumnos a la vez, sin salir de la lista.
+  const [seleccion, setSeleccion]         = useState<Set<string>>(new Set())
+  const [fechaMasivo, setFechaMasivo]     = useState(() => fechaChile())
+  const [horaMasivo, setHoraMasivo]       = useState(() => horaChile())
+  const [comentarioMasivo, setComentarioMasivo] = useState('')
+  const [enviandoMasivo, setEnviandoMasivo]     = useState(false)
+  const [mensajeMasivo, setMensajeMasivo] = useState('')
 
   const [fecha, setFecha]         = useState(() => fechaChile())
   const [hora, setHora]           = useState(() => horaChile())
@@ -166,6 +174,35 @@ export default function PanelFeedback({ clubId, userId, puedeTodo }: {
     return puedeTodo || f.autor_id === userId
   }
 
+  function toggleSeleccion(id: string) {
+    setSeleccion(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function enviarMasivo() {
+    if (seleccion.size === 0 || !comentarioMasivo.trim()) return
+    setEnviandoMasivo(true)
+    setMensajeMasivo('')
+    const res = await crearFeedbackMasivo({
+      jugadorIds: [...seleccion], fecha: fechaMasivo, hora: horaMasivo, comentario: comentarioMasivo,
+    })
+    setEnviandoMasivo(false)
+    if (res.error) { setMensajeMasivo(res.error); return }
+    const enviados = res.enviados ?? seleccion.size
+    setConteos(prev => {
+      const next = { ...prev }
+      for (const id of seleccion) next[id] = (next[id] ?? 0) + 1
+      return next
+    })
+    setSeleccion(new Set())
+    setComentarioMasivo('')
+    setMensajeMasivo(`✅ Feedback enviado a ${enviados} alumno${enviados === 1 ? '' : 's'}.`)
+  }
+
   const categorias = [...new Set(jugadores.map(j => j.categoria).filter(Boolean))].sort() as string[]
 
   const filtrados = jugadores.filter(j => {
@@ -249,6 +286,68 @@ export default function PanelFeedback({ clubId, userId, puedeTodo }: {
           )}
         </div>
 
+        {/* Envío masivo: tildar varios (o "seleccionar todos los filtrados")
+            y mandarles a todos el mismo comentario de una sola vez. */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button onClick={() => setSeleccion(new Set(filtrados.map(j => j.id)))} disabled={filtrados.length === 0}
+            style={{ padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: filtrados.length ? 'pointer' : 'default',
+              border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca' }}>
+            ☑️ Seleccionar {hayFiltros ? 'filtrados' : 'todos'} ({filtrados.length})
+          </button>
+          {seleccion.size > 0 && (
+            <button onClick={() => setSeleccion(new Set())}
+              style={{ background: 'transparent', border: 'none', color: muted, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '6px 4px' }}>
+              Quitar selección ({seleccion.size})
+            </button>
+          )}
+        </div>
+
+        {seleccion.size > 0 && (
+          <div style={{ ...card, padding: 16, marginBottom: 12, border: '1px solid #c7d2fe', background: '#f5f5ff' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: text, marginBottom: 12 }}>
+              💬 Feedback para {seleccion.size} alumno{seleccion.size === 1 ? '' : 's'}
+            </div>
+
+            {mensajeMasivo && (
+              <div style={{ background: mensajeMasivo.startsWith('✅') ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${mensajeMasivo.startsWith('✅') ? '#bbf7d0' : '#fecaca'}`, borderRadius: 8, padding: '9px 12px',
+                marginBottom: 12, fontSize: 12, color: mensajeMasivo.startsWith('✅') ? '#166534' : '#dc2626', fontWeight: 600 }}>
+                {mensajeMasivo}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4 }}>Fecha</label>
+                <input type="date" value={fechaMasivo} onChange={e => setFechaMasivo(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0',
+                    borderRadius: 8, padding: '9px 11px', color: text, fontSize: 13, outline: 'none' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4 }}>Hora</label>
+                <input type="time" value={horaMasivo} onChange={e => setHoraMasivo(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0',
+                    borderRadius: 8, padding: '9px 11px', color: text, fontSize: 13, outline: 'none' }} />
+              </div>
+            </div>
+
+            <textarea
+              style={{ width: '100%', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0',
+                borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none', resize: 'vertical',
+                minHeight: 70, marginBottom: 12 }}
+              placeholder="Este comentario se manda igual a todos los seleccionados..."
+              value={comentarioMasivo} onChange={e => setComentarioMasivo(e.target.value)}
+            />
+
+            <button onClick={enviarMasivo} disabled={enviandoMasivo || !comentarioMasivo.trim()}
+              style={{ width: '100%', padding: '10px 14px', background: comentarioMasivo.trim() ? '#4f46e5' : '#e2e8f0', border: 'none',
+                borderRadius: 8, color: comentarioMasivo.trim() ? '#fff' : '#94a3b8', fontSize: 13, fontWeight: 600,
+                cursor: enviandoMasivo || !comentarioMasivo.trim() ? 'default' : 'pointer' }}>
+              {enviandoMasivo ? 'Enviando...' : `Enviar a ${seleccion.size} alumno${seleccion.size === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        )}
+
         <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
           {filtrados.map((j, i) => {
             const n = conteos[j.id] ?? 0
@@ -257,7 +356,11 @@ export default function PanelFeedback({ clubId, userId, puedeTodo }: {
               <div key={j.id} onClick={() => setElegido(j)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10,
                   padding: '11px 14px', cursor: 'pointer',
+                  background: seleccion.has(j.id) ? '#f5f5ff' : 'transparent',
                   borderBottom: i < filtrados.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                <input type="checkbox" checked={seleccion.has(j.id)}
+                  onClick={e => e.stopPropagation()} onChange={() => toggleSeleccion(j.id)}
+                  style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0 }} />
                 <span style={{ minWidth: 34, textAlign: 'center', background: c.bg, color: c.fg,
                   borderRadius: 20, padding: '3px 8px', fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                   {n}

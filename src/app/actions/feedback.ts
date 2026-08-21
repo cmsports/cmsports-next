@@ -36,6 +36,49 @@ export async function crearFeedback(params: {
   return { success: true }
 }
 
+export async function crearFeedbackMasivo(params: {
+  jugadorIds: string[]
+  fecha: string
+  hora?: string | null
+  comentario: string
+}) {
+  const { error: authErr, supabase, perfil } = await requirePerfil()
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
+  if (!STAFF.includes(perfil.rol ?? '')) {
+    return { error: 'Solo el admin o el profesor pueden dejar feedback' }
+  }
+  const comentario = params.comentario.trim()
+  if (!comentario) return { error: 'El comentario no puede estar vacío' }
+  const jugadorIds = [...new Set(params.jugadorIds)]
+  if (jugadorIds.length === 0) return { error: 'Elegí al menos un alumno' }
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Sin sesión' }
+
+  const { data: autorPerfil } = await supabase.from('perfiles').select('nombre').eq('id', user.id).single()
+
+  // Solo alumnos del mismo club: el llamador manda ids elegidos en pantalla,
+  // pero no hay que confiar ciegamente en un array que viene del cliente.
+  const { data: validos } = await supabase.from('jugadores').select('id')
+    .in('id', jugadorIds).eq('club_id', perfil.club_id)
+  const idsValidos = (validos ?? []).map(j => j.id)
+  if (idsValidos.length === 0) return { error: 'Ningún alumno válido para este club' }
+
+  const filas = idsValidos.map(jugadorId => ({
+    club_id: perfil.club_id,
+    jugador_id: jugadorId,
+    autor_id: user.id,
+    autor_nombre: autorPerfil?.nombre || 'Staff',
+    fecha: params.fecha,
+    hora: params.hora || null,
+    comentario,
+  }))
+
+  const { error } = await supabase.from('feedback_jugadores').insert(filas)
+  if (error) return { error: error.message }
+  return { success: true, enviados: idsValidos.length }
+}
+
 export async function editarFeedback(params: {
   feedbackId: string
   fecha: string
