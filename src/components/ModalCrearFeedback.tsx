@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { crearFeedbackMasivo } from '@/app/actions/feedback'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
+import FiltroMultiSelect from '@/components/FiltroMultiSelect'
 
 const supabase = createClient()
 
@@ -12,6 +13,7 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 type Jugador = { id: string; nombre: string; categoria: string | null }
+type BloqueRef = { id: string; nombre: string }
 
 export default function ModalCrearFeedback({ clubId, onClose, onGuardado }: {
   clubId: string
@@ -20,6 +22,11 @@ export default function ModalCrearFeedback({ clubId, onClose, onGuardado }: {
 }) {
   const [jugadores, setJugadores] = useState<Jugador[]>([])
   const [busqueda, setBusqueda]   = useState('')
+  const [bloques, setBloques]     = useState<BloqueRef[]>([])
+  // jugador → nombres de grupo a los que va, para poder filtrar por bloque.
+  const [bloquesDe, setBloquesDe] = useState<Record<string, string[]>>({})
+  const [filtroCat, setFiltroCat]       = useState<Set<string>>(new Set())
+  const [filtroBloque, setFiltroBloque] = useState<Set<string>>(new Set())
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
   const [fecha, setFecha]         = useState(() => fechaChile())
   const [hora, setHora]           = useState(() => horaChile())
@@ -31,12 +38,40 @@ export default function ModalCrearFeedback({ clubId, onClose, onGuardado }: {
   useEffect(() => {
     let vivo = true
     void (async () => {
-      const { data } = await supabase.from('jugadores')
-        .select('id,nombre,categoria')
-        .eq('club_id', clubId).eq('estado', 'activo')
-        .or('es_externo.is.null,es_externo.eq.false')
-        .order('nombre')
-      if (vivo) setJugadores((data ?? []) as Jugador[])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const db = supabase as any
+      const [{ data: jugs }, { data: bloqs }, { data: bjs }] = await Promise.all([
+        supabase.from('jugadores')
+          .select('id,nombre,categoria')
+          .eq('club_id', clubId).eq('estado', 'activo')
+          .or('es_externo.is.null,es_externo.eq.false')
+          .order('nombre'),
+        db.from('bloques_horario').select('id,nombre').eq('club_id', clubId).eq('activo', true),
+        db.from('bloque_jugadores').select('bloque_id,jugador_id'),
+      ])
+      if (!vivo) return
+
+      setJugadores((jugs ?? []) as Jugador[])
+
+      // Un mismo grupo tiene un bloque por día ("Todo Público" lunes, miércoles
+      // y viernes son tres filas). Para filtrar interesa el grupo, no el día.
+      const porNombre = new Map<string, string[]>()
+      for (const b of (bloqs ?? []) as BloqueRef[]) {
+        porNombre.set(b.nombre, [...(porNombre.get(b.nombre) ?? []), b.id])
+      }
+      setBloques([...porNombre.keys()].sort().map(nombre => ({ id: nombre, nombre })))
+
+      const idANombre = new Map<string, string>()
+      for (const [nombre, ids] of porNombre) for (const id of ids) idANombre.set(id, nombre)
+
+      const deJugador: Record<string, string[]> = {}
+      for (const bj of (bjs ?? []) as { bloque_id: string; jugador_id: string }[]) {
+        const nombre = idANombre.get(bj.bloque_id)
+        if (!nombre) continue // bloque de otro club o inactivo
+        const previos = deJugador[bj.jugador_id] ?? []
+        if (!previos.includes(nombre)) deJugador[bj.jugador_id] = [...previos, nombre]
+      }
+      setBloquesDe(deJugador)
     })()
     return () => { vivo = false }
   }, [clubId])
@@ -61,7 +96,14 @@ export default function ModalCrearFeedback({ clubId, onClose, onGuardado }: {
     onGuardado?.()
   }
 
-  const filtrados = jugadores.filter(j => j.nombre?.toLowerCase().includes(busqueda.toLowerCase()))
+  const categorias = [...new Set(jugadores.map(j => j.categoria).filter(Boolean))].sort() as string[]
+
+  const filtrados = jugadores.filter(j => {
+    if (busqueda && !j.nombre?.toLowerCase().includes(busqueda.toLowerCase())) return false
+    if (filtroCat.size && !filtroCat.has(j.categoria ?? '')) return false
+    if (filtroBloque.size && !(bloquesDe[j.id] ?? []).some(b => filtroBloque.has(b))) return false
+    return true
+  })
   const todosFiltradosSeleccionados = filtrados.length > 0 && filtrados.every(j => seleccion.has(j.id))
 
   return (
@@ -96,6 +138,19 @@ export default function ModalCrearFeedback({ clubId, onClose, onGuardado }: {
               placeholder="Buscar alumno por nombre..."
               value={busqueda} onChange={e => setBusqueda(e.target.value)} autoFocus
             />
+
+            {(categorias.length > 0 || bloques.length > 0) && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                {categorias.length > 0 && (
+                  <FiltroMultiSelect label="🏷️ Categoría" options={categorias.map(c => ({ value: c, label: c }))}
+                    selected={filtroCat} onChange={setFiltroCat} />
+                )}
+                {bloques.length > 0 && (
+                  <FiltroMultiSelect label="🕐 Grupo" options={bloques.map(b => ({ value: b.id, label: b.nombre }))}
+                    selected={filtroBloque} onChange={setFiltroBloque} />
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <button onClick={() => setSeleccion(prev => {
