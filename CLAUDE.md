@@ -49,6 +49,16 @@ quitarla): `089_arranque_limpio_buin`, `060_limpiar_jugadores_externos`,
   recuperación de julio.
 - **Asistencia:** la tabla guarda faltas, así que toda consulta nueva filtra
   `estado = 'presente'`.
+- **Inscripciones a bloques: la tabla guarda las cerradas.** `bloque_jugadores`
+  no borra la fila cuando alguien cambia de grupo, le pone `vigente_hasta`. Toda
+  consulta que quiera "en qué grupos está hoy" lleva `.is('vigente_hasta',
+  null)`. El olvido **no falla**: la consulta sin filtro es SQL válido, no da
+  error y pinta una etiqueta plausible; solo lo detecta alguien que conozca al
+  jugador. El 2026-08-20 el filtro por grupo del módulo de feedback salió sin
+  ese filtro y 19 jugadores aparecían en grupos que ya habían dejado. Modelos
+  correctos: `dashboard-profesor`, `PanelCupos`, `jugadores/[id]`, `mi-horario`.
+  Solo el historial usa la tabla cruda a propósito (`PanelReportes`,
+  `lib/supabase/historial.ts`, y `AsistenciaPanel` con su rango de fechas).
 - **Bloques son la fuente de verdad** de días y sede; no tocar `entrena_*` ni
   `sede` a mano.
 
@@ -76,3 +86,29 @@ Paine** (`club_id = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'`). Hay otros clubes
 en la misma base —Demostración TDM, Unión San Bernardo, Paine— y toda consulta
 o migración debe filtrar por club: varias consultas de diagnóstico sin ese
 filtro ya causaron confusión sumando plata de clubes ajenos.
+
+### Declarar el club antes de tocar nada
+
+Se vienen clubes nuevos que **funcionan distinto** —otra forma de tomar
+asistencia, Khipu, reglas propias—. Buin es el único con plata y gente real, así
+que el riesgo ya no es que un club vea los datos de otro (el RLS eso lo cubre:
+148 de 171 políticas filtran por club), sino que **el trabajo hecho para un club
+rompa a otro**.
+
+Antes de escribir una migración, tocar un RPC de plata o modificar código
+compartido, **decir a qué club apunta y esperar confirmación**:
+
+```
+Este cambio afecta a: Asociación TDM Buin y Paine (club en producción)
+Toca: supabase/migrations/208_x.sql, src/lib/domain/asistencia.ts
+¿Confirmas que va a ese club?
+```
+
+No aplica a cambios cosméticos ni a lo que es obviamente de un solo club por
+contexto. Si pregunta por todo, deja de servir.
+
+**Las diferencias entre clubes son dato, no código.** Nunca un `if (club_id ===
+'ec1ef...')` en código compartido: eso ata a los tres clubes al mismo archivo. Si
+algo no se puede expresar como configuración, va como módulo aparte. El plan
+completo —incluido el portazo `_migracion_para_club()` y la tabla `club_config`—
+está en `docs/plan-aislamiento-clubes.md`, y **todavía no está implementado**.

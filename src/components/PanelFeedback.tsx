@@ -80,7 +80,11 @@ export default function PanelFeedback({ clubId, userId, puedeTodo }: {
         // comentarios del club para nada.
         db.from('feedback_jugadores').select('jugador_id').eq('club_id', clubId),
         db.from('bloques_horario').select('id,nombre').eq('club_id', clubId).eq('activo', true),
-        db.from('bloque_jugadores').select('bloque_id,jugador_id'),
+        // Solo las inscripciones vigentes: la tabla guarda también las cerradas
+        // (`vigente_hasta` con fecha), así que sin este filtro un jugador que
+        // cambió de grupo sigue apareciendo en el viejo. Pasó con Erik Rubio,
+        // que salió de Menores el 2026-07-28 y seguía listado ahí.
+        db.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
       ])
       if (!vivo) return
 

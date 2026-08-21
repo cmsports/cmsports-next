@@ -47,7 +47,10 @@ export default function ModalCrearFeedback({ clubId, onClose, onGuardado }: {
           .or('es_externo.is.null,es_externo.eq.false')
           .order('nombre'),
         db.from('bloques_horario').select('id,nombre').eq('club_id', clubId).eq('activo', true),
-        db.from('bloque_jugadores').select('bloque_id,jugador_id'),
+        // Solo las inscripciones vigentes: sin este filtro entran también las
+        // cerradas y un jugador que cambió de grupo sigue apareciendo en el
+        // viejo, tanto en la etiqueta como en el filtro por grupo.
+        db.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
       ])
       if (!vivo) return
 
