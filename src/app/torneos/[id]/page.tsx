@@ -396,7 +396,26 @@ export default function TorneoDetallePage() {
     if (inscribiendo || !busquedaMesa.trim()) return
     setInscribiendo(true)
     try {
-      const res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, jugadorId: jugadorIdSeleccionado ?? undefined, rut: rutMesa, metodoPago, clubProcedencia: clubMesa })
+      let res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, jugadorId: jugadorIdSeleccionado ?? undefined, rut: rutMesa, metodoPago, clubProcedencia: clubMesa })
+
+      // El servidor avisa que esa persona no existe en el club y que inscribirla
+      // significa crearle ficha. Se pregunta y, si el admin confirma, se repite
+      // la llamada con el permiso explícito. La visita juega y suma ranking
+      // igual que un socio: lo único que se confirma es que es alguien nuevo.
+      if ('confirmarExterno' in res && res.confirmarExterno) {
+        const nombre = res.confirmarExterno
+        const ok = confirm(
+          `"${nombre}" no está en el club.\n\n` +
+          `Se va a crear como visita nueva. Juega y suma ranking igual que cualquiera, ` +
+          `solo que no es socio y no tiene cuenta en la app.\n\n` +
+          `Ojo: si esa persona YA tiene ficha, cancela y búscala en la lista. ` +
+          `Crear una ficha repetida le parte el ranking en dos.\n\n` +
+          `¿Inscribirla igual?`,
+        )
+        if (!ok) return
+        res = await inscribirEnMesa({ torneoId, busqueda: busquedaMesa, rut: rutMesa, metodoPago, clubProcedencia: clubMesa, confirmadoExterno: true })
+      }
+
       if (res.error) { alert(res.error); return }
 
       setBusquedaMesa('')
@@ -1811,8 +1830,8 @@ export default function TorneoDetallePage() {
                 </div>
               )}
               {torneo?.tipo === 'interno' && busquedaMesa.length >= 1 && !jugadorIdSeleccionado && jugSuggestions.length === 0 && (
-                <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>
-                  No hay ningún jugador ni visita con ese nombre. Si es alguien nuevo, se agrega desde Jugadores.
+                <div style={{ fontSize:11, color:'#d97706', marginTop:4 }}>
+                  No está en el club. Si es alguien de afuera, igual lo puedes inscribir: al darle a Inscribir se te va a preguntar antes de crearle la ficha.
                 </div>
               )}
             </div>
@@ -1838,8 +1857,8 @@ export default function TorneoDetallePage() {
               </select>
               <button
                 onClick={handleInscribirEnMesa}
-                disabled={inscribiendo || (torneo?.tipo === 'interno' && !jugadorIdSeleccionado)}
-                style={{ flex:1, background: (inscribiendo || (torneo?.tipo === 'interno' && !jugadorIdSeleccionado)) ? '#94a3b8' : '#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor: (inscribiendo || (torneo?.tipo === 'interno' && !jugadorIdSeleccionado)) ? 'not-allowed' : 'pointer' }}
+                disabled={inscribiendo}
+                style={{ flex:1, background: inscribiendo ? '#94a3b8' : '#f43f5e', color:'white', border:'none', borderRadius:8, padding:'10px', fontSize:13, fontWeight:600, cursor: inscribiendo ? 'not-allowed' : 'pointer' }}
               >
                 {inscribiendo ? 'Inscribiendo...' : '+ Inscribir'}
               </button>

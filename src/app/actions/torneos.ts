@@ -1864,11 +1864,17 @@ export async function inscribirEnMesa(params: {
   rut: string
   metodoPago: 'efectivo' | 'transferencia' | 'pendiente'
   clubProcedencia?: string
+  /**
+   * El admin ya confirmó que la persona no es del club y que igual quiere
+   * inscribirla como visita nueva. Sin esto, un torneo interno se niega a
+   * crear fichas y devuelve `confirmarExterno` para que la UI pregunte.
+   */
+  confirmadoExterno?: boolean
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { torneoId, busqueda, jugadorId: jugadorIdParam, rut, metodoPago, clubProcedencia } = params
+  const { torneoId, busqueda, jugadorId: jugadorIdParam, rut, metodoPago, clubProcedencia, confirmadoExterno } = params
   const nombreBuscado = busqueda.trim()
   if (!nombreBuscado) return { error: 'Nombre vacío' }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
@@ -1879,10 +1885,6 @@ export async function inscribirEnMesa(params: {
   const { data: bracket } = await supabase.from('torneo_partidos')
     .select('ganador, jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')
   if ((bracket || []).some(llaveFueJugada)) return { error: 'No se pueden inscribir jugadores después de jugar partidos del bracket' }
-
-  if (torneo.tipo === 'interno' && !jugadorIdParam) {
-    return { error: 'En torneos internos solo se pueden inscribir jugadores del club. Selecciona un jugador de la lista.' }
-  }
 
   let jugadorId: string
   let jugadorNombre = nombreBuscado
@@ -1906,6 +1908,18 @@ export async function inscribirEnMesa(params: {
       jugadorId = exacto.id
       jugadorNombre = exacto.nombre ?? jugadorNombre
     } else {
+      // Acá y no antes: si el nombre calzó exacto con alguien que ya existe, no
+      // hay ficha nueva que crear y no hay nada que confirmar. El freno es solo
+      // para el caso que de verdad crea una persona nueva en la base.
+      //
+      // En un torneo interno se pregunta primero. No es por prohibirlo —una
+      // visita juega y suma ranking igual que un socio— sino porque escribir el
+      // nombre de alguien que YA tiene ficha crea una segunda, y el ranking de
+      // esa persona queda partido en dos. Así aparecieron siete fichas
+      // duplicadas de socios reales.
+      if (torneo.tipo === 'interno' && !confirmadoExterno) {
+        return { confirmarExterno: nombreBuscado }
+      }
       const { data: nuevo } = await supabase.from('jugadores').insert({
         club_id: perfil.club_id, nombre: nombreBuscado,
         rut: rut || null, categoria: 'principiante', sesiones_limite: 0,
