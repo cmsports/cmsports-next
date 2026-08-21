@@ -17,6 +17,7 @@ import { sumarDias } from '@/lib/domain/panoramaAsistencia'
 import DocumentosJugador from '@/components/DocumentosJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
 import RankingJugador from '@/components/RankingJugador'
+import FeedbackJugador from '@/components/FeedbackJugador'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { GRUPOS, sedeLabel, grupoLabel } from '@/lib/domain/sedeGrupo'
@@ -1248,6 +1249,14 @@ export default function JugadorDetallePage() {
           <CardHeader title="Documentos" />
           <DocumentosJugador jugadorId={jugadorId} puedeEditar={puedeSubirDocumentos} />
         </div>
+
+        {/* Feedback: mismo historial que /feedbacks, acotado a este alumno. */}
+        {perfil && (
+          <div style={cardStyle}>
+            <CardHeader title="Feedback" />
+            <FeedbackJugador jugadorId={jugadorId} userId={perfil.id} puedeAgregar={puedeEvaluar} puedeTodo={esAdmin} />
+          </div>
+        )}
 
       </div>
 

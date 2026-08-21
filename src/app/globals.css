@@ -745,7 +745,7 @@ html.dark [style*="background-color: rgb(240, 249, 255)"] {
   background: #0c2a4d !important;
 }
 
-/* Violeta / índigo claro (#ede9fe, #eef2ff, #f5f3ff, #faf5ff) */
+/* Violeta / índigo claro (#ede9fe, #eef2ff, #f5f3ff, #faf5ff, #f5f5ff) */
 html.dark [style*="background:#ede9fe"],
 html.dark [style*="background: #ede9fe"],
 html.dark [style*="background-color:#ede9fe"],
@@ -756,6 +756,11 @@ html.dark [style*="background: #eef2ff"],
 html.dark [style*="background-color:#eef2ff"],
 html.dark [style*="background: rgb(238, 242, 255)"],
 html.dark [style*="background-color: rgb(238, 242, 255)"],
+html.dark [style*="background:#f5f5ff"],
+html.dark [style*="background: #f5f5ff"],
+html.dark [style*="background-color:#f5f5ff"],
+html.dark [style*="background: rgb(245, 245, 255)"],
+html.dark [style*="background-color: rgb(245, 245, 255)"],
 html.dark [style*="background:#f5f3ff"],
 html.dark [style*="background: #f5f3ff"],
 html.dark [style*="background-color:#f5f3ff"],
