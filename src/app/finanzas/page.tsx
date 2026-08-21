@@ -886,6 +886,9 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [preview, setPreview] = useState<any>(null)
   const [generando, setGenerando] = useState(false)
+  // Si algo revienta al armar el reporte, hay que decirlo. Antes la excepción
+  // se comía sola y los dos botones quedaban en "Cargando…" para siempre.
+  const [errorRep, setErrorRep] = useState('')
   const [jugadores, setJugadores] = useState<any[]>([])
   const [jugadorId, setJugadorId] = useState('')
   // El PDF llevaba "CmSports" impreso en la barra de todas las páginas. El
@@ -937,6 +940,8 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     if (!clubId) return
     if (categoriaRep === 'jugador' && !jugadorId) return
     setGenerando(true)
+    setErrorRep('')
+    try {
     const { inicio, fin } = getRango()
     const iniAnio = parseInt(inicio.slice(0, 4))
     const iniMes  = parseInt(inicio.slice(5, 7))
@@ -1079,13 +1084,22 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       datos = { torneos: torn || [], ligas: ligas || [], ingresosInscripcion: (mov || []).reduce((s, m) => s + m.monto, 0), torneosPorEstado, movimientos: mov || [] }
     }
 
-    setPreview(datos)
-    setGenerando(false)
+      setPreview(datos)
+    } catch (e: any) {
+      console.error('[reportes] falló armar la vista previa', e)
+      setPreview(null)
+      setErrorRep(`No se pudo armar el reporte: ${e?.message || e}`)
+    } finally {
+      setGenerando(false)
+    }
+
   }
 
   async function exportarPDF() {
     if (!preview) return
     setGenerando(true)
+    setErrorRep('')
+    try {
     const { titulo } = getRango()
     const catInfo = categoriasReporte.find(c => c.key === categoriaRep)!
     const { default: jsPDF } = await import('jspdf')
@@ -1122,47 +1136,47 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     // El reporte de directorio: no repite el desglose contable (ese es el de
     // Finanzas), responde las preguntas que se hacen antes de abrir el sistema.
     if (categoriaRep === 'general') {
-      const a = analizarGeneral(preview, fmt)
+      const resumen = analizarGeneral(preview, fmt)
       const tonoPdf: Record<string, any> = { bien: COLOR.verde, ojo: COLOR.ambar, mal: COLOR.rojo, info: COLOR.celeste, neutro: COLOR.mutado }
       const aPdf = (d: any) => ({ etiqueta: d.etiqueta, valor: d.valor, detalle: d.detalle, color: tonoPdf[d.tono] })
 
-      y = franjaTotal(doc, y, a.balance >= 0 ? 'Resultado del período — a favor' : 'Resultado del período — en contra',
-        fmt(a.balance), a.balance >= 0 ? COLOR.verde : COLOR.rojo)
+      y = franjaTotal(doc, y, resumen.balance >= 0 ? 'Resultado del período — a favor' : 'Resultado del período — en contra',
+        fmt(resumen.balance), resumen.balance >= 0 ? COLOR.verde : COLOR.rojo)
 
       y = tituloSeccion(doc, y, 'Lo que hay que mirar', `comparado con ${preview.tituloPrev}`)
-      y = listaHallazgos(doc, y, a.hallazgos.map((h: any) => ({ texto: h.texto, color: tonoPdf[h.tono] })), cab)
+      y = listaHallazgos(doc, y, resumen.hallazgos.map((h: any) => ({ texto: h.texto, color: tonoPdf[h.tono] })), cab)
 
-      y = asegurarEspacio(doc, y, altoIndicadores(a.plata.length) + 12, cab)
+      y = asegurarEspacio(doc, y, altoIndicadores(resumen.plata.length) + 12, cab)
       y = tituloSeccion(doc, y, 'La plata')
-      y = panelIndicadores(doc, y, a.plata.map(aPdf), cab)
+      y = panelIndicadores(doc, y, resumen.plata.map(aPdf), cab)
 
-      y = asegurarEspacio(doc, y, altoIndicadores(a.gente.length) + 12, cab)
+      y = asegurarEspacio(doc, y, altoIndicadores(resumen.gente.length) + 12, cab)
       y = tituloSeccion(doc, y, 'La gente')
-      y = panelIndicadores(doc, y, a.gente.map(aPdf), cab)
+      y = panelIndicadores(doc, y, resumen.gente.map(aPdf), cab)
 
       // El respaldo de las respuestas 9 y 10, con nombre y apellido: es lo que
       // se imprime para salir a cobrar. Antes solo salía el número de morosos.
       if (preview.morosos.length > 0) {
         const impagasPorJug = new Map<string, { meses: string[]; monto: number }>()
-        for (const m of a.impagas) {
+        for (const m of resumen.impagas) {
           const acc = impagasPorJug.get(m.jugador_id) ?? { meses: [], monto: 0 }
           acc.meses.push(mesDe(m))
           acc.monto += m.monto || 0
           impagasPorJug.set(m.jugador_id, acc)
         }
         const filas = preview.morosos
-          .map((j: any) => ({ j, d: impagasPorJug.get(j.id) ?? { meses: [], monto: 0 }, clases: a.asistPorJug.get(j.id) ?? 0 }))
+          .map((j: any) => ({ j, d: impagasPorJug.get(j.id) ?? { meses: [], monto: 0 }, clases: resumen.asistPorJug.get(j.id) ?? 0 }))
           .sort((a: any, b: any) => b.d.monto - a.d.monto)
 
         doc.addPage()
         y = encabezado(doc, { ...cab, titulo: 'A quién cobrarle' })
-        y = franjaTotal(doc, y, `${filas.length} jugadores con cuotas a.impagas`, fmt(a.deudaPeriodo), COLOR.rojo)
+        y = franjaTotal(doc, y, `${filas.length} jugadores con cuotas impagas`, fmt(resumen.deudaPeriodo), COLOR.rojo)
         y = tituloSeccion(doc, y, 'Deuda del período', 'ordenado por monto', COLOR.rojo)
         autoTable(doc, {
           startY: y,
           head: [['Jugador', 'Categoría', 'Meses impagos', 'Clases', 'Debe']],
           body: filas.map((f: any) => [f.j.nombre, f.j.categoria || '—', f.d.meses.join(', ') || '—', String(f.clases), fmt(f.d.monto)]),
-          foot: [['Total', '', '', '', fmt(a.deudaPeriodo)]],
+          foot: [['Total', '', '', '', fmt(resumen.deudaPeriodo)]],
           ...estiloTabla(COLOR.rojo),
           columnStyles: { 1: { cellWidth: 28 }, 2: { cellWidth: 46 }, 3: { cellWidth: 18, halign: 'right' }, 4: { cellWidth: 28, halign: 'right', fontStyle: 'bold' } },
         })
@@ -1173,21 +1187,21 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       doc.addPage()
       y = encabezado(doc, { ...cab, titulo: 'Plantel y asistencia' })
       const filasJug = [...preview.activos].sort((a: any, b: any) =>
-        (a.asistPorJug.get(b.id) ?? 0) - (a.asistPorJug.get(a.id) ?? 0) || a.nombre.localeCompare(b.nombre))
+        (resumen.asistPorJug.get(b.id) ?? 0) - (resumen.asistPorJug.get(a.id) ?? 0) || a.nombre.localeCompare(b.nombre))
       y = tituloSeccion(doc, y, 'Jugadores activos', `${filasJug.length} · ordenados por asistencia`)
       autoTable(doc, {
         startY: y,
         head: [['#', 'Nombre', 'Categoría', 'Clases', '% de los días']],
         body: filasJug.map((j: any, i: number) => {
-          const n = a.asistPorJug.get(j.id) ?? 0
-          return [String(i + 1), j.nombre, j.categoria || '—', String(n), a.pct(n, preview.diasConAsist)]
+          const n = resumen.asistPorJug.get(j.id) ?? 0
+          return [String(i + 1), j.nombre, j.categoria || '—', String(n), resumen.pct(n, preview.diasConAsist)]
         }),
         foot: [['', 'Total', '', String(preview.asistencias.length), '']],
         ...estiloTabla(),
         columnStyles: { 0: { cellWidth: 10, halign: 'right', textColor: COLOR.tenue }, 2: { cellWidth: 34 }, 3: { cellWidth: 22, halign: 'right' }, 4: { cellWidth: 28, halign: 'right' } },
         didParseCell: (d: any) => {
           if (d.section !== 'body' || d.column.index !== 4) return
-          const n = a.asistPorJug.get(filasJug[d.row.index]?.id) ?? 0
+          const n = resumen.asistPorJug.get(filasJug[d.row.index]?.id) ?? 0
           const p = preview.diasConAsist > 0 ? (n / preview.diasConAsist) * 100 : 0
           d.cell.styles.fontStyle = 'bold'
           d.cell.styles.textColor = n === 0 ? COLOR.rojo : p >= 60 ? COLOR.verde : p >= 30 ? COLOR.ambar : COLOR.rojo
@@ -1599,7 +1613,13 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     piePagina(doc, `${club}  ·  Reporte ${catInfo.label}  ·  ${titulo}`)
     const jn = categoriaRep === 'jugador' && preview.jugador ? `_${preview.jugador.nombre.replace(/ /g, '_')}` : ''
     doc.save(`reporte_${categoriaRep}${jn}_${titulo.replace(/ /g, '_')}.pdf`)
-    setGenerando(false)
+    } catch (e: any) {
+      console.error('[reportes] falló generar el PDF', e)
+      setErrorRep(`No se pudo generar el PDF: ${e?.message || e}`)
+    } finally {
+      setGenerando(false)
+    }
+
   }
 
   const { titulo } = getRango()
@@ -1694,11 +1714,18 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
             style={{ flex:'1 1 200px', padding:'13px 18px', background: preview ? '#ffffff' : '#f8fafc', color: preview ? '#3730a3' : hint, border: `1.5px solid ${preview ? '#c4b5fd' : '#e2e8f0'}`, borderRadius:10, fontSize:13.5, fontWeight:700, cursor: preview ? 'pointer' : 'not-allowed' }}>
             {generando ? 'Generando…' : '📄 Descargar PDF'}
           </button>
-          {!preview && (
+          {!preview && !errorRep && (
             <div style={{ flexBasis:'100%', fontSize:11.5, color: hint }}>
               {categoriaRep === 'jugador' && !jugadorId
                 ? 'Elige un jugador para poder generar el reporte.'
                 : 'Primero mira el reporte en pantalla; el PDF se habilita al tenerlo listo.'}
+            </div>
+          )}
+          {/* El error tiene que verse en pantalla: si solo va a la consola, lo
+              único que se nota es que el botón se quedó pensando para siempre. */}
+          {errorRep && (
+            <div style={{ flexBasis:'100%', background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'11px 13px', fontSize:12, color:'#dc2626' }}>
+              {errorRep}
             </div>
           )}
         </div>
@@ -1708,7 +1735,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           (`analizarGeneral`), para que lo que se ve en pantalla y lo que sale
           en papel no puedan decir cosas distintas. */}
       {preview && categoriaRep === 'general' && (() => {
-        const a = analizarGeneral(preview, fmtVista)
+        const resumen = analizarGeneral(preview, fmtVista)
         const tonoBg: Record<string, { bg: string; borde: string; color: string }> = {
           bien:   { bg:'#f0fdf4', borde:'#bbf7d0', color:'#16a34a' },
           ojo:    { bg:'#fffbeb', borde:'#fde68a', color:'#d97706' },
@@ -1737,23 +1764,23 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           <div>
             <div style={{ fontSize:14, fontWeight:600, color: text, marginBottom:12 }}>{titulo} — cómo va el club</div>
 
-            <div style={{ background: a.balance >= 0 ? '#f0fdf4' : '#fef2f2', border:`1px solid ${a.balance >= 0 ? '#bbf7d0' : '#fecaca'}`, borderRadius:14, padding:'16px 18px', marginBottom:16, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-              <div style={{ fontSize:13, color: muted }}>Resultado del período {a.balance >= 0 ? '— a favor' : '— en contra'}</div>
-              <div style={{ fontSize:26, fontWeight:700, color: a.balance >= 0 ? '#16a34a' : '#dc2626', fontFamily:'monospace' }}>{fmtVista(a.balance)}</div>
+            <div style={{ background: resumen.balance >= 0 ? '#f0fdf4' : '#fef2f2', border:`1px solid ${resumen.balance >= 0 ? '#bbf7d0' : '#fecaca'}`, borderRadius:14, padding:'16px 18px', marginBottom:16, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+              <div style={{ fontSize:13, color: muted }}>Resultado del período {resumen.balance >= 0 ? '— a favor' : '— en contra'}</div>
+              <div style={{ fontSize:26, fontWeight:700, color: resumen.balance >= 0 ? '#16a34a' : '#dc2626', fontFamily:'monospace' }}>{fmtVista(resumen.balance)}</div>
             </div>
 
             <div style={{ ...card, padding:18, marginBottom:16 }}>
               <div style={{ fontSize:13, fontWeight:700, color: text, marginBottom:10 }}>Lo que hay que mirar</div>
-              {a.hallazgos.map((h, i) => (
-                <div key={i} style={{ display:'flex', gap:9, alignItems:'flex-start', padding:'7px 0', borderBottom: i < a.hallazgos.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+              {resumen.hallazgos.map((h, i) => (
+                <div key={i} style={{ display:'flex', gap:9, alignItems:'flex-start', padding:'7px 0', borderBottom: i < resumen.hallazgos.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
                   <span style={{ width:8, height:8, borderRadius:'50%', background: tonoBg[h.tono].color, marginTop:5, flexShrink:0 }} />
                   <span style={{ fontSize:12.5, color: text, lineHeight:1.45 }}>{h.texto}</span>
                 </div>
               ))}
             </div>
 
-            <Bloque titulo="La plata" datos={a.plata} />
-            <Bloque titulo="La gente" datos={a.gente} />
+            <Bloque titulo="La plata" datos={resumen.plata} />
+            <Bloque titulo="La gente" datos={resumen.gente} />
 
             {preview.morosos.length > 0 && (
               <div style={{ ...card, padding:16 }}>
@@ -1762,7 +1789,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
                 {preview.morosos.slice(0, 8).map((j: any) => (
                   <div key={j.id} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
                     <span style={{ color: text }}>{j.nombre}</span>
-                    <span style={{ color: muted }}>{a.asistPorJug.get(j.id) ?? 0} clases en el período</span>
+                    <span style={{ color: muted }}>{resumen.asistPorJug.get(j.id) ?? 0} clases en el período</span>
                   </div>
                 ))}
                 {preview.morosos.length > 8 && <div style={{ fontSize:11.5, color: hint, paddingTop:8 }}>y {preview.morosos.length - 8} más en el PDF.</div>}
