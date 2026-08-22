@@ -27,6 +27,10 @@ const jugadorRoutes = ['/perfil', '/estado-cuenta', '/mi-horario']
 // '/ranking' también quedaba fuera de todas las listas y por eso no
 // redirigía al login desde el servidor. Va acá y no en adminRoutes: el
 // jugador también entra a ver su propio ranking, filtrado por categoría.
+// '/tecnico' sobrevive al borrado del perfil técnico porque debajo cuelga
+// '/tecnico/marcador', que es el marcador de mesa del torneo oficial:
+// abrirMarcadorOficial crea la fila y redirige ahí. El experimento se fue;
+// el marcador se queda.
 const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada', '/ranking', '/tecnico']
 
 function getRolRedirect(rol: string | null): string {
