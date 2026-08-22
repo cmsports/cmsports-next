@@ -10,9 +10,19 @@ import { createAdminClient } from '@/lib/supabase/admin'
 type Admin = ReturnType<typeof createAdminClient>
 type Fila = Record<string, unknown>
 
-// Tablas con columna `club_id`. Es la misma lista de TABLAS_BORRAR_POR_CLUB de
-// actions/superadmin.ts —sacada del esquema real, no de memoria— más las cuatro
-// que allá tienen su propio camino de borrado pero acá se leen igual.
+// Tablas con columna `club_id`.
+//
+// Nació como copia de TABLAS_BORRAR_POR_CLUB (actions/superadmin.ts) más las
+// cuatro que allá tienen su propio camino de borrado. **Ya no son la misma
+// lista, y no tienen por qué serlo**: para borrar un club alcanza con las
+// tablas sin cascada, porque al final se borra la fila de `clubes` y el resto
+// se va por ON DELETE CASCADE. Para respaldar hay que nombrarlas TODAS: lo que
+// no esté acá no se lee, y un respaldo incompleto se ve igual de bien que uno
+// completo hasta el día que hay que restaurar.
+//
+// Al crear una tabla nueva con `club_id`, agregarla acá. Nadie lo va a
+// recordar: por eso el módulo de torneo oficial entero pasó meses fuera del
+// respaldo semanal.
 export const TABLAS_POR_CLUB = [
   '_respaldo_asistencia_089', '_respaldo_mensualidades_089', '_respaldo_movimientos_089',
   'actividad', 'asistencia', 'audit_log', 'auditoria_asistencia', 'auditoria_mensualidades',
@@ -28,6 +38,21 @@ export const TABLAS_POR_CLUB = [
   'solicitudes_jugador', 'tienda_asociacion_productos',
   'tienda_buin_productos', 'torneos_externos', 'usuarios', 'vouchers',
   'jugadores', 'perfiles', 'torneos', 'ligas',
+  // ── Torneo oficial (migración 156 en adelante) ──────────────────────────
+  // Esta lista se armó antes de que existiera el módulo, y nadie volvió a
+  // tocarla: el campeonato entero —inscritos, grupos, llaves, resultados y
+  // sanciones— quedaba fuera del respaldo semanal. Un respaldo incompleto se
+  // ve igual de bien que uno completo hasta el día que hay que restaurar.
+  'oficial_campeonatos', 'oficial_eventos', 'oficial_inscritos', 'oficial_grupos',
+  'oficial_grupo_inscritos', 'oficial_partidos', 'oficial_sanciones',
+  'oficial_bloques_especiales',
+  // El marcador de mesa del torneo oficial: los partidos y su bitácora de
+  // puntos y tarjetas.
+  'tecnico_partidos', 'tecnico_partido_eventos',
+  // El ranking de papel que trajo el club (migración 188). Sin esto, restaurar
+  // deja el ranking sin su arrastre histórico y nadie lo puede reconstruir.
+  'ranking_saldo_inicial',
+  'categorias_personalizadas',
 ] as const
 
 // Tablas sin `club_id`: cuelgan de una fila del club por otra llave.
@@ -49,10 +74,24 @@ const TABLAS_HIJAS: [string, string, string][] = [
   ['liga_abonos', 'pago_id', 'liga_jugador_pagos'],
   ['bloque_jugadores', 'bloque_id', 'bloques_horario'],
   ['bloque_profesores', 'bloque_id', 'bloques_horario'],
+  // Los días sin clase y las excepciones del horario: sin esto, restaurar
+  // devuelve la grilla con clases que ese día no existieron.
+  ['bloque_excepciones', 'bloque_id', 'bloques_horario'],
+  // Los retiros de liga viven acá (migración 118). Sin ellos, al restaurar
+  // vuelven a entrar en la programación los que ya se habían retirado.
+  ['liga_restricciones', 'liga_id', 'ligas'],
 ]
 
 // Tablas que no son de ningún club: van una sola vez, en `_global/`.
-const TABLAS_GLOBALES = ['clubes', 'configuracion_empresa', 'tareas', 'club_photos', 'banco_fotos', 'notificaciones_leidas']
+const TABLAS_GLOBALES = [
+  'clubes', 'configuracion_empresa', 'tareas', 'club_photos', 'banco_fotos', 'notificaciones_leidas',
+  // El registro de migraciones aplicadas: es lo que impide que una destructiva
+  // se ejecute dos veces —la 089 se corrió dos veces y borró plata real antes
+  // de que existiera—. Un respaldo sin él deja la base sin ese portazo.
+  '_migraciones_aplicadas',
+  // Hasta cuándo se conserva cada tabla _respaldo_* y por qué (migración 207).
+  '_respaldo_politica_retencion',
+]
 
 const PAGINA = 1000
 
