@@ -94,7 +94,14 @@ function MarcadorPartidoContent() {
   async function sincronizarConTorneoOficial(historial: Array<[number, number]>, ganadorLado: Lado | null) {
     if (!ganadorLado || !id) return
     const res = await sincronizarResultadoDesdeMarcador({ marcadorId: id, sets: historial, ganadorLado })
-    if (res.error) setError(res.error)
+    if (res.error) { setError(res.error); return }
+    // Ninguno de estos dos es un error, pero tampoco se guardó: sin avisarlo, el
+    // árbitro cierra el partido, no ve nada y se va pensando que quedó cargado.
+    if (res.yaTeniaResultado) {
+      setAviso('Este partido ya tenía resultado cargado en el torneo. El marcador no lo cambió.')
+    } else if (res.sinPartidoOficial) {
+      setAviso('Marcador guardado. No está asociado a un partido del torneo oficial, así que no se envió resultado.')
+    }
   }
 
   const cargarEventos = useCallback(async () => {

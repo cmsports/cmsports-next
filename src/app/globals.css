@@ -950,3 +950,16 @@ html.dark [data-landing] [class*="contactLede"] {
 .no-visible-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Punto que late junto al rótulo EN VIVO del seguimiento público de torneos.
+   Solo opacidad y escala del propio punto: no toca contenedores, así que no
+   arrastra el problema de `transform` con los modales. */
+@keyframes pulsoVivo {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .45; transform: scale(.82); }
+}
+.pulso-vivo { animation: pulsoVivo 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulso-vivo { animation: none; }
+}

@@ -158,7 +158,14 @@ export default function VivoTorneoPage() {
   return <Vivo key={claveSnapshot} snap={snap} yo={yo} cambiar={() => { try { localStorage.removeItem(storeKey) } catch { /* noop */ }; setYo(null); setPaso('gate') }} />
 }
 
-// ── Paso 1: ¿quién eres? — elegir nombre para seguir tus partidos ──
+// ── Paso 1: ¿quién eres? — jugador, o público que solo viene a mirar ──
+//
+// El público tenía que existir. Antes la única salida sin elegir un nombre de
+// la lista era "no aparezco", que manda una solicitud de inscripción al club:
+// un papá que escaneó el QR para ver jugar a su hijo terminaba pidiendo
+// inscribirse al torneo. El botón de mirar sin identificarse solo aparecía
+// cuando el torneo todavía no tenía inscritos, que es justo cuando no hay
+// nada que mirar.
 function Gate({ jugadores, onListo, irCorreo }: {
   jugadores: Jugador[]
   onListo: (i: { jugadorId: string | null; nombre: string }) => void; irCorreo: () => void
@@ -177,33 +184,67 @@ function Gate({ jugadores, onListo, irCorreo }: {
     if (sel && nom) onListo({ jugadorId: sel, nombre: nom })
   }
 
+  const verComoPublico = () => onListo({ jugadorId: null, nombre: 'Público' })
+
   return (
     <Centro>
-      <div style={{ ...card, padding: 28, width: '100%', maxWidth: 380, textAlign: 'center' }}>
-        <div style={{ fontSize: 34, marginBottom: 8 }}>🏓</div>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: text, margin: 0 }}>¿Quién eres?</h1>
-        <p style={{ fontSize: 13, color: muted, marginTop: 6, marginBottom: 20 }}>Elige tu nombre y sigue de cerca contra quién te toca.</p>
+      <div style={{ width: '100%', maxWidth: 400 }}>
+        <div style={{ textAlign: 'center', marginBottom: 18 }}>
+          <div style={{ fontSize: 40, marginBottom: 6 }}>🏓</div>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#fff', margin: 0, textShadow: '0 1px 8px rgba(15,23,42,0.35)' }}>Torneo en vivo</h1>
+        </div>
 
-        {inscritos.length > 0 ? (
-          <>
-            <select value={sel} onChange={e => setSel(e.target.value)} style={{ ...inp, marginTop: 0, marginBottom: 14, textAlign: 'center' }}>
+        {/* Mirar va primero y grande: casi todo el que escanea el QR viene a eso
+            —familia, público del gimnasio— y no a inscribirse. Antes la única
+            salida sin elegir un nombre ajeno era "no aparezco", que le manda al
+            club una solicitud de inscripción. */}
+        <button onClick={verComoPublico}
+          style={{
+            width: '100%', background: 'linear-gradient(135deg, #4f46e5, #6366f1)', color: '#fff',
+            border: 'none', borderRadius: 16, padding: '18px 16px', cursor: 'pointer',
+            boxShadow: '0 8px 24px rgba(79,70,229,0.35)', textAlign: 'left',
+            display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+          <span style={{ fontSize: 28 }}>👀</span>
+          <span style={{ flex: 1 }}>
+            <span style={{ display: 'block', fontSize: 16.5, fontWeight: 800 }}>Ver el torneo</span>
+            <span style={{ display: 'block', fontSize: 12, opacity: 0.9, marginTop: 2 }}>Grupos, resultados y llaves. Sin cuenta.</span>
+          </span>
+          <span style={{ fontSize: 20, opacity: 0.8 }}>›</span>
+        </button>
+
+        {inscritos.length > 0 && (
+          <div style={{ ...card, padding: 18, marginTop: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: text, marginBottom: 3 }}>¿Vas a jugar?</div>
+            <div style={{ fontSize: 12, color: muted, marginBottom: 12 }}>Elige tu nombre y te avisamos contra quién te toca.</div>
+            <select value={sel} onChange={e => setSel(e.target.value)} style={{ ...inp, marginTop: 0, marginBottom: 10 }}>
               <option value="">— Elige tu nombre —</option>
               {inscritos.map(i => <option key={i.id} value={i.id}>{i.nombre}</option>)}
             </select>
-            <button onClick={elegir} disabled={!sel} style={{ ...btnPrimary, opacity: sel ? 1 : 0.5, cursor: sel ? 'pointer' : 'not-allowed' }}>Ver mis partidos →</button>
-          </>
-        ) : (
-          <>
-            <p style={{ fontSize: 12.5, color: hint, marginBottom: 14 }}>El torneo aún no arma los grupos.</p>
-            <button onClick={() => onListo({ jugadorId: null, nombre: 'Espectador' })} style={btnGhost}>Ver el torneo</button>
-          </>
+            <button onClick={elegir} disabled={!sel}
+              style={{
+                width: '100%', background: sel ? '#0f172a' : '#e2e8f0', color: sel ? '#fff' : hint,
+                border: 'none', borderRadius: 12, padding: 12, fontSize: 14, fontWeight: 700,
+                cursor: sel ? 'pointer' : 'not-allowed',
+              }}>
+              Seguir mis partidos →
+            </button>
+            <button onClick={irCorreo} style={{ background: 'none', border: 'none', color: purple, fontSize: 12, fontWeight: 600, cursor: 'pointer', marginTop: 12, width: '100%' }}>
+              Juego y no aparezco en la lista →
+            </button>
+          </div>
         )}
 
-        <button onClick={irCorreo} style={{ background: 'none', border: 'none', color: purple, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginTop: 14 }}>No aparezco en la lista →</button>
+        {inscritos.length === 0 && (
+          <div style={{ textAlign: 'center', fontSize: 12.5, color: '#e2e8f0', marginTop: 14, textShadow: '0 1px 6px rgba(15,23,42,0.4)' }}>
+            El torneo aún no arma los grupos. Entra igual: la pantalla se actualiza sola.
+          </div>
+        )}
       </div>
     </Centro>
   )
 }
+
 
 // ── Paso 2: no aparezco → dejo identidad → aviso al club ──
 // El correo evita mezclar personas homónimas y solicitudes de otros torneos.
@@ -271,73 +312,112 @@ function Correo({ codigo, onListo, volver }: {
 }
 
 // ── Paso 3: vista en vivo ───────────────────────────────────
+//
+// Tres pestañas en vez de una lista larga: quien escanea el QR llega con el
+// teléfono en la mano y parado en el gimnasio, así que lo que busca tiene que
+// estar a un toque. Antes solo se veían los partidos PENDIENTES y el top 2 de
+// cada grupo: los resultados de la fase de grupos no aparecían por ningún
+// lado, que es justamente lo que la gente quiere mirar.
 function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string | null; nombre: string } | null; cambiar: () => void }) {
   const torneo = snap.torneo
-  const grupos = Array.isArray(snap.grupos) ? snap.grupos : []
-  const jugadores = Array.isArray(snap.jugadores) ? snap.jugadores : []
-  const partidos = Array.isArray(snap.partidos) ? snap.partidos : []
+  const grupos = useMemo(() => Array.isArray(snap.grupos) ? snap.grupos : [], [snap.grupos])
+  const jugadores = useMemo(() => Array.isArray(snap.jugadores) ? snap.jugadores : [], [snap.jugadores])
+  const partidos = useMemo(() => Array.isArray(snap.partidos) ? snap.partidos : [], [snap.partidos])
   const fase = torneo.fase ?? ''
+  const finalizado = fase === 'finalizado'
 
-  // mi próximo partido: pendiente (sin ganador) donde participo
+  const [tab, setTab] = useState<'vivo' | 'grupos' | 'llaves'>('vivo')
+
   const miProximo = useMemo(() => {
     if (!yo?.jugadorId) return null
     return partidos.find(p => !p.ganador && p.jugador_b && (p.jugador_a === yo.jugadorId || p.jugador_b === yo.jugadorId)) ?? null
   }, [partidos, yo])
 
-  const esMio = (p: Partido) => yo?.jugadorId && (p.jugador_a === yo.jugadorId || p.jugador_b === yo.jugadorId)
+  const esMio = (p: Partido) => !!yo?.jugadorId && (p.jugador_a === yo.jugadorId || p.jugador_b === yo.jugadorId)
 
-  // partidos "en vivo" = pendientes con ambos jugadores definidos, agrupados por grupo/fase
   const enJuego = useMemo(() => partidos.filter(p => !p.ganador && p.jugador_a && p.jugador_b), [partidos])
   const enJuegoSecc = useMemo(() => agruparPartidos(enJuego, grupos), [enJuego, grupos])
-  const totalEnJuego = enJuego.length
 
-  // clasificados = los 2 primeros de cada grupo (por partidos ganados)
-  const clasificados = useMemo(
-    () => fase === 'grupos' ? standingsPorGrupo(grupos, jugadores, partidos) : [],
-    [fase, grupos, jugadores, partidos],
+  // Los últimos resultados, para que la pestaña "En vivo" tenga algo que decir
+  // aunque en ese instante no haya ningún partido en curso.
+  const ultimos = useMemo(
+    () => partidos.filter(p => p.ganador && p.jugador_b).slice(-6).reverse(),
+    [partidos],
   )
 
-  // campeón = ganador de la final (para el mensaje al finalizar)
+  // Tabla completa por grupo, no solo los dos que clasifican: el resto también
+  // quiere saber cómo va.
+  const tablas = useMemo(() => tablaPorGrupo(grupos, jugadores, partidos), [grupos, jugadores, partidos])
+
   const campeon = useMemo(() => {
     const f = partidos.find(p => p.fase === 'final' && p.ganador)
     if (!f) return null
     return { id: f.ganador, nombre: f.ganador === f.jugador_a ? f.nombre_a : f.nombre_b }
   }, [partidos])
 
-  // desarrollo del torneo: todas las llaves de playoff por fase (jugadas y por jugar).
-  // Mientras el torneo sigue en fase de grupos el cuadro se está armando (cupos
-  // aún por definir): en público recién se muestra al entrar de lleno a playoffs.
-  const faseTorneo = torneo?.fase ?? ''
   const llavesPorFase = useMemo(() => {
-    if (faseTorneo === 'grupos') return []
     const playoff = partidos.filter(p => !p.grupo_id && p.fase && FASE_LABELS[p.fase] && p.fase !== 'grupos')
     const secc: { fase: string; titulo: string; partidos: Partido[] }[] = []
-    for (const fase of Object.keys(FASE_LABELS)) {
-      const ps = playoff.filter(p => p.fase === fase).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
-      if (ps.length) secc.push({ fase, titulo: FASE_LABELS[fase], partidos: ps })
+    for (const f of Object.keys(FASE_LABELS)) {
+      const ps = playoff.filter(p => p.fase === f).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+      if (ps.length) secc.push({ fase: f, titulo: FASE_LABELS[f], partidos: ps })
     }
     return secc
-  }, [partidos, faseTorneo])
+  }, [partidos])
+
+  const jugados = partidos.filter(p => p.ganador).length
+  const totales = partidos.filter(p => p.jugador_b).length
+
+  const TABS: { id: typeof tab; label: string; n?: number }[] = [
+    { id: 'vivo', label: 'En vivo', n: enJuego.length },
+    { id: 'grupos', label: 'Grupos', n: grupos.length },
+    { id: 'llaves', label: 'Llaves', n: llavesPorFase.length },
+  ]
 
   return (
-    <div style={{ minHeight: '100vh', background: '#a9bac8', padding: '16px 12px 40px' }}>
-      <div style={{ maxWidth: 720, margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ ...card, padding: '14px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 160 }}>
-            <div style={{ fontSize: 17, fontWeight: 800, color: text }}>{torneo.nombre}</div>
-            <div style={{ fontSize: 12, color: muted }}>{FASE_LABELS[fase] || fase || 'En preparación'}</div>
+    <div style={{ minHeight: '100vh', background: '#eef2f7', paddingBottom: 40 }}>
+      {/* Cabecera fija: el nombre del torneo y el pulso de EN VIVO siempre a la vista */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg, #312e81, #4f46e5)', color: '#fff', padding: '14px 16px 0', boxShadow: '0 2px 14px rgba(15,23,42,0.18)' }}>
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>{torneo.nombre}</div>
+              <div style={{ fontSize: 12, opacity: 0.85, marginTop: 3 }}>
+                {FASE_LABELS[fase] || fase || 'En preparación'}
+                {totales > 0 && ` · ${jugados} de ${totales} partidos jugados`}
+              </div>
+            </div>
+            {!finalizado && (
+              <span style={{ background: 'rgba(255,255,255,0.16)', padding: '4px 10px', borderRadius: 20, fontSize: 10.5, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', letterSpacing: 0.5 }}>
+                <span className="pulso-vivo" style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
+                EN VIVO
+              </span>
+            )}
           </div>
-          <span style={{ background: '#f0fdf4', color: green, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: green, display: 'inline-block' }} /> EN VIVO
-          </span>
-          <button onClick={cambiar} style={{ background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '5px 10px', color: muted, fontSize: 11, cursor: 'pointer' }}>
-            {yo?.jugadorId ? yo.nombre : 'Soy…'} ▾
-          </button>
-        </div>
 
-        {/* Campeón: mensaje al finalizar el torneo */}
-        {fase === 'finalizado' && campeon && (
+          <button onClick={cambiar} style={{ background: 'rgba(255,255,255,0.14)', border: 'none', borderRadius: 20, padding: '4px 12px', color: '#fff', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', marginTop: 10 }}>
+            {yo?.jugadorId ? `👤 ${yo.nombre}` : '👀 Público'} · cambiar
+          </button>
+
+          <div style={{ display: 'flex', gap: 4, marginTop: 12 }}>
+            {TABS.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                style={{
+                  flex: 1, background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: '#fff', opacity: tab === t.id ? 1 : 0.6,
+                  fontSize: 13, fontWeight: tab === t.id ? 800 : 600,
+                  padding: '9px 4px', borderBottom: `3px solid ${tab === t.id ? '#fff' : 'transparent'}`,
+                }}>
+                {t.label}{t.n ? ` (${t.n})` : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: '14px 12px 0' }}>
+        {/* Campeón */}
+        {finalizado && campeon && (
           <div style={{ ...card, padding: 20, marginBottom: 14, textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a' }}>
             <div style={{ fontSize: 40, marginBottom: 6 }}>🏆</div>
             {campeon.id === yo?.jugadorId ? (
@@ -348,20 +428,20 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
             ) : (
               <>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: 1 }}>Campeón del torneo</div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#b45309', marginTop: 4 }}>{campeon.nombre || 'Por definir'}</div>
+                <div style={{ fontSize: 19, fontWeight: 800, color: '#b45309', marginTop: 4 }}>{campeon.nombre || 'Por definir'}</div>
               </>
             )}
           </div>
         )}
 
-        {/* Mi próximo partido */}
-        {yo?.jugadorId && (
+        {/* Mi próximo partido: solo para quien se identificó como jugador */}
+        {yo?.jugadorId && !finalizado && (
           <div style={{ ...card, padding: 16, marginBottom: 14, borderLeft: `4px solid ${purple}` }}>
-            <div style={{ fontSize: 11, color: purple, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Tu próximo partido</div>
+            <div style={{ fontSize: 11, color: purple, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Tu próximo partido</div>
             {miProximo ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
                 <Lado nombre={miProximo.nombre_a} destaca={miProximo.jugador_a === yo.jugadorId} />
-                <span style={{ fontSize: 12, color: hint, fontWeight: 700 }}>VS</span>
+                <span style={{ fontSize: 12, color: hint, fontWeight: 800 }}>VS</span>
                 <Lado nombre={miProximo.nombre_b} destaca={miProximo.jugador_b === yo.jugadorId} />
               </div>
             ) : (
@@ -370,55 +450,98 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
           </div>
         )}
 
-        {/* En juego, separado por grupo/fase */}
-        <Seccion titulo={`En juego (${totalEnJuego})`}>
-          {totalEnJuego === 0 && <Vacio texto="No hay partidos en curso en este momento." />}
-          {enJuegoSecc.map(sec => (
-            <div key={sec.titulo}>
-              <SubTitulo>{sec.titulo}</SubTitulo>
-              {sec.partidos.map(p => <FilaPartido key={p.id} p={p} mio={!!esMio(p)} />)}
-            </div>
-          ))}
-        </Seccion>
+        {/* ── EN VIVO ── */}
+        {tab === 'vivo' && (
+          <>
+            <Seccion titulo={`⏱️ Jugándose ahora (${enJuego.length})`}>
+              {enJuego.length === 0 && <Vacio texto="No hay partidos en curso en este momento." />}
+              {enJuegoSecc.map(sec => (
+                <div key={sec.titulo}>
+                  <SubTitulo>{sec.titulo}</SubTitulo>
+                  {sec.partidos.map(p => <FilaPartido key={p.id} p={p} mio={esMio(p)} />)}
+                </div>
+              ))}
+            </Seccion>
 
-        {/* Desarrollo del torneo: llaves por fase con resultados */}
-        {llavesPorFase.length > 0 && (
-          <Seccion titulo="🏆 Llaves del torneo">
+            {ultimos.length > 0 && (
+              <Seccion titulo="✅ Últimos resultados">
+                {ultimos.map(p => <FilaPartido key={p.id} p={p} mio={esMio(p)} />)}
+              </Seccion>
+            )}
+          </>
+        )}
+
+        {/* ── GRUPOS: tabla completa y todos los partidos con su resultado ── */}
+        {tab === 'grupos' && (
+          <>
+            {tablas.length === 0 && (
+              <Seccion titulo="Grupos">
+                <Vacio texto="El torneo aún no arma los grupos. Esta pantalla se actualiza sola." />
+              </Seccion>
+            )}
+            {tablas.map(g => {
+              const suyos = partidos.filter(p => p.grupo_id === g.grupoId)
+              return (
+                <Seccion key={g.grupoId} titulo={`Grupo ${g.nombre}`}>
+                  <div style={{ display: 'flex', padding: '6px 14px', background: '#f8fafc', fontSize: 10.5, fontWeight: 800, color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <span style={{ width: 26 }}>#</span>
+                    <span style={{ flex: 1 }}>Jugador</span>
+                    <span style={{ width: 34, textAlign: 'center' }}>PJ</span>
+                    <span style={{ width: 34, textAlign: 'center' }}>G</span>
+                    <span style={{ width: 34, textAlign: 'center' }}>P</span>
+                  </div>
+                  {g.tabla.map((s, i) => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '9px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 13, background: s.id === yo?.jugadorId ? '#ede9fe' : 'transparent' }}>
+                      <span style={{ width: 26, fontWeight: 800, color: i < 2 ? green : hint, fontSize: 12 }}>{i + 1}º</span>
+                      <span style={{ flex: 1, color: text, fontWeight: i < 2 ? 700 : 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.nombre}</span>
+                      <span className="tabular-nums" style={{ width: 34, textAlign: 'center', color: muted }}>{s.pg + s.pp}</span>
+                      <span className="tabular-nums" style={{ width: 34, textAlign: 'center', color: green, fontWeight: 700 }}>{s.pg}</span>
+                      <span className="tabular-nums" style={{ width: 34, textAlign: 'center', color: muted }}>{s.pp}</span>
+                    </div>
+                  ))}
+                  {suyos.length > 0 && (
+                    <>
+                      <SubTitulo>Partidos del grupo</SubTitulo>
+                      {suyos.map(p => <FilaPartido key={p.id} p={p} mio={esMio(p)} />)}
+                    </>
+                  )}
+                </Seccion>
+              )
+            })}
+          </>
+        )}
+
+        {/* ── LLAVES ── */}
+        {tab === 'llaves' && (
+          <>
+            {llavesPorFase.length === 0 && (
+              <Seccion titulo="Llaves">
+                <Vacio texto={fase === 'grupos'
+                  ? 'El cuadro se arma cuando terminen los grupos.'
+                  : 'Todavía no hay llaves generadas.'} />
+              </Seccion>
+            )}
             {llavesPorFase.map(sec => (
-              <div key={sec.fase}>
-                <SubTitulo>{sec.titulo}</SubTitulo>
+              <Seccion key={sec.fase} titulo={sec.titulo}>
                 {sec.partidos.map(p => (
-                  <div key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <div style={{ padding: '7px 14px 0', fontSize: 11, fontWeight: 700, color: purple }}>Llave {(p.orden ?? 0) + 1}</div>
-                    <FilaPartido p={p} mio={!!esMio(p)} />
+                  <div key={p.id}>
+                    <div style={{ padding: '7px 14px 0', fontSize: 10.5, fontWeight: 800, color: purple, textTransform: 'uppercase', letterSpacing: 0.5 }}>Llave {(p.orden ?? 0) + 1}</div>
+                    <FilaPartido p={p} mio={esMio(p)} />
                   </div>
                 ))}
-              </div>
+              </Seccion>
             ))}
-          </Seccion>
+          </>
         )}
 
-        {/* Clasificados: los 2 primeros de cada grupo — solo en fase de grupos */}
-        {fase === 'grupos' && clasificados.length > 0 && (
-          <Seccion titulo="Clasificados por grupo">
-            {clasificados.map(c => (
-              <div key={c.grupoId}>
-                <SubTitulo>Grupo {c.nombre}</SubTitulo>
-                {c.top.map((s, i) => <FilaClasificado key={s.id} pos={i + 1} s={s} mio={s.id === yo?.jugadorId} />)}
-              </div>
-            ))}
-          </Seccion>
-        )}
-
-        {jugadores.length === 0 && (
-          <div style={{ textAlign: 'center', color: '#475569', fontSize: 12, marginTop: 8 }}>
-            El torneo aún no arma los grupos. Esta vista se actualiza sola cuando empiece.
-          </div>
-        )}
+        <div style={{ textAlign: 'center', color: '#64748b', fontSize: 11, marginTop: 16 }}>
+          Se actualiza solo · CMsports
+        </div>
       </div>
     </div>
   )
 }
+
 
 // ── agrupar partidos por grupo (en orden) y luego por fase de playoff ──
 function agruparPartidos(lista: Partido[], grupos: Grupo[]): { titulo: string; partidos: Partido[] }[] {
@@ -441,22 +564,26 @@ function agruparPartidos(lista: Partido[], grupos: Grupo[]): { titulo: string; p
 
 type Clasificado = { id: string; nombre: string; pg: number; pp: number }
 
-// ── standings por grupo: solo los 2 primeros (por partidos ganados) ──
-function standingsPorGrupo(grupos: Grupo[], jugadores: Jugador[], partidos: Partido[]): { grupoId: string; nombre: string; top: Clasificado[] }[] {
-  const res: { grupoId: string; nombre: string; top: Clasificado[] }[] = []
+// ── tabla completa por grupo, ordenada por partidos ganados ──
+// Antes solo se calculaban los DOS que clasifican. El resto del grupo también
+// quiere saber cómo va, así que ahora sale la tabla entera; los dos primeros
+// se marcan en verde.
+function tablaPorGrupo(grupos: Grupo[], jugadores: Jugador[], partidos: Partido[]): { grupoId: string; nombre: string; tabla: Clasificado[] }[] {
+  const res: { grupoId: string; nombre: string; tabla: Clasificado[] }[] = []
   for (const g of grupos) {
     const players = jugadores.filter(j => j.grupo_id === g.id)
+    if (players.length === 0) continue
     const ps = partidos.filter(p => p.grupo_id === g.id && p.ganador)
-    if (ps.length === 0) continue // sin resultados aún → no mostramos clasificados provisorios
     const stat = new Map<string, Clasificado>(players.map(j => [j.id, { id: j.id, nombre: j.nombre, pg: 0, pp: 0 }]))
     for (const p of ps) {
-      const w = p.ganador!, l = p.jugador_a === w ? p.jugador_b : p.jugador_a
+      const w = p.ganador!, perdedor = p.jugador_a === w ? p.jugador_b : p.jugador_a
       if (stat.has(w)) stat.get(w)!.pg++
-      if (l && stat.has(l)) stat.get(l)!.pp++
+      if (perdedor && stat.has(perdedor)) stat.get(perdedor)!.pp++
     }
-    // ponytail: sin sets en el snapshot, el desempate posible es solo por victorias
+    // Sin sets en el snapshot público, el único desempate posible es por
+    // victorias; a igualdad, alfabético, para que el orden no baile solo.
     const orden = [...stat.values()].sort((a, b) => b.pg - a.pg || a.nombre.localeCompare(b.nombre))
-    res.push({ grupoId: g.id, nombre: g.nombre, top: orden.slice(0, 2) })
+    res.push({ grupoId: g.id, nombre: g.nombre, tabla: orden })
   }
   return res
 }
@@ -476,16 +603,6 @@ function FilaPartido({ p, mio }: { p: Partido; mio: boolean }) {
       <span style={{ flex: 1, color: ganoB ? green : esBye ? hint : text, fontWeight: ganoB ? 700 : 400, fontStyle: esBye ? 'italic' : 'normal' }}>
         {esBye ? 'BYE (pasa directo)' : <>{ganoB && '✓ '}{tieneB ? (p.nombre_b || 'Por definir') : 'Por definir'}</>}
       </span>
-    </div>
-  )
-}
-
-function FilaClasificado({ pos, s, mio }: { pos: number; s: Clasificado; mio: boolean }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid #f1f5f9', background: mio ? '#faf5ff' : 'transparent', fontSize: 13 }}>
-      <span style={{ width: 22, height: 22, borderRadius: '50%', background: green, color: '#fff', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{pos}º</span>
-      <span style={{ flex: 1, color: text, fontWeight: 600 }}>{s.nombre}</span>
-      <span className="tabular-nums" style={{ fontSize: 12, color: muted, fontWeight: 600 }}>{s.pg}G · {s.pp}P</span>
     </div>
   )
 }

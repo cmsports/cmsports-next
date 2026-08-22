@@ -512,6 +512,14 @@ async function aplicarResultadoOficialDb(db: AdminDb, clubId: string, params: Pa
 
   const { data: evento } = await db.from('oficial_eventos').select('formato_partido, fase, campeonato_id')
     .eq('id', partido.evento_id).maybeSingle()
+
+  // La regla "no se toca un evento cerrado" vivía solo en la pantalla, que
+  // escondía el botón. Una pestaña abierta antes de finalizar lo conservaba y
+  // el cambio entraba igual: en un torneo con resultados ya publicados y
+  // premios entregados, eso reescribe la historia sin que nadie se entere.
+  if (evento?.fase === 'finalizado') {
+    return { error: 'El evento ya está finalizado; no se pueden registrar resultados nuevos.' }
+  }
   const meta = gamesParaGanarFormato(evento?.formato_partido || 'bo5')
 
   let sets: SetMarcador[] = params.sets ?? (Array.isArray(partido.sets) ? partido.sets as SetMarcador[] : [])
@@ -710,7 +718,7 @@ export async function sincronizarResultadoDesdeMarcador(params: {
   ganadorLado: 'a' | 'b'
   tipoCierre?: TipoCierreOficial
   motivoCierre?: string
-}): Promise<Resultado> {
+}): Promise<Resultado<{ sinPartidoOficial?: boolean; yaTeniaResultado?: boolean }>> {
   const { error, supabase, perfil } = await requireStaffMarcadorOficial()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
   const db = dbOficial(supabase)
@@ -721,8 +729,12 @@ export async function sincronizarResultadoDesdeMarcador(params: {
     .eq('marcador_id', params.marcadorId)
     .maybeSingle()
 
-  if (!oficial) return {}
-  if (oficial.ganador_id) return {}
+  // Los dos casos de abajo no son errores, pero tampoco son "guardado": el
+  // árbitro cerraba el partido en el marcador, no veía nada y se iba pensando
+  // que había quedado registrado. Se devuelven distinguibles para que la
+  // pantalla pueda decirlo.
+  if (!oficial) return { sinPartidoOficial: true }
+  if (oficial.ganador_id) return { yaTeniaResultado: true }
 
   const ganadorId = params.ganadorLado === 'a' ? oficial.inscrito_a_id : oficial.inscrito_b_id
   if (!ganadorId) return { error: 'Faltan inscritos en el partido oficial' }
@@ -1738,6 +1750,15 @@ export async function corregirResultadoOficial(params: {
   if (!partido?.ganador_id) return { error: 'El partido no tiene resultado aún' }
   if (params.nuevoGanadorId !== partido.inscrito_a_id && params.nuevoGanadorId !== partido.inscrito_b_id) {
     return { error: 'El ganador debe pertenecer al partido' }
+  }
+
+  // Misma guarda que al registrar: la final de un evento cerrado no tiene
+  // ronda siguiente que la proteja, así que sin esto la corrección pasaba
+  // derecho aunque el evento estuviera finalizado.
+  const { data: eventoEstado } = await db.from('oficial_eventos')
+    .select('fase').eq('id', partido.evento_id).maybeSingle()
+  if (eventoEstado?.fase === 'finalizado') {
+    return { error: 'El evento ya está finalizado. Para corregir un resultado hay que reabrirlo primero.' }
   }
   if (partido.ganador_id === params.nuevoGanadorId) return {}
   if (!params.setsTexto?.trim()) {
