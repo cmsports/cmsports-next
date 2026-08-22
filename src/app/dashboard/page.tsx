@@ -159,7 +159,11 @@ export default function DashboardPage() {
     ])
 
     const activos      = (jugsData || []).filter(j => j.estado === 'activo')
-    const morosos      = (mensualidades || []).filter(m => m.estado === 'pendiente' || m.estado === 'atrasado')
+    const activosIds   = new Set(activos.map(j => j.id))
+    // Bloquear a un jugador no cierra su cuota pendiente del mes: sin este
+    // filtro seguía sumando a la morosidad y apareciendo en la lista de
+    // deudores del dashboard después de bloqueado. Mismo criterio que el RPC.
+    const morosos      = (mensualidades || []).filter(m => (m.estado === 'pendiente' || m.estado === 'atrasado') && activosIds.has(m.jugador_id))
     const gastos       = (movimientos || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
     const ingresos     = (movimientos || []).filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0) || 0
     const gastosPrev   = (movimientosPrev || []).filter(m => m.tipo === 'gasto').reduce((s, m) => s + m.monto, 0) || 0
