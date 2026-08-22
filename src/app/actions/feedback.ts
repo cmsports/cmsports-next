@@ -23,6 +23,14 @@ export async function crearFeedback(params: {
 
   const { data: autorPerfil } = await supabase.from('perfiles').select('nombre').eq('id', user.id).single()
 
+  // El mismo cuidado que ya tenía la versión masiva y a esta le faltaba: el id
+  // del jugador viene del cliente. Sin comprobarlo se podía dejar un feedback
+  // colgado del jugador de otro club, guardado con el club_id propio: no lo ve
+  // el club dueño del alumno ni cuadra con el plantel de quien lo escribió.
+  const { data: jugadorDelClub } = await supabase.from('jugadores').select('id')
+    .eq('id', params.jugadorId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!jugadorDelClub) return { error: 'Ese alumno no es de este club' }
+
   const { error } = await supabase.from('feedback_jugadores').insert({
     club_id: perfil.club_id,
     jugador_id: params.jugadorId,

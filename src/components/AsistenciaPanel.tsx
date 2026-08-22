@@ -89,6 +89,8 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
 
   const [pendientesCount, setPendientesCount] = useState(0)
+  // Asistencias de la cola offline que el servidor rechazó definitivamente.
+  const [rechazosSync, setRechazosSync] = useState<string[]>([])
 
   // Los bloques que se dictan hoy y quiénes están inscritos en cada uno. Sirven
   // para achicar la lista al pasar lista; no mandan sobre la asistencia, que
@@ -154,10 +156,26 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     if (!id) return
     const cola = await obtenerCola()
     const pendientes = cola.filter(c => c.clubId === id)
+    const rechazados: string[] = []
+
     for (const item of pendientes) {
-      const result = await registrarAsistenciaAction(item.clubId, item.jugadorId, item.fecha, item.hora)
-      if (!result.error) await quitarDeCola(item.id)
+      try {
+        const result = await registrarAsistenciaAction(item.clubId, item.jugadorId, item.fecha, item.hora)
+        if (!result.error) { await quitarDeCola(item.id); continue }
+        // El servidor contestó y dijo que no. Eso no se arregla reintentando:
+        // pasa cuando al jugador lo borraron o lo traspasaron a otro club
+        // mientras su asistencia esperaba en la cola. Antes el ítem se quedaba
+        // para siempre, se reintentaba en cada reconexión y el cartel de
+        // "N pendientes" no se limpiaba nunca. Se saca y se avisa de quién es.
+        await quitarDeCola(item.id)
+        rechazados.push(`${item.jugadorNombre} (${item.fecha}): ${result.error}`)
+      } catch {
+        // Se cayó la conexión a mitad de camino: este sí es transitorio, así
+        // que el ítem se queda en la cola para el próximo intento.
+      }
     }
+
+    setRechazosSync(rechazados)
   }, [clubId])
 
   const cargarDatos = useCallback(async (cid?: string) => {
@@ -691,6 +709,19 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       {!online && (
         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#92400e', fontWeight: 600 }}>
           📡 Sin conexión — los registros se guardan localmente y se sincronizan automáticamente al recuperar internet
+        </div>
+      )}
+      {/* Lo que la cola offline no pudo guardar y no va a poder: hay que
+          decirlo, o esa asistencia se pierde sin que nadie se entere. */}
+      {rechazosSync.length > 0 && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#dc2626' }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+            No se pudo guardar {rechazosSync.length === 1 ? 'una asistencia' : `${rechazosSync.length} asistencias`} de las que quedaron sin conexión:
+          </div>
+          {rechazosSync.map((r, i) => <div key={i} style={{ fontSize: 12, marginTop: 2 }}>· {r}</div>)}
+          <button onClick={() => setRechazosSync([])} style={{ marginTop: 8, background: 'transparent', border: '1px solid #fecaca', borderRadius: 8, padding: '4px 10px', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>
+            Entendido
+          </button>
         </div>
       )}
       {online && pendientesCount > 0 && (

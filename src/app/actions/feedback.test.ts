@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   requirePerfil: vi.fn(),
   getUser: vi.fn(),
   perfilSelect: vi.fn(),
+  jugadorDelClub: vi.fn(),
   insert: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
@@ -18,6 +19,11 @@ const supabaseFalso = {
   from: (tabla: string) => {
     if (tabla === 'perfiles') {
       return { select: () => ({ eq: () => ({ single: () => mocks.perfilSelect() }) }) }
+    }
+    // `jugadores`: la comprobación de que el alumno es del club de quien
+    // escribe. Devuelve lo que diga `mocks.jugadorDelClub`.
+    if (tabla === 'jugadores') {
+      return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => mocks.jugadorDelClub() }) }) }) }
     }
     // feedback_jugadores
     return {
@@ -38,6 +44,7 @@ describe('feedback entre roles', () => {
     })
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'user-1' } } })
     mocks.perfilSelect.mockResolvedValue({ data: { nombre: 'Profe Test' } })
+    mocks.jugadorDelClub.mockResolvedValue({ data: { id: 'jugador-1' } })
     mocks.insert.mockResolvedValue({ error: null })
     mocks.update.mockResolvedValue({ error: null })
     mocks.delete.mockResolvedValue({ error: null })
@@ -73,6 +80,18 @@ describe('feedback entre roles', () => {
       })
       const resultado = await crearFeedback({ jugadorId: 'jugador-1', fecha: '2026-08-01', comentario: 'Hola' })
       expect(resultado).toEqual({ error: 'Solo el admin o el profesor pueden dejar feedback' })
+      expect(mocks.insert).not.toHaveBeenCalled()
+    })
+
+    // El id del jugador lo manda el cliente. La versión masiva ya comprobaba
+    // que fueran del club; esta no, y se podía dejar un feedback colgado del
+    // alumno de otro club guardado con el club_id propio.
+    it('rechaza un jugador que no es del club de quien escribe', async () => {
+      mocks.jugadorDelClub.mockResolvedValue({ data: null })
+      const resultado = await crearFeedback({
+        jugadorId: 'jugador-de-otro-club', fecha: '2026-08-01', comentario: 'Hola',
+      })
+      expect(resultado).toEqual({ error: 'Ese alumno no es de este club' })
       expect(mocks.insert).not.toHaveBeenCalled()
     })
   })

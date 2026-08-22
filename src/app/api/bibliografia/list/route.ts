@@ -8,8 +8,9 @@ const BUCKET = 'bibliografia-buin'
 // sesión: cualquiera podía listar todos los archivos de la bibliografía del
 // club. El bucket es público, así que el contenido ya era alcanzable con la
 // URL — lo que se filtraba era la ENUMERACIÓN, o sea saber qué archivos hay.
-// Sus tres hermanos (upload, delete y el de libro-profe) sí piden sesión; este
-// se había quedado afuera.
+// Los dos de subir y el de borrar sí piden sesión; este se había quedado
+// afuera. (El comentario decía que el de libro-profe también la pedía, y no era
+// cierto: se arregló en la misma pasada.)
 //
 // Se pide sesión pero NO rol de admin a propósito: la bibliografía la leen los
 // profesores y jugadores desde su propia pantalla, y exigir admin la dejaría
