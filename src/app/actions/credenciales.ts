@@ -172,6 +172,14 @@ export async function resetearCredencial(params: { usuarioId: string }): Promise
   const { error: espejoErr } = await admin.from('credencial_visible').upsert({
     usuario_id: perfil.id, club_id: clubId, password_plano: nuevaPassword,
     usuario_login: login, tipo_login: tipo,
+    // Vuelve a habilitar la consulta por RUT. La migración 205 dice que el
+    // reseteo del admin "crea una fila nueva sin esta marca", pero acá no se
+    // crea nada: el upsert actualiza la fila que ya existe y solo toca las
+    // columnas que se le nombran, así que la marca sobrevivía. Resultado: al
+    // jugador que ya había consultado su clave una vez, el link por RUT no le
+    // servía nunca más —ni después de que el admin le reseteara la clave, que
+    // es justamente el camino de recuperación que documenta esa migración.
+    primera_consulta_rut_en: null,
   })
   if (espejoErr) return { error: 'Contraseña cambiada, pero no se guardó en el reporte: ' + espejoErr.message }
 
@@ -246,6 +254,9 @@ export async function resetearTodasLasCredenciales(): Promise<{ error?: string; 
     const { error: espejoErr } = await admin.from('credencial_visible').upsert({
       usuario_id: p.id, club_id: clubId, password_plano: password,
       usuario_login: email, tipo_login: 'email',
+      // Misma razón que en el reset individual: si no se limpia, quien ya
+      // consultó su clave por RUT queda sin ese camino para siempre.
+      primera_consulta_rut_en: null,
     })
     if (espejoErr) fallidas++
     else cambiadas++

@@ -1887,6 +1887,9 @@ export interface Database {
         ]
       }
       credencial_visible: {
+        // `primera_consulta_rut_en` la agregó la migración 205 y estos tipos son
+        // anteriores. Va a mano porque no se regeneran solos: sin ella,
+        // asignarle null da "Type 'null' is not assignable to type 'never'".
         Row: {
           usuario_id: string
           club_id: string
@@ -1894,6 +1897,7 @@ export interface Database {
           usuario_login: string
           tipo_login: string
           actualizado_en: string
+          primera_consulta_rut_en: string | null
         }
         Insert: {
           usuario_id: string
@@ -1902,6 +1906,7 @@ export interface Database {
           usuario_login: string
           tipo_login: string
           actualizado_en?: string
+          primera_consulta_rut_en?: string | null
         }
         Update: {
           usuario_id?: string
@@ -1910,6 +1915,7 @@ export interface Database {
           usuario_login?: string
           tipo_login?: string
           actualizado_en?: string
+          primera_consulta_rut_en?: string | null
         }
         Relationships: []
       }
