@@ -29,6 +29,8 @@ export default function InscripcionOficialModal(props: {
     omitidos?: number
   }>
   importando?: boolean
+  /** Quita a un inscrito de la lista. Solo se ofrece antes del sorteo. */
+  onQuitar?: (inscritoId: string) => Promise<{ error?: string }>
 }) {
   const [nombre, setNombre] = useState('')
   const [asociacion, setAsociacion] = useState('')
@@ -38,6 +40,7 @@ export default function InscripcionOficialModal(props: {
   const [cabezasDirty, setCabezasDirty] = useState(false)
   const [textoLista, setTextoLista] = useState('')
   const [sugerirCabezas, setSugerirCabezas] = useState(true)
+  const [quitandoId, setQuitandoId] = useState<string | null>(null)
 
   const candidatos = useMemo(
     () => props.inscritos.map(i => ({
@@ -170,7 +173,7 @@ export default function InscripcionOficialModal(props: {
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, marginBottom: 14 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: torneoUi.text, marginBottom: 6 }}>Importar lista</div>
             <p style={{ margin: '0 0 8px', fontSize: 11, color: torneoUi.muted }}>
-              Pegá CSV/Excel o subí xlsx. Columnas: nombre, asociación (o COD), código, ranking.
+              Pega CSV/Excel o sube un xlsx. Columnas: nombre, asociación (o COD), código, ranking.
             </p>
             <textarea
               value={textoLista}
@@ -286,6 +289,33 @@ export default function InscripcionOficialModal(props: {
                   }}>
                     CS{i.cabeza_numero}
                   </span>
+                )}
+                {/* Quitar: va en la fila del jugador, que es donde uno lo busca al
+                    darse cuenta del error. Solo antes del sorteo — después los
+                    partidos apuntan al inscrito y borrarlo los dejaría sin
+                    ganador (ON DELETE SET NULL). */}
+                {props.onQuitar && (
+                  <button
+                    type="button"
+                    title={`Quitar a ${i.nombre} de la lista`}
+                    disabled={quitandoId === i.id}
+                    onClick={async () => {
+                      if (!confirm(`¿Quitar a ${i.nombre} de la lista de inscritos?`)) return
+                      setErrorMsg(''); setOkMsg('')
+                      setQuitandoId(i.id)
+                      const res = await props.onQuitar!(i.id)
+                      setQuitandoId(null)
+                      if (res?.error) setErrorMsg(res.error)
+                      else setOkMsg(`${i.nombre} salió de la lista.`)
+                    }}
+                    style={{
+                      background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8,
+                      width: 26, height: 26, lineHeight: 1, color: quitandoId === i.id ? torneoUi.hint : '#dc2626',
+                      fontSize: 14, cursor: quitandoId === i.id ? 'default' : 'pointer', flexShrink: 0,
+                    }}
+                  >
+                    {quitandoId === i.id ? '·' : '✕'}
+                  </button>
                 )}
               </div>
             ))}

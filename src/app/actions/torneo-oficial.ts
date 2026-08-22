@@ -254,6 +254,54 @@ export async function inscribirJugadorOficial(params: {
   return { id: data.id }
 }
 
+/**
+ * Saca a alguien de la lista de inscritos, antes del sorteo.
+ *
+ * Solo en fase de inscripción, y la guarda no es burocracia: en
+ * `oficial_partidos` las tres columnas que apuntan al inscrito
+ * —`inscrito_a_id`, `inscrito_b_id` y `ganador_id`— son ON DELETE SET NULL.
+ * Borrar a alguien que ya jugó no falla ni avisa: le deja los partidos sin
+ * jugador y, peor, **sin ganador**, así que la llave queda rota en silencio.
+ *
+ * Con los grupos ya formados el camino correcto es rehacerlos, no borrar la
+ * ficha por debajo.
+ */
+export async function quitarInscritoOficial(params: {
+  inscritoId: string
+}): Promise<Resultado<{ nombre: string }>> {
+  const { error, supabase, perfil } = await requireAdmin()
+  if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
+  const db = dbOficial(supabase)
+
+  const { data: inscrito } = await db.from('oficial_inscritos')
+    .select('id, nombre, evento_id')
+    .eq('id', params.inscritoId).eq('club_id', perfil.club_id).maybeSingle()
+  if (!inscrito) return { error: 'Inscrito no encontrado' }
+
+  const { data: evento } = await db.from('oficial_eventos')
+    .select('fase').eq('id', inscrito.evento_id).eq('club_id', perfil.club_id).maybeSingle()
+  if (!evento) return { error: 'Evento no encontrado' }
+  if (evento.fase !== 'inscripcion') {
+    return { error: 'Los grupos ya están formados. Para sacar a alguien hay que rehacer el sorteo.' }
+  }
+
+  // Cinturón y tirantes: si por lo que sea ya existiera un partido suyo, no se
+  // borra. Es más barato que descubrir después una llave sin ganador.
+  const { count } = await db.from('oficial_partidos')
+    .select('id', { count: 'exact', head: true })
+    .eq('evento_id', inscrito.evento_id)
+    .or(`inscrito_a_id.eq.${params.inscritoId},inscrito_b_id.eq.${params.inscritoId}`)
+  if ((count ?? 0) > 0) {
+    return { error: 'Este jugador ya tiene partidos en el cuadro; no se puede quitar.' }
+  }
+
+  const { error: delErr } = await db.from('oficial_inscritos')
+    .delete().eq('id', params.inscritoId).eq('club_id', perfil.club_id)
+  if (delErr) return { error: delErr.message || 'No se pudo quitar al inscrito' }
+
+  return { nombre: inscrito.nombre }
+}
+
 export async function inscribirLoteOficial(params: {
   eventoId: string
   filas: Array<{

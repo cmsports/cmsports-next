@@ -22,6 +22,7 @@ import {
   listarConflictosProgramaOficial,
   programarEventoOficial,
   registrarResultadoOficial,
+  quitarInscritoOficial,
   registrarSancionOficial,
   reiniciarLlavesOficial,
   renumerarPartidosOficial,
@@ -1008,6 +1009,11 @@ export default function EventoOficialPage() {
                 return res
               }}
               onGuardarCabezas={guardarCabezasModal}
+              onQuitar={async (inscritoId: string) => {
+                const res = await quitarInscritoOficial({ inscritoId })
+                if (!res.error) recargarEvento()
+                return res
+              }}
             />
 
             {/* Groups grid */}
@@ -1390,6 +1396,18 @@ export default function EventoOficialPage() {
                     <p style={{ margin: '8px 0 0', fontSize: 11, color: hint }}>
                       Las tarjetas del marcador técnico se copian a esta bitácora al cerrar el partido.
                     </p>
+                    {/* "Descalificación" acá solo anota. El W.O. sobre los partidos
+                        pendientes se aplica al cerrar el partido eligiendo el alcance
+                        (evento o campeonato). Sin este aviso, quien elige
+                        "Descalificación" y le da a Agregar se va creyendo que el
+                        jugador quedó fuera, y sus partidos siguen programados. */}
+                    {sancionForm.tipo === 'descalificacion' && (
+                      <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px' }}>
+                        ⚠️ Esto queda anotado en la bitácora, pero <strong>no saca al jugador del torneo</strong>.
+                        Para que sus partidos pendientes se den por perdidos, cierra su partido en curso
+                        eligiendo el alcance (evento o campeonato).
+                      </p>
+                    )}
                   </div>
                 )}
 
