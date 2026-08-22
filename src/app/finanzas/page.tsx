@@ -72,7 +72,10 @@ function FinanzasContent() {
   const [busqueda, setBusqueda] = useState('')
   const searchParams = useSearchParams()
   const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'historicas'|'reportes'>(
-    searchParams.get('tab') === 'mensualidades' ? 'mensualidades' : 'movimientos',
+    // Se aceptan todas las pestañas, no solo mensualidades: `/reportes` redirige
+    // acá con ?tab=reportes y antes caía en Movimientos sin decir nada.
+    (['movimientos', 'mensualidades', 'historicas', 'reportes'] as const)
+      .find(t => t === searchParams.get('tab')) ?? 'movimientos',
   )
   // Monta Mensualidades solo cuando se abre por primera vez (evita sus consultas al entrar en "Movimientos"); una vez montado queda vivo
   const [mensualidadesVista, setMensualidadesVista] = useState(searchParams.get('tab') === 'mensualidades')

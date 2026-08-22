@@ -251,7 +251,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
             </svg>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#64748b', marginBottom: 6 }}>Sin resultados aún</div>
             <div style={{ fontSize: 12, color: '#94a3b8', maxWidth: 240, margin: '0 auto' }}>
-              Registrá resultados en la pestaña Programación para ver el ranking
+              Registra resultados en la pestaña Programación para ver el ranking
             </div>
           </div>
         )}

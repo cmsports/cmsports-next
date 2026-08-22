@@ -1269,7 +1269,17 @@ function MiniCalendarioAsistencia({ clubId, fechaSeleccionada, onSeleccionar, ho
       const mm = String(mes + 1).padStart(2, '0')
       const inicio = `${anio}-${mm}-01`
       const fin = `${anio}-${mm}-${String(new Date(anio, mes + 1, 0).getDate()).padStart(2, '0')}`
-      const { data } = await supabase.from('asistencia').select('fecha').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).limit(200)
+      // Sin `limit`: acá viene UNA FILA POR ASISTENCIA, no un día por fila. Con
+      // 116 activos y veinte días de clase son ~2.000 filas, así que el
+      // `limit(200)` que había cortaba el mes por la mitad —y sin `order`, el
+      // corte era impredecible—: los días del final se quedaban sin punto y el
+      // calendario mostraba que no hubo clases. Es una sola columna de texto,
+      // así que traerlas todas pesa nada; el Set las reduce a los días únicos.
+      const { data } = await supabase.from('asistencia')
+        .select('fecha')
+        .eq('club_id', clubId)
+        .gte('fecha', inicio).lte('fecha', fin)
+        .order('fecha')
       const dias = new Set((data || []).map((d: any) => d.fecha))
       setDiasConDatos(dias)
     }

@@ -1509,7 +1509,12 @@ export default function TorneoDetallePage() {
                       const pendientes = cuota > 0
                         ? jugadoresUnicos.filter((j: any) => {
                             const pago = pagos.find((p: any) => p.jugador_id === j.jugador_id)
-                            return !pago || pago.estado !== 'pagado'
+                            // 'exento' es el que se retiró: no se le cobra, así que no
+                            // es un pago pendiente. Sin esta condición, este aviso
+                            // listaba gente que la lista de pagos de más abajo —en
+                            // esta misma pantalla— ya daba por cerrada, y los dos
+                            // números no cuadraban.
+                            return !pago || (pago.estado !== 'pagado' && pago.estado !== 'exento')
                           })
                         : []
                       if (!pendientes.length) return null
@@ -1785,7 +1790,13 @@ export default function TorneoDetallePage() {
                     setJugSuggestions(q ? jugadoresPorCategoria.filter((j: any) => j.nombre.toLowerCase().includes(q)) : jugadoresPorCategoria)
                   } else {
                     if (e.target.value.length >= 2 && perfil?.club_id) {
-                      const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(8)
+                      // Mismo criterio que el torneo interno: se sugieren los
+                      // activos. Un bloqueado no aparece solo porque alguien
+                      // empiece a escribir su nombre. Sigue siendo posible
+                      // inscribirlo escribiéndolo completo —el nombre exacto
+                      // reutiliza su ficha—, pero pasa a ser una decisión y no
+                      // un clic accidental en el autocompletado.
+                      const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(8)
                       setJugSuggestions(data || [])
                     } else {
                       setJugSuggestions([])

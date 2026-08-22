@@ -79,7 +79,7 @@ export default function FeedbacksPage() {
           <div style={{ padding: 30, textAlign: 'center', color: hint, fontSize: 13 }}>Cargando...</div>
         ) : feedbacks.length === 0 ? (
           <div style={{ ...card, padding: 30, textAlign: 'center', color: hint, fontSize: 13 }}>
-            Todavía no tenés feedback de tu profesor.
+            Todavía no tienes feedback de tu profesor.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -180,7 +180,7 @@ export default function EstadoCuentaPage() {
 
       {!matriculaPagada && (
         <div style={{ background:'#fff7ed', border:'1px solid #fed7aa', borderRadius:14, padding:16, marginBottom:16, fontSize:12, color:'#c2410c', lineHeight:1.5 }}>
-          ⚠️ Tu matrícula figura como pendiente. Consultá con el administrador del club.
+          ⚠️ Tu matrícula figura como pendiente. Consulta con el administrador del club.
         </div>
       )}
 

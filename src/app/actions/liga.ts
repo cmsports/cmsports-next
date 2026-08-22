@@ -365,6 +365,12 @@ export async function guardarRestriccionesLiga(params: {
  * En los dos casos queda registrado el retiro, así que si se vuelve a
  * programar, el jugador ya no entra en el horario.
  */
+/** Las divisiones de una liga. Los pagos cuelgan de la división, no de la liga. */
+async function divisionesDeLiga(db: any, ligaId: string): Promise<string[]> {
+  const { data } = await db.from('liga_divisiones').select('id').eq('liga_id', ligaId)
+  return ((data ?? []) as Array<{ id: string }>).map(d => d.id)
+}
+
 export async function retirarJugadorDeLiga(params: {
   ligaId: string
   jugadorId: string
@@ -420,6 +426,26 @@ export async function retirarJugadorDeLiga(params: {
   })
   if (marcaErr) {
     return { error: 'Los partidos se resolvieron, pero no se pudo marcar el retiro. ¿Corriste la migración 118?' }
+  }
+
+  // Su cuota de inscripción deja de ser deuda. Antes esto no se tocaba: el
+  // jugador salía del fixture pero su pago quedaba en 'pendiente' para
+  // siempre, y seguía apareciendo en el reporte de pagos de la liga como si
+  // hubiera que cobrarle. Es el "deudor eterno" que la migración 203 describe
+  // como el lugar equivocado donde dejar a alguien.
+  //
+  // Solo se cierra lo que no está pagado. Si ya pagó, no se toca: esa plata
+  // entró y el estado tiene que seguir diciéndolo. Si había pagado una parte,
+  // igual se exime el resto —no se le va a cobrar— y los abonos recibidos
+  // siguen registrados en `liga_abonos` y en Finanzas.
+  const { error: pagoErr } = await db
+    .from('liga_jugador_pagos')
+    .update({ estado: 'exento', updated_at: new Date().toISOString() })
+    .eq('jugador_id', jugadorId)
+    .in('division_id', await divisionesDeLiga(db, ligaId))
+    .neq('estado', 'pagado')
+  if (pagoErr) {
+    return { error: 'El retiro quedó registrado, pero no se pudo cerrar su cuota de inscripción. ¿Corriste la migración 211?' }
   }
 
   return { success: true, partidosAfectados: aResolver.length, modo }

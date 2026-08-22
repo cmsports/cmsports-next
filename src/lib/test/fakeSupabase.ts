@@ -81,7 +81,9 @@ export function fakeSupabase(
       },
     }
 
-    for (const m of ['select', 'eq', 'in', 'is', 'not', 'lte', 'gte', 'lt', 'or', 'order', 'limit', 'range']) {
+    // `neq` estaba faltando y el cliente real sí lo tiene: una cadena que lo
+    // usara reventaba con "no es una función" y parecía un bug del código.
+    for (const m of ['select', 'eq', 'neq', 'in', 'is', 'not', 'lte', 'gte', 'lt', 'or', 'order', 'limit', 'range']) {
       cadena[m] = vi.fn(() => cadena)
     }
     for (const m of ['insert', 'update', 'upsert', 'delete'] as const) {

@@ -44,13 +44,17 @@ describe('matrícula: la plata y el flag no se separan', () => {
     expect(cuerpo).toContain('Jugador no encontrado en el club')
   })
 
-  it("'matricula' es categoría válida de ingreso en los cuatro lugares", () => {
-    // La lista blanca del RPC y las tres de TypeScript tienen que coincidir, o
+  it("'matricula' es categoría válida de ingreso en los tres lugares", () => {
+    // La lista blanca del RPC y las dos de TypeScript tienen que coincidir, o
     // el movimiento se rechaza en la base o no se puede elegir en la interfaz.
+    //
+    // Eran cuatro lugares hasta el 2026-08-22: `/reportes` tenía su propia
+    // copia del mapa de categorías porque era un duplicado de la pestaña
+    // Reportes de Finanzas. Esa página ahora solo redirige, así que el mapa
+    // vive en un único lugar y ya no hay dos listas que sincronizar.
     expect(migracion).toContain("'mensualidad','matricula','inscripcion_torneo'")
     expect(leer('src/lib/validation/finanzas.ts')).toContain("'matricula'")
     expect(leer('src/app/finanzas/page.tsx')).toContain("matricula:'Matrícula'")
-    expect(leer('src/app/reportes/page.tsx')).toContain("matricula:'Matrícula'")
   })
 
   it('la migración deja marcados a los que ya existían, sin inventarles ingreso', () => {

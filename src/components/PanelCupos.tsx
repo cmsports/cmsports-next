@@ -201,9 +201,13 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
                   const sobre = n > abierto.cupo_maximo
                   return (
                     <div style={{ fontSize: 12, marginTop: 6, fontWeight: 600, color: sobre ? '#dc2626' : n >= abierto.cupo_maximo ? '#d97706' : '#16a34a' }}>
-                      {n} de {abierto.cupo_maximo} cupos
+                      {n} de {abierto.cupo_maximo} cupos fijos
                       {sobre && ` · ⚠ ${n - abierto.cupo_maximo} por sobre el cupo`}
-                      {abierto.cupo_libres > 0 && ` · ${abierto.cupo_libres} reservados para libre acceso`}
+                      {/* Los de plan libre acceso van en su propia bolsa: `cupo_maximo`
+                          es "lugares para jugadores con días fijos" y `cupo_libres` es
+                          aparte (migración 073). Antes decía "reservados", que se leía
+                          como si salieran de los mismos cupos y no es así. */}
+                      {abierto.cupo_libres > 0 && ` · ${abierto.cupo_libres} más para libre acceso`}
                     </div>
                   )
                 })()}

@@ -77,8 +77,8 @@ export default function SinClubPage() {
 
         <p style={{ fontSize:13, color:'#64748b', lineHeight:1.6, margin:'0 0 22px' }}>
           Tu cuenta fue dada de baja por el administrador, así que dejaste de tener
-          acceso a las pantallas del club. Si creés que fue un error, o querés volver,
-          podés enviar una solicitud de ingreso nueva.
+          acceso a las pantallas del club. Si creés que fue un error, o quieres volver,
+          puedes enviar una solicitud de ingreso nueva.
         </p>
 
         <button

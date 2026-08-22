@@ -151,7 +151,9 @@ interface PagoReporteFila {
   divisionNombre: string
   montoTotal: number
   montoPagado: number
-  estado: 'pagado' | 'parcial' | 'pendiente'
+  // 'exento' = se retiró de la liga y no se le cobra (migración 211). Mismo
+  // estado y mismo significado que en mensualidades y en torneo_pagos.
+  estado: 'pagado' | 'parcial' | 'pendiente' | 'exento'
 }
 
 type SubTab = 'jugadores' | 'programacion' | 'ranking'
@@ -717,7 +719,9 @@ export default function LigaDetallePage() {
     const totalRecaudado = pagosReporteFilas.reduce((s, f) => s + f.montoPagado, 0)
     const totalEsperado = pagosReporteFilas.reduce((s, f) => s + f.montoTotal, 0)
     const cantPagado = pagosReporteFilas.filter(f => f.estado === 'pagado').length
-    const cantPendientes = pagosReporteFilas.filter(f => f.estado !== 'pagado').length
+    // 'exento' es quien se retiró de la liga: no se le cobra, así que no es
+    // deuda. Sin esto seguía contando como deudor para siempre.
+    const cantPendientes = pagosReporteFilas.filter(f => f.estado !== 'pagado' && f.estado !== 'exento').length
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -785,7 +789,7 @@ export default function LigaDetallePage() {
 
   const totalRecaudado = pagosReporteFilas.reduce((s, f) => s + f.montoPagado, 0)
   const totalEsperado = pagosReporteFilas.reduce((s, f) => s + f.montoTotal, 0)
-  const cantPagosPendientes = pagosReporteFilas.filter(f => f.estado !== 'pagado').length
+  const cantPagosPendientes = pagosReporteFilas.filter(f => f.estado !== 'pagado' && f.estado !== 'exento').length
 
   const dm = darkMode
   const pageBg = dm ? '#0f172a' : undefined
@@ -1104,7 +1108,7 @@ export default function LigaDetallePage() {
                       const pago = pagos[jid]
                       const estado = pago?.estado ?? 'pendiente'
                       const color = SEMAFORO[estado] ?? SEMAFORO.pendiente
-                      const label = estado === 'pagado' ? '✅ Pagado' : estado === 'parcial' ? '⚡ Parcial' : '⏳ Pendiente'
+                      const label = estado === 'pagado' ? '✅ Pagado' : estado === 'parcial' ? '⚡ Parcial' : estado === 'exento' ? '➖ Se retiró' : '⏳ Pendiente'
                       const avatarStyle = { background: avatarBgD(nombre) }
                       const isHovered = hoveredJugador === jid
                       return (

@@ -549,7 +549,7 @@ export default function HorarioPage() {
             </div>
 
             <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Profesores (podés marcar más de uno)</label>
+              <label style={labelStyle}>Profesores (puedes marcar más de uno)</label>
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
                 {profesores.length === 0 && <div style={{ fontSize: 12, color: hint, padding: 4 }}>No hay profesores cargados</div>}
                 {profesores.map(p => (

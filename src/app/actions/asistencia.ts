@@ -55,7 +55,8 @@ export async function registrarAsistenciaAction(
 }
 
 // El cierre por bloque se quitó: la asistencia se pasa a mano, jugador por
-// jugador. La función `registrar_bloque_asistencia` sigue en la base sin uso.
+// jugador. La función `registrar_bloque_asistencia` tampoco existe ya en la
+// base: la borró la migración 106 (este comentario decía que seguía viva).
 
 /**
  * Corrige el estado de un jugador en una fecha, desde Asistencia Histórica.

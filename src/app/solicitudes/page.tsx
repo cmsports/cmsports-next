@@ -12,7 +12,7 @@ import { aprobarSolicitud, rechazarSolicitud } from '@/app/actions/solicitudes'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { copiarTexto } from '@/lib/clipboard'
-import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
+import { categoriaPorDefecto, esquemaCategoriasDe } from '@/lib/domain/esquemaCategorias'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { montoIngresado } from '@/lib/domain/mensualidades'
@@ -20,7 +20,6 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 
-const CLUB_BUIN_ID = 'ec1ef215-0ab5-43c6-abf4-fc5578b17bcc'
 
 const supabase = createClient()
 
@@ -96,6 +95,9 @@ export default function SolicitudesPage() {
   const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; cuentaCreada?: boolean; password?: string }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
+  // Qué categorías ofrece este club y si las sugiere por edad. La pantalla ya no
+  // pregunta "¿es Buin?": pide el esquema y lo aplica igual para todos.
+  const esquema = esquemaCategoriasDe(clubId)
 
   const PRESETS = [
     { label: '$15.000', valor: 15000, ent: 1 },
@@ -188,7 +190,7 @@ export default function SolicitudesPage() {
 
   function linkAvisoAprobado(info: NonNullable<typeof aprobadoInfo>) {
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud fue aprobada. Ya podés entrar en ${origin}/login con:\n📧 Email: ${info.email ?? ''}\n🔑 Contraseña: ${info.password ?? ''}\n¡Nos vemos en el club!`
+    const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud fue aprobada. Ya puedes entrar en ${origin}/login con:\n📧 Email: ${info.email ?? ''}\n🔑 Contraseña: ${info.password ?? ''}\n¡Nos vemos en el club!`
     return linkWhatsApp(info.telefono, msg)
   }
 
@@ -293,9 +295,8 @@ export default function SolicitudesPage() {
                       {s.estado === 'pendiente' && (
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={() => {
-                            const catAuto = s.fecha_nacimiento && clubId === CLUB_BUIN_ID
-                              ? (categoriaBuinPorFechaNacimiento(s.fecha_nacimiento) ?? 'TC')
-                              : 'principiante'
+                            const catAuto = (s.fecha_nacimiento && esquema.sugerirPorFechaNacimiento?.(s.fecha_nacimiento))
+                              ?? categoriaPorDefecto(esquema)
                             setModalAprobar(s)
                             setBloquesSel(new Set())
                             void cargarBloques()
@@ -389,10 +390,8 @@ export default function SolicitudesPage() {
                   value={infoForm.fecha_nacimiento} onChange={e => {
                     const fn = e.target.value
                     setInfoForm(f => ({ ...f, fecha_nacimiento: fn }))
-                    if (fn && clubId === CLUB_BUIN_ID) {
-                      const cat = categoriaBuinPorFechaNacimiento(fn) ?? 'TC'
-                      setPlanForm(p => ({ ...p, categoria: cat }))
-                    }
+                    const sugerida = fn ? esquema.sugerirPorFechaNacimiento?.(fn) : null
+                    if (sugerida) setPlanForm(p => ({ ...p, categoria: sugerida }))
                   }} />
               </div>
               <div>
@@ -449,14 +448,11 @@ export default function SolicitudesPage() {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 16 }}>Plan de entrenamiento</div>
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4, fontWeight: 600 }}>
-                Categoría {infoForm.fecha_nacimiento && clubId === CLUB_BUIN_ID && <span style={{ color: '#7c3aed' }}>(sugerida por edad)</span>}
+                Categoría {infoForm.fecha_nacimiento && esquema.sugerirPorFechaNacimiento && <span style={{ color: '#7c3aed' }}>(sugerida por edad)</span>}
               </label>
               <select style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', color: text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
                 value={planForm.categoria} onChange={e => setPlanForm(f => ({ ...f, categoria: e.target.value }))}>
-                {clubId === CLUB_BUIN_ID
-                  ? CATEGORIAS_BUIN.map(c => <option key={c} value={c}>{c}</option>)
-                  : <><option value="principiante">Principiante</option><option value="intermedio">Intermedio</option><option value="avanzado">Avanzado</option></>
-                }
+                {esquema.opciones.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 12 }}>

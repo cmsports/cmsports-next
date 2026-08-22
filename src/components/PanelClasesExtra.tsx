@@ -187,7 +187,7 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
             const enviables = g.conMonto.filter(e => !e.cobrada_en).map(e => e.id)
             const cobrables = g.conMonto.map(e => e.id)
             const totalCobrable = g.conMonto.reduce((s, e) => s + (e.monto ?? 0), 0)
-            const wa = linkWhatsApp(jug?.telefono, `Hola ${jug?.nombre?.split(' ')[0] ?? ''}, tenés ${g.conMonto.length} clase${g.conMonto.length === 1 ? '' : 's'} extra por ${fmt(totalCobrable)}. ¡Gracias!`)
+            const wa = linkWhatsApp(jug?.telefono, `Hola ${jug?.nombre?.split(' ')[0] ?? ''}, tienes ${g.conMonto.length} clase${g.conMonto.length === 1 ? '' : 's'} extra por ${fmt(totalCobrable)}. ¡Gracias!`)
             return (
               <div key={g.jugadorId} style={{ borderBottom: '1px solid #f1f5f9', padding: '13px 18px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>

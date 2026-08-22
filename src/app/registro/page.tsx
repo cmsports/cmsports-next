@@ -223,7 +223,7 @@ function RegistroForm() {
 
           <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#1d4ed8', marginBottom: 16, lineHeight: 1.5 }}>
             Todos los campos son obligatorios. Solo en <strong>apellido materno</strong>, <strong>tercer apellido</strong>,
-            <strong> teléfono</strong> e <strong>indicaciones médicas</strong> podés escribir <strong>no</strong> si no aplica.
+            <strong> teléfono</strong> e <strong>indicaciones médicas</strong> puedes escribir <strong>no</strong> si no aplica.
           </div>
 
           {/* ── Datos personales ── */}

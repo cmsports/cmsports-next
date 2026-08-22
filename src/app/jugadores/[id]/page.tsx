@@ -192,7 +192,7 @@ export default function JugadorDetallePage() {
           setTieneCuenta(!!perfilJugador)
         }
 
-        if (!j) { setErrorCarga('No se encontró el jugador o no tenés acceso.'); setLoading(false); return }
+        if (!j) { setErrorCarga('No se encontró el jugador o no tienes acceso.'); setLoading(false); return }
 
         if (j.club_id) {
           const { data: club } = await supabase.from('clubes').select('nombre').eq('id', j.club_id).single()
@@ -1165,7 +1165,7 @@ export default function JugadorDetallePage() {
               </div>
             ))}
             {!jugador.horario && ![jugador.entrena_lun, jugador.entrena_mar, jugador.entrena_mie, jugador.entrena_jue, jugador.entrena_vie].some(Boolean) && (
-              <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin horario asignado — hacé clic en Editar</div>
+              <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin horario asignado — haz clic en Editar</div>
             )}
           </div>
         </div>

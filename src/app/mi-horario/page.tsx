@@ -104,7 +104,7 @@ export default function MiHorarioPage() {
         <div style={{ ...card, padding: 30, textAlign: 'center' }}>
           <div style={{ fontSize: 34, marginBottom: 10 }}>🗓️</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 4 }}>
-            Todavía no tenés grupo asignado
+            Todavía no tienes grupo asignado
           </div>
           <div style={{ fontSize: 12, color: muted }}>
             Hablalo con el profe y te agrega al horario que te corresponda.
