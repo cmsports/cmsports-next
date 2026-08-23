@@ -602,8 +602,27 @@ export default function TorneoDetallePage() {
   const recaudadoEfectivo = recaudado - recaudadoTransferencia
   const pagosPendientesDeSubir = pagos.filter(p => p.estado === 'pagado' && !p.subido_a_finanzas)
   const recaudadoPendiente = pagosPendientesDeSubir.length * cuota
+  // `pagos` es TODO pago que se hizo alguna vez en este torneo, incluido el de
+  // alguien que después salió del cuadro (torneo_pagos no se toca al sacar a
+  // un jugador: si ya pagó, la plata queda registrada a propósito, ver
+  // quitarJugadorDeGrupo). `jugadoresUnicos` en cambio son solo los que siguen
+  // inscritos hoy. Antes "Meta" y "Pendiente" mezclaban esas dos poblaciones:
+  // alguien que pagó y luego se retiró contaba en recaudado pero no en
+  // inscritos, y la resta daba un "Pendiente" negativo aunque la pantalla de
+  // abajo dijera "Todos han pagado". Acá se acota todo a quien sigue en el
+  // torneo, igual que ya hace esa lista de abajo.
+  // Lista cruda de pagos exentos (todo el historial), para la sección "Se
+  // retiraron" más abajo — esa sí necesita ver a quien ya no está en
+  // `jugadoresUnicos`, es justamente el registro de quién se fue.
   const exentos = pagos.filter(p => p.estado === 'exento')
-  const proyectado = (totalInscritos - exentos.length) * cuota
+  const exentosVigentes = jugadoresUnicos.filter((j: any) =>
+    pagos.find(p => p.jugador_id === j.jugador_id)?.estado === 'exento').length
+  const proyectado = (totalInscritos - exentosVigentes) * cuota
+  const noHanPagado = jugadoresUnicos.filter((j: any) => {
+    const pago = pagos.find(p => p.jugador_id === j.jugador_id)
+    return !pago || (pago.estado !== 'pagado' && pago.estado !== 'exento')
+  })
+  const faltaPorCobrar = noHanPagado.length * cuota
   // Respeta el ojito: todo lo que este `fmt` dibuja va a pantalla.
   const fmt = useTextoMonto()
 
@@ -799,7 +818,7 @@ export default function TorneoDetallePage() {
               { label:'Recaudado', value:fmt(recaudado), color:'#16a34a' },
               { label:'Efectivo', value:fmt(recaudadoEfectivo), color:'#15803d' },
               { label:'Transferencias', value:fmt(recaudadoTransferencia), color:'#4f46e5' },
-              { label:'Pendiente', value:fmt(proyectado-recaudado), color: proyectado-recaudado>0?'#dc2626':'#16a34a' },
+              { label:'Falta cobrar', value:fmt(faltaPorCobrar), color: faltaPorCobrar>0?'#dc2626':'#16a34a' },
             ].map(s => (
               <div key={s.label} style={{ background:'#f4f7fa', borderRadius:10, padding:10, textAlign:'center' }}>
                 <div style={{ fontSize:14, fontWeight:700, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
@@ -1739,11 +1758,17 @@ export default function TorneoDetallePage() {
                   const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
                   const campeon1 = pFinal ? (pFinal as any).jg : null
                   const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : null
-                  const listaJug = jugadoresUnicos.map((j: any) => ({
-                    nombre: j.jugadores?.nombre || '—',
-                    pagado: pagos.some(p => p.jugador_id === j.jugador_id && p.estado === 'pagado'),
-                    metodoPago: pagos.find(p => p.jugador_id === j.jugador_id && p.estado === 'pagado')?.metodo_pago || null,
-                  }))
+                  const listaJug = jugadoresUnicos.map((j: any) => {
+                    const pago = pagos.find(p => p.jugador_id === j.jugador_id)
+                    return {
+                      nombre: j.jugadores?.nombre || '—',
+                      // 'exento' = se retiró y no se le cobra (migración 192). Antes
+                      // se perdía en un booleano y el informe lo mostraba como
+                      // deuda pendiente.
+                      estado: (pago?.estado === 'pagado' || pago?.estado === 'exento' ? pago.estado : 'pendiente') as 'pagado' | 'exento' | 'pendiente',
+                      metodoPago: pago?.estado === 'pagado' ? pago.metodo_pago || null : null,
+                    }
+                  })
                   const premios = [
                     { lugar: '1° lugar', nombre: campeon1?.nombre, monto: torneo?.premio_primero },
                     { lugar: '2° lugar', nombre: subcampeon?.nombre, monto: torneo?.premio_segundo },
@@ -1760,7 +1785,7 @@ export default function TorneoDetallePage() {
                   const { descargarInformeFinancieroPdf } = await import('@/lib/torneo-informe-pdf')
                   descargarInformeFinancieroPdf({
                     torneoNombre: torneo?.nombre || 'Torneo',
-                    cuota, totalInscritos, pagados, recaudado, proyectado,
+                    cuota, totalInscritos, pagados, recaudado,
                     recaudadoEfectivo, recaudadoTransferencia, recaudadoPendienteSubir: recaudadoPendiente,
                     jugadores: listaJug, premios, gastos, gastosRegistradosEnFinanzas: premiosYaGuardados, metodoPremio: premioMetodo,
                   })

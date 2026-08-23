@@ -3,7 +3,10 @@
 
 import { COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion, estiloTabla } from '@/lib/pdf/estilo'
 
-type Jugador = { nombre: string; pagado: boolean; metodoPago?: string | null }
+// 'exento' es quien se retiró del torneo y no se le cobra (migración 192). Con
+// un `pagado: boolean` esa persona salía como "Pendiente" en rojo, contando
+// como deuda algo que el club ya decidió no cobrar.
+type Jugador = { nombre: string; estado: 'pagado' | 'exento' | 'pendiente'; metodoPago?: string | null }
 type Premio = { lugar: string; nombre?: string | null; monto?: number | null }
 type Gasto = { tipo: string; monto: number }
 
@@ -16,7 +19,6 @@ export type InformeFinanciero = {
   recaudadoEfectivo: number
   recaudadoTransferencia: number
   recaudadoPendienteSubir: number
-  proyectado: number
   jugadores: Jugador[]
   premios: Premio[]
   gastos: Gasto[]
@@ -34,7 +36,14 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
   const totalPremios = d.premios.reduce((s, p) => s + (p.monto || 0), 0)
   const totalGastos = d.gastos.reduce((s, g) => s + (g.monto || 0), 0)
   const neto = d.recaudado - totalPremios - totalGastos
-  const pendienteCobro = d.proyectado - d.recaudado
+  // `d.recaudado` cuenta TODO pago que se hizo alguna vez en este torneo,
+  // incluido el de alguien que después se retiró (torneo_pagos no se toca al
+  // sacar a un jugador: si ya pagó, la plata queda registrada a propósito).
+  // `d.proyectado - d.recaudado` mezclaba esa población histórica con la de
+  // hoy y podía dar un "pendiente" negativo aunque no quedara nadie por
+  // cobrar. Se cuenta directo de `d.jugadores`, que ya viene acotado a quien
+  // sigue inscrito.
+  const pendienteCobro = d.jugadores.filter(j => j.estado === 'pendiente').length * d.cuota
 
   let y = encabezado(doc, {
     club: d.torneoNombre,
@@ -81,15 +90,16 @@ export async function descargarInformeFinancieroPdf(d: InformeFinanciero) {
     head: [['Jugador', 'Estado', 'Método', 'Monto']],
     body: d.jugadores.map(j => [
       j.nombre,
-      j.pagado ? 'Pagado' : 'Pendiente',
-      j.pagado ? (j.metodoPago === 'transferencia' ? 'Transferencia' : 'Efectivo') : '—',
-      j.pagado ? fmt(d.cuota) : '—',
+      j.estado === 'pagado' ? 'Pagado' : j.estado === 'exento' ? 'Exento' : 'Pendiente',
+      j.estado === 'pagado' ? (j.metodoPago === 'transferencia' ? 'Transferencia' : 'Efectivo') : '—',
+      j.estado === 'pagado' ? fmt(d.cuota) : '—',
     ]),
     ...estiloTabla(),
     columnStyles: { 3: { halign: 'right' } },
     didParseCell: (data: any) => {
       if (data.section === 'body' && data.column.index === 1) {
-        data.cell.styles.textColor = data.cell.raw === 'Pagado' ? COLOR.verde : COLOR.rojo
+        data.cell.styles.textColor = data.cell.raw === 'Pagado' ? COLOR.verde
+          : data.cell.raw === 'Exento' ? COLOR.ambar : COLOR.rojo
         data.cell.styles.fontStyle = 'bold'
       }
     },
