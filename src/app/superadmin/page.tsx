@@ -18,6 +18,14 @@ const supabase = createClient()
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 
+// Preset de módulos según el deporte elegido — es solo un punto de partida
+// razonable, el superadmin puede seguir tildando/destildando lo que quiera
+// antes de crear el club.
+const PRESET_MODULOS: Record<string, string[]> = {
+  'tenis de mesa': [...MODULOS_OPCIONALES.map(m => m.key)],
+  futbol: ['liga_futbol', 'finanzas', 'calendario'],
+}
+
 export default function SuperadminPage() {
   const perfil = usePerfilSuperadmin()
   const { refetchPerfil } = usePerfil()
@@ -271,9 +279,22 @@ export default function SuperadminPage() {
               <input placeholder="Ciudad" value={form.ciudad}
                 onChange={e => setForm({ ...form, ciudad: e.target.value })}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
-              <input placeholder="Deporte" value={form.deporte}
-                onChange={e => setForm({ ...form, deporte: e.target.value })}
-                style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              <select value={form.deporte in PRESET_MODULOS ? form.deporte : 'otro'}
+                onChange={e => {
+                  const nuevoDeporte = e.target.value === 'otro' ? '' : e.target.value
+                  setForm({ ...form, deporte: nuevoDeporte })
+                  if (PRESET_MODULOS[e.target.value]) setModulosForm(PRESET_MODULOS[e.target.value])
+                }}
+                style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13, background: 'white' }}>
+                <option value="tenis de mesa">Tenis de mesa</option>
+                <option value="futbol">Fútbol</option>
+                <option value="otro">Otro...</option>
+              </select>
+              {!(form.deporte in PRESET_MODULOS) && (
+                <input placeholder="¿Qué deporte?" value={form.deporte}
+                  onChange={e => setForm({ ...form, deporte: e.target.value })}
+                  style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              )}
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', marginBottom: 5 }}>Plan mensual (opcional)</div>
