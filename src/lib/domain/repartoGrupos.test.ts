@@ -12,28 +12,34 @@ function reparto(N: number) {
 }
 
 describe('reparto de grupos', () => {
-  it('nunca arma grupos de 2 (salvo con menos de 6 jugadores)', () => {
-    const conGruposDeDos: number[] = []
-    for (let N = 6; N <= 100; N++) {
-      if (reparto(N).menor < 3) conGruposDeDos.push(N)
+  it('el sobrante nunca engorda un grupo a 4; forma grupos de 2', () => {
+    const conCuatro: number[] = []
+    for (let N = 6; N < 97; N++) {
+      if (reparto(N).mayor > 3) conCuatro.push(N)
     }
-    expect(conGruposDeDos).toEqual([])
+    // Desde 97 jugadores el tope de 32 grupos obliga a grupos de 4 igual.
+    expect(conCuatro).toEqual([])
   })
 
-  it('nunca arma grupos de mas de 4', () => {
-    const grandes: number[] = []
+  it('nunca arma un grupo de 1', () => {
+    const conUno: number[] = []
     for (let N = 6; N <= 100; N++) {
-      if (reparto(N).mayor > 4) grandes.push(N)
+      if (reparto(N).menor < 2) conUno.push(N)
     }
-    expect(grandes).toEqual([])
+    expect(conUno).toEqual([])
   })
 
-  // Los casos que antes armaban un cuadro con medio bracket vacio.
-  it('los tamanos que antes eran catastroficos quedan en cuadro exacto', () => {
-    for (const N of [50, 56, 64, 100]) {
-      const r = reparto(N)
-      expect(r.byes, `N=${N} deberia quedar sin BYEs`).toBe(0)
-    }
+  // Ejemplos pedidos explícitamente: el sobrante se reparte en grupos de 2,
+  // no engordando grupos existentes a 4.
+  it('reparte el sobrante en grupos de 2, no en grupos de 4', () => {
+    expect(reparto(8)).toMatchObject({ grupos: 3, menor: 2, mayor: 3 }) // 3,3,2
+    expect(reparto(7)).toMatchObject({ grupos: 3, menor: 2, mayor: 3 }) // 3,2,2
+    expect(reparto(4)).toMatchObject({ grupos: 2, menor: 2, mayor: 2 }) // 2,2
+  })
+
+  it('a partir de ~97 jugadores el tope de 32 grupos si deja grupos de 4', () => {
+    expect(reparto(97)).toMatchObject({ grupos: 32, menor: 3, mayor: 4 })
+    expect(reparto(100)).toMatchObject({ grupos: 32, menor: 3, mayor: 4 })
   })
 
   it('100 jugadores caben en el tope de 32 grupos que ya existia', () => {
@@ -55,13 +61,12 @@ describe('reparto de grupos', () => {
     for (let N = 6; N <= 100; N++) {
       if (reparto(N).byes > 0) conByes.push(N)
     }
-    expect(conByes.length).toBe(56)
-    // El peor caso baja de 48% a 38% del cuadro, pero sigue siendo mucho.
+    expect(conByes.length).toBe(78)
     const peor = Math.max(...conByes.map(N => {
       const r = reparto(N)
       return Math.round((r.byes / r.cuadro) * 100)
     }))
-    expect(peor).toBe(38)
+    expect(peor).toBe(47)
   })
 
   it('conserva el reparto de los tamanos chicos', () => {

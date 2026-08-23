@@ -38,32 +38,33 @@ function simularPartidosGrupo(
   })
 }
 
-// ─── Simulación completa: 50 jugadores ────────────────────────────────────
+// ─── Simulación completa: 48 jugadores ────────────────────────────────────
 
-describe('Simulación torneo 50 jugadores', () => {
-  const TOTAL_INICIALES = 50
+describe('Simulación torneo 48 jugadores', () => {
+  const TOTAL_INICIALES = 48
   const jugadores = crearJugadores(TOTAL_INICIALES)
-  const cabeza1 = jugadores[49] // j50 — el más fuerte
-  const cabeza2 = jugadores[48] // j49 — segundo más fuerte
+  const cabeza1 = jugadores[47] // j48 — el más fuerte
+  const cabeza2 = jugadores[46] // j47 — segundo más fuerte
   const cabezasDeSerie = new Set([cabeza1.id, cabeza2.id])
 
   // Paso 1: Calcular grupos
   const numGrupos = calcularNumGrupos(TOTAL_INICIALES)
 
-  // Antes eran 17 grupos (50/3), que dejaba grupos de 2 y un cuadro de 64 con
-  // 30 BYEs. Ahora se eligen los grupos mirando el cuadro: 16 grupos de 3-4
-  // dejan 32 clasificados, o sea un cuadro exacto y sin un solo BYE.
-  it('genera 16 grupos para 50 jugadores, para que el cuadro quede exacto', () => {
+  // Prioridad dura: grupos de 3. 48 es múltiplo exacto de 3, así que da 16
+  // grupos parejos de 3 sin necesitar ningún grupo de 2, y de paso el cuadro
+  // de 32 clasificados queda exacto (sin BYEs) — sirve para probar el resto
+  // de la mecánica del bracket sin el ruido de los BYEs.
+  it('genera 16 grupos de 3 para 48 jugadores', () => {
     expect(numGrupos).toBe(16)
   })
 
   // Paso 2: Distribuir con serpenteo
   const asignaciones = seedingSerpenteo(jugadores, numGrupos, cabezasDeSerie)
 
-  it('asigna exactamente 50 jugadores sin duplicados', () => {
-    expect(asignaciones).toHaveLength(50)
+  it('asigna exactamente 48 jugadores sin duplicados', () => {
+    expect(asignaciones).toHaveLength(48)
     const ids = new Set(asignaciones.map(a => a.jugadorId))
-    expect(ids.size).toBe(50)
+    expect(ids.size).toBe(48)
   })
 
   it('los grupos difieren en a lo más 1 jugador', () => {
@@ -242,17 +243,17 @@ describe('Simulación torneo 50 jugadores', () => {
 
     // Todos los cupos presentes
     const slots = layout.matches.flatMap(m => [m.a, m.b]).filter(Boolean)
-    expect(slots.length).toBe(numGrupos * 2) // 34 clasificados
+    expect(slots.length).toBe(numGrupos * 2) // 32 clasificados
   })
 
   // ─── Paso 9: Jugadores tardíos ──────────────────────────────────────────
 
   describe('3 jugadores tardíos', () => {
-    const tardios = crearJugadores(53).slice(50) // j51, j52, j53
+    const tardios = crearJugadores(51).slice(48) // j49, j50, j51
 
     it('se crea un nuevo grupo con los 3 tardíos', () => {
       // Simula generarGruposTardios: 3+ jugadores → nuevo grupo
-      const nuevoGrupoIdx = numGrupos // grupo R (índice 17)
+      const nuevoGrupoIdx = numGrupos // grupo Q (índice 16)
       const nuevoGrupo = {
         id: `grupo_${String.fromCharCode(65 + nuevoGrupoIdx)}`,
         jugadores: tardios,
@@ -268,8 +269,8 @@ describe('Simulación torneo 50 jugadores', () => {
 
       const primeroTardio = stats.stats[0].jugador
       const segundoTardio = stats.stats[1].jugador
-      expect(primeroTardio.id).toBe('j53') // el más fuerte gana todo
-      expect(segundoTardio.id).toBe('j52')
+      expect(primeroTardio.id).toBe('j51') // el más fuerte gana todo
+      expect(segundoTardio.id).toBe('j50')
     })
 
     it('mover jugador tardío a grupo sin partidos jugados', () => {
@@ -278,7 +279,7 @@ describe('Simulación torneo 50 jugadores', () => {
 
       // Creamos un escenario donde el grupo A no ha jugado todavía
       const grupoA = grupos[0]
-      const jugadorAMover = tardios[0] // j51
+      const jugadorAMover = tardios[0] // j49
 
       // Pre-move: grupo A tiene sus jugadores originales
       const jugadoresAntes = grupoA.jugadores.map(j => j.id)
@@ -300,8 +301,8 @@ describe('Simulación torneo 50 jugadores', () => {
       const numGruposConTardios = numGrupos + 1 // 17
 
       // Agregar clasificados del grupo tardío
-      const primerosTodos = [...primeros, { id: 'j53', nombre: 'Jugador 53' }]
-      const segundosTodos = [...segundos, { id: 'j52', nombre: 'Jugador 52' }]
+      const primerosTodos = [...primeros, { id: 'j51', nombre: 'Jugador 51' }]
+      const segundosTodos = [...segundos, { id: 'j50', nombre: 'Jugador 50' }]
 
       const totalClasificados = primerosTodos.length + segundosTodos.length
       expect(totalClasificados).toBe(34) // 17×2
@@ -348,9 +349,9 @@ describe('Simulación torneo 50 jugadores', () => {
     })
 
     it('bracket con tardíos llega a la final correctamente', () => {
-      const primerosTodos = [...primeros, { id: 'j53', nombre: 'Jugador 53' }]
-      const segundosTodos = [...segundos, { id: 'j52', nombre: 'Jugador 52' }]
-      const todosJugadores = [...jugadores, ...crearJugadores(53).slice(50)]
+      const primerosTodos = [...primeros, { id: 'j51', nombre: 'Jugador 51' }]
+      const segundosTodos = [...segundos, { id: 'j50', nombre: 'Jugador 50' }]
+      const todosJugadores = [...jugadores, ...crearJugadores(51).slice(48)]
       const byId = new Map(todosJugadores.map(j => [j.id, j]))
 
       function pickGanador(p: PartidoGenerado): JugadorTorneo {
@@ -395,13 +396,13 @@ describe('Simulación torneo 50 jugadores', () => {
   // ─── Paso 10: Verificar la prellave (BYEs avanzan) ──────────────────────
 
   describe('prellave / BYEs', () => {
-    // El cuadro principal de esta simulación ya no tiene BYEs: 50 jugadores
+    // El cuadro principal de esta simulación ya no tiene BYEs: 48 jugadores
     // arman 16 grupos y sus 32 clasificados llenan un cuadro de 32 exacto.
     // Para seguir probando la mecánica del BYE se usa un escenario que sí los
     // produce —17 grupos, 34 clasificados en un cuadro de 64—, que es
     // justamente el caso que la ronda de avance tiene que venir a reemplazar.
-    const primeros17 = [...primeros, { id: 'j53', nombre: 'Jugador 53' }]
-    const segundos17 = [...segundos, { id: 'j52', nombre: 'Jugador 52' }]
+    const primeros17 = [...primeros, { id: 'j51', nombre: 'Jugador 51' }]
+    const segundos17 = [...segundos, { id: 'j50', nombre: 'Jugador 50' }]
     const bracketConByes = generarBracketConAvance(
       primeros17, segundos17, cabeza1.id, cabeza2.id,
     )
