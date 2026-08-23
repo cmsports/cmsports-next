@@ -1,6 +1,6 @@
 # Manual de torneos: reglas internas y uso
 
-Versión vigente: 16 de agosto de 2026  
+Versión vigente: 23 de agosto de 2026  
 Alcance: torneos club — interno (`/torneos-internos`) y externo (`/torneos`).  
 En la app: el mismo texto aparece apenas entras al módulo y dentro de cada torneo.
 
@@ -32,7 +32,7 @@ Lista #1, #2, #3… correlativa, sin duplicados, máximo una por grupo. Mandan e
 
 ## Grupos
 
-`máximo(2, ceil(jugadores ÷ 3))`. Serpentina; en externo además se separan clubes (regla blanda). Todos contra todos. Victoria = 2 pts, derrota = 0.
+`máximo(2, ceil(jugadores ÷ 3))`, tope 32. Prioridad dura: grupos de 3; el sobrante forma sus propios grupos de 2 (nunca engorda un grupo a 4, salvo pasado el tope de 32 grupos). Serpentina; en externo además se separan clubes (regla blanda). Todos contra todos. Victoria = 2 pts, derrota = 0.
 
 ## Clasificación
 
@@ -45,10 +45,9 @@ De más fuerte a más débil:
 1. Nunca 1° contra 2° del **mismo** grupo en la primera ronda.
 2. 1° y 2° del mismo grupo en **mitades opuestas**.
 3. Separar #1 y #2 en mitades opuestas.
-4. BYE primero a cabezas de menor número, y a 1° de grupo antes que a 2°.
+4. BYE repartido parejo entre 1° y 2° de grupo (nunca 2° vs 2°); dentro de esa cuota, cabezas de menor número primero.
 5. Espejo del resto de cabezas.
-6. Preferir 1° vs 2° de otro grupo; si sobran 2°, pueden jugar 2° vs 2°.
-7. Repartir grupos ya cerrados entre mitades para poder jugar una rama ya.
+6. Repartir grupos ya cerrados entre mitades para poder jugar una rama ya.
 
 El esqueleto aparece apenas hay grupos y se rellena al cerrar cada uno. En cuanto se juega una llave real, el árbol queda congelado. Después no se vuelve a sembrar: ganador 1-2 → siguiente 1, etc.
 

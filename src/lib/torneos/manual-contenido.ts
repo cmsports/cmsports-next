@@ -14,7 +14,7 @@ export type SeccionManual = {
   bloques: BloqueManual[]
 }
 
-export const MANUAL_VERSION = '16 de agosto de 2026'
+export const MANUAL_VERSION = '23 de agosto de 2026'
 
 export function introSegunTipo(tipo: TipoManualTorneo): { titulo: string; texto: string } {
   if (tipo === 'interno') {
@@ -163,16 +163,16 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
   {
     id: 'grupos',
     titulo: 'Formación de grupos',
-    resumen: 'Grupos de 3 o 4, nunca de 2. Mínimo 2 grupos. Todos contra todos dentro del grupo.',
+    resumen: 'Prioridad dura: grupos de 3. El sobrante forma sus propios grupos de 2, nunca engorda un grupo a 4.',
     bloques: [
       {
         subtitulo: 'Cuántos grupos',
         items: [
-          'Se elige mirando el cuadro que viene después, no solo el tamaño del grupo: entre los repartos que dejan grupos de 3 o 4, se toma el que deje menos BYEs en la llave.',
-          'Nunca se arman grupos de 2. En un grupo de 2 clasifican los dos —porque clasifican 2 por grupo—, así que ese partido no decidiría nada más que el orden.',
-          'Ejemplos: 6 jugadores → 2 grupos; 7 → 2; 9 → 3; 12 → 4; 24 → 8; 50 → 16; 100 → 32.',
-          'Con 50, 64 o 100 jugadores el cuadro queda exacto, sin ningún BYE.',
-          'Tope: 32 grupos, que alcanza justo para 100 jugadores.',
+          'Prioridad dura: grupos de 3. El número de grupos es `ceil(jugadores ÷ 3)`: el sobrante de la división nunca engorda un grupo existente a 4, forma sus propios grupos de 2.',
+          'En un grupo de 2 clasifican los dos —porque clasifican 2 por grupo—, así que ese partido no decide más que el orden entre ambos.',
+          'Ejemplos: 6 jugadores → 2 grupos de 3; 7 → 3,2,2; 9 → 3,3,3; 12 → 4×3; 24 → 8×3; 32 → 10×3+1×2; 50 → 16×3+1×2.',
+          'Tope: 32 grupos. Pasado ese tope (torneos de ~97+ jugadores) sí reaparecen grupos de 4, porque no hay forma de seguir sumando grupos de 3 sin superarlo.',
+          'Grupos de 3 es la prioridad; que el cuadro de playoffs quede sin BYEs es secundario y no siempre se logra (eso lo resuelve, a futuro, una ronda de avance para los sobrantes).',
         ],
       },
       {
@@ -250,11 +250,10 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
           '1) Nunca se enfrentan en la primera ronda dos jugadores del mismo grupo.',
           '2) El 1° y el 2° del mismo grupo quedan en mitades opuestas del cuadro (solo se cruzarían en la final).',
           '3) Separar a #1 y #2 en mitades opuestas (espejo estándar: #1 arriba, #2 abajo).',
-          '4) Dar BYE primero a las cabezas de menor número (#1 antes que #2, etc.) y, a igualdad, a los 1° de grupo antes que a los 2°.',
+          '4) El BYE se reparte para que la cantidad de 1° y de 2° que juegan quede igual en cada mitad: todo cruce real de la primera ronda es 1° contra 2°, nunca 2° contra 2°. Dentro de esa cuota, BYE primero a las cabezas de menor número (#1 antes que #2, etc.).',
           '5) Ubicar el resto de cabezas lo más cerca posible de su posición de espejo (#3 y #4 en cuartos distintos, #5–#8 en octavos distintos, y así).',
-          '6) Preferir cruces 1° contra 2° de otro grupo. Si sobran 2° en una mitad, pueden jugar 2° contra 2°.',
-          '7) Repartir grupos ya cerrados entre ambas mitades para que alguna rama se pueda jugar de inmediato.',
-          'Si dos reglas chocan, gana la de número más bajo. Ejemplo: si poner a #1 y #2 en mitades opuestas obligaría a un 1° contra su propio 2°, se mueve la cabeza de número más alto y se conserva el cruce legal.',
+          '6) Repartir grupos ya cerrados entre ambas mitades para que alguna rama se pueda jugar de inmediato.',
+          'Si dos reglas chocan, gana la de número más bajo. Ejemplo: si poner a #1 y #2 en mitades opuestas obligaría a un 1° contra su propio 2°, se mueve la cabeza de número más alto y se conserva el cruce legal. En cuadros muy ajustados (pocos grupos) puede que un cabeza de serie no alcance BYE si dárselo forzara un 2° contra 2°: evitar ese cruce pesa más que proteger al cabeza.',
         ],
       },
       {
@@ -275,7 +274,7 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
         items: [
           'BYE = ese jugador no juega la ronda y pasa solo a la siguiente. En pantalla se ve un solo nombre y el sistema lo marca ganador al toque.',
           'Cantidad de BYE = tamaño del cuadro − cantidad de clasificados. Ejemplo: 3 grupos → 6 clasificados → cuadro de 8 → 2 BYE.',
-          'Quién los recibe, en orden: cabezas de menor número; luego 1° de grupo; luego 2° solo si aún sobran BYE; a igualdad, el grupo que ya cerró; después el grupo de índice más bajo.',
+          'Quién los recibe: se reparte parejo entre 1° y 2° de grupo (nunca deja a nadie jugando 2° contra 2° por falta de rival del otro lado). Dentro de esa cuota, en orden: cabezas de menor número; a igualdad, el grupo que ya cerró; después el grupo de índice más bajo.',
           'No marques un BYE como partido ganado: el botón no aplica. “Los BYE avanzan automáticamente”.',
           'Un BYE sí se puede arrastrar a otra llave de la ronda inicial, porque no se considera “jugado de verdad” (no hubo rival). En cuanto esa persona ya disputó la ronda siguiente, el BYE deja de moverse.',
           'Si tras un arrastre una llave queda sin rival, esa persona pasa a tener BYE. Si ahora tiene rival, el partido vuelve a quedar pendiente.',
