@@ -644,9 +644,11 @@ function construirBracketPorGruposNumerado(
       for (const mitad of [0, 1] as const) {
         const primerosMitad = cupos.filter(c => c.pos === 1 && (orientacion.has(c.grupoIdx) ? 0 : 1) === mitad)
         const segundosMitad = cupos.filter(c => c.pos === 2 && (orientacion.has(c.grupoIdx) ? 1 : 0) === mitad)
-        // ponytail: 1ros tienen prioridad de BYE sobre 2dos
-        const byePrimeros = Math.min(vaciosMitad, primerosMitad.length)
-        const byeSegundos = vaciosMitad - byePrimeros
+        // BYE repartido para que primeros y segundos jueguen la misma cantidad
+        // de partidos (nunca 2° vs 2°): ver detalle en el bloque de abajo.
+        const partidosMitad = partidosPorMitad - vaciosMitad
+        const byePrimeros = Math.max(0, primerosMitad.length - partidosMitad)
+        const byeSegundos = Math.max(0, segundosMitad.length - partidosMitad)
         const prioridad = (a: CupoBracket, b: CupoBracket) => {
           const sa = semillaDe(a) ?? Number.MAX_SAFE_INTEGER
           const sb = semillaDe(b) ?? Number.MAX_SAFE_INTEGER
@@ -727,9 +729,13 @@ function construirBracketPorGruposNumerado(
     const primerosMitad = cupos.filter(c => c.pos === 1 && (grupoEnMitad0.has(c.grupoIdx) ? 0 : 1) === mitad)
     const segundosMitad = cupos.filter(c => c.pos === 2 && (grupoEnMitad0.has(c.grupoIdx) ? 1 : 0) === mitad)
     const vaciosMitad = totalPartidos - numGrupos
-    // ponytail: 1ros tienen prioridad de BYE; 2dos solo si sobran
-    const byePrimeros = Math.min(vaciosMitad, primerosMitad.length)
-    const byeSegundos = vaciosMitad - byePrimeros
+    // El BYE se reparte para que la cantidad de primeros y de segundos que
+    // juegan quede igual: así todo partido real es 1° vs 2°, nunca 2° vs 2°.
+    // (Antes se le daba BYE a los primeros sin tope, y el sobrante de
+    // segundos que quedaba fuera de cupo terminaba enfrentándose entre sí.)
+    const partidosMitad = partidosPorMitad - vaciosMitad
+    const byePrimeros = primerosMitad.length - partidosMitad
+    const byeSegundos = segundosMitad.length - partidosMitad
     if (byePrimeros < 0 || byeSegundos < 0) return []
 
     const primerosOrdenados = ordenarPrioridad(primerosMitad)
@@ -738,9 +744,7 @@ function construirBracketPorGruposNumerado(
     const segundosBye = segundosOrdenados.slice(0, byeSegundos)
     const primerosJuegan = primerosOrdenados.slice(byePrimeros)
     const segundosPool = [...segundosOrdenados.slice(byeSegundos)]
-    if ((primerosJuegan.length + segundosPool.length) % 2 !== 0) return []
 
-    // 1ros vs 2dos primero, luego 2dos vs 2dos con los restantes
     const parejas: { a: CupoBracket; b: CupoBracket }[] = []
     for (const p of primerosJuegan) {
       const seedA = semillaDe(p)
@@ -754,9 +758,6 @@ function construirBracketPorGruposNumerado(
           || x.grupoIdx - y.grupoIdx
       })
       parejas.push({ a: p, b: segundosPool.shift()! })
-    }
-    while (segundosPool.length >= 2) {
-      parejas.push({ a: segundosPool.shift()!, b: segundosPool.shift()! })
     }
     const unidades: UnidadBracket[] = [
       ...primerosBye.map(a => ({ a, b: null })),

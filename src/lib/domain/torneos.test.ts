@@ -251,8 +251,11 @@ describe('construirLlavesLayoutNumerado', () => {
       .toEqual([0, 2, 3, 1])
   })
 
-  it('prioriza BYE para 1ros sobre 2dos', () => {
-    // 5 grupos → bracket de 16 → 6 BYEs. Los 5 primeros reciben BYE, 1 segundo también.
+  it('reparte el BYE balanceado entre 1ros y 2dos: nunca 2° vs 2°', () => {
+    // 5 grupos → bracket de 16 → 6 BYEs. Antes se le daba BYE a los 5
+    // primeros sin tope, dejando 2dos sobrantes que terminaban jugando entre
+    // ellos. Ahora el BYE se reparte para que primeros-que-juegan y
+    // segundos-que-juegan queden parejos, así todo partido real es 1° vs 2°.
     const layout = construirLlavesLayoutNumerado(5, [
       { numero: 1, grupoIdx: 0, pos: 1 },
       { numero: 2, grupoIdx: 1, pos: 1 },
@@ -260,16 +263,17 @@ describe('construirLlavesLayoutNumerado', () => {
       { numero: 4, grupoIdx: 3, pos: 1 },
       { numero: 5, grupoIdx: 4, pos: 1 },
     ])
-    const byes = new Set(layout.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`))
-    // Todos los 1ros deberían tener BYE
-    expect(byes.has('0:1')).toBe(true)
-    expect(byes.has('1:1')).toBe(true)
-    expect(byes.has('2:1')).toBe(true)
-    expect(byes.has('3:1')).toBe(true)
-    expect(byes.has('4:1')).toBe(true)
-    // Y 1 segundo también (6 BYEs - 5 primeros = 1 segundo)
-    const byesSegundos = layout.matches.filter(m => !m.b && m.a!.pos === 2)
-    expect(byesSegundos).toHaveLength(1)
+    const reales = layout.matches.filter(m => m.a && m.b)
+    for (const m of reales) {
+      expect(m.a!.pos).not.toBe(m.b!.pos) // nunca 1°vs1° ni 2°vs2°
+    }
+    const byes = layout.matches.filter(m => !m.b).map(m => m.a!)
+    expect(byes).toHaveLength(6)
+    // El BYE queda balanceado (3 primeros, 3 segundos), no todo para los 1ros.
+    expect(byes.filter(c => c.pos === 1)).toHaveLength(3)
+    expect(byes.filter(c => c.pos === 2)).toHaveLength(3)
+    // El cabeza de serie #1 sigue teniendo prioridad para el BYE.
+    expect(byes.some(c => c.grupoIdx === 0 && c.pos === 1)).toBe(true)
   })
 
   it('conserva invariantes para 2 a 32 grupos y varias semillas', () => {
@@ -287,6 +291,7 @@ describe('construirLlavesLayoutNumerado', () => {
       expect(new Set(cupos.map(c => `${c!.grupoIdx}:${c!.pos}`)).size).toBe(numGrupos * 2)
       for (const m of layout.matches.filter(m => m.a && m.b)) {
         expect(m.a!.grupoIdx).not.toBe(m.b!.grupoIdx)
+        expect(m.a!.pos).not.toBe(m.b!.pos) // nunca 1°vs1° ni 2°vs2°
       }
       for (let g = 0; g < numGrupos; g++) {
         const p1 = posicionDe(layout, g, 1)
@@ -440,7 +445,7 @@ describe('construirLlavesLayout', () => {
     }
   })
 
-  it('prioriza BYE para primeros de grupo sobre segundos', () => {
+  it('reparte el BYE balanceado entre primeros y segundos de grupo', () => {
     for (let numGrupos = 2; numGrupos <= 32; numGrupos++) {
       const { matches } = construirLlavesLayout(numGrupos)
       const tamano = calcularTamanoBracket(numGrupos * 2)
@@ -449,18 +454,26 @@ describe('construirLlavesLayout', () => {
       expect(byes).toHaveLength(byesEsperados)
       const byesPrimeros = byes.filter(s => s.pos === 1).length
       const byesSegundos = byes.filter(s => s.pos === 2).length
-      // 1ros reciben BYE primero; 2dos solo si sobran
-      expect(byesPrimeros).toBeGreaterThanOrEqual(byesSegundos)
+      // El BYE se reparte para igualar cuántos 1ros y 2dos juegan (nunca
+      // 2°vs2°). Sin cabezas de serie el reparto por mitades es simétrico,
+      // así que a lo más difieren en 1 (cuando numGrupos es impar).
+      expect(Math.abs(byesPrimeros - byesSegundos)).toBeLessThanOrEqual(1)
     }
   })
 
-  it('prioriza BYE para cabezas de serie cuando hay cupo compatible', () => {
-    // 3 grupos → bracket de 8 → 2 BYEs. Ambos cabezas (1ros) reciben BYE.
+  it('prioriza BYE para cabezas de serie, salvo que evitar 2°vs2° lo impida', () => {
+    // 3 grupos → bracket de 8 → solo 2 BYEs en total. El cabeza #1 lo recibe,
+    // pero el cabeza #2 queda solo en una mitad de 1 grupo: darle BYE ahí
+    // dejaría a los 2dos restantes jugando entre ellos, así que juega. Evitar
+    // 2°vs2° pesa más que proteger a un cabeza de serie (igual que pide el
+    // negocio: es un objetivo, no una regla absoluta).
     const tres = construirLlavesLayout(3, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
     const byesTres = tres.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`)
     expect(byesTres).toContain('0:1')
-    expect(byesTres).toContain('1:1')
+    expect(tres.matches.filter(m => m.a && m.b).every(m => m.a!.pos !== m.b!.pos)).toBe(true)
 
+    // 5 grupos → bracket de 16 → 6 BYEs, hay margen de sobra: ambos cabezas
+    // reciben BYE sin sacrificar el balance 1°vs2°.
     const cinco = construirLlavesLayout(5, { grupoIdx: 0, pos: 1 }, { grupoIdx: 1, pos: 1 })
     const byesCinco = cinco.matches.filter(m => !m.b).map(m => `${m.a!.grupoIdx}:${m.a!.pos}`)
     expect(byesCinco).toContain('0:1')
