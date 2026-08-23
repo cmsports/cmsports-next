@@ -428,6 +428,28 @@ export default function TorneoDetallePage() {
     }
   }
 
+  // Mismo armado que cerrarInscripcion, pero para volver a repartir los
+  // grupos ya generados (ej. si quedaron mal armados). Mantiene las cabezas
+  // de serie guardadas, salvo que el propio admin las haya cambiado antes de
+  // apretar el botón — en ese caso se guardan primero, igual que al cerrar.
+  async function regenerarGrupos() {
+    if (!confirm('¿Regenerar los grupos? Se recalculan desde los jugadores inscritos, conservando las cabezas de serie guardadas.')) return
+    if (cerrandoInscripcion) return
+    setCerrandoInscripcion(true)
+    try {
+      if (cabezasConCambios) {
+        const guardado = await configurarCabezasSerie({ torneoId, jugadorIds: cabezasNumeradas.map(c => c.id) })
+        if (guardado.error) { alert(guardado.error); return }
+        cabezasDirtyRef.current = false
+      }
+      const res = await cerrarInscripcionYGenerarGrupos({ torneoId })
+      if (res.error) { alert(res.error); return }
+      await cargarTorneo()
+    } finally {
+      setCerrandoInscripcion(false)
+    }
+  }
+
   function calcularStats(grupoId: string) {
     const jugsGrupo = jugadoresPorGrupo.get(grupoId) || []
     const partidosGrupo = partidosPorGrupo.get(grupoId) || []
@@ -585,6 +607,9 @@ export default function TorneoDetallePage() {
   // riesgo — el esqueleto se recalcula solo.
   const hayBracketJugado = Array.from(partidosPorFase.entries())
     .some(([fase, ps]) => fase !== 'grupos' && (ps as any[]).some(p => p.ganador && p.jugador_b))
+  // Regenerar grupos borra y recrea todos los partidos de grupos, así que solo
+  // tiene sentido ofrecerlo mientras ninguno se haya jugado todavía.
+  const hayResultadoDeGrupos = (partidosPorFase.get('grupos') || []).some((p: any) => p.ganador)
 
   // Layout determinista del cuadro (mismo sembrado que el servidor), para poder
   // etiquetar los cupos vacíos con su grupo/posición y distinguir BYE reales de
@@ -703,6 +728,15 @@ export default function TorneoDetallePage() {
             title="Fuerza el armado/rellenado del cuadro con los grupos ya cerrados"
             style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             🔄 Armar bracket ahora
+          </button>
+        )}
+        {esAdmin && faseActual === 'grupos' && !hayBracketJugado && !hayResultadoDeGrupos && (
+          <button
+            onClick={regenerarGrupos}
+            disabled={cerrandoInscripcion}
+            title="Vuelve a repartir los grupos desde cero, conservando las cabezas de serie guardadas"
+            style={{ background:'#fff7ed', color:'#c2410c', border:'1px solid #fed7aa', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor: cerrandoInscripcion ? 'not-allowed' : 'pointer' }}>
+            🔁 Regenerar grupos
           </button>
         )}
         {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && (
