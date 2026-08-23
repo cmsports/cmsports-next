@@ -1409,7 +1409,28 @@ async function limpiarExternosDeTorneo(torneoId: string, campeonId: string | nul
     .in('jugador_id', candidatos)
     .neq('torneo_grupos.torneo_id', torneoId)
   const enOtrosIds = new Set((enOtros ?? []).map((r: { jugador_id: string }) => r.jugador_id))
-  const aEliminar = candidatos.filter(id => !enOtrosIds.has(id))
+
+  // Excluir a quien ya jugó algún partido con resultado. Antes esto no se
+  // revisaba: se borraba igual la fila de grupo_jugadores y, si el borrado
+  // de la ficha fallaba (por ejemplo por torneo_pagos referenciándolo), el
+  // ON DELETE SET NULL de torneo_partidos nunca se disparaba — el partido
+  // quedaba con el resultado real pero el jugador ya no existía en
+  // grupo_jugadores, así que calcularStats dejaba de contar esa victoria.
+  // Pasó con 8 jugadores del torneo TC (ver migración 213). Un externo cuyo
+  // grupo ya tiene partidos jugados se queda, igual que ya exige
+  // quitarJugadorDeGrupo para sacar a alguien a mano.
+  const { data: partidosJugados } = await admin
+    .from('torneo_partidos')
+    .select('jugador_a, jugador_b')
+    .eq('torneo_id', torneoId)
+    .not('ganador', 'is', null)
+  const conResultado = new Set<string>()
+  for (const p of partidosJugados ?? []) {
+    if (p.jugador_a) conResultado.add(p.jugador_a)
+    if (p.jugador_b) conResultado.add(p.jugador_b)
+  }
+
+  const aEliminar = candidatos.filter(id => !enOtrosIds.has(id) && !conResultado.has(id))
   if (!aEliminar.length) return
 
   await admin.from('grupo_jugadores').delete().in('jugador_id', aEliminar)
