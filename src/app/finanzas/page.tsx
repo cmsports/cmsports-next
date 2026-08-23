@@ -955,7 +955,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     if (categoriaRep === 'general') {
       const prev = getRangoAnterior()
       const [{ data: jug }, { data: mov }, { data: asist }, { data: torn }, { data: mens }, { data: movPrev }, { count: asistPrev }] = await Promise.all([
-        supabase.from('jugadores').select('id,nombre,estado,categoria').eq('club_id', clubId),
+        supabase.from('jugadores').select('id,nombre,estado,categoria').eq('club_id', clubId).or('es_externo.is.null,es_externo.eq.false'),
         supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('asistencia').select('jugador_id,fecha').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin),
         supabase.from('torneos').select('id,nombre,estado,fecha_inicio').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
@@ -1011,7 +1011,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       const [{ data: mov }, { data: mens }, { data: jug }, { data: movPrev }, { data: porCobrar }] = await Promise.all([
         supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('mensualidades').select('id,mes,anio,monto,estado,jugadores(nombre,categoria)').eq('club_id', clubId).eq('anio', iniAnio).gte('mes', iniMes).lte('mes', finMes),
-        supabase.from('jugadores').select('id,nombre,estado').eq('club_id', clubId).eq('estado', 'activo'),
+        supabase.from('jugadores').select('id,nombre,estado').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
         supabase.from('movimientos').select('tipo,monto,categoria').eq('club_id', clubId).gte('fecha', prev.inicio).lte('fecha', prev.fin),
         // Toda la deuda viva del club, no solo la del período: la pregunta
         // "cuánto hay en la calle" no se contesta mirando un mes.
@@ -1060,7 +1060,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     if (categoriaRep === 'asistencia') {
       const [{ data: asist }, { data: jug }] = await Promise.all([
         supabase.from('asistencia').select('jugador_id,fecha,jugadores(nombre,categoria)').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-        supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo')
+        supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false')
       ])
       const porDia: Record<string, number> = {}, porJugador: Record<string, { nombre: string; count: number }> = {}, porDiaSemana: Record<number, number> = { 0:0,1:0,2:0,3:0,4:0,5:0,6:0 }
       const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
