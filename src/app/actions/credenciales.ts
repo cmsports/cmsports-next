@@ -275,7 +275,7 @@ export async function resetearTodasLasCredenciales(): Promise<{ error?: string; 
  * No requiere admin: el propio usuario cambia lo suyo. La sesión es la que
  * dice quién es; no confiamos en un id que pueda venir del cliente.
  */
-export async function cambiarPasswordPropia(nuevaPassword: string): Promise<{ error?: string; success?: boolean }> {
+export async function cambiarPasswordPropia(nuevaPassword: string): Promise<{ error?: string; success?: boolean; avisoEspejo?: string }> {
   const { error: authErr, supabase, perfil } = await requirePerfil()
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Sin sesión' }
   if (nuevaPassword.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
@@ -303,10 +303,15 @@ export async function cambiarPasswordPropia(nuevaPassword: string): Promise<{ er
     telefono: jugData?.telefono ?? null,
     rut: jugData?.rut ?? null,
   })
-  await admin.from('credencial_visible').upsert({
+  const { error: espejoErr } = await admin.from('credencial_visible').upsert({
     usuario_id: user.id, club_id: perfil.club_id, password_plano: nuevaPassword,
     usuario_login: login, tipo_login: tipo,
   })
+  // La clave YA cambió en auth (línea de arriba); esto solo actualiza el
+  // espejo que ve el admin. No se revierte el cambio real si falla — sería
+  // peor dejar a la persona sin poder entrar con la clave que acaba de
+  // poner —, pero el admin necesita saber que el reporte quedó desactualizado.
+  if (espejoErr) return { success: true, avisoEspejo: 'La contraseña se cambió, pero no se pudo actualizar en el reporte de credenciales.' }
 
   return { success: true }
 }

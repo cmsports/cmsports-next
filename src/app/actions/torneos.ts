@@ -2077,12 +2077,24 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
   // Venía de cuando `movimientos.torneo_id` no existía y el nombre era el único
   // vínculo; hoy el RPC de la migración 050 guarda el torneo_id en cada fila,
   // así que ese rastreo por texto ya no cumplía ninguna función.
-  if (grupoIds.length) await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
-  await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
-  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
-  await supabase.from('torneo_pagos').delete().eq('torneo_id', torneoId)
-  await supabase.from('torneo_grupos').delete().eq('torneo_id', torneoId)
-  await supabase.from('torneos').delete().eq('id', torneoId)
+  // Cada paso revisa su error y corta antes del siguiente: un DELETE filtrado
+  // por RLS no da error si no borró nada (ver reiniciarBracket, más arriba en
+  // este archivo), así que sin esto el torneo podía quedar borrado a medias
+  // mientras la función igual respondía éxito.
+  if (grupoIds.length) {
+    const { error } = await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+    if (error) return { error: `No se pudo borrar el torneo (jugadores de grupo): ${error.message}` }
+  }
+  { const { error } = await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
+    if (error) return { error: `No se pudo borrar el torneo (inscritos): ${error.message}` } }
+  { const { error } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
+    if (error) return { error: `No se pudo borrar el torneo (partidos): ${error.message}` } }
+  { const { error } = await supabase.from('torneo_pagos').delete().eq('torneo_id', torneoId)
+    if (error) return { error: `No se pudo borrar el torneo (pagos): ${error.message}` } }
+  { const { error } = await supabase.from('torneo_grupos').delete().eq('torneo_id', torneoId)
+    if (error) return { error: `No se pudo borrar el torneo (grupos): ${error.message}` } }
+  { const { error } = await supabase.from('torneos').delete().eq('id', torneoId)
+    if (error) return { error: `No se pudo borrar el torneo: ${error.message}` } }
 
   return { success: true }
 }

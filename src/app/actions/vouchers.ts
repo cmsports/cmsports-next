@@ -31,7 +31,8 @@ export async function subirVoucher(params: { nombre: string; base64: string; mar
 
   const { data: { publicUrl } } = admin.storage.from('galeria-fotos').getPublicUrl(path)
   const url = `${publicUrl}?t=${Date.now()}`
-  await admin.from('vouchers').update({ imagen_url: url }).eq('id', voucher.id)
+  const { error: urlErr } = await admin.from('vouchers').update({ imagen_url: url }).eq('id', voucher.id)
+  if (urlErr) return { error: 'La imagen se subió pero no se pudo guardar en el voucher: ' + urlErr.message }
 
   return { success: true, voucher: { id: voucher.id, nombre: params.nombre.trim(), imagen_url: url, activo: true, marca } }
 }
@@ -42,7 +43,8 @@ export async function eliminarVoucher(params: { id: string }) {
 
   const admin = createAdminClient()
   await admin.storage.from('galeria-fotos').remove([`vouchers/${clubId}/${params.id}`])
-  await admin.from('vouchers').delete().eq('id', params.id).eq('club_id', clubId!)
+  const { error } = await admin.from('vouchers').delete().eq('id', params.id).eq('club_id', clubId!)
+  if (error) return { error: 'No se pudo eliminar el voucher: ' + error.message }
   return { success: true }
 }
 
@@ -54,6 +56,7 @@ export async function toggleVoucher(params: { id: string; activo: boolean }) {
   // Sin el filtro de club, cualquier staff podía activar o desactivar el
   // voucher de otro club con solo saber su id — createAdminClient() salta el
   // RLS, así que el filtro tiene que estar acá.
-  await admin.from('vouchers').update({ activo: params.activo }).eq('id', params.id).eq('club_id', clubId!)
+  const { error } = await admin.from('vouchers').update({ activo: params.activo }).eq('id', params.id).eq('club_id', clubId!)
+  if (error) return { error: 'No se pudo cambiar el estado del voucher: ' + error.message }
   return { success: true }
 }

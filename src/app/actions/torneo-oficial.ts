@@ -465,10 +465,23 @@ export async function formarGruposOficial(params: { eventoId: string }): Promise
 
   const asignaciones = seedingSerpenteoConClubes(jugadores, numGrupos, cabezas.map(c => c.id))
 
-  await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId)
-  await db.from('oficial_grupo_inscritos').delete().in('grupo_id',
-    (await db.from('oficial_grupos').select('id').eq('evento_id', params.eventoId)).data?.map((g: { id: string }) => g.id) ?? [])
-  await db.from('oficial_grupos').delete().eq('evento_id', params.eventoId)
+  // Nada de esto debería encontrar filas todavía (evento.fase === 'inscripcion'
+  // recién comprobado arriba, así que no hay grupos ni partidos previos en el
+  // caso normal) — pero si un reintento o una carrera dejó algo de una corrida
+  // anterior, hay que borrarlo de verdad antes de insertar lo nuevo. Un DELETE
+  // filtrado por RLS no da error si no borra nada (ver reiniciarBracket en
+  // torneos.ts): sin revisar esto, el grupo nuevo se insertaría encima del
+  // viejo sin avisar.
+  const { data: gruposPrevios, error: gruposPreviosErr } = await db.from('oficial_grupos').select('id').eq('evento_id', params.eventoId)
+  if (gruposPreviosErr) return { error: `No se pudo leer los grupos previos: ${gruposPreviosErr.message}` }
+  const { error: delPartidosErr } = await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId)
+  if (delPartidosErr) return { error: `No se pudieron borrar los partidos previos: ${delPartidosErr.message}` }
+  if (gruposPrevios?.length) {
+    const { error: delInscritosErr } = await db.from('oficial_grupo_inscritos').delete().in('grupo_id', gruposPrevios.map((g: { id: string }) => g.id))
+    if (delInscritosErr) return { error: `No se pudieron borrar los inscritos previos: ${delInscritosErr.message}` }
+  }
+  const { error: delGruposErr } = await db.from('oficial_grupos').delete().eq('evento_id', params.eventoId)
+  if (delGruposErr) return { error: `No se pudieron borrar los grupos previos: ${delGruposErr.message}` }
 
   const gruposInsert = Array.from({ length: numGrupos }, (_, i) => ({
     club_id: perfil.club_id!,
@@ -1216,7 +1229,8 @@ async function sincronizarPreLlaveOficial(params: {
   const hayLlavesJugadas = !!bracketExistente?.some(llaveFueJugada)
 
   if (bracketExistente?.length && !hayLlavesJugadas) {
-    await db.from('oficial_partidos').delete().eq('evento_id', eventoId).neq('fase', 'grupos')
+    const { error: delErr } = await db.from('oficial_partidos').delete().eq('evento_id', eventoId).neq('fase', 'grupos')
+    if (delErr) return { error: `No se pudo limpiar el cuadro anterior: ${delErr.message}` }
   }
 
   const { data: avanceExistente } = await db.from('oficial_partidos')
@@ -1446,7 +1460,8 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
   if (bracketExistente?.length && hayLlavesJugadas) {
     // Esqueleto congelado si ya hubo juego real
   } else if (bracketExistente?.length && !hayLlavesJugadas) {
-    await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId).neq('fase', 'grupos')
+    const { error: delErr } = await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId).neq('fase', 'grupos')
+    if (delErr) return { error: `No se pudo limpiar el cuadro anterior: ${delErr.message}` }
   }
 
   const realDe = (grupoId: string | null | undefined, pos: number | null | undefined): string | null => {
@@ -2037,14 +2052,16 @@ export async function reiniciarLlavesOficial(params: { eventoId: string }): Prom
     return { error: 'Hay partidos de llave ya jugados. Corrige esos resultados antes de reiniciar.' }
   }
 
-  await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId).neq('fase', 'grupos')
-  await db.from('oficial_eventos').update({
+  const { error: delErr } = await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId).neq('fase', 'grupos')
+  if (delErr) return { error: `No se pudieron borrar las llaves: ${delErr.message}` }
+  const { error: updErr } = await db.from('oficial_eventos').update({
     fase: 'grupos',
     campeon_inscrito_id: null,
     subcampeon_inscrito_id: null,
     tercer_inscrito_id: null,
     actualizado_en: new Date().toISOString(),
   }).eq('id', params.eventoId)
+  if (updErr) return { error: `No se pudo volver el evento a fase de grupos: ${updErr.message}` }
 
   await sincronizarLlavesOficial({ eventoId: params.eventoId })
   return {}

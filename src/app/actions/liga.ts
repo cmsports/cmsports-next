@@ -103,23 +103,22 @@ export async function asignarJugadoresDivision(params: {
   const jugadoresAgregados = nuevosIds.filter(id => !actuales.includes(id))
   const jugadoresRemovidos = actuales.filter(id => !nuevosIds.includes(id))
 
-  // Actualizar liga_division_jugadores (solo los que cambian)
-  if (jugadoresRemovidos.length > 0) {
-    await supabase
-      .from('liga_division_jugadores')
-      .delete()
-      .eq('division_id', divisionId)
-      .in('jugador_id', jugadoresRemovidos)
-  }
-  if (jugadoresAgregados.length > 0) {
-    await supabase.from('liga_division_jugadores').insert(
-      jugadoresAgregados.map(jugadorId => ({ division_id: divisionId, jugador_id: jugadorId })),
-    )
-  }
-
-  // Si el fixture aún no fue generado, solo guardamos los jugadores.
-  // Los partidos los crea generarFixtureDivisionAction cuando el admin lo pida.
+  // Si el fixture aún no fue generado, no hay partidos que revisar: guardamos
+  // los jugadores no más. Los partidos los crea generarFixtureDivisionAction
+  // cuando el admin lo pida.
   if (!division.fixture_generado) {
+    if (jugadoresRemovidos.length > 0) {
+      await supabase
+        .from('liga_division_jugadores')
+        .delete()
+        .eq('division_id', divisionId)
+        .in('jugador_id', jugadoresRemovidos)
+    }
+    if (jugadoresAgregados.length > 0) {
+      await supabase.from('liga_division_jugadores').insert(
+        jugadoresAgregados.map(jugadorId => ({ division_id: divisionId, jugador_id: jugadorId })),
+      )
+    }
     return {
       success: true,
       totalJugadores: nuevosIds.length,
@@ -130,7 +129,13 @@ export async function asignarJugadoresDivision(params: {
     }
   }
 
-  // Fixture ya generado — aplicar diff incremental sobre los partidos existentes
+  // Fixture ya generado — hay que mirar los partidos ANTES de tocar
+  // liga_division_jugadores. calcularRankingDivision solo cuenta un partido
+  // si los dos jugadores siguen en liga_division_jugadores (ver
+  // lib/domain/liga.ts): sacar de ahí a alguien que ya jugó deja su partido
+  // con resultado real en liga_partidos pero invisible en la tabla de
+  // posiciones, sin ningún error — el mismo bug que borró resultados en
+  // grupo_jugadores de torneos (ver migraciones 213/214).
   const { data: conFiltro, error: errFiltro } = await db
     .from('liga_partidos')
     .select('id, jugador_a_id, jugador_b_id, estado')
@@ -146,6 +151,31 @@ export async function asignarJugadoresDivision(params: {
       .select('id, jugador_a_id, jugador_b_id, estado')
       .eq('division_id', divisionId)
     allPartidos = sinFiltro || []
+  }
+
+  const jugadoresConResultado = jugadoresRemovidos.filter(id =>
+    allPartidos.some(p =>
+      (p.jugador_a_id === id || p.jugador_b_id === id) && ['finalizado', 'walkover'].includes(p.estado),
+    ),
+  )
+  if (jugadoresConResultado.length > 0) {
+    const { data: nombres } = await supabase.from('jugadores').select('id, nombre').in('id', jugadoresConResultado)
+    const lista = (nombres || []).map((j: { nombre: string }) => j.nombre).join(', ')
+    return { error: `No se puede sacar a alguien que ya jugó partidos en esta división: ${lista || jugadoresConResultado.join(', ')}` }
+  }
+
+  // Actualizar liga_division_jugadores (solo los que cambian, ninguno con resultado)
+  if (jugadoresRemovidos.length > 0) {
+    await supabase
+      .from('liga_division_jugadores')
+      .delete()
+      .eq('division_id', divisionId)
+      .in('jugador_id', jugadoresRemovidos)
+  }
+  if (jugadoresAgregados.length > 0) {
+    await supabase.from('liga_division_jugadores').insert(
+      jugadoresAgregados.map(jugadorId => ({ division_id: divisionId, jugador_id: jugadorId })),
+    )
   }
 
   const { partidosNuevos, partidosAAnular } = calcularDiffDivision(
@@ -958,20 +988,26 @@ export async function eliminarLiga(params: { ligaId: string }) {
   const { data: divs } = await supabase.from('liga_divisiones').select('id').eq('liga_id', ligaId)
   const divisionIds = (divs || []).map((d: { id: string }) => d.id)
 
-  // Eliminar en orden correcto (hijos antes que padres)
+  // Eliminar en orden correcto (hijos antes que padres), revisando cada
+  // error y cortando antes de seguir: un DELETE filtrado por RLS no da error
+  // si no borró nada, así que sin esto la liga podía quedar borrada a medias
+  // (con pagos de división todavía en pie) mientras la función igual
+  // respondía éxito. Mismo problema que en eliminarTorneoDefinitivo.
   if (divisionIds.length > 0) {
-    await Promise.all([
-      db.from('liga_jugador_pagos').delete().in('division_id', divisionIds),
-      db.from('liga_division_jugadores').delete().in('division_id', divisionIds),
-    ])
+    const { error: pagosErr } = await db.from('liga_jugador_pagos').delete().in('division_id', divisionIds)
+    if (pagosErr) return { error: `No se pudo eliminar (pagos de división): ${pagosErr.message}` }
+    const { error: jugErr } = await db.from('liga_division_jugadores').delete().in('division_id', divisionIds)
+    if (jugErr) return { error: `No se pudo eliminar (jugadores de división): ${jugErr.message}` }
   }
-  await Promise.all([
-    db.from('liga_partidos').delete().eq('liga_id', ligaId),
-    supabase.from('liga_fechas').delete().eq('liga_id', ligaId),
-    supabase.from('liga_mesas').delete().eq('liga_id', ligaId),
-  ])
+  const { error: partidosErr } = await db.from('liga_partidos').delete().eq('liga_id', ligaId)
+  if (partidosErr) return { error: `No se pudo eliminar (partidos): ${partidosErr.message}` }
+  const { error: fechasErr } = await supabase.from('liga_fechas').delete().eq('liga_id', ligaId)
+  if (fechasErr) return { error: `No se pudo eliminar (fechas): ${fechasErr.message}` }
+  const { error: mesasErr } = await supabase.from('liga_mesas').delete().eq('liga_id', ligaId)
+  if (mesasErr) return { error: `No se pudo eliminar (mesas): ${mesasErr.message}` }
   if (divisionIds.length > 0) {
-    await supabase.from('liga_divisiones').delete().eq('liga_id', ligaId)
+    const { error: divErr } = await supabase.from('liga_divisiones').delete().eq('liga_id', ligaId)
+    if (divErr) return { error: `No se pudo eliminar (divisiones): ${divErr.message}` }
   }
   const { error } = await supabase.from('ligas').delete().eq('id', ligaId)
   if (error) return { error: 'No se pudo eliminar: ' + error.message }

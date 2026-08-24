@@ -480,6 +480,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   // Solo en día hábil, por lo mismo que la inscripción no retrocede el fin de
   // semana: el sábado y el domingo `semana` apunta a una semana ya cerrada, y
   // mover una asistencia de ahí es reescribir algo que ya pasó y se contó.
+  const asistenciasSinMover: string[] = []
   if (salen.length > 0 && entran.length > 0 && diaDesdeFecha(hoyISO()) !== null) {
     for (const bSale of (bloquesSalen ?? [])) {
       const bEntra = bloques.find(b => entran.includes(b.id) && b.hora_inicio === bSale.hora_inicio)
@@ -497,7 +498,8 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
         .select('id').eq('jugador_id', params.jugadorId).eq('fecha', fechaNueva).maybeSingle()
       if (asistNueva) continue // ya hay asistencia ese día, no sobreescribir
 
-      await supabase.from('asistencia').update({ fecha: fechaNueva }).eq('id', asistVieja.id)
+      const { error: errMueve } = await supabase.from('asistencia').update({ fecha: fechaNueva }).eq('id', asistVieja.id)
+      if (errMueve) asistenciasSinMover.push(fechaVieja)
     }
   }
 
@@ -602,7 +604,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     }
   }
 
-  return { success: true, campos, extrasConvertidas: convertidas, extrasTrabadas: trabadas, sobreCupo }
+  return { success: true, campos, extrasConvertidas: convertidas, extrasTrabadas: trabadas, asistenciasSinMover, sobreCupo }
 }
 
 export async function quitarJugadorDeBloque(params: { bloqueId: string; jugadorId: string }) {

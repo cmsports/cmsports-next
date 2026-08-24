@@ -504,10 +504,15 @@ export async function resetearPasswordJugador(params: { jugadorId: string; nueva
   // nueva no sirve de nada porque el login se intenta con el email actual.
   await sincronizarEmailAuth(admin, perfilData.id, perfilData.email, { email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
   const { login, tipo } = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
-  await admin.from('credencial_visible').upsert({
+  const { error: espejoErr } = await admin.from('credencial_visible').upsert({
     usuario_id: perfilData.id, club_id: clubId, password_plano: params.nuevaPassword,
     usuario_login: login, tipo_login: tipo,
   })
+  // La clave YA cambió en auth (línea de arriba) — esto solo actualiza el
+  // espejo que el admin lee. Si falla, no se revierte el cambio real (sería
+  // peor: la clave que el admin acaba de escribirle a la persona dejaría de
+  // servir), pero hay que avisar que el reporte va a mostrar la vieja.
+  if (espejoErr) return { success: true, avisoEspejo: 'La contraseña se cambió, pero no se pudo actualizar en el reporte de credenciales — anótala aparte.' }
 
   return { success: true }
 }
