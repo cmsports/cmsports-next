@@ -14,7 +14,7 @@ export type SeccionManual = {
   bloques: BloqueManual[]
 }
 
-export const MANUAL_VERSION = '23 de agosto de 2026'
+export const MANUAL_VERSION = '24 de agosto de 2026'
 
 export function introSegunTipo(tipo: TipoManualTorneo): { titulo: string; texto: string } {
   if (tipo === 'interno') {
@@ -75,7 +75,7 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
           'Crear, inscribir, marcar ganadores, armar llaves, subir plata a Finanzas y finalizar: solo administrador del mismo club. Vale en la pantalla y en el servidor.',
           'Estados: En curso → Finalizado → Archivado. También puede quedar Cancelado si se elimina el flujo a medias, pero lo normal es archivar o borrar.',
           'Fases: Inscripción → Grupos → Playoffs (32avos / 16avos / octavos / cuartos / semis / final, según el tamaño) → Finalizado.',
-          'Puede verse “Grupos + playoffs” a la vez: el cuadro aparece mientras siguen grupos abiertos. Es a propósito: las ramas ya completas se pueden jugar.',
+          'El cuadro no aparece hasta que cierra el último grupo. Mientras tanto se ve la vista previa del orden de siembra, de solo lectura.',
           'Arriba, si hay varios torneos activos, aparecen como pestañas para saltar de uno a otro.',
         ],
       },
@@ -145,11 +145,13 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
   {
     id: 'cabezas',
     titulo: 'Cabezas de serie',
-    resumen: 'Lista numerada #1, #2, #3… Máximo una por grupo. El número manda en el cuadro y en los BYE.',
+    resumen: 'Lista numerada #1, #2, #3… Máximo una por grupo. Reparten los grupos; en el cuadro solo desempatan.',
     bloques: [
       {
         items: [
           'Se arman en la pantalla del torneo, antes de que se juegue cualquier llave.',
+          'Para qué sirven: separan a los favoritos al repartir los grupos, uno por grupo. Ese es su efecto principal.',
+          'En el cuadro NO deciden el BYE. Ahí manda lo que cada uno hizo en su grupo; el número de cabeza solo desempata entre dos con exactamente el mismo rendimiento. Un #1 que ganó un partido queda detrás de un no-cabeza que ganó dos.',
           'La numeración debe ser correlativa desde 1, sin huecos ni duplicados. El mismo jugador no ocupa dos números.',
           'Máximo una cabeza por grupo (estimado o ya creado). Si hay más cabezas que grupos, no se pueden generar los grupos.',
           'Al repartir grupos, las cabezas salen primero en orden de número; el resto serpentea detrás.',
@@ -182,6 +184,7 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
           'Externo: igual con cabezas, y además evita dos del mismo club en el mismo grupo mientras quepa. Si no cabe, reparte al grupo más liviano.',
           'Los grupos se llaman A, B, C… Z, AA, AB… Cada uno tiene un orden fijo para que el cuadro no dependa del abecedario.',
           'Dentro del grupo: todos contra todos, una vez cada pareja. Victoria = 2 puntos, derrota = 0. No hay empate en un partido: siempre hay ganador.',
+          'Cada partido se registra con su marcador set a set. De ahí salen los sets y los puntos que desempatan si tres quedan iguales.',
           'No se mueve ni reordena a alguien de un grupo que ya tiene resultados.',
         ],
       },
@@ -190,28 +193,37 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
   {
     id: 'clasificacion',
     titulo: 'Clasificación de grupos y desempates',
-    resumen: 'Clasifican exactamente el 1° y el 2°. No entran sets ni puntos de cada set.',
+    resumen: 'Clasifican el 1° y el 2°. Si empatan tres, deciden los sets y, si siguen iguales, los puntos.',
     bloques: [
       {
         items: [
           'Clasifican 2 por grupo: 1° y 2°. Nadie más.',
-          'Se ordena por puntos (2 por victoria). Se muestran también partidos ganados y perdidos.',
+          'Se ordena por puntos: 2 por victoria, 0 por derrota. No hay empate en un partido.',
+          'La tabla muestra también partidos ganados y perdidos, y el marcador de cada partido.',
         ],
       },
       {
-        subtitulo: 'Orden de desempate (prioridad)',
+        subtitulo: 'Orden de desempate (de más fuerte a más débil)',
         items: [
           '1) Más puntos.',
-          '2) Si empatan exactamente dos, gana quien le ganó al otro (enfrentamiento directo).',
-          '3) Si tres o más empatan en el corte que define los dos cupos, el admin elige el orden a mano (revisando papeletas). Eso se guarda en la base.',
-          '4) Si hay un líder solo y tres o más pelean el segundo cupo: el líder queda 1° fijo y solo se elige el 2° entre los empatados.',
+          '2) Empatan exactamente dos: gana quien le ganó al otro (enfrentamiento directo).',
+          '3) Empatan tres o más: se arma una tabla aparte con SOLO los partidos entre ellos, y ahí manda, en orden: más victorias → mejor proporción de sets (ganados ÷ perdidos) → mejor proporción de puntos (ganados ÷ cedidos).',
+          '4) Si ni los puntos separan a los que se juegan un cupo, recién ahí el admin elige el orden a mano. Aparece el aviso “⚠️ Triple empate” y la elección queda guardada.',
+          '5) Si hay un líder solo y tres o más pelean el segundo cupo: el líder queda 1° fijo y solo se decide el 2°.',
         ],
       },
       {
-        subtitulo: 'Qué no se usa',
+        subtitulo: 'Por qué se cuentan los puntos',
         items: [
-          'Sets ganados o perdidos, diferencia de sets, puntos de cada set, diferencia de puntos. No forman parte de la clasificación de este módulo.',
-          'El desempate manual solo se guarda si el grupo terminó todos sus partidos y los elegidos son realmente los empatados.',
+          'El caso típico es el grupo de 3 donde cada uno gana uno: los tres quedan con 2 puntos y, casi siempre, los tres 3-1 y 1-3. Mismos puntos de tabla, misma proporción de sets. Sin los puntos de cada set no hay con qué separarlos y había que resolverlo a mano.',
+          'Solo cuentan los partidos ENTRE los empatados. Una paliza contra el que ganó el grupo no ayuda a desempatar: no está en el empate.',
+          'Los partidos cargados antes de agosto de 2026 no tienen marcador y cuentan 0 sets y 0 puntos. En un grupo mezclado eso perjudica a quien no lo tenga cargado; si vas a comparar, carga todos los partidos con la planilla.',
+        ],
+      },
+      {
+        subtitulo: 'Desempate manual',
+        items: [
+          'Solo se guarda si el grupo terminó todos sus partidos y los elegidos son realmente los empatados.',
           'Si ya se jugó la llave de ese grupo en playoffs, primero hay que corregir esa llave (o Volver a grupos) antes de cambiar el desempate.',
         ],
       },
@@ -220,17 +232,16 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
   {
     id: 'llaves',
     titulo: 'Armado de llaves: cuándo y cómo',
-    resumen: 'El esqueleto aparece apenas hay grupos. Se rellena solo. El árbol no se vuelve a sembrar.',
+    resumen: 'El cuadro jugable se arma al cerrar el último grupo. Antes hay una vista previa de solo lectura.',
     bloques: [
       {
         subtitulo: 'Cuándo aparece el cuadro',
         items: [
-          'En cuanto existen grupos (y no hay un grupo “En preparación”), el sistema dibuja el esqueleto con cupos “Grupo X · 1°/2°”, aunque ese grupo todavía no termine.',
-          'Cuando un grupo cierra, se rellena el nombre real en el cupo que ya tenía reservado. El árbol no cambia de forma.',
-          'Las ramas que ya tienen ambos jugadores se pueden jugar aunque otros grupos sigan abiertos.',
-          'Si una cabeza todavía no está en ningún grupo, el sistema espera a las cabezas antes de congelar mitades.',
-          'Mientras nadie haya jugado una llave de verdad, el esqueleto se puede recalcular (por ejemplo si una cabeza que se asumía 1° termina 2°). En cuanto se juega un partido real de playoff, el árbol queda congelado.',
-          'Puedes forzar el recálculo con Armar bracket ahora. Volver a grupos borra todas las llaves y deja los resultados de grupos intactos.',
+          'El cuadro jugable se arma cuando cierran TODOS los grupos. Antes de eso no se crea ningún partido de playoff.',
+          'Mientras falte un grupo, la pantalla muestra la vista previa del orden de siembra: quién va ganando la carrera por los mejores puestos. Es de solo lectura, no se puede marcar nada ahí.',
+          'Es a propósito. El BYE se reparte comparando a todos los clasificados entre sí, y eso no se puede hacer con un grupo abierto: el ganador que falta puede entrar arriba del ranking y correr el cuadro entero. Un cuadro armado antes sería un cuadro que después cambia.',
+          'Una vez armado, el árbol queda fijo. Puedes forzar el recálculo con Armar bracket ahora mientras no se haya jugado ninguna llave de verdad.',
+          'Volver a grupos borra todas las llaves y deja los resultados de grupos intactos.',
         ],
       },
       {
@@ -245,15 +256,22 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
         ],
       },
       {
-        subtitulo: 'Prioridad de reglas (de más fuerte a más débil)',
+        subtitulo: 'Orden de mérito: quién es el 1 del cuadro',
         items: [
-          '1) Nunca se enfrentan en la primera ronda dos jugadores del mismo grupo.',
-          '2) El 1° y el 2° del mismo grupo quedan en mitades opuestas del cuadro (solo se cruzarían en la final).',
-          '3) Separar a #1 y #2 en mitades opuestas (espejo estándar: #1 arriba, #2 abajo).',
-          '4) El BYE se reparte para que la cantidad de 1° y de 2° que juegan quede igual en cada mitad: todo cruce real de la primera ronda es 1° contra 2°, nunca 2° contra 2°. Dentro de esa cuota, BYE primero a las cabezas de menor número (#1 antes que #2, etc.).',
-          '5) Ubicar el resto de cabezas lo más cerca posible de su posición de espejo (#3 y #4 en cuartos distintos, #5–#8 en octavos distintos, y así).',
-          '6) Repartir grupos ya cerrados entre ambas mitades para que alguna rama se pueda jugar de inmediato.',
-          'Si dos reglas chocan, gana la de número más bajo. Ejemplo: si poner a #1 y #2 en mitades opuestas obligaría a un 1° contra su propio 2°, se mueve la cabeza de número más alto y se conserva el cruce legal. En cuadros muy ajustados (pocos grupos) puede que un cabeza de serie no alcance BYE si dárselo forzara un 2° contra 2°: evitar ese cruce pesa más que proteger al cabeza.',
+          'Al cerrar el último grupo se ordena a TODOS los clasificados en una sola lista, del mejor al peor. Ese número es su puesto de siembra.',
+          'Primero van los tres criterios en este orden: todos los 1° de grupo antes que todos los 2° → más victorias → mejor proporción de sets → mejor proporción de puntos.',
+          'Después, solo si dos siguen exactamente iguales: cabeza de serie de número más bajo. La cabeza de serie desempata, no manda: un #1 que ganó un solo partido queda detrás de un no-cabeza que ganó dos.',
+          'Todos los 1° van antes que todos los 2°, aunque un 2° haya rendido mejor. Ganar el grupo tiene que valer algo.',
+          'Limitación conocida (la misma del estándar): en grupos de distinto tamaño las victorias no son del todo comparables. Ganar 2 de 2 en un grupo de 3 queda por delante de ganar 1 de 1 en uno de 2.',
+        ],
+      },
+      {
+        subtitulo: 'Cómo se ubica a cada uno',
+        items: [
+          'Se siembra con el espejo estándar: el 1 arriba de todo, el 2 abajo de todo. Solo se pueden cruzar en la final.',
+          'Los BYE caen solos en los mejores puestos de la lista, que es donde el espejo deja los huecos.',
+          'Única corrección sobre el espejo: si un 1° y el 2° de su propio grupo caen en la misma llave inicial, se corre al 2° a la llave ocupada más cercana que no arme otro choque. Ese movimiento nunca toca una posición con BYE, así que no le quita el descanso a nadie que se lo ganó.',
+          'Si el cuadro es muy chico y no hay a dónde correrlo, el choque se deja: matemáticamente no hay alternativa.',
         ],
       },
       {
@@ -268,13 +286,15 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
   {
     id: 'byes',
     titulo: 'Cómo funcionan los BYE',
-    resumen: 'Avance automático. No se marcan a mano. Se pueden seguir moviendo hasta que la llave tenga rival real.',
+    resumen: 'Los recibe quien mejor rindió. Avance automático, no se marcan a mano.',
     bloques: [
       {
         items: [
           'BYE = ese jugador no juega la ronda y pasa solo a la siguiente. En pantalla se ve un solo nombre y el sistema lo marca ganador al toque.',
           'Cantidad de BYE = tamaño del cuadro − cantidad de clasificados. Ejemplo: 3 grupos → 6 clasificados → cuadro de 8 → 2 BYE.',
-          'Quién los recibe: se reparte parejo entre 1° y 2° de grupo (nunca deja a nadie jugando 2° contra 2° por falta de rival del otro lado). Dentro de esa cuota, en orden: cabezas de menor número; a igualdad, el grupo que ya cerró; después el grupo de índice más bajo.',
+          'Quién los recibe: los mejores del orden de mérito, sin excepción. Con 2 BYE, los reciben el 1 y el 2 de esa lista. Nunca descansa alguien peor ubicado mientras uno mejor juega.',
+          'Un 1° de grupo puede quedarse sin BYE. Si ganó un solo partido y otros dos primeros ganaron dos, le toca jugar la primera ronda: el descanso se gana en la cancha, no por ser primero de grupo.',
+          'Antes de agosto de 2026 el BYE se repartía equilibrando las mitades del cuadro, y por eso a veces descansaba un 2° mientras un 1° con mejor rendimiento jugaba. Eso ya no pasa.',
           'No marques un BYE como partido ganado: el botón no aplica. “Los BYE avanzan automáticamente”.',
           'Un BYE sí se puede arrastrar a otra llave de la ronda inicial, porque no se considera “jugado de verdad” (no hubo rival). En cuanto esa persona ya disputó la ronda siguiente, el BYE deja de moverse.',
           'Si tras un arrastre una llave queda sin rival, esa persona pasa a tener BYE. Si ahora tiene rival, el partido vuelve a quedar pendiente.',
@@ -303,22 +323,34 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
   {
     id: 'resultados',
     titulo: 'Resultados, correcciones y Volver a grupos',
-    resumen: 'El ganador tiene que ser uno de los dos. Corregir siempre desde la ronda más avanzada hacia atrás.',
+    resumen: 'En grupos se carga el marcador set a set. Corregir siempre desde la ronda más avanzada hacia atrás.',
     bloques: [
       {
-        subtitulo: 'Marcar un partido',
+        subtitulo: 'Cargar un partido de grupo',
         items: [
-          'Elige al ganador entre los dos participantes. Un partido ya resuelto no se vuelve a marcar: se corrige.',
-          'En playoffs, marcar y copiar al ganador a la siguiente llave es atómico: no queda el árbol a medias.',
-          'No se marca un partido incompleto ni un BYE.',
+          'Pulsa Cargar resultado en el partido. Se abre la planilla con los dos nombres y una fila por set.',
+          'Escribe los puntos de cada set: 11-9, 11-7, 9-11… Si el partido se va a cuarto o quinto set, la fila aparece sola cuando hace falta.',
+          'El botón Listo se habilita recién cuando la planilla es un partido terminado de verdad. Abajo se ve el resumen en vivo: “3-1 · 44-38 puntos”.',
+          'Un set se gana a 11 con dos de ventaja. Desde 10 iguales sigue hasta que alguien saque dos: 12-10, 13-11, 20-18 son válidos; 11-10 no.',
+          'El partido termina al llegar a 3 sets. No acepta un set jugado después de eso.',
+          'El ganador NO se elige aparte: sale del marcador. Así no puede quedar guardado un 3-1 con el otro como ganador.',
+          'Todo esto se valida también en el servidor, no solo en la pantalla.',
+        ],
+      },
+      {
+        subtitulo: 'Marcar en playoffs',
+        items: [
+          'En el cuadro basta con tocar el nombre del ganador: esos partidos no alimentan el orden de mérito, y durante el torneo se registran desde el teléfono. Si igual cargas marcador, se guarda.',
+          'Marcar y copiar al ganador a la siguiente llave es atómico: no queda el árbol a medias.',
+          'No se marca un partido incompleto ni un BYE: los BYE avanzan solos.',
           'Si hay un grupo En preparación, termina o elimínalo antes de cargar resultados de ese flujo.',
         ],
       },
       {
         subtitulo: 'Corregir grupos',
         items: [
-          'El nuevo ganador debe ser del partido.',
-          'Se recalculan puntos, ganados y perdidos, y se borra un desempate manual que haya quedado viejo.',
+          'El lápiz (✏️) sobre un partido ya cargado abre la misma planilla. Se vuelven a escribir los sets.',
+          'Se recalculan puntos, ganados y perdidos, sets y puntos, y se borra un desempate manual que haya quedado viejo.',
           'Si la rama de ese grupo ya se jugó en playoffs, corrige primero esas llaves (de adelante hacia atrás) o usa Volver a grupos.',
           'Después el sistema vuelve a poner a 1° y 2° en los cupos que ya tenía el árbol.',
         ],
@@ -474,7 +506,9 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
       {
         subtitulo: 'Antes de jugar llaves',
         items: [
-          'Partidos de los grupos que van a cruzarse, completos. Empates múltiples resueltos.',
+          'TODOS los grupos cerrados: el cuadro no se arma con uno abierto.',
+          'Todos los partidos cargados con su marcador. Un partido sin sets no aporta al desempate ni al mérito.',
+          'Empates de tres resueltos (los resuelve el sistema salvo que hasta los puntos empaten).',
           'Sin grupo En preparación. Sin cambios de cabezas sin guardar.',
         ],
       },
