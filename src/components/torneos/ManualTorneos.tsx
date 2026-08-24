@@ -27,6 +27,7 @@ const ICONO: Record<string, string> = {
   clasificacion: '🏅',
   llaves: '🗂️',
   byes: '⏭️',
+  mover: '🔁',
   arrastre: '✋',
   resultados: '✅',
   tardios: '⏰',
