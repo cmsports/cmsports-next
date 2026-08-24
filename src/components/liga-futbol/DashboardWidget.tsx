@@ -86,7 +86,27 @@ export default function LigaFutbolDashboardWidget({ clubId }: { clubId: string |
     return () => { vigente = false }
   }, [clubId])
 
-  if (loading || !liga) return null
+  if (loading) return null
+
+  if (!liga) {
+    return (
+      <div
+        onClick={() => router.push('/liga-futbol')}
+        style={{
+          background: C.card, border: `1px dashed ${C.border}`, borderRadius: 14, padding: 24,
+          marginBottom: 16, cursor: 'pointer', textAlign: 'center',
+        }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>⚽ Crea tu primera liga</div>
+        <div style={{ fontSize: 13, color: C.muted, marginBottom: 12 }}>
+          Todavía no hay ninguna liga en curso. Arma equipos, fixture y empieza a cargar resultados.
+        </div>
+        <span style={{
+          display: 'inline-block', background: C.greenL, color: C.green, borderRadius: 8,
+          padding: '6px 14px', fontSize: 12, fontWeight: 700,
+        }}>Crear liga →</span>
+      </div>
+    )
+  }
 
   const totalEsperado = equiposCount * liga.monto_inscripcion
   const pctRecaudado = totalEsperado > 0 ? Math.round((totalPagado / totalEsperado) * 100) : null
