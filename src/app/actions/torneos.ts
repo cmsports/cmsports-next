@@ -2081,14 +2081,19 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
   // por RLS no da error si no borró nada (ver reiniciarBracket, más arriba en
   // este archivo), así que sin esto el torneo podía quedar borrado a medias
   // mientras la función igual respondía éxito.
+  // torneo_partidos se borra ANTES que grupo_jugadores a propósito: el
+  // trigger que impide borrar de grupo_jugadores a alguien con partidos
+  // jugados (migración de blindaje) mira si ese partido sigue existiendo —
+  // si ya no está, no hay nada que orfanar y el borrado del torneo completo
+  // no queda bloqueado.
+  { const { error } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
+    if (error) return { error: `No se pudo borrar el torneo (partidos): ${error.message}` } }
   if (grupoIds.length) {
     const { error } = await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
     if (error) return { error: `No se pudo borrar el torneo (jugadores de grupo): ${error.message}` }
   }
   { const { error } = await supabase.from('torneo_jugadores').delete().eq('torneo_id', torneoId)
     if (error) return { error: `No se pudo borrar el torneo (inscritos): ${error.message}` } }
-  { const { error } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
-    if (error) return { error: `No se pudo borrar el torneo (partidos): ${error.message}` } }
   { const { error } = await supabase.from('torneo_pagos').delete().eq('torneo_id', torneoId)
     if (error) return { error: `No se pudo borrar el torneo (pagos): ${error.message}` } }
   { const { error } = await supabase.from('torneo_grupos').delete().eq('torneo_id', torneoId)

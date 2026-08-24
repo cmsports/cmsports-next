@@ -169,12 +169,19 @@ async function eliminarTorneosDelClub(admin: ReturnType<typeof createAdminClient
   if (gruposError) return gruposError
   const grupoIds = (grupos || []).map(g => g.id)
 
+  // torneo_partidos se borra ANTES que grupo_jugadores a propósito: el
+  // trigger que impide borrar de grupo_jugadores a alguien con partidos
+  // jugados mira si ese partido sigue existiendo — si ya no está, no hay
+  // nada que orfanar y borrar el club completo no queda bloqueado.
+  const { error: partidosError } = await admin.from('torneo_partidos').delete().in('torneo_id', torneoIds)
+  if (partidosError) return partidosError
+
   if (grupoIds.length) {
     const { error } = await admin.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
     if (error) return error
   }
 
-  for (const tabla of ['torneo_partidos', 'torneo_jugadores', 'torneo_pagos', 'torneo_felicitaciones', 'torneo_cabezas_serie'] as const) {
+  for (const tabla of ['torneo_jugadores', 'torneo_pagos', 'torneo_felicitaciones', 'torneo_cabezas_serie'] as const) {
     const { error } = await admin.from(tabla).delete().in('torneo_id', torneoIds)
     if (error) return error
   }

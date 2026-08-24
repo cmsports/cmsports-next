@@ -993,14 +993,18 @@ export async function eliminarLiga(params: { ligaId: string }) {
   // si no borró nada, así que sin esto la liga podía quedar borrada a medias
   // (con pagos de división todavía en pie) mientras la función igual
   // respondía éxito. Mismo problema que en eliminarTorneoDefinitivo.
+  // liga_partidos se borra ANTES que liga_division_jugadores a propósito:
+  // el trigger que impide borrar de liga_division_jugadores a alguien con
+  // partidos jugados mira si ese partido sigue existiendo — si ya no está,
+  // no hay nada que orfanar y borrar la liga completa no queda bloqueado.
+  const { error: partidosErr } = await db.from('liga_partidos').delete().eq('liga_id', ligaId)
+  if (partidosErr) return { error: `No se pudo eliminar (partidos): ${partidosErr.message}` }
   if (divisionIds.length > 0) {
     const { error: pagosErr } = await db.from('liga_jugador_pagos').delete().in('division_id', divisionIds)
     if (pagosErr) return { error: `No se pudo eliminar (pagos de división): ${pagosErr.message}` }
     const { error: jugErr } = await db.from('liga_division_jugadores').delete().in('division_id', divisionIds)
     if (jugErr) return { error: `No se pudo eliminar (jugadores de división): ${jugErr.message}` }
   }
-  const { error: partidosErr } = await db.from('liga_partidos').delete().eq('liga_id', ligaId)
-  if (partidosErr) return { error: `No se pudo eliminar (partidos): ${partidosErr.message}` }
   const { error: fechasErr } = await supabase.from('liga_fechas').delete().eq('liga_id', ligaId)
   if (fechasErr) return { error: `No se pudo eliminar (fechas): ${fechasErr.message}` }
   const { error: mesasErr } = await supabase.from('liga_mesas').delete().eq('liga_id', ligaId)

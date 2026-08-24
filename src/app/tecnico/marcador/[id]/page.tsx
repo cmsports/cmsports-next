@@ -156,7 +156,7 @@ function MarcadorPartidoContent() {
     if (!partido || !perfil?.club_id) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any
-    await db.from('tecnico_partido_eventos').insert({
+    const { error } = await db.from('tecnico_partido_eventos').insert({
       club_id: perfil.club_id,
       partido_id: partido.id,
       tipo: evento.tipo,
@@ -164,6 +164,10 @@ function MarcadorPartidoContent() {
       detalle: evento.detalle ?? {},
       creado_por: perfil.id ?? null,
     })
+    // El puntaje ya se guardó en tecnico_partidos (persistir revisa ese
+    // error aparte) — esto es el historial de tarjetas/cambios de lado/
+    // challenges. Si falla, antes se perdía sin que nadie se enterara.
+    if (error) setError('No se pudo guardar el evento (tarjeta/cambio de lado): ' + error.message)
     void cargarEventos()
   }
 
