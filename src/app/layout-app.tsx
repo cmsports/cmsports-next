@@ -32,6 +32,7 @@ const navAdmin = [
   { label: 'Torneo oficial', emoji: '⚖️', icon: Gavel,            href: '/torneo-oficial',   modulo: 'torneo_oficial' },
   { label: 'Ranking', emoji: '🥇',         icon: Award,            href: '/ranking',          modulo: 'torneos' },
   { label: 'Liga', emoji: '📈',           icon: BarChart2,        href: '/liga',             modulo: 'liga' },
+  { label: 'Liga Fútbol', emoji: '⚽',    icon: Trophy,           href: '/liga-futbol',      modulo: 'liga_futbol' },
   { section: 'Gestión' },
   { label: 'Asistencia', emoji: '✅',      icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
   { label: 'Feedbacks', emoji: '📝',       icon: MessageSquare,   href: '/feedbacks',  modulo: 'feedback' },

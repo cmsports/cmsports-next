@@ -16,6 +16,7 @@ import {
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
+import LigaFutbolDashboardWidget from '@/components/liga-futbol/DashboardWidget'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { MessageSquare } from 'lucide-react'
@@ -582,6 +583,8 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {tiene('liga_futbol') && <LigaFutbolDashboardWidget clubId={perfil?.club_id} />}
 
       {feedbackOpen && perfil?.club_id && (
         <ModalCrearFeedback clubId={perfil.club_id} onClose={() => setFeedbackOpen(false)} />
