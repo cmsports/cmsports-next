@@ -13,9 +13,13 @@ import {
   construirLlavesLayout,
   construirLlavesLayoutNumerado,
   calcularStatsGrupo,
+  rankearClasificados,
+  construirBracketPorRanking,
   derivarPodioFinal,
   nombreGrupo,
   type JugadorTorneo,
+  type ClasificadoConStats,
+  type RankeadoParaBracket,
 } from './torneos'
 
 function jugadores(n: number): JugadorTorneo[] {
@@ -620,3 +624,229 @@ describe('generarSiguienteFase', () => {
     ])
   })
 })
+
+// ─── rankearClasificados ──────────────────────────────────────────────────
+// El orden con que se reparte el BYE del cuadro. Antes de esto el BYE se
+// decidía por el balance de mitades del bracket, no por rendimiento.
+
+describe('rankearClasificados', () => {
+  function clasificado(over: Partial<ClasificadoConStats> & { jugadorId: string }): ClasificadoConStats {
+    return {
+      grupoIdx: 0,
+      posicion: 1,
+      victorias: 0,
+      setsFavor: 0,
+      setsContra: 0,
+      cabezaNumero: null,
+      ...over,
+    }
+  }
+  const ids = (r: ClasificadoConStats[]) => r.map(c => c.jugadorId)
+
+  it('con las mismas victorias, desempata el mejor ratio de sets', () => {
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'flojo', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 4 }),
+      clasificado({ jugadorId: 'solido', grupoIdx: 1, victorias: 2, setsFavor: 6, setsContra: 1 }),
+    ])
+    expect(ids(orden)).toEqual(['solido', 'flojo'])
+  })
+
+  it('manda la cantidad de victorias por sobre el ratio', () => {
+    // Limitación conocida y aceptada (misma que el estándar ITTF de
+    // referencia): en grupos de distinto tamaño las victorias no son
+    // comparables. El de un grupo de 3 gana 2 partidos; el de un grupo de 2
+    // gana 1 y con ratio perfecto, e igual queda detrás.
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'grupoDe2', grupoIdx: 1, victorias: 1, setsFavor: 3, setsContra: 0 }),
+      clasificado({ jugadorId: 'grupoDe3', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 4 }),
+    ])
+    expect(ids(orden)).toEqual(['grupoDe3', 'grupoDe2'])
+  })
+
+  it('ningún 2° pasa por encima de un 1°, por mejor que haya rendido', () => {
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'segundoImpecable', grupoIdx: 0, posicion: 2, victorias: 3, setsFavor: 9, setsContra: 0 }),
+      clasificado({ jugadorId: 'primeroJusto', grupoIdx: 1, posicion: 1, victorias: 1, setsFavor: 3, setsContra: 2 }),
+    ])
+    expect(ids(orden)).toEqual(['primeroJusto', 'segundoImpecable'])
+  })
+
+  it('un clasificado sin marcador (dato anterior a la migración 216) queda al fondo, no arriba', () => {
+    // 0 sets a favor y 0 en contra es 0/0. Si eso diera Infinity o NaN, un
+    // torneo viejo pondría a cualquiera de cabeza del cuadro.
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'sinMarcador', grupoIdx: 0, victorias: 2, setsFavor: 0, setsContra: 0 }),
+      clasificado({ jugadorId: 'conMarcador', grupoIdx: 1, victorias: 2, setsFavor: 6, setsContra: 5 }),
+    ])
+    expect(ids(orden)).toEqual(['conMarcador', 'sinMarcador'])
+    expect(orden.every(c => Number.isFinite(c.setsFavor) && Number.isFinite(c.setsContra))).toBe(true)
+  })
+
+  it('el invicto sin sets en contra va antes que el invicto que cedió sets', () => {
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'cedioUno', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 1 }),
+      clasificado({ jugadorId: 'perfecto', grupoIdx: 1, victorias: 2, setsFavor: 6, setsContra: 0 }),
+    ])
+    expect(ids(orden)).toEqual(['perfecto', 'cedioUno'])
+  })
+
+  it('empatados en todo: desempata la cabeza de serie y después es determinístico', () => {
+    const empatados = [
+      clasificado({ jugadorId: 'zzz', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 2 }),
+      clasificado({ jugadorId: 'aaa', grupoIdx: 1, victorias: 2, setsFavor: 6, setsContra: 2 }),
+      clasificado({ jugadorId: 'mmm', grupoIdx: 2, victorias: 2, setsFavor: 6, setsContra: 2, cabezaNumero: 1 }),
+    ]
+    expect(ids(rankearClasificados(empatados))).toEqual(['mmm', 'aaa', 'zzz'])
+    // Mismo input dos veces → mismo orden. Sin esto el cuadro podría salir
+    // distinto en cada sincronización.
+    expect(ids(rankearClasificados(empatados))).toEqual(ids(rankearClasificados(empatados)))
+  })
+
+  it('no muta el arreglo que recibe', () => {
+    const entrada = [
+      clasificado({ jugadorId: 'b', grupoIdx: 0, victorias: 1 }),
+      clasificado({ jugadorId: 'a', grupoIdx: 1, victorias: 2 }),
+    ]
+    rankearClasificados(entrada)
+    expect(ids(entrada)).toEqual(['b', 'a'])
+  })
+
+  it('regresión: el 1° que ganó todo no puede quedar debajo de un 2°, que es lo que pasaba con el BYE por mitades', () => {
+    // Escenario reportado: un 2° de grupo recibía BYE mientras un 1° con mejor
+    // rendimiento jugaba la primera ronda, porque el BYE se repartía por qué
+    // mitad del cuadro necesitaba descartar gente.
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'segundoConSuerte', grupoIdx: 2, posicion: 2, victorias: 1, setsFavor: 4, setsContra: 3 }),
+      clasificado({ jugadorId: 'primeroInvicto', grupoIdx: 0, posicion: 1, victorias: 2, setsFavor: 6, setsContra: 0 }),
+      clasificado({ jugadorId: 'otroPrimero', grupoIdx: 1, posicion: 1, victorias: 2, setsFavor: 6, setsContra: 3 }),
+    ])
+    expect(ids(orden)).toEqual(['primeroInvicto', 'otroPrimero', 'segundoConSuerte'])
+  })
+})
+
+// ─── calcularStatsGrupo: sets ─────────────────────────────────────────────
+
+describe('calcularStatsGrupo con marcador', () => {
+  it('suma sets a favor y en contra a los dos jugadores', () => {
+    const js = jugadores(2)
+    const { stats } = calcularStatsGrupo(js, [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 1 },
+    ])
+    const j0 = stats.find(s => s.jugadorId === 'j0')!
+    const j1 = stats.find(s => s.jugadorId === 'j1')!
+    expect([j0.sf, j0.sc]).toEqual([3, 1])
+    expect([j1.sf, j1.sc]).toEqual([1, 3])
+  })
+
+  it('un partido sin marcador cuenta para pg/pp pero no mueve los sets', () => {
+    const js = jugadores(2)
+    const { stats } = calcularStatsGrupo(js, [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0' },
+    ])
+    const j0 = stats.find(s => s.jugadorId === 'j0')!
+    expect(j0.pg).toBe(1)
+    expect([j0.sf, j0.sc]).toEqual([0, 0])
+  })
+})
+
+// ─── construirBracketPorRanking ───────────────────────────────────────────
+// El armado del cuadro que reemplaza a construirBracketPorGruposNumerado.
+
+describe('construirBracketPorRanking', () => {
+  // Helper: rankeado por mérito ya ordenado. gi = grupoIdx, pos = 1|2.
+  function rk(jugadorId: string, gi: number, pos: 1 | 2): RankeadoParaBracket {
+    return { jugadorId, nombre: jugadorId.toUpperCase(), grupoIdx: gi, posicion: pos }
+  }
+
+  // Reconstruye las llaves iniciales (pares de la ronda). Un partido con
+  // jugadorB null es un BYE.
+  type Llave = { a: string; b: string | null; bye: boolean }
+  function llaves(partidos: ReturnType<typeof construirBracketPorRanking>): Llave[] {
+    return partidos.map(p => ({ a: p.jugadorA, b: p.jugadorB, bye: p.jugadorB == null }))
+  }
+  const grupoDe = (rankeados: RankeadoParaBracket[]) =>
+    new Map(rankeados.map(r => [r.jugadorId, r.grupoIdx]))
+
+  it('sin choques posibles: coincide con el sembrado estándar y no hay pares del mismo grupo', () => {
+    // 4 grupos, todos distintos → el sembrado nunca cruza un grupo consigo mismo.
+    const rankeados = [
+      rk('a1', 0, 1), rk('b1', 1, 1), rk('c1', 2, 1), rk('d1', 3, 1),
+      rk('a2', 0, 2), rk('b2', 1, 2), rk('c2', 2, 2), rk('d2', 3, 2),
+    ]
+    const gmap = grupoDe(rankeados)
+    const bracket = construirBracketPorRanking(rankeados)
+    for (const ll of llaves(bracket)) {
+      if (!ll.bye && ll.b) expect(gmap.get(ll.a)).not.toBe(gmap.get(ll.b))
+    }
+    // Cuadro de 8: 8 clasificados, sin BYE, 4 llaves completas.
+    expect(bracket).toHaveLength(4)
+    expect(bracket.every(p => p.jugadorB != null)).toBe(true)
+  })
+
+  it('choque de grupo forzado: ninguna llave inicial queda con dos del mismo grupo', () => {
+    // 6 clasificados de 3 grupos → cuadro de 8, 2 BYE. Ordenados a propósito
+    // para que el 1° y el 2° de un grupo caigan juntos si no se corrige.
+    const rankeados = [
+      rk('a1', 0, 1), rk('b1', 1, 1), rk('c1', 2, 1),
+      rk('a2', 0, 2), rk('b2', 1, 2), rk('c2', 2, 2),
+    ]
+    const gmap = grupoDe(rankeados)
+    const bracket = construirBracketPorRanking(rankeados)
+    for (const ll of llaves(bracket)) {
+      if (!ll.bye && ll.b) expect(gmap.get(ll.a)).not.toBe(gmap.get(ll.b))
+    }
+  })
+
+  it('el BYE cae siempre en los N mejores del ranking, antes y después de resolver choques', () => {
+    const rankeados = [
+      rk('a1', 0, 1), rk('b1', 1, 1), rk('c1', 2, 1),
+      rk('a2', 0, 2), rk('b2', 1, 2), rk('c2', 2, 2),
+    ]
+    const tam = 8
+    const nBye = tam - rankeados.length // 2 BYE
+    const mejoresN = new Set(rankeados.slice(0, nBye).map(r => r.jugadorId))
+    const bracket = construirBracketPorRanking(rankeados)
+    const conBye = bracket.filter(p => p.jugadorB == null).map(p => p.jugadorA)
+    expect(conBye).toHaveLength(nBye)
+    for (const id of conBye) expect(mejoresN.has(id)).toBe(true)
+  })
+
+  it('seed 1 y seed 2 quedan en llaves distintas: solo pueden cruzarse en la final', () => {
+    const rankeados = [
+      rk('a1', 0, 1), rk('b1', 1, 1), rk('c1', 2, 1), rk('d1', 3, 1),
+      rk('a2', 0, 2), rk('b2', 1, 2), rk('c2', 2, 2), rk('d2', 3, 2),
+    ]
+    const bracket = construirBracketPorRanking(rankeados)
+    // seed 1 = a1, seed 2 = b1. No pueden estar en la misma llave inicial.
+    const llaveDe = (id: string) => bracket.findIndex(p => p.jugadorA === id || p.jugadorB === id)
+    expect(llaveDe('a1')).not.toBe(llaveDe('b1'))
+  })
+
+  it('caso límite de 2 grupos (4 clasificados): arma el cuadro sin romperse', () => {
+    const rankeados = [rk('a1', 0, 1), rk('b1', 1, 1), rk('a2', 0, 2), rk('b2', 1, 2)]
+    const gmap = grupoDe(rankeados)
+    const bracket = construirBracketPorRanking(rankeados)
+    expect(bracket).toHaveLength(2) // cuadro de 4, 2 semis
+    for (const ll of llaves(bracket)) {
+      if (!ll.bye && ll.b) expect(gmap.get(ll.a)).not.toBe(gmap.get(ll.b))
+    }
+  })
+
+  it('menos de 2 clasificados no genera partidos', () => {
+    expect(construirBracketPorRanking([])).toEqual([])
+    expect(construirBracketPorRanking([{ jugadorId: 'x', nombre: 'X', grupoIdx: 0, posicion: 1 }])).toEqual([])
+  })
+
+  it('cada jugador aparece exactamente una vez en el cuadro', () => {
+    const rankeados = [
+      rk('a1', 0, 1), rk('b1', 1, 1), rk('c1', 2, 1),
+      rk('a2', 0, 2), rk('b2', 1, 2), rk('c2', 2, 2),
+    ]
+    const bracket = construirBracketPorRanking(rankeados)
+    const apariciones = bracket.flatMap(p => [p.jugadorA, p.jugadorB]).filter(Boolean)
+    expect(new Set(apariciones).size).toBe(rankeados.length)
+  })
+})
+
+// ─── calcularCuadroProgresivo ─────────────────────────────────────────────
+// Qué llaves se pueden jugar aunque falten grupos por cerrar.
