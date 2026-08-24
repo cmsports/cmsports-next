@@ -912,17 +912,23 @@ export async function moverJugadorEntreGrupos(params: {
   if (miembrosAntesError) return { error: 'No se pudieron leer los integrantes de los grupos' }
   const destinoActual = (miembrosAntes || []).filter(m => m.grupo_id === grupoDestinoId)
   if ((destinoActual?.length ?? 0) >= 4) return { error: 'El grupo destino ya tiene 4 jugadores' }
-  const origenCantidad = (miembrosAntes || []).filter(m => m.grupo_id === grupoOrigenId).length
-  if (origenCantidad <= 1) {
-    return { error: 'El grupo de origen debe conservar al menos 1 jugador' }
-  }
+  // El origen puede quedar vacío: más abajo el grupo se borra solo. Antes se
+  // exigía dejar al menos 1 y eso trababa el caso real —pasar de tres grupos de
+  // 2 a dos de 3—, porque vaciar el último grupo era imposible. Peor: sacar uno
+  // de un grupo de 2 sí se permitía, así que la regla dejaba grupos de 1 (que
+  // nunca llenan su cupo de 2° y cuelgan el cuadro) y bloqueaba justo el
+  // movimiento que los arregla.
+
   const lecturaCabezas = await leerCabezasSerie(supabase, torneoId)
   if (lecturaCabezas.error) return { error: lecturaCabezas.error }
-  const cabezas = lecturaCabezas.cabezas
-  const cabezasIds = new Set(cabezas.map(c => c.jugadorId))
-  if (cabezasIds.has(jugadorId) && (destinoActual || []).some(j => j.jugador_id && cabezasIds.has(j.jugador_id))) {
-    return { error: 'No pueden quedar dos cabezas de serie en el mismo grupo' }
-  }
+  const cabezasIds = new Set(lecturaCabezas.cabezas.map(c => c.jugadorId))
+  // Dos cabezas en un grupo no pueden convivir. En vez de bloquear el
+  // movimiento, el que llega deja de ser cabeza y la del grupo destino se
+  // mantiene: mover gente es más frecuente que respetar una siembra que el
+  // admin está cambiando a propósito. Se avisa en pantalla antes de mover.
+  const retirarCabeza = cabezasIds.has(jugadorId)
+    && destinoActual.some(j => j.jugador_id && cabezasIds.has(j.jugador_id))
+
   const ordenDestino = destinoActual?.length ?? 0
 
   const restaurarMovimiento = async () => {
@@ -996,7 +1002,15 @@ export async function moverJugadorEntreGrupos(params: {
     }
   }
 
-  return { success: true }
+  // Al final: si el movimiento ya está firme, el jugador pierde la cabeza. No
+  // se renumera al resto — la pantalla numera por posición en la lista, igual
+  // que hace `quitarJugadorDeGrupo` cuando saca a una cabeza del torneo.
+  if (retirarCabeza) {
+    await supabase.from('torneo_cabezas_serie')
+      .delete().eq('torneo_id', torneoId).eq('jugador_id', jugadorId)
+  }
+
+  return { success: true, cabezaRetirada: retirarCabeza }
 }
 
 export async function reordenarJugadorEnGrupo(params: {

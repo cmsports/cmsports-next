@@ -326,6 +326,27 @@ export default function TorneoDetallePage() {
   }
   async function moverAGrupo(jugadorId: string, grupoOrigenId: string, grupoDestinoId: string) {
     if (grupoOrigenId === grupoDestinoId || moviendoJugadorId) return
+
+    // Dos cabezas no pueden quedar en el mismo grupo. El servidor resuelve el
+    // choque retirándole la cabeza al que llega; acá se avisa antes, porque es
+    // una consecuencia que no se ve en la pantalla hasta después de mover.
+    const esCabeza = cabezasPersistidas.some(c => c.id === jugadorId)
+    const cabezaDestino = esCabeza
+      ? (jugadoresPorGrupo.get(grupoDestinoId) || [])
+          .map((j: any) => cabezasPersistidas.find(c => c.id === j.jugador_id))
+          .find(Boolean)
+      : undefined
+    if (cabezaDestino) {
+      const nombre = cabezasPersistidas.find(c => c.id === jugadorId)?.nombre ?? 'Este jugador'
+      const destino = gruposReales.find((g: any) => g.id === grupoDestinoId)?.nombre ?? ''
+      const ok = confirm(
+        `${nombre} dejará de ser cabeza de serie.\n\n` +
+        `El Grupo ${destino} ya tiene a ${cabezaDestino.nombre} como cabeza, y no pueden quedar dos en el mismo grupo. ` +
+        `${cabezaDestino.nombre} sigue siendo la cabeza del grupo.\n\n¿Mover igual?`,
+      )
+      if (!ok) return
+    }
+
     setMoviendoJugadorId(jugadorId)
     try {
       const res = await moverJugadorEntreGrupos({ torneoId, jugadorId, grupoOrigenId, grupoDestinoId })
