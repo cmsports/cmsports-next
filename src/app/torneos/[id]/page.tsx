@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
+import { MARCADORES_BO5 } from '@/lib/domain/marcador'
 import AppLayout from '@/app/layout-app'
 import {
   corregirResultadoGrupos,
@@ -32,7 +33,7 @@ import {
   guardarGastosGestion,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
-import { calcularNumGrupos, construirLlavesLayoutNumerado } from '@/lib/domain/torneos'
+import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
 import { useTextoMonto } from '@/components/Monto'
@@ -142,7 +143,7 @@ export default function TorneoDetallePage() {
     ] = await Promise.all([
       supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
-      supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
+      supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
       supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,club_procedencia,jugadores(id,nombre,es_externo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
@@ -353,7 +354,7 @@ export default function TorneoDetallePage() {
     }
   }
 
-  async function marcarGanador(partidoId: string, ganadorId: string) {
+  async function marcarGanador(partidoId: string, ganadorId: string, setsA?: number, setsB?: number) {
     // ponytail: semáforo anti-doble-tap (iPhone registra dos touches a veces)
     if (marcandoRef.current.has(partidoId)) return
     marcandoRef.current.add(partidoId)
@@ -363,7 +364,7 @@ export default function TorneoDetallePage() {
     const ganador = partido?.jugador_a === ganadorId
       ? (partido as any).ja
       : partido?.jugador_b === ganadorId ? (partido as any).jb : null
-    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador } : p))
+    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador, sets_a: setsA ?? p.sets_a, sets_b: setsB ?? p.sets_b } : p))
 
     try {
       // ponytail: fetch a API route en vez de server action directa. La server
@@ -374,7 +375,7 @@ export default function TorneoDetallePage() {
       const res = await fetch('/api/marcar-ganador', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partidoId, ganadorId }),
+        body: JSON.stringify({ partidoId, ganadorId, setsA, setsB }),
       }).then(r => r.json())
       if (res.error) { setPartidos(previo); alert(res.error); return }
       // Para grupos: el update optimista es suficiente; calcularStats() re-deriva
@@ -553,6 +554,7 @@ export default function TorneoDetallePage() {
     const res = await sincronizarLlavesAction({ torneoId })
     if ('error' in res && res.error) { alert(`No se pudo armar el bracket: ${res.error}`); return }
     if ('esperandoCabezas' in res && res.esperandoCabezas) { alert('Un cabeza de serie no está asignado a ningún grupo. Revisa la configuración de cabezas.'); return }
+    if ('esperandoGrupos' in res && res.esperandoGrupos) { alert('El cuadro se arma cuando terminen TODOS los grupos: así el descanso (BYE) se reparte por rendimiento real. Faltan grupos por cerrar.'); return }
     ultimaSyncRef.current = ''
     await cargarTorneo()
     setTabActiva('bracket')
@@ -653,6 +655,35 @@ export default function TorneoDetallePage() {
   // etiquetar los cupos vacíos con su grupo/posición y distinguir BYE reales de
   // cupos aún por definir.
   const clasificadosActuales = calcularClasificados()
+
+  // Vista previa del cuadro mientras faltan grupos por cerrar. Con el BYE por
+  // mérito global, el cuadro real no se puede armar hasta que cierre el último
+  // grupo (un pendiente puede reordenar todo), así que en vez de un bracket que
+  // engañe, se muestra el orden de siembra provisorio de los que ya
+  // clasificaron. Es de solo lectura: no arma ni inserta nada.
+  function previewSiembra() {
+    const entradas = clasificadosActuales.flatMap(c => {
+      const grupoIdx = gruposReales.findIndex((g: any) => g.id === c.grupoId)
+      if (grupoIdx < 0) return []
+      const jugs = (jugadoresPorGrupo.get(c.grupoId) || []).map((j: any) => ({ id: j.jugador_id, nombre: j.jugadores?.nombre ?? '' }))
+      const parts = (partidosPorGrupo.get(c.grupoId) || [])
+        .filter((p: any) => p.jugador_a && p.ganador)
+        .map((p: any) => ({ jugadorA: p.jugador_a, jugadorB: p.jugador_b, ganador: p.ganador, setsA: p.sets_a, setsB: p.sets_b }))
+      const { stats } = calcularStatsGrupo(jugs, parts)
+      const nombreDe = (id: string) => jugs.find(j => j.id === id)?.nombre ?? '—'
+      return ([[c.primeroId, 1], [c.segundoId, 2]] as const).map(([jid, pos]) => {
+        const s = stats.find(x => x.jugadorId === jid)
+        return {
+          jugadorId: jid, grupoIdx, posicion: pos as 1 | 2,
+          nombre: nombreDe(jid), grupoNombre: gruposReales[grupoIdx]?.nombre ?? '',
+          victorias: s?.pg ?? 0, setsFavor: s?.sf ?? 0, setsContra: s?.sc ?? 0,
+          cabezaNumero: cabezaNumero.get(jid) ?? null,
+        }
+      })
+    })
+    return rankearClasificados(entradas).map(r => entradas.find(e => e.jugadorId === r.jugadorId)!)
+  }
+
   const slotCabeza = (jid?: string | null): { grupoIdx: number; pos: 1 | 2 } | null => {
     if (!jid) return null
     const c = clasificadosActuales.find(x => x.primeroId === jid || x.segundoId === jid)
@@ -913,6 +944,36 @@ export default function TorneoDetallePage() {
       </>
       )}
 
+      {faseActual === 'grupos' && (() => {
+        const previa = previewSiembra()
+        if (previa.length === 0) return null
+        const numGrupos = gruposReales.length
+        const nByeFinal = Math.max(0, calcularTamanoBracket(numGrupos * 2) - numGrupos * 2)
+        const gruposCerrados = new Set(clasificadosActuales.map(c => c.grupoId)).size
+        const faltan = numGrupos - gruposCerrados
+        return (
+          <div style={{ marginBottom:16, background:'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:10, padding:'12px 16px' }}>
+            <div style={{ fontSize:13, fontWeight:700, color:'#5b21b6', marginBottom:4 }}>Vista previa del cuadro (provisoria)</div>
+            <div style={{ fontSize:11, color:'#6d28d9', marginBottom:10 }}>
+              {faltan > 0
+                ? `El cuadro definitivo se arma cuando cierren TODOS los grupos (faltan ${faltan}). El descanso (BYE) va a los ${nByeFinal} mejores del ranking final, así que este orden puede cambiar si un grupo pendiente saca buenos resultados.`
+                : `Todos los grupos cerraron. Este es el orden de siembra; el cuadro se arma con “Armar bracket ahora”.`}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              {previa.map((r, i) => (
+                <div key={r.jugadorId} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, padding:'3px 0', borderBottom:'1px solid #ede9fe' }}>
+                  <span style={{ width:22, color:'#7c3aed', fontWeight:600 }}>{i + 1}°</span>
+                  <span style={{ flex:1, color:text }}>{r.nombre}</span>
+                  <span style={{ color:hint, fontSize:10 }}>Grupo {r.grupoNombre} · {r.posicion}°</span>
+                  <span style={{ color:hint, fontSize:10, width:64, textAlign:'right' }}>{r.victorias}V · {r.setsFavor}-{r.setsContra}</span>
+                  {i < nByeFinal && <span style={{ fontSize:9, color:'#166534', background:'#dcfce7', borderRadius:4, padding:'1px 5px' }}>BYE prov.</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16, marginBottom:16 }}>
           {grupos.filter((g: any) => g.nombre !== 'MESA').map(grupo => {
@@ -1120,38 +1181,43 @@ export default function TorneoDetallePage() {
                         <span style={{ color: hint, fontSize:10 }}>vs</span>
                         <span style={{ flex:1, color: p.ganador===p.jugador_b?'#16a34a': text }}>{jugB?.jugador?.nombre||'—'}</span>
                         {esAdmin && !p.ganador && (
-                          <div style={{ display:'flex', gap:4 }}>
-                            <button onClick={() => marcarGanador(p.id, p.jugador_a)} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>A ✓</button>
-                            <button onClick={() => marcarGanador(p.id, p.jugador_b)} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>✓ B</button>
+                          <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                            {MARCADORES_BO5.map(([sa, sb]) => (
+                              <button
+                                key={`${sa}-${sb}`}
+                                onClick={() => marcarGanador(p.id, sa > sb ? p.jugador_a : p.jugador_b, sa, sb)}
+                                title={`Gana ${(sa > sb ? jugA : jugB)?.jugador?.nombre || (sa > sb ? 'A' : 'B')} ${sa}-${sb}`}
+                                style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer', minWidth:28 }}
+                              >{sa}-{sb}</button>
+                            ))}
                           </div>
                         )}
                         {p.ganador && partidoEditando !== p.id && (
                           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                            <span style={{ color:'#16a34a', fontSize:10 }}>✓</span>
+                            <span style={{ color:'#16a34a', fontSize:10 }}>
+                              {p.sets_a != null && p.sets_b != null ? `${p.sets_a}-${p.sets_b}` : '✓'}
+                            </span>
                             {esAdmin && faseActual === 'grupos' && (
                               <button onClick={() => setPartidoEditando(p.id)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'2px 4px' }} title="Corregir resultado">✏️</button>
                             )}
                           </div>
                         )}
                         {p.ganador && partidoEditando === p.id && (
-                          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-                            <span style={{ fontSize:10, color:'#94a3b8' }}>¿Quién ganó?</span>
-                            <button onClick={async () => {
-                              const res = await corregirResultadoGrupos({ partidoId: p.id, nuevoGanadorId: p.jugador_a })
-                              if ('error' in res && res.error) { alert(res.error); return }
-                              setPartidoEditando(null)
-                              await cargarTorneo()
-                            }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
-                              {jugA?.jugador?.nombre?.split(' ')[0] || 'A'}
-                            </button>
-                            <button onClick={async () => {
-                              const res = await corregirResultadoGrupos({ partidoId: p.id, nuevoGanadorId: p.jugador_b })
-                              if ('error' in res && res.error) { alert(res.error); return }
-                              setPartidoEditando(null)
-                              await cargarTorneo()
-                            }} style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer' }}>
-                              {jugB?.jugador?.nombre?.split(' ')[0] || 'B'}
-                            </button>
+                          <div style={{ display:'flex', gap:3, alignItems:'center', flexWrap:'wrap', justifyContent:'flex-end' }}>
+                            <span style={{ fontSize:10, color:'#94a3b8' }}>Marcador correcto:</span>
+                            {MARCADORES_BO5.map(([sa, sb]) => (
+                              <button
+                                key={`fix-${sa}-${sb}`}
+                                onClick={async () => {
+                                  const res = await corregirResultadoGrupos({ partidoId: p.id, setsA: sa, setsB: sb })
+                                  if ('error' in res && res.error) { alert(res.error); return }
+                                  setPartidoEditando(null)
+                                  await cargarTorneo()
+                                }}
+                                title={`Gana ${(sa > sb ? jugA : jugB)?.jugador?.nombre || (sa > sb ? 'A' : 'B')} ${sa}-${sb}`}
+                                style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer', minWidth:28 }}
+                              >{sa}-{sb}</button>
+                            ))}
                             <button onClick={() => setPartidoEditando(null)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:12, cursor:'pointer' }}>✕</button>
                           </div>
                         )}
@@ -1171,7 +1237,7 @@ export default function TorneoDetallePage() {
           <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16, flexWrap:'wrap' }}>
             <div style={{ flex:1, background:'#ede9fe', border:'1px solid #c4b5fd', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#3730a3' }}>
               {faseActual === 'grupos'
-                ? '💡 Bracket en paralelo: los grupos cerrados llenan sus cupos. Puedes jugar ramas listas y arrastrar cualquier cupo aún no jugado a cualquier llave.'
+                ? '💡 El cuadro se arma cuando cierren TODOS los grupos, con el descanso (BYE) repartido por rendimiento real. Mientras tanto, mira la vista previa en la pestaña de grupos.'
                 : '💡 Haz clic para marcar ganador. En la ronda inicial puedes arrastrar cualquier cupo a cualquier llave mientras no esté jugada.'}
             </div>
             {esAdmin && faseActual === 'grupos' && (
