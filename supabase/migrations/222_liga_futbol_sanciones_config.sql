@@ -1,5 +1,5 @@
 BEGIN;
-SELECT _migracion_nueva('217_liga_futbol_sanciones_config');
+SELECT _migracion_nueva('222_liga_futbol_sanciones_config');
 
 -- Reglas de sanción automática por tarjetas, configurables por liga.
 ALTER TABLE lf_ligas

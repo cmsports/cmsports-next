@@ -1,5 +1,5 @@
 BEGIN;
-SELECT _migracion_nueva('218_liga_futbol_playoffs_config');
+SELECT _migracion_nueva('223_liga_futbol_playoffs_config');
 
 -- Cuántos equipos clasifican a playoffs desde la tabla general (solo aplica
 -- a formato 'liga_playoffs'; en 'grupos_playoffs' lo define la suma de
