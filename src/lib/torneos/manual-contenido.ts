@@ -304,6 +304,48 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
     ],
   },
   {
+    id: 'mover',
+    titulo: 'Mover jugadores y rearmar grupos',
+    resumen: 'Se mueve libre mientras el grupo no tenga resultados. El que queda vacío se borra solo.',
+    bloques: [
+      {
+        subtitulo: 'Cómo se mueve',
+        items: [
+          'En computador: arrastra al jugador de un grupo a otro. En teléfono: botón “Mover → grupo”.',
+          'Los partidos de los dos grupos se borran y se vuelven a crear solos con el nuevo todos-contra-todos. No hay que rehacer nada a mano.',
+          '¿Quieres juntar gente en un grupo que todavía no existe? Crear grupo vacío → aparece En preparación → muévele los jugadores → Finalizar (con 2 a 4) crea sus partidos.',
+        ],
+      },
+      {
+        subtitulo: 'Cambiar el tamaño de los grupos (el caso típico)',
+        items: [
+          'Ejemplo: quedaron tres grupos de 2 y prefieres dos de 3. Mueves a los dos del grupo sobrante a los otros dos grupos, y ese grupo desaparece solo al quedar vacío.',
+          'Ojo que eso cambia el torneo: con tres grupos de 2 clasifican 6 de 6 (la fase de grupos no elimina a nadie); con dos de 3 clasifican 4 de 6. Decídelo antes de que empiecen a jugar.',
+          'CUIDADO con dejar un grupo con UN jugador: nunca llena su cupo de “2° de grupo” y el cuadro no se arma nunca, sin avisar por qué. Si empiezas a repartir un grupo, termina de repartirlo.',
+        ],
+      },
+      {
+        subtitulo: 'Límites',
+        items: [
+          'Ninguno de los dos grupos puede tener partidos ya jugados. Si cargaste un resultado, primero corrígelo o usa Volver a grupos.',
+          'El grupo destino no puede pasar de 4 jugadores.',
+          'Después de que se juega un partido real del cuadro, ya no se mueve a nadie.',
+          'Mientras exista un grupo En preparación, el cuadro no se arma. Máximo un grupo en preparación a la vez.',
+          'Limpiar grupos vacíos borra grupos sin jugadores y partidos sin jugar.',
+        ],
+      },
+      {
+        subtitulo: 'Qué pasa con las cabezas de serie',
+        items: [
+          'Si el grupo destino NO tiene cabeza: se mueve y sigue siendo cabeza. No pasa nada.',
+          'Si el grupo destino YA tiene una cabeza: el que llega deja de ser cabeza y la del grupo se mantiene. Dos cabezas no pueden convivir en el mismo grupo.',
+          'La pantalla te avisa antes, con los dos nombres, y puedes cancelar. No se pierde nada sin que lo confirmes.',
+          'Quitar a alguien del torneo (no moverlo) también le saca la condición de cabeza.',
+        ],
+      },
+    ],
+  },
+  {
     id: 'arrastre',
     titulo: 'Editar el cuadro a mano (arrastre)',
     resumen: 'En computador, ronda inicial no jugada. No se puede dejar a un grupo contra sí mismo.',
@@ -392,16 +434,9 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
         ],
       },
       {
-        subtitulo: 'Reagrupar a mano',
+        subtitulo: 'Dónde se rearman los grupos',
         items: [
-          'Si los tardíos se fueron uno a uno y quedaron repartidos: Crear grupo vacío → aparece En preparación → arrastra (computador) o Mover → grupo (móvil) a los 3 o 4 que quieras juntar.',
-          'Ningún grupo involucrado puede tener resultados y nadie pasa de 4. Fuera de eso, se mueve libre.',
-          'El grupo de origen puede quedar vacío: cuando sacas al último, ese grupo se borra solo. Así se pasa, por ejemplo, de tres grupos de 2 a dos grupos de 3.',
-          'Ojo con dejar un grupo con UN jugador: nunca llena su cupo de “2° de grupo” y el cuadro no se arma. Si lo dejas a medias, termina de repartirlo.',
-          'Si mueves a una cabeza de serie a un grupo que YA tiene cabeza, el que llega deja de ser cabeza y la del grupo se mantiene. La pantalla te avisa antes y puedes cancelar. Si el grupo destino no tiene cabeza, no pasa nada: se mueve y sigue siendo cabeza.',
-          'El grupo en preparación no genera ni acepta resultados. Al Finalizar (2 a 4 jugadores) se crean los todos-contra-todos. Si sigue vacío, se cancela.',
-          'Mientras exista un grupo En preparación, el bracket no se arma. Máximo un grupo en preparación a la vez.',
-          'Limpiar grupos vacíos borra grupos sin jugadores y partidos sin jugar.',
+          'Todo lo de mover jugadores, juntar grupos y crear grupos vacíos está en la sección “Mover jugadores y rearmar grupos”. Vale igual para tardíos que para un torneo normal.',
         ],
       },
     ],
