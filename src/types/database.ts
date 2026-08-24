@@ -703,6 +703,8 @@ export interface Database {
           ganador: string | null
           sets_a: number | null
           sets_b: number | null
+          puntos_a: number | null
+          puntos_b: number | null
           slot_a_grupo_id: string | null
           slot_a_posicion: number | null
           slot_b_grupo_id: string | null
@@ -720,6 +722,8 @@ export interface Database {
           ganador?: string | null
           sets_a?: number | null
           sets_b?: number | null
+          puntos_a?: number | null
+          puntos_b?: number | null
           slot_a_grupo_id?: string | null
           slot_a_posicion?: number | null
           slot_b_grupo_id?: string | null
@@ -737,6 +741,8 @@ export interface Database {
           ganador?: string | null
           sets_a?: number | null
           sets_b?: number | null
+          puntos_a?: number | null
+          puntos_b?: number | null
           slot_a_grupo_id?: string | null
           slot_a_posicion?: number | null
           slot_b_grupo_id?: string | null

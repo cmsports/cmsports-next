@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
-import { MARCADORES_BO5 } from '@/lib/domain/marcador'
 import AppLayout from '@/app/layout-app'
 import {
   corregirResultadoGrupos,
@@ -41,6 +40,7 @@ import dynamic from 'next/dynamic'
 const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.QRCodeSVG })), { ssr: false })
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
+import MarcadorSets from '@/components/torneos/MarcadorSets'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -96,6 +96,7 @@ export default function TorneoDetallePage() {
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
+  const [guardandoMarcador, setGuardandoMarcador] = useState<string|null>(null)
   const [partidoPlayoffEditando, setPartidoPlayoffEditando] = useState<string|null>(null)
   const [dragSlot, setDragSlot] = useState<{ partidoId: string; posicion: 'jugador_a' | 'jugador_b' } | null>(null)
   const [dragOver, setDragOver] = useState<{ partidoId: string; posicion: 'jugador_a' | 'jugador_b' } | null>(null)
@@ -143,7 +144,7 @@ export default function TorneoDetallePage() {
     ] = await Promise.all([
       supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
-      supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
+      supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
       supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,club_procedencia,jugadores(id,nombre,es_externo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
@@ -354,7 +355,7 @@ export default function TorneoDetallePage() {
     }
   }
 
-  async function marcarGanador(partidoId: string, ganadorId: string, setsA?: number, setsB?: number) {
+  async function marcarGanador(partidoId: string, ganadorId: string, setsA?: number, setsB?: number, parciales?: Array<[number, number]>) {
     // ponytail: semáforo anti-doble-tap (iPhone registra dos touches a veces)
     if (marcandoRef.current.has(partidoId)) return
     marcandoRef.current.add(partidoId)
@@ -364,7 +365,9 @@ export default function TorneoDetallePage() {
     const ganador = partido?.jugador_a === ganadorId
       ? (partido as any).ja
       : partido?.jugador_b === ganadorId ? (partido as any).jb : null
-    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador, sets_a: setsA ?? p.sets_a, sets_b: setsB ?? p.sets_b } : p))
+    const puntosA = parciales?.reduce((t, [a]) => t + a, 0)
+    const puntosB = parciales?.reduce((t, [, b]) => t + b, 0)
+    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador, sets_a: setsA ?? p.sets_a, sets_b: setsB ?? p.sets_b, puntos_a: puntosA ?? p.puntos_a, puntos_b: puntosB ?? p.puntos_b } : p))
 
     try {
       // ponytail: fetch a API route en vez de server action directa. La server
@@ -375,7 +378,7 @@ export default function TorneoDetallePage() {
       const res = await fetch('/api/marcar-ganador', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partidoId, ganadorId, setsA, setsB }),
+        body: JSON.stringify({ partidoId, ganadorId, setsA, setsB, parciales }),
       }).then(r => r.json())
       if (res.error) { setPartidos(previo); alert(res.error); return }
       // Para grupos: el update optimista es suficiente; calcularStats() re-deriva
@@ -470,37 +473,40 @@ export default function TorneoDetallePage() {
     }
   }
 
+  // La tabla del grupo la calcula `calcularStatsGrupo`, la misma función que usa
+  // el servidor para decidir quién clasifica. Esta pantalla tenía su propia copia
+  // del cálculo y el desempate por sets y puntos habría quedado solo en una de
+  // las dos: la tabla en pantalla diría una cosa y el cuadro se armaría con otra.
   function calcularStats(grupoId: string) {
     const jugsGrupo = jugadoresPorGrupo.get(grupoId) || []
     const partidosGrupo = partidosPorGrupo.get(grupoId) || []
 
-    const stats: Record<string, { jugador: any, club: string | null, pts: number, pg: number, pp: number, orden: number }> = {}
-    jugsGrupo.forEach((j: any) => {
-      // El club sale de la inscripción, no de la ficha del jugador (migración 129).
-      stats[j.jugador_id] = { jugador: j.jugadores, club: j.club_procedencia ?? null, pts: 0, pg: 0, pp: 0, orden: j.orden ?? 0 }
-    })
+    // El club sale de la inscripción, no de la ficha del jugador (migración 129).
+    const clubDe = new Map<string, string | null>(jugsGrupo.map((j: any) => [j.jugador_id, j.club_procedencia ?? null]))
+    const jugadores = [...jugsGrupo]
+      .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+      .map((j: any) => ({ id: j.jugador_id, nombre: j.jugadores?.nombre ?? '', ficha: j.jugadores }))
 
-    partidosGrupo.filter(p => p.ganador).forEach(p => {
-      if (stats[p.ganador]) { stats[p.ganador].pts += 2; stats[p.ganador].pg += 1 }
-      const perd = p.jugador_a === p.ganador ? p.jugador_b : p.jugador_a
-      if (stats[perd]) stats[perd].pp += 1
-    })
+    const { stats: tabla, hayTripleEmpate } = calcularStatsGrupo(
+      jugadores.map(j => ({ id: j.id, nombre: j.nombre })),
+      partidosGrupo
+        .filter((p: any) => p.ganador && p.jugador_a && p.jugador_b)
+        .map((p: any) => ({
+          jugadorA: p.jugador_a, jugadorB: p.jugador_b, ganador: p.ganador,
+          setsA: p.sets_a, setsB: p.sets_b, puntosA: p.puntos_a, puntosB: p.puntos_b,
+        })),
+    )
 
-    const ordenados = Object.values(stats).sort((a: any, b: any) => {
-      if (b.pts !== a.pts) return b.pts - a.pts
-      const directo = partidosGrupo.find(p =>
-        (p.jugador_a === a.jugador?.id && p.jugador_b === b.jugador?.id) ||
-        (p.jugador_a === b.jugador?.id && p.jugador_b === a.jugador?.id),
-      )
-      if (directo?.ganador === a.jugador?.id) return -1
-      if (directo?.ganador === b.jugador?.id) return 1
-      return a.orden - b.orden
-    })
+    const ordenados = tabla.map(s => ({
+      jugador: jugadores.find(j => j.id === s.jugadorId)?.ficha ?? { id: s.jugadorId, nombre: s.jugador.nombre },
+      club: clubDe.get(s.jugadorId) ?? null,
+      pts: s.pts, pg: s.pg, pp: s.pp, sf: s.sf, sc: s.sc,
+      orden: jugadores.findIndex(j => j.id === s.jugadorId),
+    }))
+    const stats = Object.fromEntries(ordenados.map(o => [o.jugador?.id, o]))
 
     const puntosCorte = ordenados[1]?.pts
     const empatados = ordenados.filter(j => j.pts === puntosCorte)
-    const hayTripleEmpate = empatados.length >= 3
-
     const primeroFijo = hayTripleEmpate ? ordenados.find(j => j.pts > puntosCorte) ?? null : null
     return { stats, ordenados, hayTripleEmpate, empatados, primeroFijo }
   }
@@ -668,7 +674,7 @@ export default function TorneoDetallePage() {
       const jugs = (jugadoresPorGrupo.get(c.grupoId) || []).map((j: any) => ({ id: j.jugador_id, nombre: j.jugadores?.nombre ?? '' }))
       const parts = (partidosPorGrupo.get(c.grupoId) || [])
         .filter((p: any) => p.jugador_a && p.ganador)
-        .map((p: any) => ({ jugadorA: p.jugador_a, jugadorB: p.jugador_b, ganador: p.ganador, setsA: p.sets_a, setsB: p.sets_b }))
+        .map((p: any) => ({ jugadorA: p.jugador_a, jugadorB: p.jugador_b, ganador: p.ganador, setsA: p.sets_a, setsB: p.sets_b, puntosA: p.puntos_a, puntosB: p.puntos_b }))
       const { stats } = calcularStatsGrupo(jugs, parts)
       const nombreDe = (id: string) => jugs.find(j => j.id === id)?.nombre ?? '—'
       return ([[c.primeroId, 1], [c.segundoId, 2]] as const).map(([jid, pos]) => {
@@ -677,6 +683,7 @@ export default function TorneoDetallePage() {
           jugadorId: jid, grupoIdx, posicion: pos as 1 | 2,
           nombre: nombreDe(jid), grupoNombre: gruposReales[grupoIdx]?.nombre ?? '',
           victorias: s?.pg ?? 0, setsFavor: s?.sf ?? 0, setsContra: s?.sc ?? 0,
+          puntosFavor: s?.pf ?? 0, puntosContra: s?.pc ?? 0,
           cabezaNumero: cabezaNumero.get(jid) ?? null,
         }
       })
@@ -1175,51 +1182,64 @@ export default function TorneoDetallePage() {
                   ) : partidosGrupo.map(p => {
                     const jugA = ordenados.find((j: any) => j.jugador?.id === p.jugador_a)
                     const jugB = ordenados.find((j: any) => j.jugador?.id === p.jugador_b)
+                    const nombreA = jugA?.jugador?.nombre || '—'
+                    const nombreB = jugB?.jugador?.nombre || '—'
+                    const editando = partidoEditando === p.id
                     return (
-                      <div key={p.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
-                        <span style={{ flex:1, color: p.ganador===p.jugador_a?'#16a34a': text, textAlign:'right' }}>{jugA?.jugador?.nombre||'—'}</span>
-                        <span style={{ color: hint, fontSize:10 }}>vs</span>
-                        <span style={{ flex:1, color: p.ganador===p.jugador_b?'#16a34a': text }}>{jugB?.jugador?.nombre||'—'}</span>
-                        {esAdmin && !p.ganador && (
-                          <div style={{ display:'flex', gap:3, flexWrap:'wrap', justifyContent:'flex-end' }}>
-                            {MARCADORES_BO5.map(([sa, sb]) => (
-                              <button
-                                key={`${sa}-${sb}`}
-                                onClick={() => marcarGanador(p.id, sa > sb ? p.jugador_a : p.jugador_b, sa, sb)}
-                                title={`Gana ${(sa > sb ? jugA : jugB)?.jugador?.nombre || (sa > sb ? 'A' : 'B')} ${sa}-${sb}`}
-                                style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer', minWidth:28 }}
-                              >{sa}-{sb}</button>
-                            ))}
-                          </div>
-                        )}
-                        {p.ganador && partidoEditando !== p.id && (
-                          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                            <span style={{ color:'#16a34a', fontSize:10 }}>
-                              {p.sets_a != null && p.sets_b != null ? `${p.sets_a}-${p.sets_b}` : '✓'}
-                            </span>
-                            {esAdmin && faseActual === 'grupos' && (
-                              <button onClick={() => setPartidoEditando(p.id)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'2px 4px' }} title="Corregir resultado">✏️</button>
-                            )}
-                          </div>
-                        )}
-                        {p.ganador && partidoEditando === p.id && (
-                          <div style={{ display:'flex', gap:3, alignItems:'center', flexWrap:'wrap', justifyContent:'flex-end' }}>
-                            <span style={{ fontSize:10, color:'#94a3b8' }}>Marcador correcto:</span>
-                            {MARCADORES_BO5.map(([sa, sb]) => (
-                              <button
-                                key={`fix-${sa}-${sb}`}
-                                onClick={async () => {
-                                  const res = await corregirResultadoGrupos({ partidoId: p.id, setsA: sa, setsB: sb })
+                      <div key={p.id} style={{ padding:'6px 0', borderBottom:'1px solid #f1f5f9', fontSize:12 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{ flex:1, color: p.ganador===p.jugador_a?'#16a34a': text, textAlign:'right' }}>{nombreA}</span>
+                          <span style={{ color: hint, fontSize:10 }}>vs</span>
+                          <span style={{ flex:1, color: p.ganador===p.jugador_b?'#16a34a': text }}>{nombreB}</span>
+                          {esAdmin && !p.ganador && !editando && (
+                            <button
+                              onClick={() => setPartidoEditando(p.id)}
+                              style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:6, padding:'4px 10px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}
+                            >Cargar resultado</button>
+                          )}
+                          {p.ganador && !editando && (
+                            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                              <span style={{ color:'#16a34a', fontSize:10, whiteSpace:'nowrap' }}>
+                                {p.sets_a != null && p.sets_b != null ? `${p.sets_a}-${p.sets_b}` : '✓'}
+                                {p.puntos_a != null && p.puntos_b != null && (
+                                  <span style={{ color:'#94a3b8' }}> · {p.puntos_a}-{p.puntos_b} pts</span>
+                                )}
+                              </span>
+                              {esAdmin && faseActual === 'grupos' && (
+                                <button onClick={() => setPartidoEditando(p.id)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'2px 4px' }} title="Corregir resultado">✏️</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {esAdmin && editando && (
+                          <MarcadorSets
+                            key={`${p.id}-${p.ganador ?? 'nuevo'}`}
+                            nombreA={nombreA}
+                            nombreB={nombreB}
+                            guardando={guardandoMarcador === p.id}
+                            onCancelar={() => setPartidoEditando(null)}
+                            onListo={async parciales => {
+                              setGuardandoMarcador(p.id)
+                              try {
+                                if (p.ganador) {
+                                  // Corregir pasa por la server action: hay que revertir
+                                  // stats y recalcular llaves, no solo pisar el marcador.
+                                  const res = await corregirResultadoGrupos({ partidoId: p.id, parciales })
                                   if ('error' in res && res.error) { alert(res.error); return }
                                   setPartidoEditando(null)
                                   await cargarTorneo()
-                                }}
-                                title={`Gana ${(sa > sb ? jugA : jugB)?.jugador?.nombre || (sa > sb ? 'A' : 'B')} ${sa}-${sb}`}
-                                style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:4, padding:'3px 6px', fontSize:10, cursor:'pointer', minWidth:28 }}
-                              >{sa}-{sb}</button>
-                            ))}
-                            <button onClick={() => setPartidoEditando(null)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:12, cursor:'pointer' }}>✕</button>
-                          </div>
+                                } else {
+                                  const setsA = parciales.filter(([a, b]) => a > b).length
+                                  const setsB = parciales.length - setsA
+                                  const ganadorId = setsA > setsB ? p.jugador_a : p.jugador_b
+                                  await marcarGanador(p.id, ganadorId, setsA, setsB, parciales)
+                                  setPartidoEditando(null)
+                                }
+                              } finally {
+                                setGuardandoMarcador(null)
+                              }
+                            }}
+                          />
                         )}
                       </div>
                     )

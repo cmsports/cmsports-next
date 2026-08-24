@@ -20,6 +20,17 @@ export interface GrupoStats {
   sf: number
   /** Sets perdidos. Ver nota de `sf`. */
   sc: number
+  /** Puntos ganados (suma de los parciales). 0 sin parciales cargados. */
+  pf: number
+  /** Puntos cedidos. Ver nota de `pf`. */
+  pc: number
+}
+
+/** Ratio de sets o de puntos sin dividir por cero: el que no cedió ninguno va
+ *  primero, salvo que tampoco haya ganado (partido sin marcador cargado). */
+export function ratioMerito(favor: number, contra: number): number {
+  if (contra === 0) return favor > 0 ? Number.POSITIVE_INFINITY : 0
+  return favor / contra
 }
 
 export interface PartidoGenerado {
@@ -249,15 +260,61 @@ export function grupoTieneSusDosCuposDecididos(
   return !puedenCambiarDeOrden
 }
 
+type PartidoConMarcador = {
+  jugadorA: string
+  jugadorB: string
+  ganador: string | null
+  setsA?: number | null
+  setsB?: number | null
+  puntosA?: number | null
+  puntosB?: number | null
+}
+
+/**
+ * Desempate de tres o más igualados en puntos: se arma una tabla aparte con
+ * SOLO los partidos entre ellos y se ordena por victorias → ratio de sets →
+ * ratio de puntos. Es la regla del estándar y es la razón por la que hace falta
+ * el marcador set a set: a tres con 1-1 cada uno, los sets suelen quedar
+ * iguales también y los puntos son lo único que separa.
+ *
+ * Devuelve la clave comparable de cada uno para poder detectar después si dos
+ * quedaron literalmente idénticos (ahí sí decide el juez a mano).
+ */
+function clavesDesempateSubgrupo(
+  empatados: readonly GrupoStats[],
+  partidos: readonly PartidoConMarcador[],
+): Map<string, string> {
+  const ids = new Set(empatados.map(e => e.jugadorId))
+  const sub = new Map(empatados.map(e => [e.jugadorId, { pg: 0, sf: 0, sc: 0, pf: 0, pc: 0 }]))
+  for (const p of partidos) {
+    if (!p.ganador || !ids.has(p.jugadorA) || !ids.has(p.jugadorB)) continue
+    sub.get(p.ganador)!.pg += 1
+    if (p.setsA != null && p.setsB != null) {
+      sub.get(p.jugadorA)!.sf += p.setsA; sub.get(p.jugadorA)!.sc += p.setsB
+      sub.get(p.jugadorB)!.sf += p.setsB; sub.get(p.jugadorB)!.sc += p.setsA
+    }
+    if (p.puntosA != null && p.puntosB != null) {
+      sub.get(p.jugadorA)!.pf += p.puntosA; sub.get(p.jugadorA)!.pc += p.puntosB
+      sub.get(p.jugadorB)!.pf += p.puntosB; sub.get(p.jugadorB)!.pc += p.puntosA
+    }
+  }
+  return new Map([...sub].map(([id, s]) => [
+    id,
+    `${s.pg}|${ratioMerito(s.sf, s.sc)}|${ratioMerito(s.pf, s.pc)}`,
+  ]))
+}
+
+function compararClaves(a: string, b: string): number {
+  const [pgA, setsA, ptsA] = a.split('|').map(Number)
+  const [pgB, setsB, ptsB] = b.split('|').map(Number)
+  if (pgB !== pgA) return pgB - pgA
+  if (setsB !== setsA) return setsB - setsA
+  return ptsB - ptsA
+}
+
 export function calcularStatsGrupo(
   jugadores: JugadorTorneo[],
-  partidos: Array<{
-    jugadorA: string
-    jugadorB: string
-    ganador: string | null
-    setsA?: number | null
-    setsB?: number | null
-  }>,
+  partidos: Array<PartidoConMarcador>,
 ): { stats: GrupoStats[]; hayTripleEmpate: boolean } {
   const statsMap: Record<string, GrupoStats> = {}
   for (const j of jugadores) {
@@ -269,6 +326,8 @@ export function calcularStatsGrupo(
       pp: 0,
       sf: 0,
       sc: 0,
+      pf: 0,
+      pc: 0,
     }
   }
 
@@ -284,14 +343,27 @@ export function calcularStatsGrupo(
     }
     // Los sets son opcionales: un partido sin marcador (anterior a la
     // migración 216) suma 0 a ambos y no distorsiona el ratio de nadie.
-    if (p.setsA == null || p.setsB == null) continue
-    if (statsMap[p.jugadorA]) {
-      statsMap[p.jugadorA].sf += p.setsA
-      statsMap[p.jugadorA].sc += p.setsB
+    if (p.setsA != null && p.setsB != null) {
+      if (statsMap[p.jugadorA]) {
+        statsMap[p.jugadorA].sf += p.setsA
+        statsMap[p.jugadorA].sc += p.setsB
+      }
+      if (statsMap[p.jugadorB]) {
+        statsMap[p.jugadorB].sf += p.setsB
+        statsMap[p.jugadorB].sc += p.setsA
+      }
     }
-    if (statsMap[p.jugadorB]) {
-      statsMap[p.jugadorB].sf += p.setsB
-      statsMap[p.jugadorB].sc += p.setsA
+    // Los puntos también: los partidos cargados con los botones 3-1 (antes de
+    // los parciales set a set) tienen sets pero no puntos.
+    if (p.puntosA != null && p.puntosB != null) {
+      if (statsMap[p.jugadorA]) {
+        statsMap[p.jugadorA].pf += p.puntosA
+        statsMap[p.jugadorA].pc += p.puntosB
+      }
+      if (statsMap[p.jugadorB]) {
+        statsMap[p.jugadorB].pf += p.puntosB
+        statsMap[p.jugadorB].pc += p.puntosA
+      }
     }
   }
 
@@ -304,8 +376,14 @@ export function calcularStatsGrupo(
   }
 
   const ordenados: GrupoStats[] = []
+  // Clave de desempate de los que empataron de a tres o más; los demás no la
+  // tienen porque su empate lo resuelve el partido directo.
+  const claves = new Map<string, string>()
   for (const puntos of [...porPuntos.keys()].sort((a, b) => b - a)) {
     const empatados = porPuntos.get(puntos) ?? []
+    if (empatados.length >= 3) {
+      for (const [id, clave] of clavesDesempateSubgrupo(empatados, partidos)) claves.set(id, clave)
+    }
     empatados.sort((a, b) => {
       if (empatados.length === 2) {
         const directo = partidos.find(p =>
@@ -315,14 +393,26 @@ export function calcularStatsGrupo(
         if (directo?.ganador === a.jugadorId) return -1
         if (directo?.ganador === b.jugadorId) return 1
       }
+      const claveA = claves.get(a.jugadorId)
+      const claveB = claves.get(b.jugadorId)
+      if (claveA && claveB && claveA !== claveB) return compararClaves(claveA, claveB)
       return (ordenOriginal.get(a.jugadorId) ?? 0) - (ordenOriginal.get(b.jugadorId) ?? 0)
     })
     ordenados.push(...empatados)
   }
 
+  // El triple empate solo va al juez si el desempate por sets y puntos NO
+  // separó a los que se disputan un cupo. Los que importan son quién es 1° y
+  // quién 2°: si esos dos bordes quedaron decididos, el resto da lo mismo.
   const puntosCorte = ordenados[1]?.pts
   const empatadosEnCorte = puntosCorte == null ? [] : ordenados.filter(j => j.pts === puntosCorte)
-  const hayTripleEmpate = empatadosEnCorte.length >= 3
+  const bordeAmbiguo = (i: number) => {
+    const a = ordenados[i], b = ordenados[i + 1]
+    if (!a || !b || a.pts !== b.pts) return false
+    const claveA = claves.get(a.jugadorId)
+    return !!claveA && claveA === claves.get(b.jugadorId)
+  }
+  const hayTripleEmpate = empatadosEnCorte.length >= 3 && (bordeAmbiguo(0) || bordeAmbiguo(1))
 
   return { stats: ordenados, hayTripleEmpate }
 }
@@ -342,6 +432,10 @@ export interface ClasificadoConStats {
   victorias: number
   setsFavor: number
   setsContra: number
+  /** Puntos ganados en el grupo. 0 en partidos cargados sin parciales. */
+  puntosFavor?: number
+  /** Puntos cedidos en el grupo. Ver nota de `puntosFavor`. */
+  puntosContra?: number
   /** Número de cabeza de serie manual, si tiene. Menor es mejor. */
   cabezaNumero: number | null
 }
@@ -351,9 +445,10 @@ export interface ClasificadoConStats {
  *
  * Todos los 1° van antes que todos los 2°, incluso si un 2° rindió mejor: es
  * la regla del estándar y evita que ganar el grupo sea indistinto. Dentro de
- * cada nivel: más victorias → mejor ratio de sets → cabeza de serie más alta →
- * id de jugador. El último criterio no es deportivo, está para que el orden
- * sea determinístico: mismos datos, mismo cuadro, siempre.
+ * cada nivel: más victorias → mejor ratio de sets → mejor ratio de puntos →
+ * cabeza de serie más alta → id de jugador. El último criterio no es deportivo,
+ * está para que el orden sea determinístico: mismos datos, mismo cuadro,
+ * siempre.
  *
  * Ojo con una limitación conocida, la misma que acepta el estándar ITTF de
  * referencia: en grupos de distinto tamaño las victorias no son comparables
@@ -365,18 +460,16 @@ export function rankearClasificados(
 ): ClasificadoConStats[] {
   // Un jugador sin ningún set en contra no puede dividir por cero. Si además
   // no ganó ninguno (partidos viejos sin marcador), su ratio es 0 y queda al
-  // fondo de su nivel, no arriba.
-  const ratio = (c: ClasificadoConStats) =>
-    c.setsContra === 0
-      ? (c.setsFavor > 0 ? Number.POSITIVE_INFINITY : 0)
-      : c.setsFavor / c.setsContra
-
+  // fondo de su nivel, no arriba. Mismo criterio para los puntos.
   return [...clasificados].sort((a, b) => {
     if (a.posicion !== b.posicion) return a.posicion - b.posicion
     if (b.victorias !== a.victorias) return b.victorias - a.victorias
-    const ratioA = ratio(a)
-    const ratioB = ratio(b)
-    if (ratioB !== ratioA) return ratioB - ratioA
+    const setsA = ratioMerito(a.setsFavor, a.setsContra)
+    const setsB = ratioMerito(b.setsFavor, b.setsContra)
+    if (setsB !== setsA) return setsB - setsA
+    const puntosA = ratioMerito(a.puntosFavor ?? 0, a.puntosContra ?? 0)
+    const puntosB = ratioMerito(b.puntosFavor ?? 0, b.puntosContra ?? 0)
+    if (puntosB !== puntosA) return puntosB - puntosA
     const cabezaA = a.cabezaNumero ?? Number.MAX_SAFE_INTEGER
     const cabezaB = b.cabezaNumero ?? Number.MAX_SAFE_INTEGER
     if (cabezaA !== cabezaB) return cabezaA - cabezaB
