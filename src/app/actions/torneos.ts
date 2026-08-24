@@ -15,7 +15,7 @@ import {
   type JugadorTorneo,
   type ClasificadoConStats,
 } from '@/lib/domain/torneos'
-import { esResultadoBo5Valido, determinarGanadorBo5 } from '@/lib/domain/marcador'
+import { esResultadoBo5Valido, determinarGanadorBo5, resumirBo5 } from '@/lib/domain/marcador'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { requireAdmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -37,7 +37,14 @@ function clubKeyDeInscripcion(
 
 type AdminSupabase = NonNullable<Awaited<ReturnType<typeof requireAdmin>>['supabase']>
 
-type StatsClasificado = { nombre: string; victorias: number; setsFavor: number; setsContra: number }
+type StatsClasificado = {
+  nombre: string
+  victorias: number
+  setsFavor: number
+  setsContra: number
+  puntosFavor: number
+  puntosContra: number
+}
 type ClasificadoGrupo = {
   grupoId: string
   primeroId: string
@@ -270,6 +277,8 @@ function statsDe(
     victorias: s?.pg ?? 0,
     setsFavor: s?.sf ?? 0,
     setsContra: s?.sc ?? 0,
+    puntosFavor: s?.pf ?? 0,
+    puntosContra: s?.pc ?? 0,
   }
 }
 
@@ -295,7 +304,7 @@ async function calcularClasificadosDesdeBD(
       .in('grupo_id', grupoIds),
     supabase
       .from('torneo_partidos')
-      .select('grupo_id, jugador_a, jugador_b, ganador, sets_a, sets_b')
+      .select('grupo_id, jugador_a, jugador_b, ganador, sets_a, sets_b, puntos_a, puntos_b')
       .eq('torneo_id', torneoId)
       .eq('fase', 'grupos')
       .in('grupo_id', grupoIds),
@@ -324,6 +333,8 @@ async function calcularClasificadosDesdeBD(
         ganador: p.ganador,
         setsA: p.sets_a,
         setsB: p.sets_b,
+        puntosA: p.puntos_a,
+        puntosB: p.puntos_b,
       })),
     )
 
@@ -469,13 +480,33 @@ async function avanzarFaseSiEstaCompleta(
     .eq('fase', partido.fase)
 }
 
-export async function corregirResultadoGrupos(params: { partidoId: string; setsA: number; setsB: number }) {
+export async function corregirResultadoGrupos(params: {
+  partidoId: string
+  setsA?: number
+  setsB?: number
+  parciales?: ParcialSet[]
+}) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { partidoId, setsA, setsB } = params
+  const { partidoId } = params
+  let setsA = params.setsA
+  let setsB = params.setsB
+  let puntosA: number | null = null
+  let puntosB: number | null = null
+  if (params.parciales !== undefined) {
+    const desdeParciales = marcadorDesdeParciales(params.parciales)
+    if ('error' in desdeParciales) return desdeParciales
+    setsA = desdeParciales.setsA
+    setsB = desdeParciales.setsB
+    puntosA = desdeParciales.puntosA
+    puntosB = desdeParciales.puntosB
+  }
+  if (typeof setsA !== 'number' || typeof setsB !== 'number') {
+    return { error: 'Falta el marcador corregido' }
+  }
 
-  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden,sets_a,sets_b').eq('id', partidoId).single()
+  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden,sets_a,sets_b,puntos_a,puntos_b').eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
   if (partido.fase !== 'grupos') return { error: 'Solo se pueden corregir partidos de grupos' }
@@ -486,9 +517,13 @@ export async function corregirResultadoGrupos(params: { partidoId: string; setsA
 
   const nuevoGanadorId = determinarGanadorBo5(setsA, setsB, partido.jugador_a, partido.jugador_b)
   // Mismo ganador Y mismo marcador: no hay nada que corregir. Si cambia solo
-  // el marcador (3-0 → 3-2, mismo ganador), sí hay que reescribirlo: el ratio
-  // de sets desempata el ranking de clasificados.
-  if (partido.ganador === nuevoGanadorId && partido.sets_a === setsA && partido.sets_b === setsB) return { success: true }
+  // el marcador (3-0 → 3-2, mismo ganador, o los mismos sets con otros puntos),
+  // sí hay que reescribirlo: los ratios de sets y de puntos desempatan.
+  if (
+    partido.ganador === nuevoGanadorId &&
+    partido.sets_a === setsA && partido.sets_b === setsB &&
+    partido.puntos_a === puntosA && partido.puntos_b === puntosB
+  ) return { success: true }
 
   const anteriorGanadorId: string = partido.ganador
   const anteriorPerdedorId: string | null = anteriorGanadorId === partido.jugador_a ? partido.jugador_b : partido.jugador_a
@@ -529,7 +564,7 @@ export async function corregirResultadoGrupos(params: { partidoId: string; setsA
   }
 
   // Limpiar ganador actual antes de reusar marcarGanadorPartido
-  await supabase.from('torneo_partidos').update({ ganador: null, sets_a: null, sets_b: null }).eq('id', partidoId)
+  await supabase.from('torneo_partidos').update({ ganador: null, sets_a: null, sets_b: null, puntos_a: null, puntos_b: null }).eq('id', partidoId)
   if (partido.grupo_id) {
     await supabase.from('torneo_grupos').update({
       desempate_primero_id: null,
@@ -538,8 +573,8 @@ export async function corregirResultadoGrupos(params: { partidoId: string; setsA
   }
 
   // Aplicar nuevo resultado (reutiliza la lógica existente)
-  const marcado = await marcarGanadorPartido({ partidoId, setsA, setsB })
-  if (marcado.error) return marcado
+  const marcado = await marcarGanadorPartido({ partidoId, setsA, setsB, parciales: params.parciales })
+  if ('error' in marcado && marcado.error) return marcado
 
   if (llavesExistentes?.length) {
     const sync = await sincronizarLlaves({ torneoId: torneoIdPartido })
@@ -547,6 +582,29 @@ export async function corregirResultadoGrupos(params: { partidoId: string; setsA
   }
 
   return marcado
+}
+
+export type ParcialSet = readonly [number, number]
+
+/**
+ * Traduce los parciales que manda la pantalla (11-9, 11-7, …) a sets y puntos
+ * totales. Valida acá y no solo en el navegador: es el borde de confianza, la
+ * acción también la puede llamar cualquiera con la sesión de admin.
+ */
+function marcadorDesdeParciales(
+  parciales: unknown,
+): { setsA: number; setsB: number; puntosA: number; puntosB: number } | { error: string } {
+  const invalido = { error: 'Parciales inválidos. Cada set se gana a 11 con dos de ventaja (o 12-10, 13-11…), y el partido termina al llegar a 3 sets.' }
+  if (!Array.isArray(parciales)) return invalido
+  const pares: ParcialSet[] = []
+  for (const set of parciales) {
+    if (!Array.isArray(set) || set.length !== 2) return invalido
+    const [a, b] = set
+    if (typeof a !== 'number' || typeof b !== 'number') return invalido
+    pares.push([a, b])
+  }
+  const resumen = resumirBo5(pares)
+  return resumen ?? invalido
 }
 
 /**
@@ -566,32 +624,46 @@ export async function marcarGanadorPartido(params: {
   ganadorId?: string
   setsA?: number
   setsB?: number
+  /** Puntos de cada set: [[11,9],[11,7],[9,11],[11,6]]. Cuando vienen, mandan
+   *  ellos: los sets y los puntos totales se derivan de acá. */
+  parciales?: ParcialSet[]
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { partidoId, setsA, setsB } = params
+  const { partidoId } = params
+  let { setsA, setsB } = params
+  let puntos: { puntosA: number; puntosB: number } | null = null
+  if (params.parciales !== undefined) {
+    const desdeParciales = marcadorDesdeParciales(params.parciales)
+    if ('error' in desdeParciales) return desdeParciales
+    setsA = desdeParciales.setsA
+    setsB = desdeParciales.setsB
+    puntos = { puntosA: desdeParciales.puntosA, puntosB: desdeParciales.puntosB }
+  }
 
   const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden').eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (partido.ganador) return { error: 'El partido ya tiene ganador' }
   if (!partido.jugador_a || !partido.jugador_b) return { error: 'Los BYE avanzan automáticamente y no se marcan manualmente' }
 
-  const hayMarcador = typeof setsA === 'number' && typeof setsB === 'number'
-  if (hayMarcador && !esResultadoBo5Valido(setsA, setsB)) {
+  const sets = typeof setsA === 'number' && typeof setsB === 'number' ? { a: setsA, b: setsB } : null
+  if (sets && !esResultadoBo5Valido(sets.a, sets.b)) {
     return { error: 'Marcador inválido. Resultados permitidos en Mejor de 5: 3-0, 3-1, 3-2, 0-3, 1-3, 2-3' }
   }
-  if (partido.fase === 'grupos' && !hayMarcador) {
+  if (partido.fase === 'grupos' && !sets) {
     return { error: 'Falta el marcador. Los partidos de grupo se registran con los sets (ej: 3-1).' }
   }
 
-  const ganadorId = hayMarcador
-    ? determinarGanadorBo5(setsA, setsB, partido.jugador_a, partido.jugador_b)
+  const ganadorId = sets
+    ? determinarGanadorBo5(sets.a, sets.b, partido.jugador_a, partido.jugador_b)
     : params.ganadorId
   if (!ganadorId) return { error: 'Falta indicar quién ganó' }
   if (ganadorId !== partido.jugador_a && ganadorId !== partido.jugador_b) return { error: 'El ganador debe ser uno de los jugadores del partido' }
 
-  const marcador = hayMarcador ? { sets_a: setsA, sets_b: setsB } : {}
+  const marcador = sets
+    ? { sets_a: sets.a, sets_b: sets.b, ...(puntos ? { puntos_a: puntos.puntosA, puntos_b: puntos.puntosB } : {}) }
+    : {}
 
   if (partido.fase !== 'grupos') {
     const { data: actualizado } = await supabase
@@ -690,7 +762,7 @@ export async function guardarDesempateGrupo(params: {
   if (primeroId && segundoId) {
     const [{ data: miembros }, { data: partidosGrupo }] = await Promise.all([
       supabase.from('grupo_jugadores').select('jugador_id,orden,jugadores(id,nombre)').eq('grupo_id', grupoId),
-      supabase.from('torneo_partidos').select('jugador_a,jugador_b,ganador').eq('torneo_id', torneoId).eq('grupo_id', grupoId).eq('fase', 'grupos'),
+      supabase.from('torneo_partidos').select('jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b').eq('torneo_id', torneoId).eq('grupo_id', grupoId).eq('fase', 'grupos'),
     ])
     if (!partidosGrupo?.length || partidosGrupo.some(p => !p.jugador_a || !p.jugador_b || !p.ganador)) {
       return { error: 'Completa todos los partidos del grupo antes de resolver el empate' }
@@ -699,8 +771,13 @@ export async function guardarDesempateGrupo(params: {
       const jugador = Array.isArray(m.jugadores) ? m.jugadores[0] : m.jugadores
       return jugador ? { id: jugador.id, nombre: jugador.nombre ?? '' } : null
     }).filter((j): j is JugadorTorneo => !!j)
+    // Con el marcador puesto, el empate a tres casi siempre lo resuelve el
+    // ratio de sets o el de puntos. Si se pasan los partidos sin marcador acá,
+    // el grupo parece irresoluble y habilita un desempate a mano que la tabla
+    // ya había decidido — por eso van los sets y los puntos.
     const { stats, hayTripleEmpate } = calcularStatsGrupo(jugadoresGrupo, partidosGrupo.map(p => ({
       jugadorA: p.jugador_a!, jugadorB: p.jugador_b!, ganador: p.ganador,
+      setsA: p.sets_a, setsB: p.sets_b, puntosA: p.puntos_a, puntosB: p.puntos_b,
     })))
     if (!hayTripleEmpate) return { error: 'Este grupo no requiere desempate manual' }
 
@@ -1199,6 +1276,8 @@ export async function sincronizarLlaves(params: {
         victorias: c.primeroStats?.victorias ?? 0,
         setsFavor: c.primeroStats?.setsFavor ?? 0,
         setsContra: c.primeroStats?.setsContra ?? 0,
+        puntosFavor: c.primeroStats?.puntosFavor ?? 0,
+        puntosContra: c.primeroStats?.puntosContra ?? 0,
         cabezaNumero: numeroCabeza.get(c.primeroId) ?? null,
       },
       {
@@ -1206,6 +1285,8 @@ export async function sincronizarLlaves(params: {
         victorias: c.segundoStats?.victorias ?? 0,
         setsFavor: c.segundoStats?.setsFavor ?? 0,
         setsContra: c.segundoStats?.setsContra ?? 0,
+        puntosFavor: c.segundoStats?.puntosFavor ?? 0,
+        puntosContra: c.segundoStats?.puntosContra ?? 0,
         cabezaNumero: numeroCabeza.get(c.segundoId) ?? null,
       },
     ]

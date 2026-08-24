@@ -643,6 +643,30 @@ describe('rankearClasificados', () => {
   }
   const ids = (r: ClasificadoConStats[]) => r.map(c => c.jugadorId)
 
+  it('con victorias y sets iguales, desempata el mejor ratio de puntos', () => {
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'justo', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 2, puntosFavor: 90, puntosContra: 80 }),
+      clasificado({ jugadorId: 'contundente', grupoIdx: 1, victorias: 2, setsFavor: 6, setsContra: 2, puntosFavor: 90, puntosContra: 55 }),
+    ])
+    expect(ids(orden)).toEqual(['contundente', 'justo'])
+  })
+
+  it('sin puntos cargados (partidos viejos) el orden no se rompe', () => {
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'b', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 4 }),
+      clasificado({ jugadorId: 'a', grupoIdx: 1, victorias: 2, setsFavor: 6, setsContra: 1 }),
+    ])
+    expect(ids(orden)).toEqual(['a', 'b'])
+  })
+
+  it('el ratio de sets manda por sobre el de puntos', () => {
+    const orden = rankearClasificados([
+      clasificado({ jugadorId: 'muchospuntos', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 4, puntosFavor: 200, puntosContra: 100 }),
+      clasificado({ jugadorId: 'mejorsets', grupoIdx: 1, victorias: 2, setsFavor: 6, setsContra: 1, puntosFavor: 70, puntosContra: 65 }),
+    ])
+    expect(ids(orden)).toEqual(['mejorsets', 'muchospuntos'])
+  })
+
   it('con las mismas victorias, desempata el mejor ratio de sets', () => {
     const orden = rankearClasificados([
       clasificado({ jugadorId: 'flojo', grupoIdx: 0, victorias: 2, setsFavor: 6, setsContra: 4 }),
@@ -746,6 +770,96 @@ describe('calcularStatsGrupo con marcador', () => {
     const j0 = stats.find(s => s.jugadorId === 'j0')!
     expect(j0.pg).toBe(1)
     expect([j0.sf, j0.sc]).toEqual([0, 0])
+  })
+
+  it('suma los puntos totales del partido a los dos jugadores', () => {
+    const { stats } = calcularStatsGrupo(jugadores(2), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 1, puntosA: 44, puntosB: 38 },
+    ])
+    const j0 = stats.find(s => s.jugadorId === 'j0')!
+    const j1 = stats.find(s => s.jugadorId === 'j1')!
+    expect([j0.pf, j0.pc]).toEqual([44, 38])
+    expect([j1.pf, j1.pc]).toEqual([38, 44])
+  })
+
+  it('un partido con sets pero sin puntos (cargado antes de la 225) no mueve los puntos', () => {
+    const { stats } = calcularStatsGrupo(jugadores(2), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 0 },
+    ])
+    const j0 = stats.find(s => s.jugadorId === 'j0')!
+    expect([j0.sf, j0.sc]).toEqual([3, 0])
+    expect([j0.pf, j0.pc]).toEqual([0, 0])
+  })
+})
+
+// ─── Desempate de tres o más ──────────────────────────────────────────────
+// El caso clásico del grupo de 3 donde cada uno gana uno: antes siempre iba al
+// juez. Ahora lo resuelve el ratio de sets y, si eso también empata, el de
+// puntos. Solo queda manual cuando ni los puntos separan.
+
+describe('desempate de tres por sets y puntos', () => {
+  it('el ratio de sets ordena el triángulo sin intervención manual', () => {
+    const { stats, hayTripleEmpate } = calcularStatsGrupo(jugadores(3), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 0 },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1', setsA: 3, setsB: 2 },
+      { jugadorA: 'j2', jugadorB: 'j0', ganador: 'j2', setsA: 3, setsB: 2 },
+    ])
+    // j0: 5 sets a favor, 3 en contra. j2: 5 a 5. j1: 3 a 5.
+    expect(hayTripleEmpate).toBe(false)
+    expect(stats.map(s => s.jugadorId)).toEqual(['j0', 'j2', 'j1'])
+  })
+
+  it('con los sets empatados manda el ratio de puntos', () => {
+    const { stats, hayTripleEmpate } = calcularStatsGrupo(jugadores(3), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 1, puntosA: 44, puntosB: 30 },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1', setsA: 3, setsB: 1, puntosA: 44, puntosB: 40 },
+      { jugadorA: 'j2', jugadorB: 'j0', ganador: 'j2', setsA: 3, setsB: 1, puntosA: 44, puntosB: 42 },
+    ])
+    // Todos 4-4 en sets. Puntos: j0 86-74, j1 74-84, j2 84-86.
+    expect(hayTripleEmpate).toBe(false)
+    expect(stats.map(s => s.jugadorId)).toEqual(['j0', 'j2', 'j1'])
+  })
+
+  it('si ni los puntos separan a los dos primeros, sigue yendo al juez', () => {
+    const { hayTripleEmpate } = calcularStatsGrupo(jugadores(3), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 1, puntosA: 44, puntosB: 40 },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1', setsA: 3, setsB: 1, puntosA: 44, puntosB: 40 },
+      { jugadorA: 'j2', jugadorB: 'j0', ganador: 'j2', setsA: 3, setsB: 1, puntosA: 44, puntosB: 40 },
+    ])
+    expect(hayTripleEmpate).toBe(true)
+  })
+
+  it('desempata solo entre los empatados, no con los partidos contra el resto', () => {
+    // j0 gana el grupo. j1, j2 y j3 empatan a 1 victoria; entre ellos j1 arrasa,
+    // pero su paliza contra j0 no puede contar (no está en el empate).
+    const { stats, hayTripleEmpate } = calcularStatsGrupo(jugadores(4), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 2 },
+      { jugadorA: 'j0', jugadorB: 'j2', ganador: 'j0', setsA: 3, setsB: 0 },
+      { jugadorA: 'j0', jugadorB: 'j3', ganador: 'j0', setsA: 3, setsB: 0 },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1', setsA: 3, setsB: 0 },
+      { jugadorA: 'j2', jugadorB: 'j3', ganador: 'j2', setsA: 3, setsB: 2 },
+      { jugadorA: 'j3', jugadorB: 'j1', ganador: 'j3', setsA: 3, setsB: 2 },
+    ])
+    // Entre los tres: j1 5-3, j3 5-5, j2 3-5.
+    expect(hayTripleEmpate).toBe(false)
+    expect(stats.map(s => s.jugadorId)).toEqual(['j0', 'j1', 'j3', 'j2'])
+  })
+
+  it('un empate a tres por el tercer puesto no bloquea el grupo', () => {
+    // j0 y j1 tienen los dos cupos resueltos; el triángulo es por el 3°.
+    const { hayTripleEmpate } = calcularStatsGrupo(jugadores(5), [
+      { jugadorA: 'j0', jugadorB: 'j1', ganador: 'j0', setsA: 3, setsB: 1 },
+      { jugadorA: 'j0', jugadorB: 'j2', ganador: 'j0', setsA: 3, setsB: 0 },
+      { jugadorA: 'j0', jugadorB: 'j3', ganador: 'j0', setsA: 3, setsB: 0 },
+      { jugadorA: 'j0', jugadorB: 'j4', ganador: 'j0', setsA: 3, setsB: 0 },
+      { jugadorA: 'j1', jugadorB: 'j2', ganador: 'j1', setsA: 3, setsB: 0 },
+      { jugadorA: 'j1', jugadorB: 'j3', ganador: 'j1', setsA: 3, setsB: 0 },
+      { jugadorA: 'j1', jugadorB: 'j4', ganador: 'j1', setsA: 3, setsB: 0 },
+      { jugadorA: 'j2', jugadorB: 'j3', ganador: 'j2', setsA: 3, setsB: 0 },
+      { jugadorA: 'j3', jugadorB: 'j4', ganador: 'j3', setsA: 3, setsB: 0 },
+      { jugadorA: 'j4', jugadorB: 'j2', ganador: 'j4', setsA: 3, setsB: 0 },
+    ])
+    expect(hayTripleEmpate).toBe(false)
   })
 })
 
