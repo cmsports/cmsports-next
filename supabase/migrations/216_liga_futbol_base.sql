@@ -1,5 +1,5 @@
 BEGIN;
-SELECT _migracion_nueva('197_liga_futbol_base');
+SELECT _migracion_nueva('216_liga_futbol_base');
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- Módulo Liga Fútbol — tablas base
