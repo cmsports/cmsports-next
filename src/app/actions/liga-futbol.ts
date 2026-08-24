@@ -314,7 +314,7 @@ export async function registrarPagoEquipo(equipoId: string, monto: number, metod
     const descripcion = `${equipo.lf_ligas.nombre} - ${equipo.nombre}${metodo ? ` (${metodo})` : ''}`
     await supabase.rpc('registrar_movimiento_financiero_atomico', {
       p_tipo: 'ingreso',
-      p_categoria: 'Inscripción liga fútbol',
+      p_categoria: 'inscripcion_liga',
       p_descripcion: descripcion,
       p_monto: monto,
       p_fecha: fechaChile(),
