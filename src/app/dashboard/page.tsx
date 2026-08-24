@@ -383,8 +383,8 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── KPIs ── */}
-      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: `repeat(${(esFutbol ? 0 : 1) + (tiene('finanzas') ? (esFutbol ? 1 : 3) : 0)},1fr)`, gap: 14, marginBottom: 16 }}>
+      {/* ── KPIs — vacía para clubes de fútbol (todo lo de acá es específico de alumnos/clases) ── */}
+      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 16 }}>
 
         {/* Jugadores activos — no aplica a ligas de fútbol (son equipos, no alumnos) */}
         {!esFutbol && (
@@ -451,8 +451,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Ingresos — requiere finanzas */}
-        {tiene('finanzas') && (
+        {/* Ingresos — requiere finanzas. En clubes de fútbol se muestra junto a Gastos más abajo, no sola en esta fila. */}
+        {tiene('finanzas') && !esFutbol && (
           <KpiCard
             icon={<DollarSign size={18} color={C.green} />}
             iconBg={C.greenL}
@@ -467,7 +467,21 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
-      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 16 }}>
+
+        {/* Ingresos — en clubes de fútbol va acá, junto a Gastos, en vez de sola arriba */}
+        {tiene('finanzas') && esFutbol && (
+          <KpiCard
+            icon={<DollarSign size={18} color={C.green} />}
+            iconBg={C.greenL}
+            label="💰 Ingresos este mes"
+            value={errorDatos ? '—' : fmt(kpis.ingresos || 0)}
+            valueColor={C.green}
+            href="/finanzas?tab=movimientos"
+            tooltip={tooltip} tooltipId="ingresos" setTooltip={setTooltip}
+            tooltipText="Suma de todos los movimientos de tipo ingreso del mes actual."
+          />
+        )}
 
         {/* Gastos este mes */}
         {tiene('finanzas') && (
