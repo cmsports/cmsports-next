@@ -570,7 +570,7 @@ function emparejarPrimeroContraSegundo(arr: Array<RankeadoParaBracket | null>, t
 
   for (const [pa, pb] of llavesDeNivel(1)) {
     // Candidatos a salir de esta llave: el que no sea cabeza de serie.
-    const salidas = [pa, pb].filter(p => arr[p]!.cabezaNumero == null)
+    const salidas = [pa, pb]
     let hecho = false
     for (const sale of salidas) {
       if (hecho) break
@@ -580,7 +580,6 @@ function emparejarPrimeroContraSegundo(arr: Array<RankeadoParaBracket | null>, t
         if (lado(qa) !== lado(sale)) continue // solo misma mitad: no cambia de lado a nadie
         for (const entra of [qa, qb]) {
           const cand = arr[entra]!
-          if (cand.cabezaNumero != null) continue          // cabeza anclada
           if (cand.grupoIdx === queda.grupoIdx) continue   // chocaría con el que se queda
           const otro2 = arr[entra === qa ? qb : qa]!
           if (otro2.grupoIdx === arr[sale]!.grupoIdx) continue // el 1° chocaría al llegar
@@ -612,20 +611,12 @@ function resolverChoqueDeGrupo(
   posB: number,
 ): void {
   const a = arr[posA]!
-  const b = arr[posB]!
-  // Mover al que NO es cabeza (las cabezas están ancladas en su esquina). Si
-  // ninguno es cabeza, mover al 2°. Dos cabezas del mismo grupo no pueden pasar
-  // (máximo una cabeza por grupo), así que siempre hay al menos uno movible.
-  const aEsCabeza = a.cabezaNumero != null
-  const bEsCabeza = b.cabezaNumero != null
-  let moverPos: number
-  if (aEsCabeza && !bEsCabeza) moverPos = posB
-  else if (bEsCabeza && !aEsCabeza) moverPos = posA
-  else moverPos = a.posicion === 2 ? posA : posB
+  // Mover al 2° del grupo: el 1° tiene mejor semilla y moverlo alteraría más
+  // el orden. Como un grupo tiene un solo 1°, siempre hay exactamente un 2°.
+  const moverPos = a.posicion === 2 ? posA : posB
   const quedaPos = moverPos === posA ? posB : posA
   const mover = arr[moverPos]!
   const seFija = arr[quedaPos]!
-  if (mover.cabezaNumero != null) return // ambos cabeza: no se toca (no debería pasar)
 
   let mejor: number | null = null
   let mejorDist = Infinity
@@ -633,7 +624,6 @@ function resolverChoqueDeGrupo(
     if (p === posA || p === posB) continue
     const cand = arr[p]
     if (!cand) continue                          // posición con BYE: no se toca
-    if (cand.cabezaNumero != null) continue      // no mover una cabeza de su ancla
     if (cand.posicion !== mover.posicion) continue // conservar el nivel (1°/2°)
     const par = p % 2 === 0 ? p + 1 : p - 1
     const vecino = arr[par]
@@ -676,10 +666,13 @@ function separarMitades(arr: Array<RankeadoParaBracket | null>, tam: number): vo
     if (p1 < 0 || p2 < 0) return false
     if (lado(p1) !== lado(p2)) return false // ya están en mitades opuestas
 
-    const c1 = arr[p1]!.cabezaNumero != null
-    const c2 = arr[p2]!.cabezaNumero != null
-    const moverPos = c1 && !c2 ? p2 : c2 && !c1 ? p1 : p2
-    if (arr[moverPos]!.cabezaNumero != null) return false // ambos cabeza: imposible mover
+    // Nunca mover a quien ya tiene BYE: perdería el descanso que le tocó por
+    // siembra y se lo llevaría alguien peor ubicado. Se prefiere mover al 2°.
+    const tieneBye = (p: number) => arr[p % 2 === 0 ? p + 1 : p - 1] == null
+    let moverPos: number
+    if (!tieneBye(p2)) moverPos = p2
+    else if (!tieneBye(p1)) moverPos = p1
+    else return false // los dos descansan: separarlos costaría un BYE
     const mover = arr[moverPos]!
     const seFija = arr[moverPos === p1 ? p2 : p1]!
     const ladoDestino = 1 - lado(moverPos)
@@ -690,7 +683,6 @@ function separarMitades(arr: Array<RankeadoParaBracket | null>, tam: number): vo
       if (lado(p) !== ladoDestino) continue
       const cand = arr[p]
       if (!cand) continue                            // BYE: no se toca
-      if (cand.cabezaNumero != null) continue        // cabeza anclada: no se mueve
       if (cand.posicion !== mover.posicion) continue // conservar nivel
       if (cand.grupoIdx === mover.grupoIdx) continue // mismo grupo que mover
       if (cand.grupoIdx === seFija.grupoIdx) continue // cand chocaría en destino con el fijo
@@ -718,23 +710,30 @@ function separarMitades(arr: Array<RankeadoParaBracket | null>, tam: number): vo
 }
 
 /**
- * Siembra tradicional acordada con el club: las cabezas de serie ocupan las
- * esquinas del cuadro por su NÚMERO de cabeza (CS más bajo = mejor esquina),
- * sin importar cómo les fue en grupos, y descansan (BYE) las de número más
- * bajo. Todos los demás —1ros sin cabeza y 2dos— van por mérito.
+ * Siembra tradicional acordada con el club (2026-08-24):
  *
- * Nota: dentro del "resto" se mantiene 1ros sobre 2dos (regla de mérito de
- * `rankearClasificados`), no un pozo único. Si el club prefiere mezclarlos por
- * mérito puro, es cambiar esta línea.
+ * 1. Todos los ganadores de grupo van antes que todos los segundos.
+ * 2. Entre los ganadores manda el ORDEN DEL GRUPO: el 1° del grupo A es la
+ *    mejor semilla, el del B la segunda, y así. No es arbitrario — al repartir
+ *    los grupos las cabezas se reparten en orden (CS1 al grupo A, CS2 al B,
+ *    CS3 al C…), así que el orden de grupo ya lleva incorporado el número de
+ *    cabeza. Ganar el grupo A vale más que ganar el G porque el A era el
+ *    grupo de la cabeza #1.
+ * 3. Entre los segundos manda el mérito (`rankearClasificados`): victorias →
+ *    ratio de sets → ratio de puntos.
+ *
+ * El número de cabeza ya no ancla posiciones por sí solo: una cabeza que
+ * pierde su grupo cae al pozo de segundos y se ordena por rendimiento, como
+ * cualquiera. Es lo que pidió el club — "el mérito es para los segundos".
  */
 function ordenarSiembraTradicional(
   clasificados: readonly ClasificadoConStats[],
 ): ClasificadoConStats[] {
-  const cabezas = clasificados
-    .filter(c => c.cabezaNumero != null)
-    .sort((a, b) => (a.cabezaNumero! - b.cabezaNumero!) || a.jugadorId.localeCompare(b.jugadorId))
-  const resto = rankearClasificados(clasificados.filter(c => c.cabezaNumero == null))
-  return [...cabezas, ...resto]
+  const primeros = clasificados
+    .filter(c => c.posicion === 1)
+    .sort((a, b) => (a.grupoIdx - b.grupoIdx) || a.jugadorId.localeCompare(b.jugadorId))
+  const segundos = rankearClasificados(clasificados.filter(c => c.posicion === 2))
+  return [...primeros, ...segundos]
 }
 
 /**

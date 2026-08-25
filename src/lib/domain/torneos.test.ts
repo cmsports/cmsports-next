@@ -1019,15 +1019,16 @@ describe('siembra tradicional (cabezas ancladas)', () => {
     expect(abajoCab.length).toBeGreaterThan(0)
   })
 
-  it('el BYE lo reciben las cabezas de número más bajo, no el mejor mérito', () => {
+  it('el BYE lo reciben los ganadores de los primeros grupos', () => {
     const { matches } = mitades(buin)
     const quien = new Map(buin.map(c => [`${c.grupoIdx}:${c.posicion}`, c.jugadorId]))
     const conBye = matches
       .filter(m => (m.a && !m.b) || (m.b && !m.a))
       .map(m => quien.get(`${(m.a ?? m.b)!.grupoIdx}:${(m.a ?? m.b)!.pos}`)!)
-    // CS1 y CS2 son las dos cabezas más bajas que clasificaron. kast y garcez
-    // rindieron igual o mejor (2-0, 6-0 en sets) pero el BYE ya no se decide
-    // por mérito. Coincide con el cuadro real del 24-08.
+    // Los 1° de los grupos A y B. El grupo A es el de la cabeza #1 y el B el
+    // de la #2, así que ganar ahí vale más. kast y garcez rindieron igual o
+    // mejor (2-0, 6-0 en sets) pero el BYE no se decide por mérito.
+    // Coincide con el cuadro real del 24-08.
     expect(conBye.sort()).toEqual(['Benjamin', 'Joaquin'])
   })
 
@@ -1075,6 +1076,29 @@ describe('siembra tradicional (cabezas ancladas)', () => {
     expect(pares.filter(([x, y]) => x === 1 && y === 1)).toHaveLength(0)
     // Y el sobrante de segundos es exactamente uno, no más.
     expect(pares.filter(([x, y]) => x === 2 && y === 2)).toHaveLength(1)
+  })
+
+  it('un 2° solo recibe BYE si se acabaron los 1ros, y va al mejor de ellos', () => {
+    // 5 grupos → 10 clasificados → cuadro de 16 → 6 BYE. Los 1ros son 5, así
+    // que sobra un BYE: le toca al mejor 2° por mérito, nunca a otro.
+    const cinco: ClasificadoConStats[] = [
+      cl('p_A', 0, 1, 2, 6, 0), cl('s_A', 0, 2, 1, 3, 6),
+      cl('p_B', 1, 1, 2, 6, 0), cl('s_B', 1, 2, 1, 3, 4),
+      cl('p_C', 2, 1, 2, 6, 0), cl('s_C_mejor', 2, 2, 1, 6, 1),
+      cl('p_D', 3, 1, 2, 6, 0), cl('s_D', 3, 2, 1, 3, 6),
+      cl('p_E', 4, 1, 2, 6, 0), cl('s_E', 4, 2, 1, 1, 6),
+    ]
+    const { matches } = construirLayoutPorRanking(cinco)
+    const quien = new Map(cinco.map(c => [`${c.grupoIdx}:${c.posicion}`, c]))
+    const conBye = matches
+      .filter(m => (m.a && !m.b) || (m.b && !m.a))
+      .map(m => quien.get(`${(m.a ?? m.b)!.grupoIdx}:${(m.a ?? m.b)!.pos}`)!)
+    expect(conBye).toHaveLength(6)
+    // Los cinco 1ros descansan, sin excepción.
+    expect(conBye.filter(c => c.posicion === 1).map(c => c.jugadorId).sort())
+      .toEqual(['p_A', 'p_B', 'p_C', 'p_D', 'p_E'])
+    // Y el sobrante es el mejor 2°, no cualquiera.
+    expect(conBye.filter(c => c.posicion === 2).map(c => c.jugadorId)).toEqual(['s_C_mejor'])
   })
 
   it('es determinístico: mismos datos, mismo cuadro', () => {
