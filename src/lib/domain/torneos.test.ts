@@ -15,6 +15,7 @@ import {
   calcularStatsGrupo,
   rankearClasificados,
   construirBracketPorRanking,
+  construirLayoutPorRanking,
   derivarPodioFinal,
   nombreGrupo,
   type JugadorTorneo,
@@ -964,3 +965,105 @@ describe('construirBracketPorRanking', () => {
 
 // ─── calcularCuadroProgresivo ─────────────────────────────────────────────
 // Qué llaves se pueden jugar aunque falten grupos por cerrar.
+
+// ─── Siembra tradicional: cabezas en las esquinas ─────────────────────────
+// Acordado con el club (2026-08-24): las cabezas de serie ocupan las esquinas
+// del cuadro por su NÚMERO, no por cómo les fue en grupos, y descansan las de
+// número más bajo. El resto va por mérito. Antes el mérito ordenaba a todos, y
+// con las cabezas rindiendo parejo terminaban las cinco en la misma mitad.
+
+describe('siembra tradicional (cabezas ancladas)', () => {
+  function cl(
+    jugadorId: string, grupoIdx: number, posicion: 1 | 2,
+    victorias: number, setsFavor: number, setsContra: number,
+    cabezaNumero: number | null = null,
+  ): ClasificadoConStats {
+    return { jugadorId, grupoIdx, posicion, victorias, setsFavor, setsContra, cabezaNumero }
+  }
+
+  // Torneo real de Buin del 2026-08-24: 7 grupos, 14 clasificados, cabezas
+  // 1, 4, 5, 6 y 7. Es el caso que motivó el cambio.
+  const buin: ClasificadoConStats[] = [
+    cl('Benjamin', 0, 1, 2, 6, 2, 1), cl('matias', 0, 2, 1, 3, 5),
+    cl('Joaquin', 1, 1, 2, 6, 0), cl('gaspar', 1, 2, 1, 3, 4),
+    cl('kojiro', 2, 1, 2, 6, 0), cl('green', 2, 2, 1, 3, 3),
+    cl('shushatumadre', 3, 1, 2, 6, 0), cl('spider', 3, 2, 1, 3, 3, 4),
+    cl('kast', 4, 1, 2, 6, 0), cl('beatriz', 4, 2, 1, 3, 3, 5),
+    cl('garcez', 5, 1, 2, 6, 0, 6), cl('maria', 5, 2, 1, 3, 3),
+    cl('luis', 6, 1, 2, 6, 0, 7), cl('yulissa', 6, 2, 1, 3, 5),
+  ]
+
+  // Reparte los slots del layout en mitad de arriba / mitad de abajo.
+  function mitades(clasificados: ClasificadoConStats[]) {
+    const { matches } = construirLayoutPorRanking(clasificados)
+    const quien = new Map(clasificados.map(c => [`${c.grupoIdx}:${c.posicion}`, c.jugadorId]))
+    const nombre = (s: { grupoIdx: number; pos: number } | null) =>
+      s ? quien.get(`${s.grupoIdx}:${s.pos}`)! : null
+    const arriba: string[] = []
+    const abajo: string[] = []
+    matches.forEach((m, i) => {
+      const destino = i < matches.length / 2 ? arriba : abajo
+      for (const n of [nombre(m.a), nombre(m.b)]) if (n) destino.push(n)
+    })
+    return { arriba, abajo, matches }
+  }
+
+  it('regresión Buin: las cabezas no quedan todas en la misma mitad', () => {
+    const { arriba, abajo } = mitades(buin)
+    const cabezas = ['Benjamin', 'spider', 'beatriz', 'garcez', 'luis']
+    const arribaCab = cabezas.filter(c => arriba.includes(c))
+    const abajoCab = cabezas.filter(c => abajo.includes(c))
+    // El bug reportado: las 5 cabezas en la mitad de abajo.
+    expect(arribaCab.length).toBeGreaterThan(0)
+    expect(abajoCab.length).toBeGreaterThan(0)
+  })
+
+  it('el BYE lo reciben las cabezas de número más bajo, no el mejor mérito', () => {
+    const { matches } = mitades(buin)
+    const quien = new Map(buin.map(c => [`${c.grupoIdx}:${c.posicion}`, c.jugadorId]))
+    const conBye = matches
+      .filter(m => (m.a && !m.b) || (m.b && !m.a))
+      .map(m => quien.get(`${(m.a ?? m.b)!.grupoIdx}:${(m.a ?? m.b)!.pos}`)!)
+    // CS1 y CS4 son las dos cabezas más bajas. kast y garcez tenían mejor
+    // mérito (2-0, 6-0) pero el BYE ya no se decide por eso.
+    expect(conBye.sort()).toEqual(['Benjamin', 'spider'])
+  })
+
+  it('la cabeza 1 y la cabeza 2 caen en mitades opuestas', () => {
+    const dos = [
+      cl('cs1', 0, 1, 2, 6, 0, 1), cl('a2', 0, 2, 1, 3, 3),
+      cl('cs2', 1, 1, 2, 6, 0, 2), cl('b2', 1, 2, 1, 3, 3),
+      cl('c1', 2, 1, 2, 6, 0), cl('c2', 2, 2, 1, 3, 3),
+      cl('d1', 3, 1, 2, 6, 0), cl('d2', 3, 2, 1, 3, 3),
+    ]
+    const { arriba, abajo } = mitades(dos)
+    expect(arriba.includes('cs1')).toBe(!arriba.includes('cs2'))
+    expect(abajo.includes('cs1')).toBe(!abajo.includes('cs2'))
+  })
+
+  it('ninguna llave inicial enfrenta a dos del mismo grupo', () => {
+    const { matches } = construirLayoutPorRanking(buin)
+    for (const m of matches) {
+      if (m.a && m.b) expect(m.a.grupoIdx).not.toBe(m.b.grupoIdx)
+    }
+  })
+
+  it('sin cabezas de serie sigue mandando el mérito puro', () => {
+    const sinCabezas = buin.map(c => ({ ...c, cabezaNumero: null }))
+    const { matches } = construirLayoutPorRanking(sinCabezas)
+    const quien = new Map(sinCabezas.map(c => [`${c.grupoIdx}:${c.posicion}`, c.jugadorId]))
+    const conBye = matches
+      .filter(m => (m.a && !m.b) || (m.b && !m.a))
+      .map(m => quien.get(`${(m.a ?? m.b)!.grupoIdx}:${(m.a ?? m.b)!.pos}`)!)
+    // Los dos mejores 1ros por sets: todos 2-0, desempata el ratio. Sin
+    // cabezas nadie está anclado, así que el BYE vuelve a ser por rendimiento.
+    expect(conBye).toHaveLength(2)
+    expect(conBye.every(n => sinCabezas.find(c => c.jugadorId === n)!.posicion === 1)).toBe(true)
+  })
+
+  it('es determinístico: mismos datos, mismo cuadro', () => {
+    const a = construirLayoutPorRanking(buin)
+    const b = construirLayoutPorRanking(buin)
+    expect(a).toEqual(b)
+  })
+})

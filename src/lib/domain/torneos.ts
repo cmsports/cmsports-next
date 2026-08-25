@@ -487,6 +487,9 @@ export interface RankeadoParaBracket {
   nombre: string
   grupoIdx: number
   posicion: 1 | 2
+  /** Número de cabeza de serie, si tiene. Una cabeza queda anclada en su
+   *  esquina y no se mueve en la separación por mitades. */
+  cabezaNumero?: number | null
 }
 
 /**
@@ -511,8 +514,12 @@ export function construirBracketPorRanking(
   const arr: Array<RankeadoParaBracket | null> = Array(tam).fill(null)
   rankeados.forEach((r, i) => { arr[seedPos[i]] = r })
 
-  // Cada par (2k, 2k+1) es una llave inicial. Si un par está completo y ambos
-  // son del mismo grupo, hay que separarlos.
+  // Regla de Luis: el 2° de un grupo va a la mitad OPUESTA de su propio 1°.
+  // Esto también evita que se crucen en la primera ronda.
+  separarMitades(arr, tam)
+
+  // Backstop: si la separación por mitades no pudo (sin swap válido), al menos
+  // que dos del mismo grupo no queden en la misma llave inicial.
   for (let k = 0; k < tam / 2; k++) {
     const posA = 2 * k
     const posB = 2 * k + 1
@@ -546,10 +553,20 @@ function resolverChoqueDeGrupo(
   posB: number,
 ): void {
   const a = arr[posA]!
-  const moverPos = a.posicion === 2 ? posA : posB
+  const b = arr[posB]!
+  // Mover al que NO es cabeza (las cabezas están ancladas en su esquina). Si
+  // ninguno es cabeza, mover al 2°. Dos cabezas del mismo grupo no pueden pasar
+  // (máximo una cabeza por grupo), así que siempre hay al menos uno movible.
+  const aEsCabeza = a.cabezaNumero != null
+  const bEsCabeza = b.cabezaNumero != null
+  let moverPos: number
+  if (aEsCabeza && !bEsCabeza) moverPos = posB
+  else if (bEsCabeza && !aEsCabeza) moverPos = posA
+  else moverPos = a.posicion === 2 ? posA : posB
   const quedaPos = moverPos === posA ? posB : posA
   const mover = arr[moverPos]!
   const seFija = arr[quedaPos]!
+  if (mover.cabezaNumero != null) return // ambos cabeza: no se toca (no debería pasar)
 
   let mejor: number | null = null
   let mejorDist = Infinity
@@ -557,6 +574,7 @@ function resolverChoqueDeGrupo(
     if (p === posA || p === posB) continue
     const cand = arr[p]
     if (!cand) continue                          // posición con BYE: no se toca
+    if (cand.cabezaNumero != null) continue      // no mover una cabeza de su ancla
     if (cand.posicion !== mover.posicion) continue // conservar el nivel (1°/2°)
     const par = p % 2 === 0 ? p + 1 : p - 1
     const vecino = arr[par]
@@ -574,19 +592,105 @@ function resolverChoqueDeGrupo(
 }
 
 /**
+ * Lleva a un grupo (1° y 2°) a mitades opuestas del cuadro. Nunca mueve una
+ * cabeza de serie (está anclada en su esquina): mueve al otro miembro, o al 2°
+ * si ninguno es cabeza. Busca un swap con alguien del MISMO nivel (1°/2°) en la
+ * mitad de destino que no arme otro choque de grupo, ni de mitad ni de primera
+ * ronda. Solo intercambia posiciones ocupadas, así el conjunto de BYE no cambia.
+ *
+ * Ceiling: es un pase greedy, un intento por grupo. Con muchos grupos y clubes
+ * apretados puede quedar algún grupo sin separar del todo; en ese caso el
+ * backstop de primera ronda evita al menos que se crucen de entrada. Si hiciera
+ * falta separación garantizada, upgrade a un emparejamiento por mitades.
+ */
+function separarMitades(arr: Array<RankeadoParaBracket | null>, tam: number): void {
+  const mitad = tam / 2
+  const lado = (p: number) => (p < mitad ? 0 : 1)
+  const grupos = [...new Set(arr.flatMap(r => (r ? [r.grupoIdx] : [])))]
+
+  // Intenta llevar el grupo `g` a mitades opuestas con un swap. Devuelve si movió.
+  // Se llama en un bucle hasta punto fijo porque separar un grupo puede liberar
+  // el slot que otro necesitaba: una sola pasada deja casos resolubles sin tocar.
+  const separarUno = (g: number): boolean => {
+    const p1 = arr.findIndex(r => r?.grupoIdx === g && r.posicion === 1)
+    const p2 = arr.findIndex(r => r?.grupoIdx === g && r.posicion === 2)
+    if (p1 < 0 || p2 < 0) return false
+    if (lado(p1) !== lado(p2)) return false // ya están en mitades opuestas
+
+    const c1 = arr[p1]!.cabezaNumero != null
+    const c2 = arr[p2]!.cabezaNumero != null
+    const moverPos = c1 && !c2 ? p2 : c2 && !c1 ? p1 : p2
+    if (arr[moverPos]!.cabezaNumero != null) return false // ambos cabeza: imposible mover
+    const mover = arr[moverPos]!
+    const seFija = arr[moverPos === p1 ? p2 : p1]!
+    const ladoDestino = 1 - lado(moverPos)
+
+    let mejor: number | null = null
+    let mejorDist = Infinity
+    for (let p = 0; p < tam; p++) {
+      if (lado(p) !== ladoDestino) continue
+      const cand = arr[p]
+      if (!cand) continue                            // BYE: no se toca
+      if (cand.cabezaNumero != null) continue        // cabeza anclada: no se mueve
+      if (cand.posicion !== mover.posicion) continue // conservar nivel
+      if (cand.grupoIdx === mover.grupoIdx) continue // mismo grupo que mover
+      if (cand.grupoIdx === seFija.grupoIdx) continue // cand chocaría en destino con el fijo
+      const vecP = p % 2 === 0 ? p + 1 : p - 1
+      const vP = arr[vecP]
+      if (vP && vP.grupoIdx === mover.grupoIdx) continue // mover chocaría en 1ª ronda al llegar a p
+      const vecM = moverPos % 2 === 0 ? moverPos + 1 : moverPos - 1
+      const vM = arr[vecM]
+      if (vM && vM.grupoIdx === cand.grupoIdx) continue // cand chocaría en 1ª ronda al llegar a moverPos
+      const dist = Math.abs(p - moverPos)
+      if (dist < mejorDist) { mejorDist = dist; mejor = p }
+    }
+    if (mejor == null) return false
+    const tmp = arr[moverPos]; arr[moverPos] = arr[mejor]; arr[mejor] = tmp
+    return true
+  }
+
+  // Punto fijo: repetir mientras alguna pasada logre separar un grupo. Cota dura
+  // de vueltas (cada vuelta arregla ≥1 grupo o corta) para no colgarse nunca.
+  for (let vuelta = 0; vuelta < grupos.length + 1; vuelta++) {
+    let cambio = false
+    for (const g of grupos) if (separarUno(g)) cambio = true
+    if (!cambio) break
+  }
+}
+
+/**
+ * Siembra tradicional acordada con el club: las cabezas de serie ocupan las
+ * esquinas del cuadro por su NÚMERO de cabeza (CS más bajo = mejor esquina),
+ * sin importar cómo les fue en grupos, y descansan (BYE) las de número más
+ * bajo. Todos los demás —1ros sin cabeza y 2dos— van por mérito.
+ *
+ * Nota: dentro del "resto" se mantiene 1ros sobre 2dos (regla de mérito de
+ * `rankearClasificados`), no un pozo único. Si el club prefiere mezclarlos por
+ * mérito puro, es cambiar esta línea.
+ */
+function ordenarSiembraTradicional(
+  clasificados: readonly ClasificadoConStats[],
+): ClasificadoConStats[] {
+  const cabezas = clasificados
+    .filter(c => c.cabezaNumero != null)
+    .sort((a, b) => (a.cabezaNumero! - b.cabezaNumero!) || a.jugadorId.localeCompare(b.jugadorId))
+  const resto = rankearClasificados(clasificados.filter(c => c.cabezaNumero == null))
+  return [...cabezas, ...resto]
+}
+
+/**
  * Adapta `construirBracketPorRanking` al formato `LlavesLayout` (slots por
- * grupo) que consume `sincronizarLlaves`. Así el reparto de BYE pasa a ser por
- * mérito, pero toda la maquinaria de inserción, slots y propagación de la capa
- * de acciones se reutiliza sin cambios. Solo se usa cuando cerraron todos los
- * grupos: antes de eso no hay ranking global comparable.
+ * grupo) que consume `sincronizarLlaves`. Toda la maquinaria de inserción,
+ * slots y propagación de la capa de acciones se reutiliza sin cambios. Solo se
+ * usa cuando cerraron todos los grupos: antes de eso no hay ranking comparable.
  */
 export function construirLayoutPorRanking(
   clasificados: readonly ClasificadoConStats[],
 ): LlavesLayout {
   const slotDe = new Map(clasificados.map(c => [c.jugadorId, { grupoIdx: c.grupoIdx, pos: c.posicion }]))
-  const ordenados = rankearClasificados(clasificados)
+  const ordenados = ordenarSiembraTradicional(clasificados)
   const bracket = construirBracketPorRanking(ordenados.map(c => ({
-    jugadorId: c.jugadorId, nombre: '', grupoIdx: c.grupoIdx, posicion: c.posicion,
+    jugadorId: c.jugadorId, nombre: '', grupoIdx: c.grupoIdx, posicion: c.posicion, cabezaNumero: c.cabezaNumero,
   })))
   return {
     faseInicial: determinarFaseInicial(calcularTamanoBracket(clasificados.length)),
