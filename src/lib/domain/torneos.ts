@@ -518,6 +518,10 @@ export function construirBracketPorRanking(
   // Esto también evita que se crucen en la primera ronda.
   separarMitades(arr, tam)
 
+  // Un ganador de grupo debe enfrentar a un 2°, no a otro ganador, mientras
+  // aritméticamente se pueda.
+  emparejarPrimeroContraSegundo(arr, tam)
+
   // Backstop: si la separación por mitades no pudo (sin swap válido), al menos
   // que dos del mismo grupo no queden en la misma llave inicial.
   for (let k = 0; k < tam / 2; k++) {
@@ -532,6 +536,61 @@ export function construirBracketPorRanking(
     arr.map(r => (r ? { id: r.jugadorId, nombre: r.nombre } : null)),
     fase,
   )
+}
+
+/**
+ * Deshace las llaves de 1°vs1° cambiando uno de esos ganadores por un 2° que
+ * esté en una llave de 2°vs2°. Las dos llaves quedan 1°vs2°, que es como debe
+ * cruzar una primera ronda: el que ganó su grupo enfrenta a un segundo.
+ *
+ * Con G grupos, 2G clasificados y B byes, quedan (G−B) ganadores libres contra
+ * G segundos: siempre sobran segundos, así que las llaves 2°vs2° existen y son
+ * inevitables, pero las de 1°vs1° no. La siembra pura igual las produce porque
+ * empareja seeds vecinos (en un cuadro de 16, el 8 con el 9) y los ganadores
+ * sin cabeza caen justo ahí.
+ *
+ * Solo intercambia DENTRO de la misma mitad: así ningún jugador cambia de lado
+ * y la separación de `separarMitades` queda intacta. Nunca mueve una cabeza de
+ * su ancla ni toca una posición con BYE. Si no hay swap válido deja la llave
+ * como está, igual criterio que el resto del armado.
+ */
+function emparejarPrimeroContraSegundo(arr: Array<RankeadoParaBracket | null>, tam: number): void {
+  const mitad = tam / 2
+  const lado = (p: number) => (p < mitad ? 0 : 1)
+  // Posiciones de una llave completa cuyos dos ocupantes son del nivel `nivel`.
+  const llavesDeNivel = (nivel: 1 | 2): number[][] => {
+    const res: number[][] = []
+    for (let k = 0; k < tam / 2; k++) {
+      const a = arr[2 * k]
+      const b = arr[2 * k + 1]
+      if (a && b && a.posicion === nivel && b.posicion === nivel) res.push([2 * k, 2 * k + 1])
+    }
+    return res
+  }
+
+  for (const [pa, pb] of llavesDeNivel(1)) {
+    // Candidatos a salir de esta llave: el que no sea cabeza de serie.
+    const salidas = [pa, pb].filter(p => arr[p]!.cabezaNumero == null)
+    let hecho = false
+    for (const sale of salidas) {
+      if (hecho) break
+      const queda = arr[sale === pa ? pb : pa]!
+      for (const [qa, qb] of llavesDeNivel(2)) {
+        if (hecho) break
+        if (lado(qa) !== lado(sale)) continue // solo misma mitad: no cambia de lado a nadie
+        for (const entra of [qa, qb]) {
+          const cand = arr[entra]!
+          if (cand.cabezaNumero != null) continue          // cabeza anclada
+          if (cand.grupoIdx === queda.grupoIdx) continue   // chocaría con el que se queda
+          const otro2 = arr[entra === qa ? qb : qa]!
+          if (otro2.grupoIdx === arr[sale]!.grupoIdx) continue // el 1° chocaría al llegar
+          const tmp = arr[sale]; arr[sale] = arr[entra]; arr[entra] = tmp
+          hecho = true
+          break
+        }
+      }
+    }
+  }
 }
 
 /**

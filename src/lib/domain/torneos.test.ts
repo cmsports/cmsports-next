@@ -981,11 +981,12 @@ describe('siembra tradicional (cabezas ancladas)', () => {
     return { jugadorId, grupoIdx, posicion, victorias, setsFavor, setsContra, cabezaNumero }
   }
 
-  // Torneo real de Buin del 2026-08-24: 7 grupos, 14 clasificados, cabezas
-  // 1, 4, 5, 6 y 7. Es el caso que motivó el cambio.
+  // Torneo real de Buin del 2026-08-24: 7 grupos, 14 clasificados. Las cabezas
+  // cargadas fueron 1 a 7; la #3 (Rodrigo) quedó eliminada en el grupo C, así
+  // que al cuadro entran 1, 2, 4, 5, 6 y 7. Es el caso que motivó el cambio.
   const buin: ClasificadoConStats[] = [
     cl('Benjamin', 0, 1, 2, 6, 2, 1), cl('matias', 0, 2, 1, 3, 5),
-    cl('Joaquin', 1, 1, 2, 6, 0), cl('gaspar', 1, 2, 1, 3, 4),
+    cl('Joaquin', 1, 1, 2, 6, 0, 2), cl('gaspar', 1, 2, 1, 3, 4),
     cl('kojiro', 2, 1, 2, 6, 0), cl('green', 2, 2, 1, 3, 3),
     cl('shushatumadre', 3, 1, 2, 6, 0), cl('spider', 3, 2, 1, 3, 3, 4),
     cl('kast', 4, 1, 2, 6, 0), cl('beatriz', 4, 2, 1, 3, 3, 5),
@@ -1024,9 +1025,10 @@ describe('siembra tradicional (cabezas ancladas)', () => {
     const conBye = matches
       .filter(m => (m.a && !m.b) || (m.b && !m.a))
       .map(m => quien.get(`${(m.a ?? m.b)!.grupoIdx}:${(m.a ?? m.b)!.pos}`)!)
-    // CS1 y CS4 son las dos cabezas más bajas. kast y garcez tenían mejor
-    // mérito (2-0, 6-0) pero el BYE ya no se decide por eso.
-    expect(conBye.sort()).toEqual(['Benjamin', 'spider'])
+    // CS1 y CS2 son las dos cabezas más bajas que clasificaron. kast y garcez
+    // rindieron igual o mejor (2-0, 6-0 en sets) pero el BYE ya no se decide
+    // por mérito. Coincide con el cuadro real del 24-08.
+    expect(conBye.sort()).toEqual(['Benjamin', 'Joaquin'])
   })
 
   it('la cabeza 1 y la cabeza 2 caen en mitades opuestas', () => {
@@ -1059,6 +1061,20 @@ describe('siembra tradicional (cabezas ancladas)', () => {
     // cabezas nadie está anclado, así que el BYE vuelve a ser por rendimiento.
     expect(conBye).toHaveLength(2)
     expect(conBye.every(n => sinCabezas.find(c => c.jugadorId === n)!.posicion === 1)).toBe(true)
+  })
+
+  it('un ganador de grupo no enfrenta a otro ganador si hay un 2° para cruzar', () => {
+    // Con 7 grupos y 2 byes quedan 5 ganadores libres contra 7 segundos: las
+    // llaves 2°vs2° sobran sí o sí, pero las de 1°vs1° no tienen por qué
+    // existir. La siembra pura igual las armaba (seeds 8 y 9 son vecinos).
+    const { matches } = construirLayoutPorRanking(buin)
+    const nivel = new Map(buin.map(c => [`${c.grupoIdx}:${c.posicion}`, c.posicion]))
+    const pares = matches
+      .filter(m => m.a && m.b)
+      .map(m => [nivel.get(`${m.a!.grupoIdx}:${m.a!.pos}`)!, nivel.get(`${m.b!.grupoIdx}:${m.b!.pos}`)!])
+    expect(pares.filter(([x, y]) => x === 1 && y === 1)).toHaveLength(0)
+    // Y el sobrante de segundos es exactamente uno, no más.
+    expect(pares.filter(([x, y]) => x === 2 && y === 2)).toHaveLength(1)
   })
 
   it('es determinístico: mismos datos, mismo cuadro', () => {
