@@ -21,7 +21,7 @@ export async function sincronizarEmailAuth(
   const { login, tipo } = usuarioLoginDe(datos)
   let aplicado: string | null = null
   if (nuevo && nuevo !== emailActual) {
-    const { error } = await admin.auth.admin.updateUserById(perfilId, { email: nuevo })
+    const { error } = await admin.auth.admin.updateUserById(perfilId, { email: nuevo, email_confirm: true })
     if (error) return null
     await admin.from('perfiles').update({ email: nuevo }).eq('id', perfilId)
     aplicado = nuevo
