@@ -186,7 +186,7 @@ describe('resetearCredencial', () => {
 
     expect(r).toEqual({ password: 'agustinquinteros123' })
     // Se aplica el email real en auth, aparte del cambio de clave.
-    expect(updateUserById).toHaveBeenCalledWith('u-1', { email: 'franciscoqhuelquen@gmail.com' })
+    expect(updateUserById).toHaveBeenCalledWith('u-1', { email: 'franciscoqhuelquen@gmail.com', email_confirm: true })
     expect(updateUserById).toHaveBeenCalledWith('u-1', { password: 'agustinquinteros123' })
     expect(perfilesUpdate).toHaveBeenCalledWith({ email: 'franciscoqhuelquen@gmail.com' })
     // El reporte muestra el email nuevo, que ahora sí coincide con auth.
@@ -269,8 +269,8 @@ describe('resetearTodasLasCredenciales', () => {
 
     expect(r).toEqual({ cambiadas: 2, fallidas: 0 })
     // La clave sigue el patrón viejo, el email el nuevo.
-    expect(updateUserById).toHaveBeenCalledWith('u-1', { email: 'cgonzalezg@cmsports.cl', password: 'colombagonzalez123' })
-    expect(updateUserById).toHaveBeenCalledWith('u-2', { email: 'ssalgadog@cmsports.cl', password: 'sofiagaete123' })
+    expect(updateUserById).toHaveBeenCalledWith('u-1', { email: 'cgonzalezg@cmsports.cl', password: 'colombagonzalez123', email_confirm: true })
+    expect(updateUserById).toHaveBeenCalledWith('u-2', { email: 'ssalgadog@cmsports.cl', password: 'sofiagaete123', email_confirm: true })
     // El espejo guarda el email como usuario_login y tipo=email.
     expect(espejoUpsert).toHaveBeenCalledWith(expect.objectContaining({
       usuario_id: 'u-1', usuario_login: 'cgonzalezg@cmsports.cl', tipo_login: 'email',
