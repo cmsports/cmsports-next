@@ -21,6 +21,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // El worktree del CLI es una copia vieja del proyecto entero: linteaba
+    // archivos que ya no existen en src/ y ensuciaba el resultado.
+    ".claude/worktrees/**",
   ]),
 ]);
 

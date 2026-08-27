@@ -197,12 +197,23 @@ export async function aprobarSolicitud(params: {
   // RPC porque el ingreso tiene que quedar atado al jugador ya creado. Si
   // falla, el alta no se deshace: el jugador ya está y la matrícula se cobra
   // desde su ficha, que es mucho mejor que perder la cuenta recién creada.
+  let avisoMatricula: string | null = null
   if (matriculaPagada && (matriculaMonto ?? 0) > 0) {
-    await supabase.rpc('registrar_pago_matricula_atomico', {
+    const { error: errMatricula } = await supabase.rpc('registrar_pago_matricula_atomico', {
       p_jugador_id: jugadorId,
       p_monto: Math.round(matriculaMonto as number),
       p_idempotency_key: crypto.randomUUID(),
     })
+    // Si el ingreso no entró, la ficha NO puede quedar diciendo que está
+    // pagada: la deuda desaparecía de los dos lados —no se le cobraba y no
+    // había entrado plata— y el comentario "se cobra desde su ficha" no servía
+    // porque la ficha ya decía pagada.
+    if (errMatricula) {
+      await supabase.from('jugadores')
+        .update({ matricula_pagada: false })
+        .eq('id', jugadorId).eq('club_id', clubId)
+      avisoMatricula = 'El jugador quedó creado, pero la matrícula no se registró en Finanzas. Queda marcada como pendiente para cobrarla desde su ficha.'
+    }
   }
 
   const { error: aprobarError } = await supabase.from('solicitudes_jugador')
@@ -217,6 +228,7 @@ export async function aprobarSolicitud(params: {
     success: true,
     cuentaCreada: true,
     jugador,
+    aviso: avisoMatricula ?? undefined,
   }
 }
 

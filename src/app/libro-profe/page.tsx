@@ -37,7 +37,10 @@ export default function LibroProfePage() {
     if (!res.ok || json.error) {
       setError(json.error ?? 'Error al subir')
     } else {
-      setPdfUrl(json.url + '?t=' + Date.now())
+      // La URL ahora viene firmada y ya trae `?token=...`. Pegarle `?t=` la
+      // rompía (dos signos de pregunta) y el visor quedaba en blanco. El
+      // cache-buster va con `&`, y solo si hace falta.
+      setPdfUrl(json.url ? `${json.url}${json.url.includes('?') ? '&' : '?'}t=${Date.now()}` : null)
     }
     setSubiendo(false)
     if (inputRef.current) inputRef.current.value = ''

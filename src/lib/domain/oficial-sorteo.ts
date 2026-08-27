@@ -155,7 +155,18 @@ export function aplicarSerpienteSegundos(layout: LlavesLayout): LlavesLayout {
   for (const mi of order) {
     const a = matches[mi].a
     const pick = pool.findIndex((s, idx) => !used.has(idx) && (!a || s.grupoIdx !== a.grupoIdx))
-    if (pick < 0) continue
+    if (pick < 0) {
+      // No hay permutación válida: se devuelve el layout base ENTERO, igual que
+      // hace aplicarSorteoSegundos cuando se le agotan los intentos.
+      //
+      // El `continue` que había acá no era inofensivo. El `b` original de este
+      // cruce también sale del pool y, por construcción, es de un grupo
+      // distinto al de `a`; si siguiera libre, el findIndex lo habría
+      // encontrado. Que no lo encuentre significa que ya se lo llevó otro
+      // cruce. Conservarlo dejaba al mismo 2.º de grupo en DOS llaves y al que
+      // quedaba suelto en ninguna: un jugador duplicado y otro desaparecido.
+      return layout
+    }
     used.add(pick)
     matches[mi] = { ...matches[mi], b: pool[pick] }
   }

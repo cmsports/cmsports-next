@@ -15,6 +15,7 @@ import {
   type JugadorTorneo,
 } from '@/lib/domain/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
+import { esUuid } from '@/lib/domain/uuid'
 import { requireAdmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -523,7 +524,11 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
       .is('ganador', null)
       .select('id')
     if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
-    await propagarGanadorPlayoff(supabase, partido, ganadorId)
+    // El error de la propagación se devuelve, no se descarta. Si el ganador no
+    // llega a la ronda siguiente, el partido queda marcado y el cuadro trabado:
+    // decir "listo" ahí es la peor de las dos respuestas posibles.
+    const errProp = await propagarGanadorPlayoff(supabase, partido, ganadorId)
+    if (errProp) return { error: errProp }
     await avanzarFaseSiEstaCompleta(supabase, partido)
     return { success: true }
   }
@@ -563,7 +568,8 @@ export async function marcarGanadorPartido(params: { partidoId: string; ganadorI
     }
   }
 
-  await propagarGanadorPlayoff(supabase, partido, ganadorId)
+  const errProp = await propagarGanadorPlayoff(supabase, partido, ganadorId)
+  if (errProp) return { error: errProp }
   await avanzarFaseSiEstaCompleta(supabase, partido)
 
   return { success: true }
@@ -596,6 +602,9 @@ export async function guardarDesempateGrupo(params: {
   if (authErr) return { error: authErr }
 
   const { torneoId, grupoId, primeroId, segundoId } = params
+  // El `.or()` de más abajo interpola `grupoId` en el lenguaje de filtros de
+  // PostgREST, donde la coma y el punto son sintaxis. Ver lib/domain/uuid.ts.
+  if (!esUuid(grupoId)) return { error: 'Grupo inválido' }
   if ((primeroId && !segundoId) || (!primeroId && segundoId)) return { error: 'Debes definir 1° y 2° juntos' }
   if (primeroId && primeroId === segundoId) return { error: 'El 1° y 2° deben ser jugadores distintos' }
 
@@ -992,18 +1001,40 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     return { error: `Hay ${cabezas.length} cabezas para ${numGrupos} grupos. Debe existir como máximo una cabeza por grupo.` }
   }
 
-  // Limpiar partidos viejos del torneo (evita FK orphans y duplicación de grupos)
-  await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
+  // Cada paso revisa su error y corta antes del siguiente.
+  //
+  // Antes ninguno lo hacía. Si el insert de `grupo_jugadores` fallaba, los
+  // grupos quedaban creados y vacíos, los partidos se creaban igual —se armaban
+  // desde el array local, no desde lo que la base había aceptado— y el torneo
+  // avanzaba a fase 'grupos' respondiendo `success`. Es exactamente el estado
+  // que tuvieron que reparar a mano las migraciones 213 y 214: partidos
+  // apuntando a jugadores que no están inscritos en ningún grupo.
+  {
+    const { error } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
+    if (error) return { error: `No se pudieron limpiar los partidos anteriores: ${error.message}` }
+  }
   if (grupoIds.length) {
-    await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
-    await supabase.from('torneo_grupos').delete().in('id', grupoIds)
+    const { error: errMiembros } = await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+    if (errMiembros) return { error: `No se pudieron limpiar los grupos anteriores: ${errMiembros.message}` }
+    const { error: errGrupos } = await supabase.from('torneo_grupos').delete().in('id', grupoIds)
+    if (errGrupos) return { error: `No se pudieron borrar los grupos anteriores: ${errGrupos.message}` }
   }
 
-  const { data: nuevosGrupos } = await supabase
+  const { data: nuevosGrupos, error: errCrearGrupos } = await supabase
     .from('torneo_grupos')
     .insert(Array.from({ length: numGrupos }, (_, i) => ({ torneo_id: torneoId, nombre: nombreGrupo(i), orden: i })))
     .select('id, nombre')
-  if (!nuevosGrupos?.length) return { error: 'No se pudieron crear los grupos' }
+  if (errCrearGrupos || !nuevosGrupos?.length) {
+    return { error: `No se pudieron crear los grupos${errCrearGrupos ? ': ' + errCrearGrupos.message : ''}` }
+  }
+
+  // Si algo falla de acá en adelante, los grupos recién creados se van con él:
+  // dejarlos vacíos es peor que no haber empezado.
+  const deshacerGrupos = async () => {
+    await supabase.from('torneo_partidos').delete().in('grupo_id', nuevosGrupos.map(g => g.id))
+    await supabase.from('grupo_jugadores').delete().in('grupo_id', nuevosGrupos.map(g => g.id))
+    await supabase.from('torneo_grupos').delete().in('id', nuevosGrupos.map(g => g.id))
+  }
 
   const asignaciones = esExterno
     ? seedingSerpenteoConClubes(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
@@ -1018,19 +1049,48 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     orden,
     club_procedencia: clubPorJugador.get(a.jugadorId) ?? null,
   }})
-  await supabase.from('grupo_jugadores').insert(inserts)
+
+  // `.select()` para armar los partidos desde las filas que la base CONFIRMÓ,
+  // no desde el array que se le mandó. Es la diferencia entre "creí que quedó
+  // inscrito" y "quedó inscrito".
+  const { data: miembrosCreados, error: errMiembros } = await supabase
+    .from('grupo_jugadores').insert(inserts).select('grupo_id, jugador_id, orden')
+  if (errMiembros || !miembrosCreados?.length) {
+    await deshacerGrupos()
+    return { error: `No se pudo inscribir a los jugadores en sus grupos${errMiembros ? ': ' + errMiembros.message : ''}` }
+  }
+  if (miembrosCreados.length !== inserts.length) {
+    await deshacerGrupos()
+    return { error: 'La base aceptó menos inscripciones de las enviadas; no se armó ningún grupo.' }
+  }
 
   const partidos: Array<{ torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }> = []
   for (const g of nuevosGrupos) {
-    const jugadoresGrupo = inserts.filter(a => a.grupo_id === g.id).sort((a, b) => a.orden - b.orden).map(a => a.jugador_id)
+    const jugadoresGrupo = miembrosCreados
+      .filter(m => m.grupo_id === g.id)
+      .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+      .map(m => m.jugador_id)
+      .filter((id): id is string => !!id)
     const parejas = generarRoundRobin(jugadoresGrupo)
     for (const [a, b] of parejas) {
       partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: a, jugador_b: b, orden: partidos.length })
     }
   }
-  if (partidos.length) await supabase.from('torneo_partidos').insert(partidos)
+  if (partidos.length) {
+    const { error } = await supabase.from('torneo_partidos').insert(partidos)
+    if (error) {
+      await deshacerGrupos()
+      return { error: `No se pudieron crear los partidos de los grupos: ${error.message}` }
+    }
+  }
 
-  await supabase.from('torneos').update({ fase: 'grupos', inscripcion_abierta: false }).eq('id', torneoId)
+  const { error: errFase } = await supabase.from('torneos')
+    .update({ fase: 'grupos', inscripcion_abierta: false }).eq('id', torneoId)
+  if (errFase) {
+    // Los grupos y partidos quedaron bien; solo no avanzó la fase. No se
+    // deshace nada: reintentar el botón termina el trabajo.
+    return { error: `Los grupos se crearon, pero el torneo no avanzó a fase de grupos: ${errFase.message}` }
+  }
 
   return { success: true, numGrupos }
 }
@@ -1374,18 +1434,31 @@ export async function finalizarTorneo(params: { torneoId: string }) {
   }).eq('id', params.torneoId)
   if (error) return { error: `No se pudo finalizar el torneo: ${error.message}` }
 
-  // Limpiar externos del torneo (best-effort, no falla la finalización)
-  void limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId).catch(() => {})
+  // La limpieza de externos se ESPERA. Antes salía como promesa suelta después
+  // del `return`: en un runtime serverless la función puede terminar antes de
+  // que corra, así que la limpieza era intermitente —a veces entera, a veces a
+  // medias, a veces nunca— y nadie se enteraba de cuál de las tres.
+  //
+  // Sigue sin poder tumbar la finalización (el torneo YA está finalizado y eso
+  // no se revierte por una limpieza), pero ahora, si algo queda sin limpiar, se
+  // devuelve como aviso en vez de desaparecer en un `.catch(() => {})`.
+  const avisoLimpieza = await limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId)
+    .catch(e => e instanceof Error ? e.message : 'No se pudo limpiar a los jugadores externos')
 
-  return { success: true }
+  return avisoLimpieza ? { success: true, aviso: avisoLimpieza } : { success: true }
 }
 
-async function limpiarExternosDeTorneo(torneoId: string, campeonId: string | null, subcampeonId: string | null) {
+/** Devuelve null si limpió todo, o un aviso legible si algo quedó sin limpiar. */
+async function limpiarExternosDeTorneo(
+  torneoId: string,
+  campeonId: string | null,
+  subcampeonId: string | null,
+): Promise<string | null> {
   const admin = createAdminClient()
 
   // IDs de grupos de este torneo
   const { data: grupos } = await admin.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
-  if (!grupos?.length) return
+  if (!grupos?.length) return null
 
   const grupoIds = grupos.map(g => g.id)
 
@@ -1395,12 +1468,12 @@ async function limpiarExternosDeTorneo(torneoId: string, campeonId: string | nul
     .select('jugador_id, jugadores!inner(id)')
     .in('grupo_id', grupoIds)
     .eq('jugadores.es_externo', true)
-  if (!rows?.length) return
+  if (!rows?.length) return null
 
   // Excluir campeón y subcampeón
   const keep = new Set([campeonId, subcampeonId].filter(Boolean))
   const candidatos = [...new Set((rows as { jugador_id: string }[]).map(r => r.jugador_id).filter(id => !keep.has(id)))]
-  if (!candidatos.length) return
+  if (!candidatos.length) return null
 
   // Excluir los que también están en otros torneos
   const { data: enOtros } = await (admin as any)
@@ -1431,11 +1504,27 @@ async function limpiarExternosDeTorneo(torneoId: string, campeonId: string | nul
   }
 
   const aEliminar = candidatos.filter(id => !enOtrosIds.has(id) && !conResultado.has(id))
-  if (!aEliminar.length) return
+  if (!aEliminar.length) return null
 
-  await admin.from('grupo_jugadores').delete().in('jugador_id', aEliminar)
-  // torneo_partidos tiene ON DELETE SET NULL → se actualiza automáticamente al borrar jugadores
-  await admin.from('jugadores').delete().in('id', aEliminar)
+  // Acotado a los grupos DE ESTE TORNEO. Antes borraba por `jugador_id` a secas:
+  // hoy no dañaba porque `aEliminar` ya venía filtrado, pero es la misma forma
+  // sin acotar que produjo las migraciones 213/214, y un cambio en el filtro de
+  // arriba la volvía peligrosa sin que nada avisara.
+  const { error: errMiembros } = await admin.from('grupo_jugadores')
+    .delete().in('grupo_id', grupoIds).in('jugador_id', aEliminar)
+  if (errMiembros) {
+    // El trigger de la 215 llega acá cuando algo quedó con resultado: es la red
+    // de seguridad haciendo su trabajo, no un fallo que haya que esconder.
+    return `El torneo se finalizó, pero no se pudo retirar a ${aEliminar.length} jugador(es) externo(s): ${errMiembros.message}`
+  }
+
+  // torneo_partidos tiene ON DELETE SET NULL → se actualiza al borrar la ficha.
+  const { error: errFichas } = await admin.from('jugadores').delete().in('id', aEliminar)
+  if (errFichas) {
+    return `El torneo se finalizó y los externos salieron de los grupos, pero sus fichas no se pudieron borrar: ${errFichas.message}`
+  }
+
+  return null
 }
 
 export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
@@ -1919,12 +2008,24 @@ export async function inscribirEnMesa(params: {
   } else {
     // El usuario escribió el nombre manualmente (Enter sin seleccionar dropdown)
     // → buscar coincidencia EXACTA primero, si no hay → crear externo
-    const { data: exacto } = await supabase
+    //
+    // `limit(2)` y no `maybeSingle()`: con dos homónimos, maybeSingle devuelve
+    // ERROR y `data` en null. Ese error no se veía, así que el flujo caía en la
+    // rama "no existe" y creaba una TERCERA ficha — el duplicado que la
+    // migración 190 tuvo que limpiar. Con dos coincidencias no se adivina:
+    // se pide elegir del autocompletado, que manda un id sin ambigüedad.
+    const { data: coincidencias, error: errBuscar } = await supabase
       .from('jugadores').select('id,nombre')
       .ilike('nombre', nombreBuscado)
       .eq('club_id', perfil.club_id)
-      .maybeSingle()
+      .limit(2)
+    if (errBuscar) return { error: 'No se pudo buscar al jugador: ' + errBuscar.message }
 
+    if ((coincidencias?.length ?? 0) > 1) {
+      return { error: `Hay más de un jugador llamado "${nombreBuscado}". Elegilo de la lista que aparece al escribir, para no crear una ficha repetida.` }
+    }
+
+    const exacto = coincidencias?.[0] ?? null
     if (exacto) {
       jugadorId = exacto.id
       jugadorNombre = exacto.nombre ?? jugadorNombre
@@ -1998,16 +2099,23 @@ export async function inscribirEnMesa(params: {
 
 export async function archivarTorneo(params: { torneoId: string }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
-  if (authErr || !supabase) return { error: authErr }
+  if (authErr || !supabase || !perfil) return { error: authErr ?? 'Acceso denegado' }
+  // Sin club, el `.eq('club_id', null)` de abajo no matchea nada: el update
+  // afectaba 0 filas y la función respondía éxito igual.
+  if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
   const { torneoId } = params
 
-  const { error } = await supabase
+  // `.select('id')` para saber si de verdad archivó algo: un update filtrado
+  // por RLS no da error, simplemente afecta 0 filas.
+  const { data, error } = await supabase
     .from('torneos')
     .update({ estado: 'archivado' })
     .eq('id', torneoId)
-    .eq('club_id', perfil!.club_id!)
+    .eq('club_id', perfil.club_id)
+    .select('id')
   if (error) return { error: `No se pudo archivar: ${error.message}` }
+  if (!data?.length) return { error: 'Torneo no encontrado en tu club' }
 
   return { success: true }
 }
@@ -2020,20 +2128,35 @@ export async function quitarJugadorDeMesa(params: { torneoId: string; jugadorId:
 
   const { torneoId, jugadorId } = params
 
-  const { data: grupos } = await supabase
+  // SOLO el grupo MESA, que es la bolsa de inscripción. Antes el filtro era
+  // "todos los grupos de este torneo": llamada sobre alguien ya repartido a un
+  // grupo real, lo sacaba de ahí sin regenerar el round robin ni limpiar sus
+  // cabezas de serie, y el grupo quedaba con partidos nombrando a alguien que
+  // ya no figuraba inscrito. Para sacar a alguien de un grupo real está
+  // `quitarJugadorDeGrupo`, que sí hace las dos cosas.
+  const { data: grupoMesa } = await supabase
     .from('torneo_grupos')
     .select('id')
     .eq('torneo_id', torneoId)
+    .eq('nombre', 'MESA')
+    .maybeSingle()
 
-  if (!grupos?.length) return { success: true }
+  if (!grupoMesa) return { success: true }
 
   const { error } = await supabase
     .from('grupo_jugadores')
     .delete()
     .eq('jugador_id', jugadorId)
-    .in('grupo_id', grupos.map(g => g.id))
+    .eq('grupo_id', grupoMesa.id)
 
   if (error) return { error: `No se pudo quitar al jugador: ${error.message}` }
+
+  // Sale del torneo: deja de ser cabeza de serie, igual que en
+  // `quitarJugadorDeGrupo`. `torneo_pagos` NO se toca — si ya pagó, la
+  // devolución la decide el admin en Finanzas.
+  await supabase.from('torneo_cabezas_serie')
+    .delete().eq('torneo_id', torneoId).eq('jugador_id', jugadorId)
+
   return { success: true }
 }
 

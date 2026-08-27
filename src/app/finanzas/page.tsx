@@ -33,7 +33,11 @@ const catLabel: Record<string, string> = {
   clase_extraordinaria:'Clase extra', otro_ingreso:'Otro ingreso',
   sueldo_profesor:'Sueldo profesor', sueldo_staff:'Sueldo staff',
   material_deportivo:'Material deportivo', servicios_basicos:'Servicios básicos',
-  mantenimiento:'Mantenimiento', otro_gasto:'Otro gasto'
+  mantenimiento:'Mantenimiento', otro_gasto:'Otro gasto',
+  // La escribe `corregir_mensualidad` al corregir una cuota de un mes cerrado:
+  // entra como ingreso si el ajuste es a favor y como gasto si es en contra.
+  // Faltaba acá y la fila se mostraba con la clave cruda.
+  ajuste_mensualidad:'Ajuste de mensualidad',
 }
 
 // La clase extra no está en esta lista a propósito: se cobra desde su propia

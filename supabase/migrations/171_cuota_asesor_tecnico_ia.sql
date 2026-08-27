@@ -1,4 +1,4 @@
-﻿BEGIN;
+BEGIN;
 SELECT _migracion_nueva('171_cuota_asesor_tecnico_ia');
 
 -- Auditoría de consultas al asesor técnico IA (no guarda la respuesta completa

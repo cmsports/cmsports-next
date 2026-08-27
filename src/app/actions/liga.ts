@@ -18,6 +18,7 @@ import {
   type PartidoExistente,
   type RestriccionDisponibilidad,
 } from '@/lib/domain/liga'
+import { esUuid } from '@/lib/domain/uuid'
 import { requireAdminClub } from '@/lib/auth/require'
 
 // Calcula el diff de cambiar jugadores en una división con fixture ya generado.
@@ -108,16 +109,18 @@ export async function asignarJugadoresDivision(params: {
   // cuando el admin lo pida.
   if (!division.fixture_generado) {
     if (jugadoresRemovidos.length > 0) {
-      await supabase
+      const { error } = await supabase
         .from('liga_division_jugadores')
         .delete()
         .eq('division_id', divisionId)
         .in('jugador_id', jugadoresRemovidos)
+      if (error) return { error: `No se pudo sacar a los jugadores de la división: ${error.message}` }
     }
     if (jugadoresAgregados.length > 0) {
-      await supabase.from('liga_division_jugadores').insert(
+      const { error } = await supabase.from('liga_division_jugadores').insert(
         jugadoresAgregados.map(jugadorId => ({ division_id: divisionId, jugador_id: jugadorId })),
       )
+      if (error) return { error: `No se pudo agregar a los jugadores a la división: ${error.message}` }
     }
     return {
       success: true,
@@ -164,18 +167,25 @@ export async function asignarJugadoresDivision(params: {
     return { error: `No se puede sacar a alguien que ya jugó partidos en esta división: ${lista || jugadoresConResultado.join(', ')}` }
   }
 
-  // Actualizar liga_division_jugadores (solo los que cambian, ninguno con resultado)
+  // Actualizar liga_division_jugadores (solo los que cambian, ninguno con resultado).
+  //
+  // Cada paso revisa su error. Antes no lo hacía ninguno: si el insert fallaba,
+  // la división quedaba sin esos jugadores pero los partidos se creaban igual
+  // más abajo, calculados desde la lista nueva. Y el modal de confirmación
+  // informaba números que salían del array local, no de lo que la base aceptó.
   if (jugadoresRemovidos.length > 0) {
-    await supabase
+    const { error } = await supabase
       .from('liga_division_jugadores')
       .delete()
       .eq('division_id', divisionId)
       .in('jugador_id', jugadoresRemovidos)
+    if (error) return { error: `No se pudo sacar a los jugadores de la división: ${error.message}` }
   }
   if (jugadoresAgregados.length > 0) {
-    await supabase.from('liga_division_jugadores').insert(
+    const { error } = await supabase.from('liga_division_jugadores').insert(
       jugadoresAgregados.map(jugadorId => ({ division_id: divisionId, jugador_id: jugadorId })),
     )
+    if (error) return { error: `No se pudo agregar a los jugadores a la división: ${error.message}` }
   }
 
   const { partidosNuevos, partidosAAnular } = calcularDiffDivision(
@@ -195,13 +205,21 @@ export async function asignarJugadoresDivision(params: {
     ))
     .filter((p): p is (typeof allPartidos)[number] => !!p)
     .map(p => p.id)
+  let partidosAnulados = 0
   if (idsAAnular.length > 0) {
-    await db.from('liga_partidos').update({ deleted_at: new Date().toISOString() }).in('id', idsAAnular)
+    const { data, error } = await db
+      .from('liga_partidos')
+      .update({ deleted_at: new Date().toISOString() })
+      .in('id', idsAAnular)
+      .select('id')
+    if (error) return { error: `No se pudieron anular los partidos que quedaron sin jugador: ${error.message}` }
+    partidosAnulados = (data ?? []).length
   }
 
   // Crear partidos nuevos para pares que no existían
+  let partidosCreados = 0
   if (partidosNuevos.length > 0) {
-    await supabase.from('liga_partidos').insert(
+    const { data, error } = await supabase.from('liga_partidos').insert(
       partidosNuevos.map(({ a, b }, idx) => ({
         liga_id: division.liga_id,
         division_id: divisionId,
@@ -209,22 +227,27 @@ export async function asignarJugadoresDivision(params: {
         jugador_b_id: b,
         orden_fixture: allPartidos.length + idx,
       })),
-    )
+    ).select('id')
+    if (error) return { error: `No se pudieron crear los partidos nuevos: ${error.message}` }
+    partidosCreados = (data ?? []).length
   }
 
   // Mantener fixture_generado = true si quedan partidos activos
-  const hayPartidos = allPartidos.length - partidosAAnular.length + partidosNuevos.length > 0
+  const hayPartidos = allPartidos.length - partidosAnulados + partidosCreados > 0
   if (!hayPartidos) {
-    await supabase.from('liga_divisiones').update({ fixture_generado: false }).eq('id', divisionId)
+    const { error } = await supabase.from('liga_divisiones').update({ fixture_generado: false }).eq('id', divisionId)
+    if (error) return { error: `Los jugadores se actualizaron, pero la división quedó marcada con fixture: ${error.message}` }
   }
 
+  // Los conteos salen de lo que la base devolvió, no de la longitud del array
+  // que se le mandó: es lo que el modal de confirmación le muestra al admin.
   return {
     success: true,
     totalJugadores: nuevosIds.length,
     jugadoresAgregados: jugadoresAgregados.length,
     jugadoresRemovidos: jugadoresRemovidos.length,
-    partidosCreados: partidosNuevos.length,
-    partidosAnulados: partidosAAnular.length,
+    partidosCreados,
+    partidosAnulados,
   }
 }
 
@@ -412,6 +435,12 @@ export async function retirarJugadorDeLiga(params: {
   const { ligaId, jugadorId, modo } = params
   const db = supabase as any
 
+  // El `.or()` de abajo interpola `jugadorId` en el lenguaje de filtros de
+  // PostgREST. Sin esta guarda, un id con comas ensancha el filtro y el retiro
+  // resuelve por walkover partidos que no eran de esta persona. Ver
+  // lib/domain/uuid.ts.
+  if (!esUuid(jugadorId)) return { error: 'Jugador inválido' }
+
   // Sólo lo pendiente. Un partido finalizado o ya resuelto por walkover es
   // historia y no se reescribe.
   const { data: pendientes, error: leerErr } = await db
@@ -485,6 +514,8 @@ export async function retirarJugadorDeLiga(params: {
 export async function contarPartidosPendientesJugador(params: { ligaId: string; jugadorId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  // Mismo motivo que en retirarJugadorDeLiga: va dentro de un `.or()`.
+  if (!esUuid(params.jugadorId)) return { error: 'Jugador inválido' }
 
   const { count, error } = await (supabase as any)
     .from('liga_partidos')

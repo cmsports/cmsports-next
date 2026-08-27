@@ -32,6 +32,7 @@ import {
   clasificarGrupoIttf,
   etiquetaCierreOficial,
   formatearSets,
+  gamesParaGanarFormato,
   type AlcanceSancionOficial,
   type PartidoOficialStats,
   type SetMarcador,
@@ -653,7 +654,12 @@ export default function EventoOficialPage() {
         esWalkover: p.es_walkover,
         tipoCierre: p.tipo_cierre,
       }))
-    return clasificarGrupoIttf(ids, statsInput)
+    // El formato del evento decide cuántos juegos vale un W.O. sin sets.
+    const formato = evento?.formato_partido
+    const games = gamesParaGanarFormato(
+      formato === 'bo3' || formato === 'bo7' ? formato : 'bo5',
+    )
+    return clasificarGrupoIttf(ids, statsInput, games)
   }
 
   async function exportarExcel() {
@@ -1238,8 +1244,17 @@ export default function EventoOficialPage() {
                                   puedeCorregir={esAdmin && evento.fase !== 'finalizado'}
                                   guardando={guardandoRes === p.id}
                                   sancionesResumen={sancionesDePartido(p.id)}
+                                  /* eslint-disable react-hooks/refs --
+                                     `guardarResultado` y `corregir` llaman a
+                                     `recargarEvento()`, que lee `syncLlavesRef`. El
+                                     compilador de React marca "puede leer una ref en
+                                     render" porque no distingue una función que se
+                                     PASA de una que se EJECUTA: estas dos solo corren
+                                     desde el manejador del botón, nunca durante el
+                                     render. Revisado en la auditoría del 2026-08-26. */
                                   onGuardar={(opts) => guardarResultado(p.id, opts)}
                                   onCorregir={(ganadorId, setsTexto) => corregir(p.id, ganadorId, setsTexto)}
+                                  /* eslint-enable react-hooks/refs */
                                   onError={setErrorMsg}
                                 />
                               )

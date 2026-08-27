@@ -176,6 +176,10 @@ export default function SolicitudesPage() {
     })
     setAprobando(false)
     if (res.error) { setErrorAprobar(res.error); return }
+    // El jugador quedó creado, pero algo secundario pudo fallar (hoy: la
+    // matrícula, que si no entró a Finanzas deja la ficha marcada como
+    // pendiente). Se avisa en vez de dejarlo pasar como éxito limpio.
+    if (res.aviso) alert(res.aviso)
     setErrorAprobar('')
     setModalAprobar(null)
     void cargarSolicitudes()

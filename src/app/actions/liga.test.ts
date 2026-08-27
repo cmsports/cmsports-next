@@ -73,6 +73,9 @@ describe('acciones críticas de liga', () => {
 
 // El retiro toca partidos de verdad y no se deshace solo, así que lo que
 // importa verificar es a quién le da los puntos y qué NO toca.
+// Los ids de este bloque tienen forma de UUID a propósito: `retirarJugadorDeLiga`
+// los interpola en un `.or()` de PostgREST, donde la coma es sintaxis, y por eso
+// valida el formato antes de construir el filtro (ver lib/domain/uuid.ts).
 describe('retirarJugadorDeLiga', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -86,22 +89,22 @@ describe('retirarJugadorDeLiga', () => {
 
   it('en walkover el partido se lo lleva el rival, nunca el que se retira', async () => {
     const fake = conPendientes([
-      { id: 'p1', jugador_a_id: 'j1', jugador_b_id: 'rival-A' },
-      { id: 'p2', jugador_a_id: 'rival-B', jugador_b_id: 'j1' },
+      { id: 'p1', jugador_a_id: '11111111-1111-4111-8111-111111111111', jugador_b_id: '22222222-2222-4222-8222-222222222222' },
+      { id: 'p2', jugador_a_id: '33333333-3333-4333-8333-333333333333', jugador_b_id: '11111111-1111-4111-8111-111111111111' },
     ])
 
-    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'walkover' })
+    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: '11111111-1111-4111-8111-111111111111', modo: 'walkover' })
 
     expect(res).toMatchObject({ success: true, partidosAfectados: 2 })
     const wo = fake.escrituras('liga_partidos').filter(e => e.estado === 'walkover')
-    expect(wo.map(e => e.ganador_id)).toEqual(['rival-A', 'rival-B'])
-    expect(wo.map(e => e.ganador_id)).not.toContain('j1')
+    expect(wo.map(e => e.ganador_id)).toEqual(['22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333'])
+    expect(wo.map(e => e.ganador_id)).not.toContain('11111111-1111-4111-8111-111111111111')
   })
 
   it('en modo eliminar borra los pendientes en vez de darlos por ganados', async () => {
-    const fake = conPendientes([{ id: 'p1', jugador_a_id: 'j1', jugador_b_id: 'rival-A' }])
+    const fake = conPendientes([{ id: 'p1', jugador_a_id: '11111111-1111-4111-8111-111111111111', jugador_b_id: '22222222-2222-4222-8222-222222222222' }])
 
-    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'eliminar' })
+    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: '11111111-1111-4111-8111-111111111111', modo: 'eliminar' })
 
     expect(res).toMatchObject({ success: true, partidosAfectados: 1 })
     const escrito = fake.escrituras('liga_partidos')
@@ -112,11 +115,11 @@ describe('retirarJugadorDeLiga', () => {
   it('deja marcado el retiro para que no vuelva a entrar en el horario', async () => {
     const fake = conPendientes([])
 
-    await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'walkover' })
+    await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: '11111111-1111-4111-8111-111111111111', modo: 'walkover' })
 
     // Restricción total: ninguna fecha, ninguna hora.
     expect(fake.escrituras('liga_restricciones')[0]).toMatchObject({
-      liga_id: 'liga-1', jugador_id: 'j1',
+      liga_id: 'liga-1', jugador_id: '11111111-1111-4111-8111-111111111111',
       fecha_numero: null, hora_desde: null, hora_hasta: null, motivo: 'retiro',
     })
   })
@@ -124,7 +127,7 @@ describe('retirarJugadorDeLiga', () => {
   it('no escribe nada sobre los partidos si no quedaban pendientes', async () => {
     const fake = conPendientes([])
 
-    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: 'j1', modo: 'eliminar' })
+    const res = await retirarJugadorDeLiga({ ligaId: 'liga-1', jugadorId: '11111111-1111-4111-8111-111111111111', modo: 'eliminar' })
 
     expect(res).toMatchObject({ partidosAfectados: 0 })
     expect(fake.escrituras('liga_partidos')).toHaveLength(0)

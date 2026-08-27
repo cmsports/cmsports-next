@@ -35,6 +35,41 @@ Migraciones anuladas que **nunca** deben re-ejecutarse (tienen guarda, no
 quitarla): `089_arranque_limpio_buin`, `060_limpiar_jugadores_externos`,
 `081_baja_jugadores_retirados`.
 
+## Toda escritura revisa su error
+
+En Supabase una escritura que falla **no lanza**: devuelve `{ error }`. Y un
+`DELETE`/`UPDATE` filtrado por RLS ni siquiera da error — afecta 0 filas y
+listo. Ignorar ese `error` produce el peor resultado posible: la función
+responde `{ success: true }` con la base a medio escribir.
+
+```ts
+// MAL: si falla, los grupos quedan vacíos y los partidos se crean igual.
+await supabase.from('grupo_jugadores').insert(inserts)
+
+// BIEN: y los partidos se arman desde lo que la base confirmó, no desde el array.
+const { data: creados, error } = await supabase
+  .from('grupo_jugadores').insert(inserts).select('grupo_id, jugador_id, orden')
+if (error) return { error: 'No se pudo inscribir a los jugadores: ' + error.message }
+```
+
+Esto es lo que dejó a ocho jugadores fuera de sus grupos en el torneo TC y
+obligó a las migraciones 213 y 214 a reponerlos a mano.
+
+`src/lib/escrituras-revisadas.test.ts` lo comprueba solo. Las excepciones
+legítimas (reversiones, limpiezas best-effort) van declaradas ahí **con el
+motivo escrito**; la prueba falla si aparecen nuevas sin declarar.
+
+Lo mismo con las rutas: `src/lib/auth/rutas-protegidas.test.ts` cruza cada
+`page.tsx` contra las listas de `proxy.ts`, porque tres veces quedó una
+pantalla sin protección de servidor y las tres se arreglaron a mano.
+
+## Ids del cliente dentro de un `.or()`
+
+`.eq('id', x)` es seguro. `.or(...)` no: recibe un string en el lenguaje de
+filtros de PostgREST, donde la coma separa condiciones. Un id que llega del
+navegador se valida con `esUuid()` (`src/lib/domain/uuid.ts`) **antes** de
+interpolarlo, o el filtro se ensancha.
+
 ## Reglas de datos
 
 - **Fechas: siempre hora de Chile.** `current_date` y `toISOString()` dan UTC y

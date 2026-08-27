@@ -75,6 +75,7 @@ export function ganadorDesdeSets(
 function acumularPartido(
   stats: Record<string, StatsOficial>,
   p: PartidoOficialStats,
+  gamesParaGanar = 3,
 ) {
   if (!p.ganador) return
   const perdedor = p.inscritoA === p.ganador ? p.inscritoB : p.inscritoA
@@ -89,10 +90,17 @@ function acumularPartido(
 
   const sets = p.sets ?? []
   if (sets.length === 0 && p.esWalkover) {
-    sG.juegosGanados += 3
-    sG.puntosGanados += 33
-    sP.juegosPerdidos += 3
-    sP.puntosPerdidos += 33
+    // Los juegos y puntos del W.O. sin sets salen del formato del evento, no de
+    // un 3 fijo. En un bo3 el ganador se llevaba un juego de más y el
+    // sancionado uno de menos, y los desempates ITTF son justamente ratio de
+    // juegos y después ratio de puntos: un grupo empatado podía ordenarse al
+    // revés. `setsSinteticosWalkover` —la otra vía para lo mismo— siempre
+    // respetó `gamesParaGanar`; esta no.
+    const n = Math.max(1, gamesParaGanar)
+    sG.juegosGanados += n
+    sG.puntosGanados += n * 11
+    sP.juegosPerdidos += n
+    sP.puntosPerdidos += n * 11
     return
   }
 
@@ -139,6 +147,7 @@ function compararEmpatados(
 function statsDeSubconjunto(
   ids: string[],
   partidos: PartidoOficialStats[],
+  gamesParaGanar = 3,
 ): Record<string, StatsOficial> {
   const set = new Set(ids)
   const stats: Record<string, StatsOficial> = {}
@@ -156,16 +165,22 @@ function statsDeSubconjunto(
   }
   for (const p of partidos) {
     if (!set.has(p.inscritoA) || !set.has(p.inscritoB)) continue
-    acumularPartido(stats, p)
+    acumularPartido(stats, p, gamesParaGanar)
   }
   return stats
 }
 
+/**
+ * @param gamesParaGanar Juegos que hacen falta para ganar en este evento
+ *   (2 en bo3, 3 en bo5, 4 en bo7). Solo interviene en los W.O. sin sets, que
+ *   son los únicos partidos cuyo marcador hay que inventar.
+ */
 export function clasificarGrupoIttf(
   inscritoIds: string[],
   partidos: PartidoOficialStats[],
+  gamesParaGanar = 3,
 ): StatsOficial[] {
-  const stats = statsDeSubconjunto(inscritoIds, partidos)
+  const stats = statsDeSubconjunto(inscritoIds, partidos, gamesParaGanar)
   const ordenOriginal = new Map(inscritoIds.map((id, i) => [id, i]))
 
   const porPuntos = new Map<number, StatsOficial[]>()
@@ -183,7 +198,7 @@ export function clasificarGrupoIttf(
       continue
     }
     const ids = bloque.map(s => s.inscritoId)
-    const subset = statsDeSubconjunto(ids, partidos)
+    const subset = statsDeSubconjunto(ids, partidos, gamesParaGanar)
     bloque.sort((a, b) => {
       const cmp = compararEmpatados(a, b, subset)
       if (cmp !== 0) return cmp

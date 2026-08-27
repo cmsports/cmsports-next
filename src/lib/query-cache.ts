@@ -19,11 +19,22 @@ const inflight = new Map<string, Inflight<unknown>>()
 // nuevo y el caché le devuelve los viejos—, que se ve igual que un bug de datos.
 const fuentes = new Map<string, string[]>()
 
-export function getCached<T>(key: string): T | null {
+// `null` es un valor legítimo para una consulta (un jugador sin ficha, un
+// torneo sin final). Devolver `null` tanto para "no está en caché" como para
+// "está y vale null" hacía que esas consultas nunca acertaran: se repetían en
+// cada render hasta que algo más las llenara. El sentinel distingue los dos.
+const MISS = Symbol('cache-miss')
+
+function leer<T>(key: string): T | typeof MISS {
   const e = store.get(key) as Entry<T> | undefined
-  if (!e) return null
-  if (Date.now() - e.ts > e.ttl) { store.delete(key); return null }
+  if (!e) return MISS
+  if (Date.now() - e.ts > e.ttl) { store.delete(key); return MISS }
   return e.data
+}
+
+export function getCached<T>(key: string): T | null {
+  const v = leer<T>(key)
+  return v === MISS ? null : v
 }
 
 export function setCached<T>(key: string, data: T, ttl = DEFAULT_TTL): void {
@@ -69,8 +80,8 @@ export async function cachedFetch<T>(
   ttl = DEFAULT_TTL,
   tablas: string[] = [],
 ): Promise<T> {
-  const hit = getCached<T>(key)
-  if (hit !== null) return hit
+  const hit = leer<T>(key)
+  if (hit !== MISS) return hit
 
   if (inflight.has(key)) return inflight.get(key) as Promise<T>
 

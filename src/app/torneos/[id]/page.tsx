@@ -581,6 +581,10 @@ export default function TorneoDetallePage() {
     if (!confirm('¿Finalizar el torneo?')) return
     const res = await finalizarTorneoAction({ torneoId })
     if (res.error) { alert(res.error); return }
+    // El torneo se finalizó. Si la limpieza de externos quedó a medias, hay que
+    // decirlo: antes esa limpieza corría como promesa suelta con un
+    // `.catch(() => {})` y nadie se enteraba de que no había corrido.
+    if ('aviso' in res && res.aviso) alert(res.aviso)
     await cargarTorneo()
   }
 

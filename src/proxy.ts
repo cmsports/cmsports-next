@@ -7,23 +7,23 @@ import { esCuentaDemo } from '@/lib/auth/demo'
 import { pathCanonicoMiAcceso } from '@/lib/domain/clubSlug'
 import type { Database } from '@/types/database'
 
-const publicRoutes = ['/login', '/registro']
+export const publicRoutes = ['/login', '/registro']
 // Accesibles siempre, con o sin sesión — el link de invite/recovery crea sesión
 // justo al llegar y no debe redirigir antes de que el usuario fije su contraseña.
-const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
+export const authFlowRoutes = ['/crear-contrasena', '/recuperar-contrasena']
 
-const superadminRoutes = ['/superadmin']
+export const superadminRoutes = ['/superadmin']
 // '/credenciales' es admin-only: muestra contraseñas en texto plano. Se sumó
 // a la auditoría del 31 de julio — quedaba fuera de todas estas listas, así
 // que sin sesión el middleware la dejaba pasar en vez de mandarla a /login
 // (el propio componente igual redirige, pero un rato después y en el
 // navegador, no al toque en el servidor como el resto de las pantallas admin).
-const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/credenciales']
+export const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/credenciales']
 // El profesor necesita abrir el listado y la ficha para evaluar. Las acciones
 // administrativas dentro de esas pantallas siguen reservadas al admin.
-const staffRoutes = ['/jugadores']
-const profesorRoutes = ['/dashboard-profesor']
-const jugadorRoutes = ['/perfil', '/estado-cuenta', '/mi-horario']
+export const staffRoutes = ['/jugadores']
+export const profesorRoutes = ['/dashboard-profesor']
+export const jugadorRoutes = ['/perfil', '/estado-cuenta', '/mi-horario']
 // '/ranking' también quedaba fuera de todas las listas y por eso no
 // redirigía al login desde el servidor. Va acá y no en adminRoutes: el
 // jugador también entra a ver su propio ranking, filtrado por categoría.
@@ -31,7 +31,28 @@ const jugadorRoutes = ['/perfil', '/estado-cuenta', '/mi-horario']
 // '/tecnico/marcador', que es el marcador de mesa del torneo oficial:
 // abrirMarcadorOficial crea la fila y redirige ahí. El experimento se fue;
 // el marcador se queda.
-const anyAuthRoutes = ['/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda', '/configuracion', '/cuenta-bloqueada', '/ranking', '/tecnico']
+// Ojo con el matcheo: es `pathname === r || startsWith(r + '/')`. Por eso
+// '/torneos' NO cubre '/torneos-internos', y cada pantalla necesita su entrada.
+//
+// Las once que se sumaron acá quedaban fuera de TODAS las listas, así que sin
+// sesión el middleware las dejaba pasar y recién el cliente redirigía. Los
+// datos los protege RLS igual, pero es el mismo hueco que ya se había cerrado
+// a mano para '/credenciales' y '/ranking'. La prueba
+// `src/lib/auth/rutas-protegidas.test.ts` cruza las páginas contra estas
+// listas para que no vuelva a quedar ninguna afuera.
+export const anyAuthRoutes = [
+  '/torneos', '/calendario', '/asistencia', '/clases', '/horario', '/tienda',
+  '/configuracion', '/cuenta-bloqueada', '/ranking', '/tecnico',
+  '/torneos-internos', '/torneo-oficial', '/feedbacks', '/central-de-pago',
+  '/tienda-buin', '/tienda-profe', '/libro-profe', '/bibliografia-tdm',
+  '/redes-sociales',
+]
+
+// Públicas a propósito: la vista en vivo de un torneo se comparte por código y
+// el manual del juez es material de consulta. No llevan datos personales más
+// allá del nombre del jugador en el cuadro, que es lo que se proyecta en la
+// pantalla del club.
+export const rutasPublicasTorneo = ['/vivo', '/torneo-oficial/vivo', '/torneo-oficial/manual']
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'
@@ -59,6 +80,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
   if (/^\/asistencia\/[^/]+$/.test(pathname) || /^\/mi-acceso\/[^/]+$/.test(pathname)) {
+    return supabaseResponse
+  }
+
+  // La vista en vivo y el manual del juez van antes que cualquier protección:
+  // '/torneo-oficial' entero pasó a exigir sesión, y esas tres rutas cuelgan
+  // debajo pero se comparten con gente que no tiene cuenta.
+  if (rutasPublicasTorneo.some(r => pathname === r || pathname.startsWith(r + '/'))) {
     return supabaseResponse
   }
 
@@ -238,12 +266,19 @@ export async function proxy(request: NextRequest) {
         .from('jugadores').select('estado').eq('id', perfil.jugador_id).single()
       esBloqueado = jug?.estado === 'bloqueado'
     } else {
-      // jugador_id no vinculado en perfiles: buscar por email del usuario autenticado
-      const email = user.email ?? ''
+      // jugador_id no vinculado en perfiles: buscar por email del usuario autenticado.
+      //
+      // `.eq` sobre el correo en minúsculas, no `.ilike`. En LIKE el guion bajo
+      // es un comodín de un carácter y los correos con `_` son comunísimos:
+      // `juan_perez@x.cl` matcheaba también `juanXperez@x.cl`. Con dos
+      // coincidencias, `maybeSingle()` devuelve error y `jug` queda en null, o
+      // sea "no bloqueado" — el error fallaba hacia el lado permisivo, que es
+      // justo el que no corresponde en un control de morosidad.
+      const email = (user.email ?? '').trim().toLowerCase()
       if (email && perfil?.club_id) {
         const { data: jug } = await adminSsr
           .from('jugadores').select('estado')
-          .eq('club_id', perfil.club_id).ilike('email', email).maybeSingle()
+          .eq('club_id', perfil.club_id).eq('email', email).maybeSingle()
         esBloqueado = jug?.estado === 'bloqueado'
       }
     }

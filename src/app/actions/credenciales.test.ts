@@ -23,7 +23,15 @@ describe('listarCredenciales', () => {
     mocks.requireAdminClub.mockResolvedValue({ error: null, clubId: CLUB })
   })
 
-  it('mezcla perfiles con su espejo, y para los que no lo tienen genera la clave al vuelo', async () => {
+  // Abrir el informe es una LECTURA: no puede cambiarle la contraseña a nadie.
+  //
+  // Antes sí lo hacía. A todo perfil sin espejo se le generaba
+  // `nombreapellido123` y se le aplicaba en auth (el "alta silenciosa"), así
+  // que a quien había elegido su propia clave y no tenía espejo, mirar la
+  // pantalla lo dejaba afuera. Hoy esos aparecen con `passwordPlano: null` y el
+  // reseteo vive donde corresponde: detrás del botón "Resetear", explícito y
+  // de a uno. Cambiado en la auditoría del 2026-08-26.
+  it('mezcla perfiles con su espejo y NO le toca la clave a quien no lo tiene', async () => {
     const perfiles = {
       select: () => ({ eq: () => ({ order: () => ({ order: () => Promise.resolve({ data: [
         { id: 'u-admin', nombre: 'Ana', email: 'ana@x.cl', rol: 'admin', jugador_id: null },
@@ -52,16 +60,16 @@ describe('listarCredenciales', () => {
     const r = await listarCredenciales()
 
     expect(r.filas).toHaveLength(3)
-    // El admin sin espejo: se le generó y se muestra la clave.
-    expect(r.filas![0]).toMatchObject({ nombre: 'Ana', rol: 'admin', usuarioLogin: 'ana@x.cl', tipoLogin: 'email', passwordPlano: 'ana123' })
+    // El admin sin espejo aparece igual, con el login deducido de su ficha,
+    // pero SIN clave: no la tenemos y no se inventa una.
+    expect(r.filas![0]).toMatchObject({ nombre: 'Ana', rol: 'admin', usuarioLogin: 'ana@x.cl', tipoLogin: 'email', passwordPlano: null })
     // El jugador que ya tenía espejo trae la clave existente.
     expect(r.filas![1]).toMatchObject({ nombre: 'Colomba Gonzalez', usuarioLogin: '958730364', passwordPlano: 'colombagonzalez123' })
-    // El jugador sin espejo se genera y ya sale con clave.
-    expect(r.filas![2]).toMatchObject({ nombre: 'Sofia Gaete', usuarioLogin: '931266944', tipoLogin: 'celular', passwordPlano: 'sofiagaete123' })
-    // Se aplicó en auth para los dos que no tenían.
-    expect(updateUserById).toHaveBeenCalledWith('u-admin', { password: 'ana123' })
-    expect(updateUserById).toHaveBeenCalledWith('u-j2', { password: 'sofiagaete123' })
-    expect(espejos.upsert).toHaveBeenCalled()
+    // El jugador sin espejo también aparece, y también sin clave.
+    expect(r.filas![2]).toMatchObject({ nombre: 'Sofia Gaete', usuarioLogin: '931266944', tipoLogin: 'celular', passwordPlano: null })
+    // Lo que de verdad importa: no se tocó una sola contraseña en auth.
+    expect(updateUserById).not.toHaveBeenCalled()
+    expect(espejos.upsert).not.toHaveBeenCalled()
   })
 
   // El caso real: un reset (individual o masivo) cambió el email en auth y en

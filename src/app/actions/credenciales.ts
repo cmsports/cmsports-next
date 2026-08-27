@@ -40,12 +40,18 @@ export async function listarCredenciales(): Promise<{ error?: string; filas?: Fi
     admin.from('jugadores').select('id,nombre,telefono,rut').eq('club_id', clubId),
   ])
 
-  // Cualquier usuario sin espejo, o con un espejo cuyo login de tipo email ya
-  // no coincide con `perfiles.email` (la fuente de verdad de auth), se
-  // sincroniza en el acto.
+  // Se realinea el `usuario_login` de quien tenga un espejo con el correo
+  // viejo. Nada más: ABRIR ESTA PANTALLA NO CAMBIA NINGUNA CONTRASEÑA.
   //
-  // Sin espejo: se genera `nombreapellido123` y se aplica en auth. Es el alta
-  // silenciosa para que el admin nunca vea "no la tenemos".
+  // Antes sí lo hacía. A todo perfil sin espejo se le generaba
+  // `nombreapellido123` y se le aplicaba en auth — el "alta silenciosa", para
+  // que el admin nunca viera "no la tenemos". El costo era que a quien había
+  // cambiado su clave por su cuenta y no tenía espejo, mirar el informe se la
+  // reescribía y lo dejaba afuera. Una lectura no puede tener ese efecto.
+  //
+  // Hoy esos perfiles aparecen con `passwordPlano: null` y la pantalla ofrece
+  // el botón "Resetear", que hace lo mismo pero de forma explícita, a pedido y
+  // con un solo destinatario a la vista.
   //
   // Con espejo y login viejo: SOLO se corrige `usuario_login`. Regenerar la
   // contraseña por abrir el informe era el caso Colomba: el admin bajaba el
@@ -70,31 +76,19 @@ export async function listarCredenciales(): Promise<{ error?: string; filas?: Fi
   // basta con ABRIR esta pantalla para que se le reescriba la contraseña y
   // quede fuera de la plataforma sin que nadie haya pedido un reset.
   const faltantes = (perfiles ?? []).filter(p => p.rol !== 'superadmin' && desalineado(p))
-  const nuevosEspejos: Array<{ usuario_id: string; club_id: string; password_plano: string; usuario_login: string; tipo_login: string; actualizado_en: string }> = []
   for (const p of faltantes as { id: string; nombre: string; email: string | null; jugador_id: string | null }[]) {
+    const esp = espejoPorId.get(p.id)
+    // Sin espejo no se hace nada: se listará con `passwordPlano: null`.
+    if (!esp) continue
     const jug = p.jugador_id ? jugPorIdSync.get(p.jugador_id) : null
     const { login, tipo } = usuarioLoginDe({ email: p.email, telefono: jug?.telefono ?? null, rut: jug?.rut ?? null })
-    const esp = espejoPorId.get(p.id)
-    if (esp) {
-      await admin.from('credencial_visible').update({
-        usuario_login: login, tipo_login: tipo,
-      }).eq('usuario_id', p.id)
-      esp.usuario_login = login
-      esp.tipo_login = tipo
-      continue
-    }
-    const password = generarPasswordInicial(p.nombre)
-    const { error: upErr } = await admin.auth.admin.updateUserById(p.id, { password })
-    if (upErr) continue
-    nuevosEspejos.push({
-      usuario_id: p.id, club_id: clubId!, password_plano: password,
-      usuario_login: login, tipo_login: tipo, actualizado_en: new Date().toISOString(),
-    })
+    await admin.from('credencial_visible').update({
+      usuario_login: login, tipo_login: tipo,
+    }).eq('usuario_id', p.id)
+    esp.usuario_login = login
+    esp.tipo_login = tipo
   }
-  if (nuevosEspejos.length > 0) {
-    await admin.from('credencial_visible').upsert(nuevosEspejos)
-  }
-  const espejosFinal = [...(espejos ?? []), ...nuevosEspejos]
+  const espejosFinal = [...(espejos ?? [])]
 
   // Jugadores por id para completar el login cuando el perfil no lo tiene y
   // para preferir su nombre completo sobre el que quedó en perfiles.
@@ -337,16 +331,14 @@ export async function credencialDelJugador(jugadorId: string): Promise<{ error?:
   const { data: esp } = await admin.from("credencial_visible").select("password_plano,usuario_login").eq("usuario_id", perfil.id).maybeSingle()
   if (esp?.password_plano) return { login: esp.usuario_login, password: esp.password_plano, nombre: perfil.nombre }
 
-  // Sin espejo: se genera al vuelo y se guarda. Es la misma politica del
-  // listado: el admin nunca ve "no la tenemos", nosotros la generamos.
-  const password = generarPasswordInicial(perfil.nombre)
-  const { error: upErr } = await admin.auth.admin.updateUserById(perfil.id, { password })
-  if (upErr) return { error: "No se pudo generar la contraseña: " + upErr.message }
-
-  const { login, tipo } = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
-  await admin.from("credencial_visible").upsert({
-    usuario_id: perfil.id, club_id: clubId, password_plano: password,
-    usuario_login: login, tipo_login: tipo,
-  })
-  return { login, password, nombre: perfil.nombre }
+  // Sin espejo NO se genera nada. Antes sí: pedir el mensaje de WhatsApp de
+  // alguien le reescribía la contraseña. Si esa persona había elegido la suya,
+  // quedaba afuera por una acción que solo pretendía leer.
+  //
+  // Se devuelve el login —que sí se puede deducir de su ficha— y se avisa que
+  // hay que resetear a propósito desde el informe de credenciales.
+  const { login } = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
+  return {
+    error: `No tenemos guardada la contraseña de ${perfil.nombre} (la cambió por su cuenta o es anterior al informe). Usá "Resetear" en Credenciales para generarle una nueva.${login ? ` Su usuario es ${login}.` : ''}`,
+  }
 }

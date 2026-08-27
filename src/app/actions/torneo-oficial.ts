@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { esUuid } from '@/lib/domain/uuid'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import {
   construirLlavesLayoutNumerado,
@@ -284,6 +285,10 @@ export async function quitarInscritoOficial(params: {
   if (evento.fase !== 'inscripcion') {
     return { error: 'Los grupos ya están formados. Para sacar a alguien hay que rehacer el sorteo.' }
   }
+
+  // El `.or()` interpola el id dentro del lenguaje de filtros de PostgREST,
+  // donde la coma separa condiciones. Ver lib/domain/uuid.ts.
+  if (!esUuid(params.inscritoId)) return { error: 'Inscrito inválido' }
 
   // Cinturón y tirantes: si por lo que sea ya existiera un partido suyo, no se
   // borra. Es más barato que descubrir después una llave sin ganador.
@@ -675,7 +680,11 @@ async function aplicarResultadoOficialDb(db: AdminDb, clubId: string, params: Pa
       if (ev?.campeonato_id) await actualizarEstadoCampeonatoOficial(db, ev.campeonato_id, clubId)
     }
   } else if (evento?.fase === 'grupos') {
-    await sincronizarLlavesOficial({ eventoId: partido.evento_id })
+    // Con `db` y `clubId` ya resueltos: no reabre sesion, asi que funciona
+    // igual si quien cierra el partido es el profesor desde el marcador. Y el
+    // error se devuelve en vez de descartarse.
+    const errLlaves = await sincronizarLlavesOficialDb(db, clubId, partido.evento_id)
+    if (errLlaves.error) return { error: errLlaves.error }
   }
 
   return {}
@@ -709,6 +718,10 @@ async function aplicarWalkoverAlcance(params: {
       .select('id').eq('campeonato_id', params.campeonatoId).eq('club_id', params.clubId)
     eventoIds = (evs || []).map((e: { id: string }) => e.id)
   }
+
+  // Mismo motivo que arriba: va dentro de un `.or()`. Acá importa más todavía,
+  // porque lo que sigue resuelve por walkover todo lo que el filtro devuelva.
+  if (!esUuid(params.perdedorId)) return 'Sancionado inválido'
 
   const { data: pendientes } = await params.db.from('oficial_partidos')
     .select('id, inscrito_a_id, inscrito_b_id, evento_id, fase, orden, grupo_id')
@@ -1051,11 +1064,15 @@ async function calcularClasificadosOficial(
   if (!grupos?.length) return { clasificados: [] }
 
   const grupoIds = grupos.map((g: { id: string }) => g.id)
-  const [{ data: miembros }, { data: partidos }] = await Promise.all([
+  const [{ data: miembros }, { data: partidos }, { data: eventoFormato }] = await Promise.all([
     db.from('oficial_grupo_inscritos').select('grupo_id, inscrito_id').in('grupo_id', grupoIds),
     db.from('oficial_partidos').select('grupo_id, inscrito_a_id, inscrito_b_id, ganador_id, sets, es_walkover')
       .eq('evento_id', eventoId).eq('fase', 'grupos').in('grupo_id', grupoIds),
+    // El formato decide cuántos juegos vale un W.O. sin sets. Sin esto se
+    // acreditaban 3 fijos y en un bo3 el desempate por ratio salía sesgado.
+    db.from('oficial_eventos').select('formato_partido').eq('id', eventoId).maybeSingle(),
   ])
+  const gamesParaGanar = gamesParaGanarFormato(eventoFormato?.formato_partido || 'bo5')
 
   const clasificados: ClasificadoGrupo[] = []
 
@@ -1078,7 +1095,7 @@ async function calcularClasificadosOficial(
         esWalkover: p.es_walkover,
       }))
 
-    const stats = clasificarGrupoIttf(ids, statsInput)
+    const stats = clasificarGrupoIttf(ids, statsInput, gamesParaGanar)
     const todosJugados = jugados.length === partidosGrupo.length
 
     if (!todosJugados) {
@@ -1333,12 +1350,29 @@ async function sincronizarPreLlaveOficial(params: {
   return { faseInicial, bracketCreado: true }
 }
 
+/**
+ * Wrapper publico. La version interna toma `db` y `clubId` ya resueltos.
+ *
+ * Antes esto era una sola funcion que abria su propia sesion con
+ * `requireAdmin()`. El problema: `aplicarResultadoOficialDb` la llama al
+ * cerrar un partido de grupos, y esa funcion se alcanza desde el marcador con
+ * rol `profesor` o `superadmin` (`requireStaffMarcadorOficial`). Para esos
+ * dos, `requireAdmin()` devolvia 'Acceso denegado' y el retorno se descartaba:
+ * el resultado quedaba guardado y el cuadro no se armaba nunca, en silencio.
+ */
 export async function sincronizarLlavesOficial(params: { eventoId: string }): Promise<Resultado<{ faseInicial?: string; bracketCreado?: boolean }>> {
   const { error, supabase, perfil } = await requireAdmin()
   if (error || !supabase || !perfil?.club_id) return { error: error || 'Acceso denegado' }
-  const db = dbOficial(supabase)
+  return sincronizarLlavesOficialDb(dbOficial(supabase), perfil.club_id, params.eventoId)
+}
 
-  const calculo = await calcularClasificadosOficial(db, params.eventoId)
+async function sincronizarLlavesOficialDb(
+  db: AdminDb,
+  clubId: string,
+  eventoId: string,
+): Promise<Resultado<{ faseInicial?: string; bracketCreado?: boolean }>> {
+
+  const calculo = await calcularClasificadosOficial(db, eventoId)
   if ('error' in calculo) return calculo
   const clasificados = calculo.clasificados
 
@@ -1355,18 +1389,18 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
 
   const { data: eventoRaw, error: evSelErr } = await db.from('oficial_eventos')
     .select('fase, clasifican_por_grupo, modo_sorteo_llave, tamano_cuadro')
-    .eq('id', params.eventoId).maybeSingle()
+    .eq('id', eventoId).maybeSingle()
   let evento = eventoRaw as {
     fase: string; clasifican_por_grupo: number; modo_sorteo_llave?: string; tamano_cuadro?: number | null
   } | null
   if (evSelErr && String(evSelErr.message || '').includes('tamano_cuadro')) {
     const { data: ev2, error: err2 } = await db.from('oficial_eventos')
       .select('fase, clasifican_por_grupo, modo_sorteo_llave')
-      .eq('id', params.eventoId).maybeSingle()
+      .eq('id', eventoId).maybeSingle()
     if (err2 && String(err2.message || '').includes('modo_sorteo_llave')) {
       const { data: ev3 } = await db.from('oficial_eventos')
         .select('fase, clasifican_por_grupo')
-        .eq('id', params.eventoId).maybeSingle()
+        .eq('id', eventoId).maybeSingle()
       evento = ev3 ? { ...ev3, modo_sorteo_llave: 'fijo', tamano_cuadro: null } : null
     } else {
       evento = ev2 ? { ...ev2, tamano_cuadro: null } : null
@@ -1374,12 +1408,12 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
   } else if (evSelErr && String(evSelErr.message || '').includes('modo_sorteo_llave')) {
     const { data: ev2 } = await db.from('oficial_eventos')
       .select('fase, clasifican_por_grupo')
-      .eq('id', params.eventoId).maybeSingle()
+      .eq('id', eventoId).maybeSingle()
     evento = ev2 ? { ...ev2, modo_sorteo_llave: 'fijo', tamano_cuadro: null } : null
   }
   if (!evento) return { error: 'Evento no encontrado' }
 
-  const { data: grupos } = await db.from('oficial_grupos').select('id, orden').eq('evento_id', params.eventoId).order('orden')
+  const { data: grupos } = await db.from('oficial_grupos').select('id, orden').eq('evento_id', eventoId).order('orden')
   const numGrupos = grupos?.length ?? 0
   if (numGrupos < 2) return { error: 'Se requieren al menos 2 grupos' }
   if (numGrupos > OFICIAL_MAX_GRUPOS) {
@@ -1395,8 +1429,8 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
     }
     return sincronizarPreLlaveOficial({
       db,
-      clubId: perfil.club_id!,
-      eventoId: params.eventoId,
+      clubId: clubId,
+      eventoId: eventoId,
       eventoFase: evento.fase,
       grupos: grupos || [],
       clasificados,
@@ -1405,7 +1439,7 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
   }
 
   const { data: inscritosCabezas } = await db.from('oficial_inscritos')
-    .select('id, cabeza_numero').eq('evento_id', params.eventoId).not('cabeza_numero', 'is', null).order('cabeza_numero')
+    .select('id, cabeza_numero').eq('evento_id', eventoId).not('cabeza_numero', 'is', null).order('cabeza_numero')
   const { data: miembros } = await db.from('oficial_grupo_inscritos')
     .select('grupo_id, inscrito_id').in('grupo_id', (grupos || []).map((g: { id: string }) => g.id))
 
@@ -1444,7 +1478,7 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
 
   const { data: bracketExistente } = await db.from('oficial_partidos')
     .select('id, fase, orden, ganador_id, inscrito_a_id, inscrito_b_id, slot_a_grupo_id, slot_a_posicion, slot_b_grupo_id, slot_b_posicion')
-    .eq('evento_id', params.eventoId).neq('fase', 'grupos')
+    .eq('evento_id', eventoId).neq('fase', 'grupos')
 
   const gruposListosIdx = clasificados.map(c => idxByGrupoId.get(c.grupoId)).filter((i): i is number => i != null)
   const layoutBase = construirLlavesLayoutNumerado(numGrupos, cabezasSlots, gruposListosIdx)
@@ -1452,15 +1486,46 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
   const modoSorteo: ModoSorteoLlave = esModoSorteoLlave(evento.modo_sorteo_llave)
     ? evento.modo_sorteo_llave
     : 'fijo'
-  const layout = aplicarModoSorteoLlave(modoSorteo, layoutBase, numGrupos)
 
   const hayLlavesJugadas = !!bracketExistente?.some(llaveFueJugada)
-  const inicialesExistentes = (bracketExistente || []).filter((p: { fase: string }) => p.fase === layout.faseInicial)
+  // El sorteo solo cambia qué 2.º va en cada cupo B; la fase inicial la decide
+  // la cantidad de grupos, así que se puede evaluar el esqueleto contra la base.
+  const inicialesExistentes = (bracketExistente || []).filter((p: { fase: string }) => p.fase === layoutBase.faseInicial)
 
-  if (bracketExistente?.length && hayLlavesJugadas) {
-    // Esqueleto congelado si ya hubo juego real
-  } else if (bracketExistente?.length && !hayLlavesJugadas) {
-    const { error: delErr } = await db.from('oficial_partidos').delete().eq('evento_id', params.eventoId).neq('fase', 'grupos')
+  // ¿El cuadro que ya está en la base sirve tal como está?
+  //
+  // Sirve si tiene la misma cantidad de llaves que el layout de hoy y todas
+  // llevan su metadata de cupo (`slot_*`). Eso quiere decir que el esqueleto
+  // corresponde a esta cantidad de grupos y que cada llave sabe de qué cupo se
+  // alimenta, que es lo único que hace falta para ir rellenando jugadores.
+  const metadataCompleta = inicialesExistentes.length === layoutBase.matches.length
+    && inicialesExistentes.every((p: {
+      slot_a_grupo_id: string | null; slot_a_posicion: number | null
+      slot_b_grupo_id: string | null; slot_b_posicion: number | null
+    }) =>
+      !!p.slot_a_grupo_id && (p.slot_a_posicion === 1 || p.slot_a_posicion === 2) &&
+      ((!p.slot_b_grupo_id && p.slot_b_posicion == null) ||
+        (!!p.slot_b_grupo_id && (p.slot_b_posicion === 1 || p.slot_b_posicion === 2))),
+    )
+  const esqueletoSirve = !!bracketExistente?.length && metadataCompleta
+
+  // EL SORTEO SE HACE UNA SOLA VEZ.
+  //
+  // `aplicarModoSorteoLlave` con modo 'sorteo_segundos' usa Math.random(), y
+  // esta función se llama después de CADA resultado de grupo. Aplicarlo siempre
+  // significaba volver a sortear el cuadro con cada partido que terminaba: el
+  // sorteo que el juez anunció en la mesa cambiaba solo, sin que nadie lo
+  // pidiera. Con un esqueleto ya guardado, ese esqueleto ES el sorteo.
+  const layout = esqueletoSirve ? layoutBase : aplicarModoSorteoLlave(modoSorteo, layoutBase, numGrupos)
+
+  if (hayLlavesJugadas) {
+    // Esqueleto congelado si ya hubo juego real.
+  } else if (bracketExistente?.length && !esqueletoSirve) {
+    // Solo se rehace si el esqueleto NO sirve: cambió la cantidad de grupos, o
+    // le falta la metadata de cupos. Antes se borraba siempre que no hubiera
+    // una llave jugada, y eso se llevaba por delante los cupos movidos a mano
+    // con `intercambiarCuposOficial` en el siguiente resultado de grupo.
+    const { error: delErr } = await db.from('oficial_partidos').delete().eq('evento_id', eventoId).neq('fase', 'grupos')
     if (delErr) return { error: `No se pudo limpiar el cuadro anterior: ${delErr.message}` }
   }
 
@@ -1473,7 +1538,7 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
 
   const { data: existentes } = await db.from('oficial_partidos')
     .select('id, orden, inscrito_a_id, inscrito_b_id, ganador_id, slot_a_grupo_id, slot_a_posicion, slot_b_grupo_id, slot_b_posicion')
-    .eq('evento_id', params.eventoId).eq('fase', layout.faseInicial)
+    .eq('evento_id', eventoId).eq('fase', layout.faseInicial)
 
   if (!existentes?.length) {
     const inserts = layout.matches.map(m => {
@@ -1482,8 +1547,8 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
       const a = realDe(grupoA, m.a?.pos)
       const esBye = m.b === null
       return {
-        club_id: perfil.club_id,
-        evento_id: params.eventoId,
+        club_id: clubId,
+        evento_id: eventoId,
         fase: layout.faseInicial,
         inscrito_a_id: a,
         inscrito_b_id: esBye ? null : realDe(grupoB, m.b?.pos),
@@ -1526,11 +1591,11 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
 
   const { data: rondaInicial } = await db.from('oficial_partidos')
     .select('evento_id, fase, orden, ganador_id, inscrito_b_id')
-    .eq('evento_id', params.eventoId).eq('fase', layout.faseInicial).order('orden')
+    .eq('evento_id', eventoId).eq('fase', layout.faseInicial).order('orden')
 
   for (const p of rondaInicial || []) {
     if (p.ganador_id && !p.inscrito_b_id) {
-      const errProp = await propagarGanadorPlayoffOficial(db, p, p.ganador_id, perfil.club_id!)
+      const errProp = await propagarGanadorPlayoffOficial(db, p, p.ganador_id, clubId)
       if (errProp) return { error: errProp }
     }
   }
@@ -1538,10 +1603,10 @@ export async function sincronizarLlavesOficial(params: { eventoId: string }): Pr
   const todosCompletos = clasificados.length === numGrupos
   if (todosCompletos && evento.fase === 'grupos') {
     await db.from('oficial_eventos').update({ fase: 'llaves', actualizado_en: new Date().toISOString() })
-      .eq('id', params.eventoId)
+      .eq('id', eventoId)
   }
 
-  await renumerarPartidosEventoDb(db, params.eventoId)
+  await renumerarPartidosEventoDb(db, eventoId)
 
   return { faseInicial: layout.faseInicial, bracketCreado: true }
 }
@@ -2031,9 +2096,13 @@ export async function intercambiarCuposOficial(params: {
     if (!faseSig) continue
     const ordenSig = Math.floor(p.orden / 2)
     const slotField = p.orden % 2 === 0 ? 'inscrito_a_id' : 'inscrito_b_id'
-    await db.from('oficial_partidos')
+    // Si esto falla, el cupo de la ronda siguiente queda con el jugador viejo
+    // mientras el cuadro ya se movió. Es la misma clase de propagación que el
+    // módulo interno dejaba pasar en silencio (hallazgo A-03).
+    const { error: errProp } = await db.from('oficial_partidos')
       .update({ [slotField]: p.ganador_id ?? null })
       .eq('evento_id', eventoId).eq('fase', faseSig).eq('orden', ordenSig)
+    if (errProp) return { error: `Los cupos se intercambiaron, pero la ronda siguiente no se actualizó: ${errProp.message}` }
   }
 
   return {}

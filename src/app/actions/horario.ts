@@ -46,25 +46,35 @@ function fechasDeSemanaChile(): Record<string, string> {
   return result
 }
 
+/**
+ * Devuelve el mensaje de error, o null si guardó bien.
+ *
+ * Devuelve en vez de tragarse el error a propósito: las horas del reporte
+ * mensual salen del profesor vigente en cada fecha, así que un cierre que no se
+ * aplicó le sigue sumando horas a quien ya no dicta. Es la misma regla que el
+ * resto del archivo ya sigue y comenta: «es preferible el error a la mentira».
+ */
 async function guardarProfesores(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   bloqueId: string,
   profesorIds: string[],
-) {
+): Promise<string | null> {
   const quiero = [...new Set(profesorIds)].filter(Boolean)
 
-  const { data: abiertas } = await supabase.from('bloque_profesores')
+  const { data: abiertas, error: errLeer } = await supabase.from('bloque_profesores')
     .select('id,profesor_id').eq('bloque_id', bloqueId).is('vigente_hasta', null)
+  if (errLeer) return `No se pudo leer quién dicta el bloque: ${errLeer.message}`
   const actuales: string[] = (abiertas ?? []).map((r: { profesor_id: string }) => r.profesor_id)
 
   // Al que sale se le cierra el período: quién dictaba en marzo tiene que
   // seguir siendo consultable.
   const salen = (abiertas ?? []).filter((r: { profesor_id: string }) => !quiero.includes(r.profesor_id))
   if (salen.length > 0) {
-    await supabase.from('bloque_profesores')
+    const { error } = await supabase.from('bloque_profesores')
       .update({ vigente_hasta: cierreISO() })
       .in('id', salen.map((r: { id: string }) => r.id))
+    if (error) return `No se pudo dar de baja al profesor saliente: ${error.message}`
   }
 
   const entran = quiero.filter(id => !actuales.includes(id))
@@ -72,9 +82,12 @@ async function guardarProfesores(
     // vigente_desde explícito: el DEFAULT current_date de la base corre en UTC
     // y de noche asignaba al profe desde "mañana", perdiendo el día en el
     // reporte de horas.
-    await supabase.from('bloque_profesores')
+    const { error } = await supabase.from('bloque_profesores')
       .insert(entran.map(profesor_id => ({ bloque_id: bloqueId, profesor_id, vigente_desde: hoyISO() })))
+    if (error) return `No se pudo asignar al profesor: ${error.message}`
   }
+
+  return null
 }
 
 /**
@@ -277,6 +290,7 @@ export async function guardarGrupo(params: {
   for (const b of previos) {
     const pedido = quiero.get(b.dia_semana)
     if (pedido) {
+      const estabaCerrado = b.vigente_hasta !== null
       // Sigue estando: se actualiza el horario y se reabre si estaba cerrado.
       const { error } = await supabase.from('bloques_horario').update({
         hora_inicio: pedido.hora_inicio,
@@ -292,7 +306,25 @@ export async function guardarGrupo(params: {
           ? `Ya hay otro grupo en ${params.sede} el ${b.dia_semana} a las ${hhmm(pedido.hora_inicio)}`
           : `No se pudo guardar el ${b.dia_semana}: ${error.message}` }
       }
-      await guardarProfesores(supabase, b.id, params.profesorIds)
+      // Reabrir el día no reabría a su gente: al destildarlo se cierran las
+      // inscripciones (más abajo), y al volver a tildarlo solo se reabría el
+      // bloque. El grupo reaparecía vacío, y con la regla de "día vencido sin
+      // lista = falta" eso no es cosmético: nadie figura inscrito, así que
+      // nadie acumula la falta y los cupos muestran cero.
+      //
+      // Se reabren las inscripciones que se cerraron con este mismo bloque, y
+      // solo esas: las que ya estaban cerradas de antes (alguien que dejó el
+      // grupo por su cuenta) siguen cerradas.
+      if (estabaCerrado && b.vigente_hasta) {
+        const { error: errReabrir } = await supabase.from('bloque_jugadores')
+          .update({ vigente_hasta: null })
+          .eq('bloque_id', b.id).eq('vigente_hasta', b.vigente_hasta)
+        if (errReabrir) {
+          return { error: `El ${b.dia_semana} se reabrió pero sus inscripciones no: ${errReabrir.message}` }
+        }
+      }
+      const errProfes = await guardarProfesores(supabase, b.id, params.profesorIds)
+      if (errProfes) return { error: errProfes }
       quiero.delete(b.dia_semana)
     } else if (b.vigente_hasta === null) {
       // Se destildó: se cierra, junto con sus inscripciones.
@@ -324,7 +356,8 @@ export async function guardarGrupo(params: {
         ? `Ya hay otro grupo en ${params.sede} el ${d.dia_semana} a las ${hhmm(d.hora_inicio)}`
         : 'No se pudo crear el día: ' + error.message }
     }
-    await guardarProfesores(supabase, data.id, params.profesorIds)
+    const errProfes = await guardarProfesores(supabase, data.id, params.profesorIds)
+    if (errProfes) return { error: errProfes }
   }
 
   return { success: true, grupoId }
@@ -561,8 +594,17 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     sede:        actualizado?.sede ?? null,
   }
 
-  // El historial es lo que usa Inasistencias para saber qué días entrenaba
-  // alguien en una fecha pasada. Solo se corta el tramo si algo cambió.
+  // `jugador_horario_historial` es una bitácora de "qué días entrenaba esta
+  // persona en tal fecha".
+  //
+  // Aclaración importante, porque el comentario anterior decía otra cosa:
+  // HOY NO LA LEE NADIE. `grep -rn "jugador_horario_historial" src/` devuelve
+  // solo estas dos escrituras y las listas de respaldo. El cálculo real de
+  // asistencia (lib/domain/historialAsistencia.ts) deriva todo de las vigencias
+  // de `bloque_jugadores`, que es la fuente de verdad. Se mantiene como
+  // bitácora, no como insumo de ningún cálculo.
+  //
+  // Solo se corta el tramo si algo cambió.
   const cambio = campos.horario !== (jugador.horario ?? null) ||
     campos.entrena_lun !== (jugador.entrena_lun ?? false) ||
     campos.entrena_mar !== (jugador.entrena_mar ?? false) ||
@@ -573,12 +615,26 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   if (cambio) {
     // En Chile, no en UTC: desde las 20:00 el toISOString ya iba un día
     // adelante y el tramo del historial nacía mañana mientras la inscripción
-    // (hoyISO) nacía hoy — Inasistencias leía dos verdades distintas.
+    // (hoyISO) nacía hoy — las dos fechas de la misma operación no coincidían.
     const hoy  = hoyISO()
-    await supabase.from('jugador_horario_historial')
+
+    // Un tramo que arrancó HOY y ya se está reemplazando hoy no cubrió ningún
+    // día: se borra en vez de cerrarse. Antes se lo salteaba con
+    // `.lt('vigente_desde', hoy)`, así que cambiarle el horario a alguien dos
+    // veces el mismo día dejaba DOS tramos abiertos a la vez y la bitácora
+    // pasaba a decir dos cosas distintas sobre la misma fecha.
+    const { error: errHoy } = await supabase.from('jugador_horario_historial')
+      .delete()
+      .eq('jugador_id', params.jugadorId).is('vigente_hasta', null).gte('vigente_desde', hoy)
+    if (errHoy) return { error: 'No se pudo actualizar el historial de horarios: ' + errHoy.message }
+
+    // Y los tramos que sí cubrieron días se cierran con ayer, nunca con hoy.
+    const { error: errCierre } = await supabase.from('jugador_horario_historial')
       .update({ vigente_hasta: cierreISO() })
-      .eq('jugador_id', params.jugadorId).is('vigente_hasta', null).lt('vigente_desde', hoy)
-    await supabase.from('jugador_horario_historial').insert({
+      .eq('jugador_id', params.jugadorId).is('vigente_hasta', null)
+    if (errCierre) return { error: 'No se pudo cerrar el historial de horarios: ' + errCierre.message }
+
+    const { error: errNuevo } = await supabase.from('jugador_horario_historial').insert({
       jugador_id: params.jugadorId, club_id: clubId,
       horario: campos.horario,
       entrena_lun: campos.entrena_lun, entrena_mar: campos.entrena_mar,
@@ -586,6 +642,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
       entrena_vie: campos.entrena_vie,
       vigente_desde: hoy,
     })
+    if (errNuevo) return { error: 'No se pudo anotar el cambio en el historial de horarios: ' + errNuevo.message }
   }
 
   // Qué grupos quedaron sobre su cupo. El cupo no bloquea —el club a veces pasa
