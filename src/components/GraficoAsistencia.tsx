@@ -55,17 +55,17 @@ function generarOffsets(total: number) {
   return offs
 }
 
-type BloqueGrafico = { id: string; nombre: string; hora_inicio: string }
 type Jugador = { id: string; nombre: string }
 type Fila = { fecha: string; date: Date; jugador_id: string }
 
 /* Cache en memoria del módulo: persiste entre navegaciones de la SPA para
    que el gráfico aparezca al instante al volver a una página ya visitada. */
-export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSeleccionada, bloquesDelDia, inscritosDe }: {
+// ponytail: el gráfico es del club completo a propósito. `inscritosDe` solo
+// arma el denominador del día ("31 de 50"), no filtra por bloque.
+export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSeleccionada, inscritosDe }: {
   clubId: string
   modo?: 'dashboard' | 'completo'
   fechaSeleccionada?: string
-  bloquesDelDia?: BloqueGrafico[]
   inscritosDe?: Record<string, string[]>
 }) {
   const [loading, setLoading] = useState(true)
@@ -75,7 +75,6 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
   const [mostrarSinAsistencia, setMostrarSinAsistencia] = useState(false)
   const [exportando, setExportando] = useState(false)
   const [registrosTodos, setRegistrosTodos] = useState<{ fecha: string; jugador_id: string; estado: string }[]>([])
-  const [bloqueSelGrafico, setBloqueSelGrafico] = useState('')
 
   useEffect(() => {
     let activo = true
@@ -136,8 +135,6 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
     }
   }, [clubId])
 
-  useEffect(() => { setBloqueSelGrafico('') }, [fechaSeleccionada])
-
   const activosCount = jugadoresActivos.length
 
   // Todos los jugadores con bloque ese día (union de todos los bloques)
@@ -159,27 +156,6 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
       : 0
     return { count, total, extras, pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0 }
   }, [filas, fechaSeleccionada, inscritosDelDia, activosCount])
-
-  const bloqueStats = useMemo(() => {
-    if (!bloqueSelGrafico || !fechaSeleccionada || !inscritosDe) return null
-    const inscritos = inscritosDe[bloqueSelGrafico] ?? []
-    const inscritosSet = new Set(inscritos)
-    const presentesDia = filas.filter(f => f.fecha === fechaSeleccionada).map(f => f.jugador_id)
-    const presentesDiaSet = new Set(presentesDia)
-    const ausentesDiaSet = new Set(
-      registrosTodos.filter(r => r.fecha === fechaSeleccionada && r.estado === 'ausente').map(r => r.jugador_id)
-    )
-    const nombre = (id: string) => jugadoresActivos.find(j => j.id === id)?.nombre ?? '—'
-    // Extras: vinieron ese día pero NO están en ningún bloque → clase extraordinaria
-    const extras = presentesDia.filter(id => !inscritosDelDia.has(id)).map(id => ({ id, nombre: nombre(id) }))
-    return {
-      total: inscritos.length,
-      presentes: inscritos.filter(id => presentesDiaSet.has(id)).map(id => ({ id, nombre: nombre(id) })),
-      ausentes: inscritos.filter(id => ausentesDiaSet.has(id) && !presentesDiaSet.has(id)).map(id => ({ id, nombre: nombre(id) })),
-      sinRegistro: inscritos.filter(id => !presentesDiaSet.has(id) && !ausentesDiaSet.has(id)).map(id => ({ id, nombre: nombre(id) })),
-      extras,
-    }
-  }, [bloqueSelGrafico, fechaSeleccionada, inscritosDe, inscritosDelDia, filas, registrosTodos, jugadoresActivos])
 
   const dias = useMemo(() => {
     const hoy = fechaChile()
@@ -417,103 +393,21 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
           </div>
         </div>
 
-        {/* Filtro de bloque: fila horizontal compacta */}
-        {(bloquesDelDia?.length ?? 0) > 0 && (
-          <div style={{ borderTop: `1px solid ${border}`, marginTop: 16, paddingTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: hint, flexShrink: 0 }}>Bloque</span>
-            {bloquesDelDia!.map(b => {
-              const activo = bloqueSelGrafico === b.id
-              return (
-                <button key={b.id} onClick={() => setBloqueSelGrafico(activo ? '' : b.id)}
-                  style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
-                    border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
-                    background: activo ? '#ede9fe' : '#fff', color: activo ? '#4f46e5' : muted,
-                    display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {b.hora_inicio.slice(0, 5)} · {b.nombre}
-                  {activo && bloqueStats && (
-                    <span style={{ background: '#4f46e5', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
-                      {bloqueStats.presentes.length}/{bloqueStats.total}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Sin asistencia (solo dashboard / sin bloques) */}
-        {(bloquesDelDia?.length ?? 0) === 0 && (
-          <div style={{ borderTop: `1px solid ${border}`, marginTop: 16, paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 11, color: muted }}>Sin asistencia {modo === 'completo' ? 'esta semana' : 'este mes'}</span>
-            <div
-              onClick={() => modo === 'completo' && sinAsistencia.length > 0 && setMostrarSinAsistencia(!mostrarSinAsistencia)}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: modo === 'completo' && sinAsistencia.length > 0 ? 'pointer' : 'default' }}
-            >
-              <span style={{ fontSize: 16, fontWeight: 700, color: sinAsistencia.length > 0 ? ROJO : VERDE, fontVariantNumeric: 'tabular-nums' }}>{sinAsistencia.length}</span>
-              {modo === 'completo' && sinAsistencia.length > 0 && (
-                <span style={{ fontSize: 11, color: hint, display: 'inline-block', transform: mostrarSinAsistencia ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Lista expandida del bloque seleccionado */}
-      {bloqueStats && (
-        <div style={{ background: '#f8fafc', border: `1px solid ${border}`, borderRadius: 14, padding: '14px 16px', marginTop: 10 }}>
-          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-            {bloqueStats.presentes.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: VERDE, marginBottom: 6 }}>
-                  ✓ Presentes ({bloqueStats.presentes.length})
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {bloqueStats.presentes.map(j => (
-                    <div key={j.id} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: VERDE }}>{j.nombre}</div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {bloqueStats.ausentes.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: ROJO, marginBottom: 6 }}>
-                  ✗ Ausentes ({bloqueStats.ausentes.length})
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {bloqueStats.ausentes.map(j => (
-                    <div key={j.id} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: ROJO }}>{j.nombre}</div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {bloqueStats.sinRegistro.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: hint, marginBottom: 6 }}>
-                  — Sin registrar ({bloqueStats.sinRegistro.length})
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {bloqueStats.sinRegistro.map(j => (
-                    <div key={j.id} style={{ background: '#fff', border: `1px solid ${border}`, borderRadius: 20, padding: '3px 10px', fontSize: 11, color: muted }}>{j.nombre}</div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {bloqueStats.extras.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#a16207', marginBottom: 6 }}>
-                  ★ Extras ({bloqueStats.extras.length})
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {bloqueStats.extras.map(j => (
-                    <div key={j.id} style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: '#a16207' }}>{j.nombre}</div>
-                  ))}
-                </div>
-              </div>
+        <div style={{ borderTop: `1px solid ${border}`, marginTop: 16, paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 11, color: muted }}>Sin asistencia {modo === 'completo' ? 'esta semana' : 'este mes'}</span>
+          <div
+            onClick={() => modo === 'completo' && sinAsistencia.length > 0 && setMostrarSinAsistencia(!mostrarSinAsistencia)}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: modo === 'completo' && sinAsistencia.length > 0 ? 'pointer' : 'default' }}
+          >
+            <span style={{ fontSize: 16, fontWeight: 700, color: sinAsistencia.length > 0 ? ROJO : VERDE, fontVariantNumeric: 'tabular-nums' }}>{sinAsistencia.length}</span>
+            {modo === 'completo' && sinAsistencia.length > 0 && (
+              <span style={{ fontSize: 11, color: hint, display: 'inline-block', transform: mostrarSinAsistencia ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
             )}
           </div>
         </div>
-      )}
-      {!bloqueStats && modo === 'completo' && mostrarSinAsistencia && sinAsistencia.length > 0 && (
+      </div>
+
+      {modo === 'completo' && mostrarSinAsistencia && sinAsistencia.length > 0 && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 14, padding: 16, marginTop: 10 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: ROJO, marginBottom: 12 }}>
             Jugadores sin asistencia esta semana ({sinAsistencia.length})
