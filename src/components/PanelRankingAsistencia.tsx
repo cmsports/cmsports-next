@@ -484,7 +484,9 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                       {d.porcentaje === null ? '—' : `${d.porcentaje}%`}
                     </div>
                     <div style={{ fontSize: 11, color: muted, marginTop: 3 }}>
-                      {d.presentes} vino{d.presentes === 1 ? '' : 'n'} · {d.ausentes} faltó{d.ausentes === 1 ? '' : 'n'}
+                      {/* Pretéritos irregulares: no se pluralizan pegándoles
+                          una n. "vino"+n daba "vinon" y "faltó"+n, "faltón". */}
+                      {d.presentes} {d.presentes === 1 ? 'vino' : 'vinieron'} · {d.ausentes} {d.ausentes === 1 ? 'faltó' : 'faltaron'}
                     </div>
                     {d.pendientes > 0 && (
                       <div style={{ fontSize: 10, color: azul, marginTop: 2, fontWeight: 600 }}>{d.pendientes} sin registrar</div>
