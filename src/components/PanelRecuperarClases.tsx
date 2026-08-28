@@ -35,6 +35,8 @@ type Bloque = BloqueSemanal & {
   cupo_maximo: number
 }
 
+type SaldoFila = { jugador_id: string; saldo: number; vence_el: string }
+
 type Movimiento = {
   bloque_id: string
   fecha: string
@@ -59,6 +61,7 @@ export default function PanelRecuperarClases({
   const [suspendidas, setSusp]    = useState<Set<string>>(new Set())
   const [profesores, setProfes]   = useState<Map<string, string[]>>(new Map())
   const [telefono, setTelefono]   = useState<string | null>(null)
+  const [saldoFila, setSaldo]     = useState<SaldoFila | null>(null)
   const [cargando, setCargando]   = useState(true)
 
   // La clase que se está por cancelar, con el comentario que la acompaña.
@@ -73,7 +76,7 @@ export default function PanelRecuperarClases({
   const cargar = useCallback(async () => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const db = supabase as any
-    const [mis, todos, movimientos, cupos, exc, profRel, profs, club] = await Promise.all([
+    const [mis, todos, movimientos, saldos, cupos, exc, profRel, profs, club] = await Promise.all([
       db.from('bloque_jugadores')
         .select('bloques_horario(id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,vigente_desde,vigente_hasta)')
         .eq('jugador_id', jugadorId).is('vigente_hasta', null),
@@ -82,9 +85,12 @@ export default function PanelRecuperarClases({
         .eq('club_id', clubId).eq('activo', true)
         .lte('vigente_desde', hasta)
         .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`),
+      // Sus movimientos de la ventana visible: sirven para pintar el estado de
+      // cada clase, NO para contar el saldo. El saldo lo da la base.
       db.from('bloque_cupos_dia')
         .select('bloque_id,fecha,tipo,con_derecho')
         .eq('jugador_id', jugadorId).gte('fecha', sumarDias(hoy, -DIAS_VENTANA)),
+      db.rpc('saldos_recuperacion'),
       db.rpc('cupos_libres_por_dia', { p_desde: hoy, p_hasta: hasta }),
       db.from('bloque_excepciones').select('bloque_id,fecha').gte('fecha', hoy).lte('fecha', hasta),
       db.from('bloque_profesores').select('bloque_id,profesor_id').is('vigente_hasta', null),
@@ -101,6 +107,8 @@ export default function PanelRecuperarClases({
 
     setDelClub((todos.data ?? []) as Bloque[])
     setMovs((movimientos.data ?? []) as Movimiento[])
+    // Una sola fila como mucho: la función solo devuelve al propio jugador.
+    setSaldo(((saldos.data ?? []) as SaldoFila[])[0] ?? null)
     setLibres(new Map(((cupos.data ?? []) as { bloque_id: string; fecha: string; libres: number }[])
       .map(c => [`${c.bloque_id}|${c.fecha}`, c.libres])))
     setSusp(new Set(((exc.data ?? []) as { bloque_id: string; fecha: string }[])
@@ -146,13 +154,11 @@ export default function PanelRecuperarClases({
       .sort((a, b) => a.fecha.localeCompare(b.fecha))
   }, [movs, delClub, hoy])
 
-  // Cuántas clases tiene derecho a recuperar y todavía no recuperó. Es un saldo:
-  // cada aviso con 24 horas suma una, cada bloque que el profe le asigna resta.
-  const saldo = useMemo(() => {
-    const ganadas = movs.filter(m => m.tipo === 'libera' && m.con_derecho).length
-    const usadas  = movs.filter(m => m.tipo === 'toma').length
-    return ganadas - usadas
-  }, [movs])
+  // El saldo lo calcula `saldos_recuperacion()` (migración 231) y NO esta
+  // pantalla. Calculado acá quedaba atado a la ventana de 14 días de la
+  // consulta de arriba: un crédito de hace 20 días desaparecía para el alumno
+  // mientras el profe lo seguía viendo, y la resta podía dar negativo.
+  const saldo = saldoFila?.saldo ?? 0
 
   // Dónde podría recuperar: clases con lugar, de bloques que no son suyos.
   const disponibles = useMemo(() => {
@@ -215,6 +221,13 @@ export default function PanelRecuperarClases({
           <div style={{ fontSize: 12, color: '#166534', marginTop: 4, lineHeight: 1.5 }}>
             Elegí abajo un bloque con lugar y mandale el mensaje al profe. Él te asigna y te aparece acá.
           </div>
+          {/* Que caduquen sin avisar es lo que hacía la versión anterior, y era
+              lo peor: el alumno perdía el derecho sin que nada se lo dijera. */}
+          {saldoFila?.vence_el && (
+            <div style={{ fontSize: 12, color: '#b45309', marginTop: 6, fontWeight: 600 }}>
+              ⏳ La primera vence el {fechaCorta(saldoFila.vence_el)}. Después se pierde.
+            </div>
+          )}
         </div>
       )}
 

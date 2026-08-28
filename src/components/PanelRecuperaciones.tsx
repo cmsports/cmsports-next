@@ -52,6 +52,7 @@ export default function PanelRecuperaciones({ clubId }: { clubId: string }) {
   const [libres, setLibres]     = useState<Map<string, number>>(new Map())
   const [jugadores, setJug]     = useState<Jugador[]>([])
   const [suspendidas, setSusp]  = useState<Set<string>>(new Set())
+  const [saldoDe, setSaldos]    = useState<Map<string, number>>(new Map())
   const [cargando, setCargando] = useState(true)
 
   const [abierto, setAbierto]   = useState<string | null>(null)  // bloque_id con el buscador abierto
@@ -63,17 +64,19 @@ export default function PanelRecuperaciones({ clubId }: { clubId: string }) {
   const cargar = useCallback(async () => {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const db = supabase as any
-    const [bloquesRes, movsRes, cuposRes, jugRes, excRes] = await Promise.all([
+    const [bloquesRes, movsRes, saldosRes, cuposRes, jugRes, excRes] = await Promise.all([
       db.from('bloques_horario')
         .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo')
         .eq('club_id', clubId).eq('activo', true)
         .lte('vigente_desde', fecha)
         .or(`vigente_hasta.is.null,vigente_hasta.gte.${fecha}`),
-      // El saldo de cada alumno se cuenta sobre su historia, no sobre este día:
-      // avisó el lunes y recupera el jueves de la semana siguiente.
+      // Solo los movimientos del día que se está mirando. Antes traía toda la
+      // historia del club en cada carga —porque el saldo se calculaba acá— y eso
+      // crece sin techo. El saldo ahora lo da la base.
       db.from('bloque_cupos_dia')
         .select('id,bloque_id,jugador_id,fecha,tipo,con_derecho,motivo')
-        .eq('club_id', clubId),
+        .eq('club_id', clubId).eq('fecha', fecha),
+      db.rpc('saldos_recuperacion'),
       // El número de lugares sale de la base, que es la que sabe contar los
       // fijos vigentes a esa fecha. Repetir la cuenta acá sería un segundo lugar
       // donde puede quedar distinta.
@@ -87,6 +90,8 @@ export default function PanelRecuperaciones({ clubId }: { clubId: string }) {
 
     setBloques((bloquesRes.data ?? []) as Bloque[])
     setMovs((movsRes.data ?? []) as Movimiento[])
+    setSaldos(new Map(((saldosRes.data ?? []) as { jugador_id: string; saldo: number }[])
+      .map(s => [s.jugador_id, s.saldo])))
     setLibres(new Map(((cuposRes.data ?? []) as { bloque_id: string; libres: number }[])
       .map(c => [c.bloque_id, c.libres])))
     setJug((jugRes.data ?? []) as Jugador[])
@@ -103,18 +108,12 @@ export default function PanelRecuperaciones({ clubId }: { clubId: string }) {
 
   const nombreDe = useMemo(() => new Map(jugadores.map(j => [j.id, j.nombre])), [jugadores])
 
-  // Cuántas clases le quedan por recuperar a cada alumno: cada aviso con 24
-  // horas suma una, cada bloque que ya se le asignó resta.
-  const saldoDe = useMemo(() => {
-    const saldo = new Map<string, number>()
-    for (const m of movs) {
-      if (m.tipo === 'libera' && !m.con_derecho) continue
-      saldo.set(m.jugador_id, (saldo.get(m.jugador_id) ?? 0) + (m.tipo === 'libera' ? 1 : -1))
-    }
-    return saldo
-  }, [movs])
+  // El saldo sale de `saldos_recuperacion()` (migración 231), igual que en la
+  // pantalla del alumno. Antes cada una lo calculaba por su cuenta con una
+  // consulta distinta, y mostraban números distintos para la misma persona.
 
-  const delDia = useMemo(() => movs.filter(m => m.fecha === fecha), [movs, fecha])
+  // Los movimientos ya vienen filtrados por fecha desde la consulta.
+  const delDia = movs
 
   // Los bloques que se dictan ese día, sin los suspendidos.
   const bloquesDelDia = useMemo(() => {
