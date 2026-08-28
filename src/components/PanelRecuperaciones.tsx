@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { Plus, Search } from 'lucide-react'
-import { hhmm, rangoHorario } from '@/lib/domain/horario'
+import { diaSemanaDeFecha, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { DIAS_VENTANA, sumarDias } from '@/lib/domain/cuposDia'
@@ -118,7 +118,7 @@ export default function PanelRecuperaciones({ clubId }: { clubId: string }) {
 
   // Los bloques que se dictan ese día, sin los suspendidos.
   const bloquesDelDia = useMemo(() => {
-    const dia = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][new Date(`${fecha}T12:00:00`).getDay()]
+    const dia = diaSemanaDeFecha(fecha)
     return bloques
       .filter(b => b.dia_semana === dia && !suspendidas.has(b.id))
       .sort((a, b) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio)))

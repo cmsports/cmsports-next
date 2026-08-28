@@ -17,7 +17,7 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import PanelRecuperarClases from '@/components/PanelRecuperarClases'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
-import { DIAS, diaLabel, rangoHorario } from '@/lib/domain/horario'
+import { DIAS, diaLabel, diaSemanaDeFecha, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 
@@ -90,9 +90,7 @@ export default function MiHorarioPage() {
 
   if (loading || !perfil) return null
 
-  const diaDeHoy = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][
-    new Date(hoy + 'T12:00:00').getDay()
-  ]
+  const diaDeHoy = diaSemanaDeFecha(hoy)
 
   return (
     <AppLayout perfil={perfil}>
