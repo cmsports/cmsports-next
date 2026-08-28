@@ -13,7 +13,9 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
 import { useEnVivo } from '@/lib/useEnVivo'
 import PanelCupos from '@/components/PanelCupos'
+import PanelRecuperaciones from '@/components/PanelRecuperaciones'
 import PanelReportes from '@/components/PanelReportes'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const supabase = createClient()
 
@@ -55,12 +57,13 @@ function colorDe(nombre: string) {
 
 export default function HorarioPage() {
   const { perfil, loading: authLoading } = usePerfil()
+  const { tiene } = useModulos()
   const router = useRouter()
   const [bloques, setBloques]       = useState<Bloque[]>([])
   const [profesores, setProfesores] = useState<Profesor[]>([])
   const [cargando, setCargando]     = useState(true)
   const [sedeActiva, setSedeActiva] = useState('buin')
-  const [tab, setTab]               = useState<'grilla' | 'cupos' | 'profesores' | 'reportes'>('grilla')
+  const [tab, setTab]               = useState<'grilla' | 'cupos' | 'recuperaciones' | 'profesores' | 'reportes'>('grilla')
   const [modal, setModal]           = useState<null | 'nuevo' | Bloque>(null)
   const [form, setForm]             = useState(FORM_VACIO)
   const [guardando, setGuardando]   = useState(false)
@@ -315,8 +318,16 @@ export default function HorarioPage() {
           datos de gestión del club, no suyos. */}
       <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 4, margin: '16px 0' }}>
         {(esStaff
-          ? [['grilla', 'Grilla semanal'], ['cupos', 'Cupos'], ['profesores', 'Profesores'], ['reportes', 'Reportes']] as const
-          : [['grilla', 'Grilla semanal']] as const
+          ? [
+              ['grilla', 'Grilla semanal'] as const,
+              ['cupos', 'Cupos'] as const,
+              // Solo donde el alumno puede avisar que no va: sin eso la pestaña
+              // no tendría nada que mostrar.
+              ...(tiene('recuperar_clases') ? [['recuperaciones', 'Recuperaciones'] as const] : []),
+              ['profesores', 'Profesores'] as const,
+              ['reportes', 'Reportes'] as const,
+            ]
+          : [['grilla', 'Grilla semanal'] as const]
         ).map(([key, label]) => (
           <div key={key} onClick={() => setTab(key)}
             style={{ flex: 1, padding: 9, textAlign: 'center', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500,
@@ -426,6 +437,8 @@ export default function HorarioPage() {
 
       {/* Cupos */}
       {tab === 'cupos' && clubId && esStaff && <PanelCupos clubId={clubId} esStaff={esStaff} />}
+
+      {tab === 'recuperaciones' && clubId && esStaff && <PanelRecuperaciones clubId={clubId} />}
 
       {tab === 'reportes' && clubId && esStaff && <PanelReportes clubId={clubId} />}
 

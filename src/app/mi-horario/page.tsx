@@ -13,6 +13,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { useModulos } from '@/lib/hooks/useModulos'
+import PanelRecuperarClases from '@/components/PanelRecuperarClases'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { DIAS, diaLabel, rangoHorario } from '@/lib/domain/horario'
@@ -37,6 +39,7 @@ type MiBloque = {
 
 export default function MiHorarioPage() {
   const { perfil, loading } = usePerfil()
+  const { tiene } = useModulos()
   const router = useRouter()
   const [bloques, setBloques]   = useState<MiBloque[]>([])
   const [cargando, setCargando] = useState(true)
@@ -134,6 +137,14 @@ export default function MiHorarioPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Avisar que no va y ver dónde recuperar. Va detrás de su propio módulo:
+          la mayoría de los clubes no quiere que el alumno toque su horario. */}
+      {tiene('recuperar_clases') && jugadorId && clubId && (
+        <div style={{ marginTop: 26 }}>
+          <PanelRecuperarClases clubId={clubId} jugadorId={jugadorId} nombre={perfil.nombre ?? 'un jugador'} />
         </div>
       )}
     </AppLayout>
