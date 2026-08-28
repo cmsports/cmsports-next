@@ -12,15 +12,21 @@ pude comprobar está marcado como tal.
 
 | # | Hallazgo | Severidad |
 |---|---|---|
-| 1 | Créditos de recuperación ilimitados cancelando fechas lejanas | **Alta** |
-| 2 | Cancelar un día suspendido regala un crédito | **Alta** |
-| 3 | El alumno y el profe ven saldos distintos | Media |
-| 4 | `asignar_recuperacion_dia` no mira el saldo | Media |
-| 5 | La política admin de asistencia de profes no acota al club | Baja |
-| 6 | Un alumno puede opinar de un profe que no es suyo | Baja |
-| 7 | `PanelRecuperaciones` lee toda la historia sin cota | Baja |
-| 8 | Las horas del mes se recalculan con el horario de hoy | Baja |
-| 9 | Los bloques de Spinhouse dicen "Buin" | Cosmética |
+| 1 | Créditos de recuperación ilimitados cancelando fechas lejanas | **Alta** — ✅ migración 231 |
+| 2 | Cancelar un día suspendido regala un crédito | **Alta** — ✅ migración 231 |
+| 3 | El alumno y el profe ven saldos distintos | Media — ✅ migración 231 |
+| 4 | `asignar_recuperacion_dia` no mira el saldo | Media — pendiente |
+| 5 | La política admin de asistencia de profes no acota al club | Baja — pendiente |
+| 6 | Un alumno puede opinar de un profe que no es suyo | Baja — pendiente |
+| 7 | `PanelRecuperaciones` lee toda la historia sin cota | Baja — ✅ migración 231 |
+| 8 | Las horas del mes se recalculan con el horario de hoy | Baja — pendiente |
+| 9 | Los bloques de Spinhouse dicen "Buin" | Cosmética — pendiente |
+
+**Resueltos** en `231_recuperaciones_caducan_y_feriados.sql`: los créditos ahora
+caducan a los **30 días** de la fecha de la clase perdida, la app se lo dice al
+alumno, el feriado ya no da crédito, solo se puede avisar por las próximas dos
+semanas, y el saldo se calcula en un único lugar (`saldos_recuperacion()`) que
+las dos pantallas consultan.
 
 Ninguna compromete el anonimato del feedback, que era el riesgo grave. Ese
 quedó bien y verificado en pantalla.
