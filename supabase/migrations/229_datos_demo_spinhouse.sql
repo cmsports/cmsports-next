@@ -149,7 +149,9 @@ BEGIN
     CASE WHEN i % 3 = 0 THEN 'Menores' ELSE 'Adultos' END,
     'activo', false,
     35000,
-    'fijo',
+    -- 'mensual', no 'fijo': el CHECK de la migración 004 solo acepta
+    -- 'mensual', 'semanal' o 'libre'.
+    'mensual',
     CASE WHEN i % 4 = 0 THEN 3 ELSE 2 END,
     -- Los "Menores" nacen entre 2010 y 2015; el resto, entre 1985 y 2005.
     CASE WHEN i % 3 = 0
@@ -327,7 +329,8 @@ BEGIN
                 'Excelente profe, muy claro para explicar.',
                 'Estaría bueno que hiciéramos más partidos de práctica.',
                 'Las clases empiezan un poco tarde a veces.'])[1 + (x.n % 6)],
-         v_desde + ((x.n * 3) % 24)
+         -- ::int porque row_number() devuelve bigint y no existe date + bigint.
+         v_desde + ((x.n * 3) % 24)::int
   FROM (
     SELECT bj.bloque_id, bj.jugador_id, row_number() OVER (ORDER BY random()) AS n
     FROM bloque_jugadores bj
