@@ -32,6 +32,10 @@ export const MODULOS = [
   // aparte de 'clases' porque la mayoría de los clubes no quiere que el alumno
   // toque su horario: hoy solo Spinhouse (migración 226).
   { key: 'recuperar_clases', label: 'Recuperar clases' },
+  // El profesor marca que estuvo, para contabilizar horas trabajadas. Aparte de
+  // 'asistencia', que es la de los alumnos: son dos registros distintos y un
+  // club puede querer uno sin el otro (migración 227).
+  { key: 'asistencia_profes', label: 'Asistencia de profesores' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin

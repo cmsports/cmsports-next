@@ -75,6 +75,20 @@ export function diaDesdeFecha(fechaISO: string): DiaSemana | null {
   return DIA_POR_INDICE[d.getDay()] ?? null
 }
 
+/**
+ * La clave del día de la semana, incluidos sábado y domingo.
+ *
+ * `diaDesdeFecha` devuelve null el fin de semana —el club no abre— y eso sirve
+ * para decidir si hay clases. Para comparar contra `bloques_horario.dia_semana`
+ * hace falta la clave cruda, y la línea que la sacaba estaba copiada con su
+ * arreglo literal en cuatro pantallas.
+ */
+export function diaSemanaDeFecha(fechaISO: string): string {
+  return ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][
+    new Date(`${fechaISO}T12:00:00`).getDay()
+  ]
+}
+
 /** Un bloque, con lo justo para decidir desde cuándo vale estar inscrito en él. */
 export type BloqueDiaHora = { id: string; dia_semana: string; hora_inicio: string }
 

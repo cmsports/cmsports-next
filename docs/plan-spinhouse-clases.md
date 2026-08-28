@@ -39,17 +39,41 @@ Archivos: `src/lib/domain/cuposDia.ts` (+ test),
 
 ---
 
-## Parte 2 — Asistencia de los profesores ⏳ pendiente
+## Parte 2 — Asistencia de los profesores ✅ hecha (falta aplicar la migración)
 
-Los profes marcan que estuvieron en el bloque, para contabilizar horas
-trabajadas. Puede haber dos profes en el mismo bloque y cada uno marca la suya.
+**Módulo:** `asistencia_profes` · **Migración:** `227_asistencia_profesores_spinhouse.sql`
 
-Plan: tabla `asistencia_profesores` (`profesor_id`, `bloque_id`, `fecha`,
-`hora`, `registrado_por`), única por los tres primeros. La marca la puede poner
-el propio profe o el admin. Reporte de horas del mes reutilizando
-`horasSemanales()` de `lib/domain/horario.ts`.
+Los profes marcan que estuvieron, y el club cuenta horas trabajadas. Dos profes
+en el mismo bloque marcan cada uno la suya: la clave es
+`(profesor, bloque, fecha)`.
 
-Módulo: `asistencia_profes`.
+- Vive en `/asistencia` → pestaña **Profesores**, con dos vistas: *Marcar el
+  día* y *Horas del mes*.
+- El profesor marca solo la suya; el admin la de cualquiera. Lo impone la RLS,
+  no la pantalla.
+- Nadie puede marcar una fecha futura: va en el `WITH CHECK` de la política,
+  porque `now()` no es inmutable y Postgres no la acepta en un `CHECK` de tabla.
+- `get_my_profesor_id()` enlaza `perfiles` con `profesores` **por el correo**,
+  que es la convención que ya usan `crearProfesor` y `crearAccesoProfesor`. Es
+  el punto frágil: si los correos no coinciden, el profe ve la pestaña pero no
+  puede marcar. La pantalla lo detecta y lo dice con un mensaje claro en vez del
+  error crudo de Postgres.
+
+**Esto NO reemplaza el reporte de Cupos/bloques → Reportes.** Ese suma las horas
+que a cada profesor le *tocaba* dictar según el horario (el plan); este suma las
+que *marcó* (el hecho). Cuando alguien falta o cubre a un compañero los dos
+números se separan, y esa diferencia es lo que Spinhouse quería ver.
+
+Archivos: `src/lib/domain/horasProfesor.ts` (+ test),
+`src/components/PanelAsistenciaProfes.tsx`.
+
+### Antes de probar
+1. Pegar en el SQL Editor de Supabase:
+   `C:\Users\Marcela Sandoval\Documents\CMSPORTS\cmsports-spinhouse-clases\supabase\migrations\227_asistencia_profesores_spinhouse.sql`
+2. Correr la última consulta del archivo: dice **qué profesores van a poder
+   marcarse**. Los que salgan con `puede_marcarse = false` tienen el correo
+   distinto entre su ficha y su cuenta y hay que emparejarlos antes de avisarle
+   al club.
 
 ---
 
