@@ -922,7 +922,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       {/* GRÁFICO DE ASISTENCIA (Admin/Profesor) */}
       {esAdminOProfesor && clubId && (
         <div style={{ marginBottom: 24 }}>
-          <GraficoAsistencia clubId={clubId} modo="completo" fechaSeleccionada={fechaVista} bloquesDelDia={bloquesDelDia} inscritosDe={inscritosDe} />
+          <GraficoAsistencia clubId={clubId} modo="completo" fechaSeleccionada={fechaVista} inscritosDe={inscritosDe} />
         </div>
       )}
 
