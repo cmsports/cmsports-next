@@ -329,7 +329,8 @@ BEGIN
                 'Excelente profe, muy claro para explicar.',
                 'Estaría bueno que hiciéramos más partidos de práctica.',
                 'Las clases empiezan un poco tarde a veces.'])[1 + (x.n % 6)],
-         v_desde + ((x.n * 3) % 24)
+         -- ::int porque row_number() devuelve bigint y no existe date + bigint.
+         v_desde + ((x.n * 3) % 24)::int
   FROM (
     SELECT bj.bloque_id, bj.jugador_id, row_number() OVER (ORDER BY random()) AS n
     FROM bloque_jugadores bj
