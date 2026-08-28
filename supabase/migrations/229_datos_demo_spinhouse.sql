@@ -149,7 +149,9 @@ BEGIN
     CASE WHEN i % 3 = 0 THEN 'Menores' ELSE 'Adultos' END,
     'activo', false,
     35000,
-    'fijo',
+    -- 'mensual', no 'fijo': el CHECK de la migración 004 solo acepta
+    -- 'mensual', 'semanal' o 'libre'.
+    'mensual',
     CASE WHEN i % 4 = 0 THEN 3 ELSE 2 END,
     -- Los "Menores" nacen entre 2010 y 2015; el resto, entre 1985 y 2005.
     CASE WHEN i % 3 = 0
