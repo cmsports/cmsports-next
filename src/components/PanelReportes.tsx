@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { DIAS, diaLabel, rangoHorario } from '@/lib/domain/horario'
-import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
+import { sedeLabel, sedesDe } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import {
   calcularReporteMes, diaDe, horas, porDia, semanasDelMes,
@@ -201,8 +201,14 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   // La sección "Grupos" se mira de a una sede a la vez, agrupada por día:
   // las dos sedes mezcladas en una sola lista larga no se entendían de un
   // vistazo. Igual que el filtro de sede de Cupos.
+  // Las sedes salen de los grupos del mes, no del catálogo de Buin: Spinhouse
+  // no figuraba en ninguna pestaña. Y si la elegida no existe acá, se cae a la
+  // primera que sí.
+  const sedesDelMes = sedesDe(gruposDelMes.map(g => g.bloque))
+  const sedeVista = sedesDelMes.includes(sedeGrupos) ? sedeGrupos : (sedesDelMes[0] ?? sedeGrupos)
+
   const gruposSede = gruposDelMes
-    .filter(g => g.bloque.sede === sedeGrupos)
+    .filter(g => g.bloque.sede === sedeVista)
     .sort((a, b) => ordenDia(a.bloque.dia_semana) - ordenDia(b.bloque.dia_semana) || a.bloque.hora_inicio.localeCompare(b.bloque.hora_inicio))
 
   // Un grupo con dos profesores le suma horas a los dos, pero se dicta una sola
@@ -438,14 +444,14 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
             Tocá uno para ver las fechas, lo que no se dictó y quiénes están inscritos.
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            {SEDES.filter(s => s.value !== 'ambos').map(s => {
-              const activa = sedeGrupos === s.value
+            {sedesDelMes.map(v => {
+              const activa = sedeVista === v
               return (
-                <button key={s.value} onClick={() => setSedeGrupos(s.value)}
+                <button key={v} onClick={() => setSedeGrupos(v)}
                   style={{ background: activa ? '#4f46e5' : '#f4f7fa', color: activa ? '#fff' : muted,
                     border: `1px solid ${activa ? '#4f46e5' : '#e2e8f0'}`, borderRadius: 8, padding: '6px 12px',
                     fontSize: 12, fontWeight: activa ? 600 : 400, cursor: 'pointer' }}>
-                  {sedeLabel(s.value).split(' ')[0]}
+                  {sedeLabel(v).split(' ')[0]}
                 </button>
               )
             })}
@@ -515,7 +521,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
 
         {gruposSede.length === 0 && (
           <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>
-            Ningún grupo en {sedeLabel(sedeGrupos).split(' ')[0]} funcionaba en {MESES[mes - 1]} {anio}.
+            Ningún grupo en {sedeLabel(sedeVista).split(' ')[0]} funcionaba en {MESES[mes - 1]} {anio}.
           </div>
         )}
       </div>
