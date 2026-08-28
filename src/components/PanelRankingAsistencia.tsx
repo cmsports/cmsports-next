@@ -25,7 +25,6 @@ import {
   diferencia, ordenarPorRiesgo, ordenarPorMerito,
   type CalendarioDeJugador, type FilaJugador,
 } from '@/lib/domain/panoramaAsistencia'
-import { descargarExcelAsistenciaPorBloque } from '@/lib/asistencia-bloque-excel'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 
@@ -131,6 +130,28 @@ function TablaJugadores({ filas, extra }: { filas: Fila[]; extra?: (f: Fila) => 
 
 type Rango = 'semana' | 'mes' | 'trimestre'
 
+/** El admin elige: PDF para imprimir y repartir, Excel para trabajar encima. */
+type Formato = 'pdf' | 'excel'
+
+/** Los dos botones de formato de una fila del menú de descarga. */
+function BotonesFormato({ onElegir, disabled }: { onElegir: (f: Formato) => void; disabled?: boolean }) {
+  return (
+    <div style={{ display: 'flex', gap: 5 }}>
+      {([['pdf', 'PDF', '#dc2626'], ['excel', 'Excel', '#16a34a']] as const).map(([f, texto, c]) => (
+        <button key={f} type="button" disabled={disabled}
+          onClick={e => { e.stopPropagation(); onElegir(f) }}
+          style={{ padding: '4px 11px', fontSize: 11, fontWeight: 700, borderRadius: 6, lineHeight: 1.4,
+            border: `1px solid ${c}33`, background: `${c}14`, color: c,
+            cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+          onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = c; e.currentTarget.style.color = '#fff' } }}
+          onMouseLeave={e => { e.currentTarget.style.background = `${c}14`; e.currentTarget.style.color = c }}>
+          {texto}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [jugadores, setJugadores] = useState<Jugador[]>([])
   const [datos, setDatos]         = useState<DatosHistorial | null>(null)
@@ -140,6 +161,8 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [cargando, setCargando]   = useState(true)
   const [selectorAbierto, setSelectorAbierto] = useState(false)
   const [descargando, setDescargando]         = useState(false)
+  /** Cuánto tiempo abarca el reporte por bloque. Tres meses ve una temporada. */
+  const [mesesBloque, setMesesBloque]         = useState(3)
   const [diaAbierto, setDiaAbierto]           = useState<string | null>(null)
 
   const hoy = fechaChile()
@@ -192,12 +215,15 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   useEffect(() => { void cargar() }, [cargar])
   useEnVivo(['asistencia', 'bloque_jugadores'], clubId, cargar, { conClub: ['asistencia'] })
 
-  async function descargarExcel(mesesElegidos: number) {
+  // El reporte por bloque pide su propio rango —"últimos N meses"— porque
+  // responde otra pregunta: si a un bloque le conviene seguir existiendo, y eso
+  // no se ve en una semana. Los otros dos salen del período que estás mirando.
+  async function descargarPorBloque(formato: Formato) {
     setSelectorAbierto(false)
     setDescargando(true)
     try {
       const hastaD = fechaChile()
-      const d = new Date(`${hastaD}T12:00:00`); d.setMonth(d.getMonth() - mesesElegidos)
+      const d = new Date(`${hastaD}T12:00:00`); d.setMonth(d.getMonth() - mesesBloque)
       const desdeD = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       const [{ data: club }, { data: jugs }, datosClub] = await Promise.all([
         supabase.from('clubes').select('nombre').eq('id', clubId).single(),
@@ -208,31 +234,48 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
           .order('nombre'),
         cargarHistorialClub(clubId, desdeD, hastaD),
       ])
-      await descargarExcelAsistenciaPorBloque({
+      const args = {
         clubNombre: club?.nombre ?? '',
-        desde: desdeD, hasta: hastaD, meses: mesesElegidos,
+        desde: desdeD, hasta: hastaD, meses: mesesBloque,
         datos: datosClub, jugadores: (jugs ?? []) as Jugador[],
-      })
+      }
+      if (formato === 'excel') {
+        const xls = await import('@/lib/asistencia-bloque-excel')
+        await xls.descargarExcelAsistenciaPorBloque(args)
+      } else {
+        const pdf = await import('@/lib/asistencia-bloque-pdf')
+        await pdf.exportarAsistenciaPorBloquePdf(args)
+      }
     } finally {
       setDescargando(false)
     }
   }
 
-  // El PDF sale del período que estás mirando, no de "todo": recibe los mismos
-  // `calendarios` que pinta la pantalla y el mismo `desde`/`hasta`. Un PDF que
-  // ignora el filtro de arriba no es el que pediste.
+  // Los dos salen del período que estás mirando, no de "todo": reciben los
+  // mismos `calendarios` que pinta la pantalla y el mismo `desde`/`hasta`. Un
+  // reporte que ignora el filtro de arriba no es el que pediste.
+  //
+  // El formato lo elige el admin y no cambia el contenido: el PDF es para
+  // imprimir y repartir, el Excel para trabajar encima. Dicen lo mismo porque
+  // los dos salen del mismo cálculo del dominio.
   //
   // Los calendarios llegan por parámetro porque se calculan más abajo, después
   // del guard de carga.
-  async function descargarPdf(modo: 'masivo' | 'individual', cals: CalendarioDeJugador[]) {
+  async function descargarPanorama(modo: 'masivo' | 'individual', cals: CalendarioDeJugador[], formato: Formato) {
     setSelectorAbierto(false)
     setDescargando(true)
     try {
       const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
       const meta = { clubNombre: club?.nombre ?? '', periodo: etiqueta, desde, hasta }
-      const pdf = await import('@/lib/panorama-asistencia-pdf')
-      if (modo === 'masivo') await pdf.exportarPanoramaPdf(cals, meta)
-      else await pdf.exportarPanoramaIndividualPdf(cals, meta)
+      if (formato === 'pdf') {
+        const pdf = await import('@/lib/panorama-asistencia-pdf')
+        if (modo === 'masivo') await pdf.exportarPanoramaPdf(cals, meta)
+        else await pdf.exportarPanoramaIndividualPdf(cals, meta)
+      } else {
+        const xls = await import('@/lib/panorama-asistencia-excel')
+        if (modo === 'masivo') await xls.exportarPanoramaExcel(cals, meta)
+        else await xls.exportarPanoramaIndividualExcel(cals, meta)
+      }
     } finally {
       setDescargando(false)
     }
@@ -326,39 +369,61 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
           </button>
           {selectorAbierto && (
             <div style={{ position: 'absolute', right: 0, top: '110%', zIndex: 10, background: '#fff', border: '1px solid #e2e8f0',
-              borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,0.18)', padding: 10, minWidth: 232 }}>
+              borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,0.18)', padding: 12, width: 340, maxWidth: '90vw' }}>
 
-              {/* Los dos PDF salen de lo que estás viendo ahora mismo, por eso
-                  van arriba y dicen el período: es la diferencia con el Excel,
-                  que pide un rango propio. */}
-              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 6, padding: '0 4px' }}>
-                PDF · {etiqueta.toLowerCase()}
+              {/* Cada reporte con sus dos formatos al lado: el admin elige qué
+                  quiere y en qué formato en un solo gesto. Antes el formato
+                  venía atado al reporte —los resúmenes solo en PDF, el detalle
+                  por bloque solo en Excel— y no había manera de pedir el otro. */}
+              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 8, padding: '0 2px' }}>
+                Del período que estás viendo · {etiqueta.toLowerCase()}
               </div>
               {([
-                ['masivo', 'Resumen del club', 'Una hoja: días, grupos y ranking'],
+                ['masivo', 'Resumen del club', 'Días, grupos y ranking completo'],
                 ['individual', 'Uno por jugador', 'Una hoja cada uno, para el apoderado'],
               ] as const).map(([modo, titulo, sub]) => (
-                <div key={modo} onClick={() => void descargarPdf(modo, calendarios)}
-                  style={{ padding: '7px 8px', borderRadius: 8, cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                <div key={modo}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px', borderRadius: 8 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  <div style={{ fontSize: 13, color: text, fontWeight: 600 }}>{titulo}</div>
-                  <div style={{ fontSize: 10.5, color: hint, marginTop: 1 }}>{sub}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: text, fontWeight: 600 }}>{titulo}</div>
+                    <div style={{ fontSize: 10.5, color: hint, marginTop: 1 }}>{sub}</div>
+                  </div>
+                  <BotonesFormato disabled={descargando}
+                    onElegir={f => void descargarPanorama(modo, calendarios, f)} />
                 </div>
               ))}
 
-              <div style={{ borderTop: '1px solid #e2e8f0', margin: '8px 0 6px' }} />
-              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 6, padding: '0 4px' }}>
-                Excel por bloque · ¿de cuánto tiempo?
+              <div style={{ borderTop: '1px solid #e2e8f0', margin: '10px 0 8px' }} />
+
+              {/* El de bloques pide su propio rango: "¿este bloque conviene
+                  mantenerlo?" no se contesta con una semana. */}
+              <div style={{ fontSize: 11, color: hint, fontWeight: 600, marginBottom: 7, padding: '0 2px' }}>
+                Detalle por bloque · ¿de cuánto tiempo?
               </div>
-              {[1, 2, 3, 6, 12].map(n => (
-                <div key={n} onClick={() => void descargarExcel(n)}
-                  style={{ padding: '7px 8px', fontSize: 13, color: text, borderRadius: 8, cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  {n === 1 ? 'Último mes' : `Últimos ${n} meses`}
+              <div style={{ display: 'flex', gap: 4, padding: '0 2px', marginBottom: 9, flexWrap: 'wrap' }}>
+                {[1, 2, 3, 6, 12].map(n => (
+                  <div key={n} onClick={() => setMesesBloque(n)}
+                    style={{ padding: '4px 9px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
+                      border: `1px solid ${mesesBloque === n ? '#4f46e5' : '#e2e8f0'}`,
+                      background: mesesBloque === n ? '#eef2ff' : '#fff',
+                      color: mesesBloque === n ? '#3730a3' : muted }}>
+                    {n === 12 ? '1 año' : `${n} ${n === 1 ? 'mes' : 'meses'}`}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px', borderRadius: 8 }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: text, fontWeight: 600 }}>Jugador por jugador, por bloque</div>
+                  <div style={{ fontSize: 10.5, color: hint, marginTop: 1 }}>
+                    Mes a mes · {mesesBloque === 12 ? 'último año' : mesesBloque === 1 ? 'último mes' : `últimos ${mesesBloque} meses`}
+                  </div>
                 </div>
-              ))}
+                <BotonesFormato disabled={descargando} onElegir={f => void descargarPorBloque(f)} />
+              </div>
             </div>
           )}
         </div>
