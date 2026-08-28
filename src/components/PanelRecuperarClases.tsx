@@ -15,7 +15,8 @@ import { diaLabel, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import {
-  DIAS_VENTANA, HORAS_AVISO, conservaDerecho, minutosHastaLaClase, ocurrencias, sumarDias,
+  DIAS_VENTANA, HORAS_AVISO, bloquesDondeRecuperar, conservaDerecho, minutosHastaLaClase,
+  ocurrencias, sumarDias,
   type BloqueSemanal,
 } from '@/lib/domain/cuposDia'
 import { linkWhatsApp } from '@/lib/whatsapp'
@@ -33,6 +34,7 @@ type Bloque = BloqueSemanal & {
   sede: string
   hora_fin: string
   cupo_maximo: number
+  grupo_id: string | null
 }
 
 type SaldoFila = { jugador_id: string; saldo: number; vence_el: string }
@@ -78,10 +80,10 @@ export default function PanelRecuperarClases({
     const db = supabase as any
     const [mis, todos, movimientos, saldos, cupos, exc, profRel, profs, club] = await Promise.all([
       db.from('bloque_jugadores')
-        .select('bloques_horario(id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,vigente_desde,vigente_hasta)')
+        .select('bloques_horario(id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,grupo_id,vigente_desde,vigente_hasta)')
         .eq('jugador_id', jugadorId).is('vigente_hasta', null),
       db.from('bloques_horario')
-        .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo')
+        .select('id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,grupo_id')
         .eq('club_id', clubId).eq('activo', true)
         .lte('vigente_desde', hasta)
         .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`),
@@ -163,9 +165,11 @@ export default function PanelRecuperarClases({
   // Dónde podría recuperar: clases con lugar, de bloques que no son suyos.
   const disponibles = useMemo(() => {
     if (saldo <= 0) return []
-    const esMio = new Set(mios.map(b => b.id))
     const ahora = horaChile()
-    return ocurrencias({ bloques: delClub.filter(b => !esMio.has(b.id)), hoy, dias: DIAS_VENTANA, excluir: suspendidas })
+    // Solo bloques de SU grupo: sin esto se le ofrecía a un adulto la clase de
+    // menores, que era lo único con lugar cuando los de adultos estaban llenos.
+    const candidatos = bloquesDondeRecuperar({ mios, delClub })
+    return ocurrencias({ bloques: candidatos, hoy, dias: DIAS_VENTANA, excluir: suspendidas })
       .filter(o => (libres.get(`${o.bloque.id}|${o.fecha}`) ?? 0) > 0)
       // Una clase que ya empezó no se puede pedir.
       .filter(o => minutosHastaLaClase({ fecha: o.fecha, horaInicio: o.bloque.hora_inicio, hoy, ahora }) > 0)

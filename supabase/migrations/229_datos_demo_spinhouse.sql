@@ -105,7 +105,9 @@ BEGIN
          CASE WHEN f.hora = '17:00' THEN v_grupo_men ELSE v_grupo_adu END,
          CASE WHEN f.hora = '17:00' THEN 'Menores ' ELSE 'Adultos ' END || d.etiqueta,
          'spinhouse', d.dia, f.hora::time, (f.hora::time + interval '90 minutes')::time,
-         8, 2, v_desde
+         -- Menores 10, Adultos 18: con 8 para los dos, los de Adultos quedaban
+         -- 5 a 8 personas sobre el cupo y la recuperación no tenía qué ofrecer.
+         CASE WHEN f.hora = '17:00' THEN 10 ELSE 18 END, 2, v_desde
   FROM (VALUES ('lun','Lun'),('mar','Mar'),('mie','Mié'),('jue','Jue'),('vie','Vie')) AS d(dia, etiqueta)
   CROSS JOIN (VALUES ('17:00'), ('19:00')) AS f(hora)
   ON CONFLICT (club_id, sede, dia_semana, hora_inicio) DO NOTHING;

@@ -21,8 +21,21 @@ pude comprobar está marcado como tal.
 | 7 | `PanelRecuperaciones` lee toda la historia sin cota | Baja — ✅ migración 231 |
 | 8 | Las horas del mes se recalculan con el horario de hoy | Baja — ✅ aceptado y documentado |
 | 9 | Los bloques de Spinhouse dicen "Buin" | Cosmética — ✅ migración 232 |
+| 10 | Se le ofrecía a un adulto recuperar en la clase de menores | **Alta** — ✅ `bloquesDondeRecuperar()` |
 
 **Queda un solo pendiente: el hallazgo 5.**
+
+El **hallazgo 10 apareció recién al entrar a la app con una cuenta de alumno**,
+no leyendo el código, y es el más vergonzoso de la lista: `disponibles` excluía
+los bloques donde el alumno ya estaba, pero no filtraba por grupo. Un alumno de
+Adultos veía diez opciones para recuperar y las diez eran de Menores. Se
+arregló con `bloquesDondeRecuperar()` (con prueba), que ofrece solo bloques de
+su mismo grupo; si el club no cargó `grupo_id`, no filtra, para no dejarlo sin
+ninguna opción.
+
+Es la mejor prueba de por qué la revisión de código no reemplaza abrir la app:
+nueve hallazgos salieron de leer, y el décimo —de severidad alta— saltó a los
+diez segundos de mirar la pantalla.
 
 **Decidido con el club (2026-08-28), no son bugs:**
 - **Hallazgo 4** — el profesor *puede* asignar una recuperación a quien no tiene
