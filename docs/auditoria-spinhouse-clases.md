@@ -15,12 +15,32 @@ pude comprobar está marcado como tal.
 | 1 | Créditos de recuperación ilimitados cancelando fechas lejanas | **Alta** — ✅ migración 231 |
 | 2 | Cancelar un día suspendido regala un crédito | **Alta** — ✅ migración 231 |
 | 3 | El alumno y el profe ven saldos distintos | Media — ✅ migración 231 |
-| 4 | `asignar_recuperacion_dia` no mira el saldo | Media — pendiente |
+| 4 | `asignar_recuperacion_dia` no mira el saldo | Media — ✅ aceptado y documentado |
 | 5 | La política admin de asistencia de profes no acota al club | Baja — pendiente |
-| 6 | Un alumno puede opinar de un profe que no es suyo | Baja — pendiente |
+| 6 | Un alumno puede opinar de un profe que no es suyo | Baja — ✅ migración 232 |
 | 7 | `PanelRecuperaciones` lee toda la historia sin cota | Baja — ✅ migración 231 |
-| 8 | Las horas del mes se recalculan con el horario de hoy | Baja — pendiente |
-| 9 | Los bloques de Spinhouse dicen "Buin" | Cosmética — pendiente |
+| 8 | Las horas del mes se recalculan con el horario de hoy | Baja — ✅ aceptado y documentado |
+| 9 | Los bloques de Spinhouse dicen "Buin" | Cosmética — ✅ migración 232 |
+
+**Queda un solo pendiente: el hallazgo 5.**
+
+**Decidido con el club (2026-08-28), no son bugs:**
+- **Hallazgo 4** — el profesor *puede* asignar una recuperación a quien no tiene
+  saldo. El saldo de la pantalla es orientativo. Queda escrito en un
+  `COMMENT ON FUNCTION` para que no se confunda con un olvido.
+- **Hallazgo 8** — las horas de los profesores son para **control, no para
+  liquidar sueldos**, así que no hace falta congelar los minutos al marcar.
+  También queda en un `COMMENT ON TABLE`, con la condición: si algún día se paga
+  con eso, hay que congelarlos.
+
+**Resueltos** en `232_sede_spinhouse_y_feedback_a_su_profe.sql`: existe la sede
+`spinhouse` y los bloques dejaron de decir "Buin"; y la RLS ahora exige que el
+profesor le haga clases al alumno, no solo que sea del mismo club.
+
+Las pestañas de sede además pasaron a derivarse **del dato** (`sedesDe()`, con
+prueba): antes salían del catálogo fijo de Buin, así que Spinhouse no tenía
+dónde ver sus bloques y agregarle su sede al catálogo le habría puesto a Buin
+una pestaña vacía. El próximo club no necesita tocar código.
 
 **Resueltos** en `231_recuperaciones_caducan_y_feriados.sql`: los créditos ahora
 caducan a los **30 días** de la fecha de la clase perdida, la app se lo dice al

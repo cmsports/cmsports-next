@@ -20,17 +20,8 @@
 -- SON DATOS FALSOS. Al final del archivo está el script de limpieza que los
 -- borra todos sin tocar nada más. Correrlo antes de cargar los datos reales.
 --
--- ── UNA FEALDAD CONOCIDA ─────────────────────────────────────────────────
--- `bloques_horario.sede` tiene un CHECK que solo acepta 'buin' y 'paine'
--- (migración 073), que son las sedes de la Asociación Buin. Spinhouse no tiene
--- nada que ver, pero el CHECK no deja poner otra cosa, así que los bloques
--- quedan con sede 'buin' y la pantalla los va a rotular "Buin (Aníbal Pinto
--- 158)". Es cosmético y afecta solo a lo que se ve.
---
--- No lo arreglo acá a propósito: relajar ese CHECK y agregar la sede al
--- catálogo `SEDES` es tocar código compartido por todos los clubes, que es
--- justo lo que `docs/plan-aislamiento-clubes.md` dice que no hay que hacer a la
--- ligera. Va como pendiente aparte.
+-- NOTA: usa la sede 'spinhouse', que existe desde la migración 232. Si se
+-- vuelve a sembrar, hay que haber corrido la 232 antes o el CHECK lo rechaza.
 --
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
@@ -97,13 +88,13 @@ BEGIN
 
   -- ══ 2. Grupos y bloques ════════════════════════════════════════════════
   INSERT INTO grupos_entrenamiento (club_id, nombre, sede, activo)
-  VALUES (v_club, 'Menores', 'buin', true), (v_club, 'Adultos', 'buin', true)
+  VALUES (v_club, 'Menores', 'spinhouse', true), (v_club, 'Adultos', 'spinhouse', true)
   ON CONFLICT (club_id, sede, nombre) DO NOTHING;
 
   SELECT id INTO v_grupo_men FROM grupos_entrenamiento
-  WHERE club_id = v_club AND nombre = 'Menores' AND sede = 'buin';
+  WHERE club_id = v_club AND nombre = 'Menores' AND sede = 'spinhouse';
   SELECT id INTO v_grupo_adu FROM grupos_entrenamiento
-  WHERE club_id = v_club AND nombre = 'Adultos' AND sede = 'buin';
+  WHERE club_id = v_club AND nombre = 'Adultos' AND sede = 'spinhouse';
 
   -- Dos franjas por día, de lunes a viernes. La restricción
   -- UNIQUE (club_id, sede, dia_semana, hora_inicio) permite una por hora y día.
@@ -113,7 +104,7 @@ BEGIN
   SELECT v_club,
          CASE WHEN f.hora = '17:00' THEN v_grupo_men ELSE v_grupo_adu END,
          CASE WHEN f.hora = '17:00' THEN 'Menores ' ELSE 'Adultos ' END || d.etiqueta,
-         'buin', d.dia, f.hora::time, (f.hora::time + interval '90 minutes')::time,
+         'spinhouse', d.dia, f.hora::time, (f.hora::time + interval '90 minutes')::time,
          8, 2, v_desde
   FROM (VALUES ('lun','Lun'),('mar','Mar'),('mie','Mié'),('jue','Jue'),('vie','Vie')) AS d(dia, etiqueta)
   CROSS JOIN (VALUES ('17:00'), ('19:00')) AS f(hora)
@@ -157,7 +148,7 @@ BEGIN
     CASE WHEN i % 3 = 0
          THEN date '2010-01-01' + ((i * 37) % 2000)
          ELSE date '1985-01-01' + ((i * 211) % 7300) END,
-    'buin',
+    'spinhouse',
     '+5699' || lpad(((i * 7919) % 10000000)::text, 7, '0')
   FROM generate_series(1, 50) AS i
   CROSS JOIN LATERAL (
