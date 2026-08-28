@@ -111,6 +111,27 @@ export function ocurrencias<B extends BloqueSemanal>(params: {
     a.fecha.localeCompare(b.fecha) || a.bloque.hora_inicio.localeCompare(b.bloque.hora_inicio))
 }
 
+/**
+ * En qué bloques puede recuperar: los de SU grupo, en días que no son suyos.
+ *
+ * Sin este filtro se le ofrecía a un adulto meterse en la clase de menores. Se
+ * vio recién con datos reales: los bloques de Adultos estaban llenos, así que
+ * los únicos con lugar eran los de Menores y la pantalla los listó sin más.
+ *
+ * Si el alumno no tiene grupo asignado en ninguno de sus bloques —`grupo_id` es
+ * opcional desde la migración 085— no se filtra nada. Es preferible ofrecerle de
+ * más que dejarlo sin ninguna opción por un dato que el club no cargó.
+ */
+export function bloquesDondeRecuperar<B extends { id: string; grupo_id?: string | null }>(
+  params: { mios: B[]; delClub: B[] },
+): B[] {
+  const esMio = new Set(params.mios.map(b => b.id))
+  const misGrupos = new Set(params.mios.map(b => b.grupo_id).filter(Boolean))
+
+  return params.delClub.filter(b =>
+    !esMio.has(b.id) && (misGrupos.size === 0 || misGrupos.has(b.grupo_id)))
+}
+
 // Cuántos lugares quedan en un bloque un día NO se calcula acá: la cuenta
 // necesita contar `bloque_jugadores`, y desde la migración 101 el alumno no
 // puede leer las inscripciones ajenas. Vive en `cupos_libres_por_dia`

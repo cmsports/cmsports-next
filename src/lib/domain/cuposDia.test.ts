@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conservaDerecho, diasEntre, minutosHastaLaClase, ocurrencias, sumarDias } from './cuposDia'
+import { bloquesDondeRecuperar, conservaDerecho, diasEntre, minutosHastaLaClase, ocurrencias, sumarDias } from './cuposDia'
 
 // 2026-09-01 es martes. La semana: mar 1, mié 2, jue 3, vie 4, sáb 5, dom 6.
 const MAR = '2026-09-01'
@@ -97,5 +97,45 @@ describe('ocurrencias', () => {
       excluir: new Set(['j|2026-09-03']),
     })
     expect(r.map(o => o.fecha)).toEqual(['2026-09-10'])
+  })
+})
+
+describe('bloquesDondeRecuperar', () => {
+  // El caso que apareció con datos reales: un alumno de Adultos veía diez
+  // opciones para recuperar y las diez eran de Menores.
+  const adultosLun = { id: 'aL', grupo_id: 'adultos' }
+  const adultosJue = { id: 'aJ', grupo_id: 'adultos' }
+  const menoresLun = { id: 'mL', grupo_id: 'menores' }
+
+  it('no le ofrece a un adulto la clase de menores', () => {
+    const r = bloquesDondeRecuperar({
+      mios: [adultosLun],
+      delClub: [adultosLun, adultosJue, menoresLun],
+    })
+    expect(r.map(b => b.id)).toEqual(['aJ'])
+  })
+
+  it('no le ofrece los bloques en los que ya está', () => {
+    const r = bloquesDondeRecuperar({ mios: [adultosLun], delClub: [adultosLun] })
+    expect(r).toEqual([])
+  })
+
+  // `grupo_id` es opcional desde la migración 085: si el club no lo cargó,
+  // filtrar por grupo lo dejaría sin ninguna opción.
+  it('sin grupo asignado ofrece todo lo que no es suyo', () => {
+    const sinGrupo = { id: 'x', grupo_id: null }
+    const r = bloquesDondeRecuperar({
+      mios: [sinGrupo],
+      delClub: [sinGrupo, adultosJue, menoresLun],
+    })
+    expect(r.map(b => b.id)).toEqual(['aJ', 'mL'])
+  })
+
+  it('el alumno que está en dos grupos ve los dos', () => {
+    const r = bloquesDondeRecuperar({
+      mios: [adultosLun, menoresLun],
+      delClub: [adultosJue, menoresLun],
+    })
+    expect(r.map(b => b.id)).toEqual(['aJ'])
   })
 })
