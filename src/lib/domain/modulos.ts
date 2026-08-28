@@ -28,6 +28,10 @@ export const MODULOS = [
   { key: 'bibliografia', label: 'Bibliografía TDM' },
   { key: 'libro_profe', label: 'Libro del profe' },
   { key: 'feedback', label: 'Feedback' },
+  // El alumno avisa que no va a un bloque y su lugar queda libre ese día. Va
+  // aparte de 'clases' porque la mayoría de los clubes no quiere que el alumno
+  // toque su horario: hoy solo Spinhouse (migración 226).
+  { key: 'recuperar_clases', label: 'Recuperar clases' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
