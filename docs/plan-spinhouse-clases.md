@@ -77,14 +77,44 @@ Archivos: `src/lib/domain/horasProfesor.ts` (+ test),
 
 ---
 
-## Parte 3 — Feedback del alumno hacia el profesor ⏳ pendiente
+## Parte 3 — Feedback del alumno hacia el profesor ✅ hecha (falta aplicar la migración)
 
-Lo inverso de `feedback_jugadores`, que ya existe. El alumno escribe con su
-nombre o anónimo.
+**Módulo:** `feedback_profes` · **Migración:** `228_feedback_a_profesores_spinhouse.sql`
 
-Plan: tabla `feedback_profesores` con `jugador_id` **siempre guardado** (el
-admin lo necesita si hay que moderar un abuso) y `anonimo boolean`. El profe lee
-por una **vista** que devuelve el nombre en NULL cuando `anonimo` — la RLS no
-puede esconder una columna, la vista sí.
+Lo inverso de `feedback_jugadores`. El alumno escribe con su nombre o anónimo,
+desde `/feedbacks` → pestaña *Escribirle al profe*. El profe lo lee en
+*Lo que me escribieron*.
 
-Módulo: `feedback_profes`.
+- Solo puede escribirle a los profes que **le hacen clases**: salen de sus
+  bloques, no de la lista completa del club.
+- Uno por profesor por día. No es una regla del club, es un freno al spam: si se
+  arrepiente, borra el suyo y escribe otro.
+
+### El anonimato, que es la parte delicada
+
+La RLS de Postgres filtra **filas, no columnas**: no hay forma de darle la fila
+al profesor con el `jugador_id` escondido. Por eso:
+
+- La tabla tiene **una sola política**, la del alumno sobre lo suyo. El profesor
+  y el admin **no leen la tabla**.
+- La leen por `feedback_de_profesores()`, que devuelve el autor en NULL cuando
+  es anónimo.
+- **Tampoco el admin ve al autor.** En Buin los admin son entrenadores, así que
+  un admin que puede ver quién escribió qué vacía la palabra "anónimo".
+- Borrar va por `borrar_feedback_profesor()` y no por una política de DELETE:
+  con la política, un `DELETE ... RETURNING jugador_id` desde la API devolvería
+  justo el dato que el anonimato niega.
+- El `jugador_id` **sí se guarda**: es lo que le permite al alumno releer y
+  borrar lo suyo, y lo que permitiría investigar un abuso real — pero eso se
+  hace con SQL, a mano y dejando rastro, no desde una pantalla.
+
+Archivos: `src/components/PanelFeedbackAlProfe.tsx` (alumno),
+`src/components/PanelFeedbackRecibido.tsx` (profe/admin).
+
+### Antes de probar
+Pegar en el SQL Editor de Supabase:
+`C:\Users\Marcela Sandoval\Documents\CMSPORTS\cmsports-spinhouse-clases\supabase\migrations\228_feedback_a_profesores_spinhouse.sql`
+
+La verificación que importa está al final del archivo: **tiene que haber una
+sola política** sobre `feedback_profesores`. Si aparece alguna de SELECT para
+staff, el anonimato está roto.

@@ -36,6 +36,10 @@ export const MODULOS = [
   // 'asistencia', que es la de los alumnos: son dos registros distintos y un
   // club puede querer uno sin el otro (migración 227).
   { key: 'asistencia_profes', label: 'Asistencia de profesores' },
+  // El alumno le escribe al profesor, con su nombre o anónimo. Aparte de
+  // 'feedback', que es del profe hacia el alumno: van en direcciones opuestas y
+  // un club puede querer una sola (migración 228).
+  { key: 'feedback_profes', label: 'Feedback al profesor' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
