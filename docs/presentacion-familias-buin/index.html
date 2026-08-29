@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CMsports · Familias Buin y Paine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0f1720;
+      --muted: #5a6570;
+      --hint: #8a939c;
+      --blue: #2e86c1;
+      --navy: #0f3651;
+      --orange: #f76802;
+      --card: #f4f7fa;
+      --sky: #eaf4fb;
+      --peach: #fff3ea;
+      --line: #e4e9ee;
+      --white: #fff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #d5e0e8; font-family: Inter, system-ui, sans-serif; color: var(--ink); }
+    .deck { min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 28px; padding: 28px 16px 80px; }
+    .slide {
+      position: relative;
+      width: 1280px; height: 720px;
+      background: var(--white);
+      overflow: hidden;
+      flex-shrink: 0;
+      box-shadow: 0 18px 48px rgba(15, 23, 32, 0.14);
+    }
+    .slide::before {
+      content: "";
+      position: absolute; top: 0; left: 0; right: 0; height: 5px;
+      background: linear-gradient(90deg, var(--navy), var(--blue) 55%, var(--orange));
+    }
+    .deco {
+      position: absolute; border-radius: 50%; pointer-events: none;
+    }
+    .deco-a { width: 220px; height: 220px; right: -70px; top: 90px; background: #eaf4fb; }
+    .deco-b { width: 140px; height: 140px; right: 70px; bottom: 70px; background: #fff3ea; }
+    .deco-c { width: 90px; height: 90px; left: -30px; bottom: 120px; background: #eaf4fb; }
+    .pad { padding: 36px 52px 50px; height: 100%; display: flex; flex-direction: column; position: relative; z-index: 1; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand svg { width: 42px; height: 42px; display: block; }
+    .brand .word { font-size: 21px; letter-spacing: -0.03em; }
+    .brand .word b { color: var(--blue); font-weight: 800; }
+    .brand .word span { color: var(--ink); font-weight: 600; }
+
+    .kicker {
+      font-size: 13px; font-weight: 700; letter-spacing: 0.16em;
+      text-transform: uppercase; color: var(--blue); margin-bottom: 10px;
+    }
+    h1 { font-size: 44px; line-height: 1.12; font-weight: 800; letter-spacing: -0.03em; }
+    h2 { font-size: 36px; line-height: 1.15; font-weight: 800; letter-spacing: -0.03em; }
+    .lead { margin-top: 10px; font-size: 18px; line-height: 1.4; color: var(--muted); font-weight: 500; }
+    .accent { width: 52px; height: 4px; background: var(--orange); border-radius: 2px; margin: 14px 0 0; }
+
+    .footer {
+      position: absolute; left: 52px; right: 52px; bottom: 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      padding-top: 12px; border-top: 1px solid var(--line);
+      font-size: 12px; color: var(--hint); font-weight: 500; z-index: 2;
+    }
+
+    .split { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 28px; flex: 1; min-height: 0; }
+    .row { display: grid; gap: 14px; }
+    .row-2 { grid-template-columns: 1fr 1fr; }
+    .row-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .row-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+    .grow { flex: 1; min-height: 0; }
+
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      padding: 20px 20px 18px;
+      position: relative;
+    }
+    .card.sky { background: var(--sky); }
+    .card.peach { background: var(--peach); }
+    .card.white { background: #fff; border: 1px solid var(--line); }
+    .card h3 { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .card p { font-size: 15px; font-weight: 500; color: var(--muted); line-height: 1.4; }
+    .ico {
+      width: 42px; height: 42px; border-radius: 12px;
+      display: grid; place-items: center;
+      font-size: 13px; font-weight: 800; color: #fff;
+      background: var(--blue); margin-bottom: 12px;
+    }
+    .ico.or { background: var(--orange); }
+    .ico.navy { background: var(--navy); }
+    .num {
+      font-size: 13px; font-weight: 800; color: var(--blue);
+      letter-spacing: 0.04em; margin-bottom: 6px;
+    }
+    .tag {
+      display: inline-block; font-size: 11px; font-weight: 800;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--orange); margin-bottom: 8px;
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: #fff; border: 1px solid var(--line);
+      border-radius: 999px; padding: 8px 14px;
+      font-size: 14px; font-weight: 700;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--blue); flex-shrink: 0;
+    }
+    .dot.or { background: var(--orange); }
+    .tl { display: flex; gap: 12px; align-items: flex-start; }
+    .tl + .tl { margin-top: 14px; }
+    .tl strong { display: block; font-size: 15px; font-weight: 800; margin-bottom: 2px; }
+    .tl span { display: block; font-size: 14px; color: var(--muted); font-weight: 500; line-height: 1.35; }
+    .name-card {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 14px;
+      padding: 16px 18px;
+    }
+    .name-card small {
+      display: block; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--blue); margin-bottom: 5px;
+    }
+    .name-card strong { display: block; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+    .name-card span { display: block; font-size: 13px; color: var(--muted); margin-top: 3px; font-weight: 500; }
+    .q { font-size: 20px; font-weight: 700; line-height: 1.5; }
+    .q em { font-style: normal; color: var(--blue); }
+    .url {
+      background: var(--sky);
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--navy);
+      letter-spacing: -0.02em;
+    }
+    .hint-nav {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: var(--ink); color: #fff; font-size: 13px; font-weight: 600;
+      padding: 8px 14px; border-radius: 999px; z-index: 20;
+    }
+    @media print {
+      html, body { background: #fff; }
+      .deck { padding: 0; gap: 0; display: block; }
+      .slide { box-shadow: none; page-break-after: always; break-after: page; }
+      .slide:last-child { page-break-after: auto; }
+      .hint-nav { display: none; }
+    }
+    @page { size: 13.333in 7.5in; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="deck">
+
+    <!-- 1 -->
+    <section class="slide">
+      <div class="deco deco-a"></div>
+      <div class="deco deco-b"></div>
+      <div class="pad">
+        <div class="brand">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <path d="M18 14 A24 24 0 1 0 18 50" fill="none" stroke="#2e86c1" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="10" cy="32" r="3.4" fill="#2e86c1"/>
+            <rect x="10" y="30.4" width="9" height="3.2" rx="1" fill="#2e86c1"/>
+            <path d="M22 47 L29 20 L36 41 L42 22" fill="none" stroke="#2e86c1" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="M39 47 Q47 32 55 17" fill="none" stroke="#f76802" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="47" y="35" width="5.5" height="13" rx="1.1" fill="#f76802"/>
+            <rect x="54.5" y="27" width="5.5" height="21" rx="1.1" fill="#f76802"/>
+          </svg>
+          <div class="word"><b>CM</b><span>sports</span></div>
+        </div>
+        <div class="split" style="margin-top: 28px;">
+          <div>
+            <div class="kicker">Reunión con las familias</div>
+            <h1>CMsports en el club:<br>un hábito de todos</h1>
+            <p class="lead">Quiénes somos, para qué nos juntamos y cómo se usa en el día a día.</p>
+            <div class="accent"></div>
+            <div class="chips">
+              <span class="chip"><span class="dot"></span> Asistencia</span>
+              <span class="chip"><span class="dot or"></span> Feedback</span>
+              <span class="chip"><span class="dot"></span> Horario</span>
+              <span class="chip"><span class="dot or"></span> Cuota</span>
+            </div>
+            <div class="row row-2" style="margin-top: 20px;">
+              <div class="name-card">
+                <small>Presenta</small>
+                <strong>Luis Felipe Muñoz</strong>
+                <span>Fundador · CMsports</span>
+              </div>
+              <div class="name-card">
+                <small>Presenta</small>
+                <strong>Benjamín Cárdenas</strong>
+                <span>Fundador · CMsports</span>
+              </div>
+            </div>
+          </div>
+          <div class="card sky" style="display:flex; flex-direction:column;">
+            <div class="tag">Hoy</div>
+            <h3>Tres cosas de esta reunión</h3>
+            <div style="margin-top: 18px;">
+              <div class="tl"><div class="dot"></div><div><strong>Quiénes somos</strong><span>La app del club, hecha para Buin y Paine.</span></div></div>
+              <div class="tl"><div class="dot or"></div><div><strong>Para qué estamos</strong><span>Entrar, saber qué mirar y dejarla en el celular.</span></div></div>
+              <div class="tl"><div class="dot"></div><div><strong>El hábito</strong><span>Abrirla el día que se entrena. Nada más.</span></div></div>
+            </div>
+            <div class="chips" style="margin-top: auto;">
+              <span class="chip"><span class="dot"></span> Familias</span>
+              <span class="chip"><span class="dot or"></span> Jugadores</span>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span>Asociación TDM Buin y Paine · Agosto 2026</span><span>01</span></div>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="slide">
+      <div class="deco deco-b" style="top: 80px; right: -40px; bottom: auto;"></div>
+      <div class="pad">
+        <div class="kicker">01 · Quiénes somos</div>
+        <h2>Qué es CMsports</h2>
+        <p class="lead">Hacemos la plataforma de este club. La administración, en un solo lugar, para que cada familia vea lo suyo.</p>
+        <div class="row row-2 grow" style="margin-top: 22px; padding-bottom: 28px;">
+          <div class="card">
+            <div class="ico">01</div>
+            <div class="tag">Plantel</div>
+            <h3>Asistencia</h3>
+            <p>Si el jugador vino. La lista la pasa el profesor, no se marca solo.</p>
+          </div>
+          <div class="card">
+            <div class="ico or">02</div>
+            <div class="tag">Semana</div>
+            <h3>Horario</h3>
+            <p>Día, hora y sede de cada uno. Si cambia el grupo, se ve solo.</p>
+          </div>
+          <div class="card">
+            <div class="ico navy">03</div>
+            <div class="tag">Cancha</div>
+            <h3>Feedback</h3>
+            <p>Lo que el profesor vio en su mesa. No es un mensaje al grupo.</p>
+          </div>
+          <div class="card">
+            <div class="ico or">04</div>
+            <div class="tag">Familia</div>
+            <h3>La cuota</h3>
+            <p>Si el mes está pagado. Cada familia ve solo lo suyo.</p>
+          </div>
+        </div>
+        <div class="footer"><span>CMsports · Asociación TDM Buin y Paine</span><span>02</span></div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section class="slide">
+      <div class="deco deco-a"></div>
+      <div class="pad">
+        <div class="kicker">02 · Objetivo de la reunión</div>
+        <h2>Para qué estamos acá</h2>
+        <div class="split" style="margin-top: 22px; padding-bottom: 28px;">
+          <div class="row" style="grid-template-columns: 1fr; gap: 12px;">
+            <div class="card">
+              <div class="num">01</div>
+              <h3>Saber entrar</h3>
+              <p>Link del club y el RUT. Aparece el correo. Se entra con ese correo y la clave.</p>
+            </div>
+            <div class="card">
+              <div class="num">02</div>
+              <h3>Saber qué mirar</h3>
+              <p>Asistencia, feedback y la cuota. No hace falta aprender las doce pantallas.</p>
+            </div>
+            <div class="card">
+              <div class="num">03</div>
+              <h3>Dejarla en el celular</h3>
+              <p>Un ícono en el inicio, para no buscar el link del grupo cada vez.</p>
+            </div>
+          </div>
+          <div class="card peach" style="display:flex; flex-direction:column;">
+            <div class="tag">Esta reunión no es</div>
+            <h3>Tres cosas que dejamos fuera</h3>
+            <div style="margin-top: 18px;">
+              <div class="tl"><div class="dot or"></div><div><strong>No es un reclamo de cuotas</strong><span>La plata se ve en Estado de cuenta, en casa.</span></div></div>
+              <div class="tl"><div class="dot or"></div><div><strong>No es una clase de informática</strong><span>Si alguien no entra, se anota y se resuelve uno a uno.</span></div></div>
+              <div class="tl"><div class="dot or"></div><div><strong>No reemplaza al profesor</strong><span>La lista y el comentario los carga el club. Acá les llegan.</span></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span>CMsports · Asociación TDM Buin y Paine</span><span>03</span></div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="slide">
+      <div class="deco deco-c"></div>
+      <div class="pad">
+        <div class="kicker">03 · El hábito</div>
+        <h2>Cómo esperamos que se use</h2>
+        <p class="lead">No todos los días. El día que entrenan, tres preguntas:</p>
+        <div class="row row-3" style="margin-top: 18px;">
+          <div class="card sky">
+            <div class="ico">1</div>
+            <h3>¿Me marcaron hoy?</h3>
+            <p>Si el profesor ya pasó lista.</p>
+          </div>
+          <div class="card peach">
+            <div class="ico or">2</div>
+            <h3>¿Hay feedback nuevo?</h3>
+            <p>Un comentario sobre su entrenamiento.</p>
+          </div>
+          <div class="card sky">
+            <div class="ico navy">3</div>
+            <h3>¿La cuota está al día?</h3>
+            <p>Mensualidad, extras y matrícula.</p>
+          </div>
+        </div>
+        <div class="row row-2" style="margin-top: 14px; padding-bottom: 28px;">
+          <div class="card">
+            <div class="tag">En cancha</div>
+            <h3>El profesor pasa lista</h3>
+            <p>El jugador no se marca solo. Si falta un día, se avisa al profesor.</p>
+          </div>
+          <div class="card">
+            <div class="tag">El domingo</div>
+            <h3>Veinte segundos</h3>
+            <p>En Mi horario: a qué hora y en qué sede toca esa semana.</p>
+          </div>
+        </div>
+        <div class="footer"><span>CMsports · Asociación TDM Buin y Paine</span><span>04</span></div>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="slide">
+      <div class="deco deco-a"></div>
+      <div class="pad">
+        <div class="kicker">04 · Lo que gana cada uno</div>
+        <h2>Más personalización por jugador</h2>
+        <p class="lead">Mientras más se use, más personal se pone. WhatsApp sigue para los avisos del club.</p>
+        <div class="row row-2 grow" style="margin-top: 20px; padding-bottom: 28px;">
+          <div class="card">
+            <div class="ico">01</div>
+            <div class="tag">Entrenamiento</div>
+            <h3>Feedback</h3>
+            <p>El profesor escribe a cada uno. No es un mensaje al grupo.</p>
+          </div>
+          <div class="card">
+            <div class="ico navy">02</div>
+            <div class="tag">Información</div>
+            <h3>Lo suyo, en un solo lugar</h3>
+            <p>Asistencia, horario y ranking de su categoría.</p>
+          </div>
+          <div class="card">
+            <div class="ico or">03</div>
+            <div class="tag">Familia</div>
+            <h3>Contacto y emergencia</h3>
+            <p>A quién llamar. Si cambió, avísenle al profesor para dejarlo en la ficha.</p>
+          </div>
+          <div class="card">
+            <div class="ico">04</div>
+            <div class="tag">Plata</div>
+            <h3>Control de la cuota</h3>
+            <p>Estado de cuenta. Cada familia ve solo lo suyo. Se paga por transferencia.</p>
+          </div>
+        </div>
+        <div class="footer"><span>CMsports · Asociación TDM Buin y Paine</span><span>05</span></div>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section class="slide">
+      <div class="deco deco-b"></div>
+      <div class="pad">
+        <div class="kicker">Próximo paso</div>
+        <h2>Tres cosas para llevarse hoy</h2>
+        <div class="split" style="margin-top: 18px; padding-bottom: 28px;">
+          <div>
+            <div class="url">cmsportschile.cl/mi-acceso/buin</div>
+            <div class="row" style="grid-template-columns: 1fr; gap: 12px; margin-top: 14px;">
+              <div class="card">
+                <div class="num">01</div>
+                <h3>Entrar con el RUT</h3>
+                <p>El link muestra el correo. Se entra con ese correo y la clave.</p>
+              </div>
+              <div class="card">
+                <div class="num">02</div>
+                <h3>Ícono en el inicio</h3>
+                <p>iPhone, Safari: Compartir → Agregar a inicio. Android, Chrome: Instalar app.</p>
+              </div>
+              <div class="card">
+                <div class="num">03</div>
+                <h3>El próximo entrenamiento</h3>
+                <p>¿Me marcaron? ¿Hay feedback? ¿La cuota está al día?</p>
+              </div>
+            </div>
+          </div>
+          <div class="card peach" style="display:flex; flex-direction:column;">
+            <div class="tag">Estamos para acompañarlos</div>
+            <h3>Cualquier duda de acceso se resuelve con el club.</h3>
+            <p style="margin-top: 10px;">Anoten nombre y RUT al final. No hace falta resolverlo en público.</p>
+            <div style="height:1px; background:#f0d4c0; margin: 18px 0;"></div>
+            <div class="tag" style="color: var(--blue);">Fundadores</div>
+            <strong style="display:block; font-size:18px; font-weight:800;">Luis Felipe Muñoz</strong>
+            <span style="display:block; color:var(--muted); font-size:14px; margin: 2px 0 14px; font-weight:500;">Fundador · CMsports</span>
+            <strong style="display:block; font-size:18px; font-weight:800;">Benjamín Cárdenas</strong>
+            <span style="display:block; color:var(--muted); font-size:14px; margin-top: 2px; font-weight:500;">Fundador · CMsports</span>
+            <div class="chips" style="margin-top: auto;">
+              <span class="chip"><span class="dot"></span> Buin</span>
+              <span class="chip"><span class="dot or"></span> Paine</span>
+            </div>
+          </div>
+        </div>
+        <div class="footer"><span>Luis Felipe Muñoz · Benjamín Cárdenas</span><span>06</span></div>
+      </div>
+    </section>
+
+  </div>
+  <div class="hint-nav">Flechas para pasar · F pantalla completa</div>
+  <script>
+    const slides = [...document.querySelectorAll('.slide')]
+    let i = 0
+    const go = (n) => {
+      i = Math.max(0, Math.min(slides.length - 1, n))
+      slides[i].scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    document.addEventListener('keydown', (e) => {
+      if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(i + 1) }
+      if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); go(i - 1) }
+      if (e.key === 'Home') go(0)
+      if (e.key === 'End') go(slides.length - 1)
+      if (e.key === 'f' || e.key === 'F') document.documentElement.requestFullscreen?.()
+      if (e.key === 'p' || e.key === 'P') window.print()
+    })
+  </script>
+</body>
+</html>
