@@ -122,3 +122,26 @@ describe('el corte por mes', () => {
     expect(porMes).toBe(delPeriodo)
   })
 })
+
+describe('dos bloques con el mismo nombre son dos bloques', () => {
+  // El club tiene seis "Adulto - Master" y tres "Menores Avanzado": mismo
+  // nombre, distinto día o distinta sede. Repartir por nombre dejaba vivo uno
+  // solo de cada grupo y el reporte salía con la mitad de los bloques.
+  const mismoNombre = datos({
+    bloques: [
+      { id: 'b1', nombre: 'Adulto - Master', sede: 'buin',  dia_semana: 'lun', hora_inicio: '20:30', vigente_desde: '2026-01-01', vigente_hasta: null },
+      { id: 'b2', nombre: 'Adulto - Master', sede: 'paine', dia_semana: 'mar', hora_inicio: '20:30', vigente_desde: '2026-01-01', vigente_hasta: null },
+    ] as any,
+    inscripciones: [
+      { bloque_id: 'b1', jugador_id: 'j1', vigente_desde: '2026-01-01', vigente_hasta: null },
+      { bloque_id: 'b2', jugador_id: 'j2', vigente_desde: '2026-01-01', vigente_hasta: null },
+    ] as any,
+  })
+
+  it('los dos salen en el reporte, cada uno con su gente', () => {
+    const a = agruparPorBloque(mismoNombre, jugadores, DESDE, HASTA)
+    expect(a.periodo.map(r => r.bloque.id).sort()).toEqual(['b1', 'b2'])
+    expect(a.periodo.find(r => r.bloque.id === 'b1')!.jugadores.map(f => f.jugador.id)).toEqual(['j1'])
+    expect(a.periodo.find(r => r.bloque.id === 'b2')!.jugadores.map(f => f.jugador.id)).toEqual(['j2'])
+  })
+})

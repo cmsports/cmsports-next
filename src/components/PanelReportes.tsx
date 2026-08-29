@@ -140,18 +140,17 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   async function calcularAsistenciaPorGrupo(desde: string, hasta: string) {
     const datosClub = await cargarHistorialClub(clubId, desde, hasta)
     const indice = indexar(datosClub)
-    const bloquePorNombre = new Map(datosClub.bloques.map(b => [b.nombre, b]))
     const idsInscritos = new Set(inscripciones.filter(i => !i.vigente_hasta).map(i => i.jugador_id))
 
     const conteo = new Map<string, Map<string, { presentes: number; ausentes: number }>>()
     for (const jugadorId of idsInscritos) {
       for (const dia of calendarioJugador(jugadorId, desde, hasta, datosClub, indice)) {
         if (dia.estado === 'extraordinaria' || dia.estado === 'pendiente') continue
-        for (const nombreBloque of dia.bloques) {
-          const bloque = bloquePorNombre.get(nombreBloque)
-          if (!bloque) continue
-          let porJugador = conteo.get(bloque.id)
-          if (!porJugador) { porJugador = new Map(); conteo.set(bloque.id, porJugador) }
+        // Por id: hay bloques distintos con el mismo nombre (seis "Adulto -
+        // Master"), y por nombre se perdían todos menos uno.
+        for (const bloqueId of dia.bloqueIds) {
+          let porJugador = conteo.get(bloqueId)
+          if (!porJugador) { porJugador = new Map(); conteo.set(bloqueId, porJugador) }
           const c = porJugador.get(jugadorId) ?? { presentes: 0, ausentes: 0 }
           if (dia.estado === 'presente') c.presentes++; else c.ausentes++
           porJugador.set(jugadorId, c)

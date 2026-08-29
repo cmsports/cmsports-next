@@ -31,6 +31,13 @@ export type DiaCalendario = {
   dia: string
   estado: EstadoDia
   bloques: string[]        // nombres de los grupos que le tocaban ese día
+  /**
+   * Los mismos grupos, por id. El nombre no identifica un bloque: el club tiene
+   * seis "Adulto - Master" y tres "Menores Avanzado" —mismo grupo, distinto día
+   * u otra sede—. Quien reparte asistencia por bloque tiene que usar esto; el
+   * nombre es para mostrar.
+   */
+  bloqueIds: string[]
   /** Además de lo anterior, ese día vino a una clase extra. */
   extra: boolean
 }
@@ -183,12 +190,17 @@ export function calendarioJugador(
   const out: DiaCalendario[] = []
   for (const { fecha, dia } of diasHabiles(desde, hasta)) {
     const nombres: string[] = []
+    const ids: string[] = []
     for (const i of mias) {
       if (!vigenteEn(i, fecha)) continue
       const b = bloquePorId.get(i.bloque_id)
       if (!b || b.dia_semana !== dia) continue
       if (!vigenteEn(b, fecha)) continue
       if (sinClase.has(`${b.id}|${fecha}`)) continue
+      if (ids.includes(b.id)) continue
+      ids.push(b.id)
+      // Los nombres se deduplican aparte: dos bloques distintos con el mismo
+      // nombre son dos bloques, pero mostrarlo dos veces solo confunde.
       if (!nombres.includes(b.nombre)) nombres.push(b.nombre)
     }
     const extra = misExtras.has(fecha)
@@ -197,7 +209,7 @@ export function calendarioJugador(
     // extra. Sin eso el día quedaba invisible: la clase existía, se cobraba, y
     // en su calendario no había nada.
     if (nombres.length === 0) {
-      if (extra) out.push({ fecha, dia, estado: 'extraordinaria', bloques: [], extra: true })
+      if (extra) out.push({ fecha, dia, estado: 'extraordinaria', bloques: [], bloqueIds: [], extra: true })
       continue
     }
 
@@ -211,7 +223,7 @@ export function calendarioJugador(
     // inventar. Cualquier día se corrige a mano desde Asistencia Histórica.
     const registrado = estadoDe.get(fecha)
     const estado: EstadoDia = registrado ?? (fecha < hoy ? 'ausente' : 'pendiente')
-    out.push({ fecha, dia, estado, bloques: nombres, extra })
+    out.push({ fecha, dia, estado, bloques: nombres, bloqueIds: ids, extra })
   }
   return out
 }
