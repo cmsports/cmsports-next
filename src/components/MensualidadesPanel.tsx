@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTextoMonto } from '@/components/Monto'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago, eximirMensualidad, revertirExencion } from '@/app/actions/mensualidades'
+import { registrarPago, generarMensualidadesPendientes, marcarAtrasado as marcarAtrasadoAction, revertirPago, eximirMensualidad, revertirExencion, marcarPuntualidad } from '@/app/actions/mensualidades'
+import { useModulos } from '@/lib/hooks/useModulos'
+import { MOTIVO_MES_GRATIS, etiquetaPuntualidad, resumenPuntualidad, type CuotaPuntualidad } from '@/lib/domain/puntualidad'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import FiltroMultiSelect from '@/components/FiltroMultiSelect'
@@ -59,6 +61,13 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const [filtroSede, setFiltroSede]   = useState<Set<string>>(new Set())
   const [clubNombre, setClubNombre] = useState('')
   const clubId = perfil?.club_id ?? null
+  // Marcar si pagó en plazo y regalarle el mes al que paga bien. Solo los clubes
+  // que lo pidieron: para el resto, el cobro sigue siendo un paso (migración 234).
+  const { tiene } = useModulos()
+  const conPuntualidad = tiene('puntualidad_pago')
+  // El historial completo del club, solo para la racha. Son ~12 filas por
+  // jugador: una consulta, no una por fila.
+  const [historial, setHistorial] = useState<Map<string, CuotaPuntualidad[]>>(new Map())
 
   useEffect(() => {
     if (!clubId) return
@@ -106,7 +115,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     const id = cid || clubId
     const [{ data: j }, { data: m }, { data: ex }] = await Promise.all([
       supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono').eq('club_id', id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').order('nombre'),
-      supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio),
+      supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas,puntualidad').eq('club_id', id).eq('mes', mes).eq('anio', anio),
       // Las clases extra impagas del club. No se filtran por mes: si quedó sin
       // cobrar, se debe, y el aviso tiene que aparecer igual mirando agosto.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -146,7 +155,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
       if (sinMens.length > 0) {
         await generarMensualidadesPendientes({ jugadorIds: sinMens.map(jug => jug.id), mes, anio })
-        const { data: mActual2 } = await supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
+        const { data: mActual2 } = await supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas,puntualidad').eq('club_id', id).eq('mes', mes).eq('anio', anio)
         setMensualidades(mActual2 || [])
       }
     }
@@ -201,7 +210,31 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     setAnioLocal(nuevoAnio)
   }
 
-  async function marcarPagado(jugadorId: string, mensId: string) {
+  // El historial de cuotas del club, para la racha de cada jugador. Solo si el
+  // módulo está encendido: para los demás clubes es una consulta al pedo.
+  const cargarHistorial = useCallback(async () => {
+    if (!clubId || !conPuntualidad) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase as any).from('mensualidades')
+      .select('jugador_id,mes,anio,estado,puntualidad,notas').eq('club_id', clubId)
+    const porJugador = new Map<string, CuotaPuntualidad[]>()
+    for (const c of (data ?? []) as (CuotaPuntualidad & { jugador_id: string })[]) {
+      const lista = porJugador.get(c.jugador_id)
+      if (lista) lista.push(c); else porJugador.set(c.jugador_id, [c])
+    }
+    setHistorial(porJugador)
+  }, [clubId, conPuntualidad])
+
+  useEffect(() => { void cargarHistorial() }, [cargarHistorial, mensualidades])
+
+  /**
+   * Registra el pago y, si el club lleva puntualidad, la deja marcada.
+   *
+   * Son dos llamadas y no una: la segunda no entra en el RPC de pagos, que es
+   * por donde pasa la plata de todos los clubes. Si la marca falla, el pago
+   * quedó igual y la cuota se ve "⚪ Sin marcar" con su botón para corregirla.
+   */
+  async function marcarPagado(jugadorId: string, mensId: string, puntualidad?: 'a_tiempo' | 'atrasado') {
     if (registrandoPago) return
     // Un pago es plata que entra al libro. Sin monto escrito no se registra
     // nada: antes se guardaban $25.000 por defecto, y un movimiento inventado
@@ -223,7 +256,32 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     setRegistrandoPago(false)
     if (resultado.error) { setErrorPago(resultado.error); return }
     pagoOperacionId.current = null
+    if (puntualidad && resultado.mensualidadId) {
+      await marcarPuntualidad({ mensualidadId: resultado.mensualidadId, puntualidad })
+    }
     setModalPago(null)
+    cargarMensualidades()
+    onPagoRegistrado?.()
+  }
+
+  /** Corrige la marca de una cuota ya cobrada, sin tocar la plata. */
+  async function corregirPuntualidad(mensId: string, puntualidad: 'a_tiempo' | 'atrasado') {
+    const res = await marcarPuntualidad({ mensualidadId: mensId, puntualidad })
+    if (res.error) { alert(res.error); return }
+    cargarMensualidades()
+  }
+
+  // El premio por pagar bien. No es un estado nuevo: es la misma exención de
+  // "No vino", con el motivo del premio, así que sale de los pendientes sin
+  // registrar plata que no entró y se puede deshacer igual.
+  async function regalarMes(mensId: string, nombre: string, racha: number) {
+    if (!confirm(`¿Regalarle el mes a ${nombre}?
+
+${racha > 0 ? `Lleva ${racha} ${racha === 1 ? 'mes' : 'meses'} seguidos pagando en plazo.` : 'Ojo: no tiene meses seguidos pagados en plazo.'}
+
+La cuota deja de cobrarse y queda registrada como mes gratis. Se puede deshacer.`)) return
+    const res = await eximirMensualidad({ mensualidadId: mensId, motivo: MOTIVO_MES_GRATIS })
+    if (res.error) { alert(res.error); return }
     cargarMensualidades()
     onPagoRegistrado?.()
   }
@@ -282,7 +340,7 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
       return
     }
 
-    const { data: historial } = await supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado,fecha_pago,metodo,notas').eq('club_id', clubId).order('anio').order('mes')
+    const { data: historial } = await supabase.from('mensualidades').select('id,jugador_id,mes,anio,monto,estado,fecha_pago,metodo,notas,puntualidad').eq('club_id', clubId).order('anio').order('mes')
     const wb = utils.book_new()
 
     const mensualidadPorJugador = new Map(mensualidades.map(m => [m.jugador_id, m]))
@@ -312,11 +370,39 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
     const jugadorPorId = new Map(jugadores.map(j => [j.id, j]))
     const datosHistorial = (historial || []).map(h => {
       const jug = jugadorPorId.get(h.jugador_id)
-      return { 'Nombre': jug?.nombre || '', 'Mes': mesesN[h.mes-1], 'Año': h.anio, 'Estado': h.estado === 'atrasado' ? 'Atrasado' : h.estado === 'pendiente' ? 'Pendiente' : 'Pagado', 'Fecha pago': h.fecha_pago || '', 'Monto': h.monto || '' }
+      return {
+        'Nombre': jug?.nombre || '', 'Mes': mesesN[h.mes-1], 'Año': h.anio,
+        'Estado': h.estado === 'atrasado' ? 'Atrasado' : h.estado === 'pendiente' ? 'Pendiente' : 'Pagado',
+        // La fecha de pago es cuándo se REGISTRÓ, no cuándo pagó: por eso la
+        // puntualidad va en su propia columna y no se deduce de esta.
+        ...(conPuntualidad ? { 'Puntualidad': etiquetaPuntualidad(h)?.slice(2) ?? '' } : {}),
+        'Fecha pago': h.fecha_pago || '', 'Monto': h.monto || '',
+      }
     })
     const ws2 = utils.json_to_sheet(datosHistorial)
-    ws2['!cols'] = [{ wch:30 },{ wch:14 },{ wch:8 },{ wch:12 },{ wch:14 },{ wch:12 }]
+    ws2['!cols'] = [{ wch:30 },{ wch:14 },{ wch:8 },{ wch:12 },...(conPuntualidad ? [{ wch:14 }] : []),{ wch:14 },{ wch:12 }]
     utils.book_append_sheet(wb, ws2, 'Historial completo')
+
+    // La hoja con la que se decide a quién premiar: una fila por jugador.
+    if (conPuntualidad) {
+      const porJugador = new Map<string, CuotaPuntualidad[]>()
+      for (const h of historial || []) {
+        const lista = porJugador.get(h.jugador_id)
+        if (lista) lista.push(h); else porJugador.set(h.jugador_id, [h])
+      }
+      const filas = jugadores.map(j => {
+        const r = resumenPuntualidad(porJugador.get(j.id) ?? [])
+        return {
+          'Nombre': j.nombre, 'RUT': j.rut || '',
+          'Meses seguidos en plazo': r.racha,
+          'Pagos en plazo': r.aTiempo, 'Pagos atrasados': r.atrasado,
+          'Pagos sin marcar': r.sinMarcar, 'Meses gratis recibidos': r.mesesGratis,
+        }
+      }).sort((a, b) => b['Meses seguidos en plazo'] - a['Meses seguidos en plazo'] || a.Nombre.localeCompare(b.Nombre))
+      const ws4 = utils.json_to_sheet(filas)
+      ws4['!cols'] = [{ wch:30 },{ wch:14 },{ wch:22 },{ wch:15 },{ wch:16 },{ wch:16 },{ wch:20 }]
+      utils.book_append_sheet(wb, ws4, 'Comportamiento de pago')
+    }
 
     const historialPorJugador = new Map<string, typeof historial>()
     ;(historial || []).forEach(h => {
@@ -565,6 +651,8 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                 const estado = estadoDe(mens)
                 const sinCuota = estado === 'sin_cuota'
                 const exento = estado === 'exento'
+                const resPunt = conPuntualidad ? resumenPuntualidad(historial.get(j.id) ?? []) : null
+                const etiqPunt = conPuntualidad ? etiquetaPuntualidad(mens) : null
                 const col = estado === 'pagado' ? '#16a34a' : estado === 'atrasado' ? '#dc2626' : exento ? '#7c3aed' : sinCuota ? '#94a3b8' : '#d97706'
                 const colBg = estado === 'pagado' ? '#f0fdf4' : estado === 'atrasado' ? '#fef2f2' : exento ? '#f5f3ff' : sinCuota ? '#f8fafc' : '#fffbeb'
                 return (
@@ -575,12 +663,43 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                         const url = linkWhatsApp(j.telefono, `Hola ${j.nombre.split(' ')[0]}! 👋 Te contactamos desde ${clubNombre || 'el club'}. Tu mensualidad de ${mesesN[mes-1]} ${anio}${mens?.monto ? ` ($${Number(mens.monto).toLocaleString('es-CL')})` : ''} figura como *${estado === 'atrasado' ? 'atrasada ⚠️' : 'pendiente ⏳'}*. Por favor regularizá tu pago cuando puedas. ¡Gracias! 🏓`)
                         return url ? <WhatsAppBtn href={url} variant="compact" style={{ marginLeft:8 }} /> : null
                       })()}
+                      {/* Para qué está: es lo único que el profe necesita mirar
+                          para decidir a quién regalarle el mes. */}
+                      {resPunt && (resPunt.racha > 0 || resPunt.atrasado > 0 || resPunt.mesesGratis > 0) && (
+                        <div style={{ marginTop:4, display:'flex', gap:6, flexWrap:'wrap', fontSize:10.5, fontWeight:700 }}>
+                          {resPunt.racha > 0 && (
+                            <span title="Meses seguidos pagando dentro del plazo"
+                              style={{ background:'#f0fdf4', color:'#15803d', border:'1px solid #bbf7d0', borderRadius:6, padding:'2px 6px', whiteSpace:'nowrap' }}>
+                              🔥 {resPunt.racha} {resPunt.racha === 1 ? 'mes' : 'meses'} en plazo
+                            </span>
+                          )}
+                          {resPunt.atrasado > 0 && (
+                            <span title="Veces que pagó fuera de plazo"
+                              style={{ background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:6, padding:'2px 6px', whiteSpace:'nowrap' }}>
+                              {resPunt.atrasado} {resPunt.atrasado === 1 ? 'atraso' : 'atrasos'}
+                            </span>
+                          )}
+                          {resPunt.mesesGratis > 0 && (
+                            <span title="Meses que el club le regaló"
+                              style={{ background:'#f5f3ff', color:'#6d28d9', border:'1px solid #ddd6fe', borderRadius:6, padding:'2px 6px', whiteSpace:'nowrap' }}>
+                              🎁 {resPunt.mesesGratis}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted, whiteSpace:'nowrap' }}>{j.sesiones_limite} ses.</td>
                     <td style={{ padding:'12px 16px' }}>
                       <span style={{ background: colBg, color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                        {estado === 'pagado' ? '✅ Pagado' : estado === 'atrasado' ? '⚠️ Atrasado' : exento ? '🎫 No vino' : sinCuota ? '— No correspondía' : '⏳ Pendiente'}
+                        {estado === 'pagado' ? '✅ Pagado' : estado === 'atrasado' ? '⚠️ Atrasado' : exento ? (etiqPunt === '🎁 Mes gratis' ? '🎁 Mes gratis' : '🎫 No vino') : sinCuota ? '— No correspondía' : '⏳ Pendiente'}
                       </span>
+                      {/* Cómo pagó, aparte de si pagó. Un pago sin marcar se
+                          ve como tal: en blanco, no como si hubiera sido puntual. */}
+                      {estado === 'pagado' && etiqPunt && (
+                        <div style={{ marginTop:5, fontSize:10.5, fontWeight:600, color: etiqPunt.includes('En plazo') ? '#15803d' : etiqPunt.includes('Atrasado') ? '#b91c1c' : hint }}>
+                          {etiqPunt}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>
                       {mens?.fecha_pago || '—'}
@@ -622,6 +741,29 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                           <button onClick={() => { pagoOperacionId.current = crypto.randomUUID(); const esperado = montoEsperado(j, mens); setModalPago({ jugadorId: j.id, mensId: mens?.id, nombre: j.nombre, esperado }); setMontoPago(esperado == null ? '' : String(esperado)); setErrorPago('') }}
                             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
                             ✅ Marcar pagado
+                          </button>
+                        )}
+                        {/* Corregir la marca sin tocar la plata: el pago ya está
+                            registrado, esto solo cambia la etiqueta. */}
+                        {conPuntualidad && estado === 'pagado' && mens?.id && mens.puntualidad !== 'a_tiempo' && (
+                          <button onClick={() => corregirPuntualidad(mens.id, 'a_tiempo')}
+                            title="Corregir: pagó dentro del plazo"
+                            style={{ background:'#f0fdf4', color:'#15803d', border:'1px solid #bbf7d0', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
+                            🟢 En plazo
+                          </button>
+                        )}
+                        {conPuntualidad && estado === 'pagado' && mens?.id && mens.puntualidad !== 'atrasado' && (
+                          <button onClick={() => corregirPuntualidad(mens.id, 'atrasado')}
+                            title="Corregir: pagó fuera de plazo"
+                            style={{ background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', whiteSpace:'nowrap' }}>
+                            🔴 Atrasado
+                          </button>
+                        )}
+                        {conPuntualidad && (estado === 'pendiente' || estado === 'atrasado') && mens?.id && (
+                          <button onClick={() => regalarMes(mens.id, j.nombre, resPunt?.racha ?? 0)}
+                            title="Premio por buen comportamiento de pago: este mes no se le cobra"
+                            style={{ background:'#f5f3ff', color:'#6d28d9', border:'1px solid #ddd6fe', borderRadius:6, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap' }}>
+                            🎁 Mes gratis
                           </button>
                         )}
                         {(estado === 'pendiente' || estado === 'atrasado') && mens?.id && (
@@ -703,10 +845,40 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                 {errorPago}
               </div>
             )}
-            <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => { setErrorPago(''); setModalPago(null) }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
-              <button disabled={registrandoPago} onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId)} style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>{registrandoPago ? 'Registrando...' : 'Confirmar'}</button>
-            </div>
+            {/* La puntualidad la declara quien cobra, acá y en este momento. No
+                se deduce de la fecha: `fecha_pago` dice cuándo se REGISTRÓ el
+                pago, y el admin que se pone al día el 20 con lo cobrado la
+                primera semana marcaría atrasado a todo el club. */}
+            {conPuntualidad ? (
+              <>
+                <div style={{ fontSize:12, color: muted, marginBottom:8 }}>¿Pagó dentro del plazo?</div>
+                <div style={{ display:'flex', gap:10, marginBottom:10 }}>
+                  <button disabled={registrandoPago} onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId, 'a_tiempo')}
+                    style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:13.5, fontWeight:600, cursor:'pointer' }}>
+                    {registrandoPago ? 'Registrando...' : '🟢 Sí, en plazo'}
+                  </button>
+                  <button disabled={registrandoPago} onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId, 'atrasado')}
+                    style={{ flex:1, padding:11, background:'#dc2626', border:'none', borderRadius:8, color:'white', fontSize:13.5, fontWeight:600, cursor:'pointer' }}>
+                    {registrandoPago ? 'Registrando...' : '🔴 Pagó atrasado'}
+                  </button>
+                </div>
+                <div style={{ display:'flex', gap:10 }}>
+                  <button onClick={() => { setErrorPago(''); setModalPago(null) }} style={{ flex:1, padding:9, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer' }}>Cancelar</button>
+                  {/* Para cuando quien cobra no sabe si fue en plazo. Mentir el
+                      dato es peor que dejarlo vacío: se corrige después con los
+                      botones de la fila. */}
+                  <button disabled={registrandoPago} onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId)}
+                    style={{ flex:1, padding:9, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: hint, fontSize:13, cursor:'pointer' }}>
+                    Registrar sin marcar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ display:'flex', gap:10 }}>
+                <button onClick={() => { setErrorPago(''); setModalPago(null) }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>Cancelar</button>
+                <button disabled={registrandoPago} onClick={() => marcarPagado(modalPago.jugadorId, modalPago.mensId)} style={{ flex:1, padding:11, background:'#16a34a', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>{registrandoPago ? 'Registrando...' : 'Confirmar'}</button>
+              </div>
+            )}
           </div>
         </div>
       )}

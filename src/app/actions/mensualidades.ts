@@ -6,6 +6,7 @@ import {
   generarMensualidadesSchema,
   mensualidadIdSchema,
   pagoMensualidadSchema,
+  puntualidadPagoSchema,
   revertirExencionSchema,
   revertirMensualidadSchema,
   validationError,
@@ -72,6 +73,33 @@ export async function marcarAtrasado(params: { mensualidadId: string }) {
 
   const { error } = await supabase.rpc('marcar_mensualidad_atrasada_seguro', {
     p_mensualidad_id: validacion.data.mensualidadId,
+  })
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+/**
+ * Deja registrado si el jugador pagó en plazo o atrasado.
+ *
+ * Va aparte del RPC de pago a propósito: ese es por donde entra la plata de
+ * Buin, que no usa esta función, y no se le agrega un parámetro para algo que
+ * no necesita. Si esta llamada falla, el pago igual quedó registrado y la cuota
+ * se ve "sin marcar" con el botón para corregirla.
+ */
+export async function marcarPuntualidad(params: {
+  mensualidadId: string
+  puntualidad: 'a_tiempo' | 'atrasado'
+}) {
+  const validacion = puntualidadPagoSchema.safeParse(params)
+  if (!validacion.success) return { error: validationError(validacion.error) }
+
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('marcar_puntualidad_pago', {
+    p_mensualidad_id: validacion.data.mensualidadId,
+    p_puntualidad: validacion.data.puntualidad,
   })
   if (error) return { error: error.message }
   return { success: true }

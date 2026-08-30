@@ -40,6 +40,10 @@ export const MODULOS = [
   // 'feedback', que es del profe hacia el alumno: van en direcciones opuestas y
   // un club puede querer una sola (migración 228).
   { key: 'feedback_profes', label: 'Feedback al profesor' },
+  // Al cobrar, el profe marca si el jugador pagó en plazo o atrasado, y puede
+  // regalarle un mes al que paga bien. Aparte de 'mensualidades' porque agrega
+  // un paso al cobro y la mayoría de los clubes no lo quiere (migración 234).
+  { key: 'puntualidad_pago', label: 'Puntualidad de pago' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin

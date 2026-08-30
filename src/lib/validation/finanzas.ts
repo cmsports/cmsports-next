@@ -54,6 +54,13 @@ export const generarMensualidadesSchema = z.object({
 
 export const mensualidadIdSchema = z.object({ mensualidadId: UUID })
 
+// Solo etiqueta una cuota ya pagada, asi que no lleva idempotencia: repetirlo
+// escribe el mismo valor y no genera ningun movimiento.
+export const puntualidadPagoSchema = z.object({
+  mensualidadId: UUID,
+  puntualidad: z.enum(['a_tiempo', 'atrasado']),
+})
+
 // Eximir es "no vino este mes": la cuota deja de cobrarse sin decir que se pago.
 // La clave de idempotencia es obligatoria, no opcional: sin ella un doble clic
 // generaria dos movimientos por la misma cuota.
