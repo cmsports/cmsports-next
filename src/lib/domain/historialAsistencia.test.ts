@@ -226,7 +226,7 @@ describe('indicadores', () => {
   const cal = (estados: EstadoDia[], dia = 'lun') =>
     estados.map((estado, i) => ({
       fecha: `2026-08-${String(3 + i * 7).padStart(2, '0')}`,
-      dia, estado, bloques: ['Todo Público 1'], extra: false,
+      dia, estado, bloques: ['Todo Público 1'], bloqueIds: [], extra: false,
     }))
 
   it('el porcentaje ignora los pendientes', () => {
@@ -284,9 +284,9 @@ describe('indicadores', () => {
 
   it('agrupa por mes', () => {
     const i = indicadores([
-      { fecha: '2026-08-03', dia: 'lun', estado: 'presente', bloques: [], extra: false },
-      { fecha: '2026-08-10', dia: 'lun', estado: 'ausente',  bloques: [], extra: false },
-      { fecha: '2026-09-07', dia: 'lun', estado: 'presente', bloques: [], extra: false },
+      { fecha: '2026-08-03', dia: 'lun', estado: 'presente', bloques: [], bloqueIds: [], extra: false },
+      { fecha: '2026-08-10', dia: 'lun', estado: 'ausente',  bloques: [], bloqueIds: [], extra: false },
+      { fecha: '2026-09-07', dia: 'lun', estado: 'presente', bloques: [], bloqueIds: [], extra: false },
     ])
     expect(i.porMes).toEqual([
       { mes: '2026-08', presentes: 1, ausentes: 1, pendientes: 0, porcentaje: 50 },
@@ -427,7 +427,7 @@ describe('bloquesSinInscripcion', () => {
 /** Días sueltos para probar indicadores, sin armar un calendario completo. */
 function indicadoresDe(dias: { fecha: string; estado: EstadoDia }[]) {
   return dias.map(d => ({
-    ...d, dia: 'lun', bloques: ['Todo Público 1'],
+    ...d, dia: 'lun', bloques: ['Todo Público 1'], bloqueIds: ['b1'],
     extra: d.estado === 'extraordinaria',
   }))
 }

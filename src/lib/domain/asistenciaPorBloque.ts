@@ -119,7 +119,6 @@ export function agruparPorBloque(
   hasta: string,
 ): AgrupadoPorBloque {
   const indice = indexar(datos)
-  const bloquePorNombre = new Map(datos.bloques.map(b => [b.nombre, b]))
   const jugadorPorId = new Map(jugadores.map(j => [j.id, j]))
 
   // mes → bloque.id → jugador.id → conteo. Un solo recorrido: el calendario de
@@ -142,13 +141,14 @@ export function agruparPorBloque(
     for (const dia of calendarioJugador(j.id, desde, hasta, datos, indice)) {
       if (dia.estado === 'extraordinaria') continue
       const mesKey = dia.fecha.slice(0, 7)
-      for (const nombreBloque of dia.bloques) {
-        const bloque = bloquePorNombre.get(nombreBloque)
-        if (!bloque) continue
+      // Por id, nunca por nombre: el club tiene seis bloques llamados "Adulto -
+      // Master" y tres "Menores Avanzado". Indexarlos por nombre dejaba vivo uno
+      // solo de cada grupo —el último— y los otros no salían en el reporte.
+      for (const bloqueId of dia.bloqueIds) {
         let delMes = porMesBloque.get(mesKey)
         if (!delMes) { delMes = new Map(); porMesBloque.set(mesKey, delMes) }
-        anotar(delMes, bloque.id, j.id, dia.estado)
-        anotar(porBloque, bloque.id, j.id, dia.estado)
+        anotar(delMes, bloqueId, j.id, dia.estado)
+        anotar(porBloque, bloqueId, j.id, dia.estado)
       }
     }
   }
