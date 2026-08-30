@@ -210,7 +210,16 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     const idsFaltantes = [...new Set(mens.filter((me: any) => !idsActivos.has(me.jugador_id)).map((me: any) => me.jugador_id))]
     let jugTodos = jugActivos
     if (idsFaltantes.length > 0) {
-      const { data: extras } = await supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono').in('id', idsFaltantes)
+      const { data: extras } = await supabase.from('jugadores')
+        .select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono')
+        .in('id', idsFaltantes)
+        // Decisión del club (2026-08-30): un bloqueado no vuelve a aparecer
+        // acá, ni en esta tabla ni en deuda acumulada, aunque tenga una cuota
+        // ya emitida para el mes. `jugActivos` de arriba ya trae solo
+        // 'activo', así que todo lo que cae en `idsFaltantes` hoy es gente
+        // bloqueada. Su plata no desaparece: pagados/recaudado arriba se
+        // calculan desde `mensualidades` directo, no desde esta lista.
+        .eq('estado', 'activo')
       if (extras?.length) jugTodos = [...jugActivos, ...extras].sort((a: any, b: any) => (a.nombre || '').localeCompare(b.nombre || ''))
     }
     setJugadores(jugTodos)

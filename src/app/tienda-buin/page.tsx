@@ -108,6 +108,8 @@ export default function TiendaBuinPage() {
         CATS.filter(c => c.key !== 'todos').map(c => c.key),
         cat => CATS.find(c => c.key === cat)?.label ?? cat,
       )
+    } catch (err) {
+      alert('No se pudo generar el PDF: ' + (err instanceof Error ? err.message : 'error desconocido'))
     } finally {
       setExportando(false)
     }
