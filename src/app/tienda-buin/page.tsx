@@ -68,6 +68,7 @@ export default function TiendaBuinPage() {
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
   const [errorForm, setErrorForm]       = useState('')
   const [clubNombre, setClubNombre]     = useState('')
+  const [clubLogo, setClubLogo]         = useState<string | null>(null)
   const [exportando, setExportando]     = useState(false)
   const imgRef = useRef<HTMLInputElement>(null)
 
@@ -94,8 +95,11 @@ export default function TiendaBuinPage() {
 
   useEffect(() => {
     if (!perfil?.club_id) return
-    createClient().from('clubes').select('nombre').eq('id', perfil.club_id).single()
-      .then(({ data }) => { if (data?.nombre) setClubNombre(data.nombre) })
+    createClient().from('clubes').select('nombre,logo_url').eq('id', perfil.club_id).single()
+      .then(({ data }) => {
+        if (data?.nombre) setClubNombre(data.nombre)
+        setClubLogo(data?.logo_url ?? null)
+      })
   }, [perfil?.club_id])
 
   async function handleExportarPdf() {
@@ -107,6 +111,7 @@ export default function TiendaBuinPage() {
         productos,
         CATS.filter(c => c.key !== 'todos').map(c => c.key),
         cat => CATS.find(c => c.key === cat)?.label ?? cat,
+        { logoUrl: clubLogo, contactoWhatsapp: WA },
       )
     } catch (err) {
       alert('No se pudo generar el PDF: ' + (err instanceof Error ? err.message : 'error desconocido'))
