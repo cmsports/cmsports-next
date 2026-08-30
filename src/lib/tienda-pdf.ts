@@ -11,7 +11,7 @@
 // se cae el PDF entero — y si el catálogo entero falla por otra razón, se
 // avisa con un error real en vez de no hacer nada.
 
-import { encabezado, piePagina, filaTarjetas, tituloSeccion, asegurarEspacio, COLOR } from '@/lib/pdf/estilo'
+import { encabezado, piePagina, tituloSeccion, asegurarEspacio, COLOR } from '@/lib/pdf/estilo'
 
 export type ProductoTiendaPdf = {
   nombre: string
@@ -111,20 +111,20 @@ export async function exportarTiendaPdf(
       }),
   )
 
+  const MARGEN = 14
+
   const doc = new jsPDF()
   const cab = { club: clubNombre, titulo: tiendaNombre, subtitulo: `Generado el ${new Date().toLocaleDateString('es-CL')}` }
   let y = encabezado(doc, cab)
 
-  const disponibles = productos.filter(p => p.stock > 0)
-  const agotados = productos.length - disponibles.length
-  const valorInventario = productos.reduce((s, p) => s + (p.precio ?? 0) * p.stock, 0)
-
-  y = filaTarjetas(doc, y, [
-    { valor: String(productos.length), etiqueta: 'Productos en catálogo' },
-    { valor: String(disponibles.length), etiqueta: 'Con stock disponible', color: COLOR.verde },
-    { valor: String(agotados), etiqueta: 'Agotados', color: agotados > 0 ? COLOR.rojo : COLOR.mutado },
-    { valor: fmt(valorInventario), etiqueta: 'Valor del inventario', color: COLOR.primario },
-  ])
+  // Esto lo recibe gente de afuera del club: nada de números de control
+  // interno (valor de inventario, cuántos agotados) — solo cuántos productos
+  // hay para ver, como en la pantalla ("24 productos disponibles").
+  const disponibles = productos.filter(p => p.stock > 0).length
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11)
+  doc.setTextColor(...COLOR.primario)
+  doc.text(`${disponibles} producto${disponibles !== 1 ? 's' : ''} disponible${disponibles !== 1 ? 's' : ''}`, MARGEN, y)
+  y += 10
 
   // Categorías con productos, en el mismo orden que los filtros de la
   // pantalla; una categoría que no esté en esa lista (dato viejo, o la
@@ -136,7 +136,6 @@ export async function exportarTiendaPdf(
   const categorias = [...conocidas, ...desconocidas]
 
   const W = doc.internal.pageSize.getWidth()
-  const MARGEN = 14
   const COLS = 3
   const GAP = 5
   const ANCHO_TARJETA = (W - 2 * MARGEN - GAP * (COLS - 1)) / COLS
