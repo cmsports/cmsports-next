@@ -5,8 +5,9 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
-import { Pencil, Trash2, Plus, X } from 'lucide-react'
+import { Pencil, Trash2, Plus, X, FileDown } from 'lucide-react'
 import { crearProductoTienda, editarProductoTienda, eliminarProductoTienda } from '@/app/actions/tienda-profe'
+import { exportarTiendaPdf } from '@/lib/tienda-pdf'
 
 const WA = '56968342721'
 
@@ -66,6 +67,8 @@ export default function TiendaProfePage() {
   const [guardando, setGuardando]       = useState(false)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
   const [errorForm, setErrorForm]       = useState('')
+  const [clubNombre, setClubNombre]     = useState('')
+  const [exportando, setExportando]     = useState(false)
   const imgRef = useRef<HTMLInputElement>(null)
 
   const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'
@@ -81,6 +84,27 @@ export default function TiendaProfePage() {
       setProductos((data as Producto[]) || [])
     } finally {
       setCargando(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!perfil?.club_id) return
+    createClient().from('clubes').select('nombre').eq('id', perfil.club_id).single()
+      .then(({ data }) => { if (data?.nombre) setClubNombre(data.nombre) })
+  }, [perfil?.club_id])
+
+  async function handleExportarPdf() {
+    setExportando(true)
+    try {
+      await exportarTiendaPdf(
+        clubNombre || 'CmSports',
+        'Catálogo tenis de mesa',
+        productos,
+        CATS.filter(c => c.key !== 'todos').map(c => c.key),
+        cat => CATS.find(c => c.key === cat)?.label ?? cat,
+      )
+    } finally {
+      setExportando(false)
     }
   }
 
@@ -172,12 +196,22 @@ export default function TiendaProfePage() {
             </div>
           </div>
           {esStaff && (
-            <button
-              onClick={abrirNuevo}
-              style={{ background: '#c8102e', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}
-            >
-              <Plus size={15} /> Agregar
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button
+                onClick={handleExportarPdf}
+                disabled={exportando || productos.length === 0}
+                title="Exportar el catálogo completo a PDF, para mandar a gente externa"
+                style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '9px 14px', fontSize: 13, fontWeight: 700, cursor: exportando ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', opacity: productos.length === 0 ? 0.5 : 1 }}
+              >
+                <FileDown size={15} /> {exportando ? 'Generando...' : 'PDF'}
+              </button>
+              <button
+                onClick={abrirNuevo}
+                style={{ background: '#c8102e', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+              >
+                <Plus size={15} /> Agregar
+              </button>
+            </div>
           )}
         </div>
 

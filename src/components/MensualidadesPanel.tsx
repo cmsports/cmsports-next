@@ -12,6 +12,8 @@ import { SEDES, GRUPOS, entrenaEnSede } from '@/lib/domain/sedeGrupo'
 import { montoEsperado, montoIngresado, SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { useEnVivo } from '@/lib/useEnVivo'
+import { cargarHistorialClub } from '@/lib/supabase/historial'
+import { calendarioJugador, indexar, indicadores } from '@/lib/domain/historialAsistencia'
 
 const supabase = createClient()
 
@@ -59,6 +61,83 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   const [filtroSede, setFiltroSede]   = useState<Set<string>>(new Set())
   const [clubNombre, setClubNombre] = useState('')
   const clubId = perfil?.club_id ?? null
+
+  // Asistencia del mes que se está mirando, por jugador — para saber de un
+  // vistazo si vino antes de cobrarle. `programados` en 0 es "sin bloques
+  // asignados este mes" (recién ingresó, o no le tocaba entrenar), que es
+  // distinto de "vino a todo" o "faltó a todo".
+  const [asistenciaPorJugador, setAsistenciaPorJugador] = useState<Map<string, { porcentaje: number | null; presentes: number; programados: number; fechas: string[] }>>(new Map())
+  // Lo mismo pero para deuda acumulada: acá la asistencia va por CADA mes
+  // adeudado por separado (jugadorId → 'YYYY-MM' → asistencia de ese mes),
+  // porque una persona puede deber marzo y venir bien en agosto.
+  const [asistenciaPorMesDeudor, setAsistenciaPorMesDeudor] = useState<Map<string, Map<string, { porcentaje: number | null; presentes: number; fechas: string[] }>>>(new Map())
+
+  const cargarAsistenciaMes = useCallback(async (idsJugadores: string[]) => {
+    if (!clubId || idsJugadores.length === 0) { setAsistenciaPorJugador(new Map()); return }
+    const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
+    const ultimoDia = new Date(anio, mes, 0).getDate()
+    const hasta = `${anio}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
+    const datosClub = await cargarHistorialClub(clubId, desde, hasta)
+    const indice = indexar(datosClub)
+    const mapa = new Map<string, { porcentaje: number | null; presentes: number; programados: number; fechas: string[] }>()
+    for (const jugadorId of idsJugadores) {
+      const dias = calendarioJugador(jugadorId, desde, hasta, datosClub, indice)
+      const ind = indicadores(dias)
+      mapa.set(jugadorId, {
+        porcentaje: ind.porcentaje,
+        presentes: ind.presentes,
+        programados: ind.programados,
+        fechas: dias.filter(d => d.estado === 'presente').map(d => d.fecha),
+      })
+    }
+    setAsistenciaPorJugador(mapa)
+  }, [clubId, mes, anio])
+
+  useEffect(() => {
+    if (alcance !== 'mes' || jugadores.length === 0) return
+    void cargarAsistenciaMes(jugadores.map(j => j.id))
+  }, [alcance, jugadores, cargarAsistenciaMes])
+
+  // Igual que arriba pero para deuda acumulada, y en un rango que cubre desde
+  // la cuota impaga más vieja hasta hoy: cada mes adeudado se mide con su
+  // propio calendario, no con un promedio de todo el rango.
+  useEffect(() => {
+    if (alcance !== 'deuda' || !clubId || impagas.length === 0) { setAsistenciaPorMesDeudor(new Map()); return }
+    let cancelado = false
+    ;(async () => {
+      const masVieja = impagas.reduce<{ mes: number; anio: number } | null>(
+        (v, c) => (!v || (c.anio * 100 + c.mes) < (v.anio * 100 + v.mes) ? { mes: c.mes, anio: c.anio } : v), null,
+      )!
+      const desde = `${masVieja.anio}-${String(masVieja.mes).padStart(2, '0')}-01`
+      const hoy = fechaChile()
+      const datosClub = await cargarHistorialClub(clubId, desde, hoy)
+      const indice = indexar(datosClub)
+      const idsConDeuda = [...new Set(impagas.map(m => m.jugador_id))]
+      const mapa = new Map<string, Map<string, { porcentaje: number | null; presentes: number; fechas: string[] }>>()
+      for (const jugadorId of idsConDeuda) {
+        const dias = calendarioJugador(jugadorId, desde, hoy, datosClub, indice)
+        const porMes = new Map<string, { presentes: number; ausentes: number; fechas: string[] }>()
+        for (const d of dias) {
+          if (d.estado === 'extraordinaria' || d.estado === 'pendiente') continue
+          const mesKey = d.fecha.slice(0, 7)
+          const acc = porMes.get(mesKey) ?? { presentes: 0, ausentes: 0, fechas: [] }
+          if (d.estado === 'presente') { acc.presentes++; acc.fechas.push(d.fecha) } else acc.ausentes++
+          porMes.set(mesKey, acc)
+        }
+        const final = new Map<string, { porcentaje: number | null; presentes: number; fechas: string[] }>()
+        for (const [mesKey, v] of porMes) {
+          final.set(mesKey, {
+            porcentaje: (v.presentes + v.ausentes) > 0 ? Math.round((v.presentes / (v.presentes + v.ausentes)) * 100) : null,
+            presentes: v.presentes,
+            fechas: v.fechas,
+          })
+        }
+        mapa.set(jugadorId, final)
+      }
+      if (!cancelado) setAsistenciaPorMesDeudor(mapa)
+    })()
+    return () => { cancelado = true }
+  }, [alcance, clubId, impagas])
 
   useEffect(() => {
     if (!clubId) return
@@ -181,6 +260,13 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       const { data: extras } = await supabase.from('jugadores')
         .select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono')
         .in('id', faltantes as string[])
+        // Decisión del club (2026-08-30): un bloqueado no vuelve a aparecer
+        // acá aunque siga debiendo. `jugadores` de arriba ya solo trae
+        // 'activo', así que lo único que cae en `faltantes` es gente que no
+        // está activa — hoy eso es siempre 'bloqueado', porque un jugador
+        // eliminado no deja fila en esta tabla. Su deuda no se pierde: sigue
+        // en `mensualidades` y visible desde su propia ficha.
+        .eq('estado', 'activo')
       setJugadoresDeuda(extras || [])
     } else {
       setJugadoresDeuda([])
@@ -527,7 +613,31 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                             {d.cuotas.length}
                           </span>
                         </td>
-                        <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{detalle}</td>
+                        <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>
+                          <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                            {d.cuotas.map(c => {
+                              const mesKey = `${c.anio}-${String(c.mes).padStart(2, '0')}`
+                              const asist = asistenciaPorMesDeudor.get(d.jugador.id)?.get(mesKey)
+                              const colorAsist = !asist || asist.porcentaje == null ? hint : asist.porcentaje >= 80 ? '#16a34a' : asist.porcentaje >= 50 ? '#d97706' : '#dc2626'
+                              const tituloFechas = asist
+                                ? (asist.fechas.length > 0
+                                    ? `Vino ${asist.presentes} día${asist.presentes !== 1 ? 's' : ''} en ${etiquetaCuota(c)}${asist.porcentaje != null ? ` (${asist.porcentaje}% de asistencia)` : ''}: ${asist.fechas.map(f => Number(f.slice(8, 10))).join(', ')}`
+                                    : `No vino ningún día en ${etiquetaCuota(c)}${asist.porcentaje != null ? ` (${asist.porcentaje}% de asistencia)` : ''}`)
+                                : `Sin datos de asistencia para ${etiquetaCuota(c)}`
+                              return (
+                                <span key={mesKey} title={tituloFechas}
+                                  style={{ cursor:'help', background:'#f1f5f9', borderRadius:6, padding:'2px 7px', whiteSpace:'nowrap', display:'inline-flex', alignItems:'center', gap:4 }}>
+                                  {etiquetaCuota(c)}
+                                  {asist && (
+                                    <span style={{ color: colorAsist, fontWeight:700 }}>
+                                      · {asist.presentes}d{asist.porcentaje != null ? ` (${asist.porcentaje}%)` : ''}
+                                    </span>
+                                  )}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </td>
                         <td style={{ padding:'12px 16px', fontSize:13, fontWeight:700, fontFamily:'monospace', color:'#dc2626', whiteSpace:'nowrap' }}>
                           {fmt(d.total)}
                           {d.incompleto && (
@@ -554,7 +664,7 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:500 }}>
             <thead>
               <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-                {['Nombre','Plan','Estado','Fecha pago','Monto','Acciones'].map(h => (
+                {['Nombre','Plan','Estado','Fecha pago','Monto','Asistencia','Acciones'].map(h => (
                   <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, color: muted, fontWeight:600, textTransform:'uppercase', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -615,6 +725,21 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                           🟡 + {fmt(extrasPorJugador.get(j.id)!)} clase extra →
                         </button>
                       )}
+                    </td>
+                    <td style={{ padding:'12px 16px', whiteSpace:'nowrap' }}>
+                      {(() => {
+                        const a = asistenciaPorJugador.get(j.id)
+                        if (!a || a.programados === 0) return <span style={{ color: hint, fontSize:12 }}>—</span>
+                        const colorAsist = a.porcentaje == null ? hint : a.porcentaje >= 80 ? '#16a34a' : a.porcentaje >= 50 ? '#d97706' : '#dc2626'
+                        const tituloFechas = a.fechas.length > 0
+                          ? `Vino: ${a.fechas.map(f => Number(f.slice(8, 10))).join(', ')} de ${mesesN[mes - 1].toLowerCase()}`
+                          : `No vino ningún día registrado en ${mesesN[mes - 1].toLowerCase()}`
+                        return (
+                          <span title={tituloFechas} style={{ cursor:'help', fontSize:12, fontWeight:700, color: colorAsist }}>
+                            {a.porcentaje != null ? `${a.porcentaje}%` : '—'} · {a.presentes} día{a.presentes !== 1 ? 's' : ''}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td style={{ padding:'12px 16px' }}>
                       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
