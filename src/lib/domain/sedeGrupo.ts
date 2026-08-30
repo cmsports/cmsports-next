@@ -4,8 +4,27 @@
 export const SEDES = [
   { value: 'buin',  label: 'Buin (Aníbal Pinto 158)' },
   { value: 'paine', label: 'Paine (Centro deportivo Fátima)' },
+  { value: 'spinhouse', label: 'Spinhouse' },
   { value: 'ambos', label: 'Ambos centros' },
 ] as const
+
+/**
+ * Las sedes que este club realmente usa, en el orden del catálogo.
+ *
+ * Las pestañas de sede salían de `SEDES` a secas, así que eran las de Buin para
+ * todos los clubes: Spinhouse no tenía dónde ver sus bloques, y agregarle su
+ * sede al catálogo le habría puesto a Buin una pestaña vacía. Derivarlas del
+ * dato arregla los dos casos y hace que el próximo club no necesite código.
+ *
+ * Los valores que no están en el catálogo igual aparecen, al final: es mejor
+ * mostrar una sede con nombre crudo que esconder sus bloques.
+ */
+export function sedesDe(items: { sede: string }[]): string[] {
+  const orden = SEDES.map(s => s.value)
+  const pos = (v: string) => { const i = orden.indexOf(v as typeof orden[number]); return i === -1 ? 99 : i }
+  return [...new Set(items.map(i => i.sede).filter(Boolean))]
+    .sort((a, b) => pos(a) - pos(b) || a.localeCompare(b, 'es'))
+}
 
 export const GRUPOS = [
   { value: 'MEN', label: 'MEN — Menores' },

@@ -43,7 +43,7 @@
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
 
 BEGIN;
-SELECT _migracion_nueva('229_division_ranking_solo_jugados');
+SELECT _migracion_nueva('237_division_ranking_solo_jugados');
 
 CREATE OR REPLACE VIEW public.division_ranking AS
 SELECT

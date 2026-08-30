@@ -50,7 +50,7 @@
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
 
 BEGIN;
-SELECT _migracion_nueva('226_cerrar_limpiar_jugadores_externos');
+SELECT _migracion_nueva('234_cerrar_limpiar_jugadores_externos');
 
 -- ══ 1. Dejar constancia de con qué permisos estaba ═════════════════════════
 -- Se anota en el log de la corrida para poder decir después, con evidencia,

@@ -8,7 +8,7 @@ import {
 } from './panoramaAsistencia'
 
 function dia(fecha: string, estado: DiaCalendario['estado'], bloques: string[] = ['Grupo A']): DiaCalendario {
-  return { fecha, dia: diaDeLaSemana(fecha), estado, bloques, extra: false }
+  return { fecha, dia: diaDeLaSemana(fecha), estado, bloques, bloqueIds: [], extra: false }
 }
 
 function jugador(id: string, nombre: string, dias: DiaCalendario[]): CalendarioDeJugador {

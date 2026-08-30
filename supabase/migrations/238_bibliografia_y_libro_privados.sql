@@ -54,7 +54,7 @@
 --    momento del COMMIT).
 
 BEGIN;
-SELECT _migracion_nueva('230_bibliografia_y_libro_privados');
+SELECT _migracion_nueva('238_bibliografia_y_libro_privados');
 
 -- ══ 1. Estado antes, para poder comparar ══════════════════════════════════
 DO $$

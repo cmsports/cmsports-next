@@ -242,6 +242,30 @@ export type FilaJugador = {
 }
 
 /**
+ * Una fila por jugador con lo suyo del rango — lo que alimenta los rankings y
+ * la hoja individual.
+ *
+ * Vivía duplicada en el generador de PDF. Está acá para que el PDF, el Excel y
+ * la pantalla no puedan discrepar: si el criterio de una falta cambia, cambia
+ * en un solo lugar.
+ */
+export function filasDeJugadores(
+  calendarios: CalendarioDeJugador[],
+  desde: string,
+  hasta: string,
+): FilaJugador[] {
+  return calendarios.map(({ jugador, dias }) => {
+    const acc = conteoVacio()
+    for (const d of dias) {
+      if (d.fecha < desde || d.fecha > hasta) continue
+      acumular(acc, d.estado)
+    }
+    const { presentes, ausentes, porcentaje } = cerrar(acc)
+    return { jugador, presentes, ausentes, porcentaje }
+  })
+}
+
+/**
  * Ordena de peor a mejor asistencia, desempatando por volumen de faltas.
  *
  * El desempate importa: sin él, alguien con una sola falta sobre una sola

@@ -35,7 +35,7 @@
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
 
 BEGIN;
-SELECT _migracion_nueva('228_asistencia_manual_hora_chile');
+SELECT _migracion_nueva('236_asistencia_manual_hora_chile');
 
 -- Cuerpo idéntico al de la 092 salvo `localtime`. `SET search_path` va
 -- declarado: CREATE OR REPLACE borra el que le puso la 210.

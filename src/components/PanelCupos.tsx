@@ -6,7 +6,7 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import { Plus, X, Search, Users } from 'lucide-react'
 import { agregarJugadorABloque, quitarJugadorDeBloque } from '@/app/actions/horario'
 import { DIAS, hhmm, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
-import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
+import { sedeLabel, sedesDe } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
 
@@ -96,7 +96,12 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
     }
   }
 
-  const bloquesSede = bloques.filter(b => b.sede === sedeActiva)
+  // Las sedes salen de los bloques del club, no del catálogo de Buin. Y si la
+  // elegida no existe acá, se cae a la primera: sin esto Spinhouse arrancaba en
+  // 'buin' —el valor inicial— y no veía ninguno de sus bloques.
+  const sedes = sedesDe(bloques)
+  const sedeVista = sedes.includes(sedeActiva) ? sedeActiva : (sedes[0] ?? '')
+  const bloquesSede = bloques.filter(b => b.sede === sedeVista)
 
   // Al abrir un bloque se ofrecen los jugadores que todavía no están en él.
   const candidatos = useMemo(() => {
@@ -115,14 +120,14 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
     <>
       {/* Sedes */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {SEDES.filter(s => s.value !== 'ambos').map(s => {
-          const activa = sedeActiva === s.value
+        {sedes.map(v => {
+          const activa = sedeVista === v
           return (
-            <button key={s.value} onClick={() => setSede(s.value)}
+            <button key={v} onClick={() => setSede(v)}
               style={{ background: activa ? '#4f46e5' : '#f4f7fa', color: activa ? '#fff' : muted,
                 border: `1px solid ${activa ? '#4f46e5' : '#e2e8f0'}`, borderRadius: 8, padding: '8px 14px',
                 fontSize: 13, fontWeight: activa ? 600 : 400, cursor: 'pointer' }}>
-              {s.label}
+              {sedeLabel(v)}
             </button>
           )
         })}
@@ -180,7 +185,7 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
 
       {bloquesSede.length === 0 && (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
-          Sin bloques en {sedeLabel(sedeActiva)}.
+          Sin bloques en {sedeLabel(sedeVista)}.
         </div>
       )}
 

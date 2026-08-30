@@ -22,8 +22,8 @@
 // no es el que pediste.
 
 import {
-  conteoDelRango, resumenPorDia, resumenPorGrupo, ordenarPorRiesgo,
-  type CalendarioDeJugador, type FilaJugador,
+  conteoDelRango, resumenPorDia, resumenPorGrupo, ordenarPorRiesgo, filasDeJugadores,
+  type CalendarioDeJugador,
 } from '@/lib/domain/panoramaAsistencia'
 import {
   encabezado, piePagina, estiloTabla, filaTarjetas, tituloSeccion, sinDatos,
@@ -74,22 +74,6 @@ function subtitulo(meta: MetaPanorama): string {
 function pie(meta: MetaPanorama, que: string): string {
   const g = meta.grupo ? ` · ${meta.grupo}` : ''
   return `${meta.clubNombre || 'CmSports'} · ${que} · ${meta.periodo}${g}`
-}
-
-/** Las filas por jugador del período, que alimentan el ranking y el individual. */
-function filasDeJugadores(cals: CalendarioDeJugador[], desde: string, hasta: string): FilaJugador[] {
-  return cals.map(({ jugador, dias }) => {
-    const suyos = dias.filter(d => d.fecha >= desde && d.fecha <= hasta)
-    const presentes = suyos.filter(d => d.estado === 'presente').length
-    const ausentes  = suyos.filter(d => d.estado === 'ausente').length
-    const resueltos = presentes + ausentes
-    return {
-      jugador,
-      presentes,
-      ausentes,
-      porcentaje: resueltos === 0 ? null : (presentes / resueltos) * 100,
-    }
-  })
 }
 
 // ══════════════════════════════════════════════════════════════════════════

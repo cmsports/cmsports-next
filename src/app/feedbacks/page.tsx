@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import AppLayout from '@/app/layout-app'
 import PanelFeedback from '@/components/PanelFeedback'
+import PanelFeedbackAlProfe from '@/components/PanelFeedbackAlProfe'
+import PanelFeedbackRecibido from '@/components/PanelFeedbackRecibido'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const supabase = createClient()
 
@@ -24,9 +27,13 @@ type Feedback = {
 
 export default function FeedbacksPage() {
   const { perfil, loading } = usePerfil()
+  const { tiene } = useModulos()
   const router = useRouter()
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([])
   const [cargandoLista, setCargandoLista] = useState(true)
+  // 'recibidos' es lo que el alumno escribió; 'escribir' es el formulario para
+  // que le escriba al profe. Solo existen con el módulo prendido.
+  const [tab, setTab] = useState<'propios' | 'otro'>('propios')
 
   const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'profesor' || perfil?.rol === 'superadmin'
 
@@ -53,6 +60,10 @@ export default function FeedbacksPage() {
 
   if (loading || !perfil) return null
 
+  // Sin el módulo no hay pestañas y la pantalla queda exactamente como estaba.
+  const alProfe   = tiene('feedback_profes')
+  const enPropios = !alProfe || tab === 'propios'
+
   return (
     <AppLayout perfil={perfil}>
       <div style={{ marginBottom: 16 }}>
@@ -66,7 +77,34 @@ export default function FeedbacksPage() {
         </p>
       </div>
 
-      {esStaff && perfil.club_id && (
+      {alProfe && (
+        <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 4, margin: '0 0 16px' }}>
+          {([
+            ['propios', esStaff ? 'Sobre los alumnos' : 'Mis feedbacks'] as const,
+            ['otro', esStaff ? 'Lo que me escribieron' : 'Escribirle al profe'] as const,
+          ]).map(([key, label]) => (
+            <div key={key} onClick={() => setTab(key)}
+              style={{ flex: 1, padding: 9, textAlign: 'center', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500,
+                background: tab === key ? '#fff' : 'transparent', color: tab === key ? '#3730a3' : '#64748b',
+                boxShadow: tab === key ? '0 1px 3px rgba(15,23,42,0.08)' : 'none' }}>
+              {label}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {alProfe && tab === 'otro' && perfil.club_id && (
+        esStaff
+          ? <PanelFeedbackRecibido
+              clubId={perfil.club_id}
+              esAdmin={perfil.rol === 'admin' || perfil.rol === 'superadmin'}
+            />
+          : perfil.jugador_id
+            ? <PanelFeedbackAlProfe clubId={perfil.club_id} jugadorId={perfil.jugador_id} />
+            : null
+      )}
+
+      {esStaff && enPropios && perfil.club_id && (
         <PanelFeedback
           clubId={perfil.club_id}
           userId={perfil.id}
@@ -74,7 +112,7 @@ export default function FeedbacksPage() {
         />
       )}
 
-      {!esStaff && (
+      {!esStaff && enPropios && (
         cargandoLista ? (
           <div style={{ padding: 30, textAlign: 'center', color: hint, fontSize: 13 }}>Cargando...</div>
         ) : feedbacks.length === 0 ? (

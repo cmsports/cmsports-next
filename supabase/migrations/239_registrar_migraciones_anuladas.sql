@@ -34,7 +34,7 @@
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
 
 BEGIN;
-SELECT _migracion_nueva('231_registrar_migraciones_anuladas');
+SELECT _migracion_nueva('239_registrar_migraciones_anuladas');
 
 INSERT INTO _migraciones_aplicadas (nombre, aplicada_por) VALUES
   ('060_limpiar_jugadores_externos', 'registro retroactivo (226/231)'),

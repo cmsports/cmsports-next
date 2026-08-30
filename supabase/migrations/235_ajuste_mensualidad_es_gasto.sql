@@ -52,7 +52,7 @@
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
 
 BEGIN;
-SELECT _migracion_nueva('227_ajuste_mensualidad_es_gasto');
+SELECT _migracion_nueva('235_ajuste_mensualidad_es_gasto');
 
 -- ══ 1. Preflight: ¿hay alguna OTRA palabra rara además de egreso? ══════════
 -- Si aparece una tercera, el CHECK del paso 3 la rechazaría y abortaría todo.

@@ -8,12 +8,14 @@ import { createClient } from '@/lib/supabase/client'
 import { Pencil, Plus, Trash2, X, Clock, MapPin } from 'lucide-react'
 import { diasSinClase, eliminarBloque, estadoDiaSinClase, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
 import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
-import { SEDES, sedeLabel } from '@/lib/domain/sedeGrupo'
+import { SEDES, sedeLabel, sedesDe } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
 import { useEnVivo } from '@/lib/useEnVivo'
 import PanelCupos from '@/components/PanelCupos'
+import PanelRecuperaciones from '@/components/PanelRecuperaciones'
 import PanelReportes from '@/components/PanelReportes'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const supabase = createClient()
 
@@ -55,12 +57,13 @@ function colorDe(nombre: string) {
 
 export default function HorarioPage() {
   const { perfil, loading: authLoading } = usePerfil()
+  const { tiene } = useModulos()
   const router = useRouter()
   const [bloques, setBloques]       = useState<Bloque[]>([])
   const [profesores, setProfesores] = useState<Profesor[]>([])
   const [cargando, setCargando]     = useState(true)
   const [sedeActiva, setSedeActiva] = useState('buin')
-  const [tab, setTab]               = useState<'grilla' | 'cupos' | 'profesores' | 'reportes'>('grilla')
+  const [tab, setTab]               = useState<'grilla' | 'cupos' | 'recuperaciones' | 'profesores' | 'reportes'>('grilla')
   const [modal, setModal]           = useState<null | 'nuevo' | Bloque>(null)
   const [form, setForm]             = useState(FORM_VACIO)
   const [guardando, setGuardando]   = useState(false)
@@ -276,7 +279,13 @@ export default function HorarioPage() {
     if (clubId) void cargar(clubId)
   }
 
-  const bloquesSede = bloques.filter(b => b.sede === sedeActiva)
+  // La sede que se está mirando. Si la elegida no existe en este club se cae a
+  // la primera que sí: sin esto Spinhouse arrancaba en 'buin' —el valor inicial
+  // del estado— y su grilla salía vacía. Con el club sin bloques todavía, se
+  // queda en la elegida para que el formulario de alta tenga algo que proponer.
+  const sedesDelClub = sedesDe(bloques)
+  const sedeVista = sedesDelClub.includes(sedeActiva) ? sedeActiva : (sedesDelClub[0] ?? sedeActiva)
+  const bloquesSede = bloques.filter(b => b.sede === sedeVista)
   const franjas = franjasDe(bloquesSede)
   const nombreProfesor = (id: string) => profesores.find(p => p.id === id)?.nombre ?? ''
 
@@ -304,7 +313,7 @@ export default function HorarioPage() {
           </button>
         )}
         {esStaff && tab === 'grilla' && (
-          <button onClick={() => abrirNuevo(sedeActiva)}
+          <button onClick={() => abrirNuevo(sedeVista)}
             style={{ background: '#f43f5e', color: 'white', border: 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
             <Plus size={15} /> Nuevo bloque
           </button>
@@ -315,8 +324,16 @@ export default function HorarioPage() {
           datos de gestión del club, no suyos. */}
       <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: 10, padding: 4, margin: '16px 0' }}>
         {(esStaff
-          ? [['grilla', 'Grilla semanal'], ['cupos', 'Cupos'], ['profesores', 'Profesores'], ['reportes', 'Reportes']] as const
-          : [['grilla', 'Grilla semanal']] as const
+          ? [
+              ['grilla', 'Grilla semanal'] as const,
+              ['cupos', 'Cupos'] as const,
+              // Solo donde el alumno puede avisar que no va: sin eso la pestaña
+              // no tendría nada que mostrar.
+              ...(tiene('recuperar_clases') ? [['recuperaciones', 'Recuperaciones'] as const] : []),
+              ['profesores', 'Profesores'] as const,
+              ['reportes', 'Reportes'] as const,
+            ]
+          : [['grilla', 'Grilla semanal'] as const]
         ).map(([key, label]) => (
           <div key={key} onClick={() => setTab(key)}
             style={{ flex: 1, padding: 9, textAlign: 'center', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500,
@@ -331,15 +348,15 @@ export default function HorarioPage() {
         <>
           {/* Sedes */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            {SEDES.filter(s => s.value !== 'ambos').map(s => {
-              const activa = sedeActiva === s.value
-              const cuantos = bloques.filter(b => b.sede === s.value).length
+            {sedesDelClub.map(v => {
+              const activa = sedeVista === v
+              const cuantos = bloques.filter(b => b.sede === v).length
               return (
-                <button key={s.value} onClick={() => setSedeActiva(s.value)}
+                <button key={v} onClick={() => setSedeActiva(v)}
                   style={{ background: activa ? '#4f46e5' : '#f4f7fa', color: activa ? '#fff' : muted,
                     border: `1px solid ${activa ? '#4f46e5' : '#e2e8f0'}`, borderRadius: 8, padding: '8px 14px',
                     fontSize: 13, fontWeight: activa ? 600 : 400, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <MapPin size={13} /> {s.label}
+                  <MapPin size={13} /> {sedeLabel(v)}
                   <span style={{ background: activa ? 'rgba(255,255,255,0.22)' : '#e2e8f0', borderRadius: 20, padding: '1px 7px', fontSize: 11 }}>{cuantos}</span>
                 </button>
               )
@@ -349,7 +366,7 @@ export default function HorarioPage() {
           {/* Grilla */}
           {franjas.length === 0 ? (
             <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
-              Sin bloques en {sedeLabel(sedeActiva)}.
+              Sin bloques en {sedeLabel(sedeVista)}.
               {esStaff && <> Usá <strong>Nuevo bloque</strong> para crear el primero.</>}
             </div>
           ) : (
@@ -375,7 +392,7 @@ export default function HorarioPage() {
                           if (!b) return (
                             <td key={d.value} style={{ padding: 6, verticalAlign: 'top' }}>
                               {esStaff && (
-                                <button onClick={() => abrirNuevo(sedeActiva, d.value, franja)} title="Agregar bloque"
+                                <button onClick={() => abrirNuevo(sedeVista, d.value, franja)} title="Agregar bloque"
                                   style={{ width: '100%', minHeight: 58, background: 'transparent', border: '1px dashed #e2e8f0', borderRadius: 8, color: '#cbd5e1', fontSize: 18, cursor: 'pointer' }}>
                                   +
                                 </button>
@@ -426,6 +443,8 @@ export default function HorarioPage() {
 
       {/* Cupos */}
       {tab === 'cupos' && clubId && esStaff && <PanelCupos clubId={clubId} esStaff={esStaff} />}
+
+      {tab === 'recuperaciones' && clubId && esStaff && <PanelRecuperaciones clubId={clubId} />}
 
       {tab === 'reportes' && clubId && esStaff && <PanelReportes clubId={clubId} />}
 
