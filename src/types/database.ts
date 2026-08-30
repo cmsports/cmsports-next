@@ -701,6 +701,10 @@ export interface Database {
           jugador_a: string | null
           jugador_b: string | null
           ganador: string | null
+          sets_a: number | null
+          sets_b: number | null
+          puntos_a: number | null
+          puntos_b: number | null
           slot_a_grupo_id: string | null
           slot_a_posicion: number | null
           slot_b_grupo_id: string | null
@@ -716,6 +720,10 @@ export interface Database {
           jugador_a?: string | null
           jugador_b?: string | null
           ganador?: string | null
+          sets_a?: number | null
+          sets_b?: number | null
+          puntos_a?: number | null
+          puntos_b?: number | null
           slot_a_grupo_id?: string | null
           slot_a_posicion?: number | null
           slot_b_grupo_id?: string | null
@@ -731,6 +739,10 @@ export interface Database {
           jugador_a?: string | null
           jugador_b?: string | null
           ganador?: string | null
+          sets_a?: number | null
+          sets_b?: number | null
+          puntos_a?: number | null
+          puntos_b?: number | null
           slot_a_grupo_id?: string | null
           slot_a_posicion?: number | null
           slot_b_grupo_id?: string | null
@@ -1918,6 +1930,466 @@ export interface Database {
           primera_consulta_rut_en?: string | null
         }
         Relationships: []
+      }
+      lf_ligas: {
+        Row: {
+          id: string
+          club_id: string
+          nombre: string
+          deporte_variante: string
+          categoria: string
+          formato: string
+          max_equipos: number
+          ruedas: number
+          dia_juego: string | null
+          horarios: string[] | null
+          cancha: string | null
+          direccion_cancha: string | null
+          monto_inscripcion: number
+          fecha_inicio: string | null
+          fecha_fin: string | null
+          estado: string
+          puntos_victoria: number
+          puntos_empate: number
+          puntos_derrota: number
+          puntos_wo_perdedor: number
+          goles_wo_favor: number
+          goles_wo_contra: number
+          fechas_suspension_roja: number
+          amarillas_acumulacion_suspension: number
+          amarillas_acumulacion_fechas: number
+          cupos_playoffs: number
+          tercer_lugar: boolean
+          reglamento: string | null
+          codigo_publico: string | null
+          es_publica: boolean
+          creado_en: string
+          actualizado_en: string
+        }
+        Insert: {
+          id?: string
+          club_id: string
+          nombre: string
+          deporte_variante?: string
+          categoria?: string
+          formato?: string
+          max_equipos?: number
+          ruedas?: number
+          dia_juego?: string | null
+          horarios?: string[] | null
+          cancha?: string | null
+          direccion_cancha?: string | null
+          monto_inscripcion?: number
+          fecha_inicio?: string | null
+          fecha_fin?: string | null
+          estado?: string
+          puntos_victoria?: number
+          puntos_empate?: number
+          puntos_derrota?: number
+          puntos_wo_perdedor?: number
+          goles_wo_favor?: number
+          goles_wo_contra?: number
+          fechas_suspension_roja?: number
+          amarillas_acumulacion_suspension?: number
+          amarillas_acumulacion_fechas?: number
+          cupos_playoffs?: number
+          tercer_lugar?: boolean
+          reglamento?: string | null
+          codigo_publico?: string | null
+          es_publica?: boolean
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Update: {
+          id?: string
+          club_id?: string
+          nombre?: string
+          deporte_variante?: string
+          categoria?: string
+          formato?: string
+          max_equipos?: number
+          ruedas?: number
+          dia_juego?: string | null
+          horarios?: string[] | null
+          cancha?: string | null
+          direccion_cancha?: string | null
+          monto_inscripcion?: number
+          fecha_inicio?: string | null
+          fecha_fin?: string | null
+          estado?: string
+          puntos_victoria?: number
+          puntos_empate?: number
+          puntos_derrota?: number
+          puntos_wo_perdedor?: number
+          goles_wo_favor?: number
+          goles_wo_contra?: number
+          fechas_suspension_roja?: number
+          amarillas_acumulacion_suspension?: number
+          amarillas_acumulacion_fechas?: number
+          cupos_playoffs?: number
+          tercer_lugar?: boolean
+          reglamento?: string | null
+          codigo_publico?: string | null
+          es_publica?: boolean
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_ligas_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_grupos: {
+        Row: {
+          id: string
+          liga_id: string
+          nombre: string
+          orden: number
+          clasifican: number
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          nombre: string
+          orden?: number
+          clasifican?: number
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          nombre?: string
+          orden?: number
+          clasifican?: number
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_grupos_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'lf_ligas'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_equipos: {
+        Row: {
+          id: string
+          liga_id: string
+          grupo_id: string | null
+          nombre: string
+          logo_url: string | null
+          color_principal: string | null
+          color_secundario: string | null
+          delegado_nombre: string | null
+          delegado_telefono: string | null
+          delegado_email: string | null
+          estado_inscripcion: string
+          monto_pagado: number
+          observaciones: string | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          grupo_id?: string | null
+          nombre: string
+          logo_url?: string | null
+          color_principal?: string | null
+          color_secundario?: string | null
+          delegado_nombre?: string | null
+          delegado_telefono?: string | null
+          delegado_email?: string | null
+          estado_inscripcion?: string
+          monto_pagado?: number
+          observaciones?: string | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          grupo_id?: string | null
+          nombre?: string
+          logo_url?: string | null
+          color_principal?: string | null
+          color_secundario?: string | null
+          delegado_nombre?: string | null
+          delegado_telefono?: string | null
+          delegado_email?: string | null
+          estado_inscripcion?: string
+          monto_pagado?: number
+          observaciones?: string | null
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_equipos_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'lf_ligas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_equipos_grupo_id_fkey'; columns: ['grupo_id']; referencedRelation: 'lf_grupos'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_jugadores: {
+        Row: {
+          id: string
+          equipo_id: string
+          nombre: string
+          rut: string | null
+          numero: number | null
+          posicion: string | null
+          fecha_nacimiento: string | null
+          foto_url: string | null
+          estado: string
+          sancionado_hasta_fecha_id: string | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          equipo_id: string
+          nombre: string
+          rut?: string | null
+          numero?: number | null
+          posicion?: string | null
+          fecha_nacimiento?: string | null
+          foto_url?: string | null
+          estado?: string
+          sancionado_hasta_fecha_id?: string | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          equipo_id?: string
+          nombre?: string
+          rut?: string | null
+          numero?: number | null
+          posicion?: string | null
+          fecha_nacimiento?: string | null
+          foto_url?: string | null
+          estado?: string
+          sancionado_hasta_fecha_id?: string | null
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_jugadores_equipo_id_fkey'; columns: ['equipo_id']; referencedRelation: 'lf_equipos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_jugadores_sancionado_fk'; columns: ['sancionado_hasta_fecha_id']; referencedRelation: 'lf_fechas'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_fechas: {
+        Row: {
+          id: string
+          liga_id: string
+          numero: number
+          nombre: string | null
+          fecha: string | null
+          es_playoff: boolean
+          fase_playoff: string | null
+          estado: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          numero: number
+          nombre?: string | null
+          fecha?: string | null
+          es_playoff?: boolean
+          fase_playoff?: string | null
+          estado?: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          numero?: number
+          nombre?: string | null
+          fecha?: string | null
+          es_playoff?: boolean
+          fase_playoff?: string | null
+          estado?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_fechas_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'lf_ligas'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_partidos: {
+        Row: {
+          id: string
+          liga_id: string
+          fecha_id: string | null
+          grupo_id: string | null
+          equipo_local_id: string
+          equipo_visita_id: string
+          goles_local: number | null
+          goles_visita: number | null
+          hora: string | null
+          cancha: string | null
+          estado: string
+          equipo_wo_id: string | null
+          nueva_fecha: string | null
+          nueva_hora: string | null
+          observaciones: string | null
+          orden_bracket: number | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          fecha_id?: string | null
+          grupo_id?: string | null
+          equipo_local_id: string
+          equipo_visita_id: string
+          goles_local?: number | null
+          goles_visita?: number | null
+          hora?: string | null
+          cancha?: string | null
+          estado?: string
+          equipo_wo_id?: string | null
+          nueva_fecha?: string | null
+          nueva_hora?: string | null
+          observaciones?: string | null
+          orden_bracket?: number | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          fecha_id?: string | null
+          grupo_id?: string | null
+          equipo_local_id?: string
+          equipo_visita_id?: string
+          goles_local?: number | null
+          goles_visita?: number | null
+          hora?: string | null
+          cancha?: string | null
+          estado?: string
+          equipo_wo_id?: string | null
+          nueva_fecha?: string | null
+          nueva_hora?: string | null
+          observaciones?: string | null
+          orden_bracket?: number | null
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_partidos_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'lf_ligas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_partidos_fecha_id_fkey'; columns: ['fecha_id']; referencedRelation: 'lf_fechas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_partidos_grupo_id_fkey'; columns: ['grupo_id']; referencedRelation: 'lf_grupos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_partidos_equipo_local_id_fkey'; columns: ['equipo_local_id']; referencedRelation: 'lf_equipos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_partidos_equipo_visita_id_fkey'; columns: ['equipo_visita_id']; referencedRelation: 'lf_equipos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_partidos_equipo_wo_id_fkey'; columns: ['equipo_wo_id']; referencedRelation: 'lf_equipos'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_goles: {
+        Row: {
+          id: string
+          partido_id: string
+          jugador_id: string
+          equipo_id: string
+          minuto: number | null
+          tipo: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          partido_id: string
+          jugador_id: string
+          equipo_id: string
+          minuto?: number | null
+          tipo?: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          partido_id?: string
+          jugador_id?: string
+          equipo_id?: string
+          minuto?: number | null
+          tipo?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_goles_partido_id_fkey'; columns: ['partido_id']; referencedRelation: 'lf_partidos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_goles_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'lf_jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_goles_equipo_id_fkey'; columns: ['equipo_id']; referencedRelation: 'lf_equipos'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_tarjetas: {
+        Row: {
+          id: string
+          partido_id: string
+          jugador_id: string
+          equipo_id: string
+          tipo: string
+          minuto: number | null
+          motivo: string | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          partido_id: string
+          jugador_id: string
+          equipo_id: string
+          tipo: string
+          minuto?: number | null
+          motivo?: string | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          partido_id?: string
+          jugador_id?: string
+          equipo_id?: string
+          tipo?: string
+          minuto?: number | null
+          motivo?: string | null
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_tarjetas_partido_id_fkey'; columns: ['partido_id']; referencedRelation: 'lf_partidos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_tarjetas_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'lf_jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_tarjetas_equipo_id_fkey'; columns: ['equipo_id']; referencedRelation: 'lf_equipos'; referencedColumns: ['id'] },
+        ]
+      }
+      lf_sanciones: {
+        Row: {
+          id: string
+          liga_id: string
+          jugador_id: string
+          equipo_id: string
+          tarjeta_id: string | null
+          tipo: string
+          fechas_suspension: number | null
+          fecha_desde_id: string | null
+          fecha_hasta_id: string | null
+          motivo: string | null
+          estado: string
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          liga_id: string
+          jugador_id: string
+          equipo_id: string
+          tarjeta_id?: string | null
+          tipo: string
+          fechas_suspension?: number | null
+          fecha_desde_id?: string | null
+          fecha_hasta_id?: string | null
+          motivo?: string | null
+          estado?: string
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          liga_id?: string
+          jugador_id?: string
+          equipo_id?: string
+          tarjeta_id?: string | null
+          tipo?: string
+          fechas_suspension?: number | null
+          fecha_desde_id?: string | null
+          fecha_hasta_id?: string | null
+          motivo?: string | null
+          estado?: string
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'lf_sanciones_liga_id_fkey'; columns: ['liga_id']; referencedRelation: 'lf_ligas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_sanciones_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'lf_jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_sanciones_equipo_id_fkey'; columns: ['equipo_id']; referencedRelation: 'lf_equipos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_sanciones_tarjeta_id_fkey'; columns: ['tarjeta_id']; referencedRelation: 'lf_tarjetas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_sanciones_fecha_desde_id_fkey'; columns: ['fecha_desde_id']; referencedRelation: 'lf_fechas'; referencedColumns: ['id'] },
+          { foreignKeyName: 'lf_sanciones_fecha_hasta_id_fkey'; columns: ['fecha_hasta_id']; referencedRelation: 'lf_fechas'; referencedColumns: ['id'] },
+        ]
       }
     }
     Views: {}

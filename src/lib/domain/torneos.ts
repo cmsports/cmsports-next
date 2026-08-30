@@ -15,6 +15,22 @@ export interface GrupoStats {
   pts: number
   pg: number
   pp: number
+  /** Sets ganados. Los partidos anteriores a la migración 216 no tienen
+   *  marcador y suman 0: cuentan para `pg`/`pp` pero no para el ratio. */
+  sf: number
+  /** Sets perdidos. Ver nota de `sf`. */
+  sc: number
+  /** Puntos ganados (suma de los parciales). 0 sin parciales cargados. */
+  pf: number
+  /** Puntos cedidos. Ver nota de `pf`. */
+  pc: number
+}
+
+/** Ratio de sets o de puntos sin dividir por cero: el que no cedió ninguno va
+ *  primero, salvo que tampoco haya ganado (partido sin marcador cargado). */
+export function ratioMerito(favor: number, contra: number): number {
+  if (contra === 0) return favor > 0 ? Number.POSITIVE_INFINITY : 0
+  return favor / contra
 }
 
 export interface PartidoGenerado {
@@ -244,13 +260,61 @@ export function grupoTieneSusDosCuposDecididos(
   return !puedenCambiarDeOrden
 }
 
+type PartidoConMarcador = {
+  jugadorA: string
+  jugadorB: string
+  ganador: string | null
+  setsA?: number | null
+  setsB?: number | null
+  puntosA?: number | null
+  puntosB?: number | null
+}
+
+/**
+ * Desempate de tres o más igualados en puntos: se arma una tabla aparte con
+ * SOLO los partidos entre ellos y se ordena por victorias → ratio de sets →
+ * ratio de puntos. Es la regla del estándar y es la razón por la que hace falta
+ * el marcador set a set: a tres con 1-1 cada uno, los sets suelen quedar
+ * iguales también y los puntos son lo único que separa.
+ *
+ * Devuelve la clave comparable de cada uno para poder detectar después si dos
+ * quedaron literalmente idénticos (ahí sí decide el juez a mano).
+ */
+function clavesDesempateSubgrupo(
+  empatados: readonly GrupoStats[],
+  partidos: readonly PartidoConMarcador[],
+): Map<string, string> {
+  const ids = new Set(empatados.map(e => e.jugadorId))
+  const sub = new Map(empatados.map(e => [e.jugadorId, { pg: 0, sf: 0, sc: 0, pf: 0, pc: 0 }]))
+  for (const p of partidos) {
+    if (!p.ganador || !ids.has(p.jugadorA) || !ids.has(p.jugadorB)) continue
+    sub.get(p.ganador)!.pg += 1
+    if (p.setsA != null && p.setsB != null) {
+      sub.get(p.jugadorA)!.sf += p.setsA; sub.get(p.jugadorA)!.sc += p.setsB
+      sub.get(p.jugadorB)!.sf += p.setsB; sub.get(p.jugadorB)!.sc += p.setsA
+    }
+    if (p.puntosA != null && p.puntosB != null) {
+      sub.get(p.jugadorA)!.pf += p.puntosA; sub.get(p.jugadorA)!.pc += p.puntosB
+      sub.get(p.jugadorB)!.pf += p.puntosB; sub.get(p.jugadorB)!.pc += p.puntosA
+    }
+  }
+  return new Map([...sub].map(([id, s]) => [
+    id,
+    `${s.pg}|${ratioMerito(s.sf, s.sc)}|${ratioMerito(s.pf, s.pc)}`,
+  ]))
+}
+
+function compararClaves(a: string, b: string): number {
+  const [pgA, setsA, ptsA] = a.split('|').map(Number)
+  const [pgB, setsB, ptsB] = b.split('|').map(Number)
+  if (pgB !== pgA) return pgB - pgA
+  if (setsB !== setsA) return setsB - setsA
+  return ptsB - ptsA
+}
+
 export function calcularStatsGrupo(
   jugadores: JugadorTorneo[],
-  partidos: Array<{
-    jugadorA: string
-    jugadorB: string
-    ganador: string | null
-  }>,
+  partidos: Array<PartidoConMarcador>,
 ): { stats: GrupoStats[]; hayTripleEmpate: boolean } {
   const statsMap: Record<string, GrupoStats> = {}
   for (const j of jugadores) {
@@ -260,6 +324,10 @@ export function calcularStatsGrupo(
       pts: 0,
       pg: 0,
       pp: 0,
+      sf: 0,
+      sc: 0,
+      pf: 0,
+      pc: 0,
     }
   }
 
@@ -273,6 +341,30 @@ export function calcularStatsGrupo(
     if (statsMap[perdedor]) {
       statsMap[perdedor].pp += 1
     }
+    // Los sets son opcionales: un partido sin marcador (anterior a la
+    // migración 216) suma 0 a ambos y no distorsiona el ratio de nadie.
+    if (p.setsA != null && p.setsB != null) {
+      if (statsMap[p.jugadorA]) {
+        statsMap[p.jugadorA].sf += p.setsA
+        statsMap[p.jugadorA].sc += p.setsB
+      }
+      if (statsMap[p.jugadorB]) {
+        statsMap[p.jugadorB].sf += p.setsB
+        statsMap[p.jugadorB].sc += p.setsA
+      }
+    }
+    // Los puntos también: los partidos cargados con los botones 3-1 (antes de
+    // los parciales set a set) tienen sets pero no puntos.
+    if (p.puntosA != null && p.puntosB != null) {
+      if (statsMap[p.jugadorA]) {
+        statsMap[p.jugadorA].pf += p.puntosA
+        statsMap[p.jugadorA].pc += p.puntosB
+      }
+      if (statsMap[p.jugadorB]) {
+        statsMap[p.jugadorB].pf += p.puntosB
+        statsMap[p.jugadorB].pc += p.puntosA
+      }
+    }
   }
 
   const ordenOriginal = new Map(jugadores.map((j, i) => [j.id, i]))
@@ -284,8 +376,14 @@ export function calcularStatsGrupo(
   }
 
   const ordenados: GrupoStats[] = []
+  // Clave de desempate de los que empataron de a tres o más; los demás no la
+  // tienen porque su empate lo resuelve el partido directo.
+  const claves = new Map<string, string>()
   for (const puntos of [...porPuntos.keys()].sort((a, b) => b - a)) {
     const empatados = porPuntos.get(puntos) ?? []
+    if (empatados.length >= 3) {
+      for (const [id, clave] of clavesDesempateSubgrupo(empatados, partidos)) claves.set(id, clave)
+    }
     empatados.sort((a, b) => {
       if (empatados.length === 2) {
         const directo = partidos.find(p =>
@@ -295,17 +393,373 @@ export function calcularStatsGrupo(
         if (directo?.ganador === a.jugadorId) return -1
         if (directo?.ganador === b.jugadorId) return 1
       }
+      const claveA = claves.get(a.jugadorId)
+      const claveB = claves.get(b.jugadorId)
+      if (claveA && claveB && claveA !== claveB) return compararClaves(claveA, claveB)
       return (ordenOriginal.get(a.jugadorId) ?? 0) - (ordenOriginal.get(b.jugadorId) ?? 0)
     })
     ordenados.push(...empatados)
   }
 
+  // El triple empate solo va al juez si el desempate por sets y puntos NO
+  // separó a los que se disputan un cupo. Los que importan son quién es 1° y
+  // quién 2°: si esos dos bordes quedaron decididos, el resto da lo mismo.
   const puntosCorte = ordenados[1]?.pts
   const empatadosEnCorte = puntosCorte == null ? [] : ordenados.filter(j => j.pts === puntosCorte)
-  const hayTripleEmpate = empatadosEnCorte.length >= 3
+  const bordeAmbiguo = (i: number) => {
+    const a = ordenados[i], b = ordenados[i + 1]
+    if (!a || !b || a.pts !== b.pts) return false
+    const claveA = claves.get(a.jugadorId)
+    return !!claveA && claveA === claves.get(b.jugadorId)
+  }
+  const hayTripleEmpate = empatadosEnCorte.length >= 3 && (bordeAmbiguo(0) || bordeAmbiguo(1))
 
   return { stats: ordenados, hayTripleEmpate }
 }
+
+// ─── Ranking global de clasificados ───────────────────────────────────────
+// Con qué criterio se ordenan TODOS los que pasaron de fase, mezclando grupos
+// distintos. Hasta ahora no existía: el reparto de BYE se decidía por el
+// balance de mitades del cuadro, así que un 2° podía descansar mientras un 1°
+// con mejor rendimiento jugaba la primera ronda.
+
+export interface ClasificadoConStats {
+  jugadorId: string
+  /** Índice del grupo (0-based). Sirve para no cruzar 1° y 2° del mismo grupo. */
+  grupoIdx: number
+  posicion: 1 | 2
+  /** Partidos ganados en el grupo (el `pg` de `calcularStatsGrupo`). */
+  victorias: number
+  setsFavor: number
+  setsContra: number
+  /** Puntos ganados en el grupo. 0 en partidos cargados sin parciales. */
+  puntosFavor?: number
+  /** Puntos cedidos en el grupo. Ver nota de `puntosFavor`. */
+  puntosContra?: number
+  /** Número de cabeza de serie manual, si tiene. Menor es mejor. */
+  cabezaNumero: number | null
+}
+
+/**
+ * Ordena a los clasificados de mejor a peor.
+ *
+ * Todos los 1° van antes que todos los 2°, incluso si un 2° rindió mejor: es
+ * la regla del estándar y evita que ganar el grupo sea indistinto. Dentro de
+ * cada nivel: más victorias → mejor ratio de sets → mejor ratio de puntos →
+ * cabeza de serie más alta → id de jugador. El último criterio no es deportivo,
+ * está para que el orden sea determinístico: mismos datos, mismo cuadro,
+ * siempre.
+ *
+ * Ojo con una limitación conocida, la misma que acepta el estándar ITTF de
+ * referencia: en grupos de distinto tamaño las victorias no son comparables
+ * (ganar 2 de 2 en un grupo de 3 vale más que ganar 1 de 1 en uno de 2, y acá
+ * el de 2 victorias queda por delante).
+ */
+export function rankearClasificados(
+  clasificados: readonly ClasificadoConStats[],
+): ClasificadoConStats[] {
+  // Un jugador sin ningún set en contra no puede dividir por cero. Si además
+  // no ganó ninguno (partidos viejos sin marcador), su ratio es 0 y queda al
+  // fondo de su nivel, no arriba. Mismo criterio para los puntos.
+  return [...clasificados].sort((a, b) => {
+    if (a.posicion !== b.posicion) return a.posicion - b.posicion
+    if (b.victorias !== a.victorias) return b.victorias - a.victorias
+    const setsA = ratioMerito(a.setsFavor, a.setsContra)
+    const setsB = ratioMerito(b.setsFavor, b.setsContra)
+    if (setsB !== setsA) return setsB - setsA
+    const puntosA = ratioMerito(a.puntosFavor ?? 0, a.puntosContra ?? 0)
+    const puntosB = ratioMerito(b.puntosFavor ?? 0, b.puntosContra ?? 0)
+    if (puntosB !== puntosA) return puntosB - puntosA
+    const cabezaA = a.cabezaNumero ?? Number.MAX_SAFE_INTEGER
+    const cabezaB = b.cabezaNumero ?? Number.MAX_SAFE_INTEGER
+    if (cabezaA !== cabezaB) return cabezaA - cabezaB
+    return a.jugadorId.localeCompare(b.jugadorId)
+  })
+}
+
+// ─── Cuadro por ranking de mérito ─────────────────────────────────────────
+// Reemplaza el reparto de BYE por balance de mitades: siembra a los
+// clasificados según `rankearClasificados` (mejor = seed 1) y deja los BYE en
+// los mejores seeds, que es donde el sembrado estándar los pone.
+
+export interface RankeadoParaBracket {
+  jugadorId: string
+  nombre: string
+  grupoIdx: number
+  posicion: 1 | 2
+  /** Número de cabeza de serie, si tiene. Una cabeza queda anclada en su
+   *  esquina y no se mueve en la separación por mitades. */
+  cabezaNumero?: number | null
+}
+
+/**
+ * Arma la ronda inicial del cuadro a partir de los clasificados YA ordenados
+ * por mérito (índice 0 = mejor). El BYE lo reciben los mejores seeds porque el
+ * sembrado bit-reversal empareja sus posiciones con las que quedan vacías.
+ *
+ * Único ajuste sobre el sembrado puro: si un 1° y su propio 2° caen en la
+ * misma llave inicial (R4), se corre al 2° a la posición ocupada más cercana
+ * que no genere otro choque. Ese corrimiento nunca toca una posición con BYE,
+ * así que no le quita el descanso a nadie que lo haya ganado.
+ */
+export function construirBracketPorRanking(
+  rankeados: readonly RankeadoParaBracket[],
+): PartidoGenerado[] {
+  const n = rankeados.length
+  if (n < 2) return []
+  const tam = calcularTamanoBracket(n)
+  const fase = determinarFaseInicial(tam)
+  const seedPos = posicionesSembradas(tam) // seedPos[i] = posición del seed i+1
+
+  const arr: Array<RankeadoParaBracket | null> = Array(tam).fill(null)
+  rankeados.forEach((r, i) => { arr[seedPos[i]] = r })
+
+  // Regla de Luis: el 2° de un grupo va a la mitad OPUESTA de su propio 1°.
+  // Esto también evita que se crucen en la primera ronda.
+  separarMitades(arr, tam)
+
+  // Un ganador de grupo debe enfrentar a un 2°, no a otro ganador, mientras
+  // aritméticamente se pueda.
+  emparejarPrimeroContraSegundo(arr, tam)
+
+  // Backstop: si la separación por mitades no pudo (sin swap válido), al menos
+  // que dos del mismo grupo no queden en la misma llave inicial.
+  for (let k = 0; k < tam / 2; k++) {
+    const posA = 2 * k
+    const posB = 2 * k + 1
+    const a = arr[posA]
+    const b = arr[posB]
+    if (a && b && a.grupoIdx === b.grupoIdx) resolverChoqueDeGrupo(arr, posA, posB)
+  }
+
+  return construirBracketDesdePosiciones(
+    arr.map(r => (r ? { id: r.jugadorId, nombre: r.nombre } : null)),
+    fase,
+  )
+}
+
+/**
+ * Deshace las llaves de 1°vs1° cambiando uno de esos ganadores por un 2° que
+ * esté en una llave de 2°vs2°. Las dos llaves quedan 1°vs2°, que es como debe
+ * cruzar una primera ronda: el que ganó su grupo enfrenta a un segundo.
+ *
+ * Con G grupos, 2G clasificados y B byes, quedan (G−B) ganadores libres contra
+ * G segundos: siempre sobran segundos, así que las llaves 2°vs2° existen y son
+ * inevitables, pero las de 1°vs1° no. La siembra pura igual las produce porque
+ * empareja seeds vecinos (en un cuadro de 16, el 8 con el 9) y los ganadores
+ * sin cabeza caen justo ahí.
+ *
+ * Solo intercambia DENTRO de la misma mitad: así ningún jugador cambia de lado
+ * y la separación de `separarMitades` queda intacta. Nunca mueve una cabeza de
+ * su ancla ni toca una posición con BYE. Si no hay swap válido deja la llave
+ * como está, igual criterio que el resto del armado.
+ */
+function emparejarPrimeroContraSegundo(arr: Array<RankeadoParaBracket | null>, tam: number): void {
+  const mitad = tam / 2
+  const lado = (p: number) => (p < mitad ? 0 : 1)
+  // Posiciones de una llave completa cuyos dos ocupantes son del nivel `nivel`.
+  const llavesDeNivel = (nivel: 1 | 2): number[][] => {
+    const res: number[][] = []
+    for (let k = 0; k < tam / 2; k++) {
+      const a = arr[2 * k]
+      const b = arr[2 * k + 1]
+      if (a && b && a.posicion === nivel && b.posicion === nivel) res.push([2 * k, 2 * k + 1])
+    }
+    return res
+  }
+
+  for (const [pa, pb] of llavesDeNivel(1)) {
+    // Candidatos a salir de esta llave: el que no sea cabeza de serie.
+    const salidas = [pa, pb]
+    let hecho = false
+    for (const sale of salidas) {
+      if (hecho) break
+      const queda = arr[sale === pa ? pb : pa]!
+      for (const [qa, qb] of llavesDeNivel(2)) {
+        if (hecho) break
+        if (lado(qa) !== lado(sale)) continue // solo misma mitad: no cambia de lado a nadie
+        for (const entra of [qa, qb]) {
+          const cand = arr[entra]!
+          if (cand.grupoIdx === queda.grupoIdx) continue   // chocaría con el que se queda
+          const otro2 = arr[entra === qa ? qb : qa]!
+          if (otro2.grupoIdx === arr[sale]!.grupoIdx) continue // el 1° chocaría al llegar
+          const tmp = arr[sale]; arr[sale] = arr[entra]; arr[entra] = tmp
+          hecho = true
+          break
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Separa a los dos del mismo grupo que cayeron en la llave `posA`/`posB`.
+ * Mueve al 2° del grupo (nunca al 1°, para no alterar la orientación de seeds
+ * altos) hacia la posición OCUPADA más cercana que no arme otro choque. Como
+ * dos del mismo grupo solo pueden ser 1° y 2° (un grupo tiene un único 1°),
+ * siempre hay exactamente un jugador de posición 2 en el par.
+ *
+ * Solo intercambia entre posiciones ocupadas: nunca mueve a nadie a una
+ * posición con BYE ni saca a nadie de una, así el conjunto de BYE es idéntico
+ * antes y después (preserva R1). Si no hay swap válido —caso extremo con pocos
+ * grupos— deja el choque, igual que `seedingSerpenteoConClubes` cuando el
+ * choque de club es inevitable.
+ */
+function resolverChoqueDeGrupo(
+  arr: Array<RankeadoParaBracket | null>,
+  posA: number,
+  posB: number,
+): void {
+  const a = arr[posA]!
+  // Mover al 2° del grupo: el 1° tiene mejor semilla y moverlo alteraría más
+  // el orden. Como un grupo tiene un solo 1°, siempre hay exactamente un 2°.
+  const moverPos = a.posicion === 2 ? posA : posB
+  const quedaPos = moverPos === posA ? posB : posA
+  const mover = arr[moverPos]!
+  const seFija = arr[quedaPos]!
+
+  let mejor: number | null = null
+  let mejorDist = Infinity
+  for (let p = 0; p < arr.length; p++) {
+    if (p === posA || p === posB) continue
+    const cand = arr[p]
+    if (!cand) continue                          // posición con BYE: no se toca
+    if (cand.posicion !== mover.posicion) continue // conservar el nivel (1°/2°)
+    const par = p % 2 === 0 ? p + 1 : p - 1
+    const vecino = arr[par]
+    if (!vecino) continue                        // p da BYE: moverse ahí lo robaría
+    if (cand.grupoIdx === seFija.grupoIdx) continue // cand chocaría al llegar a moverPos
+    if (vecino.grupoIdx === mover.grupoIdx) continue // mover chocaría al llegar a p
+    const dist = Math.abs(p - moverPos)
+    if (dist < mejorDist) { mejorDist = dist; mejor = p }
+  }
+
+  if (mejor != null) {
+    arr[moverPos] = arr[mejor]
+    arr[mejor] = mover
+  }
+}
+
+/**
+ * Lleva a un grupo (1° y 2°) a mitades opuestas del cuadro. Nunca mueve una
+ * cabeza de serie (está anclada en su esquina): mueve al otro miembro, o al 2°
+ * si ninguno es cabeza. Busca un swap con alguien del MISMO nivel (1°/2°) en la
+ * mitad de destino que no arme otro choque de grupo, ni de mitad ni de primera
+ * ronda. Solo intercambia posiciones ocupadas, así el conjunto de BYE no cambia.
+ *
+ * Ceiling: es un pase greedy, un intento por grupo. Con muchos grupos y clubes
+ * apretados puede quedar algún grupo sin separar del todo; en ese caso el
+ * backstop de primera ronda evita al menos que se crucen de entrada. Si hiciera
+ * falta separación garantizada, upgrade a un emparejamiento por mitades.
+ */
+function separarMitades(arr: Array<RankeadoParaBracket | null>, tam: number): void {
+  const mitad = tam / 2
+  const lado = (p: number) => (p < mitad ? 0 : 1)
+  const grupos = [...new Set(arr.flatMap(r => (r ? [r.grupoIdx] : [])))]
+
+  // Intenta llevar el grupo `g` a mitades opuestas con un swap. Devuelve si movió.
+  // Se llama en un bucle hasta punto fijo porque separar un grupo puede liberar
+  // el slot que otro necesitaba: una sola pasada deja casos resolubles sin tocar.
+  const separarUno = (g: number): boolean => {
+    const p1 = arr.findIndex(r => r?.grupoIdx === g && r.posicion === 1)
+    const p2 = arr.findIndex(r => r?.grupoIdx === g && r.posicion === 2)
+    if (p1 < 0 || p2 < 0) return false
+    if (lado(p1) !== lado(p2)) return false // ya están en mitades opuestas
+
+    // Nunca mover a quien ya tiene BYE: perdería el descanso que le tocó por
+    // siembra y se lo llevaría alguien peor ubicado. Se prefiere mover al 2°.
+    const tieneBye = (p: number) => arr[p % 2 === 0 ? p + 1 : p - 1] == null
+    let moverPos: number
+    if (!tieneBye(p2)) moverPos = p2
+    else if (!tieneBye(p1)) moverPos = p1
+    else return false // los dos descansan: separarlos costaría un BYE
+    const mover = arr[moverPos]!
+    const seFija = arr[moverPos === p1 ? p2 : p1]!
+    const ladoDestino = 1 - lado(moverPos)
+
+    let mejor: number | null = null
+    let mejorDist = Infinity
+    for (let p = 0; p < tam; p++) {
+      if (lado(p) !== ladoDestino) continue
+      const cand = arr[p]
+      if (!cand) continue                            // BYE: no se toca
+      if (cand.posicion !== mover.posicion) continue // conservar nivel
+      if (cand.grupoIdx === mover.grupoIdx) continue // mismo grupo que mover
+      if (cand.grupoIdx === seFija.grupoIdx) continue // cand chocaría en destino con el fijo
+      const vecP = p % 2 === 0 ? p + 1 : p - 1
+      const vP = arr[vecP]
+      if (vP && vP.grupoIdx === mover.grupoIdx) continue // mover chocaría en 1ª ronda al llegar a p
+      const vecM = moverPos % 2 === 0 ? moverPos + 1 : moverPos - 1
+      const vM = arr[vecM]
+      if (vM && vM.grupoIdx === cand.grupoIdx) continue // cand chocaría en 1ª ronda al llegar a moverPos
+      const dist = Math.abs(p - moverPos)
+      if (dist < mejorDist) { mejorDist = dist; mejor = p }
+    }
+    if (mejor == null) return false
+    const tmp = arr[moverPos]; arr[moverPos] = arr[mejor]; arr[mejor] = tmp
+    return true
+  }
+
+  // Punto fijo: repetir mientras alguna pasada logre separar un grupo. Cota dura
+  // de vueltas (cada vuelta arregla ≥1 grupo o corta) para no colgarse nunca.
+  for (let vuelta = 0; vuelta < grupos.length + 1; vuelta++) {
+    let cambio = false
+    for (const g of grupos) if (separarUno(g)) cambio = true
+    if (!cambio) break
+  }
+}
+
+/**
+ * Siembra tradicional acordada con el club (2026-08-24):
+ *
+ * 1. Todos los ganadores de grupo van antes que todos los segundos.
+ * 2. Entre los ganadores manda el ORDEN DEL GRUPO: el 1° del grupo A es la
+ *    mejor semilla, el del B la segunda, y así. No es arbitrario — al repartir
+ *    los grupos las cabezas se reparten en orden (CS1 al grupo A, CS2 al B,
+ *    CS3 al C…), así que el orden de grupo ya lleva incorporado el número de
+ *    cabeza. Ganar el grupo A vale más que ganar el G porque el A era el
+ *    grupo de la cabeza #1.
+ * 3. Entre los segundos manda el mérito (`rankearClasificados`): victorias →
+ *    ratio de sets → ratio de puntos.
+ *
+ * El número de cabeza ya no ancla posiciones por sí solo: una cabeza que
+ * pierde su grupo cae al pozo de segundos y se ordena por rendimiento, como
+ * cualquiera. Es lo que pidió el club — "el mérito es para los segundos".
+ */
+function ordenarSiembraTradicional(
+  clasificados: readonly ClasificadoConStats[],
+): ClasificadoConStats[] {
+  const primeros = clasificados
+    .filter(c => c.posicion === 1)
+    .sort((a, b) => (a.grupoIdx - b.grupoIdx) || a.jugadorId.localeCompare(b.jugadorId))
+  const segundos = rankearClasificados(clasificados.filter(c => c.posicion === 2))
+  return [...primeros, ...segundos]
+}
+
+/**
+ * Adapta `construirBracketPorRanking` al formato `LlavesLayout` (slots por
+ * grupo) que consume `sincronizarLlaves`. Toda la maquinaria de inserción,
+ * slots y propagación de la capa de acciones se reutiliza sin cambios. Solo se
+ * usa cuando cerraron todos los grupos: antes de eso no hay ranking comparable.
+ */
+export function construirLayoutPorRanking(
+  clasificados: readonly ClasificadoConStats[],
+): LlavesLayout {
+  const slotDe = new Map(clasificados.map(c => [c.jugadorId, { grupoIdx: c.grupoIdx, pos: c.posicion }]))
+  const ordenados = ordenarSiembraTradicional(clasificados)
+  const bracket = construirBracketPorRanking(ordenados.map(c => ({
+    jugadorId: c.jugadorId, nombre: '', grupoIdx: c.grupoIdx, posicion: c.posicion, cabezaNumero: c.cabezaNumero,
+  })))
+  return {
+    faseInicial: determinarFaseInicial(calcularTamanoBracket(clasificados.length)),
+    matches: bracket.map(p => ({
+      orden: p.orden,
+      a: p.jugadorA ? slotDe.get(p.jugadorA) ?? null : null,
+      b: p.jugadorB ? slotDe.get(p.jugadorB) ?? null : null,
+    })),
+  }
+}
+
 
 // ─── Semillas principales (cabezas de serie 1° y 2°) ──────────────────────
 

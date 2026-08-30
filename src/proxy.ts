@@ -46,13 +46,22 @@ export const anyAuthRoutes = [
   '/torneos-internos', '/torneo-oficial', '/feedbacks', '/central-de-pago',
   '/tienda-buin', '/tienda-profe', '/libro-profe', '/bibliografia-tdm',
   '/redes-sociales',
+  // Módulo de ligas de fútbol: llegó en el merge del 2026-08-27 sin entrada en
+  // ninguna lista de acá — mismo hueco que las once de arriba. Sus páginas
+  // usan usePerfil() y solo exigen "hay perfil", sin filtrar rol (las
+  // Server Actions de escritura sí exigen admin, con requireAdminClub). Lo
+  // encontró rutas-protegidas.test.ts al mezclar, no una revisión manual.
+  '/liga-futbol',
 ]
 
 // Públicas a propósito: la vista en vivo de un torneo se comparte por código y
 // el manual del juez es material de consulta. No llevan datos personales más
 // allá del nombre del jugador en el cuadro, que es lo que se proyecta en la
-// pantalla del club.
-export const rutasPublicasTorneo = ['/vivo', '/torneo-oficial/vivo', '/torneo-oficial/manual']
+// pantalla del club. '/liga-futbol/publica' es el mismo patrón para la liga de
+// fútbol: no usa usePerfil() y se comparte por código, sin cuenta.
+export const rutasPublicasTorneo = [
+  '/vivo', '/torneo-oficial/vivo', '/torneo-oficial/manual', '/liga-futbol/publica',
+]
 
 function getRolRedirect(rol: string | null): string {
   if (rol === 'superadmin') return '/superadmin'

@@ -7,8 +7,10 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { useModulos } from '@/lib/hooks/useModulos'
 import { registrarMovimiento, editarMovimiento, eliminarMovimiento } from '@/app/actions/finanzas'
 import { MensualidadesPanel } from '@/components/MensualidadesPanel'
+import LigaFutbolFinanzasTab from '@/components/liga-futbol/FinanzasTab'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { cachedFetch } from '@/lib/query-cache'
@@ -66,6 +68,7 @@ function FinanzasContent() {
   // pantalla, así que pasa por el interruptor del ojito.
   const fmt = useTextoMonto()
   const { perfil, loading: authLoading } = usePerfil()
+  const { tiene } = useModulos()
   const [movimientos, setMovimientos] = useState<any[]>([])
   const [profesores, setProfesores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -75,10 +78,10 @@ function FinanzasContent() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const searchParams = useSearchParams()
-  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'historicas'|'reportes'>(
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'historicas'|'reportes'|'liga'>(
     // Se aceptan todas las pestañas, no solo mensualidades: `/reportes` redirige
     // acá con ?tab=reportes y antes caía en Movimientos sin decir nada.
-    (['movimientos', 'mensualidades', 'historicas', 'reportes'] as const)
+    (['movimientos', 'mensualidades', 'historicas', 'reportes', 'liga'] as const)
       .find(t => t === searchParams.get('tab')) ?? 'movimientos',
   )
   // Monta Mensualidades solo cuando se abre por primera vez (evita sus consultas al entrar en "Movimientos"); una vez montado queda vivo
@@ -399,6 +402,7 @@ function FinanzasContent() {
       <div className="tabs-scroll" style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:20 }}>
         {[
           { key:'movimientos', label:'📋 Movimientos' },
+          ...(tiene('liga_futbol') ? [{ key:'liga', label:'⚽ Liga' }] : []),
           { key:'mensualidades', label:'💳 Mensualidades' },
           { key:'historicas', label:'🗓️ Históricas' },
           { key:'reportes', label:'📈 Reportes' },
@@ -629,6 +633,11 @@ function FinanzasContent() {
       <div style={{ display: tabActivo === 'reportes' ? 'block' : 'none' }}>
         <ReportesTab clubId={clubId} />
       </div>
+
+      {/* TAB LIGA — pagos de inscripción por equipo, solo para clubes de fútbol */}
+      {tabActivo === 'liga' && tiene('liga_futbol') && (
+        <LigaFutbolFinanzasTab clubId={clubId} />
+      )}
 
       {/* Modal nuevo movimiento */}
       {modalOpen && (

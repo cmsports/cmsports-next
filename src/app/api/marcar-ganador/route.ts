@@ -30,23 +30,45 @@ function mismoSitio(req: Request): boolean {
   }
 }
 
+// Puntos de cada set: [[11,9],[11,7],[9,11],[11,6]]. Solo se valida la forma
+// (array de pares numéricos); el contenido lo valida `marcarGanadorPartido`.
+function esParciales(v: unknown): v is [number, number][] {
+  return Array.isArray(v) && v.every(
+    p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && typeof p[1] === 'number',
+  )
+}
+
 export async function POST(req: Request) {
   if (!mismoSitio(req)) {
     return Response.json({ error: 'Origen no permitido' }, { status: 403 })
   }
 
-  let cuerpo: { partidoId?: unknown; ganadorId?: unknown }
+  let cuerpo: { partidoId?: unknown; ganadorId?: unknown; setsA?: unknown; setsB?: unknown; parciales?: unknown }
   try {
     cuerpo = await req.json()
   } catch {
     return Response.json({ error: 'Cuerpo inválido' }, { status: 400 })
   }
 
-  const { partidoId, ganadorId } = cuerpo
-  if (typeof partidoId !== 'string' || typeof ganadorId !== 'string' || !partidoId || !ganadorId) {
+  const { partidoId, ganadorId, setsA, setsB, parciales } = cuerpo
+  if (typeof partidoId !== 'string' || !partidoId) {
+    return Response.json({ error: 'Faltan datos' }, { status: 400 })
+  }
+  // Grupos mandan marcador (el ganador se deriva de él); playoff manda
+  // ganadorId. Los parciales set a set son lo que manda la pantalla de grupos.
+  const tieneGanador = typeof ganadorId === 'string' && !!ganadorId
+  const tieneSets = typeof setsA === 'number' && typeof setsB === 'number'
+  const tieneParciales = esParciales(parciales)
+  if (!tieneGanador && !tieneSets && !tieneParciales) {
     return Response.json({ error: 'Faltan datos' }, { status: 400 })
   }
 
-  const result = await marcarGanadorPartido({ partidoId, ganadorId })
+  const result = await marcarGanadorPartido({
+    partidoId,
+    ganadorId: tieneGanador ? ganadorId : undefined,
+    setsA: tieneSets ? setsA : undefined,
+    setsB: tieneSets ? setsB : undefined,
+    parciales: tieneParciales ? parciales : undefined,
+  })
   return Response.json(result)
 }

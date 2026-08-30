@@ -67,6 +67,10 @@ const EXCEPCIONES: Record<string, { max: number; motivo: string }> = {
     max: 2,
     motivo: 'Cierre de inscripciones al dar de baja un bloque, donde el error del bloque ya se devolvió.',
   },
+  'app/actions/liga-futbol.ts': {
+    max: 2,
+    motivo: 'clonarLigaFutbol copia equipos de una liga a otra best-effort (patrón ya usado ahí con `?.[i]`, ningún equipo es indispensable para seguir clonando) y registrarPagoEquipo llama a Finanzas con un comentario explícito del autor: el cobro del equipo ya quedó registrado arriba pase lo que pase con el RPC de Finanzas.',
+  },
   'app/actions/superadmin.ts': {
     max: 4,
     motivo: 'Borrado en cascada de un club: cada paso se reporta en el resumen que devuelve la acción.',
@@ -142,7 +146,9 @@ describe('escrituras a la base con su error revisado', () => {
 
   it('la lista de excepciones no crece sin darse cuenta', () => {
     // Congelado a propósito. Subirlo es una decisión, no un descuido.
-    expect(Object.keys(EXCEPCIONES).length).toBeLessThanOrEqual(19)
+    // Subido a 20 en la auditoría 2026-08-26 al declarar liga-futbol.ts, el
+    // primer módulo nuevo del amigo que trae escrituras best-effort propias.
+    expect(Object.keys(EXCEPCIONES).length).toBeLessThanOrEqual(20)
     for (const [archivo, { motivo }] of Object.entries(EXCEPCIONES)) {
       expect(motivo.length, `${archivo} necesita un motivo escrito`).toBeGreaterThan(30)
     }

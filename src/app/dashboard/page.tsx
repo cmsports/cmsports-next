@@ -16,6 +16,7 @@ import {
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
+import LigaFutbolDashboardWidget from '@/components/liga-futbol/DashboardWidget'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { MessageSquare } from 'lucide-react'
@@ -77,6 +78,7 @@ function scheduleIdle(cb: () => void) {
 export default function DashboardPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const { tiene } = useModulos()
+  const esFutbol = tiene('liga_futbol')
   const [kpis, setKpis]                           = useState<any>({})
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
@@ -381,22 +383,24 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── KPIs ── */}
-      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (tiene('finanzas') ? 3 : 0)},1fr)`, gap: 14, marginBottom: 16 }}>
+      {/* ── KPIs — vacía para clubes de fútbol (todo lo de acá es específico de alumnos/clases) ── */}
+      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 16 }}>
 
-        {/* Jugadores activos */}
-        <KpiCard
-          icon={<Users size={18} color={C.sky} />}
-          iconBg={C.skyL}
-          label="👥 Jugadores activos"
-          value={errorDatos ? '—' : (kpis.activos || 0)}
-          valueColor={C.text}
-          tooltip={tooltip} tooltipId="activos" setTooltip={setTooltip}
-          tooltipText="Jugadores con estado activo en el club. No incluye externos ni suspendidos."
-        />
+        {/* Jugadores activos — no aplica a ligas de fútbol (son equipos, no alumnos) */}
+        {!esFutbol && (
+          <KpiCard
+            icon={<Users size={18} color={C.sky} />}
+            iconBg={C.skyL}
+            label="👥 Jugadores activos"
+            value={errorDatos ? '—' : (kpis.activos || 0)}
+            valueColor={C.text}
+            tooltip={tooltip} tooltipId="activos" setTooltip={setTooltip}
+            tooltipText="Jugadores con estado activo en el club. No incluye externos ni suspendidos."
+          />
+        )}
 
-        {/* Utilidad por alumno — requiere finanzas */}
-        {tiene('finanzas') && (
+        {/* Utilidad por alumno — requiere finanzas, no aplica a fútbol */}
+        {tiene('finanzas') && !esFutbol && (
           <KpiCard
             icon={<TrendingUp size={18} color={(kpis.utilidadPorAlumno || 0) >= 0 ? C.green : C.red} />}
             iconBg={(kpis.utilidadPorAlumno || 0) >= 0 ? C.greenL : C.redL}
@@ -447,8 +451,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Ingresos — requiere finanzas */}
-        {tiene('finanzas') && (
+        {/* Ingresos — requiere finanzas. En clubes de fútbol se muestra junto a Gastos más abajo, no sola en esta fila. */}
+        {tiene('finanzas') && !esFutbol && (
           <KpiCard
             icon={<DollarSign size={18} color={C.green} />}
             iconBg={C.greenL}
@@ -463,7 +467,21 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
-      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: tiene('finanzas') ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 16 }}>
+
+        {/* Ingresos — en clubes de fútbol va acá, junto a Gastos, en vez de sola arriba */}
+        {tiene('finanzas') && esFutbol && (
+          <KpiCard
+            icon={<DollarSign size={18} color={C.green} />}
+            iconBg={C.greenL}
+            label="💰 Ingresos este mes"
+            value={errorDatos ? '—' : fmt(kpis.ingresos || 0)}
+            valueColor={C.green}
+            href="/finanzas?tab=movimientos"
+            tooltip={tooltip} tooltipId="ingresos" setTooltip={setTooltip}
+            tooltipText="Suma de todos los movimientos de tipo ingreso del mes actual."
+          />
+        )}
 
         {/* Gastos este mes */}
         {tiene('finanzas') && (
@@ -496,57 +514,63 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Link de inscripción */}
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <Link2 size={15} color={C.sky} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔗 Link de inscripción</span>
-          </div>
-          <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
-            Comparte este link para que los jugadores soliciten unirse al club
-          </p>
-          <LinkInvitacion clubId={perfil?.club_id || ''} />
-        </div>
-
-        {/* Asistencia hoy */}
-        <Link href="/asistencia" style={{ textDecoration: 'none' }}>
-          <AsistenciaHoyCard data={asistenciaHoy} totalActivos={kpis.activos || 0} />
-        </Link>
-
-        {/* Solicitudes pendientes */}
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Mail size={15} color={C.orange} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📬 Solicitudes pendientes</span>
+        {/* Link de inscripción — flujo de solicitud individual, no aplica a fútbol (los equipos se inscriben desde el módulo de liga) */}
+        {!esFutbol && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Link2 size={15} color={C.sky} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔗 Link de inscripción</span>
             </div>
+            <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+              Comparte este link para que los jugadores soliciten unirse al club
+            </p>
+            <LinkInvitacion clubId={perfil?.club_id || ''} />
+          </div>
+        )}
+
+        {/* Asistencia hoy — no aplica a fútbol (no hay clases) */}
+        {!esFutbol && (
+          <Link href="/asistencia" style={{ textDecoration: 'none' }}>
+            <AsistenciaHoyCard data={asistenciaHoy} totalActivos={kpis.activos || 0} />
+          </Link>
+        )}
+
+        {/* Solicitudes pendientes — mismo flujo que el link de inscripción, no aplica a fútbol */}
+        {!esFutbol && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Mail size={15} color={C.orange} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>📬 Solicitudes pendientes</span>
+              </div>
+              {solicitudes.length > 0 && (
+                <span style={{ background: C.orangeL, color: C.orangeD, padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
+                  {solicitudes.length} nuevas
+                </span>
+              )}
+            </div>
+            {solicitudes.length === 0
+              ? <p style={{ fontSize: 13, color: C.hint, textAlign: 'center', padding: '20px 0' }}>Sin solicitudes pendientes</p>
+              : solicitudes.slice(0, 3).map(sol => (
+                <div key={sol.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.skyL, color: C.skyD, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                    {sol.nombre?.charAt(0) || '?'}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{sol.nombre}</div>
+                    <div style={{ fontSize: 11, color: C.hint }}>{new Date(sol.creado_en).toLocaleDateString('es-CL')}</div>
+                  </div>
+                  <Link href="/solicitudes" style={{ background: C.skyL, color: C.skyD, borderRadius: 6, padding: '4px 10px', fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>Ver →</Link>
+                </div>
+              ))
+            }
             {solicitudes.length > 0 && (
-              <span style={{ background: C.orangeL, color: C.orangeD, padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
-                {solicitudes.length} nuevas
-              </span>
+              <Link href="/solicitudes" style={{ display: 'block', marginTop: 12, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px', color: C.muted, fontSize: 12, textAlign: 'center', textDecoration: 'none' }}>
+                Ver todas →
+              </Link>
             )}
           </div>
-          {solicitudes.length === 0
-            ? <p style={{ fontSize: 13, color: C.hint, textAlign: 'center', padding: '20px 0' }}>Sin solicitudes pendientes</p>
-            : solicitudes.slice(0, 3).map(sol => (
-              <div key={sol.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ width: 28, height: 28, borderRadius: '50%', background: C.skyL, color: C.skyD, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-                  {sol.nombre?.charAt(0) || '?'}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{sol.nombre}</div>
-                  <div style={{ fontSize: 11, color: C.hint }}>{new Date(sol.creado_en).toLocaleDateString('es-CL')}</div>
-                </div>
-                <Link href="/solicitudes" style={{ background: C.skyL, color: C.skyD, borderRadius: 6, padding: '4px 10px', fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>Ver →</Link>
-              </div>
-            ))
-          }
-          {solicitudes.length > 0 && (
-            <Link href="/solicitudes" style={{ display: 'block', marginTop: 12, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px', color: C.muted, fontSize: 12, textAlign: 'center', textDecoration: 'none' }}>
-              Ver todas →
-            </Link>
-          )}
-        </div>
+        )}
 
         {/* Credenciales oficiales — reporte para entregar accesos.
             El admin decide cuándo ver la clave; la tarjeta no la muestra. */}
@@ -582,6 +606,8 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {tiene('liga_futbol') && <LigaFutbolDashboardWidget clubId={perfil?.club_id} />}
 
       {feedbackOpen && perfil?.club_id && (
         <ModalCrearFeedback clubId={perfil.club_id} onClose={() => setFeedbackOpen(false)} />

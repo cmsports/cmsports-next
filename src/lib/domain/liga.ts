@@ -15,22 +15,9 @@ export function generarFixtureDivision(jugadorIds: string[]): PartidoFixtureLiga
 }
 
 // ─── Resultados Bo5 ────────────────────────────────────────────────────────
-// HC-08: únicos marcadores válidos en un partido Mejor de Cinco.
-
-const RESULTADOS_BO5_VALIDOS = new Set(['3-0', '3-1', '3-2', '0-3', '1-3', '2-3'])
-
-export function esResultadoBo5Valido(setsA: number, setsB: number): boolean {
-  return RESULTADOS_BO5_VALIDOS.has(`${setsA}-${setsB}`)
-}
-
-export function determinarGanadorBo5(
-  setsA: number,
-  setsB: number,
-  jugadorAId: string,
-  jugadorBId: string,
-): string {
-  return setsA > setsB ? jugadorAId : jugadorBId
-}
+// Se mudaron a `marcador.ts` cuando Torneos también los necesitó. Se
+// re-exportan para no tocar los imports que ya apuntan acá.
+export { esResultadoBo5Valido, determinarGanadorBo5 } from './marcador'
 
 // ─── Ranking por división ──────────────────────────────────────────────────
 // Puntos: victoria 3, derrota 1, walkover ganado 3, walkover perdido 0.

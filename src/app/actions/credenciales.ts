@@ -238,7 +238,7 @@ export async function resetearTodasLasCredenciales(): Promise<{ error?: string; 
 
     // Se cambia email y clave en la misma llamada: si falla, no se toca el
     // espejo (queda mostrando lo viejo, coherente con lo que hay en auth).
-    const { error: authUpErr } = await admin.auth.admin.updateUserById(p.id, { email, password })
+    const { error: authUpErr } = await admin.auth.admin.updateUserById(p.id, { email, password, email_confirm: true })
     if (authUpErr) { fallidas++; continue }
 
     // perfiles.email se mantiene alineado con auth.email para que el resto

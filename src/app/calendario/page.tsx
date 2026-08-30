@@ -18,7 +18,8 @@ const diasSemana = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const tiposEvento = ['entrenamiento','torneo','feriado','pago','otro']
 const coloresEvento: Record<string, string> = {
-  entrenamiento:'#16a34a', torneo:'#4f46e5', feriado:'#dc2626', pago:'#d97706', otro:'#64748b', clase:'#f43f5e'
+  entrenamiento:'#16a34a', torneo:'#4f46e5', feriado:'#dc2626', pago:'#d97706', otro:'#64748b', clase:'#f43f5e',
+  liga_futbol:'#059669',
 }
 
 function fechaValida(valor: string | null) {
@@ -44,6 +45,7 @@ function CalendarioContent() {
   const [anio, setAnio] = useState(calendarioInicial.getFullYear())
   const [eventos, setEventos] = useState<any[]>([])
   const [torneos, setTorneos] = useState<any[]>([])
+  const [fechasLiga, setFechasLiga] = useState<any[]>([])
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(fechaInicial)
   const [modalEvento, setModalEvento] = useState(false)
   const [eventoEditandoId, setEventoEditandoId] = useState<string | null>(null)
@@ -67,16 +69,18 @@ function CalendarioContent() {
     if (!clubId) return
     const inicio = new Date(anio, mes, 1).toISOString().slice(0,10)
     const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
-    const [{ data: ev, error: evError }, { data: tr, error: trError }] = await Promise.all([
+    const [{ data: ev, error: evError }, { data: tr, error: trError }, { data: fl, error: flError }] = await Promise.all([
       supabase.from('eventos').select('id,titulo,descripcion,tipo,fecha_inicio,hora_inicio,hora_fin').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-      supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
+      supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+      supabase.from('lf_fechas').select('id,numero,nombre,fecha,liga_id,lf_ligas!inner(id,nombre,club_id)').eq('lf_ligas.club_id', clubId).eq('es_playoff', false).gte('fecha', inicio).lte('fecha', fin),
     ])
-    if (evError || trError) {
-      setMensaje({ tipo: 'error', texto: evError?.message || trError?.message || 'No fue posible cargar el calendario' })
+    if (evError || trError || flError) {
+      setMensaje({ tipo: 'error', texto: evError?.message || trError?.message || flError?.message || 'No fue posible cargar el calendario' })
       return
     }
     setEventos(ev || [])
     setTorneos(tr || [])
+    setFechasLiga(fl || [])
   }, [anio, clubId, mes])
   useEffect(() => {
     if (authLoading) return
@@ -90,17 +94,19 @@ function CalendarioContent() {
     const fin = new Date(anio, mes+1, 0).toISOString().slice(0,10)
 
     async function cargar() {
-      const [{ data: ev, error: evError }, { data: tr, error: trError }] = await Promise.all([
+      const [{ data: ev, error: evError }, { data: tr, error: trError }, { data: fl, error: flError }] = await Promise.all([
         supabase.from('eventos').select('id,titulo,descripcion,tipo,fecha_inicio,hora_inicio,hora_fin').eq('club_id', clubId!).gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
-        supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId!).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin)
+        supabase.from('torneos').select('id,nombre,estado,fase,fecha_inicio').eq('club_id', clubId!).neq('estado', 'archivado').gte('fecha_inicio', inicio).lte('fecha_inicio', fin),
+        supabase.from('lf_fechas').select('id,numero,nombre,fecha,liga_id,lf_ligas!inner(id,nombre,club_id)').eq('lf_ligas.club_id', clubId!).eq('es_playoff', false).gte('fecha', inicio).lte('fecha', fin),
       ])
       if (!activo) return
-      if (evError || trError) {
-        setMensaje({ tipo: 'error', texto: evError?.message || trError?.message || 'No fue posible cargar el calendario' })
+      if (evError || trError || flError) {
+        setMensaje({ tipo: 'error', texto: evError?.message || trError?.message || flError?.message || 'No fue posible cargar el calendario' })
         return
       }
       setEventos(ev || [])
       setTorneos(tr || [])
+      setFechasLiga(fl || [])
     }
 
     void cargar()
@@ -214,6 +220,16 @@ function CalendarioContent() {
   torneos.forEach(t => {
     const f = t.fecha_inicio?.slice(0,10)
     if (f) { if (!diasConItems[f]) diasConItems[f] = []; diasConItems[f].push({ ...t, tipo_item:'torneo', tipo:'torneo', titulo: t.nombre }) }
+  })
+  fechasLiga.forEach(fl => {
+    const f = fl.fecha?.slice(0,10)
+    if (!f) return
+    if (!diasConItems[f]) diasConItems[f] = []
+    diasConItems[f].push({
+      ...fl, tipo_item: 'liga_futbol', tipo: 'liga_futbol',
+      titulo: `⚽ ${fl.lf_ligas?.nombre} · ${fl.nombre || `Fecha ${fl.numero}`}`,
+      ligaId: fl.liga_id,
+    })
   })
 
   const itemsDelDia = diaSeleccionado ? (diasConItems[diaSeleccionado] || []) : []
@@ -340,6 +356,14 @@ function CalendarioContent() {
                   Torneo · {t.fase || t.estado || 'programado'}
                 </div>
                 <div style={{ fontSize:11, color:'#4f46e5', marginTop:6, fontWeight:600 }}>Ver torneo →</div>
+              </div>
+            ))}
+
+            {itemsDelDia.filter(i => i.tipo_item === 'liga_futbol').map((fl, i) => (
+              <div key={i} onClick={() => router.push(`/liga-futbol/${fl.ligaId}/fixture`)} style={{ background:'#f4f7fa', borderRadius:10, padding:12, marginBottom:10, borderLeft:'3px solid #059669', cursor:'pointer' }}>
+                <div style={{ fontSize:13, fontWeight:600, color: text }}>{fl.titulo}</div>
+                <div style={{ fontSize:11, color: muted, marginTop:2 }}>Liga de fútbol</div>
+                <div style={{ fontSize:11, color:'#059669', marginTop:6, fontWeight:600 }}>Ver fixture →</div>
               </div>
             ))}
 
