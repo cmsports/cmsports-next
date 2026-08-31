@@ -37,7 +37,7 @@ type Extra = {
   bloque_id: string | null
 }
 
-type Jugador = { id: string; nombre: string; telefono: string | null }
+type Jugador = { id: string; nombre: string; telefono: string | null; estado: string }
 type Bloque  = { id: string; nombre: string; hora_inicio: string; hora_fin: string }
 
 export default function PanelClasesExtra({ clubId }: { clubId: string | null }) {
@@ -67,7 +67,7 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
       db.from('clases_extraordinarias')
         .select('id,jugador_id,fecha,monto,cobrada_en,pagada_en,movimiento_id,bloque_id')
         .eq('club_id', clubId).order('fecha', { ascending: false }),
-      db.from('jugadores').select('id,nombre,telefono').eq('club_id', clubId),
+      db.from('jugadores').select('id,nombre,telefono,estado').eq('club_id', clubId),
       db.from('bloques_horario').select('id,nombre,hora_inicio,hora_fin').eq('club_id', clubId),
     ])
     setExtras((ex ?? []) as Extra[])
@@ -128,9 +128,17 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
   const pendientes = extras.filter(e => !e.pagada_en)
   const pagadas    = extras.filter(e => e.pagada_en)
 
+  // Un bloqueado no aparece como fila accionable acá tampoco — misma
+  // decisión del club que en Mensualidades (2026-08-31): la deuda no se
+  // borra ni se olvida, solo deja de listarse mientras esté bloqueado, y
+  // vuelve a aparecer solo si se desbloquea. Por eso el total que se muestra
+  // arriba sale de `pendientes` sin filtrar (la plata real que se debe), y
+  // solo la LISTA de abajo usa `pendientesAccionables`.
+  const pendientesAccionables = pendientes.filter(e => jugadores[e.jugador_id]?.estado !== 'bloqueado')
+
   // Por jugador, que es como se cobra.
   const porJugador = new Map<string, Extra[]>()
-  for (const e of pendientes) {
+  for (const e of pendientesAccionables) {
     const previas = porJugador.get(e.jugador_id)
     if (previas) previas.push(e); else porJugador.set(e.jugador_id, [e])
   }
@@ -145,7 +153,9 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
     }))
     .sort((a, b) => (jugadores[a.jugadorId]?.nombre ?? '').localeCompare(jugadores[b.jugadorId]?.nombre ?? ''))
 
-  const totalPorCobrar = grupos.reduce((s, g) => s + g.total, 0)
+  // Sale de `pendientes` sin filtrar a propósito: la plata que debe un
+  // bloqueado sigue siendo real, aunque su fila no aparezca abajo.
+  const totalPorCobrar = pendientes.reduce((s, e) => s + (e.monto ?? 0), 0)
   const detalle = (e: Extra) => {
     const b = e.bloque_id ? bloques[e.bloque_id] : null
     if (b) return `${e.fecha} · ${rangoHorario(b.hora_inicio, b.hora_fin)}`
