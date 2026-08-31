@@ -8,6 +8,7 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { Pencil, Trash2, Plus, X, FileDown } from 'lucide-react'
 import { crearProductoTienda, editarProductoTienda, eliminarProductoTienda } from '@/app/actions/tienda-profe'
 import { exportarTiendaPdf } from '@/lib/tienda-pdf'
+import { CATEGORIAS_TIENDA, CATS_CON_COLOR, colorCategoriaTienda, emojiCategoriaTienda, labelCategoriaTienda, tinteCategoria } from '@/lib/domain/tiendaCategorias'
 
 const WA = '56968342721'
 
@@ -22,17 +23,7 @@ type Producto = {
   imagen_url: string | null
 }
 
-const CATS_CON_COLOR = ['gomas', 'vestimenta']
-
-const CATS = [
-  { key: 'todos',      label: 'Todos' },
-  { key: 'maderos',    label: 'Maderos' },
-  { key: 'gomas',      label: 'Gomas' },
-  { key: 'pelotas',    label: 'Pelotas' },
-  { key: 'accesorios', label: 'Accesorios' },
-  { key: 'vestimenta', label: 'Vestimenta' },
-  { key: 'otros',      label: 'Otros deportivos' },
-] as const
+const CATS = [{ key: 'todos', label: 'Todos' }, ...CATEGORIAS_TIENDA] as const
 
 type CatKey = typeof CATS[number]['key']
 
@@ -222,17 +213,27 @@ export default function TiendaProfePage() {
           )}
         </div>
 
-        {/* Filtros */}
+        {/* Filtros — cada categoría con su propio color, siempre, no solo cuando está activa */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-          {CATS.map(c => (
-            <button
-              key={c.key}
-              onClick={() => setFiltro(c.key)}
-              style={{ padding: '6px 16px', borderRadius: 6, border: 'none', background: filtro === c.key ? '#c8102e' : '#e2e8f0', color: filtro === c.key ? '#fff' : '#334155', fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: 0.4 }}
-            >
-              {c.label}
-            </button>
-          ))}
+          {CATS.map(c => {
+            const color = c.key === 'todos' ? '#152a4a' : colorCategoriaTienda(c.key)
+            const activo = filtro === c.key
+            return (
+              <button
+                key={c.key}
+                onClick={() => setFiltro(c.key)}
+                style={{
+                  padding: '7px 16px', borderRadius: 20, border: activo ? 'none' : `1.5px solid ${tinteCategoria(color, 0.78)}`,
+                  background: activo ? color : tinteCategoria(color, 0.92), color: activo ? '#fff' : color,
+                  fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: 0.4,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {c.key !== 'todos' && <span style={{ fontSize: 13 }}>{emojiCategoriaTienda(c.key)}</span>}
+                {c.label}
+              </button>
+            )
+          })}
         </div>
 
         {/* Cargando */}
@@ -252,14 +253,19 @@ export default function TiendaProfePage() {
         {/* Grid productos */}
         {!cargando && filtrados.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 20 }}>
-            {filtrados.map(p => (
+            {filtrados.map(p => {
+              const colorCat = colorCategoriaTienda(p.categoria)
+              return (
               <div
                 key={p.id}
-                style={{ background: '#fff', borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', position: 'relative' }}
+                style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', border: `1px solid ${tinteCategoria(colorCat, 0.82)}`, boxShadow: '0 3px 12px rgba(15,23,42,0.07)', display: 'flex', flexDirection: 'column', position: 'relative' }}
               >
+                {/* Franja de color de la categoría */}
+                <div style={{ height: 4, background: colorCat, flexShrink: 0 }} />
+
                 {/* Botones staff */}
                 {esStaff && (
-                  <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 2 }}>
+                  <div style={{ position: 'absolute', top: 10, right: 6, display: 'flex', gap: 4, zIndex: 2 }}>
                     <button
                       onClick={() => abrirEditar(p)}
                       title="Editar"
@@ -278,16 +284,28 @@ export default function TiendaProfePage() {
                   </div>
                 )}
 
-                {/* Imagen */}
-                <div style={{ background: '#f4f6f8', aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 12 }}>
+                {/* Imagen — con fondo tintado del color de la categoría, y un
+                    ícono de verdad (no un emoji perdido en gris) cuando no hay foto */}
+                <div style={{ background: `linear-gradient(160deg, ${tinteCategoria(colorCat, 0.88)}, ${tinteCategoria(colorCat, 0.96)})`, aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 12 }}>
                   {p.imagen_url
                     ? <img src={p.imagen_url} alt={p.nombre} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
-                    : <div style={{ fontSize: 40, color: '#cbd5e1' }}>🏓</div>
+                    : (
+                      <div style={{ width: 60, height: 60, borderRadius: '50%', background: colorCat, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, boxShadow: `0 6px 16px ${tinteCategoria(colorCat, 0.4)}` }}>
+                        {emojiCategoriaTienda(p.categoria)}
+                      </div>
+                    )
                   }
                 </div>
 
                 {/* Info */}
                 <div style={{ padding: '10px 12px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {filtro === 'todos' && (
+                    <div style={{ textAlign: 'center' }}>
+                      <span style={{ background: tinteCategoria(colorCat, 0.88), color: colorCat, fontSize: 9, fontWeight: 800, padding: '2px 9px', borderRadius: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        {emojiCategoriaTienda(p.categoria)} {labelCategoriaTienda(p.categoria)}
+                      </span>
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#1a2a4a', textAlign: 'center', textTransform: 'uppercase', lineHeight: 1.3 }}>
                     {p.nombre}
                   </div>
@@ -328,7 +346,8 @@ export default function TiendaProfePage() {
                   ) : null}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
 

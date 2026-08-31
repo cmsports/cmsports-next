@@ -28,28 +28,38 @@ export function ModulosProvider({ children }: { children: React.ReactNode }) {
   const clubId = perfil?.club_id ?? ''
   const [estado, setEstado] = useState<{ clubId: string; modulos: string[] } | null>(null)
 
+  // Sin `?? ALL_MODULOS` a la salida, un corte de red acá no se veía como un
+  // error en ningún lado: `estado` se quedaba en null, `modulos` en `[]`
+  // (ver más abajo) y el menú lateral perdía toda la sección de Recursos
+  // (tienda, bibliografía, libro del profe) sin aviso ni reintento, para el
+  // resto de esa sesión — se veía como un cuadro en blanco en la barra
+  // lateral. Mejor pecar de permisivo (mostrar todo) que de vacío.
   const cargar = useCallback(async (id: string) => {
     if (!id) return
     const supabase = createClient()
-    const { data } = await supabase.from('clubes').select('modulos_habilitados').eq('id', id).single()
-    setEstado({
-      clubId: id,
-      modulos: data?.modulos_habilitados ?? ALL_MODULOS,
-    })
+    try {
+      const { data } = await supabase.from('clubes').select('modulos_habilitados').eq('id', id).single()
+      setEstado({ clubId: id, modulos: data?.modulos_habilitados ?? ALL_MODULOS })
+    } catch {
+      setEstado({ clubId: id, modulos: ALL_MODULOS })
+    }
   }, [])
 
   useEffect(() => {
     if (!clubId) return
     let activo = true
     const supabase = createClient()
-    void supabase.from('clubes').select('modulos_habilitados').eq('id', clubId).single()
-      .then(({ data }) => {
-        if (!activo) return
-        setEstado({
-          clubId,
-          modulos: data?.modulos_habilitados ?? ALL_MODULOS,
-        })
-      })
+    supabase.from('clubes').select('modulos_habilitados').eq('id', clubId).single()
+      .then(
+        ({ data }) => {
+          if (!activo) return
+          setEstado({ clubId, modulos: data?.modulos_habilitados ?? ALL_MODULOS })
+        },
+        () => {
+          if (!activo) return
+          setEstado({ clubId, modulos: ALL_MODULOS })
+        },
+      )
     return () => { activo = false }
   }, [clubId])
 

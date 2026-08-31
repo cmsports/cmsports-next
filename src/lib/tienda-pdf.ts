@@ -29,6 +29,8 @@
 // si el catálogo entero falla por otra razón, se avisa con un error real en
 // vez de no hacer nada.
 
+import { colorCategoriaTienda, emojiCategoriaTienda } from '@/lib/domain/tiendaCategorias'
+
 export type ProductoTiendaPdf = {
   nombre: string
   descripcion: string | null
@@ -47,27 +49,12 @@ type Opciones = {
 const fmt = (n: number) => '$' + n.toLocaleString('es-CL')
 const FUENTE = "'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif"
 
-// Un emoji por categoría — antes no se podían usar (Helvetica no los dibuja,
-// salían como cuadrados rotos), pero acá el texto lo renderiza el propio
-// navegador antes de rasterizar, así que un emoji es un emoji de verdad.
-const EMOJI_CATEGORIA: Record<string, string> = {
-  maderos: '🏓', gomas: '🔴', pelotas: '⚪', accesorios: '🎒', vestimenta: '👕', otros: '🏅',
-}
-function emojiCategoria(categoria: string): string { return EMOJI_CATEGORIA[categoria] ?? '🛍️' }
-
-// Un color de marca por categoría, elegido a mano: así "Gomas" siempre es
-// rojo (el color del caucho) y "Vestimenta" siempre es azul, catálogo tras
-// catálogo, en vez de que le toque un color al azar.
-const COLOR_CATEGORIA: Record<string, string> = {
-  maderos: '#8a5a2b', gomas: '#c8102e', pelotas: '#d97706', accesorios: '#7c3aed', vestimenta: '#152a52', otros: '#0d9488',
-}
-function colorCategoria(categoria: string): string {
-  if (COLOR_CATEGORIA[categoria]) return COLOR_CATEGORIA[categoria]
-  let h = 0
-  for (const c of categoria) h = (h * 31 + c.charCodeAt(0)) | 0
-  const PALETA = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
-  return PALETA[Math.abs(h) % PALETA.length]
-}
+// El emoji y el color por categoría salen de un solo lugar, compartido con
+// las pantallas /tienda-buin y /tienda-profe — así "Gomas" es rojo y 🔴 en
+// las dos partes, y si alguien agrega una categoría nueva alcanza con
+// tocarlo ahí, no acá y en las pantallas por separado.
+const emojiCategoria = emojiCategoriaTienda
+const colorCategoria = colorCategoriaTienda
 
 function esc(s: string): string {
   return String(s)
