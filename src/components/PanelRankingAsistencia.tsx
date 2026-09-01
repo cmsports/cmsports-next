@@ -70,6 +70,14 @@ function fechaCorta(iso: string) {
   return `${Number(d)} ${MESES[Number(m) - 1]}`
 }
 
+/** `fecha` menos `n` meses, en ISO — para los accesos rápidos del historial
+ *  por bloque ("3 meses atrás" como punto de partida, no como único filtro). */
+function restarMeses(fecha: string, n: number): string {
+  const d = new Date(`${fecha}T12:00:00`)
+  d.setMonth(d.getMonth() - n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function diasDesde(iso: string, hoy: string): number {
   return Math.round((new Date(`${hoy}T12:00:00`).getTime() - new Date(`${iso}T12:00:00`).getTime()) / 86_400_000)
 }
@@ -170,13 +178,17 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
 
   // Historial por bloque: mismo gesto que pasar lista — elegí sede, elegí
   // horario — pero para revisar hacia atrás, no para marcar. Va con su propio
-  // rango (meses, no la semana/mes/trimestre de arriba): la gracia es poder
-  // mirar seis meses de un bloque sin importar qué período esté mirando el
-  // resto de la pantalla. Por eso carga sus propios datos, aparte.
-  const [bloques, setBloques]                       = useState<BloqueInfo[]>([])
-  const [sedeFiltro, setSedeFiltro]                 = useState('')
-  const [bloqueFiltro, setBloqueFiltro]             = useState('')
-  const [mesesHistorialBloque, setMesesHistorialBloque] = useState(3)
+  // rango de FECHAS (no la semana/mes/trimestre de arriba): la gracia es
+  // poder mirar un día puntual, o meses, de un bloque, sin importar qué
+  // período esté mirando el resto de la pantalla. Por eso carga sus propios
+  // datos, aparte. Arranca en los últimos 3 meses; los accesos rápidos y los
+  // dos campos de fecha lo mueven a lo que haga falta, incluido un solo día
+  // (desde = hasta).
+  const [bloques, setBloques]           = useState<BloqueInfo[]>([])
+  const [sedeFiltro, setSedeFiltro]     = useState('')
+  const [bloqueFiltro, setBloqueFiltro] = useState('')
+  const [desdeHistorialBloque, setDesdeHistorialBloque] = useState(() => restarMeses(fechaChile(), 3))
+  const [hastaHistorialBloque, setHastaHistorialBloque] = useState(() => fechaChile())
   const [historialBloque, setHistorialBloque]       = useState<FilaHistorialDetallado[]>([])
   const [cargandoHistorialBloque, setCargandoHistorialBloque] = useState(false)
   const [exportandoBloque, setExportandoBloque]     = useState<Formato | null>(null)
@@ -234,19 +246,20 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   useEffect(() => { void cargar() }, [cargar])
   useEnVivo(['asistencia', 'bloque_jugadores'], clubId, cargar, { conClub: ['asistencia'] })
 
-  // El historial por bloque tiene su propio rango (meses hacia atrás desde
-  // hoy) y su propia carga: no depende de la semana/mes/trimestre de arriba,
-  // así se puede mirar un bloque seis meses atrás aunque arriba esté puesta
-  // "esta semana". Se dispara solo cuando hay un bloque elegido — sin eso no
-  // hay nada que mostrar y no vale la pena traer meses de datos.
+  // El historial por bloque tiene su propio rango de fechas y su propia
+  // carga: no depende de la semana/mes/trimestre de arriba, así se puede
+  // mirar un bloque seis meses atrás — o un solo día puntual, si `desde` y
+  // `hasta` son la misma fecha — aunque arriba esté puesta "esta semana". Se
+  // dispara solo cuando hay un bloque elegido — sin eso no hay nada que
+  // mostrar y no vale la pena traer meses de datos.
   useEffect(() => {
     if (!bloqueFiltro) { setHistorialBloque([]); return }
+    if (desdeHistorialBloque > hastaHistorialBloque) { setHistorialBloque([]); return }
     let cancelado = false
     ;(async () => {
       setCargandoHistorialBloque(true)
-      const hastaB = fechaChile()
-      const d = new Date(`${hastaB}T12:00:00`); d.setMonth(d.getMonth() - mesesHistorialBloque)
-      const desdeB = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const desdeB = desdeHistorialBloque
+      const hastaB = hastaHistorialBloque
 
       const [datosB, { data: jugsB }, { data: asistB }] = await Promise.all([
         cargarHistorialClub(clubId, desdeB, hastaB),
@@ -282,7 +295,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
     })()
     return () => { cancelado = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bloqueFiltro, mesesHistorialBloque, clubId])
+  }, [bloqueFiltro, desdeHistorialBloque, hastaHistorialBloque, clubId])
 
   // El reporte por bloque pide su propio rango —"últimos N meses"— porque
   // responde otra pregunta: si a un bloque le conviene seguir existiendo, y eso
@@ -321,18 +334,15 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   }
 
   // El reporte del historial por bloque: lo que ya está calculado en
-  // `historialBloque` (ese rango de meses, ese bloque), en el formato que
+  // `historialBloque` (ese rango de fechas, ese bloque), en el formato que
   // elija. No vuelve a consultar nada — ya está todo en memoria.
   async function exportarHistorialBloque(formato: Formato, b: BloqueInfo) {
     setExportandoBloque(formato)
     try {
       const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
-      const hastaB = fechaChile()
-      const d = new Date(`${hastaB}T12:00:00`); d.setMonth(d.getMonth() - mesesHistorialBloque)
-      const desdeB = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       const args = {
         clubNombre: club?.nombre ?? '', bloqueNombre: b.nombre, sede: sedeLabel(b.sede),
-        horario: rangoHorario(b.hora_inicio, b.hora_fin), desde: desdeB, hasta: hastaB, filas: historialBloque,
+        horario: rangoHorario(b.hora_inicio, b.hora_fin), desde: desdeHistorialBloque, hasta: hastaHistorialBloque, filas: historialBloque,
       }
       if (formato === 'pdf') {
         const pdf = await import('@/lib/historial-bloque-pdf')
@@ -747,17 +757,35 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
           </div>
 
           {bloqueFiltro && (
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Hasta</span>
-              {[1, 3, 6, 12].map(n => (
-                <div key={n} onClick={() => setMesesHistorialBloque(n)}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Acceso rápido</span>
+                {[1, 3, 6, 12].map(n => (
+                  <div key={n}
+                    onClick={() => { setDesdeHistorialBloque(restarMeses(hoy, n)); setHastaHistorialBloque(hoy) }}
+                    style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
+                      border: '1px solid #e2e8f0', background: '#fff', color: muted }}>
+                    {n === 12 ? 'Último año' : `Últimos ${n} ${n === 1 ? 'mes' : 'meses'}`}
+                  </div>
+                ))}
+                <div onClick={() => { setDesdeHistorialBloque(hoy); setHastaHistorialBloque(hoy) }}
                   style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
-                    border: `1px solid ${mesesHistorialBloque === n ? '#4f46e5' : '#e2e8f0'}`,
-                    background: mesesHistorialBloque === n ? '#eef2ff' : '#fff',
-                    color: mesesHistorialBloque === n ? '#3730a3' : muted }}>
-                  {n === 12 ? '1 año atrás' : `${n} ${n === 1 ? 'mes' : 'meses'} atrás`}
+                    border: '1px solid #e2e8f0', background: '#fff', color: muted }}>
+                  Solo hoy
                 </div>
-              ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Fechas</span>
+                <input type="date" value={desdeHistorialBloque} max={hastaHistorialBloque}
+                  onChange={e => setDesdeHistorialBloque(e.target.value)}
+                  style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, border: '1px solid #e2e8f0', color: text }} />
+                <span style={{ fontSize: 11, color: hint }}>hasta</span>
+                <input type="date" value={hastaHistorialBloque} min={desdeHistorialBloque} max={hoy}
+                  onChange={e => setHastaHistorialBloque(e.target.value)}
+                  style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, border: '1px solid #e2e8f0', color: text }} />
+                {/* Un mismo día en los dos campos revisa esa fecha puntual —
+                    no hace falta un modo aparte para "un día en particular". */}
+              </div>
             </div>
           )}
 
@@ -780,6 +808,15 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                   <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>Calculando…</div>
                 ) : (
                   <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto' }}>
+                    {historialBloque.some(f => f.inferido) && (
+                      <div style={{ fontSize: 11, color: '#a16207', background: '#fffbeb', border: '1px solid #fde68a',
+                        borderRadius: 8, padding: '6px 10px', marginBottom: 8 }}>
+                        <strong>· inferido</strong> = esa asistencia se marcó antes de que el sistema guardara a qué
+                        bloque fue cada uno; se completó adivinando por en qué grupo estaba inscrito ese día de la
+                        semana. Puede fallar si esa persona tenía más de un bloque el mismo día. Lo que se marque de
+                        ahora en adelante ya no dice &ldquo;inferido&rdquo;: queda guardado de verdad.
+                      </div>
+                    )}
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#fff' }}>
                         <tr>
@@ -794,14 +831,16 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                             <td style={{ ...td, color: muted, fontFamily: 'monospace' }}>
                               {fechaCorta(f.fecha)}
                               {f.inferido && (
-                                <span title="No quedó guardado en el momento; se completó cruzando en qué bloque estaba inscrito ese día."
+                                <span title="Adivinado por el grupo en que estaba inscrito ese día — ver la nota de arriba."
                                   style={{ marginLeft: 6, fontSize: 10, color: '#a16207', cursor: 'help' }}>· inferido</span>
                               )}
                             </td>
                           </tr>
                         ))}
                         {historialBloque.length === 0 && (
-                          <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>Nadie marcado presente ahí en {mesesHistorialBloque === 12 ? 'el último año' : `los últimos ${mesesHistorialBloque} meses`}</td></tr>
+                          <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>
+                            Nadie marcado presente ahí entre el {fechaCorta(desdeHistorialBloque)} y el {fechaCorta(hastaHistorialBloque)}
+                          </td></tr>
                         )}
                       </tbody>
                     </table>
