@@ -19,6 +19,10 @@ export type BloqueInfo = {
   sede: string
   hora_inicio: string
   hora_fin: string
+  /** Opcional: lo piden pantallas que necesitan saber qué día de la semana
+   *  se dicta (por ejemplo, para saltar al día anterior/siguiente de ESE
+   *  bloque). El cálculo de esta base no lo usa. */
+  dia_semana?: string
 }
 
 export type RegistroAsistenciaConBloque = {

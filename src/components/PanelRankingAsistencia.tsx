@@ -70,14 +70,6 @@ function fechaCorta(iso: string) {
   return `${Number(d)} ${MESES[Number(m) - 1]}`
 }
 
-/** `fecha` menos `n` meses, en ISO — para los accesos rápidos del historial
- *  por bloque ("3 meses atrás" como punto de partida, no como único filtro). */
-function restarMeses(fecha: string, n: number): string {
-  const d = new Date(`${fecha}T12:00:00`)
-  d.setMonth(d.getMonth() - n)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 function diasDesde(iso: string, hoy: string): number {
   return Math.round((new Date(`${hoy}T12:00:00`).getTime() - new Date(`${iso}T12:00:00`).getTime()) / 86_400_000)
 }
@@ -187,8 +179,9 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [bloques, setBloques]           = useState<BloqueInfo[]>([])
   const [sedeFiltro, setSedeFiltro]     = useState('')
   const [bloqueFiltro, setBloqueFiltro] = useState('')
-  const [desdeHistorialBloque, setDesdeHistorialBloque] = useState(() => restarMeses(fechaChile(), 3))
-  const [hastaHistorialBloque, setHastaHistorialBloque] = useState(() => fechaChile())
+  // Un solo día, no un rango: "¿quién vino el martes 12 a Adulto Master?",
+  // no una lista acumulada de meses. Para otro día se cambia la fecha y listo.
+  const [fechaHistorialBloque, setFechaHistorialBloque] = useState(() => fechaChile())
   const [historialBloque, setHistorialBloque]       = useState<FilaHistorialDetallado[]>([])
   const [cargandoHistorialBloque, setCargandoHistorialBloque] = useState(false)
   const [exportandoBloque, setExportandoBloque]     = useState<Formato | null>(null)
@@ -240,7 +233,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre'),
       cargarHistorialClub(clubId, desdeCarga, hastaCarga),
-      supabase.from('bloques_horario').select('id,nombre,sede,hora_inicio,hora_fin').eq('club_id', clubId),
+      supabase.from('bloques_horario').select('id,nombre,sede,hora_inicio,hora_fin,dia_semana').eq('club_id', clubId),
     ])
     setJugadores((jugs ?? []) as Jugador[])
     setDatos(datosClub)
@@ -251,20 +244,17 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   useEffect(() => { void cargar() }, [cargar])
   useEnVivo(['asistencia', 'bloque_jugadores'], clubId, cargar, { conClub: ['asistencia'] })
 
-  // El historial por bloque tiene su propio rango de fechas y su propia
-  // carga: no depende de la semana/mes/trimestre de arriba, así se puede
-  // mirar un bloque seis meses atrás — o un solo día puntual, si `desde` y
-  // `hasta` son la misma fecha — aunque arriba esté puesta "esta semana". Se
-  // dispara solo cuando hay un bloque elegido — sin eso no hay nada que
-  // mostrar y no vale la pena traer meses de datos.
+  // El historial por bloque mira UN día, no un rango: no depende de la
+  // semana/mes/trimestre de arriba, así se puede revisar un martes puntual de
+  // hace tres meses aunque arriba esté puesta "esta semana". Se dispara solo
+  // cuando hay un bloque elegido — sin eso no hay nada que mostrar.
   useEffect(() => {
     if (!bloqueFiltro) { setHistorialBloque([]); return }
-    if (desdeHistorialBloque > hastaHistorialBloque) { setHistorialBloque([]); return }
     let cancelado = false
     ;(async () => {
       setCargandoHistorialBloque(true)
-      const desdeB = desdeHistorialBloque
-      const hastaB = hastaHistorialBloque
+      const desdeB = fechaHistorialBloque
+      const hastaB = fechaHistorialBloque
 
       const [datosB, { data: jugsB }, { data: asistB }] = await Promise.all([
         cargarHistorialClub(clubId, desdeB, hastaB),
@@ -300,7 +290,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
     })()
     return () => { cancelado = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bloqueFiltro, desdeHistorialBloque, hastaHistorialBloque, clubId])
+  }, [bloqueFiltro, fechaHistorialBloque, clubId])
 
   // El reporte por bloque pide su propio rango —"últimos N meses"— porque
   // responde otra pregunta: si a un bloque le conviene seguir existiendo, y eso
@@ -347,7 +337,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
       const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
       const args = {
         clubNombre: club?.nombre ?? '', bloqueNombre: b.nombre, sede: sedeLabel(b.sede),
-        horario: rangoHorario(b.hora_inicio, b.hora_fin), desde: desdeHistorialBloque, hasta: hastaHistorialBloque, filas,
+        horario: rangoHorario(b.hora_inicio, b.hora_fin), desde: fechaHistorialBloque, hasta: fechaHistorialBloque, filas,
       }
       if (formato === 'pdf') {
         const pdf = await import('@/lib/historial-bloque-pdf')
@@ -761,38 +751,45 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
             })}
           </div>
 
-          {bloqueFiltro && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Acceso rápido</span>
-                {[1, 3, 6, 12].map(n => (
-                  <div key={n}
-                    onClick={() => { setDesdeHistorialBloque(restarMeses(hoy, n)); setHastaHistorialBloque(hoy) }}
+          {bloqueFiltro && (() => {
+            // Un día atrás o adelante, saltando fin de semana si el bloque no
+            // se dicta ahí — no tiene sentido caer un sábado si ese grupo solo
+            // funciona de lunes a viernes.
+            function mover(dias: number) {
+              const b = bloquePorId.get(bloqueFiltro)
+              const d = new Date(`${fechaHistorialBloque}T12:00:00`)
+              for (let i = 0; i < 14; i++) {
+                d.setDate(d.getDate() + dias)
+                const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                const dow = (['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'] as const)[d.getDay()]
+                if (!b || b.dia_semana === dow) { setFechaHistorialBloque(iso); return }
+              }
+            }
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
+                <button onClick={() => mover(-1)} title="Día anterior de este bloque"
+                  style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>
+                  <ChevronLeft size={14} color={muted} />
+                </button>
+                <input type="date" value={fechaHistorialBloque} max={hoy}
+                  onChange={e => setFechaHistorialBloque(e.target.value)}
+                  style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, border: '1px solid #e2e8f0', color: text }} />
+                <button onClick={() => mover(1)} disabled={fechaHistorialBloque >= hoy} title="Día siguiente de este bloque"
+                  style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff',
+                    cursor: fechaHistorialBloque >= hoy ? 'default' : 'pointer', opacity: fechaHistorialBloque >= hoy ? 0.4 : 1 }}>
+                  <ChevronRight size={14} color={muted} />
+                </button>
+                {fechaHistorialBloque !== hoy && (
+                  <div onClick={() => setFechaHistorialBloque(hoy)}
                     style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
                       border: '1px solid #e2e8f0', background: '#fff', color: muted }}>
-                    {n === 12 ? 'Último año' : `Últimos ${n} ${n === 1 ? 'mes' : 'meses'}`}
+                    Hoy
                   </div>
-                ))}
-                <div onClick={() => { setDesdeHistorialBloque(hoy); setHastaHistorialBloque(hoy) }}
-                  style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
-                    border: '1px solid #e2e8f0', background: '#fff', color: muted }}>
-                  Solo hoy
-                </div>
+                )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Fechas</span>
-                <input type="date" value={desdeHistorialBloque} max={hastaHistorialBloque}
-                  onChange={e => setDesdeHistorialBloque(e.target.value)}
-                  style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, border: '1px solid #e2e8f0', color: text }} />
-                <span style={{ fontSize: 11, color: hint }}>hasta</span>
-                <input type="date" value={hastaHistorialBloque} min={desdeHistorialBloque} max={hoy}
-                  onChange={e => setHastaHistorialBloque(e.target.value)}
-                  style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, border: '1px solid #e2e8f0', color: text }} />
-                {/* Un mismo día en los dos campos revisa esa fecha puntual —
-                    no hace falta un modo aparte para "un día en particular". */}
-              </div>
-            </div>
-          )}
+            )
+          })()}
 
           {bloqueFiltro && (() => {
             const b = bloquePorId.get(bloqueFiltro)
@@ -855,8 +852,8 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                         {mostradas.length === 0 && (
                           <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>
                             {hayInferidos && !incluirInferido
-                              ? 'Nada confirmado en este rango — marcá el check de arriba para ver lo inferido.'
-                              : <>Nadie marcado presente ahí entre el {fechaCorta(desdeHistorialBloque)} y el {fechaCorta(hastaHistorialBloque)}</>}
+                              ? 'Nada confirmado ese día — marcá el check de arriba para ver lo inferido.'
+                              : <>Nadie marcado presente ahí el {fechaCorta(fechaHistorialBloque)}</>}
                           </td></tr>
                         )}
                       </tbody>
