@@ -27,6 +27,9 @@ import {
 } from '@/lib/domain/panoramaAsistencia'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
+import { rangoHorario } from '@/lib/domain/horario'
+import { sedeLabel } from '@/lib/domain/sedeGrupo'
+import { armarHistorialDetallado, type BloqueInfo, type RegistroAsistenciaConBloque } from '@/lib/domain/historialDetalladoAsistencia'
 
 const supabase = createClient()
 
@@ -165,6 +168,13 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [mesesBloque, setMesesBloque]         = useState(3)
   const [diaAbierto, setDiaAbierto]           = useState<string | null>(null)
 
+  // Historial por bloque: mismo gesto que pasar lista — elegí sede, elegí
+  // horario, y ves quién vino ahí en el período que estás mirando.
+  const [bloques, setBloques]           = useState<BloqueInfo[]>([])
+  const [asistConBloque, setAsistConBloque] = useState<RegistroAsistenciaConBloque[]>([])
+  const [sedeFiltro, setSedeFiltro]     = useState('')
+  const [bloqueFiltro, setBloqueFiltro] = useState('')
+
   const hoy = fechaChile()
 
   // El rango que se está mirando. La semana va de lunes a viernes porque es la
@@ -199,16 +209,24 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   }, [desdeAnterior, hoy])
 
   const cargar = useCallback(async () => {
-    const [{ data: jugs }, datosClub] = await Promise.all([
+    const hastaCarga = hasta > hoy ? hasta : hoy
+    const [{ data: jugs }, datosClub, { data: bl }, { data: asistBl }] = await Promise.all([
       supabase.from('jugadores')
         .select('id,nombre,categoria,grupo,sede,telefono')
         .eq('club_id', clubId).eq('estado', 'activo')
         .or('es_externo.is.null,es_externo.eq.false')
         .order('nombre'),
-      cargarHistorialClub(clubId, desdeCarga, hasta > hoy ? hasta : hoy),
+      cargarHistorialClub(clubId, desdeCarga, hastaCarga),
+      supabase.from('bloques_horario').select('id,nombre,sede,hora_inicio,hora_fin').eq('club_id', clubId),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).from('asistencia').select('jugador_id,fecha,bloque_id')
+        .eq('club_id', clubId).eq('estado', 'presente')
+        .gte('fecha', desdeCarga).lte('fecha', hastaCarga),
     ])
     setJugadores((jugs ?? []) as Jugador[])
     setDatos(datosClub)
+    setBloques((bl ?? []) as BloqueInfo[])
+    setAsistConBloque((asistBl ?? []) as RegistroAsistenciaConBloque[])
     setCargando(false)
   }, [clubId, desdeCarga, hasta, hoy])
 
@@ -297,6 +315,25 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
     ...c,
     dias: c.dias.filter(d => d.fecha >= desde && d.fecha <= hasta),
   }))
+
+  // Historial por bloque — mismas piezas que ya arma esta pantalla
+  // (`calendarios`, ya calculado arriba) más el `bloque_id` de verdad que
+  // guarda cada fila desde la migración 242. Lo de antes de esa migración se
+  // completa por el mismo calendario, igual que en Reportes.
+  const bloquePorId = new Map(bloques.map(b => [b.id, b]))
+  const sedesDisponibles = [...new Set(bloques.map(b => b.sede))].sort((a, b) => sedeLabel(a).localeCompare(sedeLabel(b)))
+  const bloquesDeLaSede = (sedeFiltro ? bloques.filter(b => b.sede === sedeFiltro) : bloques)
+    .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio) || a.nombre.localeCompare(b.nombre))
+  const calendariosPorJugador = new Map(calendarios.map(c => [c.jugador.id, c.dias]))
+  const nombreDeJugador = (id: string) => jugadores.find(j => j.id === id)?.nombre ?? id
+  const historialDelBloque = bloqueFiltro
+    ? armarHistorialDetallado(
+        asistConBloque.filter(a => a.fecha >= desde && a.fecha <= hasta),
+        nombreDeJugador, bloquePorId, calendariosPorJugador,
+      )
+        .filter(f => f.bloqueId === bloqueFiltro)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.jugadorNombre.localeCompare(b.jugadorNombre))
+    : []
 
   const conteo    = conteoDelRango(calendarios, desde, hasta)
   const conteoPre = conteoDelRango(calendarios, desdeAnterior, hastaAnterior)
@@ -586,6 +623,93 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
             )}
           </tbody>
         </table>
+      </Seccion>
+
+      {/* ── Por bloque: mismo gesto que pasar lista — sede, después horario ── */}
+      <Seccion titulo="Por bloque" nota="Elegí sede y horario para ver quién asistió ahí, día por día">
+        <div style={{ padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sedesDisponibles.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Sede</span>
+              <button onClick={() => { setSedeFiltro(''); setBloqueFiltro('') }}
+                style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                  border: `1px solid ${sedeFiltro === '' ? '#4f46e5' : '#e2e8f0'}`,
+                  background: sedeFiltro === '' ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
+                  color: sedeFiltro === '' ? '#ffffff' : muted }}>
+                Todas
+              </button>
+              {sedesDisponibles.map(s => {
+                const activo = sedeFiltro === s
+                return (
+                  <button key={s} onClick={() => { setSedeFiltro(activo ? '' : s); setBloqueFiltro('') }}
+                    style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                      border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
+                      background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
+                      color: activo ? '#ffffff' : muted }}>
+                    {sedeLabel(s)}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Horario</span>
+            {bloquesDeLaSede.length === 0 && <span style={{ fontSize: 12, color: hint }}>Sin bloques configurados</span>}
+            {bloquesDeLaSede.map(b => {
+              const activo = bloqueFiltro === b.id
+              return (
+                <button key={b.id} onClick={() => setBloqueFiltro(activo ? '' : b.id)}
+                  style={{ padding: '5px 11px', fontSize: 12, fontWeight: 600, borderRadius: 20, cursor: 'pointer',
+                    border: `1px solid ${activo ? '#4f46e5' : '#e2e8f0'}`,
+                    background: activo ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#ffffff',
+                    color: activo ? '#ffffff' : muted }}>
+                  {rangoHorario(b.hora_inicio, b.hora_fin)} · {b.nombre}
+                </button>
+              )
+            })}
+          </div>
+
+          {bloqueFiltro && (() => {
+            const b = bloquePorId.get(bloqueFiltro)
+            return (
+              <div style={{ marginTop: 4 }}>
+                {b && (
+                  <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
+                    {sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)} · {historialDelBloque.length} presente{historialDelBloque.length !== 1 ? 's' : ''} en {etiqueta.toLowerCase()}
+                  </div>
+                )}
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Jugador</th>
+                        <th style={th}>Fecha</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historialDelBloque.map((f, i) => (
+                        <tr key={i}>
+                          <td style={{ ...td, fontWeight: 600 }}>{f.jugadorNombre}</td>
+                          <td style={{ ...td, color: muted, fontFamily: 'monospace' }}>
+                            {fechaCorta(f.fecha)}
+                            {f.inferido && (
+                              <span title="No quedó guardado en el momento; se completó cruzando en qué bloque estaba inscrito ese día."
+                                style={{ marginLeft: 6, fontSize: 10, color: '#a16207', cursor: 'help' }}>· inferido</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {historialDelBloque.length === 0 && (
+                        <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>Nadie marcado presente ahí en este período</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })()}
+        </div>
       </Seccion>
 
       {/* ── Lo macro, comprimido ── */}
