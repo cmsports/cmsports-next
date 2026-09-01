@@ -160,7 +160,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
     for (const item of pendientes) {
       try {
-        const result = await registrarAsistenciaAction(item.clubId, item.jugadorId, item.fecha, item.hora)
+        const result = await registrarAsistenciaAction(item.clubId, item.jugadorId, item.fecha, item.hora, item.bloqueId)
         if (!result.error) { await quitarDeCola(item.id); continue }
         // El servidor contestó y dijo que no. Eso no se arregla reintentando:
         // pasa cuando al jugador lo borraron o lo traspasaron a otro club
@@ -548,6 +548,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         hora,
         jugadorNombre: jug?.nombre || '',
         creadoEn: marcaTiempoActual(),
+        bloqueId: bloqueDeHoyPara(jugadorId),
       }
       await encolarAsistencia(item)
       setAsistencias(prev => [...prev, { id: item.id, jugador_id: jugadorId, hora, pendienteSync: true }])
@@ -557,7 +558,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       return
     }
 
-    const result = await registrarAsistenciaAction(clubId!, jugadorId, fechaVista, horaRegistro)
+    const result = await registrarAsistenciaAction(clubId!, jugadorId, fechaVista, horaRegistro, bloqueDeHoyPara(jugadorId))
     if (result.error) {
       setMensaje({ tipo: 'error', texto: result.error })
       setRegistrando(null)
@@ -649,6 +650,23 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const conBloqueEseDia = new Set(Object.values(inscritosDe).flat())
   function tieneBloqueEseDia(jugadorId: string) {
     return conBloqueEseDia.has(jugadorId)
+  }
+
+  /**
+   * A qué bloque atribuirle la asistencia que se está por marcar — para que
+   * el reporte de Reportes pueda decir "vino a Martes 18:00, Sede Centro" en
+   * vez de tener que adivinarlo después.
+   *
+   * Si hay un bloque elegido en el filtro y el jugador está inscrito ahí, es
+   * ese. Si no hay filtro pero el jugador solo tiene un bloque hoy, es ese
+   * (el caso normal, un socio con un solo horario). Si está en más de uno y
+   * no hay filtro que desempate, se manda `null` en vez de adivinar cuál: un
+   * dato ausente se nota en el reporte, uno incorrecto no.
+   */
+  function bloqueDeHoyPara(jugadorId: string): string | null {
+    if (bloqueSel && inscritosDelBloque?.has(jugadorId)) return bloqueSel
+    const suyos = Object.entries(inscritosDe).filter(([, ids]) => ids.includes(jugadorId))
+    return suyos.length === 1 ? suyos[0][0] : null
   }
 
   // Candidatos a clase extra: cualquiera que no esté inscrito en el bloque

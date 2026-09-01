@@ -11,6 +11,10 @@ export type AsistenciaPendiente = {
   hora: string
   jugadorNombre: string
   creadoEn: number
+  /** A qué bloque se le atribuye, si se pudo saber al momento de encolar sin
+   *  conexión. Los ítems encolados antes de que existiera este campo no lo
+   *  traen — llegan como `undefined`, que se trata igual que `null`. */
+  bloqueId?: string | null
 }
 
 function openDb(): Promise<IDBDatabase> {

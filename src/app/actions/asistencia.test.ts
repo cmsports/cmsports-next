@@ -89,7 +89,21 @@ describe('asistencia entre roles', () => {
 
     expect(resultado).toEqual({ ok: true, asistenciaId: 'asistencia-1' })
     expect(mocks.rpc).toHaveBeenCalledWith('registrar_asistencia_segura', {
-      p_jugador_id: 'jugador-9', p_fecha: MARTES, p_hora: '03:00',
+      p_jugador_id: 'jugador-9', p_fecha: MARTES, p_hora: '03:00', p_bloque_id: null,
+    })
+  })
+
+  it('manda el bloque cuando la pantalla lo tiene, para que el reporte no tenga que adivinarlo', async () => {
+    mocks.requirePerfil.mockResolvedValue({
+      error: null,
+      supabase: supabaseFalso,
+      perfil: { club_id: 'club-1', rol: 'profesor', jugador_id: null },
+    })
+
+    await registrarAsistenciaAction('club-1', 'jugador-9', MARTES, '18:00', 'bloque-7')
+
+    expect(mocks.rpc).toHaveBeenCalledWith('registrar_asistencia_segura', {
+      p_jugador_id: 'jugador-9', p_fecha: MARTES, p_hora: '18:00', p_bloque_id: 'bloque-7',
     })
   })
 

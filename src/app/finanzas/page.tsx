@@ -17,6 +17,9 @@ import { cachedFetch } from '@/lib/query-cache'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { useTextoMonto } from '@/components/Monto'
+import { cargarHistorialClub } from '@/lib/supabase/historial'
+import { indexar, calendarioJugador } from '@/lib/domain/historialAsistencia'
+import { armarHistorialDetallado, type BloqueInfo } from '@/lib/domain/historialDetalladoAsistencia'
 
 const supabase = createClient()
 
@@ -900,6 +903,10 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
   const [trimestre, setTrimestre] = useState(Math.ceil((new Date().getMonth()+1)/3))
   const [semestre, setSemestre] = useState(new Date().getMonth() < 6 ? 1 : 2)
   const [anio, setAnio] = useState(new Date().getFullYear())
+  // Filtros del historial detallado de asistencia (sede/bloque) — solo
+  // recortan lo que se ve en pantalla, el PDF sigue llevando todo el rango.
+  const [sedeHistorial, setSedeHistorial] = useState('')
+  const [bloqueHistorial, setBloqueHistorial] = useState('')
   const [preview, setPreview] = useState<any>(null)
   const [generando, setGenerando] = useState(false)
   // Si algo revienta al armar el reporte, hay que decirlo. Antes la excepción
@@ -1071,9 +1078,10 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     }
 
     if (categoriaRep === 'asistencia') {
-      const [{ data: asist }, { data: jug }] = await Promise.all([
-        supabase.from('asistencia').select('jugador_id,fecha,jugadores(nombre,categoria)').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-        supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false')
+      const [{ data: asist }, { data: jug }, { data: bloquesRaw }] = await Promise.all([
+        supabase.from('asistencia').select('jugador_id,fecha,bloque_id,jugadores(nombre,categoria)').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
+        supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
+        supabase.from('bloques_horario').select('id,nombre,sede,hora_inicio,hora_fin').eq('club_id', clubId),
       ])
       const porDia: Record<string, number> = {}, porJugador: Record<string, { nombre: string; count: number }> = {}, porDiaSemana: Record<number, number> = { 0:0,1:0,2:0,3:0,4:0,5:0,6:0 }
       const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
@@ -1086,7 +1094,29 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       })
       const diaMasAsistido = Object.entries(porDia).sort((a, b) => b[1] - a[1])[0] || null
       const diaSemanaMax = Object.entries(porDiaSemana).sort((a, b) => b[1] - a[1])[0]
-      datos = { asistencias: asist || [], porDia, porJugador, diaMasAsistido, diaSemanaMax: diaSemanaMax ? { dia: diasSemana[parseInt(diaSemanaMax[0])], count: diaSemanaMax[1] } : null, topJugadores: Object.values(porJugador).sort((a, b) => b.count - a.count).slice(0, 10), sinAsistencia: (jug || []).filter(j => !porJugador[j.id]), totalAsist: (asist || []).length, diasUnicos: Object.keys(porDia).length, promedioDiario: Object.keys(porDia).length > 0 ? Math.round((asist || []).length / Object.keys(porDia).length) : 0, diasSemana, porDiaSemana, activos: jug || [] }
+
+      // Historial con bloque/horario/sede — pedido del profesor. Las filas ya
+      // marcadas desde la migración 242 traen `bloque_id`; las de antes se
+      // completan por el mismo calendario que usa el resto del sistema, solo
+      // para los jugadores que de verdad aparecen en el rango (no todo el club).
+      const bloquePorId = new Map<string, BloqueInfo>((bloquesRaw || []).map(b => [b.id, b as BloqueInfo]))
+      const idsSinBloque = [...new Set((asist || []).filter(a => !a.bloque_id).map(a => a.jugador_id))]
+      const calendariosPorJugador = new Map<string, ReturnType<typeof calendarioJugador>>()
+      if (idsSinBloque.length > 0) {
+        const datosClub = await cargarHistorialClub(clubId, inicio, fin)
+        const indice = indexar(datosClub)
+        for (const jugadorId of idsSinBloque) {
+          calendariosPorJugador.set(jugadorId, calendarioJugador(jugadorId, inicio, fin, datosClub, indice))
+        }
+      }
+      const historialDetallado = armarHistorialDetallado(
+        (asist || []).map(a => ({ jugador_id: a.jugador_id, fecha: a.fecha, bloque_id: a.bloque_id })),
+        (jugadorId) => porJugador[jugadorId]?.nombre ?? jugadorId,
+        bloquePorId,
+        calendariosPorJugador,
+      )
+
+      datos = { asistencias: asist || [], porDia, porJugador, diaMasAsistido, diaSemanaMax: diaSemanaMax ? { dia: diasSemana[parseInt(diaSemanaMax[0])], count: diaSemanaMax[1] } : null, topJugadores: Object.values(porJugador).sort((a, b) => b.count - a.count).slice(0, 10), sinAsistencia: (jug || []).filter(j => !porJugador[j.id]), totalAsist: (asist || []).length, diasUnicos: Object.keys(porDia).length, promedioDiario: Object.keys(porDia).length > 0 ? Math.round((asist || []).length / Object.keys(porDia).length) : 0, diasSemana, porDiaSemana, activos: jug || [], historialDetallado }
     }
 
     if (categoriaRep === 'torneos') {
@@ -1568,6 +1598,26 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           columnStyles: { 1: { cellWidth: 60 } },
         })
       }
+
+      // Historial detallado — jugador, fecha, bloque, horario y sede. Va
+      // completo, sin los filtros de sede/bloque que solo existen en pantalla:
+      // el PDF es lo que se archiva, y ahí conviene llevar todo el período.
+      if (preview.historialDetallado.length > 0) {
+        doc.addPage()
+        y = encabezado(doc, { ...cab, titulo: 'Historial detallado de asistencia' })
+        const filasHist = [...preview.historialDetallado].sort((a: any, b: any) =>
+          b.fecha.localeCompare(a.fecha) || a.jugadorNombre.localeCompare(b.jugadorNombre))
+        y = tituloSeccion(doc, y, 'Quién, a qué bloque y en qué sede', `${filasHist.length} registros`)
+        autoTable(doc, {
+          startY: y,
+          head: [['Jugador', 'Fecha', 'Bloque', 'Horario', 'Sede']],
+          body: filasHist.map((f: any) => [
+            f.jugadorNombre, f.fecha, f.bloqueNombre + (f.inferido && f.bloqueId ? ' (inferido)' : ''), f.horario, f.sede,
+          ]),
+          ...estiloTabla(),
+          columnStyles: { 1: { cellWidth: 26 }, 3: { cellWidth: 26 }, 4: { cellWidth: 30 } },
+        })
+      }
     }
 
     // ── TORNEOS Y LIGAS ───────────────────────────────────────────────────
@@ -2020,6 +2070,70 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
               ))}
               {preview.sinAsistencia.length === 0 && <p style={{ fontSize:12, color:'#16a34a' }}>Todos asistieron</p>}
             </div>
+          </div>
+
+          {/* Historial detallado: quién, a qué bloque, en qué horario y en qué
+              sede — lo que pidió el profesor. Las filas de antes de la
+              migración 242 no traen el bloque guardado y se completan por
+              inferencia; se marcan como tal en vez de mostrarse iguales a las
+              de verdad. */}
+          <div style={{ ...card, padding:16, marginTop:16 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10, marginBottom:12 }}>
+              <div style={{ fontSize:13, fontWeight:600, color: text }}>Historial detallado</div>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <select value={sedeHistorial} onChange={e => setSedeHistorial(e.target.value)}
+                  style={{ fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid #e2e8f0', color: text }}>
+                  <option value="">Todas las sedes</option>
+                  {[...new Set(preview.historialDetallado.map((f: any) => f.sede).filter((s: string) => s !== '—'))].sort().map((s: any) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <select value={bloqueHistorial} onChange={e => setBloqueHistorial(e.target.value)}
+                  style={{ fontSize:12, padding:'6px 10px', borderRadius:8, border:'1px solid #e2e8f0', color: text }}>
+                  <option value="">Todos los bloques</option>
+                  {[...new Set(preview.historialDetallado.map((f: any) => f.bloqueNombre).filter((s: string) => s !== '—'))].sort().map((b: any) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {(() => {
+              const filas = preview.historialDetallado
+                .filter((f: any) => (!sedeHistorial || f.sede === sedeHistorial) && (!bloqueHistorial || f.bloqueNombre === bloqueHistorial))
+                .slice()
+                .sort((a: any, b: any) => b.fecha.localeCompare(a.fecha) || a.jugadorNombre.localeCompare(b.jugadorNombre))
+              if (filas.length === 0) return <p style={{ fontSize:12, color: hint }}>Nada con ese filtro.</p>
+              return (
+                <div style={{ maxHeight:340, overflow:'auto', border:'1px solid #f1f5f9', borderRadius:8 }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                    <thead style={{ position:'sticky', top:0, background:'#f8fafc' }}>
+                      <tr>
+                        {['Jugador','Fecha','Bloque','Horario','Sede'].map(h => (
+                          <th key={h} style={{ padding:'8px 10px', textAlign:'left', color: muted, fontWeight:600, borderBottom:'1px solid #e2e8f0' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filas.map((f: any, i: number) => (
+                        <tr key={i} style={{ borderBottom:'1px solid #f8fafc' }}>
+                          <td style={{ padding:'7px 10px', color: text }}>{f.jugadorNombre}</td>
+                          <td style={{ padding:'7px 10px', color: muted, fontFamily:'monospace' }}>{f.fecha}</td>
+                          <td style={{ padding:'7px 10px', color: text }}>
+                            {f.bloqueNombre}
+                            {f.inferido && f.bloqueId && (
+                              <span title="No quedó guardado en el momento; se completó cruzando en qué bloque estaba inscrito ese día."
+                                style={{ marginLeft:5, fontSize:10, color:'#a16207', cursor:'help' }}>· inferido</span>
+                            )}
+                          </td>
+                          <td style={{ padding:'7px 10px', color: muted }}>{f.horario}</td>
+                          <td style={{ padding:'7px 10px', color: muted }}>{f.sede}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}

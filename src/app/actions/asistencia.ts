@@ -33,7 +33,12 @@ export async function registrarAsistenciaAction(
   clubId: string,
   jugadorId: string,
   fecha: string,
-  hora: string
+  hora: string,
+  /** El bloque desde el que se está pasando lista. Opcional: la pantalla
+   *  siempre lo tiene cuando pasa lista por grupo, pero la vía de emergencia
+   *  ("día sin grupos") no tiene ninguno que ofrecer. Queda como `NULL` en
+   *  ese caso, no se inventa uno. */
+  bloqueId?: string | null
 ) {
   const { error: authErr, supabase, perfil } = await requirePerfil()
   if (authErr || !supabase || !perfil) return { error: authErr }
@@ -47,7 +52,7 @@ export async function registrarAsistenciaAction(
   }
 
   const { data, error } = await supabase.rpc('registrar_asistencia_segura', {
-    p_jugador_id: jugadorId, p_fecha: fecha, p_hora: hora,
+    p_jugador_id: jugadorId, p_fecha: fecha, p_hora: hora, p_bloque_id: bloqueId || null,
   })
   if (error) return { error: error.message }
 
