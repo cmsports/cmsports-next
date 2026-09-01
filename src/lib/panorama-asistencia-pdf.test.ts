@@ -53,20 +53,22 @@ describe('el admin elige el formato', () => {
 
   it('cada reporte ofrece PDF y Excel, no uno solo', () => {
     expect(panel).toContain("type Formato = 'pdf' | 'excel'")
-    // Las tres filas del menú comparten el mismo par de botones —dos usos en
-    // el código: uno dentro del map de masivo/individual y otro para el de
-    // bloques—, así que agregar un formato entra en las tres de una.
-    expect(panel.match(/<BotonesFormato/g)?.length).toBe(2)
+    // Tres usos: masivo/individual, el detalle por bloque, y el historial de
+    // "Por bloque" (revisar hacia atrás). Agregar un formato entra en las
+    // tres de una.
+    expect(panel.match(/<BotonesFormato/g)?.length).toBe(3)
     expect(panel).toContain('onElegir={f => void descargarPanorama(modo, calendarios, f)}')
     expect(panel).toContain('onElegir={f => void descargarPorBloque(f)}')
+    expect(panel).toContain('onElegir={f => void exportarHistorialBloque(f, b)}')
   })
 
   it('los generadores pesados entran por import dinámico', () => {
     // jsPDF y xlsx son ~300 KB cada uno: en el bundle los pagaría toda la app.
     for (const mod of ['panorama-asistencia-pdf', 'panorama-asistencia-excel',
-                       'asistencia-bloque-pdf', 'asistencia-bloque-excel']) {
+                       'asistencia-bloque-pdf', 'asistencia-bloque-excel', 'historial-bloque-pdf']) {
       expect(panel).toContain(`await import('@/lib/${mod}')`)
     }
+    expect(panel).toContain("await import('xlsx')")
   })
 })
 

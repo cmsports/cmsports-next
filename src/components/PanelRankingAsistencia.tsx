@@ -29,7 +29,7 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
-import { armarHistorialDetallado, type BloqueInfo, type RegistroAsistenciaConBloque } from '@/lib/domain/historialDetalladoAsistencia'
+import { armarHistorialDetallado, type BloqueInfo, type FilaHistorialDetallado, type RegistroAsistenciaConBloque } from '@/lib/domain/historialDetalladoAsistencia'
 
 const supabase = createClient()
 
@@ -169,11 +169,17 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [diaAbierto, setDiaAbierto]           = useState<string | null>(null)
 
   // Historial por bloque: mismo gesto que pasar lista — elegí sede, elegí
-  // horario, y ves quién vino ahí en el período que estás mirando.
-  const [bloques, setBloques]           = useState<BloqueInfo[]>([])
-  const [asistConBloque, setAsistConBloque] = useState<RegistroAsistenciaConBloque[]>([])
-  const [sedeFiltro, setSedeFiltro]     = useState('')
-  const [bloqueFiltro, setBloqueFiltro] = useState('')
+  // horario — pero para revisar hacia atrás, no para marcar. Va con su propio
+  // rango (meses, no la semana/mes/trimestre de arriba): la gracia es poder
+  // mirar seis meses de un bloque sin importar qué período esté mirando el
+  // resto de la pantalla. Por eso carga sus propios datos, aparte.
+  const [bloques, setBloques]                       = useState<BloqueInfo[]>([])
+  const [sedeFiltro, setSedeFiltro]                 = useState('')
+  const [bloqueFiltro, setBloqueFiltro]             = useState('')
+  const [mesesHistorialBloque, setMesesHistorialBloque] = useState(3)
+  const [historialBloque, setHistorialBloque]       = useState<FilaHistorialDetallado[]>([])
+  const [cargandoHistorialBloque, setCargandoHistorialBloque] = useState(false)
+  const [exportandoBloque, setExportandoBloque]     = useState<Formato | null>(null)
 
   const hoy = fechaChile()
 
@@ -210,7 +216,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
 
   const cargar = useCallback(async () => {
     const hastaCarga = hasta > hoy ? hasta : hoy
-    const [{ data: jugs }, datosClub, { data: bl }, { data: asistBl }] = await Promise.all([
+    const [{ data: jugs }, datosClub, { data: bl }] = await Promise.all([
       supabase.from('jugadores')
         .select('id,nombre,categoria,grupo,sede,telefono')
         .eq('club_id', clubId).eq('estado', 'activo')
@@ -218,20 +224,65 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
         .order('nombre'),
       cargarHistorialClub(clubId, desdeCarga, hastaCarga),
       supabase.from('bloques_horario').select('id,nombre,sede,hora_inicio,hora_fin').eq('club_id', clubId),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase as any).from('asistencia').select('jugador_id,fecha,bloque_id')
-        .eq('club_id', clubId).eq('estado', 'presente')
-        .gte('fecha', desdeCarga).lte('fecha', hastaCarga),
     ])
     setJugadores((jugs ?? []) as Jugador[])
     setDatos(datosClub)
     setBloques((bl ?? []) as BloqueInfo[])
-    setAsistConBloque((asistBl ?? []) as RegistroAsistenciaConBloque[])
     setCargando(false)
   }, [clubId, desdeCarga, hasta, hoy])
 
   useEffect(() => { void cargar() }, [cargar])
   useEnVivo(['asistencia', 'bloque_jugadores'], clubId, cargar, { conClub: ['asistencia'] })
+
+  // El historial por bloque tiene su propio rango (meses hacia atrás desde
+  // hoy) y su propia carga: no depende de la semana/mes/trimestre de arriba,
+  // así se puede mirar un bloque seis meses atrás aunque arriba esté puesta
+  // "esta semana". Se dispara solo cuando hay un bloque elegido — sin eso no
+  // hay nada que mostrar y no vale la pena traer meses de datos.
+  useEffect(() => {
+    if (!bloqueFiltro) { setHistorialBloque([]); return }
+    let cancelado = false
+    ;(async () => {
+      setCargandoHistorialBloque(true)
+      const hastaB = fechaChile()
+      const d = new Date(`${hastaB}T12:00:00`); d.setMonth(d.getMonth() - mesesHistorialBloque)
+      const desdeB = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+      const [datosB, { data: jugsB }, { data: asistB }] = await Promise.all([
+        cargarHistorialClub(clubId, desdeB, hastaB),
+        supabase.from('jugadores').select('id,nombre').eq('club_id', clubId),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase as any).from('asistencia').select('jugador_id,fecha,bloque_id')
+          .eq('club_id', clubId).eq('estado', 'presente')
+          .gte('fecha', desdeB).lte('fecha', hastaB),
+      ])
+      if (cancelado) return
+
+      // Nombre por id sin depender de `jugadores` (esa lista es solo activos;
+      // acá puede aparecer alguien que ya no lo está, y su historial no tiene
+      // por qué desaparecer con él).
+      const asistenciasB = (asistB ?? []) as RegistroAsistenciaConBloque[]
+      const nombrePorId = new Map((jugsB ?? []).map((j: { id: string; nombre: string }) => [j.id, j.nombre]))
+      const indiceB = indexar(datosB)
+      const idsConAsistencia = [...new Set(asistenciasB.map(a => a.jugador_id))]
+      const calendariosB = new Map(idsConAsistencia.map(id => [id, calendarioJugador(id, desdeB, hastaB, datosB, indiceB)]))
+      // De `bloques` (estado, siempre definido) y no de un derivado del cuerpo
+      // de la función: ese derivado vive después de un `return` anticipado y
+      // en esta clausura todavía no existiría.
+      const bloquePorIdLocal = new Map(bloques.map(b => [b.id, b]))
+
+      const filas = armarHistorialDetallado(
+        asistenciasB, (id: string) => nombrePorId.get(id) ?? id, bloquePorIdLocal, calendariosB,
+      )
+        .filter(f => f.bloqueId === bloqueFiltro)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.jugadorNombre.localeCompare(b.jugadorNombre))
+
+      setHistorialBloque(filas)
+      setCargandoHistorialBloque(false)
+    })()
+    return () => { cancelado = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bloqueFiltro, mesesHistorialBloque, clubId])
 
   // El reporte por bloque pide su propio rango —"últimos N meses"— porque
   // responde otra pregunta: si a un bloque le conviene seguir existiendo, y eso
@@ -266,6 +317,38 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
       }
     } finally {
       setDescargando(false)
+    }
+  }
+
+  // El reporte del historial por bloque: lo que ya está calculado en
+  // `historialBloque` (ese rango de meses, ese bloque), en el formato que
+  // elija. No vuelve a consultar nada — ya está todo en memoria.
+  async function exportarHistorialBloque(formato: Formato, b: BloqueInfo) {
+    setExportandoBloque(formato)
+    try {
+      const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
+      const hastaB = fechaChile()
+      const d = new Date(`${hastaB}T12:00:00`); d.setMonth(d.getMonth() - mesesHistorialBloque)
+      const desdeB = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const args = {
+        clubNombre: club?.nombre ?? '', bloqueNombre: b.nombre, sede: sedeLabel(b.sede),
+        horario: rangoHorario(b.hora_inicio, b.hora_fin), desde: desdeB, hasta: hastaB, filas: historialBloque,
+      }
+      if (formato === 'pdf') {
+        const pdf = await import('@/lib/historial-bloque-pdf')
+        await pdf.exportarHistorialBloquePdf(args)
+      } else {
+        const { utils, writeFile } = await import('xlsx')
+        const wb = utils.book_new()
+        const ws = utils.json_to_sheet(historialBloque.map(f => ({
+          Jugador: f.jugadorNombre, Fecha: f.fecha, Dato: f.inferido ? 'Inferido' : 'Registrado',
+        })))
+        ws['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }]
+        utils.book_append_sheet(wb, ws, b.nombre.slice(0, 31))
+        writeFile(wb, `historial_${b.nombre.toLowerCase().replace(/\s+/g, '_')}.xlsx`)
+      }
+    } finally {
+      setExportandoBloque(null)
     }
   }
 
@@ -316,24 +399,13 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
     dias: c.dias.filter(d => d.fecha >= desde && d.fecha <= hasta),
   }))
 
-  // Historial por bloque — mismas piezas que ya arma esta pantalla
-  // (`calendarios`, ya calculado arriba) más el `bloque_id` de verdad que
-  // guarda cada fila desde la migración 242. Lo de antes de esa migración se
-  // completa por el mismo calendario, igual que en Reportes.
+  // Para el selector de sede/horario y la línea de contexto sobre la tabla.
+  // El historial en sí (`historialBloque`) se carga aparte, con su propio
+  // rango — ver el efecto más arriba.
   const bloquePorId = new Map(bloques.map(b => [b.id, b]))
   const sedesDisponibles = [...new Set(bloques.map(b => b.sede))].sort((a, b) => sedeLabel(a).localeCompare(sedeLabel(b)))
   const bloquesDeLaSede = (sedeFiltro ? bloques.filter(b => b.sede === sedeFiltro) : bloques)
     .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio) || a.nombre.localeCompare(b.nombre))
-  const calendariosPorJugador = new Map(calendarios.map(c => [c.jugador.id, c.dias]))
-  const nombreDeJugador = (id: string) => jugadores.find(j => j.id === id)?.nombre ?? id
-  const historialDelBloque = bloqueFiltro
-    ? armarHistorialDetallado(
-        asistConBloque.filter(a => a.fecha >= desde && a.fecha <= hasta),
-        nombreDeJugador, bloquePorId, calendariosPorJugador,
-      )
-        .filter(f => f.bloqueId === bloqueFiltro)
-        .sort((a, b) => b.fecha.localeCompare(a.fecha) || a.jugadorNombre.localeCompare(b.jugadorNombre))
-    : []
 
   const conteo    = conteoDelRango(calendarios, desde, hasta)
   const conteoPre = conteoDelRango(calendarios, desdeAnterior, hastaAnterior)
@@ -625,8 +697,12 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
         </table>
       </Seccion>
 
-      {/* ── Por bloque: mismo gesto que pasar lista — sede, después horario ── */}
-      <Seccion titulo="Por bloque" nota="Elegí sede y horario para ver quién asistió ahí, día por día">
+      {/* ── Por bloque: mismo gesto que pasar lista — sede, después horario, pero
+          para revisar hacia atrás. Con su propio rango en meses: no depende
+          de la semana/mes/trimestre de arriba, porque la gracia es poder
+          mirar un bloque bien atrás sin importar qué período se esté viendo
+          en el resto de la pantalla. ── */}
+      <Seccion titulo="Por bloque" nota="Elegí sede y horario para revisar quién asistió ahí, hacia atrás en el tiempo">
         <div style={{ padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sedesDisponibles.length > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -670,42 +746,67 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
             })}
           </div>
 
+          {bloqueFiltro && (
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Hasta</span>
+              {[1, 3, 6, 12].map(n => (
+                <div key={n} onClick={() => setMesesHistorialBloque(n)}
+                  style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
+                    border: `1px solid ${mesesHistorialBloque === n ? '#4f46e5' : '#e2e8f0'}`,
+                    background: mesesHistorialBloque === n ? '#eef2ff' : '#fff',
+                    color: mesesHistorialBloque === n ? '#3730a3' : muted }}>
+                  {n === 12 ? '1 año atrás' : `${n} ${n === 1 ? 'mes' : 'meses'} atrás`}
+                </div>
+              ))}
+            </div>
+          )}
+
           {bloqueFiltro && (() => {
             const b = bloquePorId.get(bloqueFiltro)
             return (
               <div style={{ marginTop: 4 }}>
-                {b && (
-                  <div style={{ fontSize: 11, color: hint, marginBottom: 8 }}>
-                    {sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)} · {historialDelBloque.length} presente{historialDelBloque.length !== 1 ? 's' : ''} en {etiqueta.toLowerCase()}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                  {b && (
+                    <div style={{ fontSize: 11, color: hint }}>
+                      {sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)} · {cargandoHistorialBloque ? 'calculando…' : `${historialBloque.length} presente${historialBloque.length !== 1 ? 's' : ''}`}
+                    </div>
+                  )}
+                  {!cargandoHistorialBloque && historialBloque.length > 0 && b && (
+                    <BotonesFormato disabled={exportandoBloque !== null}
+                      onElegir={f => void exportarHistorialBloque(f, b)} />
+                  )}
+                </div>
+                {cargandoHistorialBloque ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>Calculando…</div>
+                ) : (
+                  <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: '#fff' }}>
+                        <tr>
+                          <th style={th}>Jugador</th>
+                          <th style={th}>Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historialBloque.map((f, i) => (
+                          <tr key={i}>
+                            <td style={{ ...td, fontWeight: 600 }}>{f.jugadorNombre}</td>
+                            <td style={{ ...td, color: muted, fontFamily: 'monospace' }}>
+                              {fechaCorta(f.fecha)}
+                              {f.inferido && (
+                                <span title="No quedó guardado en el momento; se completó cruzando en qué bloque estaba inscrito ese día."
+                                  style={{ marginLeft: 6, fontSize: 10, color: '#a16207', cursor: 'help' }}>· inferido</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                        {historialBloque.length === 0 && (
+                          <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>Nadie marcado presente ahí en {mesesHistorialBloque === 12 ? 'el último año' : `los últimos ${mesesHistorialBloque} meses`}</td></tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 )}
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        <th style={th}>Jugador</th>
-                        <th style={th}>Fecha</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {historialDelBloque.map((f, i) => (
-                        <tr key={i}>
-                          <td style={{ ...td, fontWeight: 600 }}>{f.jugadorNombre}</td>
-                          <td style={{ ...td, color: muted, fontFamily: 'monospace' }}>
-                            {fechaCorta(f.fecha)}
-                            {f.inferido && (
-                              <span title="No quedó guardado en el momento; se completó cruzando en qué bloque estaba inscrito ese día."
-                                style={{ marginLeft: 6, fontSize: 10, color: '#a16207', cursor: 'help' }}>· inferido</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {historialDelBloque.length === 0 && (
-                        <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>Nadie marcado presente ahí en este período</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             )
           })()}
