@@ -59,7 +59,7 @@ describe('el admin elige el formato', () => {
     expect(panel.match(/<BotonesFormato/g)?.length).toBe(3)
     expect(panel).toContain('onElegir={f => void descargarPanorama(modo, calendarios, f)}')
     expect(panel).toContain('onElegir={f => void descargarPorBloque(f)}')
-    expect(panel).toContain('onElegir={f => void exportarHistorialBloque(f, b)}')
+    expect(panel).toContain('onElegir={f => void exportarHistorialBloque(f, b, mostradas)}')
   })
 
   it('los generadores pesados entran por import dinámico', () => {

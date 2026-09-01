@@ -192,6 +192,11 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const [historialBloque, setHistorialBloque]       = useState<FilaHistorialDetallado[]>([])
   const [cargandoHistorialBloque, setCargandoHistorialBloque] = useState(false)
   const [exportandoBloque, setExportandoBloque]     = useState<Formato | null>(null)
+  // Por defecto se ve solo lo real (el bloque quedó guardado al marcar). Lo
+  // adivinado por el día de la semana puede estar mal si alguien tenía dos
+  // bloques el mismo día, así que no se mezcla con lo confirmado a menos que
+  // se pida explícitamente.
+  const [incluirInferido, setIncluirInferido] = useState(false)
 
   const hoy = fechaChile()
 
@@ -336,13 +341,13 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   // El reporte del historial por bloque: lo que ya está calculado en
   // `historialBloque` (ese rango de fechas, ese bloque), en el formato que
   // elija. No vuelve a consultar nada — ya está todo en memoria.
-  async function exportarHistorialBloque(formato: Formato, b: BloqueInfo) {
+  async function exportarHistorialBloque(formato: Formato, b: BloqueInfo, filas: FilaHistorialDetallado[]) {
     setExportandoBloque(formato)
     try {
       const { data: club } = await supabase.from('clubes').select('nombre').eq('id', clubId).single()
       const args = {
         clubNombre: club?.nombre ?? '', bloqueNombre: b.nombre, sede: sedeLabel(b.sede),
-        horario: rangoHorario(b.hora_inicio, b.hora_fin), desde: desdeHistorialBloque, hasta: hastaHistorialBloque, filas: historialBloque,
+        horario: rangoHorario(b.hora_inicio, b.hora_fin), desde: desdeHistorialBloque, hasta: hastaHistorialBloque, filas,
       }
       if (formato === 'pdf') {
         const pdf = await import('@/lib/historial-bloque-pdf')
@@ -350,7 +355,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
       } else {
         const { utils, writeFile } = await import('xlsx')
         const wb = utils.book_new()
-        const ws = utils.json_to_sheet(historialBloque.map(f => ({
+        const ws = utils.json_to_sheet(filas.map(f => ({
           Jugador: f.jugadorNombre, Fecha: f.fecha, Dato: f.inferido ? 'Inferido' : 'Registrado',
         })))
         ws['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }]
@@ -791,31 +796,41 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
 
           {bloqueFiltro && (() => {
             const b = bloquePorId.get(bloqueFiltro)
+            const hayInferidos = historialBloque.some(f => f.inferido)
+            // Lo real manda: sin marcar el check, lo adivinado ni se cuenta ni
+            // se lista. Mezclarlo por defecto con lo confirmado es lo que
+            // hacía dudar de todo el reporte.
+            const mostradas = incluirInferido ? historialBloque : historialBloque.filter(f => !f.inferido)
             return (
               <div style={{ marginTop: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                   {b && (
                     <div style={{ fontSize: 11, color: hint }}>
-                      {sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)} · {cargandoHistorialBloque ? 'calculando…' : `${historialBloque.length} presente${historialBloque.length !== 1 ? 's' : ''}`}
+                      {sedeLabel(b.sede)} · {rangoHorario(b.hora_inicio, b.hora_fin)} · {cargandoHistorialBloque ? 'calculando…' : `${mostradas.length} presente${mostradas.length !== 1 ? 's' : ''} confirmado${mostradas.length !== 1 ? 's' : ''}`}
                     </div>
                   )}
-                  {!cargandoHistorialBloque && historialBloque.length > 0 && b && (
+                  {!cargandoHistorialBloque && mostradas.length > 0 && b && (
                     <BotonesFormato disabled={exportandoBloque !== null}
-                      onElegir={f => void exportarHistorialBloque(f, b)} />
+                      onElegir={f => void exportarHistorialBloque(f, b, mostradas)} />
                   )}
                 </div>
                 {cargandoHistorialBloque ? (
                   <div style={{ padding: 20, textAlign: 'center', color: hint, fontSize: 12 }}>Calculando…</div>
                 ) : (
                   <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto' }}>
-                    {historialBloque.some(f => f.inferido) && (
-                      <div style={{ fontSize: 11, color: '#a16207', background: '#fffbeb', border: '1px solid #fde68a',
-                        borderRadius: 8, padding: '6px 10px', marginBottom: 8 }}>
-                        <strong>· inferido</strong> = esa asistencia se marcó antes de que el sistema guardara a qué
-                        bloque fue cada uno; se completó adivinando por en qué grupo estaba inscrito ese día de la
-                        semana. Puede fallar si esa persona tenía más de un bloque el mismo día. Lo que se marque de
-                        ahora en adelante ya no dice &ldquo;inferido&rdquo;: queda guardado de verdad.
-                      </div>
+                    {hayInferidos && (
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 11, color: '#a16207',
+                        background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '6px 10px',
+                        marginBottom: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={incluirInferido} onChange={e => setIncluirInferido(e.target.checked)}
+                          style={{ marginTop: 2 }} />
+                        <span>
+                          Se ocultan {historialBloque.length - historialBloque.filter(f => !f.inferido).length} asistencias
+                          {' '}<strong>inferidas</strong> — de antes de que el sistema guardara a qué bloque fue cada
+                          uno; se habían completado adivinando por el grupo en que estaba inscrito ese día, y pueden
+                          estar mal si esa persona tenía más de un bloque el mismo día. Marcá esto para verlas igual.
+                        </span>
+                      </label>
                     )}
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#fff' }}>
@@ -825,7 +840,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {historialBloque.map((f, i) => (
+                        {mostradas.map((f, i) => (
                           <tr key={i}>
                             <td style={{ ...td, fontWeight: 600 }}>{f.jugadorNombre}</td>
                             <td style={{ ...td, color: muted, fontFamily: 'monospace' }}>
@@ -837,9 +852,11 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                             </td>
                           </tr>
                         ))}
-                        {historialBloque.length === 0 && (
+                        {mostradas.length === 0 && (
                           <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>
-                            Nadie marcado presente ahí entre el {fechaCorta(desdeHistorialBloque)} y el {fechaCorta(hastaHistorialBloque)}
+                            {hayInferidos && !incluirInferido
+                              ? 'Nada confirmado en este rango — marcá el check de arriba para ver lo inferido.'
+                              : <>Nadie marcado presente ahí entre el {fechaCorta(desdeHistorialBloque)} y el {fechaCorta(hastaHistorialBloque)}</>}
                           </td></tr>
                         )}
                       </tbody>
