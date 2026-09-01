@@ -409,7 +409,13 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   // rango — ver el efecto más arriba.
   const bloquePorId = new Map(bloques.map(b => [b.id, b]))
   const sedesDisponibles = [...new Set(bloques.map(b => b.sede))].sort((a, b) => sedeLabel(a).localeCompare(sedeLabel(b)))
-  const bloquesDeLaSede = (sedeFiltro ? bloques.filter(b => b.sede === sedeFiltro) : bloques)
+  // El día se elige ANTES que el horario, a propósito: mostrar los bloques de
+  // los siete días mezclados, antes de saber qué día se va a mirar, es lo que
+  // hacía la lista larga y confusa. Con el día puesto, solo aparecen los
+  // bloques que de verdad funcionan ese día.
+  const diaHistorial = (['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'] as const)[new Date(`${fechaHistorialBloque}T12:00:00`).getDay()]
+  const bloquesDelDiaYSede = bloques
+    .filter(b => (!sedeFiltro || b.sede === sedeFiltro) && (!b.dia_semana || b.dia_semana === diaHistorial))
     .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio) || a.nombre.localeCompare(b.nombre))
 
   const conteo    = conteoDelRango(calendarios, desde, hasta)
@@ -707,7 +713,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
           de la semana/mes/trimestre de arriba, porque la gracia es poder
           mirar un bloque bien atrás sin importar qué período se esté viendo
           en el resto de la pantalla. ── */}
-      <Seccion titulo="Por bloque" nota="Elegí sede y horario para revisar quién asistió ahí, hacia atrás en el tiempo">
+      <Seccion titulo="Por bloque" nota="Elegí el día primero — así solo se ofrecen los bloques que funcionan ese día">
         <div style={{ padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sedesDisponibles.length > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -734,10 +740,39 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
             </div>
           )}
 
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
+            <button onClick={() => { const d = new Date(`${fechaHistorialBloque}T12:00:00`); d.setDate(d.getDate() - 1); setFechaHistorialBloque(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`); setBloqueFiltro('') }}
+              style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>
+              <ChevronLeft size={14} color={muted} />
+            </button>
+            <input type="date" value={fechaHistorialBloque} max={hoy}
+              onChange={e => { setFechaHistorialBloque(e.target.value); setBloqueFiltro('') }}
+              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, border: '1px solid #e2e8f0', color: text }} />
+            <button onClick={() => { const d = new Date(`${fechaHistorialBloque}T12:00:00`); d.setDate(d.getDate() + 1); setFechaHistorialBloque(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`); setBloqueFiltro('') }}
+              disabled={fechaHistorialBloque >= hoy}
+              style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff',
+                cursor: fechaHistorialBloque >= hoy ? 'default' : 'pointer', opacity: fechaHistorialBloque >= hoy ? 0.4 : 1 }}>
+              <ChevronRight size={14} color={muted} />
+            </button>
+            <span style={{ fontSize: 12, color: muted, fontWeight: 600 }}>
+              {DIA_LARGO[diaHistorial] ?? diaHistorial}
+            </span>
+            {fechaHistorialBloque !== hoy && (
+              <div onClick={() => { setFechaHistorialBloque(hoy); setBloqueFiltro('') }}
+                style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
+                  border: '1px solid #e2e8f0', background: '#fff', color: muted }}>
+                Hoy
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
             <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Horario</span>
-            {bloquesDeLaSede.length === 0 && <span style={{ fontSize: 12, color: hint }}>Sin bloques configurados</span>}
-            {bloquesDeLaSede.map(b => {
+            {bloquesDelDiaYSede.length === 0 && (
+              <span style={{ fontSize: 12, color: hint }}>Ningún bloque funciona ese día{sedeFiltro ? ' en esa sede' : ''}</span>
+            )}
+            {bloquesDelDiaYSede.map(b => {
               const activo = bloqueFiltro === b.id
               return (
                 <button key={b.id} onClick={() => setBloqueFiltro(activo ? '' : b.id)}
@@ -750,46 +785,6 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
               )
             })}
           </div>
-
-          {bloqueFiltro && (() => {
-            // Un día atrás o adelante, saltando fin de semana si el bloque no
-            // se dicta ahí — no tiene sentido caer un sábado si ese grupo solo
-            // funciona de lunes a viernes.
-            function mover(dias: number) {
-              const b = bloquePorId.get(bloqueFiltro)
-              const d = new Date(`${fechaHistorialBloque}T12:00:00`)
-              for (let i = 0; i < 14; i++) {
-                d.setDate(d.getDate() + dias)
-                const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-                const dow = (['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'] as const)[d.getDay()]
-                if (!b || b.dia_semana === dow) { setFechaHistorialBloque(iso); return }
-              }
-            }
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <span style={{ fontSize: 11, color: hint, fontWeight: 600, minWidth: 54 }}>Día</span>
-                <button onClick={() => mover(-1)} title="Día anterior de este bloque"
-                  style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>
-                  <ChevronLeft size={14} color={muted} />
-                </button>
-                <input type="date" value={fechaHistorialBloque} max={hoy}
-                  onChange={e => setFechaHistorialBloque(e.target.value)}
-                  style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, border: '1px solid #e2e8f0', color: text }} />
-                <button onClick={() => mover(1)} disabled={fechaHistorialBloque >= hoy} title="Día siguiente de este bloque"
-                  style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff',
-                    cursor: fechaHistorialBloque >= hoy ? 'default' : 'pointer', opacity: fechaHistorialBloque >= hoy ? 0.4 : 1 }}>
-                  <ChevronRight size={14} color={muted} />
-                </button>
-                {fechaHistorialBloque !== hoy && (
-                  <div onClick={() => setFechaHistorialBloque(hoy)}
-                    style={{ padding: '4px 10px', fontSize: 11.5, fontWeight: 600, borderRadius: 14, cursor: 'pointer',
-                      border: '1px solid #e2e8f0', background: '#fff', color: muted }}>
-                    Hoy
-                  </div>
-                )}
-              </div>
-            )
-          })()}
 
           {bloqueFiltro && (() => {
             const b = bloquePorId.get(bloqueFiltro)
