@@ -57,6 +57,11 @@ export const MODULOS = [
   // (ver mensualidades.ts); en Spinhouse sale de una tarifa publicada
   // (migración 252).
   { key: 'planes', label: 'Planes de mensualidad' },
+  // Avisos y bloqueos automáticos por morosidad e inasistencia. Apagado por
+  // defecto y con TODOS sus umbrales en 0 (= nunca): encenderlo sin configurar
+  // no bloquea a nadie, y la pantalla que trae es una marcha en seco que
+  // muestra a quién le tocaría sin tocar a nadie (migración 253).
+  { key: 'retencion', label: 'Retención y morosidad' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin

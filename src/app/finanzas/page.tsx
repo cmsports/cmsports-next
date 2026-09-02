@@ -11,6 +11,7 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import { registrarMovimiento, editarMovimiento, eliminarMovimiento } from '@/app/actions/finanzas'
 import { MensualidadesPanel } from '@/components/MensualidadesPanel'
 import PanelPlanes from '@/components/PanelPlanes'
+import PanelRetencion from '@/components/PanelRetencion'
 import LigaFutbolFinanzasTab from '@/components/liga-futbol/FinanzasTab'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
@@ -82,10 +83,10 @@ function FinanzasContent() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const searchParams = useSearchParams()
-  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'planes'|'historicas'|'reportes'|'liga'>(
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'planes'|'retencion'|'historicas'|'reportes'|'liga'>(
     // Se aceptan todas las pestañas, no solo mensualidades: `/reportes` redirige
     // acá con ?tab=reportes y antes caía en Movimientos sin decir nada.
-    (['movimientos', 'mensualidades', 'planes', 'historicas', 'reportes', 'liga'] as const)
+    (['movimientos', 'mensualidades', 'planes', 'retencion', 'historicas', 'reportes', 'liga'] as const)
       .find(t => t === searchParams.get('tab')) ?? 'movimientos',
   )
   // Monta Mensualidades solo cuando se abre por primera vez (evita sus consultas al entrar en "Movimientos"); una vez montado queda vivo
@@ -411,6 +412,9 @@ function FinanzasContent() {
           // Solo donde la cuota sale de una tarifa. En un club de monto libre
           // no hay planes que mostrar y la pestaña quedaría vacía.
           ...(tiene('planes') ? [{ key:'planes', label:'🏷️ Planes' }] : []),
+          // La marcha en seco: a quién le tocaría un aviso o un bloqueo. No
+          // toca a nadie; el plan exige revisarla un mes antes de encender.
+          ...(tiene('retencion') ? [{ key:'retencion', label:'👁️ Retención' }] : []),
           { key:'historicas', label:'🗓️ Históricas' },
           { key:'reportes', label:'📈 Reportes' },
         ].map(t => (
@@ -633,6 +637,10 @@ function FinanzasContent() {
       {/* TAB REPORTES */}
       {/* Meses pasados: se corrigen acá, con ajuste y auditoría. Se monta solo
           al abrir la pestaña porque carga el año completo de cada jugador. */}
+      {tabActivo === 'retencion' && clubId && tiene('retencion') && (
+        <PanelRetencion clubId={clubId} />
+      )}
+
       {tabActivo === 'planes' && clubId && tiene('planes') && (
         <PanelPlanes clubId={clubId} />
       )}

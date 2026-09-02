@@ -109,8 +109,23 @@ export const CONFIG_CLUB = [
   },
 
   // ── Morosidad ──────────────────────────────────────────────────────────
-  // Los dos en 0 = nunca. Buin no bloquea a nadie automáticamente: lo hace a
-  // mano con `toggleEstadoJugador`. Cambiar estos números bloquea personas.
+  // Los dos umbrales en 0 = nunca. Buin no bloquea a nadie automáticamente: lo
+  // hace a mano con `toggleEstadoJugador`. Cambiar estos números bloquea gente.
+  {
+    clave: 'morosidad.dia_vencimiento',
+    tipo: 'entero',
+    min: 1,
+    max: 28,
+    defecto: 1,
+    editablePor: 'admin',
+    label: 'Día del mes en que vence la cuota',
+    // El sistema no tenía noción de vencimiento: `v_morosos` solo mira si la
+    // cuota del mes está impaga. Para contar DÍAS de mora hace falta una fecha
+    // desde la cual contar, y adivinarla sería inventar el número que decide a
+    // quién se bloquea. El tope es 28 para que exista en febrero.
+    //
+    // El default de 1 no cambia nada mientras los umbrales estén en 0.
+  },
   {
     clave: 'morosidad.dias_aviso',
     tipo: 'entero',
