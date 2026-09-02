@@ -387,28 +387,50 @@ Son tres reglas encadenadas.
 3. **El arriendo compite por el mismo recurso.** Una mesa arrendada de 19:00 a
    20:00 no está disponible para la clase de 19:00 a 20:30.
 
-**Tablas nuevas:**
+**Es un NÚMERO, no una lista.** ⚠️ La primera versión de esto (migración 249)
+modeló cada mesa como una fila y cada bloque como una lista de mesas concretas
+—"Adultos del martes usa la 3, la 7 y la 9"—. **Se descartó a los veinte minutos
+de aplicarla**, y vale la pena dejar escrito por qué:
+
+- **Nadie iba a hacer ese trabajo.** Asignar mesas concretas a cada bloque de
+  cada día es media hora de clicks para un dato que se resuelve hablando en la
+  sala.
+- **No era lo que se pidió.** El formulario dice, textual: "el cupo de cada
+  bloque depende **del número** de mesas disponibles en la sede". Del número, no
+  de cuáles.
+
+Lo que se perdió es poder decir "tu clase es en la mesa 3". El club no lo pidió.
+Si algún día hiciera falta, se agrega encima sin deshacer nada: una lista de
+mesas concretas es un detalle de una cantidad, no al revés.
+
+**Tablas (migración 251):**
 
 ```
-sede_mesas       club_id, sede, numero, activa, notas
-                 UNIQUE (club_id, sede, numero)
+sede_mesas       club_id, sede, cantidad, notas
+                 PRIMARY KEY (club_id, sede)     ← una fila por sede
 
-bloque_mesas     bloque_id → bloques_horario, mesa_id → sede_mesas
-                 PRIMARY KEY (bloque_id, mesa_id)
+bloques_horario  + mesas int   NULLABLE
 
-mesa_arriendos   club_id, mesa_id, fecha, hora_inicio, hora_fin,
-                 arrendatario, monto, movimiento_id
+mesa_arriendos   club_id, sede, fecha, hora_inicio, hora_fin,
+                 mesas, arrendatario, movimiento_id
 ```
 
-**La función que responde la pregunta central:**
+⚠️ **`bloques_horario.mesas` es nullable y eso es lo que deja a Buin intacto.**
+`NULL` significa "este bloque no usa el modelo de mesas" y su cupo sigue saliendo
+de `cupo_maximo`. Un default de `0` habría dejado todos los bloques de todos los
+clubes en cupo cero apenas alguien encendiera el modo.
 
-```sql
-mesas_libres(p_club_id, p_sede, p_fecha, p_desde time, p_hasta time)
-  → tabla de mesas sin asignar en ese rango
+**Las preguntas que hay que poder responder**, resueltas en
+`src/lib/domain/mesas.ts` como funciones puras:
+
+```
+mesasEnUso(usos, franja)      → cuántas ocupadas a esa hora
+mesasLibres({total, usos, …}) → cuántas quedan
+puedeUsarMesas({…})           → si cabe, y si no, con qué mensaje
 ```
 
-Ya hay dos moldes en el repositorio para esto: `cupos_libres_por_dia` (migración
-226) y `liga_mesas` (migración 013).
+`excluirId` en las tres: un bloque que se está editando no compite consigo
+mismo, o cambiarle las mesas diría siempre "no hay lugar".
 
 ⚠️ **La validación va en la base, no en la pantalla.** El formulario dice "el
 sistema debe impedir sobrepasar ese cupo", y una comprobación en el navegador no
@@ -1031,7 +1053,7 @@ porque trae resueltos treinta años de problemas conocidos.
 | Ramo / sección | Bloque horario | `bloques_horario` |
 | Toma de ramos | Inscripción a un bloque | `bloque_jugadores` |
 | Baja de un ramo | Cierre de la inscripción | `bloque_jugadores.vigente_hasta` |
-| Cupo de la sección | Mesas × jugadores por mesa | `bloque_mesas` + config |
+| Cupo de la sección | Mesas × jugadores por mesa | `bloques_horario.mesas` + config |
 | Tope de horario | Dos bloques que se solapan | validación nueva |
 | Prerrequisito | Nivel y categoría del alumno | `jugadores.nivel` + `categoria` |
 | Período de toma | Ventana de inscripción | config |
