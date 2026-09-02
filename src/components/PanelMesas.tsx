@@ -20,7 +20,7 @@ import { diaSemanaDeFecha, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import {
-  cupoDelBloque, jugadoresPorMesa, mesasEnUso, mesasLibres, puedeUsarMesas,
+  cupoDelBloque, jugadoresPorMesa, mesasDelBloque, mesasEnUso, mesasLibres,
   seSolapan, tramosDelDia,
   type UsoDeMesas,
 } from '@/lib/domain/mesas'
@@ -124,17 +124,29 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
     () => { void cargar() },
   )
 
-  /** Todo lo que ocupa mesas ese día, en un solo formato. */
+  /**
+   * Todo lo que ocupa mesas ese día.
+   *
+   * Las de cada bloque salen de su gente inscrita, no de un número que alguien
+   * escribió: si en cada mesa juegan dos, ocho alumnos ocupan cuatro mesas y el
+   * noveno obliga a una quinta. Se actualiza solo al inscribir a alguien.
+   */
   const usos: UsoDeMesas[] = useMemo(() => [
     ...bloques
-      .filter(b => (b.mesas ?? 0) > 0)
-      .map(b => ({ id: b.id, etiqueta: b.nombre, inicio: b.hora_inicio, fin: b.hora_fin, mesas: b.mesas! })),
+      .map(b => ({
+        id: b.id,
+        etiqueta: b.nombre,
+        inicio: b.hora_inicio,
+        fin: b.hora_fin,
+        mesas: mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas }),
+      }))
+      .filter(u => u.mesas > 0),
     ...arriendos.map(a => ({
       id: a.id,
       etiqueta: a.arrendatario ? `Arriendo · ${a.arrendatario}` : 'Arriendo',
       inicio: a.hora_inicio, fin: a.hora_fin, mesas: a.mesas,
     })),
-  ], [bloques, arriendos])
+  ], [bloques, arriendos, config])
 
   const tramos = useMemo(() => tramosDelDia(usos.length ? usos : bloques.map(b => ({
     inicio: b.hora_inicio, fin: b.hora_fin,
@@ -176,30 +188,6 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
     await cargar()
   }
 
-  async function guardarMesasDeBloque(bloque: Bloque, valor: string) {
-    const crudo = valor.trim()
-    // Vacío significa "no declaro mesas para este bloque", que no es lo mismo
-    // que cero: su cupo vuelve a salir del número escrito a mano.
-    const n = crudo === '' ? null : parseInt(crudo, 10)
-
-    if (n !== null) {
-      const veredicto = puedeUsarMesas({
-        total, usos,
-        franja: { inicio: bloque.hora_inicio, fin: bloque.hora_fin },
-        mesas: n, excluirId: bloque.id,
-      })
-      if (!veredicto.ok) { setError(veredicto.motivo); return }
-    }
-
-    setError('')
-    const { error: err } = await (supabase as any).from('bloques_horario')
-      .update({ mesas: n }).eq('id', bloque.id)
-
-    if (err) { setError('No se pudo guardar: ' + err.message); return }
-    setGuardado(bloque.id)
-    setTimeout(() => setGuardado(g => (g === bloque.id ? null : g)), 2000)
-    await cargar()
-  }
 
   if (cargando) return <p style={{ fontSize: 13, color: muted }}>Cargando mesas…</p>
 
@@ -333,56 +321,49 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
 
               <div style={{ display: 'grid', gap: 8 }}>
                 {bloques.map(b => {
+                  const ocupa = mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas })
                   const cupo = cupoDelBloque({
-                    config, cupoMaximo: b.cupo_maximo, mesas: b.mesas,
+                    config, cupoMaximo: b.cupo_maximo, inscritos: b.inscritos, declaradas: b.mesas,
+                    totalSede: total, usos, franja: { inicio: b.hora_inicio, fin: b.hora_fin },
+                    bloqueId: b.id,
                   })
                   const lleno = cupo > 0 && b.inscritos >= cupo
 
-                  // El cupo que daría el OTRO modo, para poder comparar sin
-                  // cambiar nada. Solo si hay mesas declaradas y da distinto.
-                  const porMesasCalc = (b.mesas ?? 0) > 0
-                    ? b.mesas! * jugadoresPorMesa(config, 'grupal')
-                    : null
-                  const otro = porMesas ? b.cupo_maximo : porMesasCalc
-                  const cupoAlternativo = otro != null && otro !== cupo ? otro : null
+                  // Lo que daría el otro modo, para poder comparar sin cambiar
+                  // nada: las mesas que ya ocupa más las que quedan libres.
+                  const cupoPorMesas =
+                    (ocupa + mesasLibres({ total, usos, franja: { inicio: b.hora_inicio, fin: b.hora_fin }, excluirId: b.id }))
+                    * jugadoresPorMesa(config, 'grupal')
+
                   return (
-                    <div key={b.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#f8fafc', borderRadius: 8 }}>
-                      <div style={{ minWidth: 150, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: text }}>{b.nombre}</div>
-                        <div style={{ fontSize: 11.5, color: hint, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    <div key={b.id} style={{ padding: '11px 13px', background: '#f8fafc', borderRadius: 8 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: text }}>{b.nombre}</span>
+                        <span style={{ fontSize: 11.5, color: hint, fontVariantNumeric: 'tabular-nums' }}>
                           {rangoHorario(b.hora_inicio, b.hora_fin)}
-                        </div>
+                        </span>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <label htmlFor={`mesas-${b.id}`} style={{ fontSize: 11.5, color: muted }}>Mesas</label>
-                        <input
-                          id={`mesas-${b.id}`} type="number" min={0} max={total}
-                          placeholder="—"
-                          defaultValue={b.mesas == null ? '' : String(b.mesas)}
-                          key={`${b.id}:${b.mesas}`}
-                          onBlur={e => {
-                            const actual = b.mesas == null ? '' : String(b.mesas)
-                            if (e.target.value.trim() !== actual) void guardarMesasDeBloque(b, e.target.value)
-                          }}
-                          style={{ width: 68, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
-                        />
-                        {guardado === b.id && <Check size={15} color="#10714e" />}
+                      {/* En palabras, no números sueltos: "8 / 10" no le dice
+                          nada a nadie sin una etiqueta al lado. */}
+                      <div style={{ fontSize: 12.5, color: muted, marginTop: 5, lineHeight: 1.55 }}>
+                        <strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>
+                          {b.inscritos} {b.inscritos === 1 ? 'alumno inscrito' : 'alumnos inscritos'}
+                        </strong>
+                        {' → ocupan '}
+                        <strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>
+                          {ocupa} {ocupa === 1 ? 'mesa' : 'mesas'}
+                        </strong>
+                        {' de las '}{total}
+                        {b.mesas != null && b.mesas > 0 && ' (reservadas a mano)'}
+                      </div>
 
-                        {/* Los dos números, cuando difieren. Sin esto, declarar
-                            mesas y ver que el cupo no se mueve hace parecer que
-                            el módulo no funciona — que es exactamente lo que
-                            pasó la primera vez que alguien lo probó. */}
-                        <div style={{ minWidth: 92, textAlign: 'right' }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: lleno ? '#b91c1c' : text, fontVariantNumeric: 'tabular-nums' }}>
-                            {b.inscritos} / {cupo}
-                          </div>
-                          {cupoAlternativo != null && (
-                            <div style={{ fontSize: 10.5, color: hint, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
-                              {porMesas ? 'a mano serían' : 'con mesas'}: {cupoAlternativo}
-                            </div>
-                          )}
-                        </div>
+                      <div style={{ fontSize: 12.5, marginTop: 3, color: lleno ? '#b91c1c' : muted, lineHeight: 1.55 }}>
+                        {porMesas
+                          ? (lleno
+                              ? 'No entra nadie más: no quedan mesas libres a esa hora.'
+                              : <>Entran <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{cupo - b.inscritos}</strong> más, con las mesas que quedan libres a esa hora.</>)
+                          : <>Su cupo escrito a mano es <strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{b.cupo_maximo}</strong>. Por mesas entrarían <strong style={{ color: text, fontVariantNumeric: 'tabular-nums' }}>{cupoPorMesas}</strong>.</>}
                       </div>
                     </div>
                   )

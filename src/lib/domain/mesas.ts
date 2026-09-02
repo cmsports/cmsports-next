@@ -80,26 +80,80 @@ export function jugadoresPorMesa(config: LectorConfig, modalidad: ModalidadClase
 }
 
 /**
- * El cupo de un bloque.
+ * Cuántas mesas ocupa un bloque, según cuánta gente tiene inscrita.
+ *
+ * **Se deriva, no se declara.** Si en cada mesa juegan dos, ocho alumnos ocupan
+ * cuatro mesas y el noveno obliga a una quinta. Pedirle al admin que escriba
+ * "Adultos usa 5" es trabajo manual que además se desactualiza solo: entra un
+ * alumno y el número queda viejo sin que nadie se entere.
+ *
+ * Redondea hacia arriba porque una mesa a medio usar sigue ocupada: tres
+ * alumnos con dos por mesa necesitan dos mesas, no una y media.
+ */
+export function mesasNecesarias(jugadores: number, porMesa: number): number {
+  if (jugadores <= 0 || porMesa <= 0) return 0
+  return Math.ceil(jugadores / porMesa)
+}
+
+/**
+ * Las mesas que ocupa un bloque: las que declaró a mano, o las que necesita.
+ *
+ * `declaradas` es un override para el caso en que un bloque reserva más de lo
+ * que su inscripción pide —un grupo que recién arranca y quiere guardarse el
+ * espacio—. Sin ese valor, que es lo normal, sale de la gente inscrita.
+ */
+export function mesasDelBloque(params: {
+  config: LectorConfig
+  inscritos: number
+  declaradas?: number | null
+  modalidad?: ModalidadClase
+}): number {
+  const { config, inscritos, declaradas, modalidad = 'grupal' } = params
+  if (declaradas != null && declaradas > 0) return declaradas
+  return mesasNecesarias(inscritos, jugadoresPorMesa(config, modalidad))
+}
+
+/**
+ * Cuánta gente entra en un bloque.
  *
  * Con `cupos.modo = 'numero'` —el default— devuelve el `cupo_maximo` escrito a
- * mano y no mira las mesas para nada. Con `'por_mesas'`, un bloque cuyo `mesas`
- * es `null` o `0` también cae al cupo escrito a mano: "no declaré cuántas mesas
- * uso" no puede significar "no entra nadie", porque dejaría en cero a todos los
- * bloques del club apenas alguien encienda el modo.
+ * mano y no mira las mesas para nada: ese es el caso de todos los clubes salvo
+ * Spinhouse.
+ *
+ * Con `'por_mesas'` el techo lo pone la sala: las mesas que este bloque ya
+ * ocupa más las que quedan libres a esa hora, por los jugadores que entran en
+ * cada una. O sea que el cupo **baja cuando otro bloque se solapa y sube cuando
+ * ese otro se va**, que es exactamente cómo se comporta una sala de verdad.
  */
 export function cupoDelBloque(params: {
   config: LectorConfig
   cupoMaximo: number
-  mesas: number | null | undefined
+  inscritos?: number
+  declaradas?: number | null
+  totalSede?: number
+  usos?: readonly UsoDeMesas[]
+  franja?: Franja
+  bloqueId?: string | null
   modalidad?: ModalidadClase
 }): number {
-  const { config, cupoMaximo, mesas, modalidad = 'grupal' } = params
+  const {
+    config, cupoMaximo, inscritos = 0, declaradas = null,
+    totalSede, usos, franja, bloqueId = null, modalidad = 'grupal',
+  } = params
 
   if (config('cupos.modo') === 'numero') return cupoMaximo
-  if (mesas == null || mesas <= 0) return cupoMaximo
 
-  return mesas * jugadoresPorMesa(config, modalidad)
+  const porMesa = jugadoresPorMesa(config, modalidad)
+
+  // Sin datos de la sala no hay techo que calcular: se cae al número escrito a
+  // mano en vez de inventar un cupo. "No sé cuántas mesas hay" no puede
+  // significar "no entra nadie".
+  if (totalSede == null || totalSede <= 0 || !usos || !franja) return cupoMaximo
+
+  const propias = mesasDelBloque({ config, inscritos, declaradas, modalidad })
+  const libres  = mesasLibres({ total: totalSede, usos, franja, excluirId: bloqueId })
+
+  return (propias + libres) * porMesa
 }
 
 /**

@@ -3,8 +3,10 @@ import { crearLectorConfig, CONFIG_POR_DEFECTO } from './clubConfig'
 import {
   cupoDelBloque,
   jugadoresPorMesa,
+  mesasDelBloque,
   mesasEnUso,
   mesasLibres,
+  mesasNecesarias,
   puedeUsarMesas,
   seSolapan,
   tramosDelDia,
@@ -61,35 +63,104 @@ describe('seSolapan', () => {
   })
 })
 
+/**
+ * Las mesas de un bloque NO se declaran: salen de su gente inscrita.
+ *
+ * Si en cada mesa juegan dos, ocho alumnos ocupan cuatro mesas y el noveno
+ * obliga a una quinta. Pedirle al admin que escriba "Adultos usa 5" es trabajo
+ * manual que además se desactualiza solo: entra un alumno y el número queda
+ * viejo sin que nadie se entere.
+ */
+describe('mesasNecesarias', () => {
+  it('dos por mesa: ocho alumnos son cuatro mesas', () => {
+    expect(mesasNecesarias(8, 2)).toBe(4)
+  })
+
+  it('redondea hacia arriba: una mesa a medio usar sigue ocupada', () => {
+    expect(mesasNecesarias(9, 2)).toBe(5)
+    expect(mesasNecesarias(3, 2)).toBe(2)
+    expect(mesasNecesarias(1, 2)).toBe(1)
+  })
+
+  it('cuatro por mesa, que es lo que dice el formulario del club', () => {
+    expect(mesasNecesarias(8, 4)).toBe(2)
+    expect(mesasNecesarias(9, 4)).toBe(3)
+  })
+
+  it('sin alumnos no ocupa nada', () => {
+    expect(mesasNecesarias(0, 2)).toBe(0)
+  })
+
+  it('no revienta con datos absurdos', () => {
+    expect(mesasNecesarias(-5, 2)).toBe(0)
+    expect(mesasNecesarias(8, 0)).toBe(0)
+  })
+})
+
+describe('mesasDelBloque', () => {
+  it('sale de los inscritos', () => {
+    expect(mesasDelBloque({ config: porMesas, inscritos: 8 })).toBe(2) // 8 / 4
+  })
+
+  it('lo declarado a mano gana, para el grupo que reserva espacio', () => {
+    expect(mesasDelBloque({ config: porMesas, inscritos: 8, declaradas: 5 })).toBe(5)
+  })
+
+  it('un cero declarado no cuenta como reserva', () => {
+    expect(mesasDelBloque({ config: porMesas, inscritos: 8, declaradas: 0 })).toBe(2)
+  })
+})
+
 describe('cupoDelBloque', () => {
+  const sala = { totalSede: 12, usos: [], franja: { inicio: '19:00', fin: '20:00' } }
+
   it('con el modo por defecto usa el número escrito a mano y NO mira las mesas', () => {
     // Este es el caso de Buin. Si esta prueba falla, Buin cambió de cupo.
-    expect(cupoDelBloque({ config: CONFIG_POR_DEFECTO, cupoMaximo: 12, mesas: 99 })).toBe(12)
+    expect(cupoDelBloque({
+      config: CONFIG_POR_DEFECTO, cupoMaximo: 12, inscritos: 99, ...sala,
+    })).toBe(12)
   })
 
-  it('3 mesas grupales dan 12', () => {
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, mesas: 3 })).toBe(12)
+  it('el techo lo pone la sala: 12 mesas vacías × 4 son 48', () => {
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, inscritos: 0, ...sala })).toBe(48)
   })
 
-  it('5 mesas grupales dan 20', () => {
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, mesas: 5 })).toBe(20)
+  it('baja cuando otro bloque se solapa', () => {
+    // Adultos ocupa 5 de las 12; quedan 7 más las 0 propias.
+    expect(cupoDelBloque({
+      config: porMesas, cupoMaximo: 0, inscritos: 0, totalSede: 12,
+      usos: [{ id: 'otro', inicio: '19:00', fin: '20:00', mesas: 5 }],
+      franja: { inicio: '19:00', fin: '20:00' },
+    })).toBe(28)
   })
 
-  it('2 mesas particulares dan 4', () => {
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, mesas: 2, modalidad: 'particular' })).toBe(4)
+  it('no baja por un bloque que NO se solapa', () => {
+    expect(cupoDelBloque({
+      config: porMesas, cupoMaximo: 0, inscritos: 0, totalSede: 12,
+      usos: [{ id: 'otro', inicio: '17:00', fin: '18:00', mesas: 5 }],
+      franja: { inicio: '19:00', fin: '20:00' },
+    })).toBe(48)
   })
 
-  it('un bloque sin mesas declaradas cae al cupo escrito a mano, no a cero', () => {
-    // "No declaré cuántas mesas uso" no puede significar "no entra nadie": eso
-    // dejaría en cero a todos los bloques del club apenas alguien encienda el
-    // modo por mesas.
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, mesas: null })).toBe(10)
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, mesas: 0 })).toBe(10)
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, mesas: undefined })).toBe(10)
+  it('cuenta las mesas propias además de las libres', () => {
+    // 8 inscritos con 4 por mesa = 2 propias. El otro usa 5, así que de las 12
+    // quedan 7 libres — las 2 propias NO cuentan como ocupadas para sí mismo,
+    // o el bloque competiría consigo. (2 + 7) × 4 = 36.
+    expect(cupoDelBloque({
+      config: porMesas, cupoMaximo: 0, inscritos: 8, totalSede: 12,
+      usos: [
+        { id: 'yo',   inicio: '19:00', fin: '20:00', mesas: 2 },
+        { id: 'otro', inicio: '19:00', fin: '20:00', mesas: 5 },
+      ],
+      franja: { inicio: '19:00', fin: '20:00' }, bloqueId: 'yo',
+    })).toBe(36)
   })
 
-  it('con mesas declaradas ignora el cupo escrito a mano', () => {
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 999, mesas: 1 })).toBe(4)
+  it('sin datos de la sala cae al cupo escrito a mano, no a cero', () => {
+    // "No sé cuántas mesas hay" no puede significar "no entra nadie": eso
+    // dejaría en cero a todos los bloques apenas alguien encienda el modo.
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, inscritos: 4 })).toBe(10)
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, inscritos: 4, totalSede: 0, ...{ usos: [], franja: sala.franja } })).toBe(10)
   })
 
   it('jugadoresPorMesa respeta lo que configuró el club', () => {
