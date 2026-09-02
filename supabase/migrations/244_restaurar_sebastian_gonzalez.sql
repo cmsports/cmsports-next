@@ -57,6 +57,9 @@ BEGIN
     RAISE EXCEPTION 'Ya existe un jugador con RUT % en este club — no se crea una ficha duplicada. Revisar a mano.', v_sol.rut;
   END IF;
 
+  -- `solicitudes_jugador.fecha_nacimiento` es texto libre (viene de un
+  -- formulario público); `jugadores.fecha_nacimiento` es `date` de verdad.
+  -- Por eso el cast explícito más abajo.
   INSERT INTO jugadores (
     club_id, nombre, rut, email, telefono, fecha_nacimiento, direccion, comuna,
     contacto_emergencia_nombre, contacto_emergencia_telefono, indicaciones_medicas,
@@ -64,7 +67,7 @@ BEGIN
     estado, es_externo, sesiones_usadas,
     matricula_pagada, matricula_monto, matricula_fecha, cobrar_desde
   ) VALUES (
-    v_club_id, v_sol.nombre, v_sol.rut, v_sol.email, v_sol.telefono, v_sol.fecha_nacimiento,
+    v_club_id, v_sol.nombre, v_sol.rut, v_sol.email, v_sol.telefono, v_sol.fecha_nacimiento::date,
     v_sol.direccion, v_sol.comuna,
     v_sol.contacto_emergencia_nombre, v_sol.contacto_emergencia_telefono, v_sol.indicaciones_medicas,
     v_sol.nombres, v_sol.apellido1, v_sol.apellido2, v_sol.apellido3, v_sol.talla_polera, v_sol.talla_short,
