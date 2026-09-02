@@ -40,6 +40,17 @@ export const MODULOS = [
   // 'feedback', que es del profe hacia el alumno: van en direcciones opuestas y
   // un club puede querer una sola (migración 228).
   { key: 'feedback_profes', label: 'Feedback al profesor' },
+  // Las mesas de la sede como recurso, y el cupo de cada bloque derivado de
+  // ellas en vez de escrito a mano. Va aparte de 'clases' porque cambia de
+  // dónde sale el cupo: un club que lo lleva a mano —Buin— no quiere ver la
+  // palabra "mesa" en ninguna pantalla (migración 249).
+  { key: 'mesas', label: 'Mesas de la sede' },
+  // El panel de `club_config` en Configuración. Apagado por defecto, y eso NO
+  // es cautela de más: ese panel tiene el control de los días de morosidad, y
+  // un club que hoy no bloquea a nadie no puede encontrarse la perilla puesta
+  // en su pantalla sin haberla pedido. Se enciende cuando el club de verdad
+  // necesita comportarse distinto.
+  { key: 'config_club', label: 'Configuración avanzada del club' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
