@@ -94,9 +94,12 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
   const [cuantas, setCuantas]   = useState('1')
   const [guardando, setGuardando] = useState(false)
 
-  // Qué mesas fueron usadas ALGUNA VEZ, no solo hoy. Es lo que decide si una
-  // mesa se puede borrar de verdad o solo retirar: ver `quitarMesa`.
-  const [conHistorial, setHist] = useState<Set<string>>(new Set())
+  // Cuánto historial tiene cada mesa, no solo si tiene. Es lo que la pantalla
+  // le muestra al admin antes de que decida: ver `aQuitar`.
+  const [historial, setHist] = useState<Map<string, { bloques: number; arriendos: number }>>(new Map())
+
+  // La mesa que se está por sacar. Abre el cartel con las dos salidas.
+  const [aQuitar, setAQuitar] = useState<Mesa | null>(null)
 
   const dia = diaSemanaDeFecha(fecha)
 
@@ -156,15 +159,22 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
       setArr(a)
 
       // Historial de uso, sin filtrar por fecha: una mesa que se usó el mes
-      // pasado tiene historial aunque hoy esté libre.
+      // pasado tiene historial aunque hoy esté libre. Se cuenta, no se marca
+      // sí/no: el admin decide mejor viendo "2 bloques y 5 arriendos" que
+      // viendo "tiene historial".
       const [enBloques, enArriendos] = await Promise.all([
         db.from('bloque_mesas').select('mesa_id').eq('club_id', clubId),
         db.from('mesa_arriendos').select('mesa_id').eq('club_id', clubId),
       ])
-      setHist(new Set([
-        ...(enBloques.data ?? []).map((r: { mesa_id: string }) => r.mesa_id),
-        ...(enArriendos.data ?? []).map((r: { mesa_id: string }) => r.mesa_id),
-      ]))
+      const cuenta = new Map<string, { bloques: number; arriendos: number }>()
+      const sumar = (id: string, campo: 'bloques' | 'arriendos') => {
+        const fila = cuenta.get(id) ?? { bloques: 0, arriendos: 0 }
+        fila[campo]++
+        cuenta.set(id, fila)
+      }
+      for (const r of (enBloques.data ?? []) as { mesa_id: string }[]) sumar(r.mesa_id, 'bloques')
+      for (const r of (enArriendos.data ?? []) as { mesa_id: string }[]) sumar(r.mesa_id, 'arriendos')
+      setHist(cuenta)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudieron cargar las mesas.')
     } finally {
@@ -239,49 +249,45 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
   }
 
   /**
-   * Sacar una mesa. Son dos cosas distintas y la diferencia importa:
+   * Borrar una mesa de verdad: la fila desaparece.
    *
-   *   · **Corregir** — la mesa nunca se usó. Cargaste doce y eran nueve. La
-   *     fila se BORRA: no hay nada que conservar, y dejarla retirada ensucia
-   *     la lista con mesas que nunca existieron.
+   * `bloque_mesas` y `mesa_arriendos` la referencian con ON DELETE CASCADE, así
+   * que se van con ella. Por eso el cartel muestra los números ANTES: la mesa
+   * que se cargó de más se borra sin pensarlo, y la que lleva medio año de
+   * arriendos merece que quien la borra vea cuántos son.
    *
-   *   · **Retirar** — la mesa tuvo clases o arriendos. Se le pone
-   *     `vigente_hasta` y se conserva, porque los bloques de meses pasados la
-   *     referencian y un reporte de ocupación tiene que poder responder
-   *     "¿cuántas mesas había el martes pasado?".
-   *
-   * La pantalla elige sola según el historial, y dice cuál de las dos va a
-   * hacer. Que el usuario tenga que entender la diferencia sería trasladarle
-   * un detalle de la base.
+   * La decisión es del admin. La pantalla informa, no decide por él.
    */
-  async function quitarMesa(mesa: Mesa) {
-    const tieneHistorial = conHistorial.has(mesa.id)
-
-    const aviso = tieneHistorial
-      ? `La mesa ${mesa.numero} tuvo clases o arriendos asignados.\n\nSe va a retirar: deja de contar desde hoy, pero se conserva para que los reportes de meses pasados sigan cuadrando. Los bloques que la usaban pierden ese cupo.\n\n¿Retirarla?`
-      : `La mesa ${mesa.numero} no se usó nunca.\n\nSe va a borrar del todo, como si no se hubiera cargado.\n\n¿Borrarla?`
-    if (!confirm(aviso)) return
-
+  async function borrarMesa(mesa: Mesa) {
     setError('')
+    const { error: err } = await (supabase as any).from('sede_mesas')
+      .delete().eq('id', mesa.id)
 
-    if (!tieneHistorial) {
-      const { error: err } = await (supabase as any).from('sede_mesas')
-        .delete().eq('id', mesa.id)
-      if (err) { setError('No se pudo borrar la mesa: ' + err.message); return }
-      await cargar()
-      return
-    }
+    if (err) { setError('No se pudo borrar la mesa: ' + err.message); return }
+    setAQuitar(null)
+    await cargar()
+  }
 
+  /**
+   * Retirarla: deja de contar desde hoy pero la fila queda.
+   *
+   * Es lo que se quiere cuando una mesa se rompe o se vende: los bloques de
+   * meses pasados la siguen referenciando y un reporte de ocupación puede
+   * responder "¿cuántas mesas había el martes pasado?".
+   */
+  async function retirarMesa(mesa: Mesa) {
     // Ayer, nunca hoy: cerrar con la fecha de hoy dejaría la mesa contando todo
     // el día de hoy. Es el mismo cuidado que con bloque_jugadores.
     const ayer = new Date(`${fechaChile()}T12:00:00`)
     ayer.setDate(ayer.getDate() - 1)
     const cierre = ayer.toISOString().slice(0, 10)
 
+    setError('')
     const { error: err } = await (supabase as any).from('sede_mesas')
       .update({ vigente_hasta: cierre }).eq('id', mesa.id)
 
     if (err) { setError('No se pudo retirar la mesa: ' + err.message); return }
+    setAQuitar(null)
     await cargar()
   }
 
@@ -365,25 +371,23 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
             Las mesas de esta sede
           </div>
           <p style={{ margin: '0 0 11px', fontSize: 11.5, color: hint, lineHeight: 1.55 }}>
-            El cupo de cada bloque sale de acá, así que este número se puede
-            cambiar cuando quieras. Las que nunca se usaron se borran sin dejar
-            rastro; las que ya tuvieron clases se retiran y se conservan, para
-            que los reportes de meses pasados sigan cuadrando.
+            El cupo de cada bloque sale de acá: son las mesas que tenga, por los
+            jugadores que entran en cada una. Agregá y sacá las que necesites —
+            este número se cambia cuando quieras.
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
             {visibles.map(m => {
-              const usada = conHistorial.has(m.id)
+              const h = historial.get(m.id)
+              const usada = !!h
               return (
                 <span key={m.id}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 11px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 999, fontSize: 12.5, fontWeight: 600, color: text }}
                 >
                   Mesa {m.numero}
                   <button
-                    type="button" onClick={() => void quitarMesa(m)}
-                    title={usada
-                      ? `Retirar la mesa ${m.numero} — tuvo clases, se conserva para los reportes`
-                      : `Borrar la mesa ${m.numero} — nunca se usó`}
-                    aria-label={usada ? `Retirar la mesa ${m.numero}` : `Borrar la mesa ${m.numero}`}
+                    type="button" onClick={() => { setAQuitar(m); setError('') }}
+                    title={`Sacar la mesa ${m.numero}`}
+                    aria-label={`Sacar la mesa ${m.numero}`}
                     style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: usada ? '#b45309' : hint, display: 'flex' }}
                   >
                     <Trash2 size={12} />
@@ -394,6 +398,76 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
           </div>
         </div>
       )}
+
+      {/* ── Sacar una mesa: las dos salidas, con los números a la vista ───
+          Borrar está SIEMPRE disponible: es la sala del club y el admin sabe
+          cuántas mesas tiene. Lo que la pantalla hace no es impedirlo, es
+          decirle qué se lleva puesto. */}
+      {aQuitar && (() => {
+        const h = historial.get(aQuitar.id)
+        const usos = (h?.bloques ?? 0) + (h?.arriendos ?? 0)
+        return (
+          <div style={{ ...card, padding: 18, marginBottom: 14, borderLeft: '3px solid #b45309' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: text, marginBottom: 6 }}>
+              Sacar la mesa {aQuitar.numero}
+            </div>
+
+            {usos === 0 ? (
+              <p style={{ margin: '0 0 14px', fontSize: 13, color: muted, lineHeight: 1.6 }}>
+                Nunca se usó: no hay bloques ni arriendos que dependan de ella.
+                Se borra y listo.
+              </p>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 8px', fontSize: 13, color: muted, lineHeight: 1.6 }}>
+                  Esta mesa está en{' '}
+                  {h!.bloques > 0 && (
+                    <strong style={{ color: text }}>
+                      {h!.bloques} {h!.bloques === 1 ? 'bloque' : 'bloques'}
+                    </strong>
+                  )}
+                  {h!.bloques > 0 && h!.arriendos > 0 && ' y '}
+                  {h!.arriendos > 0 && (
+                    <strong style={{ color: text }}>
+                      {h!.arriendos} {h!.arriendos === 1 ? 'arriendo' : 'arriendos'}
+                    </strong>
+                  )}
+                  .
+                </p>
+                <p style={{ margin: '0 0 14px', fontSize: 12.5, color: muted, lineHeight: 1.6 }}>
+                  Si la <strong style={{ color: text }}>borrás</strong>, eso se borra con
+                  ella y los reportes de meses pasados van a mostrar una mesa menos de
+                  las que hubo. Si la <strong style={{ color: text }}>retirás</strong>,
+                  deja de contar desde hoy pero el historial queda igual.
+                </p>
+              </>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {usos > 0 && (
+                <button
+                  type="button" onClick={() => void retirarMesa(aQuitar)}
+                  style={{ background: '#3730a3', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 15px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Retirarla y conservar el historial
+                </button>
+              )}
+              <button
+                type="button" onClick={() => void borrarMesa(aQuitar)}
+                style={{ background: usos > 0 ? 'transparent' : '#b91c1c', color: usos > 0 ? '#b91c1c' : '#fff', border: usos > 0 ? '1px solid #b91c1c' : 'none', borderRadius: 8, padding: '10px 15px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {usos > 0 ? 'Borrarla igual' : 'Borrarla'}
+              </button>
+              <button
+                type="button" onClick={() => setAQuitar(null)}
+                style={{ background: 'transparent', color: muted, border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 15px', fontSize: 13, cursor: 'pointer' }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── El tablero ────────────────────────────────────────────────── */}
       {visibles.length === 0 ? (
