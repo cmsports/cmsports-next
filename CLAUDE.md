@@ -10,17 +10,31 @@ No hay `supabase db push` ni runner automático. Eso significa que nada impide
 pegar dos veces el mismo archivo, y una migración destructiva repetida vuelve a
 destruir.
 
-**Toda migración nueva empieza con el portazo:**
+**Toda migración nueva empieza con los dos portazos:**
 
 ```sql
 BEGIN;
 SELECT _migracion_nueva('125_nombre_del_archivo');
+SELECT _migracion_para_club('Asociación TDM Buin y Paine');
 -- ... el resto ...
 COMMIT;
 ```
 
-Si ya se aplicó, esa línea lanza una excepción y aborta la transacción entera,
-sin ejecutar nada de lo que viene abajo.
+La primera línea atrapa **la repetición**: si esa migración ya se aplicó, lanza
+una excepción y aborta la transacción entera, sin ejecutar nada de lo que viene
+abajo (migración 128).
+
+La segunda atrapa **el destinatario equivocado**, que es el otro error y no lo
+cubría nadie (migraciones 246 y 247). Verifica que el club exista, **devuelve su
+`club_id` para no escribirlo a mano** y lo deja declarado en la sesión; desde ahí,
+un trigger sobre `movimientos`, `jugadores`, `asistencia` y `mensualidades`
+rechaza cualquier fila de otro club y voltea la transacción. Fuera de una
+migración no hay club declarado y el trigger es inerte.
+
+Si la migración de verdad es para todos, se dice a propósito y con el motivo
+escrito —`SELECT _migracion_para_todos_los_clubes('cambia el esquema, no toca
+filas');`—, que deja el trigger inerte. No ponerlo es un olvido; ponerlo es una
+decisión.
 
 Antes de escribir cualquier migración con `DELETE`, `TRUNCATE` o `DROP`, leer
 **`docs/migraciones-destructivas.md`**. Las reglas de ahí no son teóricas: el
@@ -145,5 +159,23 @@ contexto. Si pregunta por todo, deja de servir.
 **Las diferencias entre clubes son dato, no código.** Nunca un `if (club_id ===
 'ec1ef...')` en código compartido: eso ata a los tres clubes al mismo archivo. Si
 algo no se puede expresar como configuración, va como módulo aparte. El plan
-completo —incluido el portazo `_migracion_para_club()` y la tabla `club_config`—
-está en `docs/plan-aislamiento-clubes.md`, y **todavía no está implementado**.
+completo está en `docs/plan-aislamiento-clubes.md`. De ahí, el portazo
+`_migracion_para_club()` y su trigger de guardia **ya están** (migraciones 246 y
+247) y la tabla **`club_config`** también (migración 248).
+
+Ahí es donde va toda diferencia de comportamiento entre clubes. **El default de
+cada clave es lo que Buin hace hoy**, así que un club sin filas se comporta
+exactamente como antes de que la tabla existiera —por eso pudo entrar sin tocar
+producción—. Se lee siempre por `configDelClub()`
+(`src/lib/supabase/clubConfig.ts`), nunca consultando la tabla suelta, y las
+claves se declaran en el catálogo único `src/lib/domain/clubConfig.ts`.
+
+Agregar una clave: **verificar en el código qué hace hoy el sistema y poner eso
+de `defecto`** —no lo que parece razonable, lo que hace—. `clubConfig.test.ts`
+congela cada default, así que cambiar uno rompe la prueba a propósito: los `0`
+de morosidad significan "nunca bloquear", y ponerlos en 30 "porque parece
+razonable" hace que Buin empiece a bloquear alumnos al día siguiente.
+
+Lo que **no** cabe como valor —un número, una opción de una lista cerrada, un
+sí/no— no va en `club_config`: va como módulo aparte. Meter lógica dentro del
+`jsonb` es reinventar el `if` por club con más pasos y sin tipos.

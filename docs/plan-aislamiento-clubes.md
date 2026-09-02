@@ -227,21 +227,40 @@ Las tres reglas que hacen que esto funcione y no se convierta en otro enredo:
 
 ## 5. Plan de implementación
 
-### Fase A — Barrera de proceso (protege a Buin desde el día uno)
+### Fase A — Barrera de proceso (protege a Buin desde el día uno) ✅ hecha
 
-**A1 · Regla de confirmación en `CLAUDE.md`**
+**A1 · Regla de confirmación en `CLAUDE.md`** — ✅ hecha
 La capa 1 de la sección 3. Es texto, no toca la base, y desde que se escribe ya
 protege. **Es el primer entregable y no depende de nada.**
 
-**A2 · `_migracion_para_club()` + encabezado obligatorio**
-Migración que crea la función, siguiendo el molde de `_migracion_nueva`.
-Se documenta en `CLAUDE.md` junto al portazo que ya está.
+**A2 · `_migracion_para_club()` + encabezado obligatorio** — ✅
+`246_migracion_declara_su_club.sql`, siguiendo el molde de `_migracion_nueva`.
+Recibe el **nombre** del club, no el UUID: un UUID mal copiado se ve igual de
+bien que uno correcto. Devuelve el `club_id` para no volver a escribirlo a mano,
+y lo deja en la sesión con `set_config(..., is_local => true)` — **nunca `SET` a
+secas**, porque el pooler de Supabase reutiliza la conexión y la variable
+quedaría pegada, haciendo que el trigger de A3 rechace escrituras normales de la
+app. Incluye la variante explícita `_migracion_para_todos_los_clubes(motivo)`,
+con el motivo obligatorio.
 
-**A3 · Trigger de club declarado**
-La capa 3. Sobre `movimientos`, `jugadores`, `asistencia` y `mensualidades`.
+**A3 · Trigger de club declarado** — ✅
+`247_guardia_club_declarado.sql`. La capa 3, sobre `movimientos`, `jugadores`,
+`asistencia` y `mensualidades`. En `UPDATE` mira `OLD` **y** `NEW`: sacar una
+fila de Buin y meter una ajena son el mismo error. Una fila con `club_id IS NULL`
+pasa — no es "la fila de otro club", que es lo único que este trigger atajaba.
+El archivo trae escrito el `DISABLE TRIGGER` de emergencia, antes de necesitarlo.
+
 **Criterio de aceptación:** una migración de prueba que declara un club e intenta
 escribir en otro tiene que abortar; y con la variable sin poner, las operaciones
-normales de la app no cambian en nada.
+normales de la app no cambian en nada. **Las dos pruebas están al final de la
+247, listas para pegar; se revierten solas con `ROLLBACK`.**
+
+> **Aplicadas y verificadas en producción (2026-09-02).** Las dos pruebas de
+> arriba se corrieron en el SQL Editor: el portazo abortó una escritura de
+> Buin sobre una fila de Club Demostración TDM con el mensaje exacto ("Club
+> equivocado... No se ejecutó nada"), y sin club declarado la escritura normal
+> de Buin pasó (`UPDATE 1`) sin que el trigger se enterara. **Buin está
+> blindado.**
 
 ### Fase B — (eliminada)
 
@@ -251,9 +270,30 @@ No hay trabajo pendiente en la capa de datos.
 
 ### Fase C — Configuración por club
 
-**C1 · Tabla `club_config` + catálogo + `configDelClub()`**
-Sin cambiar ningún comportamiento: todos los defaults son lo que Buin hace hoy.
-**Criterio de aceptación: la suite de tests pasa sin modificarse.**
+**C1 · Tabla `club_config` + catálogo + `configDelClub()`** — ✅ escrita
+Migración **248**, más `src/lib/domain/clubConfig.ts` (el catálogo, hermano de
+`modulos.ts`) y `src/lib/supabase/clubConfig.ts` (el lector con caché).
+Sin cambiar ningún comportamiento: todos los defaults son lo que Buin hace hoy,
+y la tabla se crea vacía.
+
+**Criterio de aceptación cumplido:** la suite pasó de 1065 a **1098 pruebas
+(+33, todas nuevas) sin modificar ni un archivo existente**; `tsc` y `eslint`
+limpios. Los 33 casos incluyen el que congela cada default uno por uno, así que
+cambiar el `0` de `morosidad.dias_bloqueo` rompe la prueba a propósito.
+
+Dos decisiones que valen la pena registrar:
+- **El fallback ante un error de red es el default**, no lo último que se vio.
+  Es al revés que `useModulos`, que ante un error muestra todos los módulos
+  —ahí lo permisivo es mostrar de más—. Acá lo seguro es lo contrario: no
+  encender solo un bloqueo por morosidad ni cambiar solo un cálculo de plata.
+- **`normalizarValor` nunca lanza.** Del otro lado hay una tabla que alguien
+  edita a mano; un `'30'` con comillas y un `30` se ven casi iguales en el
+  editor de Supabase. Ante cualquier duda, el default.
+
+> **Pendiente: la 248 no está aplicada todavía.** Hasta que se pegue en el SQL
+> Editor, el catálogo existe pero no hay tabla que leer —`configDelClub()`
+> devuelve los defaults, que es justamente el comportamiento actual, así que
+> nada se rompe mientras tanto.
 
 **C2 · Primera clave real: `asistencia.modo`**
 Se migra el módulo de asistencia a leer la config en vez de asumir. Buin queda en
