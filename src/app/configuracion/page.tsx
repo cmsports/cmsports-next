@@ -15,6 +15,7 @@ import GestionProfesores from '@/components/configuracion/GestionProfesores'
 import GestionKioscos from '@/components/configuracion/GestionKioscos'
 import PerfilPersonalConfig from '@/components/configuracion/PerfilPersonalConfig'
 import PanelConfigClub from '@/components/PanelConfigClub'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const C = {
   card: '#ffffff', border: '#e2e8f0',
@@ -29,6 +30,7 @@ const inputStyle = { width: '100%', padding: '9px 11px', border: `1px solid ${C.
 
 export default function ConfiguracionPage() {
   const { perfil, loading: authLoading, refetchPerfil } = usePerfil()
+  const { tiene } = useModulos()
   const router = useRouter()
 
   const [nombre, setNombre] = useState('')
@@ -251,7 +253,12 @@ export default function ConfiguracionPage() {
 
       {perfil.club_id && <GestionProfesores clubId={perfil.club_id} />}
       {perfil.club_id && <GestionKioscos />}
-      {perfil.club_id && <PanelConfigClub clubId={perfil.club_id} rol={perfil.rol} />}
+      {/* Detrás del módulo, y no visible para todo admin: este panel tiene el
+          control de los días de morosidad, y un club que hoy no bloquea a nadie
+          no puede encontrarse esa perilla en su pantalla sin haberla pedido. */}
+      {perfil.club_id && tiene('config_club') && (
+        <PanelConfigClub clubId={perfil.club_id} rol={perfil.rol} />
+      )}
       </>}
 
       {/* ── Cambiar contraseña ── */}
