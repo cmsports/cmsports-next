@@ -448,7 +448,10 @@ export default function HorarioPage() {
       {/* Cupos */}
       {tab === 'cupos' && clubId && esStaff && <PanelCupos clubId={clubId} esStaff={esStaff} />}
 
-      {tab === 'mesas' && clubId && esStaff && <PanelMesas clubId={clubId} sede={sedeActiva} />}
+      {/* `sedeVista`, no `sedeActiva`: el estado arranca en 'buin' escrito duro,
+          así que a un club que no es Buin le mostraba "Mesas en Buin (Aníbal
+          Pinto 158)" hasta que alguien tocara la pestaña de sede. */}
+      {tab === 'mesas' && clubId && esStaff && <PanelMesas clubId={clubId} sede={sedeVista} />}
 
       {tab === 'recuperaciones' && clubId && esStaff && <PanelRecuperaciones clubId={clubId} />}
 
