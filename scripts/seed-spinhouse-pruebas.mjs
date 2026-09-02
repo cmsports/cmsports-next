@@ -10,7 +10,13 @@
  * ── Cómo se usa ─────────────────────────────────────────────────────────
  *
  *     node scripts/seed-spinhouse-pruebas.mjs            crea las tres
+ *     node scripts/seed-spinhouse-pruebas.mjs --mesas 12 y además carga mesas
  *     node scripts/seed-spinhouse-pruebas.mjs --borrar   las elimina
+ *
+ * El `--mesas` es solo un punto de partida cómodo. **El número no vive en
+ * ningún lado del código**: el cupo sale de contar las filas de `sede_mesas`,
+ * así que se cambia desde la pantalla (Cupos/bloques → Mesas) cuando se sepa
+ * el número real, sin tocar nada de esto.
  *
  * Es IDEMPOTENTE: correrlo dos veces no duplica nada. Si la cuenta ya existe,
  * le repone la contraseña y sigue. Eso importa porque se va a correr varias
@@ -52,6 +58,14 @@ const supabase = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE
 })
 
 const BORRAR = process.argv.includes('--borrar')
+
+// `--mesas N`. Sin el flag no toca las mesas: correr el script para reponer una
+// contraseña no tiene por qué cambiarle la sala al club.
+const iMesas = process.argv.indexOf('--mesas')
+const MESAS = iMesas === -1 ? null : parseInt(process.argv[iMesas + 1], 10)
+
+// La sede de Spinhouse en el catálogo (`src/lib/domain/sedeGrupo.ts`).
+const SEDE = 'spinhouse'
 
 // El club, por nombre y no por UUID: un UUID mal copiado se ve igual de bien
 // que uno correcto. Mismo criterio que `_migracion_para_club`.
@@ -235,6 +249,41 @@ async function main() {
       console.log(`  ✓ ${c.rol.padEnd(9)} ${c.email.padEnd(34)} ${nuevo ? 'creada' : 'ya existía, contraseña repuesta'}`)
     } catch (e) {
       console.error(`  ✗ ${c.rol.padEnd(9)} ${c.email} — ${e.message}`)
+    }
+  }
+
+  // ── Mesas, si las pidieron ───────────────────────────────────────────
+  //
+  // Solo AGREGA hasta llegar al número: nunca borra. Si el club ya tiene doce
+  // cargadas y alguien corre `--mesas 8`, no se le sacan cuatro por un flag de
+  // línea de comandos — eso se hace desde la pantalla, viendo cuáles.
+  if (MESAS != null) {
+    if (!Number.isInteger(MESAS) || MESAS < 0 || MESAS > 60) {
+      console.error(`\n  ✗ --mesas espera un entero entre 0 y 60, llegó "${process.argv[iMesas + 1]}"`)
+    } else {
+      const { data: yaHay, error: errLeer } = await supabase.from('sede_mesas')
+        .select('numero').eq('club_id', club.id).eq('sede', SEDE)
+
+      if (errLeer) {
+        console.error(`\n  ✗ No se pudieron leer las mesas: ${errLeer.message}`)
+        console.error('    ¿Está aplicada la migración 249?')
+      } else {
+        const actuales = yaHay?.length ?? 0
+        if (actuales >= MESAS) {
+          console.log(`\n  · La sede ya tiene ${actuales} mesas; no se agregó ninguna.`)
+        } else {
+          const desde = (yaHay ?? []).reduce((max, m) => Math.max(max, m.numero), 0) + 1
+          const faltan = MESAS - actuales
+          const { error: errIns } = await supabase.from('sede_mesas').insert(
+            Array.from({ length: faltan }, (_, i) => ({
+              club_id: club.id, sede: SEDE, numero: desde + i,
+            })),
+          )
+          if (errIns) console.error(`\n  ✗ No se pudieron crear las mesas: ${errIns.message}`)
+          else console.log(`\n  ✓ ${faltan} ${faltan === 1 ? 'mesa creada' : 'mesas creadas'} (${desde} a ${desde + faltan - 1}). Total: ${MESAS}.`)
+        }
+        console.log('    El número se cambia desde Cupos/bloques → Mesas; no está escrito en el código.')
+      }
     }
   }
 

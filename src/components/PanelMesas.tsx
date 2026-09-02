@@ -88,10 +88,15 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
   const [cargando, setCargando] = useState(true)
   const [error, setError]       = useState('')
 
-  // Alta de una mesa nueva.
+  // Alta de mesas nuevas. `cuantas` y no un número de mesa: nadie carga "la
+  // mesa 7", carga "tengo 12 mesas". El número se asigna solo.
   const [creando, setCreando]   = useState(false)
-  const [numero, setNumero]     = useState('')
+  const [cuantas, setCuantas]   = useState('1')
   const [guardando, setGuardando] = useState(false)
+
+  // Qué mesas fueron usadas ALGUNA VEZ, no solo hoy. Es lo que decide si una
+  // mesa se puede borrar de verdad o solo retirar: ver `quitarMesa`.
+  const [conHistorial, setHist] = useState<Set<string>>(new Set())
 
   const dia = diaSemanaDeFecha(fecha)
 
@@ -149,6 +154,17 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
       setMesas(m)
       setBloques(b)
       setArr(a)
+
+      // Historial de uso, sin filtrar por fecha: una mesa que se usó el mes
+      // pasado tiene historial aunque hoy esté libre.
+      const [enBloques, enArriendos] = await Promise.all([
+        db.from('bloque_mesas').select('mesa_id').eq('club_id', clubId),
+        db.from('mesa_arriendos').select('mesa_id').eq('club_id', clubId),
+      ])
+      setHist(new Set([
+        ...(enBloques.data ?? []).map((r: { mesa_id: string }) => r.mesa_id),
+        ...(enArriendos.data ?? []).map((r: { mesa_id: string }) => r.mesa_id),
+      ]))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudieron cargar las mesas.')
     } finally {
@@ -192,30 +208,69 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
 
   const tramos = useMemo(() => tramosDelDia(usos), [usos])
 
-  async function crearMesa() {
-    const n = parseInt(numero, 10)
-    if (!Number.isInteger(n) || n <= 0) { setError('El número de mesa tiene que ser un entero mayor que cero.'); return }
-    if (mesas.some(m => m.numero === n)) { setError(`Ya existe la mesa ${n} en esta sede.`); return }
+  /**
+   * Agrega N mesas, numerándolas a partir de la más alta que haya.
+   *
+   * De a varias y no de a una porque el caso real es "tengo doce mesas", no
+   * "quiero crear la mesa 7". Y sigue desde el máximo —incluidas las retiradas—
+   * para no reusar un número que ya tuvo historia: dos mesas 3 en un reporte
+   * son imposibles de distinguir.
+   */
+  async function agregarMesas() {
+    const n = parseInt(cuantas, 10)
+    if (!Number.isInteger(n) || n <= 0) { setError('Poné cuántas mesas agregar, como número entero.'); return }
+    if (n > 60) { setError('Son demasiadas de una vez. Agregá hasta 60.'); return }
+
+    const desde = mesas.reduce((max, m) => Math.max(max, m.numero), 0) + 1
+    const nuevas = Array.from({ length: n }, (_, i) => ({
+      club_id: clubId, sede, numero: desde + i,
+    }))
 
     setGuardando(true)
     setError('')
-    const { error: err } = await (supabase as any).from('sede_mesas')
-      .insert({ club_id: clubId, sede, numero: n })
+    const { error: err } = await (supabase as any).from('sede_mesas').insert(nuevas)
 
     setGuardando(false)
-    if (err) { setError('No se pudo crear la mesa: ' + err.message); return }
+    if (err) { setError('No se pudieron crear las mesas: ' + err.message); return }
 
-    setNumero('')
+    setCuantas('1')
     setCreando(false)
     await cargar()
   }
 
-  async function darDeBaja(mesa: Mesa) {
-    const enUso = usos.some(u => u.mesa_id === mesa.id)
-    const aviso = enUso
-      ? `La mesa ${mesa.numero} tiene clases o arriendos asignados. Al darla de baja, los bloques que la usaban pierden ese cupo.\n\n¿Seguro?`
-      : `¿Dar de baja la mesa ${mesa.numero}?`
+  /**
+   * Sacar una mesa. Son dos cosas distintas y la diferencia importa:
+   *
+   *   · **Corregir** — la mesa nunca se usó. Cargaste doce y eran nueve. La
+   *     fila se BORRA: no hay nada que conservar, y dejarla retirada ensucia
+   *     la lista con mesas que nunca existieron.
+   *
+   *   · **Retirar** — la mesa tuvo clases o arriendos. Se le pone
+   *     `vigente_hasta` y se conserva, porque los bloques de meses pasados la
+   *     referencian y un reporte de ocupación tiene que poder responder
+   *     "¿cuántas mesas había el martes pasado?".
+   *
+   * La pantalla elige sola según el historial, y dice cuál de las dos va a
+   * hacer. Que el usuario tenga que entender la diferencia sería trasladarle
+   * un detalle de la base.
+   */
+  async function quitarMesa(mesa: Mesa) {
+    const tieneHistorial = conHistorial.has(mesa.id)
+
+    const aviso = tieneHistorial
+      ? `La mesa ${mesa.numero} tuvo clases o arriendos asignados.\n\nSe va a retirar: deja de contar desde hoy, pero se conserva para que los reportes de meses pasados sigan cuadrando. Los bloques que la usaban pierden ese cupo.\n\n¿Retirarla?`
+      : `La mesa ${mesa.numero} no se usó nunca.\n\nSe va a borrar del todo, como si no se hubiera cargado.\n\n¿Borrarla?`
     if (!confirm(aviso)) return
+
+    setError('')
+
+    if (!tieneHistorial) {
+      const { error: err } = await (supabase as any).from('sede_mesas')
+        .delete().eq('id', mesa.id)
+      if (err) { setError('No se pudo borrar la mesa: ' + err.message); return }
+      await cargar()
+      return
+    }
 
     // Ayer, nunca hoy: cerrar con la fecha de hoy dejaría la mesa contando todo
     // el día de hoy. Es el mismo cuidado que con bloque_jugadores.
@@ -223,11 +278,10 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
     ayer.setDate(ayer.getDate() - 1)
     const cierre = ayer.toISOString().slice(0, 10)
 
-    setError('')
     const { error: err } = await (supabase as any).from('sede_mesas')
       .update({ vigente_hasta: cierre }).eq('id', mesa.id)
 
-    if (err) { setError('No se pudo dar de baja la mesa: ' + err.message); return }
+    if (err) { setError('No se pudo retirar la mesa: ' + err.message); return }
     await cargar()
   }
 
@@ -255,41 +309,89 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
             type="button" onClick={() => { setCreando(v => !v); setError('') }}
             style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#3730a3', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 13px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
           >
-            <Plus size={15} /> Agregar mesa
+            <Plus size={15} /> Agregar mesas
           </button>
         </div>
       </div>
 
       {creando && (
-        <div style={{ ...card, padding: 16, marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4, fontWeight: 600 }}>
-              Número de mesa
-            </label>
-            <input
-              type="number" min={1} value={numero} onChange={e => setNumero(e.target.value)}
-              placeholder="3" autoFocus
-              style={{ width: 110, background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: text }}
-            />
+        <div style={{ ...card, padding: 16, marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <label htmlFor="cuantas-mesas" style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                ¿Cuántas mesas agregar?
+              </label>
+              <input
+                id="cuantas-mesas" type="number" min={1} max={60}
+                value={cuantas} onChange={e => setCuantas(e.target.value)} autoFocus
+                style={{ width: 110, background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '9px 12px', fontSize: 13, color: text }}
+              />
+            </div>
+            <button
+              type="button" onClick={() => void agregarMesas()} disabled={guardando}
+              style={{ background: '#3730a3', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 15px', fontSize: 13, fontWeight: 600, cursor: guardando ? 'wait' : 'pointer', opacity: guardando ? 0.6 : 1 }}
+            >
+              {guardando ? 'Creando…' : 'Agregar'}
+            </button>
+            <button
+              type="button" onClick={() => { setCreando(false); setCuantas('1'); setError('') }}
+              style={{ background: 'transparent', color: muted, border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 15px', fontSize: 13, cursor: 'pointer' }}
+            >
+              Cancelar
+            </button>
           </div>
-          <button
-            type="button" onClick={() => void crearMesa()} disabled={guardando}
-            style={{ background: '#3730a3', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 15px', fontSize: 13, fontWeight: 600, cursor: guardando ? 'wait' : 'pointer', opacity: guardando ? 0.6 : 1 }}
-          >
-            {guardando ? 'Creando…' : 'Crear'}
-          </button>
-          <button
-            type="button" onClick={() => { setCreando(false); setNumero(''); setError('') }}
-            style={{ background: 'transparent', color: muted, border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 15px', fontSize: 13, cursor: 'pointer' }}
-          >
-            Cancelar
-          </button>
+          <p style={{ margin: '10px 0 0', fontSize: 11.5, color: hint, lineHeight: 1.55 }}>
+            Se numeran solas desde la {mesas.reduce((max, m) => Math.max(max, m.numero), 0) + 1}.
+            Si te pasás, después las sacás una por una — mientras no se hayan
+            usado, se borran sin dejar rastro.
+          </p>
         </div>
       )}
 
       {error && (
         <div style={{ ...card, padding: '12px 16px', marginBottom: 14, borderLeft: '3px solid #b91c1c' }}>
           <p style={{ margin: 0, fontSize: 13, color: '#b91c1c' }}>{error}</p>
+        </div>
+      )}
+
+      {/* ── Las mesas, siempre visibles ───────────────────────────────────
+          Va fuera del tablero a propósito: el tablero solo se dibuja si ese día
+          hay algo programado, y hace falta poder ajustar el número ANTES de
+          crear el primer bloque — que es justo cuando todavía no se sabe
+          cuántas mesas son. */}
+      {visibles.length > 0 && (
+        <div style={{ ...card, padding: 16, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 3 }}>
+            Las mesas de esta sede
+          </div>
+          <p style={{ margin: '0 0 11px', fontSize: 11.5, color: hint, lineHeight: 1.55 }}>
+            El cupo de cada bloque sale de acá, así que este número se puede
+            cambiar cuando quieras. Las que nunca se usaron se borran sin dejar
+            rastro; las que ya tuvieron clases se retiran y se conservan, para
+            que los reportes de meses pasados sigan cuadrando.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+            {visibles.map(m => {
+              const usada = conHistorial.has(m.id)
+              return (
+                <span key={m.id}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 11px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 999, fontSize: 12.5, fontWeight: 600, color: text }}
+                >
+                  Mesa {m.numero}
+                  <button
+                    type="button" onClick={() => void quitarMesa(m)}
+                    title={usada
+                      ? `Retirar la mesa ${m.numero} — tuvo clases, se conserva para los reportes`
+                      : `Borrar la mesa ${m.numero} — nunca se usó`}
+                    aria-label={usada ? `Retirar la mesa ${m.numero}` : `Borrar la mesa ${m.numero}`}
+                    style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: usada ? '#b45309' : hint, display: 'flex' }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </span>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -326,14 +428,6 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
                   <th key={m.id} style={{ padding: '11px 8px', fontSize: 12, fontWeight: 600, color: text, borderBottom: '1px solid #e2e8f0', borderLeft: '1px solid #f1f5f9', minWidth: 92 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                       <span>Mesa {m.numero}</span>
-                      <button
-                        type="button" onClick={() => void darDeBaja(m)}
-                        title={`Dar de baja la mesa ${m.numero}`}
-                        aria-label={`Dar de baja la mesa ${m.numero}`}
-                        style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: hint, display: 'flex' }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
                     </div>
                   </th>
                 ))}
