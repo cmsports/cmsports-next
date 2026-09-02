@@ -51,6 +51,12 @@ export const MODULOS = [
   // en su pantalla sin haberla pedido. Se enciende cuando el club de verdad
   // necesita comportarse distinto.
   { key: 'config_club', label: 'Configuración avanzada del club' },
+  // Tarifas de mensualidad: frecuencia semanal × tipo de clase → monto. Va
+  // aparte de 'mensualidades' porque cambia de dónde sale la cuota. En Buin
+  // cada cuota es un acuerdo por persona y ninguna tabla puede adivinarlas
+  // (ver mensualidades.ts); en Spinhouse sale de una tarifa publicada
+  // (migración 252).
+  { key: 'planes', label: 'Planes de mensualidad' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin

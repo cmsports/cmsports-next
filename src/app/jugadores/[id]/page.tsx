@@ -26,6 +26,8 @@ import { MessageCircle } from 'lucide-react'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
+import { etiquetaPlan, planesVigentes, type Plan as PlanClub } from '@/lib/domain/planes'
+import { useModulos } from '@/lib/hooks/useModulos'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
@@ -110,7 +112,10 @@ export default function JugadorDetallePage() {
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
   const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null, talla_polera:'', talla_short:'' })
-  const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'' })
+  const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'', plan_id:'' })
+  // Las tarifas del club, para el selector de plan. Vacío en un club de monto
+  // libre, donde el selector directamente no se dibuja.
+  const [planesClub, setPlanesClub] = useState<PlanClub[]>([])
   const [editDias, setEditDias] = useState(false)
   // Los días salen de los bloques a los que está inscrito, no de casillas
   // sueltas: así la ficha y los cupos no pueden contradecirse.
@@ -133,6 +138,7 @@ export default function JugadorDetallePage() {
   const [cambiandoPassword, setCambiandoPassword] = useState(false)
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
   const [recargaVersion, setRecargaVersion] = useState(0)
+  const { tiene } = useModulos()
   const [credencial, setCredencial] = useState<{ login: string; password: string } | null>(null)
   const [clubNombre, setClubNombre] = useState('')
   const [generandoReporte, setGenerandoReporte] = useState(false)
@@ -171,7 +177,7 @@ export default function JugadorDetallePage() {
 
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha').eq('id', jugadorId).single(),
+          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha').eq('id', jugadorId).single(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           perfil.rol === 'admin'
@@ -186,6 +192,14 @@ export default function JugadorDetallePage() {
           .select('id,fecha,monto,pagada_en')
           .eq('jugador_id', jugadorId).eq('club_id', perfil.club_id).is('pagada_en', null)
         setExtrasImpagas((extrasPend ?? []) as ClaseExtraJugador[])
+
+        // Las tarifas del club, para el selector de plan. Si la 252 no corrió,
+        // devuelve error y data null: el selector simplemente no aparece.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: tarifas } = await (supabase as any).from('planes_club')
+          .select('id,nombre,frecuencia_semanal,tipo_clase,monto,vigente_desde,vigente_hasta,activo')
+          .eq('club_id', perfil.club_id).order('monto')
+        setPlanesClub((tarifas ?? []) as PlanClub[])
 
         if (perfil.rol === 'admin') {
           const { data: perfilJugador } = await supabase.from('perfiles').select('id').eq('jugador_id', jugadorId).maybeSingle()
@@ -380,6 +394,7 @@ export default function JugadorDetallePage() {
       // escrito: bastaba abrir el plan y guardar para dejarle al jugador una
       // cuota que nadie decidió, con toda la cara de estar bien puesta.
       mensualidad: jugador?.mensualidad != null ? String(jugador.mensualidad) : '',
+      plan_id: jugador?.plan_id ?? '',
     })
     setDatosError('')
     setEditPlan(true)
@@ -397,6 +412,8 @@ export default function JugadorDetallePage() {
       tipo_plan: planFormState.tipo_plan,
       entrenamientos_por_semana: ent,
       mensualidad: montoIngresado(planFormState.mensualidad),
+      // Cadena vacía es "sin plan", que en la base es NULL y no un id inválido.
+      plan_id: planFormState.plan_id || null,
       sesiones_limite: sesLimite,
     }
     const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
@@ -1483,6 +1500,28 @@ export default function JugadorDetallePage() {
                 <input type="number" min={1} max={7} style={inputStyle}
                   value={planFormState.entrenamientos_por_semana}
                   onChange={e => setPlanFormState(f => ({ ...f, entrenamientos_por_semana: e.target.value }))} />
+              </FormField>
+            )}
+
+            {/* Solo donde la cuota sale de una tarifa. En un club de monto
+                libre no hay planes que elegir y el selector confundiría. */}
+            {tiene('planes') && planesClub.length > 0 && (
+              <FormField label="Plan contratado">
+                <select
+                  value={planFormState.plan_id} style={inputStyle}
+                  onChange={e => setPlanFormState(f => ({ ...f, plan_id: e.target.value }))}
+                >
+                  <option value="">Sin plan — usa el monto de abajo</option>
+                  {planesVigentes(planesClub, fechaChile()).map(p => (
+                    <option key={p.id} value={p.id}>
+                      {etiquetaPlan(p)} — ${p.monto.toLocaleString('es-CL')}
+                    </option>
+                  ))}
+                </select>
+                <p style={{ margin: '6px 0 0', fontSize: 11, color: hint, lineHeight: 1.5 }}>
+                  Con un plan asignado, su cuota sale de la tarifa y el monto de
+                  abajo se ignora. Sin plan, se le cobra el monto de abajo.
+                </p>
               </FormField>
             )}
 
