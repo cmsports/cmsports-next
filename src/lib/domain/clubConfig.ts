@@ -19,14 +19,39 @@
  * lo que Buin hace hoy. Si alguien los cambia a 30 "porque parece razonable",
  * Buin empieza a bloquear alumnos al día siguiente.
  *
+ * ── Quién puede editar cada clave ───────────────────────────────────────
+ *
+ * `editablePor` y no un permiso para toda la tabla. **Casi todo es del
+ * admin**: cuántos jugadores entran por mesa, a los cuántos días avisar de una
+ * deuda, cuánto vale ganar un partido de liga. Son decisiones sobre su propio
+ * club, y hacer que tenga que pedirlas por WhatsApp es exactamente la fricción
+ * que este sistema existe para sacar.
+ *
+ * `superadmin` queda para las dos claves cuya seguridad depende de código que
+ * puede no existir todavía:
+ *
+ *   · `mensualidad.modo` — pasar a planes sin planes cargados deja al club sin
+ *     poder emitir una sola cuota.
+ *   · `inscripcion.autoservicio` — encenderlo sin la función atómica de
+ *     inscripción hace que dos alumnos tomen el mismo último cupo.
+ *
+ * O sea: el superadmin no guarda las claves *delicadas*, guarda las que tienen
+ * una **precondición técnica**. Que una decisión sea grave —bloquear morosos lo
+ * es— no la vuelve suya: la vuelve algo que la pantalla tiene que explicar bien
+ * antes de que el admin apriete.
+ *
  * ── Cómo agregar una clave ──────────────────────────────────────────────
  *
  * 1. Verificar en el código qué hace HOY el sistema, y poner eso de `defecto`.
  *    No lo que parece razonable: lo que hace. `clubConfig.test.ts` congela
  *    cada default, así que cambiar uno rompe la prueba a propósito.
- * 2. Agregarla acá, con su `label` en español — es el texto que el superadmin
- *    va a ver al configurarla.
- * 3. Leerla con `configDelClub()`. Nunca consultar la tabla suelta.
+ * 2. Agregarla acá, con su `label` en español — es el texto que quien la
+ *    configure va a ver en pantalla.
+ * 3. Elegir `editablePor`. Por defecto, `'admin'`: es su club.
+ * 4. **Si es `'superadmin'`, sumarla también a la lista de la migración 250.**
+ *    Son dos listas en dos lenguajes distintos; `clubConfig.test.ts` las cruza
+ *    y falla si se separan.
+ * 5. Leerla con `configDelClub()`. Nunca consultar la tabla suelta.
  *
  * Y lo que NO va acá: cualquier diferencia que no se pueda expresar como un
  * valor —un número, una opción de una lista cerrada, un sí/no—. Eso va como
@@ -43,6 +68,7 @@ export const CONFIG_CLUB = [
     tipo: 'opcion',
     opciones: ['numero', 'por_mesas'],
     defecto: 'numero',
+    editablePor: 'admin',
     label: 'Cómo se calcula el cupo de un bloque',
     // 'numero' es lo que hay hoy: `bloques_horario.cupo_maximo`, escrito a
     // mano (migración 073). 'por_mesas' lo deriva de las mesas asignadas.
@@ -53,6 +79,7 @@ export const CONFIG_CLUB = [
     min: 1,
     max: 8,
     defecto: 4,
+    editablePor: 'admin',
     label: 'Jugadores por mesa en clase grupal',
     // Inerte mientras `cupos.modo` sea 'numero', que es el default. El 4 es
     // lo que pidió Spinhouse, no un supuesto sobre Buin.
@@ -63,6 +90,7 @@ export const CONFIG_CLUB = [
     min: 1,
     max: 4,
     defecto: 2,
+    editablePor: 'admin',
     label: 'Jugadores por mesa en clase particular',
   },
 
@@ -72,6 +100,7 @@ export const CONFIG_CLUB = [
     tipo: 'opcion',
     opciones: ['monto_libre', 'por_plan'],
     defecto: 'monto_libre',
+    editablePor: 'superadmin',
     label: 'Cómo se determina la cuota de un jugador',
     // 'monto_libre' es lo que hay hoy: `jugadores.mensualidad`, un número por
     // persona. `mensualidades.ts` lo explica: "el profe define cada cuota a
@@ -88,6 +117,7 @@ export const CONFIG_CLUB = [
     min: 0,
     max: 365,
     defecto: 0,
+    editablePor: 'admin',
     label: 'Días de deuda antes de avisar (0 = nunca)',
   },
   {
@@ -96,6 +126,7 @@ export const CONFIG_CLUB = [
     min: 0,
     max: 365,
     defecto: 0,
+    editablePor: 'admin',
     label: 'Días de deuda antes de bloquear la cuenta (0 = nunca)',
   },
 
@@ -106,6 +137,7 @@ export const CONFIG_CLUB = [
     min: 0,
     max: 20,
     defecto: 0,
+    editablePor: 'admin',
     label: 'Inasistencias seguidas antes de alertar (0 = nunca)',
   },
   {
@@ -114,6 +146,7 @@ export const CONFIG_CLUB = [
     min: 0,
     max: 365,
     defecto: 0,
+    editablePor: 'admin',
     label: 'Días sin asistir ni pagar antes de marcar inactivo (0 = nunca)',
   },
 
@@ -126,6 +159,7 @@ export const CONFIG_CLUB = [
     min: 0,
     max: 10,
     defecto: 3,
+    editablePor: 'admin',
     label: 'Puntos por ganar un partido de liga',
   },
   {
@@ -134,6 +168,7 @@ export const CONFIG_CLUB = [
     min: 0,
     max: 10,
     defecto: 1,
+    editablePor: 'admin',
     label: 'Puntos por perder un partido jugado',
   },
   {
@@ -142,6 +177,7 @@ export const CONFIG_CLUB = [
     min: 0,
     max: 10,
     defecto: 0,
+    editablePor: 'admin',
     label: 'Puntos para quien no se presenta',
   },
 
@@ -151,6 +187,7 @@ export const CONFIG_CLUB = [
     tipo: 'opcion',
     opciones: ['off', 'pide_aprobacion', 'directo'],
     defecto: 'off',
+    editablePor: 'superadmin',
     label: 'Si el alumno puede inscribirse solo en un bloque',
     // 'off' es lo que hay hoy en los dos clubes: inscribe el staff. Encenderlo
     // exige antes la función atómica de inscripción — sin ella, dos alumnos
@@ -182,6 +219,28 @@ const POR_CLAVE = new Map<string, Definicion>(
 
 export function esClaveConfig(valor: string): valor is ClaveConfig {
   return POR_CLAVE.has(valor)
+}
+
+/** Las claves cuya edición exige superadmin. La migración 250 tiene la misma lista. */
+export const CLAVES_SOLO_SUPERADMIN: ClaveConfig[] =
+  CONFIG_CLUB.filter(c => c.editablePor === 'superadmin').map(c => c.clave)
+
+/**
+ * Si ese rol puede editar esa clave.
+ *
+ * Es la misma regla que aplica la RLS, acá para poder esconder el control en
+ * vez de dejar que el admin apriete y reciba un error. La base sigue siendo la
+ * garantía: esto es cortesía, no seguridad.
+ */
+export function puedeEditarClave(clave: ClaveConfig, rol: string | null | undefined): boolean {
+  if (rol === 'superadmin') return true
+  if (rol !== 'admin') return false
+  return POR_CLAVE.get(clave)?.editablePor === 'admin'
+}
+
+/** Las claves que ese rol puede tocar, en el orden del catálogo. */
+export function clavesEditablesPor(rol: string | null | undefined): ClaveConfig[] {
+  return CLAVES_CONFIG.filter(c => puedeEditarClave(c, rol))
 }
 
 export function definicionDe<K extends ClaveConfig>(clave: K): DefinicionDe<K> {

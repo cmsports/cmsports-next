@@ -14,6 +14,7 @@ import { Building2, Upload, Loader2, Check, Lock } from 'lucide-react'
 import GestionProfesores from '@/components/configuracion/GestionProfesores'
 import GestionKioscos from '@/components/configuracion/GestionKioscos'
 import PerfilPersonalConfig from '@/components/configuracion/PerfilPersonalConfig'
+import PanelConfigClub from '@/components/PanelConfigClub'
 
 const C = {
   card: '#ffffff', border: '#e2e8f0',
@@ -250,6 +251,7 @@ export default function ConfiguracionPage() {
 
       {perfil.club_id && <GestionProfesores clubId={perfil.club_id} />}
       {perfil.club_id && <GestionKioscos />}
+      {perfil.club_id && <PanelConfigClub clubId={perfil.club_id} rol={perfil.rol} />}
       </>}
 
       {/* ── Cambiar contraseña ── */}

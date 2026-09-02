@@ -15,6 +15,7 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import PanelCupos from '@/components/PanelCupos'
 import PanelRecuperaciones from '@/components/PanelRecuperaciones'
 import PanelReportes from '@/components/PanelReportes'
+import PanelMesas from '@/components/PanelMesas'
 import { useModulos } from '@/lib/hooks/useModulos'
 
 const supabase = createClient()
@@ -63,7 +64,7 @@ export default function HorarioPage() {
   const [profesores, setProfesores] = useState<Profesor[]>([])
   const [cargando, setCargando]     = useState(true)
   const [sedeActiva, setSedeActiva] = useState('buin')
-  const [tab, setTab]               = useState<'grilla' | 'cupos' | 'recuperaciones' | 'profesores' | 'reportes'>('grilla')
+  const [tab, setTab]               = useState<'grilla' | 'cupos' | 'mesas' | 'recuperaciones' | 'profesores' | 'reportes'>('grilla')
   const [modal, setModal]           = useState<null | 'nuevo' | Bloque>(null)
   const [form, setForm]             = useState(FORM_VACIO)
   const [guardando, setGuardando]   = useState(false)
@@ -327,6 +328,9 @@ export default function HorarioPage() {
           ? [
               ['grilla', 'Grilla semanal'] as const,
               ['cupos', 'Cupos'] as const,
+              // Solo donde el cupo sale de las mesas de la sede. Un club que lo
+              // lleva a mano no quiere ver la palabra "mesa" en ningún lado.
+              ...(tiene('mesas') ? [['mesas', 'Mesas'] as const] : []),
               // Solo donde el alumno puede avisar que no va: sin eso la pestaña
               // no tendría nada que mostrar.
               ...(tiene('recuperar_clases') ? [['recuperaciones', 'Recuperaciones'] as const] : []),
@@ -443,6 +447,8 @@ export default function HorarioPage() {
 
       {/* Cupos */}
       {tab === 'cupos' && clubId && esStaff && <PanelCupos clubId={clubId} esStaff={esStaff} />}
+
+      {tab === 'mesas' && clubId && esStaff && <PanelMesas clubId={clubId} sede={sedeActiva} />}
 
       {tab === 'recuperaciones' && clubId && esStaff && <PanelRecuperaciones clubId={clubId} />}
 

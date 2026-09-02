@@ -3,11 +3,14 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   CLAVES_CONFIG,
+  CLAVES_SOLO_SUPERADMIN,
   CONFIG_CLUB,
   CONFIG_POR_DEFECTO,
+  clavesEditablesPor,
   crearLectorConfig,
   esClaveConfig,
   normalizarValor,
+  puedeEditarClave,
   valorPorDefecto,
 } from './clubConfig'
 
@@ -118,6 +121,87 @@ describe('el catálogo está sano', () => {
   it('toda clave tiene su label en español', () => {
     for (const def of CONFIG_CLUB) {
       expect(def.label.length, `${def.clave}: sin label`).toBeGreaterThan(0)
+    }
+  })
+})
+
+/**
+ * Quién edita qué.
+ *
+ * La regla: casi todo es del admin, porque son decisiones sobre su propio
+ * club. El superadmin se queda solo con las claves que tienen una PRECONDICIÓN
+ * TÉCNICA —código que puede no existir todavía—, no con las graves.
+ */
+describe('permisos de edición', () => {
+  it('el admin puede tocar lo operativo de su club', () => {
+    expect(puedeEditarClave('cupos.por_mesa_grupal', 'admin')).toBe(true)
+    expect(puedeEditarClave('liga.puntos_victoria', 'admin')).toBe(true)
+    expect(puedeEditarClave('retencion.faltas_alerta', 'admin')).toBe(true)
+  })
+
+  it('el admin puede fijar el bloqueo por morosidad, aunque sea grave', () => {
+    // Que una decisión sea grave no la vuelve del superadmin: la vuelve algo
+    // que la pantalla tiene que explicar bien. Un permiso no es el lugar donde
+    // se pide pensar.
+    expect(puedeEditarClave('morosidad.dias_bloqueo', 'admin')).toBe(true)
+  })
+
+  it('el admin NO puede tocar las que tienen precondición técnica', () => {
+    expect(puedeEditarClave('mensualidad.modo', 'admin')).toBe(false)
+    expect(puedeEditarClave('inscripcion.autoservicio', 'admin')).toBe(false)
+  })
+
+  it('el superadmin puede con todo', () => {
+    for (const clave of CLAVES_CONFIG) {
+      expect(puedeEditarClave(clave, 'superadmin')).toBe(true)
+    }
+  })
+
+  it('el profesor y el jugador no pueden con nada', () => {
+    for (const rol of ['profesor', 'jugador', null, undefined, '']) {
+      for (const clave of CLAVES_CONFIG) {
+        expect(puedeEditarClave(clave, rol)).toBe(false)
+      }
+    }
+  })
+
+  it('la mayoría de las claves las edita el admin', () => {
+    // Si esto se invierte, alguien se pasó de cauto y el club volvió a
+    // depender de pedir cambios por WhatsApp.
+    expect(clavesEditablesPor('admin').length).toBeGreaterThan(CLAVES_CONFIG.length / 2)
+  })
+})
+
+/**
+ * La lista de claves reservadas vive en dos lados —el catálogo de TypeScript y
+ * la función SQL de la migración 250— y no hay forma de derivar una de la otra.
+ *
+ * Es el mismo problema que `rutas-protegidas.test.ts`: dos listas en archivos
+ * distintos que alguien va a actualizar de a una. Y la consecuencia de que se
+ * separen es silenciosa en la dirección peligrosa: si el catálogo dice `admin`
+ * y el SQL la tiene reservada, el admin ve el control, aprieta, y recibe un
+ * error de RLS que no explica nada.
+ */
+describe('el catálogo y la migración 250 dicen lo mismo', () => {
+  const sql = readFileSync(
+    join(__dirname, '../../../supabase/migrations/250_club_config_la_edita_el_admin.sql'),
+    'utf8',
+  )
+
+  const enSql = [...sql.matchAll(/^\s*'([a-z][a-z0-9_.]*)',?\s*$/gm)].map(m => m[1])
+
+  it('la migración lista alguna clave', () => {
+    expect(enSql.length, 'no se encontró la lista en el SQL; ¿cambió el formato?')
+      .toBeGreaterThan(0)
+  })
+
+  it('las dos listas coinciden exactamente', () => {
+    expect([...enSql].sort()).toEqual([...CLAVES_SOLO_SUPERADMIN].sort())
+  })
+
+  it('toda clave del SQL existe en el catálogo', () => {
+    for (const clave of enSql) {
+      expect(esClaveConfig(clave), `la migración 250 reserva "${clave}", que no existe`).toBe(true)
     }
   })
 })
