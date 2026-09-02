@@ -3,21 +3,12 @@ import { crearLectorConfig, CONFIG_POR_DEFECTO } from './clubConfig'
 import {
   cupoDelBloque,
   jugadoresPorMesa,
-  mesaVigente,
+  mesasEnUso,
   mesasLibres,
-  mesasVigentes,
-  puedeAsignarMesas,
+  puedeUsarMesas,
   seSolapan,
-  type Mesa,
+  tramosDelDia,
 } from './mesas'
-
-const mesa = (numero: number, extra: Partial<Mesa> = {}): Mesa => ({
-  id: `m${numero}`,
-  numero,
-  vigente_desde: null,
-  vigente_hasta: null,
-  ...extra,
-})
 
 /** Un club con las mesas encendidas, como Spinhouse. */
 const porMesas = crearLectorConfig([
@@ -38,7 +29,7 @@ describe('seSolapan', () => {
     expect(seSolapan({ inicio: '19:00', fin: '20:00' }, { inicio: '20:00', fin: '21:00' })).toBe(false)
   })
 
-  it('el borde exacto tampoco al revés: 20–21 con 19–20', () => {
+  it('el borde exacto tampoco al revés', () => {
     expect(seSolapan({ inicio: '20:00', fin: '21:00' }, { inicio: '19:00', fin: '20:00' })).toBe(false)
   })
 
@@ -48,10 +39,6 @@ describe('seSolapan', () => {
 
   it('uno contiene al otro', () => {
     expect(seSolapan({ inicio: '18:00', fin: '21:00' }, { inicio: '19:00', fin: '20:00' })).toBe(true)
-  })
-
-  it('el mismo rango se solapa consigo mismo', () => {
-    expect(seSolapan({ inicio: '19:00', fin: '20:00' }, { inicio: '19:00', fin: '20:00' })).toBe(true)
   })
 
   it('un minuto de encimada ya es solapamiento', () => {
@@ -74,63 +61,35 @@ describe('seSolapan', () => {
   })
 })
 
-describe('vigencia de una mesa', () => {
-  it('una mesa sin fechas sirve siempre', () => {
-    expect(mesaVigente(mesa(1), '2026-09-02')).toBe(true)
-  })
-
-  it('no sirve antes de su alta', () => {
-    expect(mesaVigente(mesa(1, { vigente_desde: '2026-09-10' }), '2026-09-02')).toBe(false)
-  })
-
-  it('sirve el mismo día del alta', () => {
-    expect(mesaVigente(mesa(1, { vigente_desde: '2026-09-02' }), '2026-09-02')).toBe(true)
-  })
-
-  it('sirve el ÚLTIMO día de su vigencia, inclusive', () => {
-    // Misma semántica que en el resto del proyecto: cerrar es con ayer.
-    expect(mesaVigente(mesa(1, { vigente_hasta: '2026-09-02' }), '2026-09-02')).toBe(true)
-    expect(mesaVigente(mesa(1, { vigente_hasta: '2026-09-02' }), '2026-09-03')).toBe(false)
-  })
-
-  it('una mesa dada de baja a mitad de semana deja de contar desde ese día', () => {
-    const sala = [mesa(1), mesa(2), mesa(3, { vigente_hasta: '2026-09-02' })]
-    expect(mesasVigentes(sala, '2026-09-02')).toHaveLength(3)
-    expect(mesasVigentes(sala, '2026-09-03')).toHaveLength(2)
-  })
-
-  it('las devuelve ordenadas por número', () => {
-    expect(mesasVigentes([mesa(3), mesa(1), mesa(2)], '2026-09-02').map(m => m.numero))
-      .toEqual([1, 2, 3])
-  })
-})
-
 describe('cupoDelBloque', () => {
   it('con el modo por defecto usa el número escrito a mano y NO mira las mesas', () => {
     // Este es el caso de Buin. Si esta prueba falla, Buin cambió de cupo.
-    expect(cupoDelBloque({
-      config: CONFIG_POR_DEFECTO, cupoMaximo: 12, mesasAsignadas: 99,
-    })).toBe(12)
+    expect(cupoDelBloque({ config: CONFIG_POR_DEFECTO, cupoMaximo: 12, mesas: 99 })).toBe(12)
   })
 
-  it('4 mesas grupales dan 16', () => {
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, mesasAsignadas: 4 })).toBe(16)
+  it('3 mesas grupales dan 12', () => {
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, mesas: 3 })).toBe(12)
+  })
+
+  it('5 mesas grupales dan 20', () => {
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, mesas: 5 })).toBe(20)
   })
 
   it('2 mesas particulares dan 4', () => {
-    expect(cupoDelBloque({
-      config: porMesas, cupoMaximo: 0, mesasAsignadas: 2, modalidad: 'particular',
-    })).toBe(4)
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 0, mesas: 2, modalidad: 'particular' })).toBe(4)
   })
 
-  it('sin mesas asignadas da 0, no null ni error', () => {
-    // No hay dónde jugar, así que no entra nadie. Devolver null obligaría a
-    // cada pantalla a decidir qué hacer, y alguna decidiría mal.
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 12, mesasAsignadas: 0 })).toBe(0)
+  it('un bloque sin mesas declaradas cae al cupo escrito a mano, no a cero', () => {
+    // "No declaré cuántas mesas uso" no puede significar "no entra nadie": eso
+    // dejaría en cero a todos los bloques del club apenas alguien encienda el
+    // modo por mesas.
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, mesas: null })).toBe(10)
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, mesas: 0 })).toBe(10)
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 10, mesas: undefined })).toBe(10)
   })
 
-  it('ignora el cupo escrito a mano cuando cuenta mesas', () => {
-    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 999, mesasAsignadas: 1 })).toBe(4)
+  it('con mesas declaradas ignora el cupo escrito a mano', () => {
+    expect(cupoDelBloque({ config: porMesas, cupoMaximo: 999, mesas: 1 })).toBe(4)
   })
 
   it('jugadoresPorMesa respeta lo que configuró el club', () => {
@@ -139,101 +98,134 @@ describe('cupoDelBloque', () => {
   })
 })
 
-describe('mesasLibres', () => {
-  const sala = [mesa(1), mesa(2), mesa(3), mesa(4)]
-  const hoy = '2026-09-02'
+describe('mesasEnUso y mesasLibres', () => {
+  const usos = [
+    { id: 'menores', etiqueta: 'Menores', inicio: '17:00', fin: '18:30', mesas: 3 },
+    { id: 'adultos', etiqueta: 'Adultos', inicio: '19:00', fin: '20:30', mesas: 5 },
+    { id: 'arr1',    etiqueta: 'Arriendo', inicio: '19:00', fin: '20:00', mesas: 2 },
+  ]
 
-  it('sin nada ocupado están todas', () => {
-    expect(mesasLibres({ mesas: sala, usos: [], fechaISO: hoy, franja: { inicio: '19:00', fin: '20:00' } }))
-      .toHaveLength(4)
+  it('suma solo lo que se solapa', () => {
+    expect(mesasEnUso(usos, { inicio: '17:00', fin: '18:00' })).toBe(3)
+    expect(mesasEnUso(usos, { inicio: '19:15', fin: '19:45' })).toBe(7)
   })
 
-  it('descuenta las que tiene una clase que se solapa', () => {
-    const usos = [
-      { mesa_id: 'm1', inicio: '19:00', fin: '20:30', origen_id: 'b1' },
-      { mesa_id: 'm2', inicio: '19:00', fin: '20:30', origen_id: 'b1' },
-    ]
-    const libres = mesasLibres({ mesas: sala, usos, fechaISO: hoy, franja: { inicio: '19:00', fin: '20:00' } })
-    expect(libres.map(m => m.numero)).toEqual([3, 4])
+  it('a una hora sin nada, cero', () => {
+    expect(mesasEnUso(usos, { inicio: '21:00', fin: '22:00' })).toBe(0)
   })
 
-  it('un arriendo que termina justo cuando empieza la clase NO la bloquea', () => {
-    const usos = [{ mesa_id: 'm1', inicio: '19:00', fin: '20:00', origen_id: 'a1' }]
-    const libres = mesasLibres({ mesas: sala, usos, fechaISO: hoy, franja: { inicio: '20:00', fin: '21:00' } })
-    expect(libres).toHaveLength(4)
+  it('las libres salen del total', () => {
+    expect(mesasLibres({ total: 12, usos, franja: { inicio: '19:15', fin: '19:45' } })).toBe(5)
+    expect(mesasLibres({ total: 12, usos, franja: { inicio: '21:00', fin: '22:00' } })).toBe(12)
   })
 
-  it('no cuenta las mesas dadas de baja', () => {
-    const sala2 = [mesa(1), mesa(2, { vigente_hasta: '2026-09-01' })]
-    const libres = mesasLibres({ mesas: sala2, usos: [], fechaISO: hoy, franja: { inicio: '19:00', fin: '20:00' } })
-    expect(libres.map(m => m.numero)).toEqual([1])
+  it('nunca da negativo, aunque lo cargado supere el total', () => {
+    // Puede pasar si alguien baja la cantidad de mesas de la sede después.
+    expect(mesasLibres({ total: 4, usos, franja: { inicio: '19:15', fin: '19:45' } })).toBe(0)
   })
 
-  it('un bloque que se está editando no compite consigo mismo', () => {
-    // Sin esto, reasignarle sus propias mesas diría siempre "ya están tomadas".
-    const usos = [{ mesa_id: 'm1', inicio: '19:00', fin: '20:00', origen_id: 'b1' }]
-    const libres = mesasLibres({
-      mesas: sala, usos, fechaISO: hoy,
-      franja: { inicio: '19:00', fin: '20:00' }, excluirOrigen: 'b1',
-    })
-    expect(libres).toHaveLength(4)
-  })
-
-  it('pero sí compite con OTRO bloque a la misma hora', () => {
-    const usos = [{ mesa_id: 'm1', inicio: '19:00', fin: '20:00', origen_id: 'b2' }]
-    const libres = mesasLibres({
-      mesas: sala, usos, fechaISO: hoy,
-      franja: { inicio: '19:00', fin: '20:00' }, excluirOrigen: 'b1',
-    })
-    expect(libres.map(m => m.numero)).toEqual([2, 3, 4])
+  it('un bloque que se está editando no se cuenta a sí mismo', () => {
+    // Sin esto, cambiarle las mesas a Adultos diría siempre "no hay lugar".
+    expect(mesasEnUso(usos, { inicio: '19:15', fin: '19:45' }, 'adultos')).toBe(2)
+    expect(mesasLibres({ total: 12, usos, franja: { inicio: '19:15', fin: '19:45' }, excluirId: 'adultos' })).toBe(10)
   })
 })
 
 /**
  * Los mensajes son parte de la especificación, no decoración: "error de
- * validación" obliga a escribirle al club por WhatsApp; "la mesa 3 ya está
- * tomada de 19:00 a 20:00" se resuelve solo.
+ * validación" obliga a escribirle al club por WhatsApp; "a esa hora quedan 3
+ * mesas libres de 12" se resuelve solo.
  */
-describe('puedeAsignarMesas', () => {
-  const sala = [mesa(1), mesa(2), mesa(3)]
-  const hoy = '2026-09-02'
+describe('puedeUsarMesas', () => {
+  const usos = [
+    { id: 'adultos', etiqueta: 'Adultos', inicio: '19:00', fin: '20:30', mesas: 5 },
+  ]
   const franja = { inicio: '19:00', fin: '20:00' }
 
-  it('deja asignar mesas libres', () => {
-    expect(puedeAsignarMesas({ mesas: sala, usos: [], fechaISO: hoy, franja, mesaIds: ['m1', 'm2'] }))
-      .toEqual({ ok: true })
+  it('deja usar lo que hay libre', () => {
+    expect(puedeUsarMesas({ total: 12, usos, franja, mesas: 7 })).toEqual({ ok: true })
   })
 
-  it('exige al menos una mesa', () => {
-    const r = puedeAsignarMesas({ mesas: sala, usos: [], fechaISO: hoy, franja, mesaIds: [] })
-    expect(r.ok).toBe(false)
-    expect(r.ok === false && r.motivo).toContain('al menos una mesa')
+  it('cero mesas siempre pasa: es "no uso el modelo de mesas"', () => {
+    expect(puedeUsarMesas({ total: 12, usos, franja, mesas: 0 })).toEqual({ ok: true })
   })
 
-  it('dice QUÉ mesa está tomada y a qué hora', () => {
-    const usos = [{ mesa_id: 'm2', inicio: '19:00', fin: '20:00', origen_id: 'a1' }]
-    const r = puedeAsignarMesas({ mesas: sala, usos, fechaISO: hoy, franja, mesaIds: ['m1', 'm2'] })
+  it('rechaza pasarse del total de la sede, diciendo cuántas hay', () => {
+    const r = puedeUsarMesas({ total: 12, usos, franja, mesas: 15 })
     expect(r.ok).toBe(false)
-    expect(r.ok === false && r.motivo).toBe('La mesa 2 ya está tomada de 19:00 a 20:00.')
+    expect(r.ok === false && r.motivo).toBe('La sede tiene 12 mesas en total.')
   })
 
-  it('rechaza una mesa que no existe', () => {
-    const r = puedeAsignarMesas({ mesas: sala, usos: [], fechaISO: hoy, franja, mesaIds: ['m9'] })
+  it('rechaza pasarse de las libres, diciendo cuántas quedan y quién usa el resto', () => {
+    const r = puedeUsarMesas({ total: 12, usos, franja, mesas: 8 })
     expect(r.ok).toBe(false)
-    expect(r.ok === false && r.motivo).toContain('no existe')
+    expect(r.ok === false && r.motivo).toBe(
+      'A esa hora quedan 7 mesas libres de 12. El resto lo usa Adultos (5).',
+    )
   })
 
-  it('rechaza una mesa dada de baja, nombrándola', () => {
-    const sala2 = [mesa(1, { vigente_hasta: '2026-09-01' })]
-    const r = puedeAsignarMesas({ mesas: sala2, usos: [], fechaISO: hoy, franja, mesaIds: ['m1'] })
+  it('cuando no queda ninguna lo dice distinto', () => {
+    const llenas = [{ id: 'x', etiqueta: 'Adultos', inicio: '19:00', fin: '20:30', mesas: 12 }]
+    const r = puedeUsarMesas({ total: 12, usos: llenas, franja, mesas: 1 })
     expect(r.ok).toBe(false)
-    expect(r.ok === false && r.motivo).toBe('La mesa 1 no está disponible en esa fecha.')
+    expect(r.ok === false && r.motivo).toContain('no queda ninguna mesa libre de las 12')
+  })
+
+  it('avisa cuando la sede no tiene mesas cargadas', () => {
+    const r = puedeUsarMesas({ total: 0, usos: [], franja, mesas: 3 })
+    expect(r.ok).toBe(false)
+    expect(r.ok === false && r.motivo).toContain('todavía no tiene mesas cargadas')
+  })
+
+  it('rechaza un número que no es entero', () => {
+    const r = puedeUsarMesas({ total: 12, usos: [], franja, mesas: 2.5 })
+    expect(r.ok).toBe(false)
+    expect(r.ok === false && r.motivo).toContain('número entero')
   })
 
   it('deja reasignarle al bloque sus propias mesas', () => {
-    const usos = [{ mesa_id: 'm1', inicio: '19:00', fin: '20:00', origen_id: 'b1' }]
-    expect(puedeAsignarMesas({
-      mesas: sala, usos, fechaISO: hoy, franja, mesaIds: ['m1'], excluirOrigen: 'b1',
-    })).toEqual({ ok: true })
+    expect(puedeUsarMesas({ total: 12, usos, franja, mesas: 5, excluirId: 'adultos' }))
+      .toEqual({ ok: true })
+  })
+
+  it('una clase que empieza cuando termina la otra no compite', () => {
+    const r = puedeUsarMesas({
+      total: 12, usos: [{ id: 'a', etiqueta: 'Adultos', inicio: '19:00', fin: '20:00', mesas: 12 }],
+      franja: { inicio: '20:00', fin: '21:00' }, mesas: 12,
+    })
+    expect(r).toEqual({ ok: true })
+  })
+})
+
+describe('tramosDelDia', () => {
+  it('parte el día en los cortes que marcan los propios bloques', () => {
+    expect(tramosDelDia([
+      { inicio: '17:00', fin: '18:30' },
+      { inicio: '19:00', fin: '20:30' },
+    ])).toEqual([
+      { inicio: '17:00', fin: '18:30' },
+      { inicio: '18:30', fin: '19:00' },
+      { inicio: '19:00', fin: '20:30' },
+    ])
+  })
+
+  it('parte donde algo empieza en medio de otra cosa', () => {
+    expect(tramosDelDia([
+      { inicio: '19:00', fin: '20:30' },
+      { inicio: '19:30', fin: '20:00' },
+    ])).toEqual([
+      { inicio: '19:00', fin: '19:30' },
+      { inicio: '19:30', fin: '20:00' },
+      { inicio: '20:00', fin: '20:30' },
+    ])
+  })
+
+  it('sin nada programado no hay tramos', () => {
+    expect(tramosDelDia([])).toEqual([])
+  })
+
+  it('acepta HH:MM:SS', () => {
+    expect(tramosDelDia([{ inicio: '19:00:00', fin: '20:00:00' }]))
+      .toEqual([{ inicio: '19:00', fin: '20:00' }])
   })
 })

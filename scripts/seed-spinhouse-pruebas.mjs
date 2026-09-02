@@ -254,34 +254,22 @@ async function main() {
 
   // ── Mesas, si las pidieron ───────────────────────────────────────────
   //
-  // Solo AGREGA hasta llegar al número: nunca borra. Si el club ya tiene doce
-  // cargadas y alguien corre `--mesas 8`, no se le sacan cuatro por un flag de
-  // línea de comandos — eso se hace desde la pantalla, viendo cuáles.
+  // Es UN número por sede, no una fila por mesa: el cupo depende de cuántas
+  // hay, no de cuáles (migración 251). Así que esto es un upsert y ya.
   if (MESAS != null) {
-    if (!Number.isInteger(MESAS) || MESAS < 0 || MESAS > 60) {
-      console.error(`\n  ✗ --mesas espera un entero entre 0 y 60, llegó "${process.argv[iMesas + 1]}"`)
+    if (!Number.isInteger(MESAS) || MESAS < 0 || MESAS > 200) {
+      console.error(`\n  ✗ --mesas espera un entero entre 0 y 200, llegó "${process.argv[iMesas + 1]}"`)
     } else {
-      const { data: yaHay, error: errLeer } = await supabase.from('sede_mesas')
-        .select('numero').eq('club_id', club.id).eq('sede', SEDE)
+      const { error: errMesas } = await supabase.from('sede_mesas').upsert({
+        club_id: club.id, sede: SEDE, cantidad: MESAS,
+        actualizado_en: new Date().toISOString(),
+      }, { onConflict: 'club_id,sede' })
 
-      if (errLeer) {
-        console.error(`\n  ✗ No se pudieron leer las mesas: ${errLeer.message}`)
-        console.error('    ¿Está aplicada la migración 249?')
+      if (errMesas) {
+        console.error(`\n  ✗ No se pudo guardar la cantidad de mesas: ${errMesas.message}`)
+        console.error('    ¿Están aplicadas las migraciones 249 y 251?')
       } else {
-        const actuales = yaHay?.length ?? 0
-        if (actuales >= MESAS) {
-          console.log(`\n  · La sede ya tiene ${actuales} mesas; no se agregó ninguna.`)
-        } else {
-          const desde = (yaHay ?? []).reduce((max, m) => Math.max(max, m.numero), 0) + 1
-          const faltan = MESAS - actuales
-          const { error: errIns } = await supabase.from('sede_mesas').insert(
-            Array.from({ length: faltan }, (_, i) => ({
-              club_id: club.id, sede: SEDE, numero: desde + i,
-            })),
-          )
-          if (errIns) console.error(`\n  ✗ No se pudieron crear las mesas: ${errIns.message}`)
-          else console.log(`\n  ✓ ${faltan} ${faltan === 1 ? 'mesa creada' : 'mesas creadas'} (${desde} a ${desde + faltan - 1}). Total: ${MESAS}.`)
-        }
+        console.log(`\n  ✓ Sede ${SEDE}: ${MESAS} mesas.`)
         console.log('    El número se cambia desde Cupos/bloques → Mesas; no está escrito en el código.')
       }
     }

@@ -1,38 +1,32 @@
 /**
  * Mesas: el recurso escaso desde el que se deriva el cupo.
  *
- * ── Qué cambia respecto de cómo funciona hoy ────────────────────────────
+ * ── El modelo, y por qué es un número ───────────────────────────────────
  *
- * Hoy el cupo de un bloque es `bloques_horario.cupo_maximo`, un número que
- * alguien escribe a mano (migración 073). Para Spinhouse deja de ser un dato y
- * pasa a ser un cálculo:
+ * La sede tiene N mesas. Cada bloque usa K. A cualquier hora, lo que se solapa
+ * no puede sumar más de N. Eso es todo.
  *
- *     cupo = mesas asignadas × jugadores por mesa (según la modalidad)
- *
- * Eso arrastra dos reglas que el sistema no tenía:
- *
- *   1. **Las mesas son un recurso compartido EN EL TIEMPO.** Dos bloques que
- *      se solapan no pueden sumar más mesas que las que tiene la sede. No es
- *      un problema de contar: es de solapamiento de intervalos.
- *   2. **El arriendo libre compite por el mismo recurso.** Una mesa arrendada
- *      de 19:00 a 20:00 no está disponible para la clase de 19:00 a 20:30.
+ * No se registra CUÁL mesa usa cada bloque, y es a propósito: el formulario
+ * pide que "el cupo dependa del NÚMERO de mesas disponibles", el club sabe que
+ * tiene doce y que Adultos usa cinco, y asignar mesas concretas a cada bloque
+ * de cada día es media hora de clicks para un dato que se resuelve hablando en
+ * la sala. La migración 251 lo cuenta entero.
  *
  * ── Buin no se entera de nada de esto ───────────────────────────────────
  *
  * `cupoDelBloque` mira `cupos.modo`, cuyo default es `'numero'`. Con ese modo
- * devuelve `cupo_maximo` tal cual, sin tocar una sola mesa. Un club sin
- * configuración se comporta exactamente como antes.
+ * devuelve `cupo_maximo` tal cual y no toca una sola mesa. Además
+ * `bloques_horario.mesas` es NULL en todos los bloques que no son de Spinhouse,
+ * así que aunque alguien encendiera el modo, un bloque sin mesas declaradas
+ * sigue con su cupo escrito a mano.
  *
  * ── La validación de verdad va en la base ───────────────────────────────
  *
- * Este archivo es lógica pura: sirve para pintar la pantalla y para avisarle
- * al usuario antes de que apriete. **No es la garantía.** El formulario de
- * Spinhouse pide que "el sistema impida sobrepasar el cupo", y una
- * comprobación en el navegador no impide nada: dos personas asignando la misma
- * mesa en el mismo segundo pasan las dos. Eso lo tiene que atajar una función
- * atómica en Postgres.
+ * Esto es lógica pura: sirve para pintar la pantalla y avisar antes de que
+ * alguien apriete. **No es la garantía.** Dos personas guardando bloques que se
+ * solapan en el mismo segundo pasan las dos comprobaciones de cliente.
  *
- * Ver `docs/plan-spinhouse-maestro.md` §5.1 y §10.6.
+ * Ver `docs/plan-spinhouse-maestro.md` §5.1.
  */
 
 import { minutosDelDia } from './horario'
@@ -43,34 +37,14 @@ export type Franja = { inicio: string; fin: string }
 
 export type ModalidadClase = 'grupal' | 'particular'
 
-/**
- * Una mesa de la sede.
- *
- * `vigente_desde` / `vigente_hasta` en vez de un booleano `activa`, por lo
- * mismo que en `bloque_jugadores`: una mesa que se rompe a mitad de semana
- * tiene que dejar de contar DESDE ESA FECHA, sin borrar el historial de los
- * bloques que la usaban antes. Un booleano no puede responder "¿cuántas mesas
- * había el martes pasado?", y esa pregunta la hace cualquier reporte.
- */
-export type Mesa = {
-  id: string
-  numero: number
-  vigente_desde: string | null
-  vigente_hasta: string | null
-}
-
-/**
- * Que una mesa está ocupada en un rango, sea por una clase o por un arriendo.
- *
- * `origen_id` es qué la ocupa —un bloque o un arriendo—. Sirve para que un
- * bloque que se está editando no compita consigo mismo: sin eso, reasignarle
- * sus propias mesas diría siempre "ya están ocupadas".
- */
-export type UsoDeMesa = {
-  mesa_id: string
-  inicio: string
-  fin: string
-  origen_id?: string | null
+/** Algo que ocupa mesas en una franja: un bloque o un arriendo. */
+export type UsoDeMesas = Franja & {
+  /** Cuántas mesas ocupa. */
+  mesas: number
+  /** Qué lo ocupa, para que un bloque que se está editando no se cuente a sí mismo. */
+  id?: string | null
+  /** Cómo se llama en pantalla. */
+  etiqueta?: string
 }
 
 /**
@@ -78,14 +52,14 @@ export type UsoDeMesa = {
  *
  * **Las desigualdades son estrictas, y eso no es un detalle.** Con `>=`, una
  * clase que empieza justo cuando termina el arriendo quedaría bloqueada sin
- * razón: son el caso más común de una sala que programa cada hora en punto.
+ * razón: programar cada hora en punto es exactamente lo que hace una sala.
  *
- *     arriendo 19:00–20:00, clase 20:00–21:00  →  NO se solapan
- *     arriendo 19:00–20:00, clase 19:30–20:30  →  sí se solapan
- *     arriendo 19:00–20:00, clase 18:00–21:00  →  sí (la contiene)
+ *     19:00–20:00 con 20:00–21:00  →  NO se solapan
+ *     19:00–20:00 con 19:30–20:30  →  sí se solapan
+ *     18:00–21:00 con 19:00–20:00  →  sí (la contiene)
  *
- * Un rango vacío o invertido (fin <= inicio) no se solapa con nada: no ocupa
- * tiempo. Eso evita que una fila mal cargada bloquee media sala.
+ * Un rango vacío o invertido no se solapa con nada: no ocupa tiempo. Eso evita
+ * que una fila mal cargada bloquee media sala.
  */
 export function seSolapan(a: Franja, b: Franja): boolean {
   const aDesde = minutosDelDia(a.inicio)
@@ -98,24 +72,6 @@ export function seSolapan(a: Franja, b: Franja): boolean {
   return aHasta > bDesde && aDesde < bHasta
 }
 
-/**
- * Si la mesa existe en esa fecha.
- *
- * `vigente_hasta` es el último día en que la mesa sirvió, inclusive — misma
- * semántica que en el resto del proyecto, donde cerrar una vigencia se hace
- * con la fecha de AYER y no la de hoy.
- */
-export function mesaVigente(mesa: Mesa, fechaISO: string): boolean {
-  if (mesa.vigente_desde && fechaISO < mesa.vigente_desde) return false
-  if (mesa.vigente_hasta && fechaISO > mesa.vigente_hasta) return false
-  return true
-}
-
-/** Las mesas que existen ese día, ordenadas por número. */
-export function mesasVigentes(mesas: readonly Mesa[], fechaISO: string): Mesa[] {
-  return mesas.filter(m => mesaVigente(m, fechaISO)).sort((a, b) => a.numero - b.numero)
-}
-
 /** Cuántos jugadores entran por mesa, según la modalidad y lo que dice el club. */
 export function jugadoresPorMesa(config: LectorConfig, modalidad: ModalidadClase): number {
   return modalidad === 'particular'
@@ -126,94 +82,111 @@ export function jugadoresPorMesa(config: LectorConfig, modalidad: ModalidadClase
 /**
  * El cupo de un bloque.
  *
- * Con `cupos.modo = 'numero'` —el default, o sea Buin— devuelve el
- * `cupo_maximo` escrito a mano y no mira las mesas para nada.
- *
- * Un bloque sin mesas asignadas en modo `por_mesas` da **0**, no `null` ni un
- * error: no hay dónde jugar, así que no entra nadie. Devolver `null` obligaría
- * a cada pantalla a decidir qué hacer con eso, y alguna decidiría mal.
+ * Con `cupos.modo = 'numero'` —el default— devuelve el `cupo_maximo` escrito a
+ * mano y no mira las mesas para nada. Con `'por_mesas'`, un bloque cuyo `mesas`
+ * es `null` o `0` también cae al cupo escrito a mano: "no declaré cuántas mesas
+ * uso" no puede significar "no entra nadie", porque dejaría en cero a todos los
+ * bloques del club apenas alguien encienda el modo.
  */
 export function cupoDelBloque(params: {
   config: LectorConfig
   cupoMaximo: number
-  mesasAsignadas: number
+  mesas: number | null | undefined
   modalidad?: ModalidadClase
 }): number {
-  const { config, cupoMaximo, mesasAsignadas, modalidad = 'grupal' } = params
+  const { config, cupoMaximo, mesas, modalidad = 'grupal' } = params
 
   if (config('cupos.modo') === 'numero') return cupoMaximo
+  if (mesas == null || mesas <= 0) return cupoMaximo
 
-  if (mesasAsignadas <= 0) return 0
-  return mesasAsignadas * jugadoresPorMesa(config, modalidad)
+  return mesas * jugadoresPorMesa(config, modalidad)
 }
 
 /**
- * Qué mesas quedan libres en una franja.
+ * Cuántas mesas están ocupadas en una franja.
  *
- * `excluirOrigen` es el bloque que se está editando: sus propias mesas no
- * cuentan como ocupadas, porque justamente se le están reasignando.
+ * `excluirId` es el bloque que se está editando: sus propias mesas no cuentan,
+ * porque justamente se están cambiando.
  */
+export function mesasEnUso(
+  usos: readonly UsoDeMesas[],
+  franja: Franja,
+  excluirId?: string | null,
+): number {
+  return usos
+    .filter(u => (excluirId == null || u.id !== excluirId))
+    .filter(u => seSolapan(u, franja))
+    .reduce((total, u) => total + Math.max(0, u.mesas), 0)
+}
+
+/** Cuántas quedan libres en esa franja. Nunca negativo. */
 export function mesasLibres(params: {
-  mesas: readonly Mesa[]
-  usos: readonly UsoDeMesa[]
-  fechaISO: string
+  total: number
+  usos: readonly UsoDeMesas[]
   franja: Franja
-  excluirOrigen?: string | null
-}): Mesa[] {
-  const { mesas, usos, fechaISO, franja, excluirOrigen = null } = params
-
-  const ocupadas = new Set(
-    usos
-      .filter(u => (excluirOrigen == null || u.origen_id !== excluirOrigen))
-      .filter(u => seSolapan(u, franja))
-      .map(u => u.mesa_id),
-  )
-
-  return mesasVigentes(mesas, fechaISO).filter(m => !ocupadas.has(m.id))
+  excluirId?: string | null
+}): number {
+  const { total, usos, franja, excluirId = null } = params
+  return Math.max(0, total - mesasEnUso(usos, franja, excluirId))
 }
 
 /**
- * Si se le pueden asignar esas mesas a ese bloque, y si no, por qué no.
+ * Si el bloque puede usar esa cantidad de mesas, y si no, por qué no.
  *
- * El mensaje sale de acá y no de la pantalla a propósito: "error de
- * validación" obliga a escribirle al club por WhatsApp; "la mesa 3 ya está
- * tomada de 19:00 a 20:00" se resuelve solo.
+ * El mensaje sale de acá y no de la pantalla a propósito: "error de validación"
+ * obliga a escribirle al club por WhatsApp; "a esa hora quedan 3 mesas libres de
+ * 12, y Adultos usa 5" se resuelve solo.
  */
-export function puedeAsignarMesas(params: {
-  mesas: readonly Mesa[]
-  usos: readonly UsoDeMesa[]
-  fechaISO: string
+export function puedeUsarMesas(params: {
+  total: number
+  usos: readonly UsoDeMesas[]
   franja: Franja
-  mesaIds: readonly string[]
-  excluirOrigen?: string | null
+  mesas: number
+  excluirId?: string | null
 }): { ok: true } | { ok: false; motivo: string } {
-  const { mesas, usos, fechaISO, franja, mesaIds, excluirOrigen = null } = params
+  const { total, usos, franja, mesas, excluirId = null } = params
 
-  if (mesaIds.length === 0) return { ok: false, motivo: 'Hay que asignarle al menos una mesa.' }
+  if (!Number.isInteger(mesas) || mesas < 0) {
+    return { ok: false, motivo: 'Las mesas se cuentan con un número entero.' }
+  }
+  if (mesas === 0) return { ok: true }
 
-  const porId = new Map(mesas.map(m => [m.id, m]))
-  const libres = new Set(
-    mesasLibres({ mesas, usos, fechaISO, franja, excluirOrigen }).map(m => m.id),
-  )
+  if (total <= 0) {
+    return { ok: false, motivo: 'Esta sede todavía no tiene mesas cargadas.' }
+  }
+  if (mesas > total) {
+    return { ok: false, motivo: `La sede tiene ${total} ${total === 1 ? 'mesa' : 'mesas'} en total.` }
+  }
 
-  for (const id of mesaIds) {
-    const mesa = porId.get(id)
-    if (!mesa) return { ok: false, motivo: 'Esa mesa no existe en esta sede.' }
+  const libres = mesasLibres({ total, usos, franja, excluirId })
+  if (mesas > libres) {
+    const ocupantes = usos
+      .filter(u => (excluirId == null || u.id !== excluirId))
+      .filter(u => seSolapan(u, franja) && u.mesas > 0)
+      .map(u => `${u.etiqueta ?? 'otro bloque'} (${u.mesas})`)
 
-    if (!mesaVigente(mesa, fechaISO)) {
-      return { ok: false, motivo: `La mesa ${mesa.numero} no está disponible en esa fecha.` }
-    }
-
-    if (!libres.has(id)) {
-      const choque = usos.find(
-        u => u.mesa_id === id
-          && (excluirOrigen == null || u.origen_id !== excluirOrigen)
-          && seSolapan(u, franja),
-      )
-      const cuando = choque ? ` de ${choque.inicio.slice(0, 5)} a ${choque.fin.slice(0, 5)}` : ''
-      return { ok: false, motivo: `La mesa ${mesa.numero} ya está tomada${cuando}.` }
+    return {
+      ok: false,
+      motivo: libres === 0
+        ? `A esa hora no queda ninguna mesa libre de las ${total}.${ocupantes.length ? ' Las está usando ' + ocupantes.join(', ') + '.' : ''}`
+        : `A esa hora quedan ${libres} ${libres === 1 ? 'mesa libre' : 'mesas libres'} de ${total}.${ocupantes.length ? ' El resto lo usa ' + ocupantes.join(', ') + '.' : ''}`,
     }
   }
 
   return { ok: true }
+}
+
+/**
+ * Los tramos en que se parte el día, sacados de lo que de verdad hay.
+ *
+ * No son horas redondas: con filas de una hora, un bloque de 19:00 a 19:30 se
+ * vería ocupando hasta las 20:00 y el tablero mentiría justo donde importa.
+ */
+export function tramosDelDia(usos: readonly Franja[]): Franja[] {
+  const cortes = [...new Set(usos.flatMap(u => [u.inicio.slice(0, 5), u.fin.slice(0, 5)]))]
+    .sort((a, b) => minutosDelDia(a) - minutosDelDia(b))
+
+  const out: Franja[] = []
+  for (let i = 0; i < cortes.length - 1; i++) out.push({ inicio: cortes[i], fin: cortes[i + 1] })
+  return out
 }
