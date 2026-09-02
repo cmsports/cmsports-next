@@ -20,7 +20,8 @@ import { diaSemanaDeFecha, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import {
-  cupoDelBloque, mesasEnUso, mesasLibres, puedeUsarMesas, seSolapan, tramosDelDia,
+  cupoDelBloque, jugadoresPorMesa, mesasEnUso, mesasLibres, puedeUsarMesas,
+  seSolapan, tramosDelDia,
   type UsoDeMesas,
 } from '@/lib/domain/mesas'
 import { CONFIG_POR_DEFECTO, type LectorConfig } from '@/lib/domain/clubConfig'
@@ -156,6 +157,25 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
     await cargar()
   }
 
+  /**
+   * El interruptor de cómo se cuenta el cupo, acá y no escondido en
+   * Configuración.
+   *
+   * Vive donde se ve la consecuencia: declarar mesas y que el cupo no se mueva
+   * hace que la pantalla parezca rota, y mandar al admin a otra pantalla para
+   * entender por qué es pedirle que arme el rompecabezas solo.
+   */
+  async function guardarModo(valor: string) {
+    setError('')
+    const { error: err } = await (supabase as any).from('club_config')
+      .upsert({ club_id: clubId, clave: 'cupos.modo', valor }, { onConflict: 'club_id,clave' })
+
+    if (err) { setError('No se pudo cambiar cómo se calcula el cupo: ' + err.message); return }
+    setGuardado('modo')
+    setTimeout(() => setGuardado(g => (g === 'modo' ? null : g)), 2000)
+    await cargar()
+  }
+
   async function guardarMesasDeBloque(bloque: Bloque, valor: string) {
     const crudo = valor.trim()
     // Vacío significa "no declaro mesas para este bloque", que no es lo mismo
@@ -206,6 +226,24 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
               style={{ width: 90, background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', fontSize: 15, fontWeight: 600, color: text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
             />
             {guardado === 'total' && <Check size={16} color="#10714e" />}
+          </div>
+        </div>
+
+        {/* El interruptor va acá, no en Configuración: es donde se ve qué hace. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 14, borderTop: '1px solid #e2e8f0' }}>
+          <label htmlFor="modo-cupo" style={{ fontSize: 12.5, color: muted }}>
+            El cupo de cada bloque sale de
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select
+              id="modo-cupo" value={config('cupos.modo')}
+              onChange={e => void guardarModo(e.target.value)}
+              style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 12.5, color: text, cursor: 'pointer' }}
+            >
+              <option value="numero">El número escrito en cada bloque</option>
+              <option value="por_mesas">Las mesas × jugadores por mesa</option>
+            </select>
+            {guardado === 'modo' && <Check size={16} color="#10714e" />}
           </div>
         </div>
       </div>
@@ -289,8 +327,8 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
               </div>
               <p style={{ margin: '0 0 12px', fontSize: 11.5, color: hint, lineHeight: 1.55 }}>
                 {porMesas
-                  ? `El cupo se calcula: mesas × ${config('cupos.por_mesa_grupal')} jugadores por mesa. Dejalo vacío para que ese bloque use su cupo escrito a mano.`
-                  : 'Este club cuenta el cupo con el número escrito en cada bloque. Para que salga de las mesas, cambiá "Cómo se calcula el cupo" en Configuración.'}
+                  ? `El cupo sale de las mesas: mesas × ${config('cupos.por_mesa_grupal')} jugadores. Un bloque sin mesas declaradas usa su número escrito a mano.`
+                  : `Hoy el cupo es el número escrito en cada bloque. Al lado se muestra cuánto daría con las mesas (× ${config('cupos.por_mesa_grupal')} por mesa), para comparar antes de cambiar el modo arriba.`}
               </p>
 
               <div style={{ display: 'grid', gap: 8 }}>
@@ -299,6 +337,14 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
                     config, cupoMaximo: b.cupo_maximo, mesas: b.mesas,
                   })
                   const lleno = cupo > 0 && b.inscritos >= cupo
+
+                  // El cupo que daría el OTRO modo, para poder comparar sin
+                  // cambiar nada. Solo si hay mesas declaradas y da distinto.
+                  const porMesasCalc = (b.mesas ?? 0) > 0
+                    ? b.mesas! * jugadoresPorMesa(config, 'grupal')
+                    : null
+                  const otro = porMesas ? b.cupo_maximo : porMesasCalc
+                  const cupoAlternativo = otro != null && otro !== cupo ? otro : null
                   return (
                     <div key={b.id} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#f8fafc', borderRadius: 8 }}>
                       <div style={{ minWidth: 150, flex: 1 }}>
@@ -322,9 +368,21 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
                           style={{ width: 68, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
                         />
                         {guardado === b.id && <Check size={15} color="#10714e" />}
-                        <span style={{ fontSize: 13, fontWeight: 700, color: lleno ? '#b91c1c' : text, fontVariantNumeric: 'tabular-nums', minWidth: 58, textAlign: 'right' }}>
-                          {b.inscritos} / {cupo}
-                        </span>
+
+                        {/* Los dos números, cuando difieren. Sin esto, declarar
+                            mesas y ver que el cupo no se mueve hace parecer que
+                            el módulo no funciona — que es exactamente lo que
+                            pasó la primera vez que alguien lo probó. */}
+                        <div style={{ minWidth: 92, textAlign: 'right' }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: lleno ? '#b91c1c' : text, fontVariantNumeric: 'tabular-nums' }}>
+                            {b.inscritos} / {cupo}
+                          </div>
+                          {cupoAlternativo != null && (
+                            <div style={{ fontSize: 10.5, color: hint, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>
+                              {porMesas ? 'a mano serían' : 'con mesas'}: {cupoAlternativo}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
