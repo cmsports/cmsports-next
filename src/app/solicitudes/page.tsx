@@ -13,6 +13,8 @@ import { DIAS, diaLabel, rangoHorario, type BloqueHorario } from '@/lib/domain/h
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { copiarTexto } from '@/lib/clipboard'
 import { categoriaPorDefecto, esquemaCategoriasDe } from '@/lib/domain/esquemaCategorias'
+import { configDelClub } from '@/lib/supabase/clubConfig'
+import type { LectorConfig } from '@/lib/domain/clubConfig'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { montoIngresado } from '@/lib/domain/mensualidades'
@@ -97,7 +99,19 @@ export default function SolicitudesPage() {
   const clubId = perfil?.club_id ?? null
   // Qué categorías ofrece este club y si las sugiere por edad. La pantalla ya no
   // pregunta "¿es Buin?": pide el esquema y lo aplica igual para todos.
-  const esquema = esquemaCategoriasDe(clubId)
+  //
+  // El club puede elegirlo por configuración; mientras la clave esté en 'auto'
+  // —su default— el esquema es el de siempre. Hasta que la config llega se usa
+  // ese mismo camino, así que en el primer render nunca se ofrece una lista
+  // equivocada: se ofrece la de antes.
+  const [configClub, setConfigClub] = useState<LectorConfig | undefined>(undefined)
+  useEffect(() => {
+    if (!clubId) return
+    let vivo = true
+    void configDelClub(clubId).then(c => { if (vivo) setConfigClub(() => c) })
+    return () => { vivo = false }
+  }, [clubId])
+  const esquema = esquemaCategoriasDe(clubId, configClub)
 
   const PRESETS = [
     { label: '$15.000', valor: 15000, ent: 1 },
