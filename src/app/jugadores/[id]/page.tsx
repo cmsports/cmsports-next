@@ -30,6 +30,7 @@ import { etiquetaPlan, planesVigentes, type Plan as PlanClub } from '@/lib/domai
 import { useModulos } from '@/lib/hooks/useModulos'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
+import { CATEGORIAS_EDAD, MANOS, NIVELES, categoriaPorEdad, manoLabel, nivelLabel } from '@/lib/domain/perfilDeportivo'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { sesionesDelMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
@@ -111,7 +112,7 @@ export default function JugadorDetallePage() {
   const [errorCarga, setErrorCarga] = useState('')
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
-  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null, talla_polera:'', talla_short:'' })
+  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null, talla_polera:'', talla_short:'', nivel:'', licencia_fechiteme:'', mano_habil:'', estilo_juego:'', material:'' })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'', plan_id:'' })
   // Las tarifas del club, para el selector de plan. Vacío en un club de monto
   // libre, donde el selector directamente no se dibuja.
@@ -175,9 +176,21 @@ export default function JugadorDetallePage() {
       const mesActual = new Date().getMonth() + 1
       const anioActual = new Date().getFullYear()
 
+      // Las cinco columnas del perfil deportivo se piden SOLO si el club tiene
+      // el módulo. Un `select` nombra columnas, así que pedirlas a una base
+      // donde la migración 254 todavía no corrió devuelve error y la ficha
+      // entera queda en blanco — para todos los clubes, no solo para el que
+      // las usa. Así, la consulta de Buin es exactamente la de antes.
+      const COLUMNAS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha'
+        + (tiene('perfil_deportivo') ? ',nivel,licencia_fechiteme,mano_habil,estilo_juego,material' : '')
+
       try {
         const [{ data: j }, { data: e }, { data: ext }, { data: mens }] = await Promise.all([
-          supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha').eq('id', jugadorId).single(),
+          // El `<any>` es por la lista de columnas armada arriba: los tipos de
+          // PostgREST solo saben deducir el resultado de un string literal, y
+          // con una variable devuelven GenericStringError. El estado `jugador`
+          // ya era `any` de antes, así que no se pierde nada que existiera.
+          supabase.from('jugadores').select(COLUMNAS_JUGADOR).eq('id', jugadorId).single<any>(),
           supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,fase,torneos(nombre)').or(`jugador_a.eq.${jugadorId},jugador_b.eq.${jugadorId}`).not('ganador', 'is', null),
           supabase.from('torneos_externos').select('id,jugador_id,nombre,resultado,rival,fecha,categoria,lugar,descripcion').eq('jugador_id', jugadorId).order('fecha', { ascending: false }),
           perfil.rol === 'admin'
@@ -307,6 +320,11 @@ export default function JugadorDetallePage() {
       federado: jugador?.federado ?? null,
       talla_polera: jugador?.talla_polera || '',
       talla_short: jugador?.talla_short || '',
+      nivel: jugador?.nivel || '',
+      licencia_fechiteme: jugador?.licencia_fechiteme || '',
+      mano_habil: jugador?.mano_habil || '',
+      estilo_juego: jugador?.estilo_juego || '',
+      material: jugador?.material || '',
     })
     setDatosError('')
     setEditContacto(true)
@@ -341,6 +359,21 @@ export default function JugadorDetallePage() {
       federado: contactoForm.federado,
       talla_polera: contactoForm.talla_polera || null,
       talla_short: contactoForm.talla_short || null,
+      // Los cinco campos deportivos SOLO viajan si el club tiene el módulo.
+      // No es cosmética: si esta pantalla se despliega antes de que la
+      // migración 254 esté corrida, el UPDATE fallaría con "column does not
+      // exist" y dejaría a TODOS los clubes sin poder guardar una ficha. Buin
+      // no tiene el módulo, así que su payload es byte por byte el de antes.
+      //
+      // El `|| null` importa: la cadena vacía de un select sin elegir no pasa
+      // el CHECK de `nivel`, que acepta NULL o una de las tres opciones.
+      ...(tiene('perfil_deportivo') ? {
+        nivel: contactoForm.nivel || null,
+        licencia_fechiteme: contactoForm.licencia_fechiteme?.trim() || null,
+        mano_habil: contactoForm.mano_habil || null,
+        estilo_juego: contactoForm.estilo_juego?.trim() || null,
+        material: contactoForm.material?.trim() || null,
+      } : {}),
     }
     const { error } = await supabase.from('jugadores').update(datos).eq('id', jugadorId)
     if (error) {
@@ -1138,6 +1171,31 @@ export default function JugadorDetallePage() {
           </div>
         </div>
 
+        {/* Perfil deportivo — solo para el club que lo pidió (módulo 254).
+            La categoría por edad NO se guarda: se calcula cada vez desde la
+            fecha de nacimiento. Guardarla sería garantizar que en enero quede
+            vieja y que nadie se entere hasta ver a uno de 14 en U11. */}
+        {tiene('perfil_deportivo') && (
+          <div style={cardStyle}>
+            <CardHeader title="Perfil deportivo" onEdit={puedeEditar ? abrirEditContacto : undefined} />
+            <div style={{ padding:'4px 20px 16px' }}>
+              <InfoRow label="Nivel" value={jugador.nivel ? nivelLabel(jugador.nivel) : null} />
+              <InfoRow label="Categoría por edad" value={categoriaPorEdad(jugador.fecha_nacimiento, fechaChile())} />
+              <InfoRow label="Mano hábil" value={jugador.mano_habil ? manoLabel(jugador.mano_habil) : null} />
+              <InfoRow label="Estilo de juego" value={jugador.estilo_juego} />
+              <InfoRow label="Material" value={jugador.material} />
+              <InfoRow label="Licencia FECHITEME" value={jugador.licencia_fechiteme} />
+              {!jugador.nivel && !jugador.mano_habil && !jugador.estilo_juego
+                && !jugador.material && !jugador.licencia_fechiteme
+                && !categoriaPorEdad(jugador.fecha_nacimiento, fechaChile()) && (
+                <div style={{ padding:'12px 0', fontSize:12, color: hint }}>
+                  {puedeEditar ? 'Todavía sin datos deportivos — Editar' : 'Todavía sin datos deportivos'}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Asistencia del año */}
         {jugador.club_id && (
           <div style={cardStyle}>
@@ -1421,6 +1479,46 @@ export default function JugadorDetallePage() {
                     </select>
                   </FormField>
                 </div>
+
+                {/* Perfil deportivo — solo para el club que lo pidió. */}
+                {tiene('perfil_deportivo') && (
+                  <>
+                    <div style={{ borderTop:'1px solid #e2e8f0', margin:'20px 0', paddingTop:20 }}>
+                      <div style={{ fontSize:12, fontWeight:600, color: muted, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Perfil deportivo</div>
+                      <div style={{ fontSize:11, color: hint, marginBottom:12 }}>
+                        El nivel es aparte de la categoría: la categoría la pone la edad y el nivel lo pones vos.
+                      </div>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                      <FormField label="Nivel">
+                        <select style={inputStyle} value={contactoForm.nivel} onChange={e => setContactoForm(f => ({ ...f, nivel: e.target.value }))}>
+                          <option value="">— Sin definir —</option>
+                          {NIVELES.map(n => <option key={n} value={n}>{nivelLabel(n)}</option>)}
+                        </select>
+                      </FormField>
+                      <FormField label="Mano hábil">
+                        <select style={inputStyle} value={contactoForm.mano_habil} onChange={e => setContactoForm(f => ({ ...f, mano_habil: e.target.value }))}>
+                          <option value="">— Sin definir —</option>
+                          {MANOS.map(m => <option key={m} value={m}>{manoLabel(m)}</option>)}
+                        </select>
+                      </FormField>
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                      <FormField label="N.º de licencia FECHITEME">
+                        <input style={inputStyle} value={contactoForm.licencia_fechiteme}
+                          onChange={e => setContactoForm(f => ({ ...f, licencia_fechiteme: e.target.value }))} />
+                      </FormField>
+                      <FormField label="Estilo de juego">
+                        <input style={inputStyle} placeholder="Ataque de revés, defensa..." value={contactoForm.estilo_juego}
+                          onChange={e => setContactoForm(f => ({ ...f, estilo_juego: e.target.value }))} />
+                      </FormField>
+                    </div>
+                    <FormField label="Material (madera y gomas)">
+                      <input style={inputStyle} placeholder="Butterfly Viscaria · Tenergy 05 / Rakza 7" value={contactoForm.material}
+                        onChange={e => setContactoForm(f => ({ ...f, material: e.target.value }))} />
+                    </FormField>
+                  </>
+                )}
 
                 {esClubBuin && (
                   <>

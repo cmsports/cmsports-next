@@ -62,6 +62,12 @@ export const MODULOS = [
   // no bloquea a nadie, y la pantalla que trae es una marcha en seco que
   // muestra a quién le tocaría sin tocar a nadie (migración 253).
   { key: 'retencion', label: 'Retención y morosidad' },
+  // Los campos deportivos de la ficha: nivel interno, licencia FECHITEME, mano
+  // hábil, estilo y material. Va aparte de 'jugadores' —que es core y no se
+  // apaga— porque son datos que solo un club de competición llena: una ficha de
+  // Buin con cinco campos vacíos de por vida es ruido, no una función
+  // (migración 254).
+  { key: 'perfil_deportivo', label: 'Perfil deportivo del jugador' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
