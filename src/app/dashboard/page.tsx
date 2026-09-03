@@ -17,6 +17,7 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
 import LigaFutbolDashboardWidget from '@/components/liga-futbol/DashboardWidget'
+import TarjetaOcupacion from '@/components/TarjetaOcupacion'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { MessageSquare } from 'lucide-react'
@@ -465,6 +466,10 @@ export default function DashboardPage() {
           />
         )}
       </div>
+
+      {/* Ocupación por bloque — debajo de los KPIs, sin reordenar nada de lo de
+          arriba. Cuelga del módulo 'mesas', que Buin no tiene. */}
+      {tiene('mesas') && <TarjetaOcupacion clubId={perfil?.club_id} />}
 
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
       <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 16 }}>
