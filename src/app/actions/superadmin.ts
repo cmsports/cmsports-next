@@ -470,6 +470,86 @@ export async function registrarPagoClub(input: {
   return { success: true, pagoId: creado.id }
 }
 
+const pagoClubSchema = z.object({
+  monto: z.number().finite().positive('El monto debe ser mayor a cero'),
+  periodoMes: z.number().int().min(1).max(12),
+  periodoAnio: z.number().int().min(2020).max(2100),
+  metodo: z.enum(['transferencia', 'efectivo', 'otro']),
+  notas: z.string().trim().max(500, 'Las notas son demasiado largas'),
+  fechaPago: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de pago inválida'),
+  concepto: z.enum(['mensualidad', 'implementacion', 'soporte', 'otro']),
+  montoNeto: z.number().finite().positive('El neto debe ser mayor a cero').optional(),
+}).refine(d => d.montoNeto === undefined || d.montoNeto <= d.monto, {
+  message: 'El neto no puede ser mayor que el monto total', path: ['montoNeto'],
+})
+
+/**
+ * Corrige un pago ya registrado — monto, fecha, concepto o desglose mal
+ * ingresados.
+ *
+ * No toca `proximo_vencimiento` del club. Ese campo lo mueve
+ * `registrarPagoClub` al CREAR un pago de mensualidad, y deshacer ese cálculo
+ * al editar exige saber si hubo otros pagos entre medio — más riesgo de
+ * corromper la fecha que el error de tipeo que se está arreglando. Si
+ * corregir el monto también corrió el vencimiento, se ajusta a mano desde
+ * "editar plan".
+ */
+export async function editarPagoClub(input: {
+  pagoId: string
+  monto: number
+  periodoMes: number
+  periodoAnio: number
+  metodo: string
+  notas: string
+  fechaPago: string
+  concepto: string
+  montoNeto?: number
+}) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  if (!z.string().uuid().safeParse(input.pagoId).success) return { error: 'Pago inválido' }
+
+  const parsed = pagoClubSchema.safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0].message }
+  const data = parsed.data
+
+  const { error } = await supabase.from('pagos_clubes').update({
+    monto: data.monto,
+    periodo_mes: data.periodoMes,
+    periodo_anio: data.periodoAnio,
+    fecha_pago: data.fechaPago,
+    metodo: data.metodo,
+    notas: data.notas || null,
+    concepto: data.concepto,
+    monto_neto: data.montoNeto ?? null,
+  }).eq('id', input.pagoId)
+  if (error) return { error: 'Error al editar el pago' }
+
+  revalidatePath('/superadmin/finanzas')
+  return { success: true }
+}
+
+export async function eliminarPagoClub(input: { pagoId: string }) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  if (!z.string().uuid().safeParse(input.pagoId).success) return { error: 'Pago inválido' }
+
+  const { data: pago, error: leerError } = await supabase.from('pagos_clubes')
+    .select('factura_path').eq('id', input.pagoId).maybeSingle()
+  if (leerError) return { error: 'No se pudo leer el pago' }
+
+  const { error } = await supabase.from('pagos_clubes').delete().eq('id', input.pagoId)
+  if (error) return { error: 'Error al eliminar el pago' }
+
+  // Mismo orden que `eliminarGastoCmsports`: el archivo después de la fila.
+  if (pago?.factura_path) {
+    await createAdminClient().storage.from(BUCKET_PRIVADO).remove([pago.factura_path])
+  }
+
+  revalidatePath('/superadmin/finanzas')
+  return { success: true }
+}
+
 // ── Gastos de CmSports ──────────────────────────────────────────────────
 // La otra mitad del resultado. Hasta la migración 255 la pantalla se llamaba
 // "Finanzas" y solo sabía sumar ingresos.
@@ -505,6 +585,41 @@ export async function registrarGastoCmsports(input: {
 
   revalidatePath('/superadmin/finanzas')
   return { success: true, gastoId: creado.id }
+}
+
+export async function editarGastoCmsports(input: {
+  gastoId: string
+  fecha: string
+  monto: number
+  categoria: string
+  descripcion: string
+  proveedor: string
+}) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  if (!z.string().uuid().safeParse(input.gastoId).success) return { error: 'Gasto inválido' }
+
+  const parsed = z.object({
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+    monto: z.number().finite().positive('El monto debe ser mayor a cero'),
+    categoria: z.string().trim().min(2, 'Escribe una categoría').max(60),
+    descripcion: z.string().trim().min(2, 'Escribe en qué se gastó').max(300),
+    proveedor: z.string().trim().max(120),
+  }).safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0].message }
+  const data = parsed.data
+
+  const { error } = await supabase.from('gastos_cmsports').update({
+    fecha: data.fecha,
+    monto: data.monto,
+    categoria: data.categoria,
+    descripcion: data.descripcion,
+    proveedor: data.proveedor || null,
+  }).eq('id', input.gastoId)
+  if (error) return { error: 'Error al editar el gasto' }
+
+  revalidatePath('/superadmin/finanzas')
+  return { success: true }
 }
 
 export async function eliminarGastoCmsports(input: { gastoId: string }) {
