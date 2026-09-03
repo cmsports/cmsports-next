@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Wallet, TrendingUp, TrendingDown, AlertTriangle, Scale, Pencil, Receipt, FileDown, Upload, Download, Plus, Trash2 } from 'lucide-react'
-import { actualizarPlanClub, registrarPagoClub, registrarGastoCmsports, eliminarGastoCmsports, subirFacturaCmsports, urlFacturaCmsports } from '@/app/actions/superadmin'
+import { actualizarPlanClub, registrarPagoClub, editarPagoClub, eliminarPagoClub, registrarGastoCmsports, editarGastoCmsports, eliminarGastoCmsports, subirFacturaCmsports, urlFacturaCmsports } from '@/app/actions/superadmin'
 import { useClubesSuperadmin } from '../layout'
 import { formatCLP } from '@/lib/domain/finanzas'
 import { useTextoMonto } from '@/components/Monto'
@@ -50,9 +50,9 @@ export default function FinanzasSuperadminPage() {
   const [loadingDatos, setLoadingDatos] = useState(true)
   const [editandoPlan, setEditandoPlan] = useState<string | null>(null)
   const [planForm, setPlanForm] = useState<{ monto: string; estado: EstadoPlan; fechaInicio: string }>({ monto: '', estado: 'prueba', fechaInicio: '' })
-  const [modalPago, setModalPago] = useState<{ clubId: string; nombre: string } | null>(null)
+  const [modalPago, setModalPago] = useState<{ clubId: string; nombre: string; pagoId?: string } | null>(null)
   const [pagoForm, setPagoForm] = useState({ monto: '', montoNeto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '', fecha: fechaChile(), concepto: 'mensualidad' as ConceptoPago })
-  const [modalGasto, setModalGasto] = useState(false)
+  const [modalGasto, setModalGasto] = useState<{ gastoId?: string } | null>(null)
   const [gastoForm, setGastoForm] = useState({ fecha: fechaChile(), monto: '', categoria: '', descripcion: '', proveedor: '' })
   const [guardando, setGuardando] = useState(false)
   const [subiendo, setSubiendo] = useState<string | null>(null)
@@ -115,29 +115,80 @@ export default function FinanzasSuperadminPage() {
     setModalPago({ clubId: club.id, nombre: club.nombre })
   }
 
+  function abrirEditarPago(pago: Pago) {
+    setPagoForm({
+      monto: String(pago.monto),
+      montoNeto: pago.monto_neto != null ? String(pago.monto_neto) : '',
+      mes: pago.periodo_mes,
+      anio: pago.periodo_anio,
+      metodo: pago.metodo || 'transferencia',
+      notas: pago.notas || '',
+      fecha: pago.fecha_pago,
+      concepto: (pago.concepto as ConceptoPago) || 'mensualidad',
+    })
+    setError('')
+    setModalPago({ clubId: pago.club_id, nombre: pago.clubes?.nombre || '', pagoId: pago.id })
+  }
+
   async function confirmarPago() {
     if (!modalPago || !pagoForm.monto) return
     setGuardando(true)
     setError('')
     setMensaje('')
-    const res = await registrarPagoClub({
-      clubId: modalPago.clubId,
-      monto: Number(pagoForm.monto),
-      periodoMes: pagoForm.mes,
-      periodoAnio: pagoForm.anio,
-      metodo: pagoForm.metodo,
-      notas: pagoForm.notas,
-      fechaPago: pagoForm.fecha,
-      concepto: pagoForm.concepto,
-      montoNeto: pagoForm.montoNeto ? Number(pagoForm.montoNeto) : undefined,
-    })
+    const montoNeto = pagoForm.montoNeto ? Number(pagoForm.montoNeto) : undefined
+    const res = modalPago.pagoId
+      ? await editarPagoClub({
+          pagoId: modalPago.pagoId,
+          monto: Number(pagoForm.monto),
+          periodoMes: pagoForm.mes,
+          periodoAnio: pagoForm.anio,
+          metodo: pagoForm.metodo,
+          notas: pagoForm.notas,
+          fechaPago: pagoForm.fecha,
+          concepto: pagoForm.concepto,
+          montoNeto,
+        })
+      : await registrarPagoClub({
+          clubId: modalPago.clubId,
+          monto: Number(pagoForm.monto),
+          periodoMes: pagoForm.mes,
+          periodoAnio: pagoForm.anio,
+          metodo: pagoForm.metodo,
+          notas: pagoForm.notas,
+          fechaPago: pagoForm.fecha,
+          concepto: pagoForm.concepto,
+          montoNeto,
+        })
     setGuardando(false)
     if (res?.error) { setError(res.error); return }
+    const editando = !!modalPago.pagoId
     setModalPago(null)
     await Promise.all([cargarDatos(), recargarClubes()])
-    setMensaje(pagoForm.concepto === 'mensualidad'
-      ? 'Pago registrado. El próximo vencimiento fue actualizado.'
-      : 'Pago registrado. No corre el vencimiento: no es una mensualidad.')
+    setMensaje(editando
+      ? 'Pago corregido.'
+      : pagoForm.concepto === 'mensualidad'
+        ? 'Pago registrado. El próximo vencimiento fue actualizado.'
+        : 'Pago registrado. No corre el vencimiento: no es una mensualidad.')
+  }
+
+  async function borrarPago(pago: Pago) {
+    if (!confirm(`¿Eliminar el pago de ${formatCLP(pago.monto)} de ${pago.clubes?.nombre || 'este club'}?`)) return
+    setError('')
+    const res = await eliminarPagoClub({ pagoId: pago.id })
+    if (res?.error) { setError(res.error); return }
+    await cargarDatos()
+  }
+
+  function abrirEditarGasto(gasto: Gasto) {
+    setGastoForm({
+      fecha: gasto.fecha,
+      monto: String(gasto.monto),
+      categoria: gasto.categoria,
+      descripcion: gasto.descripcion,
+      proveedor: gasto.proveedor || '',
+    })
+    setError('')
+    setModalGasto({ gastoId: gasto.id })
   }
 
   async function confirmarGasto() {
@@ -145,19 +196,29 @@ export default function FinanzasSuperadminPage() {
     setGuardando(true)
     setError('')
     setMensaje('')
-    const res = await registrarGastoCmsports({
-      fecha: gastoForm.fecha,
-      monto: Number(gastoForm.monto),
-      categoria: gastoForm.categoria,
-      descripcion: gastoForm.descripcion,
-      proveedor: gastoForm.proveedor,
-    })
+    const res = modalGasto?.gastoId
+      ? await editarGastoCmsports({
+          gastoId: modalGasto.gastoId,
+          fecha: gastoForm.fecha,
+          monto: Number(gastoForm.monto),
+          categoria: gastoForm.categoria,
+          descripcion: gastoForm.descripcion,
+          proveedor: gastoForm.proveedor,
+        })
+      : await registrarGastoCmsports({
+          fecha: gastoForm.fecha,
+          monto: Number(gastoForm.monto),
+          categoria: gastoForm.categoria,
+          descripcion: gastoForm.descripcion,
+          proveedor: gastoForm.proveedor,
+        })
     setGuardando(false)
     if (res?.error) { setError(res.error); return }
-    setModalGasto(false)
+    const editando = !!modalGasto?.gastoId
+    setModalGasto(null)
     setGastoForm({ fecha: fechaChile(), monto: '', categoria: '', descripcion: '', proveedor: '' })
     await cargarDatos()
-    setMensaje('Gasto registrado.')
+    setMensaje(editando ? 'Gasto corregido.' : 'Gasto registrado.')
   }
 
   async function borrarGasto(gasto: Gasto) {
@@ -352,7 +413,7 @@ export default function FinanzasSuperadminPage() {
           <p style={{ fontSize: 12, color: '#94a3b8' }}>Lo que CmSports cobra a cada club y lo que gasta</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => { setError(''); setModalGasto(true) }} style={{
+          <button onClick={() => { setError(''); setGastoForm({ fecha: fechaChile(), monto: '', categoria: '', descripcion: '', proveedor: '' }); setModalGasto({}) }} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '8px 14px', background: '#fff', color: '#dc2626',
             border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
@@ -460,7 +521,7 @@ export default function FinanzasSuperadminPage() {
                 <th style={{ padding: '8px 18px' }}>Fecha</th><th style={{ padding: '8px 18px' }}>Club</th>
                 <th style={{ padding: '8px 18px' }}>Concepto</th><th style={{ padding: '8px 18px' }}>Período</th>
                 <th style={{ padding: '8px 18px' }}>Método</th><th style={{ padding: '8px 18px' }}>Factura</th>
-                <th style={{ padding: '8px 18px', textAlign: 'right' }}>Monto</th>
+                <th style={{ padding: '8px 18px', textAlign: 'right' }}>Monto</th><th style={{ padding: '8px 18px' }}></th>
               </tr></thead>
               <tbody>
                 {pagos.map(p => (
@@ -482,6 +543,18 @@ export default function FinanzasSuperadminPage() {
                           Neto {fmtVista(p.monto_neto)} + IVA {fmtVista(p.monto - p.monto_neto)}
                         </div>
                       )}
+                    </td>
+                    <td style={{ padding: '10px 18px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button onClick={() => abrirEditarPago(p)} title="Editar pago"
+                          style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 6px', color: '#64748b', cursor: 'pointer' }}>
+                          <Pencil size={12} />
+                        </button>
+                        <button onClick={() => borrarPago(p)} title="Eliminar pago"
+                          style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 6px', color: '#dc2626', cursor: 'pointer' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -519,10 +592,16 @@ export default function FinanzasSuperadminPage() {
                     <td style={{ padding: '10px 18px' }}>{celdaFactura('gastos', g)}</td>
                     <td style={{ padding: '10px 18px', textAlign: 'right', fontWeight: 600, color: '#dc2626' }}>{fmtVista(g.monto)}</td>
                     <td style={{ padding: '10px 18px', textAlign: 'right' }}>
-                      <button onClick={() => borrarGasto(g)} title="Eliminar gasto"
-                        style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 6px', color: '#dc2626', cursor: 'pointer' }}>
-                        <Trash2 size={12} />
-                      </button>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button onClick={() => abrirEditarGasto(g)} title="Editar gasto"
+                          style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 6px', color: '#64748b', cursor: 'pointer' }}>
+                          <Pencil size={12} />
+                        </button>
+                        <button onClick={() => borrarGasto(g)} title="Eliminar gasto"
+                          style={{ display: 'inline-flex', alignItems: 'center', background: '#fff', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 6px', color: '#dc2626', cursor: 'pointer' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -540,7 +619,7 @@ export default function FinanzasSuperadminPage() {
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
         }} onClick={() => setModalPago(null)}>
           <div style={{ ...card, padding: 20, width: 380, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>Registrar pago</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>{modalPago.pagoId ? 'Editar pago' : 'Registrar pago'}</h2>
             <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 14 }}>{modalPago.nombre}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <input placeholder="Monto total recibido (CLP)" type="number" value={pagoForm.monto}
@@ -602,7 +681,7 @@ export default function FinanzasSuperadminPage() {
               <button onClick={confirmarPago} disabled={guardando} style={{
                 flex: 1, padding: '8px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none',
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardando ? 0.6 : 1,
-              }}>{guardando ? 'Guardando...' : 'Confirmar'}</button>
+              }}>{guardando ? 'Guardando...' : modalPago.pagoId ? 'Guardar cambios' : 'Confirmar'}</button>
             </div>
           </div>
         </div>
@@ -612,9 +691,9 @@ export default function FinanzasSuperadminPage() {
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50,
-        }} onClick={() => setModalGasto(false)}>
+        }} onClick={() => setModalGasto(null)}>
           <div style={{ ...card, padding: 20, width: 380, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>Registrar gasto</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>{modalGasto.gastoId ? 'Editar gasto' : 'Registrar gasto'}</h2>
             <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 14 }}>Un gasto de CmSports, no de un club</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <input placeholder="Monto (CLP)" type="number" value={gastoForm.monto}
@@ -641,14 +720,14 @@ export default function FinanzasSuperadminPage() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button onClick={() => setModalGasto(false)} style={{
+              <button onClick={() => setModalGasto(null)} style={{
                 flex: 1, padding: '8px', background: '#f8fafc', border: '1px solid #e2e8f0',
                 borderRadius: 7, fontSize: 12, color: '#64748b', cursor: 'pointer',
               }}>Cancelar</button>
               <button onClick={confirmarGasto} disabled={guardando} style={{
                 flex: 1, padding: '8px', background: '#dc2626', border: 'none',
                 borderRadius: 7, fontSize: 12, color: '#fff', cursor: 'pointer', opacity: guardando ? 0.6 : 1,
-              }}>{guardando ? 'Guardando...' : 'Registrar gasto'}</button>
+              }}>{guardando ? 'Guardando...' : modalGasto.gastoId ? 'Guardar cambios' : 'Registrar gasto'}</button>
             </div>
           </div>
         </div>
