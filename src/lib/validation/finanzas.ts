@@ -11,8 +11,25 @@ const FECHA = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida').refine(
 
 export const METODOS_PAGO = ['efectivo', 'transferencia'] as const
 export const TIPOS_MOVIMIENTO = ['ingreso', 'gasto'] as const
-export const CATEGORIAS_INGRESO = ['mensualidad', 'matricula', 'inscripcion_torneo', 'inscripcion_liga', 'arriendo_cancha', 'donacion', 'otro_ingreso'] as const
-export const CATEGORIAS_GASTO = ['sueldo_profesor', 'sueldo_staff', 'arriendo_cancha', 'material_deportivo', 'servicios_basicos', 'mantenimiento', 'premio_torneo', 'otro_gasto'] as const
+// Las cuatro de ingreso y las dos de gasto que se suman acá son las que pidió
+// Spinhouse (§5.7 del plan). Esta lista es la de lo que el SERVIDOR acepta, no
+// la de lo que cada club ve: qué se ofrece en el formulario lo decide el módulo
+// 'finanzas_categorias', en `domain/categoriasFinanzas.ts`.
+//
+// Ampliarla no le cambia nada a nadie —una categoría que el formulario no
+// ofrece no la elige nadie— y hacerla por club acá significaría leer la
+// configuración del club dentro de un esquema de validación, que es mucho
+// aparato para una lista blanca de textos aceptados.
+export const CATEGORIAS_INGRESO = [
+  'mensualidad', 'matricula', 'inscripcion_torneo', 'inscripcion_liga',
+  'arriendo_cancha', 'donacion', 'otro_ingreso',
+  'clase_particular', 'arriendo_mesa', 'venta_articulos', 'auspicio',
+] as const
+export const CATEGORIAS_GASTO = [
+  'sueldo_profesor', 'sueldo_staff', 'arriendo_cancha', 'material_deportivo',
+  'servicios_basicos', 'mantenimiento', 'premio_torneo', 'otro_gasto',
+  'premio_liga', 'marketing',
+] as const
 
 export const pagoLigaSchema = z.object({
   divisionId: UUID,

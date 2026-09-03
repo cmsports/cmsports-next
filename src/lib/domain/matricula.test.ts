@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { categoriasIngresoDe, etiquetaCategoria } from './categoriasFinanzas'
 
 const leer = (ruta: string) => readFileSync(resolve(process.cwd(), ruta), 'utf8').replace(/\r\n/g, '\n')
 
@@ -50,11 +51,18 @@ describe('matrícula: la plata y el flag no se separan', () => {
     //
     // Eran cuatro lugares hasta el 2026-08-22: `/reportes` tenía su propia
     // copia del mapa de categorías porque era un duplicado de la pestaña
-    // Reportes de Finanzas. Esa página ahora solo redirige, así que el mapa
-    // vive en un único lugar y ya no hay dos listas que sincronizar.
+    // Reportes de Finanzas. Esa página ahora solo redirige.
+    //
+    // Y desde el 2026-09-02 el tercer lugar ya no es `finanzas/page.tsx`: las
+    // categorías y sus nombres se mudaron a `domain/categoriasFinanzas.ts`,
+    // porque estaban en tres archivos y las tres copias se habían separado
+    // solas. Por eso acá ahora se comprueba el catálogo de verdad en vez de
+    // buscar un texto dentro de una pantalla — es la misma regla, mejor atada:
+    // esto falla aunque alguien escriba la categoría con otro formato.
     expect(migracion).toContain("'mensualidad','matricula','inscripcion_torneo'")
     expect(leer('src/lib/validation/finanzas.ts')).toContain("'matricula'")
-    expect(leer('src/app/finanzas/page.tsx')).toContain("matricula:'Matrícula'")
+    expect(categoriasIngresoDe(false)).toContain('matricula')
+    expect(etiquetaCategoria('matricula')).toBe('Matrícula')
   })
 
   it('la migración deja marcados a los que ya existían, sin inventarles ingreso', () => {

@@ -104,15 +104,22 @@ COMMENT ON COLUMN public.jugadores.material IS
 -- `array_append` sobre el array actual y no una lista escrita a mano: escribir
 -- `modulos_habilitados = ARRAY[...]` acá borraría los módulos que el club ya
 -- tiene, que es un error que se paga apagándole medio sistema al cliente.
--- Van los dos juntos porque los dos son "la ficha y la lista como las quiere
--- este club": 'perfil_deportivo' son los campos deportivos de la ficha y
--- 'pasar_lista_rapido' es el contador y los botones de 44 px con que el profe
--- pasa lista de pie en la cancha.
+-- Los tres son "la ficha, la lista y el libro como los quiere este club":
+--
+--   · perfil_deportivo    — los campos deportivos de la ficha
+--   · pasar_lista_rapido  — el contador y los botones de 44 px, para la cancha
+--   · finanzas_categorias — clases particulares, arriendo de mesa, venta de
+--                           artículos, auspicios, premios de liga, marketing
+--
+-- El tercero NO agrega ni renombra nada de lo que ya existe: las claves con que
+-- están guardados los movimientos de Buin son historia escrita y tocarlas
+-- rompería todos sus reportes anteriores. Solo suma opciones al formulario del
+-- club que las pidió.
 DO $$
 DECLARE
   v_modulo text;
 BEGIN
-  FOREACH v_modulo IN ARRAY ARRAY['perfil_deportivo', 'pasar_lista_rapido'] LOOP
+  FOREACH v_modulo IN ARRAY ARRAY['perfil_deportivo', 'pasar_lista_rapido', 'finanzas_categorias'] LOOP
     UPDATE public.clubes
     SET    modulos_habilitados = array_append(modulos_habilitados, v_modulo)
     WHERE  nombre = 'Spinhouse'
@@ -136,11 +143,18 @@ COMMIT;
 --   count(*) FILTER (WHERE material           IS NOT NULL) AS con_material
 -- FROM jugadores;
 
--- 2) Solo Spinhouse tiene los módulos. Buin tiene que dar false en los dos.
+-- 2) Solo Spinhouse tiene los módulos. Buin tiene que dar false en los tres.
 -- SELECT nombre,
---        'perfil_deportivo'   = ANY(modulos_habilitados) AS perfil_deportivo,
---        'pasar_lista_rapido' = ANY(modulos_habilitados) AS lista_rapida
+--        'perfil_deportivo'    = ANY(modulos_habilitados) AS perfil_deportivo,
+--        'pasar_lista_rapido'  = ANY(modulos_habilitados) AS lista_rapida,
+--        'finanzas_categorias' = ANY(modulos_habilitados) AS categorias
 -- FROM clubes ORDER BY nombre;
+
+-- 3) Ningún movimiento existente cambió de categoría. Las claves de Buin son
+--    historia escrita: esto tiene que dar exactamente lo mismo que antes.
+-- SELECT categoria, count(*) FROM movimientos
+-- WHERE club_id = (SELECT id FROM clubes WHERE nombre = 'Asociación TDM Buin y Paine')
+-- GROUP BY categoria ORDER BY categoria;
 
 -- 3) El CHECK rechaza un nivel inventado y acepta NULL.
 -- UPDATE jugadores SET nivel = 'crack' WHERE id = (SELECT id FROM jugadores LIMIT 1);

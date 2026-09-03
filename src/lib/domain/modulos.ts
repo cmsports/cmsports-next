@@ -73,6 +73,12 @@ export const MODULOS = [
   // cambia cómo se ve la pantalla que Buin usa todos los días — y eso se
   // enciende cuando el club lo pide, no de sorpresa en un despliegue.
   { key: 'pasar_lista_rapido', label: 'Pasar lista rápido (para la cancha)' },
+  // Categorías de ingreso y gasto propias: clases particulares, arriendo de
+  // mesa, venta de artículos, auspicios, premios de liga, marketing. Va aparte
+  // de 'finanzas' porque las claves de un club son historia escrita —cada
+  // movimiento guardado lleva la suya como texto— y sumarle categorías a un
+  // club que no las pidió le ensucia el formulario y sus reportes (254).
+  { key: 'finanzas_categorias', label: 'Categorías de finanzas propias del club' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
