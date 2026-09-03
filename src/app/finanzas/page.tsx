@@ -22,6 +22,7 @@ import { useTextoMonto } from '@/components/Monto'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { indexar, calendarioJugador } from '@/lib/domain/historialAsistencia'
 import { armarHistorialDetallado, type BloqueInfo } from '@/lib/domain/historialDetalladoAsistencia'
+import { ETIQUETAS, categoriasGastoDe, categoriasIngresoDe } from '@/lib/domain/categoriasFinanzas'
 
 const supabase = createClient()
 
@@ -30,28 +31,16 @@ const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
 
-// Los nombres de las categorías se escriben acá y no en config.ts porque acá
-// llevan tildes. Al agregar una categoría hay que tocar los dos lados: si falta
-// en este mapa, el movimiento se muestra con su nombre interno crudo.
-const catLabel: Record<string, string> = {
-  mensualidad:'Mensualidad', matricula:'Matrícula', inscripcion_torneo:'Inscripción torneo',
-  inscripcion_liga:'Inscripción liga', premio_torneo:'Premio torneo',
-  arriendo_cancha:'Arriendo cancha', donacion:'Donación',
-  clase_extraordinaria:'Clase extra', otro_ingreso:'Otro ingreso',
-  sueldo_profesor:'Sueldo profesor', sueldo_staff:'Sueldo staff',
-  material_deportivo:'Material deportivo', servicios_basicos:'Servicios básicos',
-  mantenimiento:'Mantenimiento', otro_gasto:'Otro gasto',
-  // La escribe `corregir_mensualidad` al corregir una cuota de un mes cerrado:
-  // entra como ingreso si el ajuste es a favor y como gasto si es en contra.
-  // Faltaba acá y la fila se mostraba con la clave cruda.
-  ajuste_mensualidad:'Ajuste de mensualidad',
-}
-
-// La clase extra no está en esta lista a propósito: se cobra desde su propia
-// sección, que además marca la clase como pagada. Cargarla a mano crearía el
-// ingreso y dejaría la clase figurando como impaga para siempre.
-const categoriasIngreso = ['mensualidad','matricula','inscripcion_torneo','inscripcion_liga','arriendo_cancha','donacion','otro_ingreso']
-const categoriasGasto = ['sueldo_profesor','sueldo_staff','arriendo_cancha','material_deportivo','servicios_basicos','mantenimiento','otro_gasto']
+// Las categorías y sus nombres viven en `domain/categoriasFinanzas.ts`. Estaban
+// escritas acá, en el enum de zod y en el dashboard, y las tres copias ya se
+// habían separado: `premio_torneo` lo aceptaba el servidor y este formulario no
+// lo ofrecía.
+//
+// La clase extra sigue sin estar entre las que se pueden elegir, a propósito:
+// se cobra desde su propia sección, que además marca la clase como pagada.
+// Cargarla a mano crearía el ingreso y dejaría la clase figurando como impaga
+// para siempre. Sí tiene etiqueta, porque hay que poder leerla en el listado.
+const catLabel = ETIQUETAS
 
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -214,6 +203,12 @@ function FinanzasContent() {
   // Editando no se ofrece 'mensualidad': esos movimientos son el espejo de un
   // pago y ni siquiera llegan al modal, pero tampoco tiene sentido convertir
   // otro movimiento en uno.
+  // Las propias del club —clases particulares, arriendo de mesa, auspicios,
+  // premios de liga, marketing— solo si tiene el módulo. Sin él, la lista es
+  // exactamente la de antes; hay una prueba que lo congela.
+  const conCategoriasPropias = tiene('finanzas_categorias')
+  const categoriasIngreso = categoriasIngresoDe(conCategoriasPropias)
+  const categoriasGasto = categoriasGastoDe(conCategoriasPropias)
   const categoriasActuales = form.tipo === 'ingreso'
     ? (esEdicion ? categoriasIngreso.filter(c => c !== 'mensualidad') : categoriasIngreso)
     : categoriasGasto

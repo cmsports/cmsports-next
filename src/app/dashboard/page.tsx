@@ -17,6 +17,8 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
 import LigaFutbolDashboardWidget from '@/components/liga-futbol/DashboardWidget'
+import TarjetaOcupacion from '@/components/TarjetaOcupacion'
+import { etiquetaCategoria } from '@/lib/domain/categoriasFinanzas'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { MessageSquare } from 'lucide-react'
@@ -47,11 +49,9 @@ const C = {
   divider: '#1e2030',
 }
 
-const catLabelGasto: Record<string, string> = {
-  sueldo_profesor: 'Sueldo profesor', sueldo_staff: 'Sueldo staff',
-  arriendo_cancha: 'Arriendo cancha', material_deportivo: 'Material deportivo',
-  servicios_basicos: 'Servicios básicos', mantenimiento: 'Mantenimiento', otro_gasto: 'Otro gasto',
-}
+// Era una cuarta copia de las etiquetas, y le faltaban `premio_torneo` y
+// `ajuste_mensualidad`: un club que gastara en premios veía "premio_torneo" en
+// el desglose de gastos de su dashboard. Ahora sale del catálogo único.
 
 const dashboardCache: Record<string, {
   kpis?: any
@@ -466,6 +466,10 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Ocupación por bloque — debajo de los KPIs, sin reordenar nada de lo de
+          arriba. Cuelga del módulo 'mesas', que Buin no tiene. */}
+      {tiene('mesas') && <TarjetaOcupacion clubId={perfil?.club_id} />}
+
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
       <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 16 }}>
 
@@ -501,7 +505,7 @@ export default function DashboardPage() {
                 return (
                   <div key={d.categoria}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.muted, marginBottom: 3 }}>
-                      <span>{catLabelGasto[d.categoria] || d.categoria}</span>
+                      <span>{etiquetaCategoria(d.categoria)}</span>
                       <span style={{ fontWeight: 600, color: C.text }}>{fmt(d.monto)}</span>
                     </div>
                     <div style={{ height: 4, background: C.redL, borderRadius: 3, overflow: 'hidden' }}>

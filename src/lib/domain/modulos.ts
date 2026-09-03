@@ -62,6 +62,23 @@ export const MODULOS = [
   // no bloquea a nadie, y la pantalla que trae es una marcha en seco que
   // muestra a quién le tocaría sin tocar a nadie (migración 253).
   { key: 'retencion', label: 'Retención y morosidad' },
+  // Los campos deportivos de la ficha: nivel interno, licencia FECHITEME, mano
+  // hábil, estilo y material. Va aparte de 'jugadores' —que es core y no se
+  // apaga— porque son datos que solo un club de competición llena: una ficha de
+  // Buin con cinco campos vacíos de por vida es ruido, no una función
+  // (migración 254).
+  { key: 'perfil_deportivo', label: 'Perfil deportivo del jugador' },
+  // Pasar lista optimizado para la cancha: contador de cuántos faltan y
+  // botones de 44 px. Va aparte de 'asistencia' porque no agrega una función,
+  // cambia cómo se ve la pantalla que Buin usa todos los días — y eso se
+  // enciende cuando el club lo pide, no de sorpresa en un despliegue.
+  { key: 'pasar_lista_rapido', label: 'Pasar lista rápido (para la cancha)' },
+  // Categorías de ingreso y gasto propias: clases particulares, arriendo de
+  // mesa, venta de artículos, auspicios, premios de liga, marketing. Va aparte
+  // de 'finanzas' porque las claves de un club son historia escrita —cada
+  // movimiento guardado lleva la suya como texto— y sumarle categorías a un
+  // club que no las pidió le ensucia el formulario y sus reportes (254).
+  { key: 'finanzas_categorias', label: 'Categorías de finanzas propias del club' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
