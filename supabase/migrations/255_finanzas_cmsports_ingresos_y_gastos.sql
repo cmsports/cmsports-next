@@ -66,6 +66,16 @@ ALTER TABLE pagos_clubes ADD COLUMN IF NOT EXISTS concepto       text NOT NULL D
 ALTER TABLE pagos_clubes ADD COLUMN IF NOT EXISTS factura_path   text;
 ALTER TABLE pagos_clubes ADD COLUMN IF NOT EXISTS factura_nombre text;
 
+-- Neto, opcional. Nace NULL: los pagos que ya existen no llevaban IVA
+-- desglosado y siguen sin mostrarlo. El IVA no se guarda aparte —es
+-- `monto - monto_neto`— porque guardarlo por separado es el mismo dato dos
+-- veces y una forma más de que se desincronicen.
+ALTER TABLE pagos_clubes ADD COLUMN IF NOT EXISTS monto_neto numeric;
+
+ALTER TABLE pagos_clubes DROP CONSTRAINT IF EXISTS pagos_clubes_monto_neto_check;
+ALTER TABLE pagos_clubes ADD CONSTRAINT pagos_clubes_monto_neto_check
+  CHECK (monto_neto IS NULL OR (monto_neto > 0 AND monto_neto <= monto));
+
 ALTER TABLE pagos_clubes DROP CONSTRAINT IF EXISTS pagos_clubes_concepto_check;
 ALTER TABLE pagos_clubes ADD CONSTRAINT pagos_clubes_concepto_check
   CHECK (concepto IN ('mensualidad', 'implementacion', 'soporte', 'otro'));

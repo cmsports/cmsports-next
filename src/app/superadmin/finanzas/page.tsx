@@ -37,7 +37,7 @@ const PLAN_COLOR: Record<EstadoPlan, { bg: string; fg: string; label: string }> 
 
 const fechaCorta = (iso: string | null) => iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('es-CL') : '—'
 
-type Pago = { id: string; club_id: string; monto: number; periodo_mes: number; periodo_anio: number; fecha_pago: string; metodo: string | null; notas: string | null; concepto: string; factura_path: string | null; factura_nombre: string | null; clubes?: { nombre: string } | null }
+type Pago = { id: string; club_id: string; monto: number; periodo_mes: number; periodo_anio: number; fecha_pago: string; metodo: string | null; notas: string | null; concepto: string; factura_path: string | null; factura_nombre: string | null; monto_neto: number | null; clubes?: { nombre: string } | null }
 type Gasto = { id: string; fecha: string; monto: number; categoria: string; descripcion: string; proveedor: string | null; factura_path: string | null; factura_nombre: string | null }
 
 export default function FinanzasSuperadminPage() {
@@ -51,7 +51,7 @@ export default function FinanzasSuperadminPage() {
   const [editandoPlan, setEditandoPlan] = useState<string | null>(null)
   const [planForm, setPlanForm] = useState<{ monto: string; estado: EstadoPlan; fechaInicio: string }>({ monto: '', estado: 'prueba', fechaInicio: '' })
   const [modalPago, setModalPago] = useState<{ clubId: string; nombre: string } | null>(null)
-  const [pagoForm, setPagoForm] = useState({ monto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '', fecha: fechaChile(), concepto: 'mensualidad' as ConceptoPago })
+  const [pagoForm, setPagoForm] = useState({ monto: '', montoNeto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '', fecha: fechaChile(), concepto: 'mensualidad' as ConceptoPago })
   const [modalGasto, setModalGasto] = useState(false)
   const [gastoForm, setGastoForm] = useState({ fecha: fechaChile(), monto: '', categoria: '', descripcion: '', proveedor: '' })
   const [guardando, setGuardando] = useState(false)
@@ -103,6 +103,7 @@ export default function FinanzasSuperadminPage() {
     const fecha = club.proximo_vencimiento ? new Date(`${club.proximo_vencimiento}T12:00:00`) : new Date()
     setPagoForm({
       monto: String(club.plan_mensual || ''),
+      montoNeto: '',
       mes: fecha.getMonth() + 1,
       anio: fecha.getFullYear(),
       metodo: 'transferencia',
@@ -128,6 +129,7 @@ export default function FinanzasSuperadminPage() {
       notas: pagoForm.notas,
       fechaPago: pagoForm.fecha,
       concepto: pagoForm.concepto,
+      montoNeto: pagoForm.montoNeto ? Number(pagoForm.montoNeto) : undefined,
     })
     setGuardando(false)
     if (res?.error) { setError(res.error); return }
@@ -276,13 +278,15 @@ export default function FinanzasSuperadminPage() {
       doc.text('Ingresos — historial completo', 14, y); y += 8
       autoTable(doc, {
         startY: y,
-        head: [['Fecha', 'Club', 'Concepto', 'Período', 'Método', 'Monto']],
+        head: [['Fecha', 'Club', 'Concepto', 'Período', 'Método', 'Neto', 'IVA', 'Monto']],
         body: pagos.map(p => [
           fechaCorta(p.fecha_pago),
           p.clubes?.nombre || '—',
           LABEL_CONCEPTO[p.concepto] || p.concepto,
           `${MESES[p.periodo_mes - 1]} ${p.periodo_anio}`,
           p.metodo || '—',
+          p.monto_neto != null ? fmt(p.monto_neto) : '—',
+          p.monto_neto != null ? fmt(p.monto - p.monto_neto) : '—',
           fmt(p.monto),
         ]),
         theme: 'striped',
@@ -471,7 +475,14 @@ export default function FinanzasSuperadminPage() {
                     <td style={{ padding: '10px 18px', color: '#64748b' }}>{MESES[p.periodo_mes - 1]} {p.periodo_anio}</td>
                     <td style={{ padding: '10px 18px', color: '#64748b' }}>{p.metodo || '—'}</td>
                     <td style={{ padding: '10px 18px' }}>{celdaFactura('pagos', p)}</td>
-                    <td style={{ padding: '10px 18px', textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>{fmtVista(p.monto)}</td>
+                    <td style={{ padding: '10px 18px', textAlign: 'right' }}>
+                      <div style={{ fontWeight: 600, color: '#16a34a' }}>{fmtVista(p.monto)}</div>
+                      {p.monto_neto != null && (
+                        <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
+                          Neto {fmtVista(p.monto_neto)} + IVA {fmtVista(p.monto - p.monto_neto)}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -532,9 +543,19 @@ export default function FinanzasSuperadminPage() {
             <h2 style={{ fontSize: 15, fontWeight: 600, color: '#0f172a', marginBottom: 4 }}>Registrar pago</h2>
             <p style={{ fontSize: 12, color: '#94a3b8', marginBottom: 14 }}>{modalPago.nombre}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <input placeholder="Monto (CLP)" type="number" value={pagoForm.monto}
+              <input placeholder="Monto total recibido (CLP)" type="number" value={pagoForm.monto}
                 onChange={e => setPagoForm({ ...pagoForm, monto: e.target.value })}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              <label style={{ fontSize: 11, color: '#64748b' }}>Monto neto, sin IVA (opcional — dejar vacío si no aplica)
+                <input placeholder="Ej: 50000 si el total con IVA es 60000" type="number" value={pagoForm.montoNeto}
+                  onChange={e => setPagoForm({ ...pagoForm, montoNeto: e.target.value })}
+                  style={{ width: '100%', marginTop: 4, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+              </label>
+              {!!pagoForm.montoNeto && !!pagoForm.monto && Number(pagoForm.montoNeto) <= Number(pagoForm.monto) && (
+                <div style={{ fontSize: 11, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 7, padding: '7px 9px' }}>
+                  IVA: {formatCLP(Number(pagoForm.monto) - Number(pagoForm.montoNeto))}
+                </div>
+              )}
               <label style={{ fontSize: 11, color: '#64748b' }}>Fecha en que llegó la plata
                 <input type="date" value={pagoForm.fecha} onChange={e => setPagoForm({ ...pagoForm, fecha: e.target.value })}
                   style={{ width: '100%', marginTop: 4, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
