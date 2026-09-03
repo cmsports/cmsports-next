@@ -29,6 +29,7 @@ import {
 } from '@/lib/offline/db'
 import { cachedFetch } from '@/lib/query-cache'
 import { useEnVivo } from '@/lib/useEnVivo'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const supabase = createClient()
 
@@ -73,6 +74,16 @@ function diaDeHoy(): string {
 }
 
 export default function AsistenciaPanel({ perfil }: { perfil: any }) {
+  // Pasar lista optimizado para la cancha: el profe está de pie, con el
+  // teléfono en una mano y una pelota en la otra. Es un módulo y no una mejora
+  // para todos porque cambia cómo se ve la pantalla que Buin usa todos los
+  // días, y eso se enciende cuando el club lo pide, no de sorpresa.
+  //
+  // Sin sesión —el marcador público de /asistencia/[codigo]— no hay club, los
+  // módulos llegan vacíos y `tiene` da false: se comporta como siempre.
+  const { tiene } = useModulos()
+  const listaRapida = tiene('pasar_lista_rapido')
+
   const [jugadores, setJugadores] = useState<any[]>([])
   // Sesiones del mes por jugador, derivadas de sus bloques. Las columnas
   // `sesiones_usadas`/`sesiones_limite` no sirven: arrastran el mes anterior y
@@ -1098,6 +1109,36 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               </button>
             </div>
           ) : (
+          <>
+          {/* Cuánto falta, sin tener que contar.
+              Va pegado arriba de la lista y no en la cabecera de la pantalla:
+              el profe hace scroll mientras marca, y un contador que se va con
+              el scroll obliga justo a lo que este contador viene a evitar. */}
+          {listaRapida && filtrados.length > 0 && (() => {
+            const marcados  = filtrados.filter(j => yaRegistrado.has(j.id) || yaTieneExtra.has(j.id))
+            const ausentes  = marcados.filter(j =>
+              asistenciasMostradas.find(a => a.jugador_id === j.id)?.estado === 'ausente').length
+            const faltan    = filtrados.length - marcados.length
+            const completo  = faltan === 0
+            return (
+              <div style={{
+                position: 'sticky', top: 0, zIndex: 2,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                background: completo ? '#f0fdf4' : '#ffffff',
+                border: `1px solid ${completo ? '#bbf7d0' : '#e2e8f0'}`,
+                borderRadius: 8, padding: '10px 14px', marginBottom: 8,
+              }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: completo ? '#16a34a' : text, fontVariantNumeric: 'tabular-nums' }}>
+                  {marcados.length} de {filtrados.length}
+                </span>
+                <span style={{ fontSize: 12, color: completo ? '#16a34a' : muted }}>
+                  {completo
+                    ? '✓ Lista completa'
+                    : `faltan ${faltan}${ausentes > 0 ? ` · ${ausentes} ausente${ausentes !== 1 ? 's' : ''}` : ''}`}
+                </span>
+              </div>
+            )
+          })()}
           <div style={{ background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', maxHeight: 520, overflowY: 'auto' }}>
               {filtrados.map(j => {
                 const ya = yaRegistrado.has(j.id)
@@ -1110,6 +1151,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                 return (
                   <div key={j.id} onClick={() => !hecho && !esExtra && !esFuturo && registrarAsistencia(j.id)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px',
+                      minHeight: listaRapida ? 56 : undefined,
                       borderBottom: '1px solid #e2e8f0', cursor: hecho || esExtra || esFuturo ? 'default' : 'pointer', opacity: hecho ? 0.6 : 1,
                       background: esExtra && !hecho ? '#fffbeb' : undefined }}>
                     <div>
@@ -1138,9 +1180,13 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
                               : <span style={{ background: '#eff6ff', color: '#1e40af', padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>Le toca</span>)
                           : esExtra
                             ? <button onClick={e => { e.stopPropagation(); setPendienteExtra({ jugadorId: j.id, bloqueId: null }) }} style={{ background: '#eab308', color: '#422006', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>🟡 Clase extra</button>
+                            // Con la lista rápida los dos botones miden 44 px de
+                            // alto, que es el mínimo táctil accesible: el profe
+                            // marca con el dedo, de pie y con poca luz, no con
+                            // un puntero. Sin el módulo quedan como estaban.
                             : <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
-                                <button onClick={() => registrarAsistencia(j.id)} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>✅ Presente</button>
-                                <button onClick={() => registrarAusente(j.id)} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: 6, padding: '6px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>✗ Ausente</button>
+                                <button onClick={() => registrarAsistencia(j.id)} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', borderRadius: 6, padding: listaRapida ? '0 14px' : '6px 10px', minHeight: listaRapida ? 44 : undefined, fontSize: listaRapida ? 13 : 12, cursor: 'pointer', fontWeight: 600 }}>✅ Presente</button>
+                                <button onClick={() => registrarAusente(j.id)} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: 6, padding: listaRapida ? '0 14px' : '6px 10px', minHeight: listaRapida ? 44 : undefined, fontSize: listaRapida ? 13 : 12, cursor: 'pointer', fontWeight: 700 }}>✗ Ausente</button>
                               </div>
                     }
                   </div>
@@ -1148,6 +1194,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               })}
               {filtrados.length === 0 && <div style={{ padding: 16, color: muted, fontSize: 13, textAlign: 'center' }}>Sin resultados</div>}
           </div>
+          </>
           )}
 
           {/* Vino alguien que no es de este grupo. Necesita un bloque elegido:

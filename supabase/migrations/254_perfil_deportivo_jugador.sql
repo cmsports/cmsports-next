@@ -1,5 +1,5 @@
 -- ────────────────────────────────────────────────────────────
--- El perfil deportivo del jugador: nivel, mano hábil, estilo y material.
+-- El perfil deportivo del jugador, y pasar lista para la cancha.
 --
 -- Este cambio afecta a: **Spinhouse**. El ESQUEMA cambia para todos —cinco
 -- columnas nuevas en `jugadores`—, pero todas nacen NULL y ninguna pantalla
@@ -104,10 +104,22 @@ COMMENT ON COLUMN public.jugadores.material IS
 -- `array_append` sobre el array actual y no una lista escrita a mano: escribir
 -- `modulos_habilitados = ARRAY[...]` acá borraría los módulos que el club ya
 -- tiene, que es un error que se paga apagándole medio sistema al cliente.
-UPDATE public.clubes
-SET    modulos_habilitados = array_append(modulos_habilitados, 'perfil_deportivo')
-WHERE  nombre = 'Spinhouse'
-  AND  NOT ('perfil_deportivo' = ANY(COALESCE(modulos_habilitados, ARRAY[]::text[])));
+-- Van los dos juntos porque los dos son "la ficha y la lista como las quiere
+-- este club": 'perfil_deportivo' son los campos deportivos de la ficha y
+-- 'pasar_lista_rapido' es el contador y los botones de 44 px con que el profe
+-- pasa lista de pie en la cancha.
+DO $$
+DECLARE
+  v_modulo text;
+BEGIN
+  FOREACH v_modulo IN ARRAY ARRAY['perfil_deportivo', 'pasar_lista_rapido'] LOOP
+    UPDATE public.clubes
+    SET    modulos_habilitados = array_append(modulos_habilitados, v_modulo)
+    WHERE  nombre = 'Spinhouse'
+      AND  NOT (v_modulo = ANY(COALESCE(modulos_habilitados, ARRAY[]::text[])));
+  END LOOP;
+END;
+$$;
 
 COMMIT;
 
@@ -124,8 +136,10 @@ COMMIT;
 --   count(*) FILTER (WHERE material           IS NOT NULL) AS con_material
 -- FROM jugadores;
 
--- 2) Solo Spinhouse tiene el módulo. Buin tiene que dar false.
--- SELECT nombre, 'perfil_deportivo' = ANY(modulos_habilitados) AS tiene
+-- 2) Solo Spinhouse tiene los módulos. Buin tiene que dar false en los dos.
+-- SELECT nombre,
+--        'perfil_deportivo'   = ANY(modulos_habilitados) AS perfil_deportivo,
+--        'pasar_lista_rapido' = ANY(modulos_habilitados) AS lista_rapida
 -- FROM clubes ORDER BY nombre;
 
 -- 3) El CHECK rechaza un nivel inventado y acepta NULL.

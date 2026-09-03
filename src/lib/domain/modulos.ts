@@ -68,6 +68,11 @@ export const MODULOS = [
   // Buin con cinco campos vacíos de por vida es ruido, no una función
   // (migración 254).
   { key: 'perfil_deportivo', label: 'Perfil deportivo del jugador' },
+  // Pasar lista optimizado para la cancha: contador de cuántos faltan y
+  // botones de 44 px. Va aparte de 'asistencia' porque no agrega una función,
+  // cambia cómo se ve la pantalla que Buin usa todos los días — y eso se
+  // enciende cuando el club lo pide, no de sorpresa en un despliegue.
+  { key: 'pasar_lista_rapido', label: 'Pasar lista rápido (para la cancha)' },
   { key: 'tecnico', label: 'Perfil técnico' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
