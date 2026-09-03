@@ -400,6 +400,7 @@ export async function registrarPagoClub(input: {
   notas: string
   fechaPago?: string
   concepto?: string
+  montoNeto?: number
 }) {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }
@@ -415,6 +416,12 @@ export async function registrarPagoClub(input: {
     // entran con el día en que la plata llegó de verdad, no con el de hoy.
     fechaPago: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de pago inválida').optional(),
     concepto: z.enum(['mensualidad', 'implementacion', 'soporte', 'otro']).optional(),
+    // El neto sin IVA, cuando el pago viene desglosado. El IVA no se pide
+    // aparte: es `monto - montoNeto`, y guardarlo por separado sería el mismo
+    // dato dos veces.
+    montoNeto: z.number().finite().positive('El neto debe ser mayor a cero').optional(),
+  }).refine(d => d.montoNeto === undefined || d.montoNeto <= d.monto, {
+    message: 'El neto no puede ser mayor que el monto total', path: ['montoNeto'],
   }).safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const data = parsed.data
@@ -435,6 +442,7 @@ export async function registrarPagoClub(input: {
     metodo: data.metodo,
     notas: data.notas || null,
     concepto,
+    monto_neto: data.montoNeto ?? null,
   }).select('id').single()
   if (error || !creado) return { error: 'Error al registrar el pago' }
 

@@ -70,6 +70,7 @@ export interface Database {
           concepto: string
           factura_path: string | null
           factura_nombre: string | null
+          monto_neto: number | null
           creado_en: string | null
         }
         Insert: {
@@ -84,6 +85,7 @@ export interface Database {
           concepto?: string
           factura_path?: string | null
           factura_nombre?: string | null
+          monto_neto?: number | null
           creado_en?: string | null
         }
         Update: {
@@ -98,6 +100,7 @@ export interface Database {
           concepto?: string
           factura_path?: string | null
           factura_nombre?: string | null
+          monto_neto?: number | null
           creado_en?: string | null
         }
         Relationships: [

@@ -65,6 +65,8 @@ SELECT _migracion_para_todos_los_clubes(
 ALTER TABLE pagos_clubes ADD COLUMN IF NOT EXISTS concepto       text NOT NULL DEFAULT 'mensualidad';
 ALTER TABLE pagos_clubes ADD COLUMN IF NOT EXISTS factura_path   text;
 ALTER TABLE pagos_clubes ADD COLUMN IF NOT EXISTS factura_nombre text;
+-- `monto_neto` (el desglose de IVA) se agregó después, en la migración 256:
+-- esta 255 ya se corrió en producción sin esa columna y no se puede editar.
 
 ALTER TABLE pagos_clubes DROP CONSTRAINT IF EXISTS pagos_clubes_concepto_check;
 ALTER TABLE pagos_clubes ADD CONSTRAINT pagos_clubes_concepto_check
