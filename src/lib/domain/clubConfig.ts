@@ -196,6 +196,70 @@ export const CONFIG_CLUB = [
     label: 'Puntos para quien no se presenta',
   },
 
+  // ── Categorías de jugador ──────────────────────────────────────────────
+  {
+    clave: 'categorias.esquema',
+    tipo: 'opcion',
+    opciones: ['auto', 'generico', 'buin', 'spinhouse'],
+    defecto: 'auto',
+    editablePor: 'admin',
+    label: 'Con qué categorías se clasifica a los jugadores',
+    // 'auto' = lo que hacía `esquemaCategorias.ts` antes de que existiera esta
+    // clave: Buin por su UUID, todos los demás el genérico. Es el default
+    // porque es el comportamiento actual, y porque cambiarlo a 'buin' le
+    // pondría las categorías PENECA…MASTER J a los otros cinco clubes.
+  },
+
+  // ── Índice de fuerza (Elo) ─────────────────────────────────────────────
+  // Las cuatro son inertes sin el módulo 'ranking_elo': nadie las lee. Por eso
+  // sus defaults no son "lo que Buin hace hoy" en el sentido literal —Buin no
+  // calcula Elo— sino los valores estándar del sistema. Lo que protege a Buin
+  // acá es el módulo apagado, no el default.
+  {
+    clave: 'elo.inicial',
+    tipo: 'entero',
+    min: 100,
+    max: 3000,
+    defecto: 1500,
+    editablePor: 'admin',
+    label: 'Índice con que arranca un jugador nuevo',
+  },
+  {
+    clave: 'elo.k',
+    tipo: 'entero',
+    min: 1,
+    max: 100,
+    defecto: 24,
+    editablePor: 'admin',
+    label: 'Cuánto se mueve el índice por partido (K)',
+    // 24 es el valor habitual para competencia de club. Más alto reacciona
+    // antes y salta más con un resultado raro; más bajo es estable pero tarda
+    // media temporada en reflejar que alguien mejoró.
+  },
+  {
+    clave: 'elo.k_menores',
+    tipo: 'entero',
+    min: 1,
+    max: 100,
+    defecto: 40,
+    editablePor: 'admin',
+    label: 'Cuánto se mueve el índice de un menor por partido (K)',
+    // Más alto que el de adultos a propósito: la fuerza real de un juvenil
+    // cambia de mes a mes. Ponerlo igual al de adultos desactiva la
+    // diferencia sin romper nada.
+  },
+  {
+    clave: 'elo.cuenta_walkover',
+    tipo: 'opcion',
+    opciones: ['no', 'si'],
+    defecto: 'no',
+    editablePor: 'admin',
+    label: 'Si no presentarse mueve el índice',
+    // 'no' porque un partido que no se jugó no es evidencia de fuerza.
+    // Castigar la no presentación es disciplina y va por los puntos de la
+    // liga, no por el índice.
+  },
+
   // ── Inscripción ────────────────────────────────────────────────────────
   {
     clave: 'inscripcion.autoservicio',
