@@ -23,6 +23,17 @@ export function rutaCentralPago(clubId: string) {
   return `central-pago/${clubId}/datos.jpg`
 }
 
+// Facturas de CmSports (empresa), no de un club. La primera carpeta las deja
+// fuera de las dos políticas del bucket, que comparan `foldername(name)[2]`
+// contra el club de quien mira: acá esa posición es 'pagos' o 'gastos' y no
+// calza con ningún UUID, así que solo se alcanzan con la service key desde una
+// Server Action que ya verificó superadmin. Ver migración 255.
+export const CARPETA_FACTURAS = 'facturas-cmsports'
+
+export function rutaFacturaCmsports(tipo: 'pagos' | 'gastos', id: string, ext: string) {
+  return `${CARPETA_FACTURAS}/${tipo}/${id}.${ext}`
+}
+
 export async function firmarUrl(path: string | null | undefined): Promise<string | null> {
   if (!path) return null
   const { data } = await createClient().storage

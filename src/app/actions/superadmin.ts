@@ -6,6 +6,7 @@ import { requireSuperadmin } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hoyISO, sumarMesesISO, vencimientoTrasPago } from '@/lib/domain/suscripciones'
 import { MODULOS_KEYS, conDependencias } from '@/lib/domain/modulos'
+import { BUCKET_PRIVADO, CARPETA_FACTURAS, rutaFacturaCmsports } from '@/lib/supabase/privado'
 
 const crearClubSchema = z.object({
   nombre: z.string().trim().min(2, 'Ingresa el nombre del club'),
@@ -397,6 +398,8 @@ export async function registrarPagoClub(input: {
   periodoAnio: number
   metodo: string
   notas: string
+  fechaPago?: string
+  concepto?: string
 }) {
   const { error: authErr, supabase } = await requireSuperadmin()
   if (authErr || !supabase) return { error: authErr }
@@ -408,9 +411,14 @@ export async function registrarPagoClub(input: {
     periodoAnio: z.number().int().min(2020).max(2100),
     metodo: z.enum(['transferencia', 'efectivo', 'otro']),
     notas: z.string().trim().max(500, 'Las notas son demasiado largas'),
+    // La fecha se pide para poder registrar lo de atrás: los pagos viejos
+    // entran con el día en que la plata llegó de verdad, no con el de hoy.
+    fechaPago: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de pago inválida').optional(),
+    concepto: z.enum(['mensualidad', 'implementacion', 'soporte', 'otro']).optional(),
   }).safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const data = parsed.data
+  const concepto = data.concepto ?? 'mensualidad'
 
   const { data: club, error: clubError } = await supabase.from('clubes')
     .select('estado_plan,proximo_vencimiento,fecha_inicio_plan')
@@ -418,33 +426,187 @@ export async function registrarPagoClub(input: {
     .single()
   if (clubError || !club) return { error: 'No se encontró el club' }
 
-  const { error } = await supabase.from('pagos_clubes').insert({
+  const { data: creado, error } = await supabase.from('pagos_clubes').insert({
     club_id: data.clubId,
     monto: data.monto,
     periodo_mes: data.periodoMes,
     periodo_anio: data.periodoAnio,
+    fecha_pago: data.fechaPago ?? hoyISO(),
     metodo: data.metodo,
     notas: data.notas || null,
-  })
-  if (error) return { error: 'Error al registrar el pago' }
+    concepto,
+  }).select('id').single()
+  if (error || !creado) return { error: 'Error al registrar el pago' }
 
-  const { error: estadoError } = await supabase.from('clubes')
-    .update({
-      estado_pago: 'pagado',
-      proximo_vencimiento: club.estado_plan === 'activo'
-        ? vencimientoTrasPago({
-            fechaInicioPlan: club.fecha_inicio_plan,
-            proximoVencimiento: club.proximo_vencimiento,
-            periodoMes: data.periodoMes,
-            periodoAnio: data.periodoAnio,
-          })
-        : club.proximo_vencimiento,
-    })
-    .eq('id', data.clubId)
-  if (estadoError) return { error: 'Pago registrado pero fallo actualizar el estado' }
+  // Solo la mensualidad corre el vencimiento. La implementación y el soporte
+  // se cobran una vez y no compran un mes de plan: contarlos como tal regalaba
+  // un mes cada vez que se registraba uno.
+  if (concepto === 'mensualidad') {
+    const { error: estadoError } = await supabase.from('clubes')
+      .update({
+        estado_pago: 'pagado',
+        proximo_vencimiento: club.estado_plan === 'activo'
+          ? vencimientoTrasPago({
+              fechaInicioPlan: club.fecha_inicio_plan,
+              proximoVencimiento: club.proximo_vencimiento,
+              periodoMes: data.periodoMes,
+              periodoAnio: data.periodoAnio,
+            })
+          : club.proximo_vencimiento,
+      })
+      .eq('id', data.clubId)
+    if (estadoError) return { error: 'Pago registrado pero fallo actualizar el estado' }
+  }
+
+  revalidatePath('/superadmin/finanzas')
+  return { success: true, pagoId: creado.id }
+}
+
+// ── Gastos de CmSports ──────────────────────────────────────────────────
+// La otra mitad del resultado. Hasta la migración 255 la pantalla se llamaba
+// "Finanzas" y solo sabía sumar ingresos.
+
+export async function registrarGastoCmsports(input: {
+  fecha: string
+  monto: number
+  categoria: string
+  descripcion: string
+  proveedor: string
+}) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+
+  const parsed = z.object({
+    fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida'),
+    monto: z.number().finite().positive('El monto debe ser mayor a cero'),
+    categoria: z.string().trim().min(2, 'Escribe una categoría').max(60),
+    descripcion: z.string().trim().min(2, 'Escribe en qué se gastó').max(300),
+    proveedor: z.string().trim().max(120),
+  }).safeParse(input)
+  if (!parsed.success) return { error: parsed.error.issues[0].message }
+  const data = parsed.data
+
+  const { data: creado, error } = await supabase.from('gastos_cmsports').insert({
+    fecha: data.fecha,
+    monto: data.monto,
+    categoria: data.categoria,
+    descripcion: data.descripcion,
+    proveedor: data.proveedor || null,
+  }).select('id').single()
+  if (error || !creado) return { error: 'Error al registrar el gasto' }
+
+  revalidatePath('/superadmin/finanzas')
+  return { success: true, gastoId: creado.id }
+}
+
+export async function eliminarGastoCmsports(input: { gastoId: string }) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  if (!z.string().uuid().safeParse(input.gastoId).success) return { error: 'Gasto inválido' }
+
+  const { data: gasto, error: leerError } = await supabase.from('gastos_cmsports')
+    .select('factura_path').eq('id', input.gastoId).maybeSingle()
+  if (leerError) return { error: 'No se pudo leer el gasto' }
+
+  const { error } = await supabase.from('gastos_cmsports').delete().eq('id', input.gastoId)
+  if (error) return { error: 'Error al eliminar el gasto' }
+
+  // El archivo después de la fila: si esto falla queda un PDF huérfano en el
+  // bucket, que es molesto y nada más. Al revés —borrar el archivo y que falle
+  // la fila— dejaría un gasto apuntando a una factura que ya no existe.
+  if (gasto?.factura_path) {
+    await createAdminClient().storage.from(BUCKET_PRIVADO).remove([gasto.factura_path])
+  }
 
   revalidatePath('/superadmin/finanzas')
   return { success: true }
+}
+
+// ── Facturas ────────────────────────────────────────────────────────────
+
+const EXT_FACTURA: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
+/**
+ * Sube (o reemplaza) la factura de un pago o de un gasto.
+ *
+ * Se acepta imagen además de PDF a propósito: la boleta de una compra chica
+ * llega como foto del celular, y obligar a convertirla a PDF es la clase de
+ * fricción que termina con la factura guardada en ninguna parte.
+ */
+export async function subirFacturaCmsports(input: {
+  tipo: 'pagos' | 'gastos'
+  id: string
+  base64: string
+  nombreArchivo: string
+}) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+  if (input.tipo !== 'pagos' && input.tipo !== 'gastos') return { error: 'Tipo inválido' }
+  if (!z.string().uuid().safeParse(input.id).success) return { error: 'Registro inválido' }
+
+  const mime = input.base64.match(/^data:([^;]+);base64,/)?.[1] || ''
+  const ext = EXT_FACTURA[mime]
+  if (!ext) return { error: 'Formato inválido. Se acepta PDF, JPG, PNG o WEBP.' }
+
+  const buffer = Buffer.from(input.base64.replace(/^data:[^;]+;base64,/, ''), 'base64')
+  if (buffer.byteLength > 10 * 1024 * 1024) return { error: 'El archivo supera los 10 MB' }
+
+  const tabla = input.tipo === 'pagos' ? 'pagos_clubes' : 'gastos_cmsports'
+  const { data: fila, error: leerError } = await supabase.from(tabla)
+    .select('factura_path').eq('id', input.id).maybeSingle()
+  if (leerError) return { error: 'No se pudo leer el registro' }
+  if (!fila) return { error: 'No se encontró el registro' }
+
+  const admin = createAdminClient()
+  const path = rutaFacturaCmsports(input.tipo, input.id, ext)
+
+  // La anterior puede tener otra extensión (PDF reemplazado por foto): sin
+  // esto quedaría huérfana en el bucket y nadie volvería a mirarla.
+  if (fila.factura_path && fila.factura_path !== path) {
+    await admin.storage.from(BUCKET_PRIVADO).remove([fila.factura_path])
+  }
+
+  const { error: upErr } = await admin.storage.from(BUCKET_PRIVADO)
+    .upload(path, buffer, { contentType: mime, upsert: true })
+  if (upErr) return { error: 'Error al subir la factura: ' + upErr.message }
+
+  const { error: dbErr } = await supabase.from(tabla).update({
+    factura_path: path,
+    factura_nombre: input.nombreArchivo.slice(0, 200),
+  }).eq('id', input.id)
+  if (dbErr) return { error: 'La factura se subió pero no quedó registrada: ' + dbErr.message }
+
+  revalidatePath('/superadmin/finanzas')
+  return { success: true, path, nombreArchivo: input.nombreArchivo.slice(0, 200) }
+}
+
+/**
+ * Enlace de descarga, firmado y con vencimiento.
+ *
+ * Se firma de a una y al hacer clic, no todas al cargar la pantalla: la lista
+ * de ingresos y gastos crece para siempre y firmar cien archivos que nadie va
+ * a abrir es una petición grande cada vez que alguien entra a mirar el total.
+ */
+export async function urlFacturaCmsports(input: { path: string }) {
+  const { error: authErr, supabase } = await requireSuperadmin()
+  if (authErr || !supabase) return { error: authErr }
+
+  // Solo rutas de facturas de CmSports. La ruta viene del navegador, y sin
+  // este cerco esta acción firmaría cualquier archivo del bucket privado
+  // —incluidos los documentos personales de los jugadores de cualquier club—.
+  if (!input.path.startsWith(`${CARPETA_FACTURAS}/`) || input.path.includes('..')) {
+    return { error: 'Ruta inválida' }
+  }
+
+  const { data, error } = await createAdminClient().storage
+    .from(BUCKET_PRIVADO).createSignedUrl(input.path, 3600)
+  if (error || !data?.signedUrl) return { error: 'No se pudo generar el enlace' }
+  return { success: true, url: data.signedUrl }
 }
 
 

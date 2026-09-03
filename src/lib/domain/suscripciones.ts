@@ -94,3 +94,64 @@ export function metricasPlanes(clubes: ClubPlan[], hoy = hoyISO()) {
     alDia: activos.length - vencidos.length,
   }
 }
+
+export type ConceptoPago = 'mensualidad' | 'implementacion' | 'soporte' | 'otro'
+
+export const CONCEPTOS: { valor: ConceptoPago; label: string }[] = [
+  { valor: 'mensualidad', label: 'Mensualidad' },
+  { valor: 'implementacion', label: 'Implementación' },
+  { valor: 'soporte', label: 'Soporte / desarrollo' },
+  { valor: 'otro', label: 'Otro' },
+]
+
+export const LABEL_CONCEPTO = Object.fromEntries(CONCEPTOS.map(c => [c.valor, c.label])) as Record<string, string>
+
+type PagoRecibido = { club_id: string; monto: number | null; fecha_pago: string }
+type GastoEmpresa = { monto: number | null; fecha: string }
+
+const suma = (filas: { monto: number | null }[]) => filas.reduce((total, f) => total + Number(f.monto || 0), 0)
+
+/**
+ * Las cuentas de CmSports: lo que entró, lo que salió y el acumulado por club.
+ *
+ * ── El mes se mide por `fecha_pago`, no por el período ───────────────────
+ *
+ * Antes "cobrado este mes" filtraba por `periodo_mes`/`periodo_anio`, o sea
+ * por el mes que el pago CUBRE. Con el historial andando eso se rompe solo:
+ * registrar hoy la implementación que Buin pagó hace meses aparecería como
+ * plata entrada este mes, y un pago adelantado de octubre no aparecería
+ * nunca. La caja se mide por la fecha en que la plata llegó; el período sigue
+ * sirviendo para saber qué mes quedó cubierto, que es otra pregunta.
+ *
+ * ── Por qué el acumulado se calcula acá y no en SQL ──────────────────────
+ *
+ * Son cuatro clubes y unas decenas de pagos. Una vista o un `group by` en la
+ * base sería una migración más para mantener y un lugar más donde la
+ * definición de "total" pueda divergir de la de la pantalla.
+ */
+export function resumenCmsports(pagos: PagoRecibido[], gastos: GastoEmpresa[], hoy = hoyISO()) {
+  const mes = hoy.slice(0, 7)
+  const delMes = <T extends { fecha: string }>(f: T) => f.fecha.slice(0, 7) === mes
+
+  const ingresos = suma(pagos)
+  const egresos = suma(gastos)
+
+  const porClub = new Map<string, { total: number; pagos: number; ultimo: string | null }>()
+  for (const p of pagos) {
+    const acum = porClub.get(p.club_id) || { total: 0, pagos: 0, ultimo: null }
+    acum.total += Number(p.monto || 0)
+    acum.pagos += 1
+    // Fechas ISO: el orden lexicográfico es el cronológico.
+    if (!acum.ultimo || p.fecha_pago > acum.ultimo) acum.ultimo = p.fecha_pago
+    porClub.set(p.club_id, acum)
+  }
+
+  return {
+    ingresos,
+    egresos,
+    balance: ingresos - egresos,
+    ingresosMes: suma(pagos.filter(p => delMes({ fecha: p.fecha_pago }))),
+    egresosMes: suma(gastos.filter(delMes)),
+    porClub,
+  }
+}

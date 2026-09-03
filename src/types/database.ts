@@ -67,6 +67,9 @@ export interface Database {
           fecha_pago: string
           metodo: string | null
           notas: string | null
+          concepto: string
+          factura_path: string | null
+          factura_nombre: string | null
           creado_en: string | null
         }
         Insert: {
@@ -78,6 +81,9 @@ export interface Database {
           fecha_pago?: string
           metodo?: string | null
           notas?: string | null
+          concepto?: string
+          factura_path?: string | null
+          factura_nombre?: string | null
           creado_en?: string | null
         }
         Update: {
@@ -89,11 +95,50 @@ export interface Database {
           fecha_pago?: string
           metodo?: string | null
           notas?: string | null
+          concepto?: string
+          factura_path?: string | null
+          factura_nombre?: string | null
           creado_en?: string | null
         }
         Relationships: [
           { foreignKeyName: 'pagos_clubes_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
         ]
+      }
+      gastos_cmsports: {
+        Row: {
+          id: string
+          fecha: string
+          monto: number
+          categoria: string
+          descripcion: string
+          proveedor: string | null
+          factura_path: string | null
+          factura_nombre: string | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          fecha?: string
+          monto: number
+          categoria: string
+          descripcion: string
+          proveedor?: string | null
+          factura_path?: string | null
+          factura_nombre?: string | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          fecha?: string
+          monto?: number
+          categoria?: string
+          descripcion?: string
+          proveedor?: string | null
+          factura_path?: string | null
+          factura_nombre?: string | null
+          creado_en?: string
+        }
+        Relationships: []
       }
       perfiles: {
         Row: {
