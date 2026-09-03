@@ -24,15 +24,19 @@ export async function requireAdminClub() {
 // Eran cuatro copias sin divergencias todavía, que es exactamente el momento
 // de juntarlas: el próximo que cambie el criterio de rol en una sola de ellas
 // deja las otras tres abiertas y nadie se entera.
+//
+// Devuelve también el `nombre` para poder dejar rastro de quién escribió, sin
+// que cada acción tenga que volver a consultar `perfiles`. Es aditivo: quien no
+// lo use sigue igual.
 export async function requireStaffClub() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null }
-  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol').eq('id', user.id).single()
+  if (!user) return { error: 'No autenticado' as const, supabase: null, clubId: null, nombre: null }
+  const { data: perfil } = await supabase.from('perfiles').select('club_id,rol,nombre').eq('id', user.id).single()
   if (!perfil?.club_id || !['admin', 'superadmin', 'profesor'].includes(perfil.rol ?? '')) {
-    return { error: 'Acceso denegado' as const, supabase: null, clubId: null }
+    return { error: 'Acceso denegado' as const, supabase: null, clubId: null, nombre: null }
   }
-  return { error: null, supabase, clubId: perfil.club_id }
+  return { error: null, supabase, clubId: perfil.club_id, nombre: perfil.nombre }
 }
 
 // Admin devolviendo el perfil completo (id, club_id, rol, nombre) — torneos.

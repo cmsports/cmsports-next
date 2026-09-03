@@ -3,7 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { requireAdminClub, requirePerfil } from '@/lib/auth/require'
+import { requireAdminClub, requirePerfil, requireStaffClub } from '@/lib/auth/require'
 import { authEmailDe as emailParaAuth, generarEmailInicial, generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
 import { sincronizarEmailAuth } from '@/lib/credencialesAuth'
 import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
@@ -280,6 +280,54 @@ export async function actualizarMensualidad(params: { jugadorId: string; mensual
     .select('id').maybeSingle()
   if (error) return { error: error.message }
   if (!data) return { error: 'Jugador no encontrado' }
+  return { success: true }
+}
+
+/**
+ * Guarda las observaciones del entrenador y los objetivos del alumno.
+ *
+ * Va a `jugador_perfil_tecnico` y no a `jugadores` porque el formulario los
+ * pide "visibles solo para el staff", y la RLS de Postgres filtra filas y no
+ * columnas: en `jugadores` se los llevaría el propio alumno al pedir su ficha.
+ * La migración 256 lo explica entero.
+ *
+ * Lo escribe el STAFF, no solo el admin: la observación técnica es del
+ * entrenador, que es quien mira entrenar al alumno.
+ */
+export async function guardarPerfilTecnico(params: {
+  jugadorId: string
+  observaciones: string
+  objetivos: string
+}) {
+  const { error: authErr, supabase, clubId, nombre } = await requireStaffClub()
+  if (authErr) return { error: authErr }
+
+  // Que el jugador sea de su club se comprueba acá y no solo en la RLS: sin
+  // esto, el upsert insertaría una fila con el club_id de quien llama y un
+  // jugador_id ajeno, y la política la dejaría pasar porque el club_id calza.
+  const { data: jugador, error: errJugador } = await supabase
+    .from('jugadores').select('id')
+    .eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
+  if (errJugador) return { error: 'No se pudo verificar el jugador: ' + errJugador.message }
+  if (!jugador) return { error: 'Jugador no encontrado en el club' }
+
+  // Un campo vacío se guarda como NULL, no como cadena vacía: así "todavía no
+  // le escribieron nada" y "le borraron lo que decía" son el mismo estado, y
+  // la ficha no tiene que distinguir dos vacíos distintos.
+  const { error } = await (supabase as never as {
+    from: (t: string) => { upsert: (v: unknown, o: unknown) => Promise<{ error: { message: string } | null }> }
+  })
+    .from('jugador_perfil_tecnico')
+    .upsert({
+      jugador_id: params.jugadorId,
+      club_id: clubId,
+      observaciones: params.observaciones.trim() || null,
+      objetivos: params.objetivos.trim() || null,
+      actualizado_en: new Date().toISOString(),
+      actualizado_por_nombre: nombre,
+    }, { onConflict: 'jugador_id' })
+
+  if (error) return { error: 'No se pudo guardar: ' + error.message }
   return { success: true }
 }
 

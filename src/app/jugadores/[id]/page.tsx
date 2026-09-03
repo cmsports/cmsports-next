@@ -31,6 +31,7 @@ import { useModulos } from '@/lib/hooks/useModulos'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { CATEGORIAS_EDAD, MANOS, NIVELES, categoriaPorEdad, manoLabel, nivelLabel } from '@/lib/domain/perfilDeportivo'
+import PanelPerfilTecnico from '@/components/PanelPerfilTecnico'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { sesionesDelMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
@@ -1194,6 +1195,16 @@ export default function JugadorDetallePage() {
               )}
             </div>
           </div>
+        )}
+
+        {/* Notas técnicas — tabla aparte y solo staff (migración 256). El
+            jugador no la ve ni entrando por la API: no tiene política. */}
+        {tiene('perfil_deportivo') && puedeEditar && (
+          <PanelPerfilTecnico
+            jugadorId={jugador.id}
+            clubId={jugador.club_id}
+            puedeEditar={puedeEditar}
+          />
         )}
 
         {/* Asistencia del año */}
