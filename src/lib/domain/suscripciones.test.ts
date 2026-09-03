@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { metricasPlanes, planVencido, sumarMesesISO, vencimientoTrasPago } from './suscripciones'
+import { metricasPlanes, planVencido, resumenCmsports, sumarMesesISO, vencimientoTrasPago } from './suscripciones'
 
 describe('ciclo mensual de suscripción', () => {
   it('respeta el último día del mes', () => {
@@ -94,5 +94,46 @@ describe('metricasPlanes', () => {
     const m = metricasPlanes(clubes, '2026-09-02')
     expect(m.vencidos).toBe(1)
     expect(m.alDia).toBe(0)
+  })
+})
+
+describe('las cuentas de CmSports', () => {
+  // El caso real: Buin pagó la implementación en junio, y después dos
+  // mensualidades. Antes la pantalla mostraba $50.000 —el mes corriente— y el
+  // resto no aparecía en ninguna parte.
+  const pagos = [
+    { club_id: 'buin', monto: 80000, fecha_pago: '2026-06-10' },
+    { club_id: 'buin', monto: 50000, fecha_pago: '2026-08-05' },
+    { club_id: 'buin', monto: 50000, fecha_pago: '2026-09-02' },
+    { club_id: 'paine', monto: 30000, fecha_pago: '2026-09-01' },
+  ]
+  const gastos = [
+    { monto: 12000, fecha: '2026-09-01' },
+    { monto: 8000, fecha: '2026-07-01' },
+  ]
+
+  it('suma el histórico completo, no solo el mes', () => {
+    const r = resumenCmsports(pagos, gastos, '2026-09-03')
+    expect(r.ingresos).toBe(210000)
+    expect(r.porClub.get('buin')).toEqual({ total: 180000, pagos: 3, ultimo: '2026-09-02' })
+  })
+
+  it('descuenta los gastos: el balance es un resultado, no la mitad de uno', () => {
+    const r = resumenCmsports(pagos, gastos, '2026-09-03')
+    expect(r.egresos).toBe(20000)
+    expect(r.balance).toBe(190000)
+  })
+
+  // Registrar hoy un pago viejo no puede inflar la caja del mes.
+  it('el mes se mide por la fecha en que entró la plata', () => {
+    const r = resumenCmsports(pagos, gastos, '2026-09-03')
+    expect(r.ingresosMes).toBe(80000)   // los dos de septiembre, no los de junio ni agosto
+    expect(r.egresosMes).toBe(12000)
+  })
+
+  it('sin pagos ni gastos no revienta: todo en cero', () => {
+    const r = resumenCmsports([], [], '2026-09-03')
+    expect(r).toMatchObject({ ingresos: 0, egresos: 0, balance: 0, ingresosMes: 0, egresosMes: 0 })
+    expect(r.porClub.size).toBe(0)
   })
 })
