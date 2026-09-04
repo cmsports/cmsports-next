@@ -18,6 +18,7 @@ import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
 import LigaFutbolDashboardWidget from '@/components/liga-futbol/DashboardWidget'
 import TarjetaOcupacion from '@/components/TarjetaOcupacion'
+import TarjetaAltasBajas from '@/components/TarjetaAltasBajas'
 import { etiquetaCategoria } from '@/lib/domain/categoriasFinanzas'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -57,6 +58,7 @@ const dashboardCache: Record<string, {
   kpis?: any
   solicitudes?: any[]
   desgloseGastos?: { categoria: string; monto: number }[]
+  desgloseIngresos?: { categoria: string; monto: number }[]
   jugadoresInactivos?: any[]
   asistenciaHoy?: { total: number; nombres: string[] }
 }> = {}
@@ -83,6 +85,7 @@ export default function DashboardPage() {
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
   const [desgloseGastos, setDesgloseGastos]       = useState<{ categoria: string; monto: number }[]>([])
+  const [desgloseIngresos, setDesgloseIngresos]   = useState<{ categoria: string; monto: number }[]>([])
   const [asistenciaHoy, setAsistenciaHoy]         = useState<{ total: number; nombres: string[] } | null>(null)
   const [loading, setLoading]       = useState(true)
   const [errorDatos, setErrorDatos] = useState(false)
@@ -92,20 +95,30 @@ export default function DashboardPage() {
   const [tooltip, setTooltip]       = useState<string | null>(null)
   const router = useRouter()
 
-  async function cargarDesgloseGastos(cid: string) {
+  // Los dos desgloses del mes salen de la MISMA consulta: son las mismas filas
+  // de `movimientos`, separadas por `tipo`. Traerlas dos veces sería pedirle a
+  // la base el mismo mes dos veces para partirlo igual en el cliente.
+  async function cargarDesgloses(cid: string) {
     const mesActual  = new Date().getMonth() + 1
     const anioActual = new Date().getFullYear()
     const mesInicio  = `${anioActual}-${String(mesActual).padStart(2, '0')}-01`
     const ultimoDia  = new Date(anioActual, mesActual, 0).getDate()
     const mesFin     = `${anioActual}-${String(mesActual).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
 
-    const { data } = await supabase.from('movimientos').select('categoria,monto').eq('club_id', cid).eq('tipo', 'gasto').gte('fecha', mesInicio).lte('fecha', mesFin)
+    const { data } = await supabase.from('movimientos').select('tipo,categoria,monto').eq('club_id', cid).gte('fecha', mesInicio).lte('fecha', mesFin)
 
-    const agrupado: Record<string, number> = {}
-    ;(data || []).forEach((m: any) => { agrupado[m.categoria] = (agrupado[m.categoria] || 0) + m.monto })
-    const desglose = Object.entries(agrupado).map(([categoria, monto]) => ({ categoria, monto })).sort((a, b) => b.monto - a.monto)
-    dashboardCache[cid] = { ...dashboardCache[cid], desgloseGastos: desglose }
-    setDesgloseGastos(desglose)
+    const porTipo = (tipo: string) => {
+      const agrupado: Record<string, number> = {}
+      ;(data || []).filter((m: any) => m.tipo === tipo)
+        .forEach((m: any) => { agrupado[m.categoria] = (agrupado[m.categoria] || 0) + m.monto })
+      return Object.entries(agrupado).map(([categoria, monto]) => ({ categoria, monto })).sort((a, b) => b.monto - a.monto)
+    }
+
+    const gastos   = porTipo('gasto')
+    const ingresos = porTipo('ingreso')
+    dashboardCache[cid] = { ...dashboardCache[cid], desgloseGastos: gastos, desgloseIngresos: ingresos }
+    setDesgloseGastos(gastos)
+    setDesgloseIngresos(ingresos)
   }
 
   async function cargarDatos(cid: string) {
@@ -264,6 +277,7 @@ export default function DashboardPage() {
         if (cached.kpis) setKpis(cached.kpis)
         if (cached.solicitudes) setSolicitudes(cached.solicitudes)
         if (cached.desgloseGastos) setDesgloseGastos(cached.desgloseGastos)
+        if (cached.desgloseIngresos) setDesgloseIngresos(cached.desgloseIngresos)
         if (cached.jugadoresInactivos) setJugadoresInactivos(cached.jugadoresInactivos)
         if (cached.asistenciaHoy) setAsistenciaHoy(cached.asistenciaHoy)
         setLoading(false)
@@ -276,7 +290,7 @@ export default function DashboardPage() {
         if (!cancelado) setLoading(false)
         scheduleIdle(() => {
           if (!cancelado) {
-            void cargarDesgloseGastos(clubId)
+            void cargarDesgloses(clubId)
             void cargarInactivos(clubId)
             void cargarAsistenciaHoy(clubId)
           }
@@ -485,6 +499,46 @@ export default function DashboardPage() {
             tooltip={tooltip} tooltipId="ingresos" setTooltip={setTooltip}
             tooltipText="Suma de todos los movimientos de tipo ingreso del mes actual."
           />
+        )}
+
+        {/* Altas y bajas del mes — la señal temprana de deserción. */}
+        {tiene('retencion') && <TarjetaAltasBajas clubId={perfil?.club_id} />}
+
+        {/* Ingresos por línea de negocio.
+            Cuelga de 'finanzas_categorias' —el módulo de las categorías propias
+            del club— y no de 'finanzas' a secas: sin esas categorías el desglose
+            es una sola barra que dice "mensualidades 100 %", que no informa
+            nada, y le agregaría una tarjeta al dashboard de Buin sin que la
+            pidiera. El plan §7.2: las tarjetas nuevas van abajo y el dashboard
+            de Buin no se reordena. */}
+        {tiene('finanzas') && tiene('finanzas_categorias') && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: C.greenL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+              <DollarSign size={16} color={C.green} />
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>📈 Ingresos por línea</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: C.green, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
+              {errorDatos ? '—' : fmt(kpis.ingresos || 0)}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+              {desgloseIngresos.length === 0 ? (
+                <div style={{ fontSize: 11, color: C.hint }}>Sin ingresos registrados este mes</div>
+              ) : desgloseIngresos.slice(0, 5).map(d => {
+                const pct = (kpis.ingresos || 0) > 0 ? Math.round((d.monto / kpis.ingresos) * 100) : 0
+                return (
+                  <div key={d.categoria}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: C.muted, marginBottom: 3 }}>
+                      <span>{etiquetaCategoria(d.categoria)}</span>
+                      <span style={{ fontWeight: 600, color: C.text, fontVariantNumeric: 'tabular-nums' }}>{fmt(d.monto)} · {pct}%</span>
+                    </div>
+                    <div style={{ height: 4, background: C.greenL, borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: C.green, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         )}
 
         {/* Gastos este mes */}
