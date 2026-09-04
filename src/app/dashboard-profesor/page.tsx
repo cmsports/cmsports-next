@@ -19,6 +19,7 @@ import { diaDesdeFecha, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { useEnVivo } from '@/lib/useEnVivo'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
+import AlertaFaltas, { type AlumnoParaAlerta } from '@/components/AlertaFaltas'
 import { MessageSquare } from 'lucide-react'
 
 const supabase = createClient()
@@ -34,7 +35,7 @@ type Bloque = {
   sede: string
   hora_inicio: string
   hora_fin: string
-  alumnos: { id: string; nombre: string; categoria: string | null }[]
+  alumnos: { id: string; nombre: string; categoria: string | null; telefono: string | null }[]
 }
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
@@ -71,7 +72,10 @@ export default function DashboardProfesorPage() {
         .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
         .order('hora_inicio'),
       db.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
-      db.from('jugadores').select('id,nombre,categoria')
+      // `telefono` es para el botón de WhatsApp de la alerta de inasistencias.
+      // Es dato personal de sus alumnos, que es lo que la matriz de permisos
+      // le concede al entrenador; montos y morosidad siguen sin aparecer acá.
+      db.from('jugadores').select('id,nombre,categoria,telefono')
         .eq('club_id', club).eq('estado', 'activo')
         .or('es_externo.is.null,es_externo.eq.false'),
       // Un día suspendido no es un día de clase: si el grupo no se dicta, no
@@ -123,6 +127,12 @@ export default function DashboardProfesorPage() {
 
   const saludo = ahora.getHours() < 12 ? 'Buenos días' : ahora.getHours() < 20 ? 'Buenas tardes' : 'Buenas noches'
   const totalAlumnos = bloques.reduce((s, b) => s + b.alumnos.length, 0)
+
+  // Sin repetidos: un alumno que está en dos de sus bloques de hoy no tiene
+  // por qué aparecer dos veces en la alerta.
+  const alumnosDeHoy: AlumnoParaAlerta[] = [...new Map(
+    bloques.flatMap(b => b.alumnos).map(a => [a.id, a]),
+  ).values()]
   const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`
 
   return (
@@ -136,6 +146,13 @@ export default function DashboardProfesorPage() {
           {bloques.length > 0 && ` · ${bloques.length} grupo${bloques.length === 1 ? '' : 's'} · ${totalAlumnos} alumnos`}
         </div>
       </div>
+
+      {/* Va ARRIBA de todo lo demás: es lo único de esta pantalla que pide una
+          acción hoy. Con el módulo apagado —o con el umbral en 0, que es el
+          default— el componente no dibuja nada. */}
+      {tiene('retencion') && alumnosDeHoy.length > 0 && (
+        <AlertaFaltas clubId={perfil?.club_id} alumnos={alumnosDeHoy} />
+      )}
 
       {tiene('feedback') && (
         <div onClick={() => setFeedbackOpen(true)}

@@ -9,6 +9,7 @@ import {
   diasSinMovimiento,
   estadoDeMorosidad,
   faltasSeguidas,
+  mensajeFaltasApoderado,
   simular,
   vencimientoDe,
   type Cuota,
@@ -176,6 +177,39 @@ describe('faltasSeguidas', () => {
 
   it('sin marcas, cero', () => {
     expect(faltasSeguidas([])).toBe(0)
+  })
+})
+
+describe('mensajeFaltasApoderado', () => {
+  it('trata al alumno por su primer nombre y nombra al club', () => {
+    const m = mensajeFaltasApoderado({ nombreAlumno: 'Matías Rojas Pérez', nombreClub: 'Spinhouse' })
+    expect(m).toContain('Matías')
+    expect(m).not.toContain('Rojas')
+    expect(m).toContain('Spinhouse')
+  })
+
+  it('sin club no dice "undefined": cae en un genérico que se puede mandar igual', () => {
+    const m = mensajeFaltasApoderado({ nombreAlumno: 'Ana', nombreClub: null })
+    expect(m).not.toMatch(/undefined|null/)
+    expect(m).toContain('la escuela')
+  })
+
+  it('no menciona ni el número de faltas ni plata', () => {
+    // El número suena a lista de colegio, y la plata no es asunto del profe:
+    // la matriz de permisos le prohíbe ver montos.
+    const m = mensajeFaltasApoderado({ nombreAlumno: 'Ana', nombreClub: 'Spinhouse' })
+    expect(m).not.toMatch(/\d/)
+    expect(m.toLowerCase()).not.toMatch(/deuda|pago|pagar|cuota|mensualidad/)
+  })
+
+  it('pregunta, no reclama', () => {
+    const m = mensajeFaltasApoderado({ nombreAlumno: 'Ana', nombreClub: 'Spinhouse' })
+    expect(m).toContain('?')
+    expect(m.toLowerCase()).not.toMatch(/falta|ausencia|inasistencia/)
+  })
+
+  it('un nombre con espacios de más no rompe el saludo', () => {
+    expect(mensajeFaltasApoderado({ nombreAlumno: '  Pedro   Soto ' })).toContain('Pedro')
   })
 })
 

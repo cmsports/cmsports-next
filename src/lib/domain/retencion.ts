@@ -148,6 +148,35 @@ export function debeAlertarPorFaltas(config: LectorConfig, faltas: number): bool
 }
 
 /**
+ * El mensaje que el profe le manda al apoderado desde la alerta.
+ *
+ * Viene redactado a propósito. Un botón que abre WhatsApp en blanco deja al
+ * profe escribiendo de pie en la cancha, y ahí el mensaje o no sale o sale
+ * seco. El plan (§8.5) lo pide redactado por eso.
+ *
+ * El tono es una decisión, no un descuido: **pregunta, no reclama.** El alumno
+ * que faltó tres veces seguidas puede estar enfermo, castigado o aburrido, y
+ * un mensaje que da por sentado lo último es el que termina de perderlo.
+ *
+ * No dice cuántas faltas ni menciona plata. Lo primero suena a lista de
+ * asistencia de colegio; lo segundo no es asunto del profe —la matriz de
+ * permisos le prohíbe ver montos— y mezclarlo convierte una pregunta por el
+ * alumno en un cobro.
+ */
+export function mensajeFaltasApoderado(params: {
+  nombreAlumno: string
+  nombreClub?: string | null
+}): string {
+  const primerNombre = params.nombreAlumno.trim().split(/\s+/)[0] || params.nombreAlumno
+  const club = params.nombreClub?.trim()
+  return [
+    `Hola! Te escribo de ${club || 'la escuela'}.`,
+    `Notamos que ${primerNombre} no ha venido a las últimas clases. ¿Está todo bien?`,
+    `Si necesita cambiar de horario o recuperar alguna clase, lo vemos sin problema. ¡Quedamos atentos!`,
+  ].join(' ')
+}
+
+/**
  * Días desde el último signo de vida: una asistencia o un pago.
  *
  * `null` cuando no hay ninguno de los dos, que **no** es lo mismo que "muchos
