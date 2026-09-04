@@ -27,6 +27,7 @@ import { DIAS, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
 import { cupoDelBloque, mesasDelBloque, type UsoDeMesas } from '@/lib/domain/mesas'
+import { etiquetaTipoClase, modalidadDe } from '@/lib/domain/tiposClase'
 import { nivelOcupacion, porcentajeOcupacion, OCUPACION } from '@/lib/domain/ocupacion'
 import { CONFIG_POR_DEFECTO, type LectorConfig } from '@/lib/domain/clubConfig'
 import { configDelClub } from '@/lib/supabase/clubConfig'
@@ -47,6 +48,7 @@ type Bloque = {
   hora_fin: string
   cupo_maximo: number
   mesas: number | null
+  tipo_clase: string | null
   inscritos: number
 }
 
@@ -74,7 +76,7 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
       // falla — solo devuelve un número más alto que el real.
       soloVigentes(
         db.from('bloques_horario')
-          .select('id, nombre, sede, dia_semana, hora_inicio, hora_fin, cupo_maximo, mesas, bloque_jugadores(id, vigente_hasta)')
+          .select('id, nombre, sede, dia_semana, hora_inicio, hora_fin, cupo_maximo, mesas, tipo_clase, bloque_jugadores(id, vigente_hasta)')
           .eq('club_id', clubId).eq('activo', true),
         fechaChile(),
       ).order('hora_inicio'),
@@ -101,6 +103,7 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
       hora_fin: b.hora_fin,
       cupo_maximo: b.cupo_maximo ?? 0,
       mesas: b.mesas,
+      tipo_clase: b.tipo_clase ?? null,
       inscritos: (b.bloque_jugadores ?? []).filter((j: any) => j.vigente_hasta == null).length,
     })))
     setCargando(false)
@@ -128,7 +131,10 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
       const uso = {
         id: b.id, etiqueta: b.nombre,
         inicio: b.hora_inicio, fin: b.hora_fin,
-        mesas: mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas }),
+        // La modalidad sale del tipo de clase: un particular ocupa una mesa
+        // con dos alumnos donde un grupal mete cuatro. Sin tipo es 'grupal',
+        // que es lo que se asumía antes.
+        mesas: mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas, modalidad: modalidadDe(b.tipo_clase) }),
       }
       usosPorSala.set(sala, [...(usosPorSala.get(sala) ?? []), uso])
     }
@@ -143,6 +149,7 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
         usos: usosPorSala.get(`${b.sede}|${b.dia_semana}`) ?? [],
         franja: { inicio: b.hora_inicio, fin: b.hora_fin },
         bloqueId: b.id,
+        modalidad: modalidadDe(b.tipo_clase),
       })
       return { ...b, cupo, pct: porcentajeOcupacion(b.inscritos, cupo), nivel: nivelOcupacion(b.inscritos, cupo) }
     })
@@ -238,7 +245,15 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
                       <div style={{ height: '100%', width: `${Math.min(100, f.pct ?? 0)}%`, background: color }} />
                     </div>
 
-                    <div style={{ fontSize: 11, color, fontWeight: 500 }}>{que}</div>
+                    <div style={{ fontSize: 11, color, fontWeight: 500 }}>
+                      {que}
+                      {/* Solo si el bloque declaró tipo: en un club que no usa
+                          tipos de clase, "Grupal por nivel" en todas las filas
+                          es ruido que repite lo mismo doce veces. */}
+                      {f.tipo_clase && (
+                        <span style={{ color: hint, fontWeight: 400 }}> · {etiquetaTipoClase(f.tipo_clase)}</span>
+                      )}
+                    </div>
                   </div>
                 )
               })}

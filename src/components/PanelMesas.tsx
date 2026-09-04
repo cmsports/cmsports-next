@@ -24,6 +24,7 @@ import {
   seSolapan, tramosDelDia,
   type UsoDeMesas,
 } from '@/lib/domain/mesas'
+import { modalidadDe } from '@/lib/domain/tiposClase'
 import { CONFIG_POR_DEFECTO, type LectorConfig } from '@/lib/domain/clubConfig'
 import { configDelClub } from '@/lib/supabase/clubConfig'
 
@@ -41,6 +42,7 @@ type Bloque = {
   hora_fin: string
   cupo_maximo: number
   mesas: number | null
+  tipo_clase: string | null
   inscritos: number
 }
 
@@ -82,7 +84,7 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
         // que ya dejaron el grupo, y la consulta no falla — solo da un número
         // más alto que el real.
         db.from('bloques_horario')
-          .select('id, nombre, hora_inicio, hora_fin, cupo_maximo, mesas, activo, bloque_jugadores(id, vigente_hasta)')
+          .select('id, nombre, hora_inicio, hora_fin, cupo_maximo, mesas, tipo_clase, activo, bloque_jugadores(id, vigente_hasta)')
           .eq('club_id', clubId).eq('sede', sede).eq('dia_semana', dia)
           .order('hora_inicio'),
 
@@ -106,6 +108,7 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
           hora_fin: b.hora_fin,
           cupo_maximo: b.cupo_maximo ?? 0,
           mesas: b.mesas,
+          tipo_clase: b.tipo_clase ?? null,
           inscritos: (b.bloque_jugadores ?? []).filter((j: any) => j.vigente_hasta == null).length,
         })))
       setArr((arriendosRes.data ?? []) as Arriendo[])
@@ -138,7 +141,10 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
         etiqueta: b.nombre,
         inicio: b.hora_inicio,
         fin: b.hora_fin,
-        mesas: mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas }),
+        // Un particular ocupa una mesa con dos alumnos donde un grupal mete
+        // cuatro: el tipo de clase decide con qué modalidad se cuenta. Sin
+        // tipo es 'grupal', que es lo que se asumía antes.
+        mesas: mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas, modalidad: modalidadDe(b.tipo_clase) }),
       }))
       .filter(u => u.mesas > 0),
     ...arriendos.map(a => ({
@@ -321,11 +327,12 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
 
               <div style={{ display: 'grid', gap: 8 }}>
                 {bloques.map(b => {
-                  const ocupa = mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas })
+                  const modalidad = modalidadDe(b.tipo_clase)
+                  const ocupa = mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas, modalidad })
                   const cupo = cupoDelBloque({
                     config, cupoMaximo: b.cupo_maximo, inscritos: b.inscritos, declaradas: b.mesas,
                     totalSede: total, usos, franja: { inicio: b.hora_inicio, fin: b.hora_fin },
-                    bloqueId: b.id,
+                    bloqueId: b.id, modalidad,
                   })
                   const lleno = cupo > 0 && b.inscritos >= cupo
 
@@ -333,7 +340,7 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
                   // nada: las mesas que ya ocupa más las que quedan libres.
                   const cupoPorMesas =
                     (ocupa + mesasLibres({ total, usos, franja: { inicio: b.hora_inicio, fin: b.hora_fin }, excluirId: b.id }))
-                    * jugadoresPorMesa(config, 'grupal')
+                    * jugadoresPorMesa(config, modalidad)
 
                   return (
                     <div key={b.id} style={{ padding: '11px 13px', background: '#f8fafc', borderRadius: 8 }}>

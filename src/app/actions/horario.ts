@@ -3,6 +3,8 @@
 import { diaDesdeFecha, hhmm, iniciosDeInscripcion } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cierreVigencia } from '@/lib/domain/vigencia'
+import { SEDES } from '@/lib/domain/sedeGrupo'
+import { esTipoClase } from '@/lib/domain/tiposClase'
 import { requireStaffClub } from '@/lib/auth/require'
 
 // El horario semanal lo maneja el staff (admin o profesor), no solo el admin,
@@ -59,31 +61,54 @@ async function guardarProfesores(
   supabase: any,
   bloqueId: string,
   profesorIds: string[],
+  auxiliarIds: string[] = [],
 ): Promise<string | null> {
-  const quiero = [...new Set(profesorIds)].filter(Boolean)
+  // Quién dicta y con qué rol. El principal gana si alguien quedó en las dos
+  // listas: es más fácil equivocarse tildando de más el auxiliar que
+  // degradar a alguien sin querer.
+  const quiero = new Map<string, 'principal' | 'auxiliar'>()
+  for (const id of auxiliarIds) if (id) quiero.set(id, 'auxiliar')
+  for (const id of profesorIds) if (id) quiero.set(id, 'principal')
 
   const { data: abiertas, error: errLeer } = await supabase.from('bloque_profesores')
-    .select('id,profesor_id').eq('bloque_id', bloqueId).is('vigente_hasta', null)
+    .select('id,profesor_id,rol').eq('bloque_id', bloqueId).is('vigente_hasta', null)
   if (errLeer) return `No se pudo leer quién dicta el bloque: ${errLeer.message}`
-  const actuales: string[] = (abiertas ?? []).map((r: { profesor_id: string }) => r.profesor_id)
+
+  type Fila = { id: string; profesor_id: string; rol: string | null }
+  const filas: Fila[] = abiertas ?? []
+  const actuales = filas.map(r => r.profesor_id)
 
   // Al que sale se le cierra el período: quién dictaba en marzo tiene que
   // seguir siendo consultable.
-  const salen = (abiertas ?? []).filter((r: { profesor_id: string }) => !quiero.includes(r.profesor_id))
+  const salen = filas.filter(r => !quiero.has(r.profesor_id))
   if (salen.length > 0) {
     const { error } = await supabase.from('bloque_profesores')
       .update({ vigente_hasta: cierreISO() })
-      .in('id', salen.map((r: { id: string }) => r.id))
+      .in('id', salen.map(r => r.id))
     if (error) return `No se pudo dar de baja al profesor saliente: ${error.message}`
   }
 
-  const entran = quiero.filter(id => !actuales.includes(id))
+  // El que sigue pero cambió de rol: se actualiza en su misma fila. Cerrarla y
+  // abrir otra partiría en dos su historial de horas por un cambio que no es
+  // una baja — el profe siguió dictando el mismo bloque todos los martes.
+  //
+  // `rol ?? 'principal'` porque las filas anteriores a la migración 257 no
+  // tienen valor y significaban exactamente eso.
+  for (const r of filas) {
+    const nuevo = quiero.get(r.profesor_id)
+    if (!nuevo || (r.rol ?? 'principal') === nuevo) continue
+    const { error } = await supabase.from('bloque_profesores')
+      .update({ rol: nuevo }).eq('id', r.id)
+    if (error) return `No se pudo cambiar el rol del profesor: ${error.message}`
+  }
+
+  const entran = [...quiero.entries()].filter(([id]) => !actuales.includes(id))
   if (entran.length > 0) {
     // vigente_desde explícito: el DEFAULT current_date de la base corre en UTC
     // y de noche asignaba al profe desde "mañana", perdiendo el día en el
     // reporte de horas.
     const { error } = await supabase.from('bloque_profesores')
-      .insert(entran.map(profesor_id => ({ bloque_id: bloqueId, profesor_id, vigente_desde: hoyISO() })))
+      .insert(entran.map(([profesor_id, rol]) => ({ bloque_id: bloqueId, profesor_id, rol, vigente_desde: hoyISO() })))
     if (error) return `No se pudo asignar al profesor: ${error.message}`
   }
 
@@ -239,6 +264,14 @@ export async function guardarGrupo(params: {
   cupoMaximo: number
   cupoLibres: number
   profesorIds: string[]
+  /** Los que acompañan al principal. Vacío en los clubes sin 'tipos_clase'. */
+  auxiliarIds?: string[]
+  /** grupal | competitivo | particular | adultos | paralimpico | arriendo. */
+  tipoClase?: string | null
+  /** Plantilla de la sesión: FK a `tecnico_planes`. */
+  planId?: string | null
+  /** true = no se descuenta de la mensualidad (particulares). */
+  seCobraAparte?: boolean
   dias: DiaDeGrupo[]
 }) {
   const { error: authErr, supabase, clubId } = await requireStaff()
@@ -246,9 +279,16 @@ export async function guardarGrupo(params: {
 
   const nombre = params.nombre.trim()
   if (!nombre) return { error: 'El nombre del grupo es obligatorio' }
-  if (!['buin', 'paine'].includes(params.sede)) return { error: 'Sede inválida' }
+  // Contra el catálogo, no contra una lista escrita acá. Estaba fijo en
+  // ['buin','paine'] y `SEDES` ya tenía 'spinhouse' desde la migración 232:
+  // el club podía ver sus bloques pero no guardar uno, y el mensaje era
+  // "Sede inválida" sobre su propia sede.
+  if (!SEDES.some(s => s.value === params.sede)) return { error: 'Sede inválida' }
   if (params.dias.length === 0) return { error: 'Marcá al menos un día' }
   if (params.cupoMaximo < 0 || params.cupoLibres < 0) return { error: 'Los cupos no pueden ser negativos' }
+  // Una clave que no está en el catálogo la rechazaría el CHECK de la base con
+  // un error de Postgres crudo. Mejor decirlo acá y en español.
+  if (params.tipoClase && !esTipoClase(params.tipoClase)) return { error: 'Tipo de clase inválido' }
 
   for (const d of params.dias) {
     if (!['lun', 'mar', 'mie', 'jue', 'vie'].includes(d.dia_semana)) return { error: 'Día inválido' }
@@ -257,6 +297,16 @@ export async function guardarGrupo(params: {
       return { error: `En ${d.dia_semana}, la hora de fin debe ser posterior a la de inicio` }
     }
   }
+
+  // Solo se mandan a la base los campos que el formulario trajo. Un club sin
+  // el módulo 'tipos_clase' no manda ninguno, y sus bloques no se tocan: sin
+  // esto, guardar un grupo de Buin le escribiría `tipo_clase: null` y
+  // `se_cobra_aparte: false` en cada guardado, que es ruido en el historial y
+  // pisaría el dato si algún día alguien lo carga por otra vía.
+  const camposDeTipo: Record<string, unknown> = {}
+  if (params.tipoClase !== undefined)     camposDeTipo.tipo_clase = params.tipoClase || null
+  if (params.planId !== undefined)        camposDeTipo.plan_id = params.planId || null
+  if (params.seCobraAparte !== undefined) camposDeTipo.se_cobra_aparte = params.seCobraAparte
 
   // ── El grupo ──
   let grupoId = params.grupoId
@@ -297,6 +347,7 @@ export async function guardarGrupo(params: {
         hora_fin: pedido.hora_fin,
         cupo_maximo: params.cupoMaximo,
         cupo_libres: params.cupoLibres,
+        ...camposDeTipo,
         vigente_hasta: null,
       }).eq('id', b.id)
       // Si esto falla en silencio, la pantalla dice "guardado" y el horario
@@ -323,7 +374,7 @@ export async function guardarGrupo(params: {
           return { error: `El ${b.dia_semana} se reabrió pero sus inscripciones no: ${errReabrir.message}` }
         }
       }
-      const errProfes = await guardarProfesores(supabase, b.id, params.profesorIds)
+      const errProfes = await guardarProfesores(supabase, b.id, params.profesorIds, params.auxiliarIds ?? [])
       if (errProfes) return { error: errProfes }
       quiero.delete(b.dia_semana)
     } else if (b.vigente_hasta === null) {
@@ -350,13 +401,14 @@ export async function guardarGrupo(params: {
       hora_fin: d.hora_fin,
       cupo_maximo: params.cupoMaximo,
       cupo_libres: params.cupoLibres,
+      ...camposDeTipo,
     }).select('id').single()
     if (error) {
       return { error: error.code === '23505'
         ? `Ya hay otro grupo en ${params.sede} el ${d.dia_semana} a las ${hhmm(d.hora_inicio)}`
         : 'No se pudo crear el día: ' + error.message }
     }
-    const errProfes = await guardarProfesores(supabase, data.id, params.profesorIds)
+    const errProfes = await guardarProfesores(supabase, data.id, params.profesorIds, params.auxiliarIds ?? [])
     if (errProfes) return { error: errProfes }
   }
 

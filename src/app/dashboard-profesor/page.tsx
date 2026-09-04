@@ -20,6 +20,7 @@ import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { useEnVivo } from '@/lib/useEnVivo'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
 import AlertaFaltas, { type AlumnoParaAlerta } from '@/components/AlertaFaltas'
+import { etiquetaTipoClase } from '@/lib/domain/tiposClase'
 import { MessageSquare } from 'lucide-react'
 
 const supabase = createClient()
@@ -35,6 +36,8 @@ type Bloque = {
   sede: string
   hora_inicio: string
   hora_fin: string
+  tipo_clase: string | null
+  plan: string | null
   alumnos: { id: string; nombre: string; categoria: string | null; telefono: string | null }[]
 }
 
@@ -66,7 +69,9 @@ export default function DashboardProfesorPage() {
     const db = supabase as any
     const [{ data: bs }, { data: rel }, { data: jug }, { data: exc }] = await Promise.all([
       db.from('bloques_horario')
-        .select('id,nombre,sede,hora_inicio,hora_fin')
+        // `tecnico_planes(nombre)` es la plantilla de la sesión: el club pidió
+        // que el profe vea el objetivo de su clase de hoy sin salir de acá.
+        .select('id,nombre,sede,hora_inicio,hora_fin,tipo_clase,tecnico_planes(nombre)')
         .eq('club_id', club).eq('activo', true).eq('dia_semana', dia)
         .lte('vigente_desde', hoy)
         .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
@@ -89,6 +94,8 @@ export default function DashboardProfesorPage() {
       .filter(b => !suspendidos.has(b.id))
       .map(b => ({
         ...b,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        plan: (b as any).tecnico_planes?.nombre ?? null,
         alumnos: (rel ?? [])
           .filter((r: { bloque_id: string }) => r.bloque_id === b.id)
           .map((r: { jugador_id: string }) => porId.get(r.jugador_id))
@@ -208,7 +215,13 @@ export default function DashboardProfesorPage() {
                       )}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: text, marginTop: 3 }}>{b.nombre}</div>
-                    <div style={{ fontSize: 12, color: muted, marginTop: 1 }}>📍 {sedeLabel(b.sede)}</div>
+                    <div style={{ fontSize: 12, color: muted, marginTop: 1 }}>
+                      📍 {sedeLabel(b.sede)}
+                      {b.tipo_clase && ` · ${etiquetaTipoClase(b.tipo_clase)}`}
+                    </div>
+                    {b.plan && (
+                      <div style={{ fontSize: 12, color: '#4f46e5', marginTop: 2 }}>🎯 {b.plan}</div>
+                    )}
                   </div>
                   <Link href="/asistencia"
                     style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
