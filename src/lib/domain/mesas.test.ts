@@ -142,10 +142,11 @@ describe('cupoDelBloque', () => {
     })).toBe(48)
   })
 
-  it('cuenta las mesas propias además de las libres', () => {
-    // 8 inscritos con 4 por mesa = 2 propias. El otro usa 5, así que de las 12
-    // quedan 7 libres — las 2 propias NO cuentan como ocupadas para sí mismo,
-    // o el bloque competiría consigo. (2 + 7) × 4 = 36.
+  it('las mesas propias NO se suman aparte: ya están dentro de las libres', () => {
+    // 8 inscritos con 4 por mesa = 2 propias. El otro usa 5, así que el bloque
+    // puede ocupar como mucho 12 − 5 = 7 mesas, y esas 7 ya incluyen las 2 que
+    // hoy usa: `mesasLibres` con excluirId no lo cuenta contra sí mismo. 7 × 4
+    // = 28. Sumarle las 2 propias daba 36 y prometía gente que no cabe.
     expect(cupoDelBloque({
       config: porMesas, cupoMaximo: 0, inscritos: 8, totalSede: 12,
       usos: [
@@ -153,7 +154,7 @@ describe('cupoDelBloque', () => {
         { id: 'otro', inicio: '19:00', fin: '20:00', mesas: 5 },
       ],
       franja: { inicio: '19:00', fin: '20:00' }, bloqueId: 'yo',
-    })).toBe(36)
+    })).toBe(28)
   })
 
   it('sin datos de la sala cae al cupo escrito a mano, no a cero', () => {
