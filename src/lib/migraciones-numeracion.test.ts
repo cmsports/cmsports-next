@@ -20,6 +20,12 @@ import { join } from 'node:path'
  */
 const DUPLICADOS_HISTORICOS = new Set([
   '047', '054', '100', '105', '126', '127', '128', '129', '180',
+  // 256: dos ramas a la vez —`256_pagos_clubes_monto_neto` (finanzas CmSports)
+  // y `256_perfil_tecnico_solo_staff` (Spinhouse)—. Las DOS se corrieron ya en
+  // producción con ese nombre, así que renumerar una la dejaría mintiendo
+  // sobre lo que se ejecutó y el portazo `_migracion_nueva` rechazaría la
+  // nueva igual. Queda documentada, como las de arriba.
+  '256',
 ])
 
 describe('numeración de migraciones', () => {

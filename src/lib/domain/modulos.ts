@@ -60,7 +60,9 @@ export const MODULOS = [
   // Avisos y bloqueos automáticos por morosidad e inasistencia. Apagado por
   // defecto y con TODOS sus umbrales en 0 (= nunca): encenderlo sin configurar
   // no bloquea a nadie, y la pantalla que trae es una marcha en seco que
-  // muestra a quién le tocaría sin tocar a nadie (migración 253).
+  // muestra a quién le tocaría sin tocar a nadie. No tiene migración: lee
+  // `club_config` y `movimientos`, que ya existen, y el módulo se enciende
+  // desde el panel del superadmin.
   { key: 'retencion', label: 'Retención y morosidad' },
   // Los campos deportivos de la ficha: nivel interno, licencia FECHITEME, mano
   // hábil, estilo y material. Va aparte de 'jugadores' —que es core y no se
