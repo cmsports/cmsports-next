@@ -120,10 +120,14 @@ export function mesasDelBloque(params: {
  * mano y no mira las mesas para nada: ese es el caso de todos los clubes salvo
  * Spinhouse.
  *
- * Con `'por_mesas'` el techo lo pone la sala: las mesas que este bloque ya
- * ocupa más las que quedan libres a esa hora, por los jugadores que entran en
- * cada una. O sea que el cupo **baja cuando otro bloque se solapa y sube cuando
- * ese otro se va**, que es exactamente cómo se comporta una sala de verdad.
+ * Con `'por_mesas'` el techo lo pone la sala: las mesas que quedan libres a esa
+ * hora sin contar las de este bloque, por los jugadores que entran en cada una.
+ * O sea que el cupo **baja cuando otro bloque se solapa y sube cuando ese otro
+ * se va**, que es exactamente cómo se comporta una sala de verdad.
+ *
+ * `mesasLibres` con `excluirId` ya devuelve "total menos lo que usan los OTROS",
+ * así que las propias están adentro. Sumarlas otra vez las contaba dos veces y
+ * prometía más cupo del que la sala aguanta.
  */
 export function cupoDelBloque(params: {
   config: LectorConfig
@@ -150,10 +154,7 @@ export function cupoDelBloque(params: {
   // significar "no entra nadie".
   if (totalSede == null || totalSede <= 0 || !usos || !franja) return cupoMaximo
 
-  const propias = mesasDelBloque({ config, inscritos, declaradas, modalidad })
-  const libres  = mesasLibres({ total: totalSede, usos, franja, excluirId: bloqueId })
-
-  return (propias + libres) * porMesa
+  return mesasLibres({ total: totalSede, usos, franja, excluirId: bloqueId }) * porMesa
 }
 
 /**

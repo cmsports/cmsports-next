@@ -337,9 +337,10 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
                   const lleno = cupo > 0 && b.inscritos >= cupo
 
                   // Lo que daría el otro modo, para poder comparar sin cambiar
-                  // nada: las mesas que ya ocupa más las que quedan libres.
+                  // nada: las mesas que quedan libres a esa hora, que con
+                  // `excluirId` ya incluyen las que este bloque usa hoy.
                   const cupoPorMesas =
-                    (ocupa + mesasLibres({ total, usos, franja: { inicio: b.hora_inicio, fin: b.hora_fin }, excluirId: b.id }))
+                    mesasLibres({ total, usos, franja: { inicio: b.hora_inicio, fin: b.hora_fin }, excluirId: b.id })
                     * jugadoresPorMesa(config, modalidad)
 
                   return (
