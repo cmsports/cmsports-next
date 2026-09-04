@@ -22,11 +22,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useEnVivo } from '@/lib/useEnVivo'
-import { LayoutGrid } from 'lucide-react'
+import { LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react'
 import { DIAS, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
 import { cupoDelBloque, mesasDelBloque, type UsoDeMesas } from '@/lib/domain/mesas'
+import { etiquetaTipoClase, modalidadDe } from '@/lib/domain/tiposClase'
 import { nivelOcupacion, porcentajeOcupacion, OCUPACION } from '@/lib/domain/ocupacion'
 import { CONFIG_POR_DEFECTO, type LectorConfig } from '@/lib/domain/clubConfig'
 import { configDelClub } from '@/lib/supabase/clubConfig'
@@ -47,6 +48,7 @@ type Bloque = {
   hora_fin: string
   cupo_maximo: number
   mesas: number | null
+  tipo_clase: string | null
   inscritos: number
 }
 
@@ -55,6 +57,11 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
   const [mesasSede, setMesas]   = useState<Record<string, number>>({})
   const [config, setConfig]     = useState<LectorConfig>(() => CONFIG_POR_DEFECTO)
   const [cargando, setCargando] = useState(true)
+  // Plegada por defecto: con los bloques de una semana entera esto ocupa media
+  // pantalla, y el dashboard es donde el admin viene a mirar cinco cosas, no
+  // una. Cerrada igual dice lo único que obliga a actuar —cuántos llenos y
+  // cuántos vacíos—; el detalle se abre cuando de verdad va a decidir.
+  const [abierto, setAbierto]   = useState(false)
 
   const cargar = useCallback(async () => {
     if (!clubId) return
@@ -69,7 +76,7 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
       // falla — solo devuelve un número más alto que el real.
       soloVigentes(
         db.from('bloques_horario')
-          .select('id, nombre, sede, dia_semana, hora_inicio, hora_fin, cupo_maximo, mesas, bloque_jugadores(id, vigente_hasta)')
+          .select('id, nombre, sede, dia_semana, hora_inicio, hora_fin, cupo_maximo, mesas, tipo_clase, bloque_jugadores(id, vigente_hasta)')
           .eq('club_id', clubId).eq('activo', true),
         fechaChile(),
       ).order('hora_inicio'),
@@ -96,6 +103,7 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
       hora_fin: b.hora_fin,
       cupo_maximo: b.cupo_maximo ?? 0,
       mesas: b.mesas,
+      tipo_clase: b.tipo_clase ?? null,
       inscritos: (b.bloque_jugadores ?? []).filter((j: any) => j.vigente_hasta == null).length,
     })))
     setCargando(false)
@@ -123,7 +131,10 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
       const uso = {
         id: b.id, etiqueta: b.nombre,
         inicio: b.hora_inicio, fin: b.hora_fin,
-        mesas: mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas }),
+        // La modalidad sale del tipo de clase: un particular ocupa una mesa
+        // con dos alumnos donde un grupal mete cuatro. Sin tipo es 'grupal',
+        // que es lo que se asumía antes.
+        mesas: mesasDelBloque({ config, inscritos: b.inscritos, declaradas: b.mesas, modalidad: modalidadDe(b.tipo_clase) }),
       }
       usosPorSala.set(sala, [...(usosPorSala.get(sala) ?? []), uso])
     }
@@ -138,22 +149,64 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
         usos: usosPorSala.get(`${b.sede}|${b.dia_semana}`) ?? [],
         franja: { inicio: b.hora_inicio, fin: b.hora_fin },
         bloqueId: b.id,
+        modalidad: modalidadDe(b.tipo_clase),
       })
       return { ...b, cupo, pct: porcentajeOcupacion(b.inscritos, cupo), nivel: nivelOcupacion(b.inscritos, cupo) }
     })
   }, [bloques, mesasSede, config])
 
+  // El resumen que se ve con la tarjeta cerrada: solo los dos extremos, que
+  // son los únicos que piden una decisión. "Sano" y "llenándose" no obligan a
+  // hacer nada hoy, así que no ganan un número en la línea plegada.
+  const llenos = filas.filter(f => f.nivel === 'lleno').length
+  const vacios = filas.filter(f => f.nivel === 'vacio').length
+
   if (cargando) return null
 
   return (
     <div style={{ ...card, padding: 18, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: abierto ? 4 : 0 }}>
         <LayoutGrid size={15} color="#4f46e5" />
-        <span style={{ fontSize: 13, fontWeight: 600, color: text }}>📊 Ocupación por bloque</span>
+        <button
+          type="button"
+          onClick={() => setAbierto(v => !v)}
+          aria-expanded={abierto}
+          // 44 px de alto: el admin también entra desde el teléfono, entre
+          // clase y clase.
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, minHeight: 44,
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+            fontSize: 13, fontWeight: 600, color: text, textAlign: 'left',
+          }}
+        >
+          {abierto ? <ChevronDown size={15} color={muted} /> : <ChevronRight size={15} color={muted} />}
+          📊 Ocupación por bloque
+          <span style={{ fontWeight: 400, fontSize: 11.5, color: hint }}>
+            ({filas.length})
+          </span>
+        </button>
         <Link href="/horario" style={{ marginLeft: 'auto', fontSize: 11.5, color: '#4f46e5', textDecoration: 'none' }}>
           Ver horario →
         </Link>
       </div>
+
+      {!abierto && filas.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 11.5, color: muted, paddingLeft: 21 }}>
+          {llenos > 0 && (
+            <span style={{ color: OCUPACION.lleno.color, fontWeight: 600 }}>
+              {llenos} {llenos === 1 ? 'lleno' : 'llenos'}
+            </span>
+          )}
+          {vacios > 0 && (
+            <span style={{ color: OCUPACION.vacio.color, fontWeight: 600 }}>
+              {vacios} bajo el 50%
+            </span>
+          )}
+          {llenos === 0 && vacios === 0 && <span>Todos los grupos con ocupación sana.</span>}
+        </div>
+      )}
+
+      {!abierto ? null : (<>
       <p style={{ margin: '0 0 14px', fontSize: 11.5, color: hint, lineHeight: 1.55 }}>
         Cuánta gente hay en cada grupo contra lo que entra en él. El color dice
         qué conviene hacer con cada uno.
@@ -192,13 +245,22 @@ export default function TarjetaOcupacion({ clubId }: { clubId: string | null | u
                       <div style={{ height: '100%', width: `${Math.min(100, f.pct ?? 0)}%`, background: color }} />
                     </div>
 
-                    <div style={{ fontSize: 11, color, fontWeight: 500 }}>{que}</div>
+                    <div style={{ fontSize: 11, color, fontWeight: 500 }}>
+                      {que}
+                      {/* Solo si el bloque declaró tipo: en un club que no usa
+                          tipos de clase, "Grupal por nivel" en todas las filas
+                          es ruido que repite lo mismo doce veces. */}
+                      {f.tipo_clase && (
+                        <span style={{ color: hint, fontWeight: 400 }}> · {etiquetaTipoClase(f.tipo_clase)}</span>
+                      )}
+                    </div>
                   </div>
                 )
               })}
           </div>
         </div>
       ))}
+      </>)}
     </div>
   )
 }

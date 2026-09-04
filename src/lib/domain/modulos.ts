@@ -60,7 +60,9 @@ export const MODULOS = [
   // Avisos y bloqueos automáticos por morosidad e inasistencia. Apagado por
   // defecto y con TODOS sus umbrales en 0 (= nunca): encenderlo sin configurar
   // no bloquea a nadie, y la pantalla que trae es una marcha en seco que
-  // muestra a quién le tocaría sin tocar a nadie (migración 253).
+  // muestra a quién le tocaría sin tocar a nadie. No tiene migración: lee
+  // `club_config` y `movimientos`, que ya existen, y el módulo se enciende
+  // desde el panel del superadmin.
   { key: 'retencion', label: 'Retención y morosidad' },
   // Los campos deportivos de la ficha: nivel interno, licencia FECHITEME, mano
   // hábil, estilo y material. Va aparte de 'jugadores' —que es core y no se
@@ -80,6 +82,13 @@ export const MODULOS = [
   // club que no las pidió le ensucia el formulario y sus reportes (254).
   { key: 'finanzas_categorias', label: 'Categorías de finanzas propias del club' },
   { key: 'tecnico', label: 'Perfil técnico' },
+  // Tipo de clase por bloque (grupal, competitivo, particular, adultos,
+  // paralímpico, arriendo), entrenador auxiliar, plantilla de la sesión y la
+  // clase que se cobra aparte. Va aparte de 'clases' porque un club que dicta
+  // una sola modalidad no gana nada eligiendo "grupal" en cada bloque: gana un
+  // campo más que llenar. Y porque 'particular' cambia la cuenta de las mesas,
+  // que es algo que solo tiene sentido con 'mesas' encendido (migración 257).
+  { key: 'tipos_clase', label: 'Tipos de clase y entrenador auxiliar' },
   { key: 'liga_futbol', label: 'Liga Fútbol' },
   // Tareas NO va acá: es la lista privada de los superadmin
   // (/superadmin/tareas), no una función que un club pueda activar.

@@ -17,6 +17,7 @@ import PanelRecuperaciones from '@/components/PanelRecuperaciones'
 import PanelReportes from '@/components/PanelReportes'
 import PanelMesas from '@/components/PanelMesas'
 import { useModulos } from '@/lib/hooks/useModulos'
+import { TIPOS_CLASE, etiquetaTipoClase } from '@/lib/domain/tiposClase'
 
 const supabase = createClient()
 
@@ -26,7 +27,16 @@ const muted = '#64748b'
 const hint = '#94a3b8'
 
 type Profesor = { id: string; nombre: string }
-type Bloque = BloqueHorario & { profesorIds: string[]; grupo_id: string }
+type Bloque = BloqueHorario & {
+  profesorIds: string[]
+  auxiliarIds: string[]
+  grupo_id: string
+  tipo_clase: string | null
+  plan_id: string | null
+  se_cobra_aparte: boolean
+}
+
+type Plan = { id: string; nombre: string }
 
 type HorarioDia = { hora_inicio: string; hora_fin: string }
 
@@ -36,6 +46,11 @@ const FORM_VACIO = {
   dias: {} as Record<string, HorarioDia>,
   cupo_maximo: '12', cupo_libres: '5',
   profesorIds: [] as string[],
+  // Lo del módulo 'tipos_clase'. Vacío = como antes de que existiera.
+  auxiliarIds: [] as string[],
+  tipo_clase: '',
+  plan_id: '',
+  se_cobra_aparte: false,
 }
 
 const inputStyle = {
@@ -59,9 +74,13 @@ function colorDe(nombre: string) {
 export default function HorarioPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const { tiene } = useModulos()
+  // Tipos de clase, entrenador auxiliar, plantilla de sesión y cobro aparte.
+  // Apagado, el formulario es exactamente el de siempre.
+  const usaTipos = tiene('tipos_clase')
   const router = useRouter()
   const [bloques, setBloques]       = useState<Bloque[]>([])
   const [profesores, setProfesores] = useState<Profesor[]>([])
+  const [planes, setPlanes]         = useState<Plan[]>([])
   const [cargando, setCargando]     = useState(true)
   const [sedeActiva, setSedeActiva] = useState('buin')
   const [tab, setTab]               = useState<'grilla' | 'cupos' | 'mesas' | 'recuperaciones' | 'profesores' | 'reportes'>('grilla')
@@ -89,25 +108,37 @@ export default function HorarioPage() {
   const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'
 
   const cargar = useCallback(async (cid: string) => {
-    const [{ data: bloquesData }, { data: profesoresData }, { data: rel }] = await Promise.all([
+    const [{ data: bloquesData }, { data: profesoresData }, { data: rel }, { data: planesData }] = await Promise.all([
       // `activo` no alcanza: dar de baja un grupo le cierra la vigencia y deja
       // `activo` en true. Sin este filtro, el grupo que borrabas seguía acá.
       soloVigentes(supabase.from('bloques_horario')
-        .select('id,grupo_id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo')
+        .select('id,grupo_id,nombre,sede,dia_semana,hora_inicio,hora_fin,cupo_maximo,cupo_libres,activo,tipo_clase,plan_id,se_cobra_aparte')
         .eq('club_id', cid).eq('activo', true), fechaChile())
         .order('hora_inicio'),
       supabase.from('profesores').select('id,nombre').eq('club_id', cid).eq('activo', true).order('nombre'),
-      supabase.from('bloque_profesores').select('bloque_id,profesor_id').is('vigente_hasta', null),
+      supabase.from('bloque_profesores').select('bloque_id,profesor_id,rol').is('vigente_hasta', null),
+      // Las plantillas de sesión del módulo técnico (migración 168). Si el club
+      // no lo tiene, la consulta vuelve vacía y el selector no aparece.
+      supabase.from('tecnico_planes').select('id,nombre').eq('club_id', cid).eq('activo', true).order('nombre'),
     ])
 
+    // `rol` es null en las filas anteriores a la migración 257, y ahí
+    // significaba 'principal'.
     const porBloque = new Map<string, string[]>()
+    const auxPorBloque = new Map<string, string[]>()
     for (const r of rel ?? []) {
-      porBloque.set(r.bloque_id, [...(porBloque.get(r.bloque_id) ?? []), r.profesor_id])
+      const destino = (r as { rol?: string | null }).rol === 'auxiliar' ? auxPorBloque : porBloque
+      destino.set(r.bloque_id, [...(destino.get(r.bloque_id) ?? []), r.profesor_id])
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setBloques(((bloquesData ?? []) as any[]).map(b => ({ ...b, profesorIds: porBloque.get(b.id) ?? [] })) as Bloque[])
+    setBloques(((bloquesData ?? []) as any[]).map(b => ({
+      ...b,
+      profesorIds: porBloque.get(b.id) ?? [],
+      auxiliarIds: auxPorBloque.get(b.id) ?? [],
+    })) as Bloque[])
     setProfesores((profesoresData ?? []) as Profesor[])
+    setPlanes((planesData ?? []) as Plan[])
     setCargando(false)
   }, [])
 
@@ -164,6 +195,10 @@ export default function HorarioPage() {
       nombre: b.nombre, sede: b.sede, dias,
       cupo_maximo: String(b.cupo_maximo), cupo_libres: String(b.cupo_libres),
       profesorIds: b.profesorIds,
+      auxiliarIds: b.auxiliarIds ?? [],
+      tipo_clase: b.tipo_clase ?? '',
+      plan_id: b.plan_id ?? '',
+      se_cobra_aparte: b.se_cobra_aparte ?? false,
     })
     setErrorForm('')
     setModal(b)
@@ -179,6 +214,14 @@ export default function HorarioPage() {
       cupoMaximo: parseInt(form.cupo_maximo) || 0,
       cupoLibres: parseInt(form.cupo_libres) || 0,
       profesorIds: form.profesorIds,
+      // Solo se mandan si el club usa tipos de clase. Un club sin el módulo no
+      // manda estos campos y la Action ni los toca: sus bloques quedan igual.
+      ...(usaTipos ? {
+        auxiliarIds: form.auxiliarIds,
+        tipoClase: form.tipo_clase || null,
+        planId: form.plan_id || null,
+        seCobraAparte: form.se_cobra_aparte,
+      } : {}),
       dias: Object.entries(form.dias).map(([dia_semana, h]) => ({ dia_semana, ...h })),
     })
     setGuardando(false)
@@ -414,6 +457,19 @@ export default function HorarioPage() {
                                 {b.profesorIds.length > 0 && (
                                   <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>
                                     {b.profesorIds.map(nombreProfesor).filter(Boolean).join(' + ')}
+                                    {/* El auxiliar va detrás y en gris: quién dicta
+                                        y quién acompaña no se leen igual. */}
+                                    {b.auxiliarIds.length > 0 && (
+                                      <span style={{ color: hint }}>
+                                        {' + '}{b.auxiliarIds.map(nombreProfesor).filter(Boolean).join(' + ')} (aux.)
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                {usaTipos && b.tipo_clase && (
+                                  <div style={{ fontSize: 10, color: hint, marginTop: 2 }}>
+                                    {etiquetaTipoClase(b.tipo_clase)}
+                                    {b.se_cobra_aparte && ' · se cobra aparte'}
                                   </div>
                                 )}
                                 <div style={{ fontSize: 10, color: hint, marginTop: 2 }}>
@@ -576,8 +632,58 @@ export default function HorarioPage() {
               </div>
             </div>
 
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Profesores (puedes marcar más de uno)</label>
+            {/* Todo lo del módulo 'tipos_clase'. Sin él, el formulario queda
+                exactamente como estaba: es la pantalla que Buin usa. */}
+            {usaTipos && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Tipo de clase</label>
+                <select style={inputStyle} value={form.tipo_clase}
+                  onChange={e => setForm(f => ({ ...f, tipo_clase: e.target.value }))}>
+                  <option value="">Sin especificar (se cuenta como grupal)</option>
+                  {TIPOS_CLASE.map(t => (
+                    <option key={t.clave} value={t.clave}>{t.label}</option>
+                  ))}
+                </select>
+                {form.tipo_clase === 'particular' && (
+                  <div style={{ fontSize: 11, color: hint, marginTop: 5, lineHeight: 1.5 }}>
+                    En particulares entran {' '}
+                    <strong>menos jugadores por mesa</strong>, así que el cupo de
+                    este bloque baja solo.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {usaTipos && planes.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Plantilla de la sesión</label>
+                <select style={inputStyle} value={form.plan_id}
+                  onChange={e => setForm(f => ({ ...f, plan_id: e.target.value }))}>
+                  <option value="">Sin plantilla</option>
+                  {planes.map(pl => <option key={pl.id} value={pl.id}>{pl.nombre}</option>)}
+                </select>
+                <div style={{ fontSize: 11, color: hint, marginTop: 5 }}>
+                  Sale de los planes del módulo técnico. El profe la ve en su
+                  clase de hoy.
+                </div>
+              </div>
+            )}
+
+            {usaTipos && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, fontSize: 13, color: text, cursor: 'pointer', minHeight: 44 }}>
+                <input type="checkbox" checked={form.se_cobra_aparte}
+                  onChange={e => setForm(f => ({ ...f, se_cobra_aparte: e.target.checked }))} />
+                <span>
+                  Se cobra aparte
+                  <span style={{ display: 'block', fontSize: 11, color: hint }}>
+                    No se descuenta de la mensualidad. El monto se define en Planes.
+                  </span>
+                </span>
+              </label>
+            )}
+
+            <div style={{ marginBottom: usaTipos ? 12 : 18 }}>
+              <label style={labelStyle}>{usaTipos ? 'Entrenador principal' : 'Profesores (puedes marcar más de uno)'}</label>
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
                 {profesores.length === 0 && <div style={{ fontSize: 12, color: hint, padding: 4 }}>No hay profesores cargados</div>}
                 {profesores.map(p => (
@@ -594,6 +700,35 @@ export default function HorarioPage() {
                 ))}
               </div>
             </div>
+
+            {/* El auxiliar es una segunda lista y no un rol dentro de la
+                primera: son dos preguntas distintas —quién dicta y quién
+                acompaña— y mezclarlas en una lista con un desplegable al lado
+                de cada nombre es más clics para lo mismo. */}
+            {usaTipos && (
+              <div style={{ marginBottom: 18 }}>
+                <label style={labelStyle}>Entrenador auxiliar (opcional)</label>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 8 }}>
+                  {profesores.filter(p => !form.profesorIds.includes(p.id)).length === 0 && (
+                    <div style={{ fontSize: 12, color: hint, padding: 4 }}>
+                      No queda ningún profesor para marcar como auxiliar.
+                    </div>
+                  )}
+                  {profesores.filter(p => !form.profesorIds.includes(p.id)).map(p => (
+                    <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', fontSize: 13, color: text, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={form.auxiliarIds.includes(p.id)}
+                        onChange={() => setForm(f => ({
+                          ...f,
+                          auxiliarIds: f.auxiliarIds.includes(p.id)
+                            ? f.auxiliarIds.filter(x => x !== p.id)
+                            : [...f.auxiliarIds, p.id],
+                        }))} />
+                      {p.nombre}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {errorForm && (
               <div style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, padding: '9px 12px', fontSize: 12, marginBottom: 14 }}>

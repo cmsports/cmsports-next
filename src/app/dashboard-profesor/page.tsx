@@ -19,6 +19,8 @@ import { diaDesdeFecha, hhmm, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel } from '@/lib/domain/sedeGrupo'
 import { useEnVivo } from '@/lib/useEnVivo'
 import ModalCrearFeedback from '@/components/ModalCrearFeedback'
+import AlertaFaltas, { type AlumnoParaAlerta } from '@/components/AlertaFaltas'
+import { etiquetaTipoClase } from '@/lib/domain/tiposClase'
 import { MessageSquare } from 'lucide-react'
 
 const supabase = createClient()
@@ -34,7 +36,9 @@ type Bloque = {
   sede: string
   hora_inicio: string
   hora_fin: string
-  alumnos: { id: string; nombre: string; categoria: string | null }[]
+  tipo_clase: string | null
+  plan: string | null
+  alumnos: { id: string; nombre: string; categoria: string | null; telefono: string | null }[]
 }
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
@@ -65,13 +69,18 @@ export default function DashboardProfesorPage() {
     const db = supabase as any
     const [{ data: bs }, { data: rel }, { data: jug }, { data: exc }] = await Promise.all([
       db.from('bloques_horario')
-        .select('id,nombre,sede,hora_inicio,hora_fin')
+        // `tecnico_planes(nombre)` es la plantilla de la sesión: el club pidió
+        // que el profe vea el objetivo de su clase de hoy sin salir de acá.
+        .select('id,nombre,sede,hora_inicio,hora_fin,tipo_clase,tecnico_planes(nombre)')
         .eq('club_id', club).eq('activo', true).eq('dia_semana', dia)
         .lte('vigente_desde', hoy)
         .or(`vigente_hasta.is.null,vigente_hasta.gte.${hoy}`)
         .order('hora_inicio'),
       db.from('bloque_jugadores').select('bloque_id,jugador_id').is('vigente_hasta', null),
-      db.from('jugadores').select('id,nombre,categoria')
+      // `telefono` es para el botón de WhatsApp de la alerta de inasistencias.
+      // Es dato personal de sus alumnos, que es lo que la matriz de permisos
+      // le concede al entrenador; montos y morosidad siguen sin aparecer acá.
+      db.from('jugadores').select('id,nombre,categoria,telefono')
         .eq('club_id', club).eq('estado', 'activo')
         .or('es_externo.is.null,es_externo.eq.false'),
       // Un día suspendido no es un día de clase: si el grupo no se dicta, no
@@ -85,6 +94,8 @@ export default function DashboardProfesorPage() {
       .filter(b => !suspendidos.has(b.id))
       .map(b => ({
         ...b,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        plan: (b as any).tecnico_planes?.nombre ?? null,
         alumnos: (rel ?? [])
           .filter((r: { bloque_id: string }) => r.bloque_id === b.id)
           .map((r: { jugador_id: string }) => porId.get(r.jugador_id))
@@ -123,6 +134,12 @@ export default function DashboardProfesorPage() {
 
   const saludo = ahora.getHours() < 12 ? 'Buenos días' : ahora.getHours() < 20 ? 'Buenas tardes' : 'Buenas noches'
   const totalAlumnos = bloques.reduce((s, b) => s + b.alumnos.length, 0)
+
+  // Sin repetidos: un alumno que está en dos de sus bloques de hoy no tiene
+  // por qué aparecer dos veces en la alerta.
+  const alumnosDeHoy: AlumnoParaAlerta[] = [...new Map(
+    bloques.flatMap(b => b.alumnos).map(a => [a.id, a]),
+  ).values()]
   const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`
 
   return (
@@ -136,6 +153,13 @@ export default function DashboardProfesorPage() {
           {bloques.length > 0 && ` · ${bloques.length} grupo${bloques.length === 1 ? '' : 's'} · ${totalAlumnos} alumnos`}
         </div>
       </div>
+
+      {/* Va ARRIBA de todo lo demás: es lo único de esta pantalla que pide una
+          acción hoy. Con el módulo apagado —o con el umbral en 0, que es el
+          default— el componente no dibuja nada. */}
+      {tiene('retencion') && alumnosDeHoy.length > 0 && (
+        <AlertaFaltas clubId={perfil?.club_id} alumnos={alumnosDeHoy} />
+      )}
 
       {tiene('feedback') && (
         <div onClick={() => setFeedbackOpen(true)}
@@ -191,7 +215,13 @@ export default function DashboardProfesorPage() {
                       )}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: text, marginTop: 3 }}>{b.nombre}</div>
-                    <div style={{ fontSize: 12, color: muted, marginTop: 1 }}>📍 {sedeLabel(b.sede)}</div>
+                    <div style={{ fontSize: 12, color: muted, marginTop: 1 }}>
+                      📍 {sedeLabel(b.sede)}
+                      {b.tipo_clase && ` · ${etiquetaTipoClase(b.tipo_clase)}`}
+                    </div>
+                    {b.plan && (
+                      <div style={{ fontSize: 12, color: '#4f46e5', marginTop: 2 }}>🎯 {b.plan}</div>
+                    )}
                   </div>
                   <Link href="/asistencia"
                     style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff',
