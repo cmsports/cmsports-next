@@ -323,7 +323,7 @@ fechas AS (
 INSERT INTO public.asistencia (club_id, jugador_id, fecha, estado, metodo)
 SELECT t.club_id, t.id,
        (now() AT TIME ZONE 'America/Santiago')::date - f.dias_atras,
-       f.estado, 'demo'
+       f.estado, 'manual'
 FROM   tres t CROSS JOIN fechas f
 WHERE  NOT EXISTS (
   SELECT 1 FROM public.asistencia a
@@ -332,6 +332,13 @@ WHERE  NOT EXISTS (
 );
 -- `registrado_por` NO se escribe: tiene la FK rota y rompió las tres vías de
 -- registro. Es un bug conocido del proyecto.
+--
+-- ⚠️ Y `metodo` va en 'manual', no en 'demo'. La migración 037 le puso un CHECK
+-- a esa columna —solo NULL, 'manual', 'qr', 'autoregistro', 'rut'— así que
+-- 'demo' voltea el INSERT entero. Eso deja a estas filas SIN una marca propia
+-- que las distinga de la asistencia real, y por eso el DESHACER las borra por
+-- alumno y fecha, con una consulta de revisión obligatoria antes. Está escrito
+-- allá abajo con todas sus letras.
 
 
 -- ══ PASO 10 ══ Una baja y un reingreso, para la tarjeta del dashboard ═══
@@ -416,7 +423,12 @@ SELECT CASE extract(isodow FROM (now() AT TIME ZONE 'America/Santiago')::date)
 FROM   public.asistencia a
 JOIN   public.jugadores j ON j.id = a.jugador_id
 JOIN   public.clubes c    ON c.id = j.club_id
-WHERE  c.nombre ILIKE '%spinhouse%' AND a.metodo = 'demo' AND a.estado = 'ausente';
+WHERE  c.nombre ILIKE '%spinhouse%' AND a.estado = 'ausente'
+  AND  a.fecha IN (
+         (now() AT TIME ZONE 'America/Santiago')::date - 21,
+         (now() AT TIME ZONE 'America/Santiago')::date - 14,
+         (now() AT TIME ZONE 'America/Santiago')::date - 7
+       );
 
 -- Y la tarjeta de altas y bajas del mes. Esperado: 0 entraron, 1 volvió,
 -- 1 o 2 se fueron (2 si el reingreso cayó en el mismo alumno que la baja no es
@@ -484,10 +496,37 @@ USING  public.clubes c
 WHERE  c.id = ma.club_id AND c.nombre ILIKE '%spinhouse%'
   AND  ma.arrendatario LIKE '[DEMO]%';
 
+-- ⚠️ ESTA ES LA ÚNICA SENTENCIA DEL DESHACER QUE NO ES SEGURA A CIEGAS.
+--
+-- Las marcas del PASO 9 no llevan una marca propia —el CHECK de la 037 no deja
+-- inventar un `metodo`—, así que se borran por alumno y fecha. Si el club ya
+-- tomó asistencia de verdad, ESAS FILAS SON REALES Y ESTO LAS BORRA.
+--
+-- Mirá primero qué va a caer. Si son 12 filas o menos y las cuatro fechas están
+-- separadas por 7 días exactos, son las del seed:
+--
+--   SELECT j.nombre, a.fecha, a.estado
+--   FROM   public.asistencia a
+--   JOIN   public.jugadores j ON j.id = a.jugador_id
+--   JOIN   public.clubes c    ON c.id = j.club_id
+--   WHERE  c.nombre ILIKE '%spinhouse%'
+--     AND  a.fecha IN ((now() AT TIME ZONE 'America/Santiago')::date - 28,
+--                      (now() AT TIME ZONE 'America/Santiago')::date - 21,
+--                      (now() AT TIME ZONE 'America/Santiago')::date - 14,
+--                      (now() AT TIME ZONE 'America/Santiago')::date - 7)
+--   ORDER  BY j.nombre, a.fecha;
+--
+-- Y ojo con el calendario: las fechas son relativas a HOY, así que el deshacer
+-- borra lo correcto solo si lo corrés el mismo día que corriste el seed. Un día
+-- después apunta a otras cuatro fechas.
+
 DELETE FROM public.asistencia a
 USING  public.clubes c
 WHERE  c.id = a.club_id AND c.nombre ILIKE '%spinhouse%'
-  AND  a.metodo = 'demo';
+  AND  a.fecha IN ((now() AT TIME ZONE 'America/Santiago')::date - 28,
+                   (now() AT TIME ZONE 'America/Santiago')::date - 21,
+                   (now() AT TIME ZONE 'America/Santiago')::date - 14,
+                   (now() AT TIME ZONE 'America/Santiago')::date - 7);
 
 UPDATE public.jugadores j SET plan_id = NULL
 FROM   public.clubes c WHERE c.id = j.club_id AND c.nombre ILIKE '%spinhouse%';
