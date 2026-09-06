@@ -26,6 +26,13 @@ const DUPLICADOS_HISTORICOS = new Set([
   // sobre lo que se ejecutó y el portazo `_migracion_nueva` rechazaría la
   // nueva igual. Queda documentada, como las de arriba.
   '256',
+  // 254: lo mismo, otra vez —`254_perfil_deportivo_jugador` (Spinhouse, 09-03)
+  // y `254_tercer_lugar_torneo_interno` (Buin, 09-06)—. La segunda se numeró
+  // mirando el `ls` del repo, que llegaba hasta la 253 porque le faltaban las
+  // migraciones aplicadas desde la otra rama. Las dos están en
+  // `_migraciones_aplicadas` con ese nombre, así que renumerar una la dejaría
+  // mintiendo sobre lo que se ejecutó.
+  '254',
 ])
 
 describe('numeración de migraciones', () => {
