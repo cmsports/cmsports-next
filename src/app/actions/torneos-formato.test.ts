@@ -48,7 +48,7 @@ function fakeSupabase(tablas: Record<string, Fila[]>) {
 }
 
 /** Un torneo con grupos al mejor de 3 y llave al mejor de 5: el caso real. */
-function escenario() {
+function escenario(): Record<string, Fila[]> {
   return {
     torneos: [{
       id: 't1', club_id: 'club', tipo: 'interno', fase: 'grupos', estado: 'en_curso',
@@ -107,8 +107,11 @@ describe('el marcador se valida con el formato de SU fase', () => {
 
   it('un torneo sin formato declarado se sigue jugando al mejor de 5', async () => {
     const t = escenario()
-    delete t.torneos[0].formato_grupos
-    delete t.torneos[0].formato_llave
+    // Un torneo creado antes de la migración 262: sin las columnas de formato.
+    const sinFormato = { ...t.torneos[0] }
+    delete sinFormato.formato_grupos
+    delete sinFormato.formato_llave
+    t.torneos[0] = sinFormato
     montar(t)
     expect(await marcarGanadorPartido({ partidoId: 'pg', setsA: 2, setsB: 0 })).toHaveProperty('error')
     expect(await marcarGanadorPartido({ partidoId: 'pg', setsA: 3, setsB: 0 })).toEqual({ success: true })

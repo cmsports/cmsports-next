@@ -134,9 +134,27 @@ export default function TorneoDetallePage() {
   const params = useParams()
   const torneoId = params.id as string
 
+  /**
+   * Solo los partidos. Es lo único que cambia mientras se juega, y es la
+   * recarga que corre en cada marca y en cada aviso en vivo: una consulta de
+   * ~190 ms contra las seis de `cargarTorneo`, y sin reemplazar el resto del
+   * estado, que obligaba a redibujar la pantalla entera.
+   */
+  const cargarPartidos = useCallback(async () => {
+    const { data } = await supabase
+      .from('torneo_partidos')
+      .select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)')
+      .eq('torneo_id', torneoId)
+    if (data) setPartidos(data)
+  }, [torneoId])
+
   const cargarTorneo = useCallback(async () => {
     // Un solo viaje: las 5 queries en paralelo. grupo_jugadores se filtra por
     // torneo vía el join a torneo_grupos, así no hay que esperar los grupos.
+    //
+    // Durante el torneo lo que cambia son los PARTIDOS, y para eso está
+    // `cargarPartidos()`: traer las seis consultas cada vez que alguien marca
+    // un resultado es lo que hacía que la pantalla se sintiera pesada.
     const [
       { data: t },
       { data: g },
@@ -195,11 +213,27 @@ export default function TorneoDetallePage() {
   // Solo `torneo_partidos` y `torneos`, que son las dos que están publicadas en
   // `supabase_realtime`. `grupo_jugadores` y `torneo_grupos` no lo están:
   // escucharlas no daría error, simplemente no llegaría nada nunca.
+  //
+  // Dos suscripciones y no una, y esto es lo que hace que la pantalla no se
+  // arrastre durante un torneo:
+  //
+  //  · Los partidos van FILTRADOS por este torneo. `torneo_partidos` no tiene
+  //    `club_id`, así que sin el filtro cualquier partido de cualquier torneo
+  //    —de cualquier club— recargaba esta pantalla.
+  //  · Y cuando cambia un partido se recargan SOLO los partidos: una consulta
+  //    en vez de las seis de `cargarTorneo`, y sin pisar grupos, pagos ni
+  //    inscritos, que no cambiaron.
   useEnVivo(
-    ['torneo_partidos', 'torneos'],
+    ['torneo_partidos'],
+    perfil?.club_id ?? null,
+    () => { void cargarPartidos() },
+    { filtro: `torneo_id=eq.${torneoId}` },
+  )
+  useEnVivo(
+    ['torneos'],
     perfil?.club_id ?? null,
     () => { void cargarTorneo() },
-    { conClub: ['torneos'] },
+    { filtro: `id=eq.${torneoId}` },
   )
 
   useEffect(() => {
@@ -424,10 +458,15 @@ export default function TorneoDetallePage() {
       // Para grupos: el update optimista es suficiente; calcularStats() re-deriva
       // el ranking instantáneamente. Recargar pisaría el estado antes de que
       // Supabase propague el write → ranking a 0 pts momentáneo.
-      // Para playoffs: el RPC crea filas nuevas en la siguiente fase (semis/final).
-      // Sin reload esas filas nunca aparecen en pantalla.
+      // Para playoffs: el servidor crea filas nuevas en la siguiente fase
+      // (semis/final, y la mini llave del 3er lugar). Sin recargar, esas filas
+      // nunca aparecen en pantalla.
+      //
+      // Se recargan SOLO los partidos: es lo único que cambió, y traer las seis
+      // consultas acá era lo que metía medio segundo entre el toque y la
+      // respuesta en cada llave.
       if (partido?.fase && partido.fase !== 'grupos') {
-        await cargarTorneo()
+        await cargarPartidos()
       }
     } catch {
       setPartidos(previo)

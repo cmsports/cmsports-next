@@ -26,9 +26,16 @@ export function useEnVivo(
   tablas: string[],
   clubId: string | null,
   recargar: () => void,
-  opciones: { conClub?: string[]; esperaMs?: number } = {},
+  opciones: { conClub?: string[]; esperaMs?: number; filtro?: string } = {},
 ) {
-  const { conClub = [], esperaMs = 250 } = opciones
+  // `filtro` acota la escucha a UNA fila o a un puñado —por ejemplo
+  // `torneo_id=eq.<id>`— y manda por sobre el filtro de club.
+  //
+  // Hace falta cuando la tabla no tiene `club_id` y escucharla entera trae
+  // ruido caro: la pantalla de un torneo se recargaba con cualquier partido de
+  // cualquier torneo, de cualquier club. Con veinte personas marcando
+  // resultados eso es una recarga por marca para todos.
+  const { conClub = [], esperaMs = 250, filtro } = opciones
 
   // Identificador propio de cada componente que usa el hook.
   //
@@ -66,9 +73,11 @@ export function useEnVivo(
       canal.on(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         'postgres_changes' as any,
-        claveClub.split(',').includes(tabla)
-          ? { event: '*', schema: 'public', table: tabla, filter: `club_id=eq.${clubId}` }
-          : { event: '*', schema: 'public', table: tabla },
+        filtro
+          ? { event: '*', schema: 'public', table: tabla, filter: filtro }
+          : claveClub.split(',').includes(tabla)
+            ? { event: '*', schema: 'public', table: tabla, filter: `club_id=eq.${clubId}` }
+            : { event: '*', schema: 'public', table: tabla },
         () => {
           // El caché se tira en el acto, no dentro de la espera: si algo lee
           // mientras dura la ráfaga, tiene que leer datos nuevos. La recarga sí
@@ -87,5 +96,5 @@ export function useEnVivo(
     }
     // `instancia` es estable durante toda la vida del componente, así que
     // entra en las dependencias sin provocar resuscripciones.
-  }, [clubId, clave, claveClub, esperaMs, tablas.length, instancia])
+  }, [clubId, clave, claveClub, esperaMs, filtro, tablas.length, instancia])
 }
