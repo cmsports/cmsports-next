@@ -7,6 +7,7 @@ import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
+import { SIN_CUOTA } from '@/lib/domain/mensualidades'
 
 const supabase = createClient()
 
@@ -88,12 +89,19 @@ export default function EstadoCuentaPage() {
     pagado:   { color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0', label:'Al día' },
     pendiente:{ color:'#d97706', bg:'#fffbeb', border:'#fde68a', label:'Pendiente' },
     atrasado: { color:'#dc2626', bg:'#fef2f2', border:'#fecaca', label:'Atrasado' },
+    sin_cuota:{ color:'#c2410c', bg:'#fff7ed', border:'#fed7aa', label: SIN_CUOTA },
   }
 
   // El titular es de la cuenta entera, no de la mensualidad. Antes decía "Al
   // día" con una clase extra sin pagar: la cuota estaba pagada y la deuda no.
+  //
+  // `sinCuota` va primero porque también da total 0, y ese cero no significa
+  // que no deba: significa que todavía no se sabe cuánto. Decirle "Al día"
+  // mientras el historial de abajo dice "pendiente" es la contradicción que
+  // esto arregla.
   const estadoMens = mensualidad?.estado || 'pendiente'
-  const estado = cuenta.total === 0 ? 'pagado'
+  const estado = cuenta.sinCuota ? 'sin_cuota'
+    : cuenta.total === 0 ? 'pagado'
     : estadoMens === 'atrasado' ? 'atrasado'
     : 'pendiente'
   const cfg = estadoConfig[estado]
@@ -129,6 +137,10 @@ export default function EstadoCuentaPage() {
           <div style={{ fontSize:12, color: muted, marginTop:8, lineHeight:1.6 }}>
             {cuenta.mensualidad > 0
               ? <>Mensualidad {plata(cuenta.mensualidad)} + clases extra {plata(cuenta.extras)}</>
+              // Sin monto la cuota no está al día, está sin tarifar: el desglose
+              // no puede decir lo contrario que el titular.
+              : cuenta.sinCuota
+              ? <>Mensualidad sin monto asignado · clases extra {plata(cuenta.extras)}</>
               : <>Mensualidad al día · clases extra {plata(cuenta.extras)}</>}
           </div>
         )}
@@ -186,7 +198,12 @@ export default function EstadoCuentaPage() {
 
       {estado !== 'pagado' && (
         <div style={{ ...card, padding:16, marginBottom:16, color:muted, fontSize:12, lineHeight:1.5 }}>
-          El administrador marcará {conExtras ? 'estos cobros' : 'esta mensualidad'} como pagados cuando confirme la recepción del pago.
+          {/* Sin monto no hay nada que confirmar todavía: el paso que falta es
+              del administrador, y decirle "cuando confirme el pago" lo deja
+              esperando a que le cobren algo que nadie definió. */}
+          {cuenta.sinCuota
+            ? <>Tu mensualidad de este mes todavía no tiene monto asignado. El administrador del club la definirá; hasta entonces no hay nada que pagar.</>
+            : <>El administrador marcará {conExtras ? 'estos cobros' : 'esta mensualidad'} como pagados cuando confirme la recepción del pago.</>}
         </div>
       )}
 
@@ -210,7 +227,14 @@ export default function EstadoCuentaPage() {
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 {h.monto && <span style={{ fontSize:14, fontWeight:700, color:'#3730a3', fontFamily:'monospace' }}>${h.monto.toLocaleString('es-CL')}</span>}
-                <span style={{ background: colBg, color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>{h.estado === 'exento' ? 'no vino' : h.estado}</span>
+                {/* Un mes emitido sin monto no es una cuota pendiente de pago:
+                    es una cuota pendiente de definir. Mismo rótulo que ve el
+                    admin en PanelMensualidadesHistoricas. */}
+                <span style={{ background: colBg, color: col, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                  {h.estado === 'exento' ? 'no vino'
+                    : h.monto == null && h.estado !== 'pagado' ? SIN_CUOTA.toLowerCase()
+                    : h.estado}
+                </span>
               </div>
             </div>
           )
