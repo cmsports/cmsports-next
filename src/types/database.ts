@@ -239,6 +239,7 @@ export interface Database {
           contacto_emergencia_nombre: string | null
           contacto_emergencia_telefono: string | null
           indicaciones_medicas: string | null
+          necesidades_accesibilidad: string | null
           federado: boolean | null
           categorias: string[] | null
           nombres: string | null
@@ -280,6 +281,7 @@ export interface Database {
           contacto_emergencia_nombre?: string | null
           contacto_emergencia_telefono?: string | null
           indicaciones_medicas?: string | null
+          necesidades_accesibilidad?: string | null
           federado?: boolean | null
           categorias?: string[] | null
           nombres?: string | null
@@ -321,6 +323,7 @@ export interface Database {
           contacto_emergencia_nombre?: string | null
           contacto_emergencia_telefono?: string | null
           indicaciones_medicas?: string | null
+          necesidades_accesibilidad?: string | null
           federado?: boolean | null
           categorias?: string[] | null
           nombres?: string | null
