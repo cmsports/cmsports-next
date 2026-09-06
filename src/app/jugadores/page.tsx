@@ -19,6 +19,8 @@ import { SIN_CUOTA, montoIngresado } from '@/lib/domain/mensualidades'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { calcularEdad } from '@/lib/domain/jugadorExport'
 import ModalExportarJugadores from '@/components/ModalExportarJugadores'
+import { useModulos } from '@/lib/hooks/useModulos'
+import { idsInactivos } from '@/lib/supabase/inactivos'
 
 const supabase = createClient()
 
@@ -26,6 +28,10 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
+// Ámbar y no rojo: inactivo no es una sanción, es un aviso. El rojo de este
+// listado ya significa otra cosa —bloqueado— y usar el mismo color para las dos
+// haría que el admin las confunda de un vistazo, que es como se mira un listado.
+const badgeInactivo = { background:'#fef3c7', color:'#b45309', padding:'2px 8px', borderRadius:20, fontSize:10.5, fontWeight:700, flexShrink:0, whiteSpace:'nowrap' } as const
 
 const badgeCategoria: Record<string, { bg: string; color: string }> = {
   principiante: { bg: '#fffbeb', color: '#d97706' },
@@ -74,6 +80,7 @@ export default function JugadoresPage() {
   const [edadMin, setEdadMin]                   = useState(() => searchParams.get('edadMin') || '')
   const [edadMax, setEdadMax]                   = useState(() => searchParams.get('edadMax') || '')
   const [asistenciaHoy, setAsistenciaHoy]       = useState<Set<string>>(new Set())
+  const [inactivos, setInactivos]               = useState<Set<string>>(new Set())
   const [fotosFirmadas, setFotosFirmadas]       = useState<Record<string, string>>({})
   const [estadoPago, setEstadoPago]             = useState<Record<string, string>>({})
   const [editandoMensualidadId, setEditandoMensualidadId] = useState<string | null>(null)
@@ -87,6 +94,8 @@ export default function JugadoresPage() {
   const [filtroDoc, setFiltroDoc]       = useState<Set<string>>(() => setDesdeParam(searchParams, 'doc'))
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
+  const { tiene } = useModulos()
+  const conRetencion = tiene('retencion')
 
   useEffect(() => {
     if (authLoading) return
@@ -210,6 +219,17 @@ export default function JugadoresPage() {
       .then(({ data }) => { if (activo) setAsistenciaHoy(new Set((data || []).map((a: any) => a.jugador_id))) })
     return () => { activo = false }
   }, [clubId])
+
+  // Los que llevan 60 días sin asistir ni pagar. Sin el módulo 'retencion' no
+  // se consulta nada: el listado de Buin no cambia ni pide una fila de más.
+  useEffect(() => {
+    if (!clubId || !conRetencion) return
+    let activo = true
+    void idsInactivos(clubId).then(ids => { if (activo) setInactivos(ids) })
+    return () => { activo = false }
+    // `conRetencion` y no `tiene`: la función se recrea en cada render del
+    // proveedor de módulos y el efecto volvería a consultar la base por nada.
+  }, [clubId, conRetencion])
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -600,6 +620,7 @@ export default function JugadoresPage() {
                 <div style={{ fontSize:14, fontWeight:600, color: text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{j.nombre}</div>
                 <div style={{ fontSize:11, color: hint }}>{j.categoria || '—'}</div>
               </div>
+              {inactivos.has(j.id) && <span style={badgeInactivo}>Inactivo</span>}
               <span style={{ fontSize:12, color:'#3730a3', fontWeight:600, flexShrink:0 }}>Ver →</span>
             </div>
           )
@@ -640,7 +661,10 @@ export default function JugadoresPage() {
                         <span style={{ fontSize:10, color: hint }}>{String(i+1).padStart(3,'0')}</span>
                       </div>
                     </td>
-                    <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>{j.nombre}</td>
+                    <td style={{ padding:'12px 16px', fontWeight:600, color: text, whiteSpace:'nowrap' }}>
+                      {j.nombre}
+                      {inactivos.has(j.id) && <span style={{ ...badgeInactivo, marginLeft:8 }}>Inactivo</span>}
+                    </td>
                     <td style={{ padding:'12px 16px', fontSize:12, color: muted }}>{j.rut || '—'}</td>
                     <td style={{ padding:'12px 16px' }}>
                       <span style={{ background: cat.bg, color: cat.color, padding:'3px 8px', borderRadius:20, fontSize:11, fontWeight:600 }}>
