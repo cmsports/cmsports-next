@@ -61,6 +61,55 @@ export function derivarPodioFinal(final: {
   }
 }
 
+/**
+ * Quién perdió un partido ya jugado. `null` si todavía no tiene ganador o si
+ * no hubo rival: un BYE no deja perdedor.
+ */
+export function perdedorDePartido(partido: {
+  jugador_a: string | null
+  jugador_b: string | null
+  ganador: string | null
+}): string | null {
+  const { jugador_a: jugadorA, jugador_b: jugadorB, ganador } = partido
+  if (!jugadorA || !jugadorB || !ganador) return null
+  if (ganador !== jugadorA && ganador !== jugadorB) return null
+  return ganador === jugadorA ? jugadorB : jugadorA
+}
+
+/**
+ * Los dos que disputan el 3er lugar: los perdedores de las dos semifinales.
+ *
+ * Devuelve `null` mientras falte cualquiera de los dos —una semi sin jugar, o
+ * una semi resuelta por BYE, que no deja perdedor—. El partido se abre recién
+ * cuando hay dos rivales de verdad; media llave de consuelo no es una llave.
+ */
+export function derivarTercerLugar(semis: Array<{
+  jugador_a: string | null
+  jugador_b: string | null
+  ganador: string | null
+}>): [string, string] | null {
+  if (semis.length !== 2) return null
+  const [a, b] = semis.map(perdedorDePartido)
+  if (!a || !b || a === b) return null
+  return [a, b]
+}
+
+/**
+ * Las fases que se muestran, con el 3er lugar intercalado justo ANTES de la
+ * final: es el orden en que se juegan y en que se leen.
+ *
+ * No va dentro de `CONFIG.FASES_ORDEN` porque esa lista es el camino del
+ * cuadro —`siguienteFase()` la recorre— y el 3er lugar no es un paso de ese
+ * camino: se llega perdiendo, no ganando.
+ */
+export function fasesParaMostrar(fasesPresentes: ReadonlySet<string>): string[] {
+  const fases: string[] = CONFIG.FASES_ORDEN.filter(f => fasesPresentes.has(f))
+  if (!fasesPresentes.has('tercer_lugar')) return fases
+  const iFinal = fases.indexOf('final')
+  if (iFinal < 0) return [...fases, 'tercer_lugar']
+  return [...fases.slice(0, iFinal), 'tercer_lugar', ...fases.slice(iFinal)]
+}
+
 // ─── Grupos ────────────────────────────────────────────────────────────────
 
 /**

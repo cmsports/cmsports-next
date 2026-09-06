@@ -10,6 +10,7 @@ import {
   cerrarInscripcionYGenerarGrupos,
   sincronizarLlaves as sincronizarLlavesAction,
   finalizarTorneo as finalizarTorneoAction,
+  abrirTercerLugar as abrirTercerLugarAction,
   generarGruposTardios,
   actualizarEstadoPago,
   subirPagosPendientesAFinanzas,
@@ -32,7 +33,7 @@ import {
   guardarGastosGestion,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
-import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket } from '@/lib/domain/torneos'
+import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket, fasesParaMostrar, derivarTercerLugar } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { copiarTexto } from '@/lib/clipboard'
 import { useTextoMonto } from '@/components/Monto'
@@ -672,6 +673,22 @@ export default function TorneoDetallePage() {
   // "grupos": mostramos las pestañas y el bracket también en ese caso.
   const hayBracket = Array.from(fasesConPartidos).some(fase => fase !== 'grupos')
   const mostrarLlaves = !!esPlayoffs || hayBracket
+  // El partido por el 3er lugar cuelga de la final pero NO es un peldaño del
+  // árbol: no se llega a él ganando, sino perdiendo la semi. Por eso queda
+  // fuera de `fasesOrden` —donde cada columna tiene la mitad de llaves que la
+  // anterior, y meterlo ahí descuadraría el SVG— y se dibuja como una mini
+  // llave aparte, junto a la final.
+  const hayTercerLugar = fasesConPartidos.has('tercer_lugar')
+  const fasesConTercerLugar = fasesParaMostrar(fasesConPartidos)
+  const partidoTercerLugar = (partidosPorFase.get('tercer_lugar') || [])[0] ?? null
+  const tercerLugarPendiente = !!partidoTercerLugar && !partidoTercerLugar.ganador
+  // Un torneo interno cuyas semis se marcaron ANTES de que existiera esta regla
+  // no dispara el automatismo (corre al cerrar una semi, y ya están cerradas).
+  // Para esos, el botón de abrirla a mano.
+  const sePuedeAbrirTercerLugar = !hayTercerLugar
+    && torneo?.tipo === 'interno'
+    && faseActual !== 'finalizado'
+    && !!derivarTercerLugar(partidosPorFase.get('semis') || [])
   // A diferencia de hayBracket (el esqueleto puede existir con cupos vacíos
   // apenas hay grupos), esto es si YA se jugó un partido real de bracket
   // (mismo criterio que llaveFueJugada en el backend). Mientras no haya
@@ -806,7 +823,7 @@ export default function TorneoDetallePage() {
           <button
             onClick={async () => {
               const { descargarExcelTorneo } = await import('@/lib/torneo-excel')
-              descargarExcelTorneo({ torneo, grupos, partidos, statsDeGrupo: (id) => calcularStats(id), faseLabel, fasesOrden })
+              descargarExcelTorneo({ torneo, grupos, partidos, statsDeGrupo: (id) => calcularStats(id), faseLabel, fasesOrden: fasesConTercerLugar })
             }}
             title="Descargar respaldo del torneo en Excel (una hoja por fase)"
             style={{ background:'#f0fdf4', color:'#16a34a', border:'1px solid #bbf7d0', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
@@ -841,8 +858,31 @@ export default function TorneoDetallePage() {
             🔁 Regenerar grupos
           </button>
         )}
-        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && (
+        {esAdmin && sePuedeAbrirTercerLugar && (
+          <button
+            onClick={async () => {
+              const res = await abrirTercerLugarAction({ torneoId })
+              if (res.error) { alert(res.error); return }
+              await cargarTorneo()
+            }}
+            title="Crea la llave por el 3er y 4to lugar con los dos que perdieron las semifinales"
+            style={{ background:'#fffbeb', color:'#b45309', border:'1px solid #fde68a', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            🥉 Abrir el 3er lugar
+          </button>
+        )}
+        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
+        )}
+        {/* Con el 3er lugar sin jugar, el servidor rechaza finalizar. Mostrar el
+            botón igual sería ofrecer un error: se dice qué falta y se lleva al
+            único lugar donde se resuelve, que es la mini llave. */}
+        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && tercerLugarPendiente && (
+          <button
+            onClick={() => document.getElementById('mini-llave-tercer-lugar')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            title="Marca al ganador del 3er lugar para poder finalizar"
+            style={{ background:'#fffbeb', color:'#b45309', border:'1px solid #fde68a', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            🥉 Falta el 3er lugar
+          </button>
         )}
       </div>
 
@@ -1442,9 +1482,11 @@ export default function TorneoDetallePage() {
           })()}
 
           {/* Bracket móvil: lista por fase (liviana). Mismo dato que el SVG, sin
-              divs absolutos ni SVG → no hay OOM. Tocas el nombre para marcar. */}
-          {isMobile && (() => {
-            const fasesVis = fasesOrden.filter(f => fasesConPartidos.has(f))
+              divs absolutos ni SVG → no hay OOM. Tocas el nombre para marcar.
+              En desktop esta misma lista dibuja solo la mini llave del 3er
+              lugar, que no cabe en la geometría del SVG. */}
+          {(() => {
+            const fasesVis = isMobile ? fasesConTercerLugar : (hayTercerLugar ? ['tercer_lugar'] : [])
             if (!fasesVis.length) return null
 
             const nombre = (p: any, pos: 'a' | 'b') =>
@@ -1453,8 +1495,26 @@ export default function TorneoDetallePage() {
             return fasesVis.map(fase => {
               const ps = partidosPorFase.get(fase) || []
               return (
-                <div key={fase} style={{ marginBottom: 18 }}>
-                  <div style={{ fontSize: 11, color: muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>{faseLabel[fase]}</div>
+                <div
+                  key={fase}
+                  id={fase === 'tercer_lugar' ? 'mini-llave-tercer-lugar' : undefined}
+                  style={fase === 'tercer_lugar'
+                    ? { marginBottom: 18, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 14, padding: 14 }
+                    : { marginBottom: 18 }}
+                >
+                  <div style={{ fontSize: 11, color: fase === 'tercer_lugar' ? '#b45309' : muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>
+                    {fase === 'tercer_lugar' ? '🥉 3er y 4to lugar' : faseLabel[fase]}
+                  </div>
+                  {/* El podio no se cierra solo: alguien tiene que tocar al que
+                      ganó. Sin este cartel, el admin veía una llave más y no
+                      sabía que el torneo la está esperando para finalizar. */}
+                  {fase === 'tercer_lugar' && tercerLugarPendiente && (
+                    <div style={{ fontSize: 12, color: '#92400e', marginBottom: 10 }}>
+                      {esAdmin
+                        ? 'Toca al que ganó para cerrar el podio. Hasta entonces el torneo no se puede finalizar.'
+                        : 'Falta jugar el partido por el 3er lugar.'}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {ps.map((p, i) => {
                       const isBye = esByeMatch(p)
@@ -1496,7 +1556,9 @@ export default function TorneoDetallePage() {
                       return (
                         <div key={p.id} style={{ ...card, borderRadius: 12, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>Llave {i + 1}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>
+                              {fase === 'tercer_lugar' ? '3er y 4to lugar' : `Llave ${i + 1}`}
+                            </span>
                             {!!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado' && !editando && (
                               <button onClick={() => setPartidoPlayoffEditando(p.id)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 13, cursor: 'pointer', padding: '0 2px' }} title="Corregir resultado">✏️</button>
                             )}
@@ -1551,6 +1613,10 @@ export default function TorneoDetallePage() {
         const subcampeon = pFinal
           ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja)
           : null
+        // El 3er lugar solo tiene nombre si se jugó su partido. Sin él, el
+        // informe sigue mostrando el monto sin dueño, como antes.
+        const pTercero = (partidosPorFase.get('tercer_lugar') || []).find(p => p.ganador)
+        const tercero = pTercero ? ((pTercero as any).jg) : null
 
         const inputStyle = {
           width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0',
@@ -1599,7 +1665,7 @@ export default function TorneoDetallePage() {
             ) : (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                  <label style={{ fontSize: 11, color: muted }}>🥉 Tercer lugar</label>
+                  <label style={{ fontSize: 11, color: muted }}>🥉 Tercer lugar{tercero ? ` — ${tercero.nombre}` : ''}</label>
                   <button onClick={() => { setPremioTerceroOpen(false); setPremio3('') }} style={{ background: 'transparent', border: 'none', color: hint, cursor: 'pointer', fontSize: 14, padding: 0 }}>✕</button>
                 </div>
                 <input
@@ -1870,6 +1936,8 @@ export default function TorneoDetallePage() {
                   const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
                   const campeon1 = pFinal ? (pFinal as any).jg : null
                   const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : null
+                  const pTercero = (partidosPorFase.get('tercer_lugar') || []).find(p => p.ganador)
+                  const tercero = pTercero ? ((pTercero as any).jg) : null
                   const listaJug = jugadoresUnicos.map((j: any) => {
                     const pago = pagos.find(p => p.jugador_id === j.jugador_id)
                     return {
@@ -1884,7 +1952,7 @@ export default function TorneoDetallePage() {
                   const premios = [
                     { lugar: '1° lugar', nombre: campeon1?.nombre, monto: torneo?.premio_primero },
                     { lugar: '2° lugar', nombre: subcampeon?.nombre, monto: torneo?.premio_segundo },
-                    { lugar: '3° lugar', nombre: null, monto: torneo?.premio_tercero },
+                    { lugar: '3° lugar', nombre: tercero?.nombre ?? null, monto: torneo?.premio_tercero },
                   ]
                   const gastos = gastosGestion
                     .filter(g => g.tipo.trim() && g.monto)

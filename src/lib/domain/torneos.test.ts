@@ -10,6 +10,9 @@ import {
   siguienteFase,
   generarBracketConAvance,
   generarSiguienteFase,
+  derivarTercerLugar,
+  perdedorDePartido,
+  fasesParaMostrar,
   construirLlavesLayout,
   construirLlavesLayoutNumerado,
   calcularStatsGrupo,
@@ -1105,5 +1108,51 @@ describe('siembra tradicional (cabezas ancladas)', () => {
     const a = construirLayoutPorRanking(buin)
     const b = construirLayoutPorRanking(buin)
     expect(a).toEqual(b)
+  })
+})
+
+describe('derivarTercerLugar', () => {
+  const semi = (a: string | null, b: string | null, ganador: string | null) =>
+    ({ jugador_a: a, jugador_b: b, ganador })
+
+  it('empareja a los dos perdedores de las semis', () => {
+    expect(derivarTercerLugar([semi('ana', 'cata', 'ana'), semi('beto', 'dani', 'beto')]))
+      .toEqual(['cata', 'dani'])
+  })
+
+  it('no abre el partido mientras falte jugar una semi', () => {
+    expect(derivarTercerLugar([semi('ana', 'cata', 'ana'), semi('beto', 'dani', null)])).toBeNull()
+  })
+
+  it('no abre el partido si una semi se resolvió por BYE: no dejó perdedor', () => {
+    expect(derivarTercerLugar([semi('ana', null, 'ana'), semi('beto', 'dani', 'beto')])).toBeNull()
+  })
+
+  it('sin dos semis —cuadro que arranca en la final— no hay 3er lugar', () => {
+    expect(derivarTercerLugar([semi('ana', 'cata', 'ana')])).toBeNull()
+    expect(derivarTercerLugar([])).toBeNull()
+  })
+
+  it('un ganador que no jugó el partido no genera perdedor', () => {
+    expect(perdedorDePartido(semi('ana', 'cata', 'beto'))).toBeNull()
+  })
+})
+
+describe('fasesParaMostrar', () => {
+  it('mete el 3er lugar justo antes de la final', () => {
+    expect(fasesParaMostrar(new Set(['cuartos', 'semis', 'final', 'tercer_lugar'])))
+      .toEqual(['cuartos', 'semis', 'tercer_lugar', 'final'])
+  })
+
+  it('sin 3er lugar deja el cuadro como estaba', () => {
+    expect(fasesParaMostrar(new Set(['semis', 'final']))).toEqual(['semis', 'final'])
+  })
+
+  it('si la final todavía no existe, lo deja al final de la lista', () => {
+    expect(fasesParaMostrar(new Set(['semis', 'tercer_lugar']))).toEqual(['semis', 'tercer_lugar'])
+  })
+
+  it('ignora fases que no tienen partidos', () => {
+    expect(fasesParaMostrar(new Set(['final', 'tercer_lugar']))).toEqual(['tercer_lugar', 'final'])
   })
 })

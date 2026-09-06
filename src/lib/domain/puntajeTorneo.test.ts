@@ -90,3 +90,41 @@ describe('puestosDelTorneo', () => {
     expect(puestos.get('ana')?.puntos).toBe(PUNTOS_GRUPO)
   })
 })
+
+describe('el partido por el 3er lugar separa a los semifinalistas perdedores', () => {
+  const semisYFinal: PartidoDelTorneo[] = [
+    p('ana', 'cata', 'ana', 'semis'),
+    p('beto', 'dani', 'beto', 'semis'),
+    p('ana', 'beto', 'ana', 'final'),
+  ]
+
+  it('el ganador queda 3° con 80 y el perdedor 4° con 70', () => {
+    const puestos = puestosDelTorneo([...semisYFinal, p('cata', 'dani', 'dani', 'tercer_lugar')])
+    expect(puestos.get('dani')).toEqual({ etiqueta: '3°', puntos: 80 })
+    expect(puestos.get('cata')).toEqual({ etiqueta: '4°', puntos: 70 })
+  })
+
+  it('el podio de arriba no se mueve', () => {
+    const puestos = puestosDelTorneo([...semisYFinal, p('cata', 'dani', 'dani', 'tercer_lugar')])
+    expect(puestos.get('ana')).toEqual({ etiqueta: '1°', puntos: PUNTOS_CAMPEON })
+    expect(puestos.get('beto')).toEqual({ etiqueta: '2°', puntos: 90 })
+  })
+
+  it('mientras no se juegue, los dos siguen compartiendo 3-4', () => {
+    const puestos = puestosDelTorneo([...semisYFinal, p('cata', 'dani', null, 'tercer_lugar')])
+    expect(puestos.get('cata')).toEqual({ etiqueta: '3-4', puntos: 80 })
+    expect(puestos.get('dani')).toEqual({ etiqueta: '3-4', puntos: 80 })
+  })
+
+  it('no asciende a alguien que se fue en cuartos', () => {
+    // Dato imposible en la práctica, pero el 3er lugar no puede reescribir el
+    // puesto de quien no llegó a semis.
+    const puestos = puestosDelTorneo([
+      p('ana', 'zoe', 'ana', 'cuartos'),
+      ...semisYFinal,
+      p('zoe', 'cata', 'zoe', 'tercer_lugar'),
+    ])
+    expect(puestos.get('zoe')).toEqual({ etiqueta: '5-8', puntos: 60 })
+    expect(puestos.get('cata')).toEqual({ etiqueta: '4°', puntos: 70 })
+  })
+})

@@ -584,6 +584,10 @@ export interface Database {
           cabeza_serie_2: string | null
           campeon_id: string | null
           subcampeon_id: string | null
+          tercer_id: string | null
+          // 'interno' | 'externo' (migración 055). Los internos disputan el
+          // partido por el 3er lugar.
+          tipo: string | null
         }
         Insert: {
           id?: string
@@ -606,6 +610,8 @@ export interface Database {
           cabeza_serie_2?: string | null
           campeon_id?: string | null
           subcampeon_id?: string | null
+          tercer_id?: string | null
+          tipo?: string | null
         }
         Update: {
           id?: string
@@ -628,6 +634,8 @@ export interface Database {
           cabeza_serie_2?: string | null
           campeon_id?: string | null
           subcampeon_id?: string | null
+          tercer_id?: string | null
+          tipo?: string | null
         }
         Relationships: [
           { foreignKeyName: 'torneos_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
@@ -635,6 +643,7 @@ export interface Database {
           { foreignKeyName: 'torneos_cabeza_serie_2_fkey'; columns: ['cabeza_serie_2']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneos_campeon_id_fkey'; columns: ['campeon_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
           { foreignKeyName: 'torneos_subcampeon_id_fkey'; columns: ['subcampeon_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneos_tercer_id_fkey'; columns: ['tercer_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
         ]
       }
       torneo_felicitaciones: {

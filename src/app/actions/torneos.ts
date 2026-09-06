@@ -11,6 +11,7 @@ import {
   calcularStatsGrupo,
   grupoTieneSusDosCuposDecididos,
   derivarPodioFinal,
+  derivarTercerLugar,
   nombreGrupo,
   type JugadorTorneo,
   type ClasificadoConStats,
@@ -481,6 +482,97 @@ async function avanzarFaseSiEstaCompleta(
     .eq('fase', partido.fase)
 }
 
+/**
+ * Abre —o corrige— el partido por el 3er lugar cuando las dos semis ya tienen
+ * ganador. Solo en torneos INTERNOS: es la regla del club, no del módulo.
+ *
+ * Vive fuera del árbol de la llave (`orden = 0`, sin fase siguiente), así que
+ * ni `propagarGanadorPlayoff` ni `avanzarFaseSiEstaCompleta` lo tocan:
+ * `siguienteFase('tercer_lugar')` no existe y ambas cortan solas.
+ *
+ * Si ya se jugó, no se toca: rehacerlo borraría un resultado real.
+ */
+async function sincronizarTercerLugarInterno(
+  supabase: AdminSupabase,
+  torneoId: string,
+): Promise<string | null> {
+  const { data: torneo, error: torneoError } = await supabase
+    .from('torneos').select('tipo').eq('id', torneoId).maybeSingle()
+  if (torneoError) return 'No se pudo revisar el torneo para el 3er lugar'
+  if (torneo?.tipo !== 'interno') return null
+
+  const { data: semis, error: semisError } = await supabase
+    .from('torneo_partidos')
+    .select('jugador_a,jugador_b,ganador')
+    .eq('torneo_id', torneoId)
+    .eq('fase', 'semis')
+    .order('orden')
+  if (semisError) return 'No se pudieron revisar las semifinales para el 3er lugar'
+
+  const disputantes = derivarTercerLugar(semis || [])
+  if (!disputantes) return null
+
+  const { data: existente, error: existenteError } = await supabase
+    .from('torneo_partidos')
+    .select('id,ganador')
+    .eq('torneo_id', torneoId)
+    .eq('fase', 'tercer_lugar')
+    .eq('orden', 0)
+    .maybeSingle()
+  if (existenteError) return 'No se pudo consultar el partido por el 3er lugar'
+  if (existente?.ganador) return null
+
+  const [jugadorA, jugadorB] = disputantes
+  if (existente) {
+    const { error } = await supabase.from('torneo_partidos')
+      .update({ jugador_a: jugadorA, jugador_b: jugadorB })
+      .eq('id', existente.id)
+      .is('ganador', null)
+    if (error) return 'No se pudo actualizar el partido por el 3er lugar'
+    return null
+  }
+
+  const { error } = await supabase.from('torneo_partidos').insert({
+    torneo_id: torneoId,
+    fase: 'tercer_lugar',
+    orden: 0,
+    jugador_a: jugadorA,
+    jugador_b: jugadorB,
+    ganador: null,
+  })
+  // Las dos semis pueden cerrarse casi a la vez e intentar crear la misma fila.
+  // El índice único deja una sola; la segunda pasada no tiene nada que hacer.
+  if (error && error.code !== '23505') return 'No se pudo crear el partido por el 3er lugar'
+  return null
+}
+
+/**
+ * Abre la mini llave a mano.
+ *
+ * `sincronizarTercerLugarInterno` corre cuando se cierra una semifinal, así
+ * que un torneo cuyas semis YA estaban marcadas antes de esta regla —TC"A", sin
+ * ir más lejos— nunca dispararía el automatismo. Este botón cubre ese caso y
+ * cualquier otro donde la fila haya que reponerla.
+ */
+export async function abrirTercerLugar(params: { torneoId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+  if (!esUuid(params.torneoId)) return { error: 'Torneo inválido' }
+
+  const err = await sincronizarTercerLugarInterno(supabase, params.torneoId)
+  if (err) return { error: err }
+
+  // Que no haya error no significa que se haya abierto: el sincronizador se
+  // calla y no hace nada si el torneo es externo o si las semis no dejaron dos
+  // perdedores. Decirlo es la diferencia entre "no pasó nada" y "listo".
+  const { data: creado } = await supabase.from('torneo_partidos')
+    .select('id').eq('torneo_id', params.torneoId).eq('fase', 'tercer_lugar').eq('orden', 0).maybeSingle()
+  if (!creado) {
+    return { error: 'No se pudo abrir: las dos semifinales tienen que estar jugadas y con rival (un BYE no deja perdedor).' }
+  }
+  return { success: true }
+}
+
 export async function corregirResultadoGrupos(params: {
   partidoId: string
   setsA?: number
@@ -679,6 +771,10 @@ export async function marcarGanadorPartido(params: {
     // decir "listo" ahí es la peor de las dos respuestas posibles.
     const errProp = await propagarGanadorPlayoff(supabase, partido, ganadorId)
     if (errProp) return { error: errProp }
+    if (partido.fase === 'semis' && partido.torneo_id) {
+      const errTercer = await sincronizarTercerLugarInterno(supabase, partido.torneo_id)
+      if (errTercer) return { error: errTercer }
+    }
     await avanzarFaseSiEstaCompleta(supabase, partido)
     return { success: true }
   }
@@ -1538,7 +1634,7 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
 
   const { partidoId, nuevoGanadorId } = params
 
-  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase').eq('id', partidoId).single()
+  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,torneo_id').eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
   if (partido.fase === 'grupos') return { error: 'Usa corregirResultadoGrupos para partidos de grupos' }
@@ -1549,6 +1645,14 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
     p_nuevo_ganador_id: nuevoGanadorId,
   })
   if (error) return { error: error.message }
+
+  // Corregir una semi cambia quién perdió, así que cambia también quién juega
+  // el 3er lugar. El RPC ya se negó si ese partido tenía resultado, de modo
+  // que acá solo se reescriben dos cupos todavía sin jugar.
+  if (partido.fase === 'semis' && partido.torneo_id) {
+    const errTercer = await sincronizarTercerLugarInterno(supabase, partido.torneo_id)
+    if (errTercer) return { error: errTercer }
+  }
   return { success: true }
 }
 
@@ -1608,12 +1712,27 @@ export async function finalizarTorneo(params: { torneoId: string }) {
     return { error: 'La final debe estar completa antes de finalizar el torneo.' }
   }
 
+  // El partido por el 3er lugar, cuando existe, es parte del torneo: cerrar sin
+  // jugarlo deja el podio a medias y el ranking sin repartir 3° y 4°.
+  const { data: tercer, error: tercerError } = await supabase
+    .from('torneo_partidos')
+    .select('ganador')
+    .eq('torneo_id', params.torneoId)
+    .eq('fase', 'tercer_lugar')
+    .eq('orden', 0)
+    .maybeSingle()
+  if (tercerError) return { error: 'No se pudo revisar el partido por el 3er lugar.' }
+  if (tercer && !tercer.ganador) {
+    return { error: 'Falta jugar el partido por el 3er lugar antes de finalizar el torneo.' }
+  }
+
   const { error } = await supabase.from('torneos').update({
     estado: 'finalizado',
     fase: 'finalizado',
     fecha_fin: new Date().toISOString(),
     campeon_id: podio.campeonId,
     subcampeon_id: podio.subcampeonId,
+    ...(tercer?.ganador ? { tercer_id: tercer.ganador } : {}),
   }).eq('id', params.torneoId)
   if (error) return { error: `No se pudo finalizar el torneo: ${error.message}` }
 
@@ -1625,7 +1744,7 @@ export async function finalizarTorneo(params: { torneoId: string }) {
   // Sigue sin poder tumbar la finalización (el torneo YA está finalizado y eso
   // no se revierte por una limpieza), pero ahora, si algo queda sin limpiar, se
   // devuelve como aviso en vez de desaparecer en un `.catch(() => {})`.
-  const avisoLimpieza = await limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId)
+  const avisoLimpieza = await limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId, tercer?.ganador ?? null)
     .catch(e => e instanceof Error ? e.message : 'No se pudo limpiar a los jugadores externos')
 
   return avisoLimpieza ? { success: true, aviso: avisoLimpieza } : { success: true }
@@ -1636,6 +1755,7 @@ async function limpiarExternosDeTorneo(
   torneoId: string,
   campeonId: string | null,
   subcampeonId: string | null,
+  terceroId: string | null = null,
 ): Promise<string | null> {
   const admin = createAdminClient()
 
@@ -1653,8 +1773,8 @@ async function limpiarExternosDeTorneo(
     .eq('jugadores.es_externo', true)
   if (!rows?.length) return null
 
-  // Excluir campeón y subcampeón
-  const keep = new Set([campeonId, subcampeonId].filter(Boolean))
+  // Excluir el podio: campeón, subcampeón y —desde que se disputa— el tercero.
+  const keep = new Set([campeonId, subcampeonId, terceroId].filter(Boolean))
   const candidatos = [...new Set((rows as { jugador_id: string }[]).map(r => r.jugador_id).filter(id => !keep.has(id)))]
   if (!candidatos.length) return null
 
