@@ -33,6 +33,7 @@ import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { CATEGORIAS_EDAD, MANOS, NIVELES, categoriaPorEdad, manoLabel, nivelLabel } from '@/lib/domain/perfilDeportivo'
 import PanelPerfilTecnico from '@/components/PanelPerfilTecnico'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
+import { idsInactivos } from '@/lib/supabase/inactivos'
 import { sesionesDelMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
 
@@ -141,6 +142,10 @@ export default function JugadorDetallePage() {
   const [passwordMsg, setPasswordMsg] = useState<{ok: boolean; text: string} | null>(null)
   const [recargaVersion, setRecargaVersion] = useState(0)
   const { tiene } = useModulos()
+  // Inactivo por 60 días sin asistir ni pagar. Se calcula, no se guarda: el
+  // porqué está en `lib/supabase/inactivos.ts`. Sin el módulo 'retencion' no se
+  // consulta nada y la ficha queda igual que antes.
+  const [inactivo, setInactivo] = useState(false)
   const [credencial, setCredencial] = useState<{ login: string; password: string } | null>(null)
   const [clubNombre, setClubNombre] = useState('')
   const [generandoReporte, setGenerandoReporte] = useState(false)
@@ -642,6 +647,12 @@ export default function JugadorDetallePage() {
       // abajo, contando hoy.
       const desde = sumarDias(fechaChile(), -89)
 
+      // Inactivo: 60 días sin asistir ni pagar. Va acá y no en su propio
+      // efecto para no abrir un segundo viaje a la base por la misma ficha.
+      if (tiene('retencion') && jugador.club_id) {
+        idsInactivos(jugador.club_id).then(ids => setInactivo(ids.has(jugadorId)))
+      }
+
       // Asistencia, mensualidades y ranking en paralelo
       const [{ data: asist }, { data: mens3 }, { data: club }] = await Promise.all([
         supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', desde).order('fecha'),
@@ -962,6 +973,16 @@ export default function JugadorDetallePage() {
               <span style={{ background: jugador.estado === 'activo' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)', color: jugador.estado === 'activo' ? '#86efac' : '#fca5a5', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>
                 {jugador.estado === 'activo' ? 'Activo' : 'Bloqueado'}
               </span>
+              {/* Va JUNTO a "Activo", no en su lugar: son dos cosas distintas y
+                  el club necesita ver las dos. "Activo" es que su cuenta está
+                  abierta; "Inactivo" es que hace 60 días que no da señales de
+                  vida. Un alumno puede estar en las dos a la vez, y ese es
+                  justamente el que hay que llamar. */}
+              {inactivo && (
+                <span title="60 días o más sin asistir ni pagar" style={{ background:'rgba(245,158,11,0.3)', color:'#fde68a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                  Inactivo
+                </span>
+              )}
             </div>
           </div>
           {(esAdmin || esProfesor) && (
