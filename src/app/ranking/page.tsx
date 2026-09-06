@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
+import PanelRankingElo from '@/components/PanelRankingElo'
+import { useModulos } from '@/lib/hooks/useModulos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
@@ -49,6 +51,7 @@ const SERPENTINA = [
 
 export default function RankingPage() {
   const { perfil, loading: authLoading } = usePerfil()
+  const { tiene } = useModulos()
   const [rankingPorCategoria, setRankingPorCategoria] = useState<CategoriaRanking[]>([])
   const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -291,6 +294,16 @@ export default function RankingPage() {
   return (
     <AppLayout perfil={perfil}>
       <div style={{ maxWidth: 700, margin: '0 auto' }}>
+
+        {/* Índice de fuerza — arriba del ranking por puestos, no como otra
+            pestaña: las de abajo son categorías, que es otro eje. */}
+        {tiene('ranking_elo') && (
+          <PanelRankingElo
+            clubId={perfil?.club_id}
+            esStaff={perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'}
+            jugadorId={perfil?.jugador_id}
+          />
+        )}
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12 }}>

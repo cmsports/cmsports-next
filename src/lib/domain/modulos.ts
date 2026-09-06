@@ -96,6 +96,11 @@ export const MODULOS = [
   // ficha de 140 personas reales, y eso se decide cuando el club defina cómo va
   // a juntar las autorizaciones, no en un despliegue (migración 259).
   { key: 'consentimientos', label: 'Consentimientos y accesibilidad' },
+  // El índice de fuerza partido a partido. NO reemplaza al ranking interno, que
+  // premia el puesto alcanzado en torneos: son dos números con dos propósitos.
+  // Apagado por defecto porque a un club que quiere uno solo, dos rankings en
+  // el menú le sirven menos que ninguno (migración 260).
+  { key: 'ranking_elo', label: 'Índice de fuerza (Elo)' },
   // Tareas NO va acá: es la lista privada de los superadmin
   // (/superadmin/tareas), no una función que un club pueda activar.
 ] as const
