@@ -13,6 +13,7 @@ import { firmarUrl } from '@/lib/supabase/privado'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
+import { SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useEnVivo } from '@/lib/useEnVivo'
 import RankingJugador from '@/components/RankingJugador'
 
@@ -161,12 +162,15 @@ export default function PerfilPage() {
   // $3.000 es la clase de contradicción por la que deja de creerle a las dos.
   const cuenta = cuentaDelJugador(mensualidadActual, extrasImpagas)
   const mensEstado = mensualidadActual?.estado
+  // Una cuota emitida sin monto también da total 0. Si no se mira antes que el
+  // total, esta pantalla dice "✅ Pagado" por algo que nadie ha tarifado.
   const estadoCuenta = !mensEstado && !tieneExtrasPendientes(cuenta) ? null
+    : cuenta.sinCuota ? 'sin_cuota'
     : cuenta.total === 0 ? 'pagado'
     : mensEstado === 'atrasado' ? 'atrasado'
     : 'pendiente'
-  const mensLabel = estadoCuenta === 'pagado' ? '✅ Pagado' : estadoCuenta === 'atrasado' ? '❌ Atrasado' : estadoCuenta === 'pendiente' ? '⚠️ Pendiente' : '—'
-  const mensColor = estadoCuenta === 'pagado' ? '#86efac' : estadoCuenta === 'atrasado' ? '#fca5a5' : estadoCuenta === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
+  const mensLabel = estadoCuenta === 'pagado' ? '✅ Pagado' : estadoCuenta === 'atrasado' ? '❌ Atrasado' : estadoCuenta === 'sin_cuota' ? `⏳ ${SIN_CUOTA}` : estadoCuenta === 'pendiente' ? '⚠️ Pendiente' : '—'
+  const mensColor = estadoCuenta === 'pagado' ? '#86efac' : estadoCuenta === 'atrasado' ? '#fca5a5' : estadoCuenta === 'sin_cuota' ? '#fed7aa' : estadoCuenta === 'pendiente' ? '#fde68a' : 'rgba(255,255,255,0.7)'
   const edad = edadDesde(jugador.fecha_nacimiento)
   const nacimiento = fechaLarga(jugador.fecha_nacimiento)
   const nacimientoLabel = nacimiento ? (edad !== null ? `${nacimiento} (${edad} años)` : nacimiento) : null

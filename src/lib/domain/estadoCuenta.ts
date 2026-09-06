@@ -19,6 +19,15 @@
 //   null  nadie le puso precio todavía  → no es deuda, pero se avisa
 //   0     el profe debía esa clase      → no es deuda, y conviene decirlo
 //   > 0   tiene precio y no está pagada → esto sí es deuda
+//
+// LA CUOTA TIENE LOS MISMOS TRES ESTADOS y acá se leían como dos: una
+// mensualidad emitida sin monto se sumaba como 0 y el titular cantaba "Al día"
+// mientras el historial, que mira el estado crudo, decía "pendiente" en la
+// misma pantalla. No estaba al día: nadie le había asignado la cuota. Pasaba
+// cuando se emite el mes antes de cargar los planes —el generador no reescribe
+// las filas ya emitidas—, y afectaba a 7 jugadores entre Buin y Spinhouse.
+// El total sigue sin inventarse un monto: se avisa que falta, que es distinto
+// de cobrar una cifra adivinada.
 
 export type ClaseExtraJugador = {
   id: string
@@ -39,6 +48,8 @@ export type CuentaJugador = {
   extras: number
   /** Lo que tiene que pagar hoy, todo junto. */
   total: number
+  /** El mes está emitido y sin pagar, pero nadie le puso monto a la cuota. */
+  sinCuota: boolean
   /** Con precio y sin pagar: las que suman. */
   porCobrar: ClaseExtraJugador[]
   /** Precio 0 — el profe debía la clase. */
@@ -67,10 +78,13 @@ export function cuentaDelJugador(
   // 'exento' es un mes que el club decidio no cobrar ("no vino este mes"), asi
   // que al jugador no se le muestra como deuda igual que uno pagado. Lo unico
   // que los distingue es que el exento no genero ingreso en Finanzas.
-  const debeMensualidad =
+  const mesCerrado =
     mensualidad?.estado === 'pagado' || mensualidad?.estado === 'exento'
-      ? 0
-      : Number(mensualidad?.monto ?? 0)
+  const debeMensualidad = mesCerrado ? 0 : Number(mensualidad?.monto ?? 0)
+
+  // Emitida y sin pagar pero sin monto. `mensualidad == null` es otra cosa —el
+  // mes no se ha emitido— y ahí no hay nada que avisar.
+  const sinCuota = mensualidad != null && !mesCerrado && mensualidad.monto == null
 
   const porCobrar: ClaseExtraJugador[] = []
   const sinCargo: ClaseExtraJugador[] = []
@@ -90,6 +104,7 @@ export function cuentaDelJugador(
     mensualidad: debeMensualidad,
     extras: totalExtras,
     total: debeMensualidad + totalExtras,
+    sinCuota,
     porCobrar: porCobrar.sort(porFechaDesc),
     sinCargo: sinCargo.sort(porFechaDesc),
     sinMonto: sinMonto.sort(porFechaDesc),

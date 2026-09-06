@@ -55,6 +55,49 @@ describe('cuentaDelJugador: el total que ve el jugador', () => {
   })
 })
 
+describe('cuota emitida sin monto: cero no es "al día"', () => {
+  // El Jugador de Prueba de Spinhouse: fila de 9/2026 con monto NULL y estado
+  // 'pendiente' porque el mes se emitió tres días antes de que existieran los
+  // planes. El titular decía "Al día" y el historial de la misma pantalla,
+  // "pendiente". Siete jugadores entre Buin y Spinhouse estaban así.
+  it('avisa que falta la cuota en vez de dar el mes por saldado', () => {
+    const cuenta = cuentaDelJugador({ monto: null, estado: 'pendiente' }, [])
+    expect(cuenta.sinCuota).toBe(true)
+    expect(cuenta.total).toBe(0)
+  })
+
+  it('no inventa un monto: el total sigue en cero', () => {
+    // Cobrar una cifra adivinada es peor que avisar que falta.
+    const cuenta = cuentaDelJugador({ monto: null, estado: 'atrasado' }, [])
+    expect(cuenta.mensualidad).toBe(0)
+    expect(cuenta.sinCuota).toBe(true)
+  })
+
+  it('un mes sin emitir no es una cuota sin monto', () => {
+    // Nadie le debe nada todavía; no hay nada que avisar.
+    expect(cuentaDelJugador(null, []).sinCuota).toBe(false)
+    expect(cuentaDelJugador(undefined, []).sinCuota).toBe(false)
+  })
+
+  it('el mes pagado o eximido no pide cuota aunque no tenga monto', () => {
+    expect(cuentaDelJugador({ monto: null, estado: 'pagado' }, []).sinCuota).toBe(false)
+    expect(cuentaDelJugador({ monto: null, estado: 'exento' }, []).sinCuota).toBe(false)
+  })
+
+  it('con cuota asignada no se avisa nada', () => {
+    expect(cuentaDelJugador({ monto: 45000, estado: 'pendiente' }, []).sinCuota).toBe(false)
+  })
+
+  it('sin cuota pero con una clase extra impaga, la extra sí se cobra', () => {
+    const cuenta = cuentaDelJugador(
+      { monto: null, estado: 'pendiente' },
+      [extra({ id: 'a', monto: 3000 })],
+    )
+    expect(cuenta.sinCuota).toBe(true)
+    expect(cuenta.total).toBe(3000)
+  })
+})
+
 describe('cuentaDelJugador: los tres montos son estados distintos', () => {
   const extras = [
     extra({ id: 'conPrecio', monto: 3000 }),
@@ -194,6 +237,15 @@ describe('las dos pantallas del jugador no pueden contradecirse', () => {
 
   it('el rótulo del perfil ya no sale del estado de la cuota a secas', () => {
     expect(perfilPage).not.toMatch(/mensLabel = mensEstado === 'pagado'/)
+  })
+
+  it('las dos miran sinCuota antes que el total', () => {
+    // Las dos derivan el rótulo de `total === 0`, y una cuota sin monto da
+    // cero. Si una sola de las dos lo mira, vuelven a contradecirse.
+    for (const pagina of [leer('src/app/estado-cuenta/page.tsx'), perfilPage]) {
+      expect(pagina).toContain("cuenta.sinCuota ? 'sin_cuota'")
+      expect(pagina.indexOf('cuenta.sinCuota')).toBeLessThan(pagina.indexOf('cuenta.total === 0'))
+    }
   })
 })
 
