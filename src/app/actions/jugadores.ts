@@ -7,6 +7,7 @@ import { requireAdminClub, requirePerfil, requireStaffClub } from '@/lib/auth/re
 import { authEmailDe as emailParaAuth, generarEmailInicial, generarPasswordInicial, usuarioLoginDe } from '@/lib/domain/credenciales'
 import { sincronizarEmailAuth } from '@/lib/credencialesAuth'
 import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 type PlanFields = {
   categoria: string
@@ -32,6 +33,10 @@ type DatosExtendidos = {
   contacto_emergencia_nombre?: string | null
   contacto_emergencia_telefono?: string | null
   indicaciones_medicas?: string | null
+  // Qué necesita para poder entrenar: rampa, intérprete, apoyo para
+  // trasladarse. Aparte de las indicaciones médicas porque son dos preguntas
+  // distintas y se consultan en momentos distintos (migración 259).
+  necesidades_accesibilidad?: string | null
   federado?: boolean | null
   // Un jugador pertenece a su categoría por edad y además a TC (todo competidor).
   categorias?: string[] | null
@@ -328,6 +333,60 @@ export async function guardarPerfilTecnico(params: {
     }, { onConflict: 'jugador_id' })
 
   if (error) return { error: 'No se pudo guardar: ' + error.message }
+  return { success: true }
+}
+
+/**
+ * Deja constancia de una autorización o de su retiro.
+ *
+ * SIEMPRE inserta, nunca actualiza: el registro es de solo agregar y esa es su
+ * razón de existir. Revocar pisando la fila anterior borraría la prueba de que
+ * hubo permiso mientras la foto estuvo publicada, que es justo lo que hay que
+ * poder mostrar. La base además no ofrece otra opción — la migración 259 no le
+ * dejó política de UPDATE ni de DELETE a nadie salvo el superadmin.
+ */
+export async function registrarConsentimiento(params: {
+  jugadorId: string
+  tipo: 'uso_imagen'
+  otorgado: boolean
+  /** El día en que firmó, que puede ser anterior a hoy. */
+  fecha: string
+  firmadoPor: 'jugador' | 'apoderado'
+  nota?: string
+}) {
+  const { error: authErr, supabase, clubId, nombre } = await requireStaffClub()
+  if (authErr) return { error: authErr }
+
+  // Mismo motivo que en `guardarPerfilTecnico`: sin esto el INSERT pasaría con
+  // el club_id de quien llama y un jugador_id ajeno, y la política lo dejaría
+  // entrar porque el club_id calza.
+  const { data: jugador, error: errJugador } = await supabase
+    .from('jugadores').select('id')
+    .eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
+  if (errJugador) return { error: 'No se pudo verificar el jugador: ' + errJugador.message }
+  if (!jugador) return { error: 'Jugador no encontrado en el club' }
+
+  // Una fecha futura sería una firma que todavía no ocurrió, y dejaría el
+  // registro diciendo que hoy no hay permiso mientras la fila ya está cargada.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(params.fecha)) return { error: 'La fecha no es válida' }
+  if (params.fecha > fechaChile()) return { error: 'La fecha de la firma no puede ser futura' }
+
+  const { error } = await (supabase as never as {
+    from: (t: string) => { insert: (v: unknown) => Promise<{ error: { message: string } | null }> }
+  })
+    .from('jugador_consentimientos')
+    .insert({
+      jugador_id: params.jugadorId,
+      club_id: clubId,
+      tipo: params.tipo,
+      otorgado: params.otorgado,
+      fecha: params.fecha,
+      firmado_por: params.firmadoPor,
+      registrado_por_nombre: nombre,
+      nota: params.nota?.trim() || null,
+    })
+
+  if (error) return { error: 'No se pudo registrar: ' + error.message }
   return { success: true }
 }
 

@@ -32,6 +32,7 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { CATEGORIAS_EDAD, MANOS, NIVELES, categoriaPorEdad, manoLabel, nivelLabel } from '@/lib/domain/perfilDeportivo'
 import PanelPerfilTecnico from '@/components/PanelPerfilTecnico'
+import PanelConsentimientos from '@/components/PanelConsentimientos'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { idsInactivos } from '@/lib/supabase/inactivos'
 import { sesionesDelMes } from '@/lib/domain/historialAsistencia'
@@ -114,7 +115,7 @@ export default function JugadorDetallePage() {
   const [errorCarga, setErrorCarga] = useState('')
   const [editContacto, setEditContacto] = useState(false)
   const [editPlan, setEditPlan] = useState(false)
-  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', federado: false as boolean | null, talla_polera:'', talla_short:'', nivel:'', licencia_fechiteme:'', mano_habil:'', estilo_juego:'', material:'' })
+  const [contactoForm, setContactoForm] = useState({ nombre:'', rut:'', email:'', telefono:'', categoria:'', categorias: new Set<string>(), sede:'', grupo:'', fecha_nacimiento:'', direccion:'', comuna:'', contacto_emergencia_nombre:'', contacto_emergencia_telefono:'', indicaciones_medicas:'', necesidades_accesibilidad:'', federado: false as boolean | null, talla_polera:'', talla_short:'', nivel:'', licencia_fechiteme:'', mano_habil:'', estilo_juego:'', material:'' })
   const [planFormState, setPlanFormState] = useState({ tipo_plan:'mensual', entrenamientos_por_semana:'3', mensualidad:'', plan_id:'' })
   // Las tarifas del club, para el selector de plan. Vacío en un club de monto
   // libre, donde el selector directamente no se dibuja.
@@ -187,7 +188,7 @@ export default function JugadorDetallePage() {
       // donde la migración 254 todavía no corrió devuelve error y la ficha
       // entera queda en blanco — para todos los clubes, no solo para el que
       // las usa. Así, la consulta de Buin es exactamente la de antes.
-      const COLUMNAS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha'
+      const COLUMNAS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,necesidades_accesibilidad,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha'
         + (tiene('perfil_deportivo') ? ',nivel,licencia_fechiteme,mano_habil,estilo_juego,material' : '')
 
       try {
@@ -323,6 +324,7 @@ export default function JugadorDetallePage() {
       contacto_emergencia_nombre: jugador?.contacto_emergencia_nombre || '',
       contacto_emergencia_telefono: jugador?.contacto_emergencia_telefono || '',
       indicaciones_medicas: jugador?.indicaciones_medicas || '',
+      necesidades_accesibilidad: jugador?.necesidades_accesibilidad || '',
       federado: jugador?.federado ?? null,
       talla_polera: jugador?.talla_polera || '',
       talla_short: jugador?.talla_short || '',
@@ -362,6 +364,7 @@ export default function JugadorDetallePage() {
       contacto_emergencia_nombre: contactoForm.contacto_emergencia_nombre?.trim() || null,
       contacto_emergencia_telefono: contactoForm.contacto_emergencia_telefono?.trim() || null,
       indicaciones_medicas: contactoForm.indicaciones_medicas?.trim() || null,
+      necesidades_accesibilidad: contactoForm.necesidades_accesibilidad?.trim() || null,
       federado: contactoForm.federado,
       talla_polera: contactoForm.talla_polera || null,
       talla_short: contactoForm.talla_short || null,
@@ -1190,6 +1193,16 @@ export default function JugadorDetallePage() {
                 <div style={{ fontSize:13, color:'#991b1b', lineHeight:1.5 }}>{jugador.indicaciones_medicas}</div>
               </div>
             )}
+            {/* En azul y no en rojo: una necesidad de accesibilidad no es una
+                urgencia médica, es algo que hay que tener listo. Pintarla igual
+                que una alergia haría que se lean las dos con la misma prisa y
+                ninguna con la atención que necesita. */}
+            {tiene('consentimientos') && jugador.necesidades_accesibilidad && (
+              <div style={{ marginTop:12, background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:10, padding:'12px 14px' }}>
+                <div style={{ fontSize:11, color:'#1d4ed8', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Necesidades de accesibilidad</div>
+                <div style={{ fontSize:13, color:'#1e40af', lineHeight:1.5 }}>{jugador.necesidades_accesibilidad}</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1222,6 +1235,18 @@ export default function JugadorDetallePage() {
             jugador no la ve ni entrando por la API: no tiene política. */}
         {tiene('perfil_deportivo') && puedeEditar && (
           <PanelPerfilTecnico
+            jugadorId={jugador.id}
+            clubId={jugador.club_id}
+            puedeEditar={puedeEditar}
+          />
+        )}
+
+        {/* Uso de imagen — Ley 21.719, rige desde el 2026-12-01.
+            Va montado para TODO el staff, no solo para quien puede editar: el
+            profesor que va a sacar una foto en la clase necesita poder mirar si
+            hay permiso, aunque no sea él quien registre la autorización. */}
+        {tiene('consentimientos') && (esAdmin || esProfesor) && jugador.club_id && (
+          <PanelConsentimientos
             jugadorId={jugador.id}
             clubId={jugador.club_id}
             puedeEditar={puedeEditar}
@@ -1571,6 +1596,16 @@ export default function JugadorDetallePage() {
                       <textarea style={{ ...inputStyle, resize:'vertical', minHeight:60 }} placeholder="Alergias, condiciones, medicamentos..."
                         value={contactoForm.indicaciones_medicas} onChange={e => setContactoForm(f => ({ ...f, indicaciones_medicas: e.target.value }))} />
                     </FormField>
+                    {/* Aparte de las indicaciones médicas a propósito: son dos
+                        preguntas distintas, y el profesor que arma la sesión
+                        necesita saber quién necesita rampa sin leerse las
+                        alergias de todo el grupo (migración 259). */}
+                    {tiene('consentimientos') && (
+                      <FormField label="Necesidades de accesibilidad">
+                        <textarea style={{ ...inputStyle, resize:'vertical', minHeight:60 }} placeholder="Rampa, intérprete, apoyo para trasladarse..."
+                          value={contactoForm.necesidades_accesibilidad} onChange={e => setContactoForm(f => ({ ...f, necesidades_accesibilidad: e.target.value }))} />
+                      </FormField>
+                    )}
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
                       <input type="checkbox" id="federado-check" checked={contactoForm.federado === true}
                         onChange={e => setContactoForm(f => ({ ...f, federado: e.target.checked }))}
