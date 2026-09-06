@@ -103,11 +103,17 @@ ON CONFLICT (club_id, clave) DO UPDATE SET valor = EXCLUDED.valor;
 --
 -- Ocho es un número plausible para una sede única; cuando Cristhian diga el
 -- real, se cambia desde /horario → Mesas sin volver a tocar SQL.
+--
+-- ⚠️ La sede sale de los BLOQUES, no escrita a mano. `sede_mesas.sede` se cruza
+-- con `bloques_horario.sede` por igualdad de texto: si acá se pusiera
+-- 'spinhouse' y los bloques dijeran otra cosa, cada bloque quedaría con cupo 0
+-- y la tarjeta de ocupación se vería vacía sin dar ningún error.
 
 INSERT INTO public.sede_mesas (club_id, sede, cantidad, notas)
-SELECT c.id, 'spinhouse', 8, 'Dato de demostración — confirmar con el club'
-FROM   public.clubes c
-WHERE  c.nombre ILIKE '%spinhouse%'
+SELECT DISTINCT b.club_id, b.sede, 8, 'Dato de demostración — confirmar con el club'
+FROM   public.bloques_horario b
+JOIN   public.clubes c ON c.id = b.club_id
+WHERE  c.nombre ILIKE '%spinhouse%' AND b.activo AND b.sede IS NOT NULL
 ON CONFLICT (club_id, sede) DO UPDATE
   SET cantidad = EXCLUDED.cantidad, actualizado_en = now();
 
@@ -246,10 +252,17 @@ WHERE  c.nombre ILIKE '%spinhouse%'
 -- Dos mesas arrendadas hoy de 19:00 a 20:00. Es lo que hace visible en el
 -- tablero de mesas que el arriendo y la clase pelean por la misma sala.
 
+-- La sede, otra vez, sale de los bloques: un arriendo en una sede que ningún
+-- bloque usa no compite con nada y el tablero no lo mostraría.
+
 INSERT INTO public.mesa_arriendos (club_id, sede, fecha, hora_inicio, hora_fin, mesas, arrendatario)
-SELECT c.id, 'spinhouse', (now() AT TIME ZONE 'America/Santiago')::date,
+SELECT c.id, sm.sede, (now() AT TIME ZONE 'America/Santiago')::date,
        '19:00', '20:00', 2, '[DEMO] Grupo de empresa'
 FROM   public.clubes c
+JOIN   LATERAL (
+         SELECT s.sede FROM public.sede_mesas s
+         WHERE s.club_id = c.id ORDER BY s.sede LIMIT 1
+       ) sm ON true
 WHERE  c.nombre ILIKE '%spinhouse%'
   AND  NOT EXISTS (
     SELECT 1 FROM public.mesa_arriendos ma
@@ -268,11 +281,30 @@ WHERE  c.nombre ILIKE '%spinhouse%'
 -- que las tres ausencias tienen que ser las últimas tres fechas, y antes va
 -- un 'presente' — que además es lo que hace la demo creíble: alguien que
 -- venía y dejó de venir, no alguien que nunca vino.
+--
+-- ⚠️ Y los tres alumnos NO son los primeros del padrón: son tres de los que
+-- entrenan el día que el profe va a estar mirando. `AlertaFaltas` solo alerta
+-- sobre los alumnos de los bloques de HOY —a propósito: hoy es cuando puede
+-- hacer algo, y el entrenador ve sus grupos, no el padrón—. Tres alumnos
+-- elegidos por orden alfabético caen casi seguro en otro día y la alerta no
+-- aparece nunca, sin que nada avise por qué.
+--
+-- Si hoy es sábado o domingo se apunta al lunes: el fin de semana el dashboard
+-- del profe no muestra bloques y no hay dónde ver la alerta.
 
-WITH tres AS (
-  SELECT j.id, j.club_id, row_number() OVER (ORDER BY j.nombre) AS n
+WITH dia_objetivo AS (
+  SELECT CASE extract(isodow FROM (now() AT TIME ZONE 'America/Santiago')::date)
+           WHEN 2 THEN 'mar' WHEN 3 THEN 'mie' WHEN 4 THEN 'jue' WHEN 5 THEN 'vie'
+           ELSE 'lun'
+         END AS dia
+),
+tres AS (
+  SELECT DISTINCT ON (j.nombre) j.id, j.club_id, j.nombre
   FROM   public.jugadores j
-  JOIN   public.clubes c ON c.id = j.club_id
+  JOIN   public.clubes c  ON c.id = j.club_id
+  JOIN   public.bloque_jugadores bj ON bj.jugador_id = j.id AND bj.vigente_hasta IS NULL
+  JOIN   public.bloques_horario  b  ON b.id = bj.bloque_id AND b.activo
+                                   AND b.dia_semana = (SELECT dia FROM dia_objetivo)
   WHERE  c.nombre ILIKE '%spinhouse%'
     AND  j.estado = 'activo'
     AND  COALESCE(j.es_externo, false) = false
@@ -322,6 +354,47 @@ SET    vigente_hasta = date_trunc('month', (now() AT TIME ZONE 'America/Santiago
 FROM   cuarto
 WHERE  bj.jugador_id = cuarto.id AND bj.vigente_hasta IS NULL;
 
+-- Y el reingreso: al 5.º se le cierra la inscripción ANTES de que empezara el
+-- mes y se le abre una nueva adentro. Los dos pasos son necesarios y el orden
+-- importa: `reingreso` es "abrió inscripción en el mes, ya tenía historial y
+-- NO venía vigente de antes". Si solo se le abriera una nueva sin cerrar la
+-- vieja, vendría vigente de antes y no contaría como nada.
+
+WITH quinto AS (
+  SELECT j.id
+  FROM   public.jugadores j
+  JOIN   public.clubes c ON c.id = j.club_id
+  WHERE  c.nombre ILIKE '%spinhouse%' AND j.estado = 'activo'
+  ORDER  BY j.nombre OFFSET 4 LIMIT 1
+),
+-- El bloque al que va a volver: uno de los que ya tenía. Se guarda ANTES de
+-- cerrar, porque después de cerrar no queda ninguno abierto que mirar.
+suyo AS (
+  SELECT bj.bloque_id
+  FROM   public.bloque_jugadores bj, quinto
+  WHERE  bj.jugador_id = quinto.id AND bj.vigente_hasta IS NULL
+  ORDER  BY bj.vigente_desde LIMIT 1
+),
+cerrar AS (
+  UPDATE public.bloque_jugadores bj
+  SET    vigente_hasta = date_trunc('month', (now() AT TIME ZONE 'America/Santiago')::date)::date - 5
+  FROM   quinto
+  WHERE  bj.jugador_id = quinto.id AND bj.vigente_hasta IS NULL
+  RETURNING 1
+)
+INSERT INTO public.bloque_jugadores (bloque_id, jugador_id, vigente_desde)
+SELECT suyo.bloque_id, quinto.id,
+       date_trunc('month', (now() AT TIME ZONE 'America/Santiago')::date)::date + 4
+FROM   quinto, suyo
+WHERE  EXISTS (SELECT 1 FROM cerrar);
+
+-- ⚠️ El **alta** no se simula, y es a propósito: un alta es "su primera
+-- inscripción del club empieza este mes", y fabricarla obligaría a reescribir
+-- el `vigente_desde` de un alumno que entró de verdad hace meses — o sea, a
+-- borrar historia real para que un número quede lindo. Es mejor demo mostrarlo
+-- en vivo: que Cristhian inscriba a alguien por el link y la tarjeta pase a
+-- "+1 entraron" delante de él.
+
 
 -- ══ VERIFICACIÓN ════════════════════════════════════════════════════════
 
@@ -333,6 +406,43 @@ SELECT b.tipo_clase, count(*), bool_or(b.se_cobra_aparte) AS alguno_se_cobra_apa
 FROM   public.bloques_horario b JOIN public.clubes c ON c.id = b.club_id
 WHERE  c.nombre ILIKE '%spinhouse%' AND b.activo
 GROUP  BY b.tipo_clase ORDER BY b.tipo_clase;
+
+-- ⚠️ QUÉ DÍA ABRIR EL DASHBOARD DEL PROFE. La alerta de faltas solo mira a los
+-- alumnos de los bloques de ESE día; estos tres son los que quedaron cargados:
+SELECT CASE extract(isodow FROM (now() AT TIME ZONE 'America/Santiago')::date)
+         WHEN 2 THEN 'mar' WHEN 3 THEN 'mie' WHEN 4 THEN 'jue' WHEN 5 THEN 'vie'
+         ELSE 'lun' END                                   AS abrir_el_dia,
+       string_agg(DISTINCT j.nombre, ', ' ORDER BY j.nombre) AS alumnos_con_3_faltas
+FROM   public.asistencia a
+JOIN   public.jugadores j ON j.id = a.jugador_id
+JOIN   public.clubes c    ON c.id = j.club_id
+WHERE  c.nombre ILIKE '%spinhouse%' AND a.metodo = 'demo' AND a.estado = 'ausente';
+
+-- Y la tarjeta de altas y bajas del mes. Esperado: 0 entraron, 1 volvió,
+-- 1 o 2 se fueron (2 si el reingreso cayó en el mismo alumno que la baja no es
+-- posible —son el 4.º y el 5.º—, así que lo normal es 1).
+WITH mes AS (
+  SELECT date_trunc('month', (now() AT TIME ZONE 'America/Santiago')::date)::date AS desde,
+         (date_trunc('month', (now() AT TIME ZONE 'America/Santiago')::date)
+          + interval '1 month - 1 day')::date AS hasta
+)
+SELECT count(*) FILTER (WHERE NOT venia AND empezo AND primera >= (SELECT desde FROM mes)) AS entraron,
+       count(*) FILTER (WHERE NOT venia AND empezo AND primera <  (SELECT desde FROM mes)) AS volvieron,
+       count(*) FILTER (WHERE (venia OR empezo) AND NOT sigue)                             AS se_fueron
+FROM (
+  SELECT bj.jugador_id,
+         min(bj.vigente_desde) AS primera,
+         bool_or(bj.vigente_desde <  (SELECT desde FROM mes)
+             AND (bj.vigente_hasta IS NULL OR bj.vigente_hasta >= (SELECT desde FROM mes))) AS venia,
+         bool_or(bj.vigente_desde BETWEEN (SELECT desde FROM mes) AND (SELECT hasta FROM mes)) AS empezo,
+         bool_or(bj.vigente_desde <= (SELECT hasta FROM mes)
+             AND (bj.vigente_hasta IS NULL OR bj.vigente_hasta >= (SELECT hasta FROM mes)))  AS sigue
+  FROM   public.bloque_jugadores bj
+  JOIN   public.jugadores j ON j.id = bj.jugador_id
+  JOIN   public.clubes c    ON c.id = j.club_id
+  WHERE  c.nombre ILIKE '%spinhouse%'
+  GROUP  BY bj.jugador_id
+) x;
 
 -- Los ingresos por línea del mes (lo que va a mostrar la tarjeta):
 SELECT m.categoria, sum(m.monto) AS total
@@ -409,9 +519,11 @@ WHERE  nombre ILIKE '%spinhouse%';
 
 COMMIT;
 
--- ⚠️ El PASO 10 (la baja) NO se revierte acá: reabrir esas inscripciones a
--- ciegas podría reabrir alguna que el club cerró de verdad. Si querés
--- deshacerla, mirá primero cuáles fueron:
+-- ⚠️ El PASO 10 (la baja y el reingreso) NO se revierte acá: reabrir esas
+-- inscripciones a ciegas podría reabrir alguna que el club cerró de verdad.
+-- La fila NUEVA del reingreso sí se puede borrar sin riesgo —la creó este
+-- archivo— y se reconoce por su `vigente_desde` = día 5 del mes en curso.
+-- Si querés deshacerlo, mirá primero cuáles fueron:
 --
 --   SELECT bj.id, j.nombre, bj.vigente_hasta
 --   FROM   public.bloque_jugadores bj
