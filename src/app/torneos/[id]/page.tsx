@@ -35,6 +35,7 @@ import {
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket, fasesParaMostrar, derivarTercerLugar } from '@/lib/domain/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { useEnVivo } from '@/lib/useEnVivo'
 import { copiarTexto } from '@/lib/clipboard'
 import { useTextoMonto } from '@/components/Monto'
 import dynamic from 'next/dynamic'
@@ -184,6 +185,21 @@ export default function TorneoDetallePage() {
     // de PerfilProvider crea un objeto nuevo y recargaba el torneo dos veces.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, perfil?.id, torneoId])
+
+  // La pantalla se mantiene al día sola. Un torneo se juega en varias mesas a
+  // la vez y los resultados los cargan dos o tres personas desde sus teléfonos:
+  // sin esto, cada una veía solo lo suyo hasta recargar a mano, y la llave del
+  // 3er lugar recién aparecía en la próxima recarga.
+  //
+  // Solo `torneo_partidos` y `torneos`, que son las dos que están publicadas en
+  // `supabase_realtime`. `grupo_jugadores` y `torneo_grupos` no lo están:
+  // escucharlas no daría error, simplemente no llegaría nada nunca.
+  useEnVivo(
+    ['torneo_partidos', 'torneos'],
+    perfil?.club_id ?? null,
+    () => { void cargarTorneo() },
+    { conClub: ['torneos'] },
+  )
 
   useEffect(() => {
     if (!perfil?.club_id) return
