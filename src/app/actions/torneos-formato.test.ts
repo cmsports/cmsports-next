@@ -72,6 +72,8 @@ const montar = (t: Record<string, Fila[]>) => {
   return t
 }
 const partido = (t: Record<string, Fila[]>, id: string) => t.torneo_partidos.find(p => p.id === id)!
+/** El resultado es una unión: acá solo interesa el mensaje cuando lo hay. */
+const errorDe = (r: unknown) => (r as { error?: string }).error
 
 describe('el marcador se valida con el formato de SU fase', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -79,29 +81,29 @@ describe('el marcador se valida con el formato de SU fase', () => {
   it('en los grupos al mejor de 3 acepta un 2-1', async () => {
     const t = montar(escenario())
     const res = await marcarGanadorPartido({ partidoId: 'pg', parciales: [[11, 9], [8, 11], [11, 6]] })
-    expect(res).toEqual({ success: true })
+    expect(res).toMatchObject({ success: true })
     expect(partido(t, 'pg')).toMatchObject({ sets_a: 2, sets_b: 1, ganador: 'ana' })
   })
 
   it('y rechaza un 3-1, que en mejor de 3 no existe', async () => {
     montar(escenario())
     const res = await marcarGanadorPartido({ partidoId: 'pg', setsA: 3, setsB: 1 })
-    expect(res.error).toContain('Mejor de 3')
-    expect(res.error).toContain('2-1')
+    expect(errorDe(res)).toContain('Mejor de 3')
+    expect(errorDe(res)).toContain('2-1')
   })
 
   it('no acepta un cuarto set en un partido de grupo al mejor de 3', async () => {
     montar(escenario())
     const res = await marcarGanadorPartido({ partidoId: 'pg', parciales: [[11, 9], [8, 11], [11, 6], [11, 4]] })
-    expect(res.error).toContain('2 sets')
+    expect(errorDe(res)).toContain('2 sets')
   })
 
   it('en la MISMA llave del mismo torneo, en cambio, exige 3 sets', async () => {
     const t = montar(escenario())
     const corto = await marcarGanadorPartido({ partidoId: 'pll', setsA: 2, setsB: 1 })
-    expect(corto.error).toContain('Mejor de 5')
+    expect(errorDe(corto)).toContain('Mejor de 5')
     const res = await marcarGanadorPartido({ partidoId: 'pll', setsA: 3, setsB: 1 })
-    expect(res).toEqual({ success: true })
+    expect(res).toMatchObject({ success: true })
     expect(partido(t, 'pll')).toMatchObject({ sets_a: 3, ganador: 'ana' })
   })
 
@@ -114,6 +116,6 @@ describe('el marcador se valida con el formato de SU fase', () => {
     t.torneos[0] = sinFormato
     montar(t)
     expect(await marcarGanadorPartido({ partidoId: 'pg', setsA: 2, setsB: 0 })).toHaveProperty('error')
-    expect(await marcarGanadorPartido({ partidoId: 'pg', setsA: 3, setsB: 0 })).toEqual({ success: true })
+    expect(await marcarGanadorPartido({ partidoId: 'pg', setsA: 3, setsB: 0 })).toMatchObject({ success: true })
   })
 })

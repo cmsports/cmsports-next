@@ -704,6 +704,17 @@ export type ParcialSet = readonly [number, number]
  * totales. Valida acá y no solo en el navegador: es el borde de confianza, la
  * acción también la puede llamar cualquiera con la sesión de admin.
  */
+/** El cuadro completo, con los nombres ya resueltos: exactamente lo que la
+ *  pantalla del torneo necesita para redibujar sin volver a preguntar. */
+async function partidosDelTorneo(supabase: AdminSupabase, torneoId: string | null) {
+  if (!torneoId) return null
+  const { data } = await supabase
+    .from('torneo_partidos')
+    .select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)')
+    .eq('torneo_id', torneoId)
+  return data ?? null
+}
+
 /**
  * El formato de la fase que le toca a un partido.
  *
@@ -823,7 +834,15 @@ export async function marcarGanadorPartido(params: {
       if (errTercer) return { error: errTercer }
     }
     await avanzarFaseSiEstaCompleta(supabase, partido)
-    return { success: true }
+    // El cuadro actualizado vuelve en esta misma respuesta.
+    //
+    // Marcar una llave crea filas nuevas —la ronda siguiente, y la mini llave
+    // del 3er lugar—, así que la pantalla tenía que volver a preguntar por los
+    // partidos apenas recibía el "listo": dos viajes por cada toque, y el
+    // segundo desde el teléfono, que es el caro (~190 ms contra los ~20 que le
+    // cuesta al servidor, que está al lado de la base). Devolverlos acá deja un
+    // solo viaje. Si por lo que sea no vienen, la pantalla los pide igual.
+    return { success: true, partidos: await partidosDelTorneo(supabase, partido.torneo_id) }
   }
 
   if (partido.grupo_id) {

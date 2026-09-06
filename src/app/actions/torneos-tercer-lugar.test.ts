@@ -92,7 +92,7 @@ describe('la mini llave del 3er lugar se abre sola', () => {
   it('al cerrar la SEGUNDA semi, con los dos perdedores', async () => {
     const t = montar(escenario())
     const res = await marcarGanadorPartido({ partidoId: 's1', ganadorId: 'beto' })
-    expect(res).toEqual({ success: true })
+    expect(res).toMatchObject({ success: true })
     const mini = tercerLugar(t)
     expect(mini).toHaveLength(1)
     expect(mini[0]).toMatchObject({ fase: 'tercer_lugar', orden: 0, ganador: null })
@@ -161,7 +161,7 @@ describe('la mini llave del 3er lugar se abre sola', () => {
       ],
     })
     const res = await marcarGanadorPartido({ partidoId: 'x', ganadorId: 'dani' })
-    expect(res).toEqual({ success: true })
+    expect(res).toMatchObject({ success: true })
     expect(t.torneo_partidos).toHaveLength(1)
     expect(t.torneos[0].fase).toBe('final')
   })
@@ -222,7 +222,7 @@ describe('abrirTercerLugar (para torneos que ya tenían las semis cerradas)', ()
 
   it('crea la mini llave con los dos perdedores', async () => {
     const t = montar(yaJugado())
-    expect(await abrirTercerLugar({ torneoId: ID })).toEqual({ success: true })
+    expect(await abrirTercerLugar({ torneoId: ID })).toMatchObject({ success: true })
     const mini = tercerLugar(t)
     expect(mini).toHaveLength(1)
     expect([mini[0].jugador_a, mini[0].jugador_b].sort()).toEqual(['cata', 'dani'])
@@ -271,7 +271,7 @@ describe('resembrar la mini llave que quedó sin cupos', () => {
         { id: 'x', torneo_id: ID, grupo_id: null, fase: 'tercer_lugar', orden: 0, jugador_a: null, jugador_b: null, ganador: null },
       ],
     })
-    expect(await abrirTercerLugar({ torneoId: ID })).toEqual({ success: true })
+    expect(await abrirTercerLugar({ torneoId: ID })).toMatchObject({ success: true })
     const mini = tercerLugar(t)
     expect(mini).toHaveLength(1)
     expect([mini[0].jugador_a, mini[0].jugador_b].sort()).toEqual(['ana', 'dani'])

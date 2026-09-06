@@ -466,7 +466,10 @@ export default function TorneoDetallePage() {
       // consultas acá era lo que metía medio segundo entre el toque y la
       // respuesta en cada llave.
       if (partido?.fase && partido.fase !== 'grupos') {
-        await cargarPartidos()
+        // El servidor ya devolvió el cuadro actualizado: se usa y no se
+        // pregunta de nuevo. Solo si no vino, se pide.
+        if (Array.isArray(res.partidos)) setPartidos(res.partidos)
+        else await cargarPartidos()
       }
     } catch {
       setPartidos(previo)
@@ -556,7 +559,31 @@ export default function TorneoDetallePage() {
   // el servidor para decidir quién clasifica. Esta pantalla tenía su propia copia
   // del cálculo y el desempate por sets y puntos habría quedado solo en una de
   // las dos: la tabla en pantalla diría una cosa y el cuadro se armaría con otra.
+  //
+  // El resultado se calcula UNA vez por grupo y se guarda: la tabla de cada
+  // grupo se pedía dentro del dibujo, así que con cinco grupos eran cinco
+  // ordenamientos y cinco rankings completos por cada render —y la pantalla se
+  // redibuja entera con cada toque—. Ahora solo se rehace cuando cambian de
+  // verdad los partidos o los inscritos.
+  const statsPorGrupo = useMemo(() => {
+    const calcular = (grupoId: string) => calcularStatsDelGrupo(grupoId, jugadoresPorGrupo, partidosPorGrupo)
+    const mapa = new Map<string, ReturnType<typeof calcular>>()
+    for (const id of new Set([...jugadoresPorGrupo.keys(), ...partidosPorGrupo.keys()])) {
+      mapa.set(id, calcular(id))
+    }
+    return mapa
+  }, [jugadoresPorGrupo, partidosPorGrupo])
+
   function calcularStats(grupoId: string) {
+    return statsPorGrupo.get(grupoId)
+      ?? calcularStatsDelGrupo(grupoId, jugadoresPorGrupo, partidosPorGrupo)
+  }
+
+  function calcularStatsDelGrupo(
+    grupoId: string,
+    jugadoresPorGrupo: Map<string, any[]>,
+    partidosPorGrupo: Map<string, any[]>,
+  ) {
     const jugsGrupo = jugadoresPorGrupo.get(grupoId) || []
     const partidosGrupo = partidosPorGrupo.get(grupoId) || []
 
