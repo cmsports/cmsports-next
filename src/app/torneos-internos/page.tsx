@@ -9,6 +9,8 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
+import SelectorFormato from '@/components/torneos/SelectorFormato'
+import { type FormatoPartido } from '@/lib/domain/marcador'
 
 const supabase = createClient()
 
@@ -53,6 +55,8 @@ export default function TorneosInternosPage() {
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
   const [cuota, setCuota] = useState('0')
+  const [formatoGrupos, setFormatoGrupos] = useState<FormatoPartido>('bo5')
+  const [formatoLlave, setFormatoLlave] = useState<FormatoPartido>('bo5')
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('')
   const [generoSeleccionado, setGeneroSeleccionado] = useState<'varones' | 'damas' | 'mixto' | ''>('')
   const [formCategoriaAbierto, setFormCategoriaAbierto] = useState(false)
@@ -161,7 +165,7 @@ export default function TorneosInternosPage() {
     if (!generoSeleccionado) { alert('Selecciona Varones o Damas'); return }
     const monto = Number(cuota)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
-    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, tipo: 'interno', categoria: categoriaSeleccionada, genero: generoSeleccionado })
+    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, tipo: 'interno', categoria: categoriaSeleccionada, genero: generoSeleccionado, formatoGrupos, formatoLlave })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
     setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado('')
@@ -532,8 +536,13 @@ export default function TorneosInternosPage() {
                 style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
+            <SelectorFormato
+              formatoGrupos={formatoGrupos}
+              formatoLlave={formatoLlave}
+              onCambiar={(fase, formato) => fase === 'grupos' ? setFormatoGrupos(formato) : setFormatoLlave(formato)}
+            />
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado(''); setFormCategoriaAbierto(false); setTextoCategoriaNueva('') }}
+              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado(''); setFormCategoriaAbierto(false); setTextoCategoriaNueva(''); setFormatoGrupos('bo5'); setFormatoLlave('bo5') }}
                 style={{ flex: 1, background: '#f4f7fa', color: muted, border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, cursor: 'pointer' }}>
                 Cancelar
               </button>

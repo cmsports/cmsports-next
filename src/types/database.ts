@@ -585,6 +585,8 @@ export interface Database {
           campeon_id: string | null
           subcampeon_id: string | null
           tercer_id: string | null
+          formato_grupos: string
+          formato_llave: string
           // 'interno' | 'externo' (migración 055). Los internos disputan el
           // partido por el 3er lugar.
           tipo: string | null
@@ -611,6 +613,8 @@ export interface Database {
           campeon_id?: string | null
           subcampeon_id?: string | null
           tercer_id?: string | null
+          formato_grupos?: string
+          formato_llave?: string
           tipo?: string | null
         }
         Update: {
@@ -635,6 +639,8 @@ export interface Database {
           campeon_id?: string | null
           subcampeon_id?: string | null
           tercer_id?: string | null
+          formato_grupos?: string
+          formato_llave?: string
           tipo?: string | null
         }
         Relationships: [

@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { archivarTorneo, crearTorneo as crearTorneoAction, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
+import SelectorFormato from '@/components/torneos/SelectorFormato'
+import { type FormatoPartido } from '@/lib/domain/marcador'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
@@ -25,6 +27,8 @@ export default function TorneosPage() {
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
   const [cuota, setCuota] = useState('0')
+  const [formatoGrupos, setFormatoGrupos] = useState<FormatoPartido>('bo5')
+  const [formatoLlave, setFormatoLlave] = useState<FormatoPartido>('bo5')
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -98,7 +102,7 @@ export default function TorneosPage() {
     if (!nombre || !fecha) return
     const monto = Number(cuota)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
-    const res = await crearTorneoAction({ nombre, fecha, cuota: monto })
+    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, formatoGrupos, formatoLlave })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
     setNombre(''); setFecha(''); setCuota('0')
@@ -267,8 +271,14 @@ export default function TorneosPage() {
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
                 type="number" min="0" step="1" placeholder="5000" value={cuota} onChange={e => setCuota(e.target.value)} />
             </div>
+            <SelectorFormato
+              formatoGrupos={formatoGrupos}
+              formatoLlave={formatoLlave}
+              onCambiar={(fase, formato) => fase === 'grupos' ? setFormatoGrupos(formato) : setFormatoLlave(formato)}
+              colorActivo="#f43f5e"
+            />
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => setModalOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
+              <button onClick={() => { setModalOpen(false); setFormatoGrupos('bo5'); setFormatoLlave('bo5') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
                 Cancelar
               </button>
               <button onClick={crearTorneo} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>

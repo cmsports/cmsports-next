@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { esSetValido, resumirBo5 } from '@/lib/domain/marcador'
+import { esSetValido, resumirPartido, setsParaGanar, setsMaximos, FORMATO_LABEL, type FormatoPartido } from '@/lib/domain/marcador'
 
 // Planilla de un partido: los dos nombres y los puntos de cada set. Reemplaza
 // los seis botones de marcador (3-0 … 2-3), que daban los sets pero no los
@@ -16,17 +16,25 @@ export default function MarcadorSets({
   nombreA,
   nombreB,
   guardando,
+  formato = 'bo5',
   onListo,
   onCancelar,
 }: {
   nombreA: string
   nombreB: string
   guardando?: boolean
+  /** El de la fase del partido, no el del torneo: grupos y llave pueden ir
+   *  a formatos distintos. */
+  formato?: FormatoPartido
   onListo: (parciales: Array<[number, number]>) => void
   onCancelar: () => void
 }) {
   // Un casillero vacío es '' y no 0: 0 es un puntaje válido (11-0).
-  const [sets, setSets] = useState<Array<[string, string]>>([['', ''], ['', ''], ['', '']])
+  const meta = setsParaGanar(formato)
+  const maxSets = setsMaximos(formato)
+  const [sets, setSets] = useState<Array<[string, string]>>(
+    () => Array.from({ length: meta }, () => ['', ''] as [string, string]),
+  )
 
   const parciales = sets
     .filter(([a, b]) => a !== '' && b !== '')
@@ -34,11 +42,11 @@ export default function MarcadorSets({
   // Media fila (11 contra vacío) no es un set jugado: sin esto, `Number('')`
   // la convertiría en un 11-0 válido y habilitaría Listo con datos a medias.
   const hayFilaAMedias = sets.some(([a, b]) => (a === '') !== (b === ''))
-  const resumen = hayFilaAMedias ? null : resumirBo5(parciales)
+  const resumen = hayFilaAMedias ? null : resumirPartido(parciales, formato)
 
   // Se ofrece un set más solo mientras el partido no esté terminado, para que
   // no queden casilleros de sobra que después invalidan la planilla.
-  const puedeAgregar = !resumen && sets.length < MAX_SETS && sets.every(([a, b]) => a !== '' && b !== '')
+  const puedeAgregar = !resumen && sets.length < maxSets && sets.every(([a, b]) => a !== '' && b !== '')
 
   const editar = (i: number, lado: 0 | 1, valor: string) => {
     if (valor !== '' && !/^\d{1,2}$/.test(valor)) return
@@ -99,7 +107,7 @@ export default function MarcadorSets({
         <span style={{ fontSize: 11, color: resumen ? '#166534' : '#94a3b8' }}>
           {resumen
             ? `${resumen.setsA}-${resumen.setsB} · ${resumen.puntosA}-${resumen.puntosB} puntos`
-            : 'Completa los sets (a 11, con dos de ventaja)'}
+            : `${FORMATO_LABEL[formato]}: gana el primero que llega a ${meta} sets (cada set a 11, con dos de ventaja)`}
         </span>
         <span style={{ display: 'flex', gap: 6 }}>
           <button

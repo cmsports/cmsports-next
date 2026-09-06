@@ -16,7 +16,15 @@ import {
   type JugadorTorneo,
   type ClasificadoConStats,
 } from '@/lib/domain/torneos'
-import { esResultadoBo5Valido, determinarGanadorBo5, resumirBo5 } from '@/lib/domain/marcador'
+import {
+  esResultadoValido,
+  determinarGanador,
+  resumirPartido,
+  marcadoresPermitidosTexto,
+  setsParaGanar,
+  formatoDe,
+  type FormatoPartido,
+} from '@/lib/domain/marcador'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { esUuid } from '@/lib/domain/uuid'
 import { requireAdmin } from '@/lib/auth/require'
@@ -112,6 +120,10 @@ export async function crearTorneo(params: {
   tipo?: 'interno' | 'externo'
   categoria?: string
   genero?: 'varones' | 'damas' | 'mixto'
+  /** Al mejor de cuántos sets se juega cada fase. Sin declarar: Mejor de 5,
+   *  que es como se jugó todo hasta la migración 262. */
+  formatoGrupos?: FormatoPartido
+  formatoLlave?: FormatoPartido
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -142,6 +154,8 @@ export async function crearTorneo(params: {
     tipo: params.tipo ?? 'externo',
     categoria: params.categoria ?? null,
     genero: params.genero ?? null,
+    formato_grupos: formatoDe(params.formatoGrupos),
+    formato_llave: formatoDe(params.formatoLlave),
   }).select('id').single()
 
   if (error || !data) return { error: error?.message || 'No se pudo crear el torneo' }
@@ -583,12 +597,24 @@ export async function corregirResultadoGrupos(params: {
   if (authErr) return { error: authErr }
 
   const { partidoId } = params
+
+  // El partido se lee PRIMERO: sin saber de qué torneo y de qué fase es, no se
+  // sabe a cuántos sets se juega, y validar el marcador contra el formato
+  // equivocado rechaza un 2-1 legítimo o acepta un 3-1 imposible.
+  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden,sets_a,sets_b,puntos_a,puntos_b').eq('id', partidoId).single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
+  if (partido.fase !== 'grupos') return { error: 'Solo se pueden corregir partidos de grupos' }
+  if (!partido.jugador_a || !partido.jugador_b) return { error: 'El partido no tiene sus dos jugadores' }
+
+  const formato = await formatoDeLaFase(supabase, partido.torneo_id, partido.fase)
+
   let setsA = params.setsA
   let setsB = params.setsB
   let puntosA: number | null = null
   let puntosB: number | null = null
   if (params.parciales !== undefined) {
-    const desdeParciales = marcadorDesdeParciales(params.parciales)
+    const desdeParciales = marcadorDesdeParciales(params.parciales, formato)
     if ('error' in desdeParciales) return desdeParciales
     setsA = desdeParciales.setsA
     setsB = desdeParciales.setsB
@@ -598,17 +624,11 @@ export async function corregirResultadoGrupos(params: {
   if (typeof setsA !== 'number' || typeof setsB !== 'number') {
     return { error: 'Falta el marcador corregido' }
   }
-
-  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden,sets_a,sets_b,puntos_a,puntos_b').eq('id', partidoId).single()
-  if (!partido) return { error: 'Partido no encontrado' }
-  if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
-  if (partido.fase !== 'grupos') return { error: 'Solo se pueden corregir partidos de grupos' }
-  if (!partido.jugador_a || !partido.jugador_b) return { error: 'El partido no tiene sus dos jugadores' }
-  if (!esResultadoBo5Valido(setsA, setsB)) {
-    return { error: 'Marcador inválido. Resultados permitidos en Mejor de 5: 3-0, 3-1, 3-2, 0-3, 1-3, 2-3' }
+  if (!esResultadoValido(setsA, setsB, formato)) {
+    return { error: marcadoresPermitidosTexto(formato) }
   }
 
-  const nuevoGanadorId = determinarGanadorBo5(setsA, setsB, partido.jugador_a, partido.jugador_b)
+  const nuevoGanadorId = determinarGanador(setsA, setsB, partido.jugador_a, partido.jugador_b)
   // Mismo ganador Y mismo marcador: no hay nada que corregir. Si cambia solo
   // el marcador (3-0 → 3-2, mismo ganador, o los mismos sets con otros puntos),
   // sí hay que reescribirlo: los ratios de sets y de puntos desempatan.
@@ -684,10 +704,31 @@ export type ParcialSet = readonly [number, number]
  * totales. Valida acá y no solo en el navegador: es el borde de confianza, la
  * acción también la puede llamar cualquiera con la sesión de admin.
  */
+/**
+ * El formato de la fase que le toca a un partido.
+ *
+ * Los grupos y la llave pueden ir a distinto formato en el mismo torneo, así
+ * que no alcanza con mirar el torneo: hay que mirar de qué fase es el partido.
+ * Un torneo que no existe —o una columna que todavía no está— cae en 'bo5', que
+ * es lo que el módulo hacía antes de que esto se pudiera elegir.
+ */
+async function formatoDeLaFase(
+  supabase: AdminSupabase,
+  torneoId: string | null,
+  fase: string | null,
+): Promise<FormatoPartido> {
+  if (!torneoId) return 'bo5'
+  const { data } = await supabase.from('torneos')
+    .select('formato_grupos, formato_llave').eq('id', torneoId).maybeSingle()
+  if (!data) return 'bo5'
+  return formatoDe(fase === 'grupos' ? data.formato_grupos : data.formato_llave)
+}
+
 function marcadorDesdeParciales(
   parciales: unknown,
+  formato: FormatoPartido = 'bo5',
 ): { setsA: number; setsB: number; puntosA: number; puntosB: number } | { error: string } {
-  const invalido = { error: 'Parciales inválidos. Cada set se gana a 11 con dos de ventaja (o 12-10, 13-11…), y el partido termina al llegar a 3 sets.' }
+  const invalido = { error: `Parciales inválidos. Cada set se gana a 11 con dos de ventaja (o 12-10, 13-11…), y el partido termina al llegar a ${setsParaGanar(formato)} sets.` }
   if (!Array.isArray(parciales)) return invalido
   const pares: ParcialSet[] = []
   for (const set of parciales) {
@@ -696,7 +737,7 @@ function marcadorDesdeParciales(
     if (typeof a !== 'number' || typeof b !== 'number') return invalido
     pares.push([a, b])
   }
-  const resumen = resumirBo5(pares)
+  const resumen = resumirPartido(pares, formato)
   return resumen ?? invalido
 }
 
@@ -725,31 +766,37 @@ export async function marcarGanadorPartido(params: {
   if (authErr) return { error: authErr }
 
   const { partidoId } = params
+
+  // Igual que en la corrección: primero el partido, porque el formato con el
+  // que se valida el marcador sale de su torneo Y de su fase (los grupos pueden
+  // ir al mejor de 3 y la llave al mejor de 5 en el mismo torneo).
+  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden').eq('id', partidoId).single()
+  if (!partido) return { error: 'Partido no encontrado' }
+  if (partido.ganador) return { error: 'El partido ya tiene ganador' }
+  if (!partido.jugador_a || !partido.jugador_b) return { error: 'Los BYE avanzan automáticamente y no se marcan manualmente' }
+
+  const formato = await formatoDeLaFase(supabase, partido.torneo_id, partido.fase)
+
   let { setsA, setsB } = params
   let puntos: { puntosA: number; puntosB: number } | null = null
   if (params.parciales !== undefined) {
-    const desdeParciales = marcadorDesdeParciales(params.parciales)
+    const desdeParciales = marcadorDesdeParciales(params.parciales, formato)
     if ('error' in desdeParciales) return desdeParciales
     setsA = desdeParciales.setsA
     setsB = desdeParciales.setsB
     puntos = { puntosA: desdeParciales.puntosA, puntosB: desdeParciales.puntosB }
   }
 
-  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden').eq('id', partidoId).single()
-  if (!partido) return { error: 'Partido no encontrado' }
-  if (partido.ganador) return { error: 'El partido ya tiene ganador' }
-  if (!partido.jugador_a || !partido.jugador_b) return { error: 'Los BYE avanzan automáticamente y no se marcan manualmente' }
-
   const sets = typeof setsA === 'number' && typeof setsB === 'number' ? { a: setsA, b: setsB } : null
-  if (sets && !esResultadoBo5Valido(sets.a, sets.b)) {
-    return { error: 'Marcador inválido. Resultados permitidos en Mejor de 5: 3-0, 3-1, 3-2, 0-3, 1-3, 2-3' }
+  if (sets && !esResultadoValido(sets.a, sets.b, formato)) {
+    return { error: marcadoresPermitidosTexto(formato) }
   }
   if (partido.fase === 'grupos' && !sets) {
-    return { error: 'Falta el marcador. Los partidos de grupo se registran con los sets (ej: 3-1).' }
+    return { error: `Falta el marcador. Los partidos de grupo se registran con los sets (ej: ${setsParaGanar(formato)}-1).` }
   }
 
   const ganadorId = sets
-    ? determinarGanadorBo5(sets.a, sets.b, partido.jugador_a, partido.jugador_b)
+    ? determinarGanador(sets.a, sets.b, partido.jugador_a, partido.jugador_b)
     : params.ganadorId
   if (!ganadorId) return { error: 'Falta indicar quién ganó' }
   if (ganadorId !== partido.jugador_a && ganadorId !== partido.jugador_b) return { error: 'El ganador debe ser uno de los jugadores del partido' }

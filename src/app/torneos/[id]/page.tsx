@@ -43,6 +43,7 @@ const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.Q
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
 import MarcadorSets from '@/components/torneos/MarcadorSets'
+import { formatoDe, FORMATO_LABEL, FORMATO_EXPLICACION } from '@/lib/domain/marcador'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -144,7 +145,7 @@ export default function TorneoDetallePage() {
       { data: gj },
       { data: cabezasData },
     ] = await Promise.all([
-      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin').eq('id', torneoId).single(),
+      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
@@ -694,6 +695,12 @@ export default function TorneoDetallePage() {
   // fuera de `fasesOrden` —donde cada columna tiene la mitad de llaves que la
   // anterior, y meterlo ahí descuadraría el SVG— y se dibuja como una mini
   // llave aparte, junto a la final.
+  // Al mejor de cuántos sets se juega cada fase de ESTE torneo (migración 262).
+  // Un torneo viejo, o uno donde nadie tocó el selector, viene en 'bo5': lo que
+  // el módulo hacía antes de que esto se pudiera elegir.
+  const formatoGrupos = formatoDe(torneo?.formato_grupos)
+  const formatoLlave = formatoDe(torneo?.formato_llave)
+
   const hayTercerLugar = fasesConPartidos.has('tercer_lugar')
   const fasesConTercerLugar = fasesParaMostrar(fasesConPartidos)
   const partidoTercerLugar = (partidosPorFase.get('tercer_lugar') || [])[0] ?? null
@@ -831,6 +838,18 @@ export default function TorneoDetallePage() {
         )}
         <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0, flex:'1 1 auto' }}>{torneo?.nombre}</h1>
         <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseActual === 'grupos' && hayBracket ? 'Grupos + playoffs' : (faseLabel[faseActual] || faseActual)}</span>
+        {/* A cuántos sets se juega. Va en el encabezado y no escondido en el
+            manual: es lo primero que pregunta el jugador antes de entrar a la
+            mesa, y de eso depende cuándo se termina su partido. */}
+        <span
+          title={formatoGrupos === formatoLlave
+            ? `Todo el torneo al ${FORMATO_LABEL[formatoGrupos].toLowerCase()}: ${FORMATO_EXPLICACION[formatoGrupos]}.`
+            : `Grupos al ${FORMATO_LABEL[formatoGrupos].toLowerCase()} (${FORMATO_EXPLICACION[formatoGrupos]}) y llave al ${FORMATO_LABEL[formatoLlave].toLowerCase()} (${FORMATO_EXPLICACION[formatoLlave]}).`}
+          style={{ background:'#eef2ff', color:'#3730a3', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>
+          🏓 {formatoGrupos === formatoLlave
+            ? FORMATO_LABEL[formatoGrupos]
+            : `Grupos ${FORMATO_LABEL[formatoGrupos].toLowerCase()} · Llave ${FORMATO_LABEL[formatoLlave].toLowerCase()}`}
+        </span>
         {torneo?.codigo && (
           <button
             onClick={() => setQrOpen(true)}
@@ -1305,6 +1324,7 @@ export default function TorneoDetallePage() {
                             key={`${p.id}-${p.ganador ?? 'nuevo'}`}
                             nombreA={nombreA}
                             nombreB={nombreB}
+                            formato={formatoGrupos}
                             guardando={guardandoMarcador === p.id}
                             onCancelar={() => setPartidoEditando(null)}
                             onListo={async parciales => {

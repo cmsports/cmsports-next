@@ -369,13 +369,25 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
     resumen: 'En grupos se carga el marcador set a set. Corregir siempre desde la ronda más avanzada hacia atrás.',
     bloques: [
       {
+        subtitulo: 'Al mejor de cuántos sets se juega',
+        items: [
+          'Se elige al CREAR el torneo, junto al nombre y la fecha, y se elige por fase: los grupos por un lado y la llave por otro. Los dos vienen en Mejor de 5, que es como jugó el club hasta ahora.',
+          'Mejor de 3: gana el primero que llega a 2 sets, y los marcadores posibles son 2-0 y 2-1. Mejor de 5: gana el que llega a 3, y son 3-0, 3-1 y 3-2.',
+          'Lo normal es grupos al mejor de 3 y llave al mejor de 5: los grupos se acortan casi a la mitad —que es lo que descongestiona las mesas y el horario— y la definición se juega larga.',
+          'El formato aparece en el encabezado del torneo, al lado de la fase, para que el jugador sepa a qué entra a la mesa.',
+          'Lo que el formato NO cambia: la tabla de los grupos (son 2 puntos por victoria, y los desempates son proporciones de sets y de puntos, así que un 2-0 vale lo mismo que un 3-0), el armado de la llave, ni el ranking, que paga por el puesto final.',
+          'Lo que sí cambia: al mejor de 3 el triple empate en un grupo es más frecuente, porque hay menos sets jugados para separar. Por eso los puntos de cada set pesan más.',
+          'Elígelo bien al crear el torneo: una vez que hay resultados cargados, cambiarlo dejaría marcadores imposibles guardados (un 3-1 no existe en un mejor de 3).',
+        ],
+      },
+      {
         subtitulo: 'Cargar un partido de grupo',
         items: [
           'Pulsa Cargar resultado en el partido. Se abre la planilla con los dos nombres y una fila por set.',
           'Escribe los puntos de cada set: 11-9, 11-7, 9-11… Si el partido se va a cuarto o quinto set, la fila aparece sola cuando hace falta.',
           'El botón Listo se habilita recién cuando la planilla es un partido terminado de verdad. Abajo se ve el resumen en vivo: “3-1 · 44-38 puntos”.',
           'Un set se gana a 11 con dos de ventaja. Desde 10 iguales sigue hasta que alguien saque dos: 12-10, 13-11, 20-18 son válidos; 11-10 no.',
-          'El partido termina al llegar a 3 sets. No acepta un set jugado después de eso.',
+          'El partido termina al llegar a los sets que pide el formato del torneo: 2 al mejor de 3, 3 al mejor de 5. No acepta un set jugado después de eso.',
           'El ganador NO se elige aparte: sale del marcador. Así no puede quedar guardado un 3-1 con el otro como ganador.',
           'Todo esto se valida también en el servidor, no solo en la pantalla.',
         ],
