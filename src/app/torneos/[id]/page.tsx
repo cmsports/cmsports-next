@@ -685,7 +685,14 @@ export default function TorneoDetallePage() {
   // Un torneo interno cuyas semis se marcaron ANTES de que existiera esta regla
   // no dispara el automatismo (corre al cerrar una semi, y ya están cerradas).
   // Para esos, el botón de abrirla a mano.
-  const sePuedeAbrirTercerLugar = !hayTercerLugar
+  // La llave también hay que poder RESEMBRARLA, no solo crearla: corregir una
+  // semifinal vacía los dos cupos —los deja el RPC así para que el servidor los
+  // vuelva a llenar—, y si esa segunda parte falla, la fila queda sin
+  // jugadores. Sin este caso el botón desaparecía (la fila existe) y el torneo
+  // quedaba sin poder finalizarse ni repararse desde la pantalla.
+  const tercerLugarSinCupos = !!partidoTercerLugar
+    && !partidoTercerLugar.jugador_a && !partidoTercerLugar.jugador_b && !partidoTercerLugar.ganador
+  const sePuedeAbrirTercerLugar = (!hayTercerLugar || tercerLugarSinCupos)
     && torneo?.tipo === 'interno'
     && faseActual !== 'finalizado'
     && !!derivarTercerLugar(partidosPorFase.get('semis') || [])
@@ -867,7 +874,7 @@ export default function TorneoDetallePage() {
             }}
             title="Crea la llave por el 3er y 4to lugar con los dos que perdieron las semifinales"
             style={{ background:'#fffbeb', color:'#b45309', border:'1px solid #fde68a', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
-            🥉 Abrir el 3er lugar
+            {tercerLugarSinCupos ? '🥉 Rellenar el 3er lugar' : '🥉 Abrir el 3er lugar'}
           </button>
         )}
         {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && (

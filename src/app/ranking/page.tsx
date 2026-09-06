@@ -352,7 +352,7 @@ export default function RankingPage() {
             </div>
             <div style={{ fontSize: 11, color: '#6d28d9', lineHeight: 1.6 }}>
               Cada torneo reparte puntos según <strong>dónde terminó</strong> cada jugador, no por cuántos partidos ganó.
-              Los dos que caen en semifinales quedan 3-4 y se llevan lo mismo; los cuatro que caen en cuartos, 5-8.
+              El 3° y el 4° salen del partido por el tercer lugar; si no se jugó, los dos semifinalistas comparten 3-4. Los cuatro que caen en cuartos son todos 5-8.
               El que participa y no pasa de la fase de grupos igual suma. Perder no resta nada.
               Los puntos se <strong>acumulan entre todos los torneos</strong> de esa categoría, y se actualizan cuando el torneo termina.
               Dos jugadores con los mismos puntos comparten puesto.

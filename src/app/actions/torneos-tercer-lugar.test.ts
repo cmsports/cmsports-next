@@ -254,3 +254,26 @@ describe('abrirTercerLugar (para torneos que ya tenían las semis cerradas)', ()
     expect(res.error).toContain('semifinales')
   })
 })
+
+describe('resembrar la mini llave que quedó sin cupos', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('rellena la fila vacía que deja el RPC al corregir una semi', async () => {
+    // El RPC de corrección vacía los dos cupos para que el servidor los vuelva
+    // a llenar. Si esa segunda parte falló, la fila queda así.
+    const ID = '11111111-1111-4111-8111-111111111111'
+    const t = montar({
+      torneos: [{ id: ID, club_id: 'club', tipo: 'interno', fase: 'final', estado: 'en_curso' }],
+      torneo_grupos: [],
+      torneo_partidos: [
+        { id: 's0', torneo_id: ID, grupo_id: null, fase: 'semis', orden: 0, jugador_a: 'ana', jugador_b: 'cata', ganador: 'cata' },
+        { id: 's1', torneo_id: ID, grupo_id: null, fase: 'semis', orden: 1, jugador_a: 'beto', jugador_b: 'dani', ganador: 'beto' },
+        { id: 'x', torneo_id: ID, grupo_id: null, fase: 'tercer_lugar', orden: 0, jugador_a: null, jugador_b: null, ganador: null },
+      ],
+    })
+    expect(await abrirTercerLugar({ torneoId: ID })).toEqual({ success: true })
+    const mini = tercerLugar(t)
+    expect(mini).toHaveLength(1)
+    expect([mini[0].jugador_a, mini[0].jugador_b].sort()).toEqual(['ana', 'dani'])
+  })
+})

@@ -467,8 +467,9 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
       {
         items: [
           'Solo cuentan torneos internos finalizados o archivados. Un torneo en curso no suma: el que hoy va en semis puede terminar campeón o 3-4.',
-          'Cada torneo paga el puesto: 1° = 100, 2° = 90, 3-4 = 80, 5-8 = 60, 9-16 = 20, 17-32 = 10, fase de grupos (no clasificó) = 9. Perder no resta.',
-          'Los dos que caen en semis son ambos 3-4 (nadie jugó un partido que los ordene). Los cuatro de cuartos son 5-8. Por eso el puntaje va en rangos.',
+          'Cada torneo paga el puesto: 1° = 100, 2° = 90, 3° = 80, 4° = 70, 5-8 = 60, 9-16 = 20, 17-32 = 10, fase de grupos (no clasificó) = 9. Perder no resta.',
+          'El 3° y el 4° salen del partido por el tercer lugar, que se juega. Si no se jugó —cuadro sin semifinales, o una semi resuelta por BYE que no dejó rival— los dos semifinalistas comparten 3-4 y sus 80 puntos.',
+          'Los cuatro que caen en cuartos son todos 5-8: nadie jugó un partido que los ordene. Por eso ese puntaje va en rango.',
           'Un BYE no es un partido jugado: no suma victoria. El puesto sale de hasta dónde llegó en la llave.',
           'Los puntos se acumulan entre todos los torneos de esa categoría + género. Dos con los mismos puntos comparten puesto (1, 1, 3). Victorias y derrotas solo ordenan la lista dentro del empate.',
           'Jugar más torneos nunca baja a nadie: solo suma chances.',
@@ -499,7 +500,7 @@ export const SECCIONES_MANUAL_TORNEOS: SeccionManual[] = [
         items: [
           'Opcionales para 1°, 2° y 3°. Cada uno es un monto. Se indica si se pagó en efectivo o transferencia.',
           'Guardar premios los registra como gastos en Finanzas (RPC atómico, no se duplican con un doble clic). Los ingresos de inscripción se suben aparte, desde Control financiero.',
-          'No hay partido por el tercer lugar en este módulo: el 3° del premio lo decides tú. El ranking igual trata a los dos semifinalistas como 3-4.',
+          'El 3° del premio ya no lo decides tú: al cerrar las dos semifinales se abre sola la llave por el 3er y 4to lugar, y el torneo no se puede finalizar hasta jugarla. El que gana ese partido es el 3° del premio y del ranking.',
         ],
       },
       {
