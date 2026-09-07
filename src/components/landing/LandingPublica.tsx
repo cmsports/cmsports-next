@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { motion } from 'motion/react'
@@ -23,6 +23,7 @@ import {
 import styles from './landing.module.css'
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card'
 import LandingModulesTabs from './LandingModulesTabs'
+import HeroDemo from './HeroDemo'
 import AntesDespues from './AntesDespues'
 import VideoDemos from './VideoDemos'
 
@@ -192,6 +193,14 @@ export default function LandingPublica() {
     setMenuOpen(false)
   }
 
+  // ponytail: escribe las variables CSS en el nodo, sin estado de React. Un
+  // setState por movimiento del mouse repinta la landing entera.
+  function seguirPuntero(e: PointerEvent<HTMLElement>) {
+    const caja = e.currentTarget.getBoundingClientRect()
+    e.currentTarget.style.setProperty('--mx', `${e.clientX - caja.left}px`)
+    e.currentTarget.style.setProperty('--my', `${e.clientY - caja.top}px`)
+  }
+
   return (
     <div ref={pageRef} className={styles.page} data-landing>
       <header ref={headerRef} className={`${styles.header} ${scrolled ? styles.headerScrolled : ''}`}>
@@ -237,25 +246,39 @@ export default function LandingPublica() {
       )}
 
       {/* HERO */}
-      <section className={styles.hero} aria-label="Inicio">
-        <div className={styles.heroInner}>
-          <p className={styles.eyebrow}>Gestión deportiva profesional</p>
-          <p className={styles.heroBrand}>CMsports</p>
-          <h1 className={styles.heroTitle}>
-            Ordenamos la operación del club para que ustedes se concentren en formar deportistas.
-          </h1>
-          <p className={styles.heroLede}>
-            Plantel, asistencia, finanzas, torneos y reportes en un solo lugar. Hecho en Chile, para clubes de Chile y Latinoamérica.
-          </p>
-          <div className={styles.heroActions}>
-            <Link href="/login" className={styles.btnPrimary}>
-              Ingresar al sistema <ArrowRight size={16} />
-            </Link>
-            <a href="#contacto" className={styles.btnGhost}>Contacto</a>
+      <section
+        className={styles.hero}
+        aria-label="Inicio"
+        onPointerMove={seguirPuntero}
+      >
+        <div className={styles.heroGrid} aria-hidden />
+        <div className={styles.heroSplit}>
+          <div className={styles.heroInner}>
+            <p className={styles.eyebrow}>Gestión deportiva profesional</p>
+            <p className={styles.heroBrand}>CMsports</p>
+            <h1 className={styles.heroTitle}>
+              Ordenamos la operación del club para que ustedes se concentren en formar deportistas.
+            </h1>
+            <p className={styles.heroLede}>
+              Plantel, asistencia, finanzas, torneos y reportes en un solo lugar. Hecho en Chile, para clubes de Chile y Latinoamérica.
+            </p>
+            <div className={styles.heroActions}>
+              <Link href="/login" className={styles.btnPrimary}>
+                Ingresar al sistema <ArrowRight size={16} />
+              </Link>
+              <a href="#contacto" className={styles.btnGhost}>Contacto</a>
+            </div>
+            <p className={styles.heroNote}>
+              Asociación TDM Buin y Paine ya opera con CMsports.
+            </p>
           </div>
-          <p className={styles.heroNote}>
-            Asociación TDM Buin y Paine ya opera con CMsports.
-          </p>
+
+          <div className={styles.heroDemo}>
+            <HeroDemo />
+            <p className={styles.heroDemoPie}>
+              Demo real de la pantalla de asistencia. Pruébela aquí mismo.
+            </p>
+          </div>
         </div>
       </section>
 
