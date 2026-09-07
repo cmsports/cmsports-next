@@ -9,14 +9,14 @@
 .card {
   padding: 22px;
   border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: #111827;
+  border: 1px solid var(--line);
+  background: var(--superficie);
   min-height: 260px;
 }
 
 .cardDespues {
-  background: linear-gradient(165deg, #14304a 0%, #0b1220 100%);
-  border-color: rgba(56, 189, 248, 0.35);
+  background: var(--tarjeta-2);
+  border-color: var(--acento);
 }
 
 .tagAntes,
@@ -29,17 +29,17 @@
 }
 
 .tagAntes {
-  color: #fb7185;
+  color: var(--bad);
 }
 
 .tagDespues {
-  color: #38bdf8;
+  color: var(--blue);
 }
 
 .cardTitle {
   font-size: 16px;
   font-weight: 700;
-  color: #fff;
+  color: var(--titulo);
   margin-bottom: 14px;
 }
 
@@ -54,12 +54,12 @@
 
 .card li {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--muted);
   line-height: 1.4;
 }
 
 .cardDespues li {
-  color: #cbd5e1;
+  color: var(--body);
 }
 
 .arrow {
@@ -68,7 +68,7 @@
   justify-content: center;
   font-size: 28px;
   font-weight: 700;
-  color: #7dd3fc;
+  color: var(--blue);
   padding: 0 4px;
 }
 
@@ -92,11 +92,26 @@
   background: #7f1d1d;
 }
 
+/* La planilla de mentira son celdas oscuras: en tema claro se invierten, si no
+   quedan tres manchas negras sobre la tarjeta blanca. `data-tema` lo pone
+   LandingPublica en la raíz de la página. */
+[data-tema='claro'] .fakeSheet span {
+  background: #e2e8f0;
+}
+
+[data-tema='claro'] .fakeSheet span:nth-child(4n + 1) {
+  background: #bbf7d0;
+}
+
+[data-tema='claro'] .fakeSheet span:nth-child(3) {
+  background: #fecaca;
+}
+
 .fakeApp {
   border-radius: 10px;
-  border: 1px solid rgba(56, 189, 248, 0.25);
+  border: 1px solid var(--acento);
   overflow: hidden;
-  background: #020617;
+  background: var(--superficie-honda);
 }
 
 .appBar {
@@ -115,7 +130,7 @@
   display: block;
   height: 10px;
   border-radius: 4px;
-  background: rgba(125, 211, 252, 0.2);
+  background: var(--chip-info);
 }
 
 .appRows i:nth-child(2) {
