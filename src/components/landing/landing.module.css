@@ -468,14 +468,6 @@
   line-height: 1.15;
 }
 
-.sectionIntro {
-  font-size: 17px;
-  line-height: 1.55;
-  color: var(--body);
-  max-width: 42ch;
-  margin-bottom: 36px;
-}
-
 .rule {
   width: 40px;
   height: 2px;
