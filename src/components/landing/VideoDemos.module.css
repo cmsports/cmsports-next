@@ -7,14 +7,14 @@
 .card {
   margin: 0;
   border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: #0b1220;
+  border: 1px solid var(--line);
+  background: var(--fondo);
   overflow: hidden;
 }
 
 .frame {
   position: relative;
-  background: #020617;
+  background: var(--superficie-honda);
   aspect-ratio: 16 / 10;
 }
 
@@ -33,13 +33,13 @@
 .title {
   font-size: 16px;
   font-weight: 700;
-  color: #fff;
+  color: var(--titulo);
   margin-bottom: 4px;
 }
 
 .caption {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--muted);
   line-height: 1.4;
 }
 

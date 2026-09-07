@@ -19,6 +19,8 @@ import {
   Headset,
   Mail,
   CheckCircle2,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import styles from './landing.module.css'
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card'
@@ -136,6 +138,7 @@ const FUNDADORES = [
 export default function LandingPublica() {
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [tema, setTema] = useState<'oscuro' | 'claro'>('oscuro')
   const pageRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLElement>(null)
 
@@ -202,7 +205,7 @@ export default function LandingPublica() {
   }
 
   return (
-    <div ref={pageRef} className={styles.page} data-landing>
+    <div ref={pageRef} className={styles.page} data-landing data-tema={tema}>
       <header ref={headerRef} className={`${styles.header} ${scrolled ? styles.headerScrolled : ''}`}>
         <Link href="/" className={styles.brand} onClick={cerrarMenu}>
           <Image
@@ -223,15 +226,28 @@ export default function LandingPublica() {
           <Link href="/login" className={styles.ctaIngresar}>Ingresar</Link>
         </nav>
 
-        <button
-          type="button"
-          className={styles.menuBtn}
-          aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((v) => !v)}
-        >
-          {menuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+        <div className={styles.headerAcciones}>
+          <button
+            type="button"
+            className={styles.temaBtn}
+            aria-pressed={tema === 'claro'}
+            aria-label={tema === 'oscuro' ? 'Ver la página en claro' : 'Ver la página en oscuro'}
+            onClick={() => setTema((t) => (t === 'oscuro' ? 'claro' : 'oscuro'))}
+          >
+            {tema === 'oscuro' ? <Sun size={16} /> : <Moon size={16} />}
+            <span>{tema === 'oscuro' ? 'Claro' : 'Oscuro'}</span>
+          </button>
+
+          <button
+            type="button"
+            className={styles.menuBtn}
+            aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            {menuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
       </header>
 
       {menuOpen && (
@@ -276,7 +292,7 @@ export default function LandingPublica() {
           <div className={styles.heroDemo}>
             <HeroDemo />
             <p className={styles.heroDemoPie}>
-              Demo real de la pantalla de asistencia. Pruébela aquí mismo.
+              Asistencia, finanzas y torneos. Cambie de módulo y pruébelos aquí mismo.
             </p>
           </div>
         </div>
