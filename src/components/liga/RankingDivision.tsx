@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { calcularRankingDivision, type FilaRanking, type PartidoFinalizado } from '@/lib/domain/liga'
+import { useReordenAnimado } from '@/lib/useReordenAnimado'
 
 const supabase = createClient()
 
@@ -66,6 +67,9 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
   const [error, setError] = useState<string | null>(null)
 
   const accent = divColor(nombreDivision)
+
+  // Las filas se deslizan a su nuevo puesto cuando el ranking se reordena.
+  const listaRef = useReordenAnimado<HTMLDivElement>(ranking.map(r => r.jugadorId).join(','))
 
   const PODIO_CONFIG = [
     {
@@ -218,7 +222,13 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
         @keyframes gold-glow{0%,100%{box-shadow:0 0 0 0 ${hexAlpha(accent, 0.6)},0 4px 12px rgba(0,0,0,0.18)}50%{box-shadow:0 0 0 10px ${hexAlpha(accent, 0)},0 4px 12px rgba(0,0,0,0.18)}}
         .rank-avatar-1{animation:gold-glow 2.5s ease-in-out infinite}
         @keyframes fadeUp-rank{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-        .rank-card{animation:fadeUp-rank 0.3s ease both}
+        /* 'backwards' y no 'both': con 'both' el fotograma final queda pegado, y
+           una animación CSS le gana al estilo en línea aunque ya haya terminado.
+           El translateY(0) del keyframe pisaba el transform con el que
+           useReordenAnimado desliza la fila y no se movía nada. 'backwards'
+           conserva lo único que hacía falta —quedar invisible durante el delay
+           escalonado— y suelta la propiedad al terminar. */
+        .rank-card{animation:fadeUp-rank 0.3s ease backwards}
       `}</style>
 
       {/* Leyenda + botón PDF */}
@@ -242,7 +252,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
       </div>
 
       {/* Lista de jugadores */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div ref={listaRef} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {ranking.length === 0 && (
           <div style={{ padding: '48px 24px', textAlign: 'center', background: '#f8fafc', borderRadius: 16, border: '2px dashed #e2e8f0' }}>
             <svg width="72" height="72" viewBox="0 0 72 72" fill="none" style={{ margin: '0 auto 16px', display: 'block', opacity: 0.35 }}>
