@@ -348,7 +348,6 @@ export default function LandingPublica() {
             label="El cambio"
             titulo="De la planilla al sistema"
             intro="Dejen Excel, chats y cuadernos. Pasen a una sola plataforma para la operación del club."
-            variante={0}
           />
           <AntesDespues />
         </div>
@@ -361,7 +360,6 @@ export default function LandingPublica() {
             label="Demo"
             titulo="Vea CMsports en acción"
             intro="Dos recorridos cortos de la plataforma. Puede reproducirlos con audio o en silencio."
-            variante={1}
           />
           <VideoDemos />
         </div>
@@ -374,7 +372,6 @@ export default function LandingPublica() {
             label="Valor"
             titulo="Cómo ayuda al club"
             intro="Una sola fuente de verdad para la operación diaria."
-            variante={2}
           />
           <div className={styles.benefitGrid}>
             {BENEFICIOS.map((item, i) => {
@@ -405,7 +402,6 @@ export default function LandingPublica() {
             label="Plataforma"
             titulo="Módulos desde el día uno"
             intro="Elija un módulo para ver qué hace. Se activan según la necesidad del club."
-            variante={0}
           />
           <LandingModulesTabs />
         </div>
@@ -418,7 +414,6 @@ export default function LandingPublica() {
             label="Implementación"
             titulo="Implementación sencilla"
             intro="Un proceso claro, con capacitación y acompañamiento. Sin vueltas innecesarias."
-            variante={1}
           />
           <ol className={styles.implList}>
             {IMPLEMENTACION.map((step, i) => (
@@ -448,7 +443,6 @@ export default function LandingPublica() {
             label="Horizonte"
             titulo="Resultados esperados"
             intro="Así debería verse un club que adopta CMsports como hábito, no como un sistema aparte."
-            variante={2}
           />
           <div className={styles.timeline}>
             {RESULTADOS.map((block, i) => (
@@ -483,7 +477,6 @@ export default function LandingPublica() {
             label="Próximos pasos"
             titulo="Servicios adicionales"
             intro="Lo que viene y lo que ya podemos cotizar según el club."
-            variante={0}
           />
           <div className={styles.futureGrid}>
             {FUTUROS.map((item) => {
@@ -512,7 +505,6 @@ export default function LandingPublica() {
             label="Presencia"
             titulo="Chile y Latinoamérica"
             intro="Pensado para clubes deportivos de distintas disciplinas. Empezamos en tenis de mesa; la arquitectura permite crecer a más deportes."
-            variante={1}
           />
           <div className={styles.presenceGrid}>
             <article className={styles.presenceCard}>
@@ -539,7 +531,7 @@ export default function LandingPublica() {
       {/* EQUIPO / MISIÓN */}
       <section id="equipo" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <EncabezadoSeccion label="Equipo" titulo="Quiénes somos" variante={2} />
+          <EncabezadoSeccion label="Equipo" titulo="Quiénes somos" />
           <div className={styles.missionGrid}>
             <article className={styles.missionCard}>
               <h3>Misión</h3>
