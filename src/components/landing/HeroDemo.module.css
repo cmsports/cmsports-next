@@ -111,6 +111,21 @@
   padding: 14px;
 }
 
+/* Las tres capas comparten celda: el alto lo fija la más alta y no cambia al
+   cambiar de pestaña. `visibility` en vez de `display` para que la oculta siga
+   ocupando su lugar, y de paso queda fuera del tabulador y del lector. */
+.escena {
+  display: grid;
+}
+
+.capa {
+  grid-area: 1 / 1;
+}
+
+.capa[data-activo='false'] {
+  visibility: hidden;
+}
+
 .bloque {
   display: flex;
   align-items: center;

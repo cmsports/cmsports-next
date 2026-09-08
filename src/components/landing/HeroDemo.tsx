@@ -276,6 +276,8 @@ export default function HeroDemo() {
               key={m.id}
               type="button"
               role="tab"
+              id={`demo-tab-${m.id}`}
+              aria-controls={`demo-panel-${m.id}`}
               aria-selected={modulo === m.id}
               className={styles.moduloBtn}
               onClick={() => cambiar(m.id)}
@@ -287,11 +289,40 @@ export default function HeroDemo() {
         })}
       </div>
 
-      {/* la key remonta el módulo entero: cada uno arranca en su estado inicial */}
-      <div className={styles.body} key={modulo}>
-        {modulo === 'asistencia' && <Asistencia avisar={avisar} />}
-        {modulo === 'finanzas' && <Finanzas avisar={avisar} />}
-        {modulo === 'torneos' && <Torneos avisar={avisar} />}
+      <div className={styles.body}>
+        {/* Los tres módulos van montados y apilados en la misma celda de la
+            grilla, así el panel mide siempre lo que el más alto. Con uno solo
+            montado el marco cambiaba de alto al cambiar de pestaña y, como la
+            columna del hero va centrada, el título de al lado saltaba 54px. */}
+        <div className={styles.escena}>
+          <div
+            className={styles.capa}
+            role="tabpanel"
+            id="demo-panel-asistencia"
+            aria-labelledby="demo-tab-asistencia"
+            data-activo={modulo === 'asistencia'}
+          >
+            <Asistencia avisar={avisar} />
+          </div>
+          <div
+            className={styles.capa}
+            role="tabpanel"
+            id="demo-panel-finanzas"
+            aria-labelledby="demo-tab-finanzas"
+            data-activo={modulo === 'finanzas'}
+          >
+            <Finanzas avisar={avisar} />
+          </div>
+          <div
+            className={styles.capa}
+            role="tabpanel"
+            id="demo-panel-torneos"
+            aria-labelledby="demo-tab-torneos"
+            data-activo={modulo === 'torneos'}
+          >
+            <Torneos avisar={avisar} />
+          </div>
+        </div>
 
         {/* la key repite la animación CSS en cada toque */}
         <p key={pulso} className={styles.guardado}>
