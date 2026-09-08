@@ -915,6 +915,7 @@ html.dark [data-landing] * {
 html.dark [data-landing] [class*="muted"],
 html.dark [data-landing] [class*="Hint"],
 html.dark [data-landing] [class*="sectionIntro"],
+html.dark [data-landing] [class*="__intro"],
 html.dark [data-landing] [class*="audienceText"],
 html.dark [data-landing] [class*="prose"] p,
 html.dark [data-landing] .text-slate-400 {

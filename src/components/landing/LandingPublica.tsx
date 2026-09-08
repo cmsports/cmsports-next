@@ -26,6 +26,7 @@ import styles from './landing.module.css'
 import { CardBody, CardContainer, CardItem } from '@/components/ui/3d-card'
 import LandingModulesTabs from './LandingModulesTabs'
 import HeroDemo from './HeroDemo'
+import EncabezadoSeccion from './EncabezadoSeccion'
 import AntesDespues from './AntesDespues'
 import VideoDemos from './VideoDemos'
 
@@ -343,11 +344,12 @@ export default function LandingPublica() {
       {/* ANTES / DESPUÉS */}
       <section id="cambio" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>El cambio</p>
-          <h2 className={styles.sectionTitle}>De la planilla al sistema</h2>
-          <p className={styles.sectionIntro}>
-            Dejen Excel, chats y cuadernos. Pásen a una sola plataforma para la operación del club.
-          </p>
+          <EncabezadoSeccion
+            label="El cambio"
+            titulo="De la planilla al sistema"
+            intro="Dejen Excel, chats y cuadernos. Pasen a una sola plataforma para la operación del club."
+            variante={0}
+          />
           <AntesDespues />
         </div>
       </section>
@@ -355,11 +357,12 @@ export default function LandingPublica() {
       {/* VIDEOS */}
       <section id="demo" className={styles.section}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Demo</p>
-          <h2 className={styles.sectionTitle}>Vea CMsports en acción</h2>
-          <p className={styles.sectionIntro}>
-            Dos recorridos cortos de la plataforma. Puede reproducirlos con audio o en silencio.
-          </p>
+          <EncabezadoSeccion
+            label="Demo"
+            titulo="Vea CMsports en acción"
+            intro="Dos recorridos cortos de la plataforma. Puede reproducirlos con audio o en silencio."
+            variante={1}
+          />
           <VideoDemos />
         </div>
       </section>
@@ -367,9 +370,12 @@ export default function LandingPublica() {
       {/* CÓMO AYUDA */}
       <section id="como-ayuda" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Valor</p>
-          <h2 className={styles.sectionTitle}>Cómo ayuda al club</h2>
-          <p className={styles.sectionIntro}>Una sola fuente de verdad para la operación diaria.</p>
+          <EncabezadoSeccion
+            label="Valor"
+            titulo="Cómo ayuda al club"
+            intro="Una sola fuente de verdad para la operación diaria."
+            variante={2}
+          />
           <div className={styles.benefitGrid}>
             {BENEFICIOS.map((item, i) => {
               const Icon = item.icon
@@ -395,11 +401,12 @@ export default function LandingPublica() {
       {/* MÓDULOS */}
       <section id="modulos" className={styles.section}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Plataforma</p>
-          <h2 className={styles.sectionTitle}>Módulos desde el día uno</h2>
-          <p className={styles.sectionIntro}>
-            Elija un módulo para ver qué hace. Se activan según la necesidad del club.
-          </p>
+          <EncabezadoSeccion
+            label="Plataforma"
+            titulo="Módulos desde el día uno"
+            intro="Elija un módulo para ver qué hace. Se activan según la necesidad del club."
+            variante={0}
+          />
           <LandingModulesTabs />
         </div>
       </section>
@@ -407,11 +414,12 @@ export default function LandingPublica() {
       {/* IMPLEMENTACIÓN */}
       <section id="implementacion" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Implementación</p>
-          <h2 className={styles.sectionTitle}>Implementación sencilla</h2>
-          <p className={styles.sectionIntro}>
-            Un proceso claro, con capacitación y acompañamiento. Sin vueltas innecesarias.
-          </p>
+          <EncabezadoSeccion
+            label="Implementación"
+            titulo="Implementación sencilla"
+            intro="Un proceso claro, con capacitación y acompañamiento. Sin vueltas innecesarias."
+            variante={1}
+          />
           <ol className={styles.implList}>
             {IMPLEMENTACION.map((step, i) => (
               <motion.li
@@ -436,11 +444,12 @@ export default function LandingPublica() {
       {/* RESULTADOS 3 / 6 / 12 */}
       <section id="resultados" className={styles.section}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Horizonte</p>
-          <h2 className={styles.sectionTitle}>Resultados esperados</h2>
-          <p className={styles.sectionIntro}>
-            Así debería verse un club que adopta CMsports como hábito, no como un sistema aparte.
-          </p>
+          <EncabezadoSeccion
+            label="Horizonte"
+            titulo="Resultados esperados"
+            intro="Así debería verse un club que adopta CMsports como hábito, no como un sistema aparte."
+            variante={2}
+          />
           <div className={styles.timeline}>
             {RESULTADOS.map((block, i) => (
               <motion.article
@@ -470,11 +479,12 @@ export default function LandingPublica() {
       {/* FUTURO */}
       <section id="futuro" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Próximos pasos</p>
-          <h2 className={styles.sectionTitle}>Servicios adicionales</h2>
-          <p className={styles.sectionIntro}>
-            Lo que viene y lo que ya podemos cotizar según el club.
-          </p>
+          <EncabezadoSeccion
+            label="Próximos pasos"
+            titulo="Servicios adicionales"
+            intro="Lo que viene y lo que ya podemos cotizar según el club."
+            variante={0}
+          />
           <div className={styles.futureGrid}>
             {FUTUROS.map((item) => {
               const Icon = item.icon
@@ -498,11 +508,12 @@ export default function LandingPublica() {
       {/* ALCANCE + CLIENTES */}
       <section id="alcance" className={styles.section}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Presencia</p>
-          <h2 className={styles.sectionTitle}>Chile y Latinoamérica</h2>
-          <p className={styles.sectionIntro}>
-            Pensado para clubes deportivos de distintas disciplinas. Empezamos en tenis de mesa; la arquitectura permite crecer a más deportes.
-          </p>
+          <EncabezadoSeccion
+            label="Presencia"
+            titulo="Chile y Latinoamérica"
+            intro="Pensado para clubes deportivos de distintas disciplinas. Empezamos en tenis de mesa; la arquitectura permite crecer a más deportes."
+            variante={1}
+          />
           <div className={styles.presenceGrid}>
             <article className={styles.presenceCard}>
               <p className={styles.presenceEyebrow}>En producción</p>
@@ -528,8 +539,7 @@ export default function LandingPublica() {
       {/* EQUIPO / MISIÓN */}
       <section id="equipo" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
-          <p className={styles.sectionLabel}>Equipo</p>
-          <h2 className={styles.sectionTitle}>Quiénes somos</h2>
+          <EncabezadoSeccion label="Equipo" titulo="Quiénes somos" variante={2} />
           <div className={styles.missionGrid}>
             <article className={styles.missionCard}>
               <h3>Misión</h3>

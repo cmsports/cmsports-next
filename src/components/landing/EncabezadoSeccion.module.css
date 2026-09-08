@@ -1,0 +1,103 @@
+.encabezado {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(24px, 4vw, 48px);
+  align-items: end;
+  margin-bottom: 36px;
+}
+
+/* Mismos valores que .sectionLabel / .sectionTitle / .sectionIntro tenían
+   sueltos en landing.module.css, ahora en un solo lugar. */
+
+.label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 10px;
+}
+
+.titulo {
+  font-size: clamp(26px, 3.2vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--titulo);
+  margin-bottom: 12px;
+  max-width: 18ch;
+  line-height: 1.15;
+}
+
+.intro {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--body);
+  max-width: 42ch;
+  margin: 0;
+}
+
+/* El peloteo */
+
+.trazo {
+  width: 300px;
+  height: 132px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.mesa,
+.red,
+.pata {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.red {
+  stroke: var(--acento);
+  opacity: 0.55;
+}
+
+.pata {
+  opacity: 0.6;
+}
+
+.estela {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 8;
+  stroke-linecap: round;
+  opacity: 0.4;
+}
+
+.pelota {
+  fill: var(--orange);
+  offset-path: var(--ruta);
+  offset-rotate: 0deg;
+  animation: pelotear var(--dur) cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+
+@keyframes pelotear {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
+}
+
+@media (max-width: 900px) {
+  .encabezado {
+    grid-template-columns: 1fr;
+  }
+
+  /* en móvil no sobra espacio: el adorno estorba */
+  .trazo {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pelota {
+    animation: none;
+    offset-distance: 50%;
+  }
+}
