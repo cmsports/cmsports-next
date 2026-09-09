@@ -17,12 +17,15 @@ import {
   type ClasificadoConStats,
 } from '@/lib/domain/torneos'
 import {
+  minParticipantes,
   modalidadDe,
   puedeUsarModalidad,
   ruedasDe,
+  usaCabezasSerie,
   usaRuedas,
   type ModalidadTorneo,
 } from '@/lib/domain/modalidadTorneo'
+import { generarLiguilla, partidosDeLiguilla } from '@/lib/domain/torneoLiguilla'
 import {
   esResultadoValido,
   determinarGanador,
@@ -1360,8 +1363,15 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
   const { torneoId } = params
 
-  const { data: torneoInfo } = await (supabase as any).from('torneos').select('tipo').eq('id', torneoId).single()
+  const { data: torneoInfo } = await (supabase as any).from('torneos')
+    .select('tipo, formato, ruedas').eq('id', torneoId).single()
   const esExterno = torneoInfo?.tipo === 'externo'
+
+  // La modalidad decide cómo se reparten los inscritos y qué partidos se crean.
+  // `modalidadDe` cae en 'grupos' ante cualquier valor raro, así que un torneo
+  // viejo —o uno con la columna en algo inesperado— se arma como siempre.
+  const modalidad = modalidadDe(torneoInfo?.formato)
+  const esLiguilla = modalidad === 'liguilla'
 
   const { data: gruposPrev } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
   const grupoIds = (gruposPrev || []).map(g => g.id)
@@ -1383,18 +1393,41 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     })
     .filter((x): x is JugadorTorneo => x !== null)
 
-  if (jugadores.length < CONFIG.TORNEO_MIN_JUGADORES) {
-    return { error: `Se requieren al menos ${CONFIG.TORNEO_MIN_JUGADORES} jugadores` }
+  const minimo = minParticipantes(modalidad)
+  if (jugadores.length < minimo) {
+    return { error: `Se requieren al menos ${minimo} jugadores` }
   }
-  const numGrupos = calcularNumGrupos(jugadores.length)
+
+  // Una liguilla es UN grupo con todos adentro: la tabla de posiciones sale de
+  // `calcularStatsGrupo` igual que la de cualquier grupo, sin nada nuevo.
+  const numGrupos = esLiguilla ? 1 : calcularNumGrupos(jugadores.length)
   if (numGrupos > CONFIG.TORNEO_MAX_GRUPOS) {
     return { error: `El máximo soportado es ${CONFIG.TORNEO_MAX_GRUPOS} grupos (${CONFIG.TORNEO_MAX_CLASIFICADOS} clasificados)` }
   }
-  const lecturaCabezas = await leerCabezasSerie(supabase, torneoId)
-  if (lecturaCabezas.error) return { error: lecturaCabezas.error }
-  const cabezas = lecturaCabezas.cabezas
-  if (cabezas.length > numGrupos) {
-    return { error: `Hay ${cabezas.length} cabezas para ${numGrupos} grupos. Debe existir como máximo una cabeza por grupo.` }
+
+  // Con todos contra todos la siembra no cambia un solo resultado, así que ni
+  // se leen: el tope de "una cabeza por grupo" tampoco significaría nada con un
+  // grupo único, y rechazaría un torneo perfectamente válido.
+  const cabezas: Array<{ jugadorId: string; numero: number }> = []
+  if (usaCabezasSerie(modalidad)) {
+    const lecturaCabezas = await leerCabezasSerie(supabase, torneoId)
+    if (lecturaCabezas.error) return { error: lecturaCabezas.error }
+    cabezas.push(...lecturaCabezas.cabezas)
+    if (cabezas.length > numGrupos) {
+      return { error: `Hay ${cabezas.length} cabezas para ${numGrupos} grupos. Debe existir como máximo una cabeza por grupo.` }
+    }
+  }
+
+  const ruedas = esLiguilla ? ruedasDe(torneoInfo?.ruedas) : 1
+  if (esLiguilla) {
+    const total = partidosDeLiguilla(jugadores.length, ruedas)
+    if (total > CONFIG.LIGUILLA_MAX_PARTIDOS) {
+      return {
+        error: `Con ${jugadores.length} inscritos ${ruedas === 2 ? 'a ida y vuelta ' : ''}salen ${total} partidos, ` +
+          `más de los ${CONFIG.LIGUILLA_MAX_PARTIDOS} que soporta una liguilla. ` +
+          `Usá una rueda, o el formato tradicional de grupos.`,
+      }
+    }
   }
 
   // Cada paso revisa su error y corta antes del siguiente.
@@ -1432,9 +1465,15 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     await supabase.from('torneo_grupos').delete().in('id', nuevosGrupos.map(g => g.id))
   }
 
-  const asignaciones = esExterno
-    ? seedingSerpenteoConClubes(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
-    : seedingSerpenteo(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
+  // En una liguilla no hay nada que repartir: entran todos al único grupo, en
+  // el orden en que se inscribieron. El serpenteo con un solo grupo daría lo
+  // mismo, pero decirlo así se lee mejor que confiar en que el caso degenerado
+  // haga lo correcto.
+  const asignaciones = esLiguilla
+    ? jugadores.map(j => ({ grupoIndex: 0, jugadorId: j.id }))
+    : esExterno
+      ? seedingSerpenteoConClubes(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
+      : seedingSerpenteo(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
   const ordenPorGrupo = new Map<number, number>()
   const inserts = asignaciones.map(a => {
     const orden = ordenPorGrupo.get(a.grupoIndex) ?? 0
@@ -1467,9 +1506,24 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
       .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
       .map(m => m.jugador_id)
       .filter((id): id is string => !!id)
-    const parejas = generarRoundRobin(jugadoresGrupo)
-    for (const [a, b] of parejas) {
-      partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: a, jugador_b: b, orden: partidos.length })
+    // La liguilla usa el método del círculo y no el doble bucle del round
+    // robin: reparte los partidos en fechas donde cada uno juega una vez, en
+    // vez de dejar al primer jugador con todos sus partidos seguidos. Con
+    // grupos de 3 o 4 la diferencia no se nota; con 12 es la diferencia entre
+    // un calendario y una lista.
+    //
+    // La fase sigue siendo 'grupos' a propósito: una liguilla ES un grupo con
+    // todos adentro, así que la tabla de posiciones, la pantalla y el marcador
+    // funcionan sin tocar nada, y el CHECK de `fase` no necesita un valor más.
+    if (esLiguilla) {
+      for (const p of generarLiguilla(jugadoresGrupo, ruedas)) {
+        partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: p.jugadorA, jugador_b: p.jugadorB, orden: partidos.length })
+      }
+    } else {
+      const parejas = generarRoundRobin(jugadoresGrupo)
+      for (const [a, b] of parejas) {
+        partidos.push({ torneo_id: torneoId, grupo_id: g.id, fase: 'grupos', jugador_a: a, jugador_b: b, orden: partidos.length })
+      }
     }
   }
   if (partidos.length) {
@@ -1500,6 +1554,17 @@ export async function sincronizarLlaves(params: {
   if (authErr) return { error: authErr }
 
   const { torneoId } = params
+
+  // Una liguilla termina en la tabla: no hay clasificados ni llave que armar.
+  // Sin esta guarda, `calcularClasificadosDesdeBD` tomaría al 1° y al 2° del
+  // grupo único y armaría una "final" de dos, que no es el torneo que el club
+  // configuró.
+  {
+    const { data: t } = await (supabase as any).from('torneos').select('formato').eq('id', torneoId).single()
+    if (modalidadDe(t?.formato) === 'liguilla') {
+      return { error: 'Una liguilla se define en la tabla de posiciones: no tiene llave.' }
+    }
+  }
 
   const calculo = await calcularClasificadosDesdeBD(supabase, torneoId)
   if ('error' in calculo) return calculo
@@ -1994,8 +2059,19 @@ export async function generarGruposTardios(params: {
 
   const { torneoId } = params
 
-  const { data: torneoInfo } = await (supabase as any).from('torneos').select('tipo').eq('id', torneoId).single()
+  const { data: torneoInfo } = await (supabase as any).from('torneos').select('tipo, formato').eq('id', torneoId).single()
   const esExterno = torneoInfo?.tipo === 'externo'
+
+  // Los tardíos forman grupos independientes de hasta cuatro, que después
+  // entran a la llave. En una liguilla eso no existe: el que llega tarde
+  // tendría que jugar contra TODOS los que ya empezaron, y meterlo en un grupo
+  // aparte le armaría un torneo paralelo con su propia tabla.
+  if (modalidadDe(torneoInfo?.formato) === 'liguilla') {
+    return {
+      error: 'En una liguilla todos juegan contra todos, así que no se pueden sumar jugadores ' +
+        'después de cerrar la inscripción. Volvé a cerrar la inscripción con todos adentro.',
+    }
+  }
 
   const { data: grupoMesa } = await supabase
     .from('torneo_grupos').select('id').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle()

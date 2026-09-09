@@ -690,14 +690,39 @@ Lo que quedó fuera a propósito, con el motivo:
 - Un torneo **interno** de cualquier club sigue siendo tradicional, y la Action lo
   hace cumplir aunque alguien mande otra cosa a mano.
 
-### Fase B — Liguilla de una y dos ruedas
+### Fase B — Liguilla de una y dos ruedas ✅ 2026-09-09
 
-`cerrarInscripcionYGenerarGrupos` bifurca: un grupo con todos y round robin ×N.
-Sin llave. Tabla de posiciones con `calcularStatsGrupo`. Contador de partidos en
-vivo en el selector (§2.2).
+**Entregada.** `cerrarInscripcionYGenerarGrupos` bifurca: un grupo con todos y
+el calendario en `src/lib/domain/torneoLiguilla.ts` (30 pruebas). Sin llave.
+Tabla de posiciones con `calcularStatsGrupo`, sin tocarla.
 
-**Criterio de salida:** una liguilla de 8 a 1 rueda genera 28 partidos y la tabla
-ordena igual que un grupo de hoy.
+⚠️ **Corrección a lo que decía este plan.** Acá estaba escrito que la liguilla
+"reusa `generarRoundRobin`". **Es falso, y se vio al programarlo.**
+
+`generarRoundRobin` es un doble bucle: con `[A,B,C,D]` da AB, AC, AD, BC, BD,
+CD. Para un grupo de 3 o 4 da igual porque se juegan casi a la vez. **En una
+liguilla de 12 hace que el primer jugador juegue sus once partidos casi
+seguidos** y que el último no toque una mesa hasta el final. No es un bug de esa
+función: es que ese orden nunca tuvo que servir de calendario.
+
+La liguilla usa el **método del círculo**, que reparte en fechas donde cada uno
+juega una vez. Una prueba lo hace cumplir para 4, 5, 8, 11 y 12 jugadores.
+
+Tres decisiones que se tomaron al programar:
+
+- **La fase sigue siendo `'grupos'`.** Una liguilla *es* un grupo con todos
+  adentro, así que la tabla, la pantalla y el marcador funcionan sin tocar nada
+  y el `CHECK` de `fase` no necesitó un valor más. El plan proponía una fase
+  `'liguilla'` y habría costado más sin ganar nada.
+- **`generarGruposTardios` queda bloqueado.** Los tardíos forman grupos
+  independientes; en una liguilla el que llega tarde tendría que jugar contra
+  todos, y meterlo aparte le arma un torneo paralelo con su propia tabla. Lo
+  rechaza la Action, y la pantalla ni ofrece el botón.
+- **Tope de `CONFIG.LIGUILLA_MAX_PARTIDOS = 200`.** Los partidos crecen al
+  cuadrado: 30 inscritos a ida y vuelta son 870 de una sentada.
+
+**Criterios de salida, cumplidos:** 1429 pruebas en verde sin modificar ninguna
+existente, typecheck limpio, lint sin errores nuevos y `next build` completo.
 
 ### Fase C — Eliminación directa con consolación
 

@@ -34,6 +34,8 @@ import {
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket, fasesParaMostrar, derivarTercerLugar } from '@/lib/domain/torneos'
+import { MODALIDAD_LABEL, minParticipantes, modalidadDe, ruedasDe } from '@/lib/domain/modalidadTorneo'
+import { partidosDeLiguilla, rondasDeLiguilla } from '@/lib/domain/torneoLiguilla'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { copiarTexto } from '@/lib/clipboard'
@@ -163,7 +165,7 @@ export default function TorneoDetallePage() {
       { data: gj },
       { data: cabezasData },
     ] = await Promise.all([
-      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave').eq('id', torneoId).single(),
+      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave,formato,ruedas').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
@@ -292,6 +294,10 @@ export default function TorneoDetallePage() {
     if (loading || authLoading) return
     if (perfil?.rol !== 'admin') return
     if (torneo?.fase !== 'grupos') return
+    // Una liguilla no tiene cuadro que sincronizar. Sin este corte el efecto
+    // llamaría al servidor en cada cambio de resultado para recibir siempre el
+    // mismo rechazo, y el error solo se ve en la consola.
+    if (modalidadDe(torneo?.formato) === 'liguilla') return
     if (cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')) return
 
     const clasificados = calcularClasificados()
@@ -747,15 +753,32 @@ export default function TorneoDetallePage() {
   const faseActual = torneo?.fase
   const esPlayoffs = faseActual && (fasesOrden.includes(faseActual) || faseActual === 'finalizado')
 
+  // La modalidad del torneo. Un torneo creado antes de la migración 264, o con
+  // la columna en cualquier cosa rara, cae en 'grupos' y se ve como siempre.
+  const modalidad = modalidadDe(torneo?.formato)
+  const esLiguilla = modalidad === 'liguilla'
+
   const partidosFaseActual = faseActual ? (partidosPorFase.get(faseActual) || []) : []
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
 
   const numGruposEstimados = calcularNumGrupos(jugadoresInscritos.length)
 
+  // Lo que se le muestra al admin ANTES de cerrar la inscripción, que es el
+  // único momento en que el número existe y todavía se puede echar pie atrás:
+  // al crear el torneo no hay inscritos, y después de cerrar ya está armado.
+  const ruedasTorneo = ruedasDe(torneo?.ruedas)
+  const minimoInscritos = minParticipantes(modalidad)
+  const partidosLiguilla = partidosDeLiguilla(jugadoresInscritos.length, ruedasTorneo)
+  const fechasLiguilla = rondasDeLiguilla(jugadoresInscritos.length, ruedasTorneo)
+
   // El cuadro puede existir (parcialmente lleno) mientras la fase sigue siendo
   // "grupos": mostramos las pestañas y el bracket también en ese caso.
+  //
+  // Una liguilla no tiene cuadro: se define en la tabla de posiciones. Con esto
+  // en false desaparecen de una vez las pestañas, el panel del bracket y el
+  // botón de "ver llaves" — es la única palanca que gobierna a los tres.
   const hayBracket = Array.from(fasesConPartidos).some(fase => fase !== 'grupos')
-  const mostrarLlaves = !!esPlayoffs || hayBracket
+  const mostrarLlaves = !esLiguilla && (!!esPlayoffs || hayBracket)
   // El partido por el 3er lugar cuelga de la final pero NO es un peldaño del
   // árbol: no se llega a él ganando, sino perdiendo la semi. Por eso queda
   // fuera de `fasesOrden` —donde cada columna tiene la mitad de llaves que la
@@ -904,6 +927,16 @@ export default function TorneoDetallePage() {
         )}
         <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0, flex:'1 1 auto' }}>{torneo?.nombre}</h1>
         <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseActual === 'grupos' && hayBracket ? 'Grupos + playoffs' : (faseLabel[faseActual] || faseActual)}</span>
+        {/* La modalidad se muestra solo cuando NO es la tradicional. Un club
+            que corre siempre grupos + llave no gana nada leyendo "Tradicional"
+            en cada torneo: gana una etiqueta más que ignorar. */}
+        {modalidad !== 'grupos' && (
+          <span
+            title={esLiguilla && ruedasTorneo === 2 ? 'Todos contra todos, ida y vuelta.' : undefined}
+            style={{ background:'#faf5ff', color:'#7c3aed', border:'1px solid #e9d5ff', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>
+            {MODALIDAD_LABEL[modalidad]}{esLiguilla && ruedasTorneo === 2 ? ' · ida y vuelta' : ''}
+          </span>
+        )}
         {/* A cuántos sets se juega. Va en el encabezado y no escondido en el
             manual: es lo primero que pregunta el jugador antes de entrar a la
             mesa, y de eso depende cuándo se termina su partido. */}
@@ -2305,14 +2338,25 @@ export default function TorneoDetallePage() {
             )}
 
             {faseActual === 'inscripcion' ? (
-              <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < 4 || cerrandoInscripcion}
-                style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= 4 && !cerrandoInscripcion?'pointer':'not-allowed' }}>
+              <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < minimoInscritos || cerrandoInscripcion}
+                style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'pointer':'not-allowed' }}>
                 {cerrandoInscripcion
-                  ? 'Guardando y generando grupos…'
-                  : jugadoresInscritos.length < 4
-                    ? `Mínimo 4 jugadores (faltan ${4-jugadoresInscritos.length})`
-                    : `✓ ${cabezasConCambios ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · generar ${numGruposEstimados} grupos`}
+                  ? (esLiguilla ? 'Cerrando y armando el calendario…' : 'Guardando y generando grupos…')
+                  : jugadoresInscritos.length < minimoInscritos
+                    ? `Mínimo ${minimoInscritos} jugadores (faltan ${minimoInscritos - jugadoresInscritos.length})`
+                    : esLiguilla
+                      ? `✓ Cerrar inscripción · ${partidosLiguilla} partidos en ${fechasLiguilla} fechas`
+                      : `✓ ${cabezasConCambios ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · generar ${numGruposEstimados} grupos`}
               </button>
+            ) : esLiguilla ? (
+              // En una liguilla no hay grupos tardíos: el que llega después
+              // tendría que jugar contra todos los que ya empezaron. La Action
+              // también lo rechaza, pero ofrecer un botón que siempre falla es
+              // peor que no ofrecerlo.
+              <div style={{ fontSize:12, color: hint, textAlign:'center', padding:'10px 0', lineHeight:1.5 }}>
+                En una liguilla todos juegan contra todos, así que no se pueden sumar
+                jugadores después de cerrar la inscripción.
+              </div>
             ) : jugadoresInscritos.length > 0 ? (
               <button disabled={generandoTardios} onClick={async () => {
                 if (generandoTardios) return
