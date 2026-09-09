@@ -96,6 +96,21 @@ export const MODULOS = [
   // ficha de 140 personas reales, y eso se decide cuando el club defina cómo va
   // a juntar las autorizaciones, no en un despliegue (migración 259).
   { key: 'consentimientos', label: 'Consentimientos y accesibilidad' },
+  // Liguilla (todos contra todos, una o dos ruedas) y eliminación directa con
+  // cuadro de consolación, como alternativas al torneo tradicional de grupos +
+  // llave. Va aparte de 'torneos' —que es el módulo entero y Buin usa todos los
+  // días— porque agrega un selector al formulario de creación: un club que
+  // corre una sola forma de torneo no gana nada eligiéndola cada vez, gana un
+  // paso más. Solo aparece en Torneo Externo; el interno es siempre tradicional
+  // y eso lo hace cumplir `crearTorneo`, no el formulario (migración 264).
+  { key: 'torneos_modalidades', label: 'Modalidades de torneo' },
+  // Torneos por equipos: Swaythling (5 individuales) o Corbillon (4 y un
+  // dobles). Va aparte de 'torneos_modalidades' y no como una opción más
+  // porque no es una variante del mismo motor: el participante deja de ser un
+  // jugador y pasa a ser un equipo, un encuentro contiene cinco partidos, y el
+  // dobles necesita cuatro personas en una tabla que tiene dos lados. Trae sus
+  // propias tablas. Un club puede querer liguilla sin meterse en nada de eso.
+  { key: 'torneos_equipos', label: 'Torneos por equipos' },
   // Tareas NO va acá: es la lista privada de los superadmin
   // (/superadmin/tareas), no una función que un club pueda activar.
 ] as const

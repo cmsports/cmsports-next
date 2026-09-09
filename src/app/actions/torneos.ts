@@ -17,6 +17,13 @@ import {
   type ClasificadoConStats,
 } from '@/lib/domain/torneos'
 import {
+  modalidadDe,
+  puedeUsarModalidad,
+  ruedasDe,
+  usaRuedas,
+  type ModalidadTorneo,
+} from '@/lib/domain/modalidadTorneo'
+import {
   esResultadoValido,
   determinarGanador,
   resumirPartido,
@@ -113,6 +120,31 @@ async function leerCabezasSerie(supabase: AdminSupabase, torneoId: string): Prom
   return { cabezas: (data || []).map(c => ({ jugadorId: c.jugador_id, numero: c.numero })) }
 }
 
+/**
+ * Los módulos del club, para decidir qué modalidades puede elegir un torneo.
+ *
+ * ⚠️ Acá `modulos_habilitados` en NULL significa **ninguno**, y eso se aparta a
+ * propósito de `liga-futbol.ts:312` y `proxy.ts:254`, que en ese caso asumen
+ * que están todos encendidos.
+ *
+ * El default permisivo de esos dos existe para no ESCONDER funciones que el
+ * club ya usa: un club sin la lista cargada que de pronto pierde el menú es
+ * peor que uno que ve de más. Acá el costo del error está del otro lado. Las
+ * modalidades son funciones nuevas que nadie usa todavía, así que mostrarlas
+ * sin que el club las haya pedido es el único error posible — y es el mismo
+ * criterio que `modulos.ts` ya escribió para `config_club` y `retencion`.
+ */
+async function modulosDelClub(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  clubId: string,
+): Promise<(modulo: string) => boolean> {
+  const { data: club } = await supabase
+    .from('clubes').select('modulos_habilitados').eq('id', clubId).single()
+  const habilitados: string[] = club?.modulos_habilitados ?? []
+  return (modulo: string) => habilitados.includes(modulo)
+}
+
 export async function crearTorneo(params: {
   nombre: string
   fecha: string
@@ -124,6 +156,11 @@ export async function crearTorneo(params: {
    *  que es como se jugó todo hasta la migración 262. */
   formatoGrupos?: FormatoPartido
   formatoLlave?: FormatoPartido
+  /** Cómo se corre el torneo. Sin declarar: el tradicional de grupos + llave,
+   *  que es lo único que existió hasta la migración 264. */
+  modalidad?: ModalidadTorneo
+  /** Cuántas vueltas juega una liguilla. Las demás modalidades la ignoran. */
+  ruedas?: number
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -140,22 +177,43 @@ export async function crearTorneo(params: {
   if (params.tipo === 'interno' && !params.categoria) return { error: 'Selecciona la categoría del torneo interno' }
   if (params.tipo === 'interno' && !params.genero) return { error: 'Selecciona Varones, Damas o Mixto' }
 
+  // El tipo efectivo, no el que vino: sin declarar, el torneo nace externo, y
+  // la modalidad tiene que validarse contra eso mismo que se va a guardar.
+  const tipo = params.tipo ?? 'externo'
+
+  // Esconder el selector en el formulario no impide nada: esto es una Server
+  // Action y recibe lo que le manden. La lista contra la que se valida es la
+  // MISMA que pinta los botones (`modalidadesDisponibles`), así que no pueden
+  // desalinearse: lo que la pantalla ofrece, el servidor lo acepta, y lo que no
+  // ofrece, lo rechaza.
+  const modalidad = modalidadDe(params.modalidad)
+  const tiene = await modulosDelClub(supabase, perfil.club_id)
+  if (!puedeUsarModalidad({ modalidad, tipo, tiene })) {
+    return {
+      error: tipo === 'interno'
+        ? 'Los torneos internos se juegan siempre en el formato tradicional (grupos y llave).'
+        : 'Ese formato de torneo no está habilitado para este club.',
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any).from('torneos').insert({
     club_id: perfil.club_id,
     nombre,
-    formato: 'grupos',
+    formato: modalidad,
     estado: 'en_curso',
     fase: 'inscripcion',
     fecha_inicio: params.fecha,
     cuota_inscripcion: cuota,
     precio_entrada: cuota,
     inscripcion_abierta: true,
-    tipo: params.tipo ?? 'externo',
+    tipo,
     categoria: params.categoria ?? null,
     genero: params.genero ?? null,
     formato_grupos: formatoDe(params.formatoGrupos),
     formato_llave: formatoDe(params.formatoLlave),
+    // Solo la liguilla la mira; en el resto queda en 1 y nadie la lee.
+    ruedas: usaRuedas(modalidad) ? ruedasDe(params.ruedas) : 1,
   }).select('id').single()
 
   if (error || !data) return { error: error?.message || 'No se pudo crear el torneo' }
