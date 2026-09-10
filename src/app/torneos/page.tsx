@@ -6,7 +6,11 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { archivarTorneo, crearTorneo as crearTorneoAction, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import SelectorFormato from '@/components/torneos/SelectorFormato'
+import SelectorModalidad from '@/components/torneos/SelectorModalidad'
 import { type FormatoPartido } from '@/lib/domain/marcador'
+import { fasesDeSets, modalidadesDisponibles, type ModalidadTorneo } from '@/lib/domain/modalidadTorneo'
+import { type SistemaEquipos } from '@/lib/domain/torneoEquipos'
+import { useModulos } from '@/lib/hooks/useModulos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
@@ -29,9 +33,17 @@ export default function TorneosPage() {
   const [cuota, setCuota] = useState('0')
   const [formatoGrupos, setFormatoGrupos] = useState<FormatoPartido>('bo5')
   const [formatoLlave, setFormatoLlave] = useState<FormatoPartido>('bo5')
+  const [modalidad, setModalidad] = useState<ModalidadTorneo>('grupos')
+  const [ruedas, setRuedas] = useState<1 | 2>(1)
+  // Corbillon por defecto: admite equipos de dos, y Swaythling exige tres.
+  const [sistemaEquipos, setSistemaEquipos] = useState<SistemaEquipos>('corbillon')
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
+  const { tiene } = useModulos()
+  // La misma función contra la que valida `crearTorneo` en el servidor, así lo
+  // que la pantalla ofrece es exactamente lo que la Action acepta.
+  const modalidades = modalidadesDisponibles({ tipo: 'externo', tiene })
 
   useEffect(() => {
     if (authLoading) return
@@ -102,10 +114,11 @@ export default function TorneosPage() {
     if (!nombre || !fecha) return
     const monto = Number(cuota)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
-    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, formatoGrupos, formatoLlave })
+    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, formatoGrupos, formatoLlave, modalidad, ruedas, sistemaEquipos })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
     setNombre(''); setFecha(''); setCuota('0')
+    setModalidad('grupos'); setRuedas(1); setSistemaEquipos('corbillon')
     router.push(`/torneos/${res.torneoId}`)
   }
 
@@ -256,6 +269,18 @@ export default function TorneosPage() {
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:6 }}>Nuevo torneo</div>
             <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Los jugadores se inscriben el día del torneo en la mesa de inscripción</div>
+            {/* Va arriba de todo porque decide qué campos vienen abajo. Con el
+                módulo apagado no hay más de una modalidad y no se pinta nada. */}
+            <SelectorModalidad
+              disponibles={modalidades}
+              modalidad={modalidad}
+              ruedas={ruedas}
+              sistemaEquipos={sistemaEquipos}
+              onCambiarModalidad={setModalidad}
+              onCambiarRuedas={setRuedas}
+              onCambiarSistema={setSistemaEquipos}
+              colorActivo="#f43f5e"
+            />
             <div style={{ marginBottom:14 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Nombre del torneo</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
@@ -272,13 +297,13 @@ export default function TorneosPage() {
                 type="number" min="0" step="1" placeholder="5000" value={cuota} onChange={e => setCuota(e.target.value)} />
             </div>
             <SelectorFormato
-              formatoGrupos={formatoGrupos}
-              formatoLlave={formatoLlave}
-              onCambiar={(fase, formato) => fase === 'grupos' ? setFormatoGrupos(formato) : setFormatoLlave(formato)}
+              fases={fasesDeSets(modalidad)}
+              valores={{ formato_grupos: formatoGrupos, formato_llave: formatoLlave }}
+              onCambiar={(campo, formato) => campo === 'formato_grupos' ? setFormatoGrupos(formato) : setFormatoLlave(formato)}
               colorActivo="#f43f5e"
             />
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => { setModalOpen(false); setFormatoGrupos('bo5'); setFormatoLlave('bo5') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
+              <button onClick={() => { setModalOpen(false); setFormatoGrupos('bo5'); setFormatoLlave('bo5'); setModalidad('grupos'); setRuedas(1); setSistemaEquipos('corbillon') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
                 Cancelar
               </button>
               <button onClick={crearTorneo} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>

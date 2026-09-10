@@ -15,6 +15,14 @@ export const CONFIG = {
   TORNEO_MAX_GRUPOS: 32,
   TORNEO_MAX_CLASIFICADOS: 64,
 
+  // Tope de una liguilla, donde los partidos crecen al cuadrado: 12 jugadores
+  // a ida y vuelta ya son 132, y 20 son 380. Sin tope, treinta inscritos a dos
+  // ruedas generan 870 partidos de una sentada.
+  //
+  // 200 deja pasar lo que un club de verdad juega —16 a una rueda son 120, y
+  // 12 a ida y vuelta 132— y frena lo que sería un error de dedo.
+  LIGUILLA_MAX_PARTIDOS: 200,
+
   FASES_ORDEN: ['avance', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'final'] as const,
 
   FASE_LABELS: {

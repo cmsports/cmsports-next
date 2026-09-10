@@ -1,5 +1,6 @@
 'use client'
 import { FORMATO_LABEL, FORMATO_EXPLICACION, FORMATOS, type FormatoPartido } from '@/lib/domain/marcador'
+import { type CampoFormato, type FaseDeSets } from '@/lib/domain/modalidadTorneo'
 
 // A cuántos sets se juega el torneo, elegido al crearlo.
 //
@@ -11,25 +12,36 @@ import { FORMATO_LABEL, FORMATO_EXPLICACION, FORMATOS, type FormatoPartido } fro
 // La explicación va escrita al lado y no en el manual: quien crea el torneo
 // tiene que ver ahí mismo qué significa lo que está eligiendo, porque después
 // no se puede cambiar sin invalidar los marcadores ya cargados.
+//
+// ── Por qué las fases ahora llegan por prop (migración 264) ────────────────
+//
+// Hasta las modalidades, este componente preguntaba siempre por "Fase de
+// grupos" y "Llave (playoffs)", que eran las dos que existían. Una liguilla no
+// tiene ninguna de las dos: se juega todo de una y no hay playoffs. Un torneo
+// por equipos, tampoco.
+//
+// Así que qué preguntar —cuántas veces y con qué nombre— lo decide la
+// modalidad, en `fasesDeSets()`. El componente solo lo pinta.
 
 const FILA = { display: 'flex', gap: 8 } as const
 
 export default function SelectorFormato({
-  formatoGrupos,
-  formatoLlave,
+  fases,
+  valores,
   onCambiar,
   colorActivo = '#7c3aed',
 }: {
-  formatoGrupos: FormatoPartido
-  formatoLlave: FormatoPartido
-  onCambiar: (fase: 'grupos' | 'llave', formato: FormatoPartido) => void
+  /** Qué selectores mostrar y cómo llamarlos. Sale de `fasesDeSets(modalidad)`. */
+  fases: ReadonlyArray<FaseDeSets>
+  valores: Record<CampoFormato, FormatoPartido>
+  onCambiar: (campo: CampoFormato, formato: FormatoPartido) => void
   colorActivo?: string
 }) {
-  const boton = (fase: 'grupos' | 'llave', formato: FormatoPartido, activo: boolean) => (
+  const boton = (campo: CampoFormato, formato: FormatoPartido, activo: boolean) => (
     <button
-      key={`${fase}-${formato}`}
+      key={`${campo}-${formato}`}
       type="button"
-      onClick={() => onCambiar(fase, formato)}
+      onClick={() => onCambiar(campo, formato)}
       title={FORMATO_EXPLICACION[formato]}
       style={{
         flex: 1,
@@ -53,19 +65,23 @@ export default function SelectorFormato({
         ¿Al mejor de cuántos sets?
       </label>
 
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Fase de grupos</div>
-        <div style={FILA}>{FORMATOS.map(f => boton('grupos', f, formatoGrupos === f))}</div>
-      </div>
-
-      <div>
-        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Llave (playoffs)</div>
-        <div style={FILA}>{FORMATOS.map(f => boton('llave', f, formatoLlave === f))}</div>
-      </div>
+      {fases.map((fase, i) => (
+        <div key={fase.campo} style={{ marginBottom: i < fases.length - 1 ? 8 : 0 }}>
+          {/* Con un solo selector el subtítulo sobra: la etiqueta de arriba ya
+              dice todo y repetirlo agrega ruido a un formulario de teléfono. */}
+          {fases.length > 1 && (
+            <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>{fase.label}</div>
+          )}
+          <div style={FILA}>
+            {FORMATOS.map(f => boton(fase.campo, f, valores[fase.campo] === f))}
+          </div>
+        </div>
+      ))}
 
       <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.5 }}>
-        Grupos: {FORMATO_EXPLICACION[formatoGrupos]}. Llave: {FORMATO_EXPLICACION[formatoLlave]}.
-        {formatoGrupos === 'bo3' && ' Al mejor de 3 los grupos duran bastante menos, y el desempate a tres se decide más seguido por los puntos de cada set.'}
+        {fases.map(f => `${f.label}: ${FORMATO_EXPLICACION[valores[f.campo]]}`).join('. ')}.
+        {fases.some(f => valores[f.campo] === 'bo3') &&
+          ' Al mejor de 3 se juega bastante menos, y el desempate a tres se decide más seguido por los puntos de cada set.'}
       </div>
     </div>
   )

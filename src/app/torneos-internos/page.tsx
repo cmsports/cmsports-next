@@ -10,6 +10,7 @@ import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
 import SelectorFormato from '@/components/torneos/SelectorFormato'
+import { fasesDeSets } from '@/lib/domain/modalidadTorneo'
 import { type FormatoPartido } from '@/lib/domain/marcador'
 
 const supabase = createClient()
@@ -536,10 +537,13 @@ export default function TorneosInternosPage() {
                 style={{ width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', color: text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
+            {/* El torneo interno es siempre el tradicional: no lleva selector
+                de modalidad y sus dos fases son las de siempre. Decisión del
+                2026-09-09, y `crearTorneo` la hace cumplir en el servidor. */}
             <SelectorFormato
-              formatoGrupos={formatoGrupos}
-              formatoLlave={formatoLlave}
-              onCambiar={(fase, formato) => fase === 'grupos' ? setFormatoGrupos(formato) : setFormatoLlave(formato)}
+              fases={fasesDeSets('grupos')}
+              valores={{ formato_grupos: formatoGrupos, formato_llave: formatoLlave }}
+              onCambiar={(campo, formato) => campo === 'formato_grupos' ? setFormatoGrupos(formato) : setFormatoLlave(formato)}
             />
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado(''); setFormCategoriaAbierto(false); setTextoCategoriaNueva(''); setFormatoGrupos('bo5'); setFormatoLlave('bo5') }}
