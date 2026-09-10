@@ -46,7 +46,7 @@
 -- reemplazo: la existente no cambia en nada.
 --
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
--- Corrida el: ____________  (anotar la fecha al aplicarla)
+-- Corrida el: 2026-09-09 hora de Chile (queda como 2026-09-10 en _migraciones_aplicadas, que guarda UTC)
 
 BEGIN;
 SELECT _migracion_nueva('266_torneos_por_equipos');
