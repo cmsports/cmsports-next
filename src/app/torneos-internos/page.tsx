@@ -396,9 +396,15 @@ export default function TorneosInternosPage() {
         )}
       </div>
 
+      {/* `maxHeight` + `overflowY` en la tarjeta, y padding en el fondo. Sin
+          eso, un formulario más alto que la ventana —el de torneo interno lo
+          es: categoría, género, nombre, fecha, cuota y sets— se desborda por
+          arriba y por abajo, y como el fondo es `fixed` no hay forma de hacer
+          scroll: el botón de crear queda fuera de alcance. Mismo patrón que
+          `/credenciales`. */}
       {modalOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}>
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 28, width: '100%', maxWidth: 420, maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize: 17, fontWeight: 600, color: text, marginBottom: 6 }}>Nuevo torneo interno</div>
             <div style={{ fontSize: 12, color: muted, marginBottom: 20 }}>Los resultados se acumularán en el Ranking del club por categoría</div>
             <div style={{ marginBottom: 14 }}>

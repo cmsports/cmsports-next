@@ -263,10 +263,14 @@ export default function TorneosPage() {
         )}
       </div>
 
-      {/* Modal nuevo torneo */}
+      {/* Modal nuevo torneo.
+          Mismo arreglo que en torneos internos: con el selector de modalidad
+          este formulario creció —cuatro tipos, más ruedas o sistema según el
+          elegido— y sin `maxHeight` se desborda de la ventana sin dejar
+          scroll, dejando el botón de crear fuera de alcance. */}
       {modalOpen && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100 }}>
-          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.35)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:16 }}>
+          <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:420, maxHeight:'86vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize:17, fontWeight:600, color: text, marginBottom:6 }}>Nuevo torneo</div>
             <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Los jugadores se inscriben el día del torneo en la mesa de inscripción</div>
             {/* Va arriba de todo porque decide qué campos vienen abajo. Con el
