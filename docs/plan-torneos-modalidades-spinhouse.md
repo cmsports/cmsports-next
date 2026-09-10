@@ -378,12 +378,31 @@ Esto ya estaba anticipado en `docs/plan-spinhouse-implementacion.md` §3.8:
 va a ser "una de las cuatro modalidades", porque es lo que el club pidió; **por
 dentro es un módulo con sus propias tablas**, y por eso va última y sola.
 
-⚠️ **Y arrastra al resto del sistema.** El supuesto "un partido es entre dos
-jugadores" no vive solo en la tabla: lo asumen el ranking interno, el marcador en
-vivo, los exportes a Excel y PDF, y la ficha del jugador. Un partido de dobles
-que llegue a `rankingInterno.ts` sin que nadie lo haya pensado va a sumar puntos
-raros o reventar. **Cada uno de esos consumidores hay que revisarlo uno por uno**,
-y es lo que hace que esta modalidad valga por las otras dos juntas.
+⚠️ **Arrastra a parte del sistema, pero menos de lo que este plan decía.**
+
+Acá estaba escrito que había que revisar `rankingInterno.ts` porque un dobles le
+llegaría sin que nadie lo hubiera pensado. **Es falso, y lo corrigió el usuario
+el 2026-09-09.** La consulta que alimenta el ranking filtra
+`.eq('tipo', 'interno')` (`src/app/ranking/page.tsx:111`), y las modalidades
+solo existen en torneo **externo** — validado en el servidor, no en el
+formulario. **El ranking no puede ver un partido por equipos jamás.**
+
+Lo que sí queda por revisar, porque no filtran por tipo y leen `jugador_a` /
+`jugador_b` sin preguntar de dónde vienen:
+
+| Consumidor | ¿Filtra por tipo? | ¿Lo afecta? |
+|---|---|---|
+| Ranking interno | `.eq('tipo','interno')` | **no, nunca** |
+| Marcador en vivo (`/vivo/[codigo]`) | no | sí |
+| Exportes a Excel y PDF | no | sí |
+
+A los dos últimos, un dobles les mostraría **un solo jugador por lado**. No es
+urgente —no puede existir un torneo por equipos hasta que haya pantalla— pero va
+antes de encender el módulo.
+
+> La lección de este cambio no es sobre equipos: es que **la lista de
+> consumidores en riesgo se verifica leyendo sus consultas**, no enumerando de
+> memoria lo que "parece" que toca partidos.
 
 **Costo: alto.** Tablas nuevas, alineación, corte anticipado, dobles, y una
 revisión de todo lo que hoy lee partidos.
@@ -793,11 +812,11 @@ Supabase, y el sistema elegible al crear el torneo.
 generar el fixture de encuentros, declarar la alineación de cada encuentro,
 cargar los cinco resultados y cerrar el encuentro al llegar a 3.
 
-⚠️ **Y falta la revisión de §2.4**, que es lo que hace cara esta fase: el
-supuesto "un partido es entre dos jugadores" también lo asumen el ranking
-interno, el marcador en vivo, los 14 exportes y la ficha del jugador. Un dobles
-que llegue a `rankingInterno.ts` sin que nadie lo haya pensado suma puntos raros
-o revienta. **Hay que revisarlos uno por uno antes de encender el módulo.**
+⚠️ **Y falta la revisión de §2.4**, ya acotada a lo que de verdad corre riesgo:
+el **marcador en vivo** y los **exportes**, que no filtran por tipo de torneo y
+leen `jugador_a` / `jugador_b` sin preguntar. A un dobles le mostrarían un solo
+jugador por lado. **El ranking NO está en esta lista** — filtra por torneo
+interno y las modalidades son solo de externo.
 
 **Criterio de salida:** un encuentro 3-0 deja los partidos 4 y 5 sin jugar y no
 rompe ningún reporte; el ranking no cuenta un dobles como individual.
