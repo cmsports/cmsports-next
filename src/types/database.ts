@@ -590,6 +590,12 @@ export interface Database {
           // 'interno' | 'externo' (migración 055). Los internos disputan el
           // partido por el 3er lugar.
           tipo: string | null
+          // Cuántas vueltas juega una liguilla, 1 o 2 (migración 264). Las
+          // demás modalidades la ignoran.
+          ruedas: number
+          // Solo para la modalidad equipos: 'swaythling' | 'corbillon'
+          // (migración 266). NULL en las demás.
+          sistema_equipos: string | null
         }
         Insert: {
           id?: string
@@ -777,6 +783,15 @@ export interface Database {
           slot_b_posicion: number | null
           orden: number | null
           creado_en: string | null
+          // Equipos (migración 266). Las cuatro nullable: un partido individual
+          // las deja en NULL y toda consulta de hoy sigue leyendo jugador_a y
+          // jugador_b como siempre.
+          encuentro_id: string | null
+          /** Segundo jugador del lado A. Solo en el dobles de un encuentro. */
+          jugador_a2: string | null
+          jugador_b2: string | null
+          /** Posición dentro del encuentro, 1 a 5. */
+          numero_en_encuentro: number | null
         }
         Insert: {
           id?: string
@@ -1131,6 +1146,127 @@ export interface Database {
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },
           { foreignKeyName: 'solicitudes_jugador_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+        ]
+      }
+      // Equipos (migración 266). Van en tablas propias porque el módulo entero
+      // asume que un partido es entre DOS JUGADORES, y acá el participante es
+      // un equipo, un encuentro contiene cinco partidos y uno puede ser dobles.
+      torneo_equipos: {
+        Row: {
+          id: string
+          torneo_id: string
+          nombre: string
+          club_procedencia: string | null
+          orden: number
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          torneo_id: string
+          nombre: string
+          club_procedencia?: string | null
+          orden?: number
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          torneo_id?: string
+          nombre?: string
+          club_procedencia?: string | null
+          orden?: number
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'torneo_equipos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+        ]
+      }
+      torneo_equipo_jugadores: {
+        Row: {
+          equipo_id: string
+          jugador_id: string
+          /** Alineación por defecto: 0 = A, 1 = B, 2 = C. La de cada encuentro
+           *  se declara aparte, porque un equipo puede alinear distinto contra
+           *  dos rivales. */
+          orden: number
+        }
+        Insert: {
+          equipo_id: string
+          jugador_id: string
+          orden?: number
+        }
+        Update: {
+          equipo_id?: string
+          jugador_id?: string
+          orden?: number
+        }
+        Relationships: [
+          { foreignKeyName: 'torneo_equipo_jugadores_equipo_id_fkey'; columns: ['equipo_id']; referencedRelation: 'torneo_equipos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_equipo_jugadores_jugador_id_fkey'; columns: ['jugador_id']; referencedRelation: 'jugadores'; referencedColumns: ['id'] },
+        ]
+      }
+      torneo_equipos_cabezas: {
+        Row: {
+          torneo_id: string
+          equipo_id: string
+          numero: number
+          creado_en: string
+        }
+        Insert: {
+          torneo_id: string
+          equipo_id: string
+          numero: number
+          creado_en?: string
+        }
+        Update: {
+          torneo_id?: string
+          equipo_id?: string
+          numero?: number
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'torneo_equipos_cabezas_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_equipos_cabezas_equipo_id_fkey'; columns: ['equipo_id']; referencedRelation: 'torneo_equipos'; referencedColumns: ['id'] },
+        ]
+      }
+      torneo_encuentros: {
+        Row: {
+          id: string
+          torneo_id: string
+          fase: string
+          orden: number
+          equipo_a_id: string | null
+          equipo_b_id: string | null
+          /** 'swaythling' | 'corbillon' */
+          sistema: string
+          ganador_equipo_id: string | null
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          torneo_id: string
+          fase: string
+          orden?: number
+          equipo_a_id?: string | null
+          equipo_b_id?: string | null
+          sistema: string
+          ganador_equipo_id?: string | null
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          torneo_id?: string
+          fase?: string
+          orden?: number
+          equipo_a_id?: string | null
+          equipo_b_id?: string | null
+          sistema?: string
+          ganador_equipo_id?: string | null
+          creado_en?: string
+        }
+        Relationships: [
+          { foreignKeyName: 'torneo_encuentros_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_encuentros_equipo_a_id_fkey'; columns: ['equipo_a_id']; referencedRelation: 'torneo_equipos'; referencedColumns: ['id'] },
+          { foreignKeyName: 'torneo_encuentros_equipo_b_id_fkey'; columns: ['equipo_b_id']; referencedRelation: 'torneo_equipos'; referencedColumns: ['id'] },
         ]
       }
       torneo_cabezas_serie: {

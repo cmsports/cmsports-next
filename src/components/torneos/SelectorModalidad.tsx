@@ -5,6 +5,12 @@ import {
   usaRuedas,
   type ModalidadTorneo,
 } from '@/lib/domain/modalidadTorneo'
+import {
+  SISTEMAS,
+  SISTEMA_EXPLICACION,
+  minJugadoresPorEquipo,
+  type SistemaEquipos,
+} from '@/lib/domain/torneoEquipos'
 
 // Cómo se corre el torneo, elegido al crearlo.
 //
@@ -31,15 +37,19 @@ export default function SelectorModalidad({
   disponibles,
   modalidad,
   ruedas,
+  sistemaEquipos,
   onCambiarModalidad,
   onCambiarRuedas,
+  onCambiarSistema,
   colorActivo = '#7c3aed',
 }: {
   disponibles: ReadonlyArray<ModalidadTorneo>
   modalidad: ModalidadTorneo
   ruedas: 1 | 2
+  sistemaEquipos: SistemaEquipos
   onCambiarModalidad: (modalidad: ModalidadTorneo) => void
   onCambiarRuedas: (ruedas: 1 | 2) => void
+  onCambiarSistema: (sistema: SistemaEquipos) => void
   colorActivo?: string
 }) {
   if (disponibles.length < 2) return null
@@ -117,6 +127,49 @@ export default function SelectorModalidad({
             {ruedas === 2
               ? 'Ojo: ida y vuelta duplica los partidos. Con 12 inscritos son 132 en vez de 66.'
               : 'Con 12 inscritos son 66 partidos.'}
+          </div>
+        </div>
+      )}
+
+      {modalidad === 'equipos' && (
+        <div style={{ marginTop: 10, borderLeft: `2px solid ${colorActivo}`, paddingLeft: 10 }}>
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 5 }}>¿Qué sistema?</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {SISTEMAS.map(s => {
+              const activo = s === sistemaEquipos
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onCambiarSistema(s)}
+                  title={SISTEMA_EXPLICACION[s]}
+                  style={{
+                    flex: 1,
+                    background: activo ? colorActivo : '#f4f7fa',
+                    color: activo ? '#fff' : '#64748b',
+                    border: `1px solid ${activo ? colorActivo : '#e2e8f0'}`,
+                    borderRadius: 8,
+                    padding: '8px 6px',
+                    fontSize: 12,
+                    fontWeight: activo ? 700 : 500,
+                    cursor: 'pointer',
+                    lineHeight: 1.3,
+                  }}
+                >
+                  {s === 'swaythling' ? 'Swaythling' : 'Corbillon'}
+                  <div style={{ fontSize: 10, fontWeight: 400, color: activo ? '#fff' : '#94a3b8', marginTop: 2 }}>
+                    {s === 'swaythling' ? '5 individuales' : '4 y un dobles'}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          {/* El mínimo de jugadores es lo que de verdad decide cuál se puede
+              jugar: con Corbillon alcanzan dos por equipo. */}
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>
+            {SISTEMA_EXPLICACION[sistemaEquipos]}. Cada equipo necesita al menos{' '}
+            {minJugadoresPorEquipo(sistemaEquipos)} jugadores. El encuentro se juega al mejor de 5:
+            termina apenas un equipo gana 3.
           </div>
         </div>
       )}

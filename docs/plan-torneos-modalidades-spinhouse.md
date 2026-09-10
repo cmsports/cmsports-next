@@ -768,10 +768,36 @@ grupo", que no significaría nada sin grupos.
 - Con 16 inscritos y 4 sembrados, los seeds 1 y 2 **no pueden cruzarse antes de
   la final** del cuadro principal.
 
-### Fase D — Por equipos
+### Fase D — Por equipos 🔨 a mitad (2026-09-09)
 
-Tablas nuevas, alineación por encuentro, corte en 3, dobles. Y la revisión uno por
-uno de todo lo que hoy lee partidos (§2.4).
+**Hecho:** el dominio completo (`src/lib/domain/torneoEquipos.ts`, 30 pruebas),
+la migración **266** con las cuatro tablas y las columnas nullable, los tipos de
+Supabase, y el sistema elegible al crear el torneo.
+
+- `CRUCES` fija el orden de los cinco partidos de cada sistema, **como constante
+  y no como configuración**: si se pudiera cambiar, el torneo dejaría de ser
+  Swaythling. Una prueba comprueba que nadie juega dos veces seguidas, que es
+  para lo que ese orden existe.
+- `resultadoEncuentro()` corta en 3 y devuelve **qué partidos ya no hace falta
+  jugar**. Un 3-0 deja los partidos 4 y 5 sin jugar y eso es el resultado
+  correcto, no un encuentro a medias — cualquier reporte que cuente partidos
+  jugados tiene que contar con ello.
+- `validarAlineacion()` se aplica antes de generar los partidos, porque de ahí
+  salen: una alineación con un hueco genera un partido sin rival que después
+  nadie sabe cerrar.
+- **Corbillon es el default.** Admite equipos de dos jugadores y Swaythling
+  exige tres; en un club donde armar tríos cuesta, el default tiene que ser el
+  que se puede jugar.
+
+**Falta, y es una pantalla entera:** crear equipos y asignar sus jugadores,
+generar el fixture de encuentros, declarar la alineación de cada encuentro,
+cargar los cinco resultados y cerrar el encuentro al llegar a 3.
+
+⚠️ **Y falta la revisión de §2.4**, que es lo que hace cara esta fase: el
+supuesto "un partido es entre dos jugadores" también lo asumen el ranking
+interno, el marcador en vivo, los 14 exportes y la ficha del jugador. Un dobles
+que llegue a `rankingInterno.ts` sin que nadie lo haya pensado suma puntos raros
+o revienta. **Hay que revisarlos uno por uno antes de encender el módulo.**
 
 **Criterio de salida:** un encuentro 3-0 deja los partidos 4 y 5 sin jugar y no
 rompe ningún reporte; el ranking no cuenta un dobles como individual.

@@ -26,6 +26,7 @@ import {
   type ModalidadTorneo,
 } from '@/lib/domain/modalidadTorneo'
 import { generarLiguilla, partidosDeLiguilla } from '@/lib/domain/torneoLiguilla'
+import { sistemaDe, type SistemaEquipos } from '@/lib/domain/torneoEquipos'
 import {
   consolacionLista,
   elegiblesParaConsolacion,
@@ -173,6 +174,8 @@ export async function crearTorneo(params: {
   modalidad?: ModalidadTorneo
   /** Cuántas vueltas juega una liguilla. Las demás modalidades la ignoran. */
   ruedas?: number
+  /** Swaythling o Corbillon. Solo lo mira la modalidad por equipos. */
+  sistemaEquipos?: SistemaEquipos
 }) {
   const { error: authErr, supabase, perfil } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -226,6 +229,9 @@ export async function crearTorneo(params: {
     formato_llave: formatoDe(params.formatoLlave),
     // Solo la liguilla la mira; en el resto queda en 1 y nadie la lee.
     ruedas: usaRuedas(modalidad) ? ruedasDe(params.ruedas) : 1,
+    // NULL fuera de la modalidad por equipos: un torneo que no es de equipos no
+    // tiene por qué declarar un sistema, y el CHECK de la 266 lo permite así.
+    sistema_equipos: modalidad === 'equipos' ? sistemaDe(params.sistemaEquipos) : null,
   }).select('id').single()
 
   if (error || !data) return { error: error?.message || 'No se pudo crear el torneo' }

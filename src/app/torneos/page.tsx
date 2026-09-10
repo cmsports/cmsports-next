@@ -9,6 +9,7 @@ import SelectorFormato from '@/components/torneos/SelectorFormato'
 import SelectorModalidad from '@/components/torneos/SelectorModalidad'
 import { type FormatoPartido } from '@/lib/domain/marcador'
 import { fasesDeSets, modalidadesDisponibles, type ModalidadTorneo } from '@/lib/domain/modalidadTorneo'
+import { type SistemaEquipos } from '@/lib/domain/torneoEquipos'
 import { useModulos } from '@/lib/hooks/useModulos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useTextoMonto } from '@/components/Monto'
@@ -34,6 +35,8 @@ export default function TorneosPage() {
   const [formatoLlave, setFormatoLlave] = useState<FormatoPartido>('bo5')
   const [modalidad, setModalidad] = useState<ModalidadTorneo>('grupos')
   const [ruedas, setRuedas] = useState<1 | 2>(1)
+  // Corbillon por defecto: admite equipos de dos, y Swaythling exige tres.
+  const [sistemaEquipos, setSistemaEquipos] = useState<SistemaEquipos>('corbillon')
   const [mostrarArchivados, setMostrarArchivados] = useState(false)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
@@ -111,11 +114,11 @@ export default function TorneosPage() {
     if (!nombre || !fecha) return
     const monto = Number(cuota)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
-    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, formatoGrupos, formatoLlave, modalidad, ruedas })
+    const res = await crearTorneoAction({ nombre, fecha, cuota: monto, formatoGrupos, formatoLlave, modalidad, ruedas, sistemaEquipos })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
     setNombre(''); setFecha(''); setCuota('0')
-    setModalidad('grupos'); setRuedas(1)
+    setModalidad('grupos'); setRuedas(1); setSistemaEquipos('corbillon')
     router.push(`/torneos/${res.torneoId}`)
   }
 
@@ -272,8 +275,10 @@ export default function TorneosPage() {
               disponibles={modalidades}
               modalidad={modalidad}
               ruedas={ruedas}
+              sistemaEquipos={sistemaEquipos}
               onCambiarModalidad={setModalidad}
               onCambiarRuedas={setRuedas}
+              onCambiarSistema={setSistemaEquipos}
               colorActivo="#f43f5e"
             />
             <div style={{ marginBottom:14 }}>
@@ -298,7 +303,7 @@ export default function TorneosPage() {
               colorActivo="#f43f5e"
             />
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={() => { setModalOpen(false); setFormatoGrupos('bo5'); setFormatoLlave('bo5'); setModalidad('grupos'); setRuedas(1) }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
+              <button onClick={() => { setModalOpen(false); setFormatoGrupos('bo5'); setFormatoLlave('bo5'); setModalidad('grupos'); setRuedas(1); setSistemaEquipos('corbillon') }} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:14, cursor:'pointer' }}>
                 Cancelar
               </button>
               <button onClick={crearTorneo} style={{ flex:1, padding:11, background:'#f43f5e', border:'none', borderRadius:8, color:'white', fontSize:14, fontWeight:600, cursor:'pointer' }}>
