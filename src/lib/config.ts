@@ -32,12 +32,38 @@ export const CONFIG = {
   // de mandar a cambiar de formato.
   LIGUILLA_MAX_PARTIDOS: 500,
 
-  FASES_ORDEN: ['avance', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'final'] as const,
+  // Tope de partidos de la fase de grupos del torneo tradicional.
+  //
+  // Hasta la auditoría del 2026-09-10 el tradicional NO tenía tope real:
+  // `calcularNumGrupos` capa en 32 grupos, así que la validación que existía
+  // —"más de 32 grupos"— nunca podía dispararse. Pasados los ~96 inscritos lo
+  // que crece es el tamaño de cada grupo, y los partidos con su cuadrado:
+  // 300 inscritos daban 32 grupos de ~9 y más de mil partidos, en silencio.
+  //
+  // 600 deja pasar unos 200 inscritos (grupos de ~6) y frena lo que ningún club
+  // puede jugar. Se mide en partidos y no en jugadores porque es lo que de
+  // verdad duele: 32 grupos de 3 son 96 partidos y 32 de 8 son 896.
+  GRUPOS_MAX_PARTIDOS: 600,
+
+  // El camino del cuadro, de la ronda más grande a la final.
+  //
+  // Hasta el 2026-09-10 empezaba en '32vos', y eso le ponía un techo invisible:
+  // `determinarFaseInicial` devuelve la primera fase que cubre el tamaño, pero
+  // como no había nada más arriba, TODO cuadro mayor a 64 caía igual en '32vos'
+  // y el camino quedaba corto. Con 65 inscritos el torneo terminaba con DOS
+  // partidos en 'final'; con 129, con cuatro. No daba error: daba dos campeones.
+  //
+  // Con '64vos' y '128vos' el cuadro llega hasta 256 inscritos, que es techo de
+  // sobra para un club de 140. Agregarlas al principio no toca a nadie:
+  // `siguienteFase('32vos')` sigue siendo '16vos'.
+  FASES_ORDEN: ['avance', '128vos', '64vos', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'final'] as const,
 
   FASE_LABELS: {
     inscripcion: 'Inscripcion',
     grupos: 'Fase de grupos',
     avance: 'Llave de avance',
+    '128vos': '128vos de final',
+    '64vos': '64vos de final',
     '32vos': '32vos de final',
     '16vos': '16vos de final',
     '8vos': '8vos de final',

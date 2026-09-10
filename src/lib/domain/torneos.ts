@@ -146,6 +146,28 @@ export function calcularNumGruposTardios(total: number): number {
   return Math.ceil(total / 4)
 }
 
+/**
+ * Cuántos partidos genera la fase de grupos, exacto.
+ *
+ * ⚠️ Existe porque el torneo tradicional **no tenía tope real de jugadores**.
+ * `calcularNumGrupos` ya capa en `TORNEO_MAX_GRUPOS`, así que la validación
+ * `numGrupos > TORNEO_MAX_GRUPOS` que había en `cerrarInscripcionYGenerarGrupos`
+ * no podía dispararse nunca: era código muerto. Pasado ese tope lo que crece no
+ * es la cantidad de grupos sino su TAMAÑO, y los partidos con el cuadrado de
+ * ese tamaño: 300 inscritos son 32 grupos de ~9 y más de mil partidos, sin que
+ * nadie avise. (Auditoría del 2026-09-10.)
+ *
+ * Cuenta el reparto real —unos grupos con uno más que otros— en vez de asumir
+ * que todos miden lo mismo.
+ */
+export function partidosDeGrupos(numJugadores: number, numGrupos: number): number {
+  if (numGrupos <= 0 || numJugadores <= 0) return 0
+  const base = Math.floor(numJugadores / numGrupos)
+  const conUnoMas = numJugadores % numGrupos
+  const roundRobin = (k: number) => (k * (k - 1)) / 2
+  return conUnoMas * roundRobin(base + 1) + (numGrupos - conUnoMas) * roundRobin(base)
+}
+
 export function nombreGrupo(indice: number): string {
   let numero = indice + 1
   let nombre = ''
@@ -1323,14 +1345,42 @@ export function calcularTamanoBracket(numClasificados: number): number {
   return tam
 }
 
+/**
+ * La fase con la que arranca un cuadro de `tamanoBracket` lugares.
+ *
+ * ⚠️ **El último `return` es un techo, no un cajón de sastre.** Antes devolvía
+ * '32vos' para cualquier tamaño mayor a 32, y como no había fases más grandes,
+ * un cuadro de 128 arrancaba en '32vos' y llegaba a 'final' con DOS partidos:
+ * el torneo daba dos campeones sin dar un solo error. Ahora `FASES_ORDEN` llega
+ * a '128vos' (cuadro de 256) y `maxCuadroSoportado()` dice dónde está el borde,
+ * para que quien genere un cuadro lo compruebe ANTES en vez de descubrirlo el
+ * día del torneo.
+ */
 export function determinarFaseInicial(tamanoBracket: number): FaseOrden {
   if (tamanoBracket <= 2) return 'final'
   if (tamanoBracket <= 4) return 'semis'
   if (tamanoBracket <= 8) return 'cuartos'
   if (tamanoBracket <= 16) return '8vos'
   if (tamanoBracket <= 32) return '16vos'
-  return '32vos'
+  if (tamanoBracket <= 64) return '32vos'
+  if (tamanoBracket <= 128) return '64vos'
+  return '128vos'
 }
+
+/**
+ * El cuadro más grande que el camino de fases puede recorrer entero.
+ *
+ * Sale de `FASES_ORDEN` en vez de estar escrito a mano: si mañana se agrega
+ * '256vos', el tope sube solo y nadie tiene que acordarse de este número.
+ * ('avance' no cuenta: es una ronda previa, no un paso del camino.)
+ */
+export function maxCuadroSoportado(): number {
+  const pasos = CONFIG.FASES_ORDEN.filter(f => f !== 'avance').length
+  return 2 ** pasos
+}
+
+/** Cuántos participantes admite un cuadro sin pasarse del camino de fases. */
+export const MAX_JUGADORES_EN_CUADRO = maxCuadroSoportado()
 
 export function siguienteFase(faseActual: FaseOrden): FaseOrden | null {
   const idx = CONFIG.FASES_ORDEN.indexOf(faseActual)

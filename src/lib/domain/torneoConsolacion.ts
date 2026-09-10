@@ -53,6 +53,8 @@ import { CONFIG, type FaseOrden } from '../config'
 /** Las fases del cuadro de consuelo, en el mismo orden que las del principal. */
 export const FASES_CONSOLACION: Record<FaseOrden, string> = {
   avance: 'cons_avance',
+  '128vos': 'cons_128vos',
+  '64vos': 'cons_64vos',
   '32vos': 'cons_32vos',
   '16vos': 'cons_16vos',
   '8vos': 'cons_8vos',
@@ -71,6 +73,8 @@ export function esFaseDeConsolacion(fase: string | null | undefined): boolean {
 /** Cómo se llama cada fase de consuelo en pantalla. */
 export const FASE_CONSOLACION_LABEL: Record<string, string> = {
   cons_avance: 'Consuelo · avance',
+  cons_128vos: 'Consuelo · 128vos',
+  cons_64vos: 'Consuelo · 64vos',
   cons_32vos: 'Consuelo · 32vos',
   cons_16vos: 'Consuelo · 16vos',
   cons_8vos: 'Consuelo · 8vos',

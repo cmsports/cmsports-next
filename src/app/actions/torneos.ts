@@ -6,7 +6,9 @@ import {
   generarRoundRobin,
   siguienteFase,
   construirLayoutPorRanking,
+  MAX_JUGADORES_EN_CUADRO,
   calcularNumGrupos,
+  partidosDeGrupos,
   calcularNumGruposTardios,
   calcularStatsGrupo,
   grupoTieneSusDosCuposDecididos,
@@ -647,10 +649,34 @@ async function sincronizarTercerLugarInterno(
  * ir más lejos— nunca dispararía el automatismo. Este botón cubre ese caso y
  * cualquier otro donde la fila haya que reponerla.
  */
+/**
+ * Rechaza una operación de cuadro en un torneo que no tiene cuadro.
+ *
+ * `volverAGrupos` y `abrirTercerLugar` no miraban la modalidad (auditoría del
+ * 2026-09-10): en una liguilla, "abrir el 3er lugar" habría creado un partido
+ * suelto que no pertenece a ninguna llave, y "volver a grupos" borra playoffs
+ * que no existen. Ninguna de las dos fallaba: hacían algo sin sentido.
+ */
+async function rechazarSiEsLiguilla(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  torneoId: string,
+  queHace: string,
+): Promise<string | null> {
+  const { data: t } = await supabase.from('torneos').select('formato').eq('id', torneoId).single()
+  if (modalidadDe(t?.formato) !== 'liguilla') return null
+  return `Una liguilla se define en la tabla de posiciones: no tiene llave, así que ${queHace}.`
+}
+
 export async function abrirTercerLugar(params: { torneoId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
   if (!esUuid(params.torneoId)) return { error: 'Torneo inválido' }
+
+  {
+    const no = await rechazarSiEsLiguilla(supabase, params.torneoId, 'no hay 3er lugar que disputar')
+    if (no) return { error: no }
+  }
 
   const err = await sincronizarTercerLugarInterno(supabase, params.torneoId)
   if (err) return { error: err }
@@ -1451,6 +1477,33 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     }
   }
 
+  // ── Techos de capacidad ──────────────────────────────────────────────────
+  // Los tres formatos crecen distinto y los tres tenían un borde donde se
+  // rompían en silencio (auditoría del 2026-09-10). Se comprueban ACÁ, antes de
+  // generar nada, porque después el club ya cerró la inscripción.
+
+  // El cuadro no puede pasar del camino de fases: un cuadro más grande arranca
+  // en la fase más alta que existe y llega a 'final' con más de un partido, o
+  // sea con más de un campeón, sin dar error.
+  if (esEliminacion && jugadores.length > MAX_JUGADORES_EN_CUADRO) {
+    return {
+      error: `Un cuadro de eliminación admite hasta ${MAX_JUGADORES_EN_CUADRO} jugadores y hay ${jugadores.length}. ` +
+        `Usá el formato tradicional de grupos, que reparte a todos antes de la llave.`,
+    }
+  }
+
+  if (!esLiguilla && !esEliminacion) {
+    const totalGrupos = partidosDeGrupos(jugadores.length, numGrupos)
+    if (totalGrupos > CONFIG.GRUPOS_MAX_PARTIDOS) {
+      const porGrupo = Math.round(jugadores.length / numGrupos)
+      return {
+        error: `Con ${jugadores.length} inscritos salen ${numGrupos} grupos de ~${porGrupo} jugadores, ` +
+          `o sea ${totalGrupos} partidos solo en la fase de grupos —más de los ${CONFIG.GRUPOS_MAX_PARTIDOS} ` +
+          `que soporta—. Conviene dividir el torneo en categorías.`,
+      }
+    }
+  }
+
   const ruedas = esLiguilla ? ruedasDe(torneoInfo?.ruedas) : 1
   if (esLiguilla) {
     const total = partidosDeLiguilla(jugadores.length, ruedas)
@@ -2005,6 +2058,11 @@ export async function volverAGrupos(params: { torneoId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
+  {
+    const no = await rechazarSiEsLiguilla(supabase, params.torneoId, 'no hay playoffs que deshacer')
+    if (no) return { error: no }
+  }
+
   const { torneoId } = params
 
   const { data: torneo } = await supabase.from('torneos').select('fase').eq('id', torneoId).single()
@@ -2042,9 +2100,87 @@ export async function volverAGrupos(params: { torneoId: string }) {
   return { success: true }
 }
 
+/**
+ * El podio de una liguilla, que sale de la tabla de posiciones y no de una final.
+ *
+ * ⚠️ Sin esto una liguilla **no se podía cerrar nunca**: `finalizarTorneo` exige
+ * un partido con `fase = 'final'` y una liguilla no tiene ninguno —todos sus
+ * partidos son de 'grupos'—, así que el botón de finalizar respondía siempre
+ * "La final debe estar completa" y el torneo quedaba abierto para siempre, sin
+ * campeón. Lo encontró la auditoría del 2026-09-10, y no lo cazó ninguna prueba
+ * porque todas miraban el formato por dentro y ninguna lo jugaba hasta el final.
+ *
+ * El orden lo decide `calcularStatsGrupo`, el mismo que pinta la tabla en
+ * pantalla: así el campeón es exactamente el que el club ve arriba.
+ */
+async function podioDeLiguilla(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  torneoId: string,
+): Promise<{ error: string } | { campeonId: string; subcampeonId: string; terceroId: string | null }> {
+  const { data: grupos } = await supabase
+    .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  const grupoIds = (grupos || []).map((g: { id: string }) => g.id)
+  if (!grupoIds.length) return { error: 'La liguilla todavía no tiene su calendario armado.' }
+
+  const [{ data: miembros }, { data: partidos }] = await Promise.all([
+    supabase.from('grupo_jugadores')
+      .select('jugador_id, orden, jugadores(id,nombre)').in('grupo_id', grupoIds),
+    supabase.from('torneo_partidos')
+      .select('jugador_a, jugador_b, ganador, sets_a, sets_b, puntos_a, puntos_b')
+      .eq('torneo_id', torneoId).eq('fase', 'grupos'),
+  ])
+
+  const sinJugar = (partidos || []).filter((p: { ganador: string | null }) => !p.ganador).length
+  if (sinJugar > 0) {
+    return { error: `Faltan ${sinJugar} partidos por jugar antes de cerrar la liguilla.` }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const jugadores: JugadorTorneo[] = (miembros || []).map((m: any) => {
+    const j = Array.isArray(m.jugadores) ? m.jugadores[0] : m.jugadores
+    return { id: m.jugador_id, nombre: j?.nombre ?? '' }
+  }).filter((j: JugadorTorneo) => !!j.id)
+
+  if (jugadores.length < 2) return { error: 'La liguilla no tiene jugadores inscritos.' }
+
+  const { stats } = calcularStatsGrupo(jugadores, partidos || [])
+  if (stats.length < 2) return { error: 'No se pudo calcular la tabla de posiciones.' }
+
+  return {
+    campeonId: stats[0].jugadorId,
+    subcampeonId: stats[1].jugadorId,
+    terceroId: stats[2]?.jugadorId ?? null,
+  }
+}
+
 export async function finalizarTorneo(params: { torneoId: string }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
+
+  // Una liguilla se define en la tabla, no en una final. Se resuelve acá y se
+  // sale antes de buscar un partido 'final' que no existe.
+  {
+    const { data: t } = await (supabase as any).from('torneos').select('formato').eq('id', params.torneoId).single()
+    if (modalidadDe(t?.formato) === 'liguilla') {
+      const podio = await podioDeLiguilla(supabase, params.torneoId)
+      if ('error' in podio) return { error: podio.error }
+
+      const { error } = await supabase.from('torneos').update({
+        estado: 'finalizado',
+        fase: 'finalizado',
+        fecha_fin: fechaChile(),
+        campeon_id: podio.campeonId,
+        subcampeon_id: podio.subcampeonId,
+        tercer_id: podio.terceroId,
+      }).eq('id', params.torneoId)
+      if (error) return { error: `No se pudo finalizar la liguilla: ${error.message}` }
+
+      const avisoLimpieza = await limpiarExternosDeTorneo(
+        params.torneoId, podio.campeonId, podio.subcampeonId, podio.terceroId)
+      return { success: true, ...(avisoLimpieza ? { aviso: avisoLimpieza } : {}) }
+    }
+  }
 
   const { data: final, error: finalError } = await supabase
     .from('torneo_partidos')

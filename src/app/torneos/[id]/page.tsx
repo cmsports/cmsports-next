@@ -813,6 +813,7 @@ export default function TorneoDetallePage() {
   // la columna en cualquier cosa rara, cae en 'grupos' y se ve como siempre.
   const modalidad = modalidadDe(torneo?.formato)
   const esLiguilla = modalidad === 'liguilla'
+  const esEliminacion = modalidad === 'eliminacion_consolacion'
 
   const partidosFaseActual = faseActual ? (partidosPorFase.get(faseActual) || []) : []
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
@@ -2195,7 +2196,15 @@ export default function TorneoDetallePage() {
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:10, marginBottom:16 }}>
               {(faseActual === 'inscripcion' ? [
                 { label:'Inscritos', value:jugadoresInscritos.length, color: text },
-                { label:'Grupos estimados', value:numGruposEstimados, color:'#3730a3' },
+                // En una liguilla no hay grupos que estimar —es uno solo con
+                // todos— y en eliminación directa tampoco: el cuadro se arma sin
+                // pasar por grupos. En esos casos lo útil es cuántos partidos
+                // van a salir.
+                esLiguilla
+                  ? { label:'Partidos', value:partidosLiguilla, color:'#3730a3' }
+                  : esEliminacion
+                    ? { label:'Cuadro de', value:calcularTamanoBracket(jugadoresInscritos.length), color:'#3730a3' }
+                    : { label:'Grupos estimados', value:numGruposEstimados, color:'#3730a3' },
                 { label:'Recaudado', value:fmt(recaudado), color:'#16a34a' },
               ] : [
                 { label:'Inscritos', value:totalInscritos, color: text },
