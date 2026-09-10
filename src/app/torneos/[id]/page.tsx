@@ -179,19 +179,6 @@ export default function TorneoDetallePage() {
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
 
-    // Las mesas de la sede, para poder decir cuántas tandas ocupa una fecha de
-    // liguilla. El dato ya existía (migración 251) y no se usaba acá.
-    //
-    // Se suman todas las sedes del club porque un torneo no declara sede: en un
-    // club de sede única —el caso de Spinhouse— es exactamente su número, y en
-    // uno con varias es el total disponible, que es lo más cercano a la verdad
-    // sin inventar un campo nuevo.
-    if (t?.club_id) {
-      const { data: mesasSedes } = await (supabase as any)
-        .from('sede_mesas').select('cantidad').eq('club_id', t.club_id)
-      setMesasDelClub((mesasSedes || []).reduce((n: number, m: any) => n + (m.cantidad ?? 0), 0))
-    }
-
     setTorneo(t)
     setGrupos(g || [])
     setPartidos(pts || [])
@@ -202,6 +189,29 @@ export default function TorneoDetallePage() {
     }))
     if (!cabezasDirtyRef.current) setCabezasNumeradasState(cabezasCargadas)
     setCabezasPersistidas(cabezasCargadas)
+
+    // Las mesas de la sede, para decir cuántas tandas ocupa una fecha de
+    // liguilla. El dato ya existía (migración 251) y esta pantalla no lo miraba.
+    //
+    // ⚠️ Va DESPUÉS de todos los `set` de arriba y dentro de un try, y eso no es
+    // cosmético: la primera versión lo puso antes, y cuando esa lectura falla
+    // —RLS, red, lo que sea— `cargarTorneo` se corta ahí y la pantalla entera
+    // queda sin torneo, sin grupos y sin partidos. Un dato accesorio nunca va
+    // en el camino crítico: si no llega, lo único que se pierde es la línea de
+    // tandas.
+    //
+    // Se suman todas las sedes del club porque un torneo no declara sede: en un
+    // club de sede única —el caso de Spinhouse— es exactamente su número.
+    try {
+      if (t?.club_id) {
+        const { data: mesasSedes } = await (supabase as any)
+          .from('sede_mesas').select('cantidad').eq('club_id', t.club_id)
+        setMesasDelClub((mesasSedes || []).reduce((n: number, m: any) => n + (m.cantidad ?? 0), 0))
+      }
+    } catch {
+      // Sin mesas la línea de tandas simplemente no se muestra.
+      setMesasDelClub(0)
+    }
 
     const todos = [...(gj || [])].sort((a: any, b: any) =>
       String(a.grupo_id ?? '').localeCompare(String(b.grupo_id ?? '')) ||
