@@ -36,7 +36,7 @@ import {
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket, fasesParaMostrar, derivarTercerLugar } from '@/lib/domain/torneos'
 import { MODALIDAD_LABEL, minParticipantes, modalidadDe, ruedasDe } from '@/lib/domain/modalidadTorneo'
-import { partidosDeLiguilla, rondasDeLiguilla } from '@/lib/domain/torneoLiguilla'
+import { partidosDeLiguilla, partidosPorFecha, rondasDeLiguilla, tandasPorFecha } from '@/lib/domain/torneoLiguilla'
 import { FASE_CONSOLACION_LABEL, esFaseDeConsolacion, fasesParaMostrarConConsuelo } from '@/lib/domain/torneoConsolacion'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
@@ -104,6 +104,8 @@ export default function TorneoDetallePage() {
   const [jugadorIdSeleccionado, setJugadorIdSeleccionado] = useState<string | null>(null)
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
   const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
+  /** Mesas de la sede, para decir cuántas tandas ocupa una fecha de liguilla. */
+  const [mesasDelClub, setMesasDelClub] = useState(0)
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
   const [guardandoMarcador, setGuardandoMarcador] = useState<string|null>(null)
   const [partidoPlayoffEditando, setPartidoPlayoffEditando] = useState<string|null>(null)
@@ -176,6 +178,19 @@ export default function TorneoDetallePage() {
       supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,club_procedencia,jugadores(id,nombre,es_externo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
+
+    // Las mesas de la sede, para poder decir cuántas tandas ocupa una fecha de
+    // liguilla. El dato ya existía (migración 251) y no se usaba acá.
+    //
+    // Se suman todas las sedes del club porque un torneo no declara sede: en un
+    // club de sede única —el caso de Spinhouse— es exactamente su número, y en
+    // uno con varias es el total disponible, que es lo más cercano a la verdad
+    // sin inventar un campo nuevo.
+    if (t?.club_id) {
+      const { data: mesasSedes } = await (supabase as any)
+        .from('sede_mesas').select('cantidad').eq('club_id', t.club_id)
+      setMesasDelClub((mesasSedes || []).reduce((n: number, m: any) => n + (m.cantidad ?? 0), 0))
+    }
 
     setTorneo(t)
     setGrupos(g || [])
@@ -801,6 +816,8 @@ export default function TorneoDetallePage() {
   const minimoInscritos = minParticipantes(modalidad)
   const partidosLiguilla = partidosDeLiguilla(jugadoresInscritos.length, ruedasTorneo)
   const fechasLiguilla = rondasDeLiguilla(jugadoresInscritos.length, ruedasTorneo)
+  const porFechaLiguilla = partidosPorFecha(jugadoresInscritos.length)
+  const tandasLiguilla = tandasPorFecha(jugadoresInscritos.length, mesasDelClub)
 
   // El cuadro puede existir (parcialmente lleno) mientras la fase sigue siendo
   // "grupos": mostramos las pestañas y el bracket también en ese caso.
@@ -2382,7 +2399,22 @@ export default function TorneoDetallePage() {
                       ? `✓ Cerrar inscripción · ${partidosLiguilla} partidos en ${fechasLiguilla} fechas`
                       : `✓ ${cabezasConCambios ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · generar ${numGruposEstimados} grupos`}
               </button>
-            ) : esLiguilla ? (
+            ) : null}
+
+            {/* Cuánto ocupa una fecha, que es lo que decide si el formato sirve.
+                Solo con mesas cargadas: sin ellas el dato no existe, y un
+                "0 tandas" se leería como información en vez de como ausencia. */}
+            {faseActual === 'inscripcion' && esLiguilla && jugadoresInscritos.length >= minimoInscritos && (
+              <div style={{ fontSize:11, color: hint, textAlign:'center', marginTop:8, lineHeight:1.6 }}>
+                {porFechaLiguilla} partidos por fecha
+                {tandasLiguilla > 0
+                  ? ` · ${tandasLiguilla} ${tandasLiguilla === 1 ? 'tanda' : 'tandas'} con ${mesasDelClub} ${mesasDelClub === 1 ? 'mesa' : 'mesas'}`
+                  : ' · cargá las mesas de la sede para saber cuántas tandas ocupa'}
+                {jugadoresInscritos.length % 2 === 1 && ' · descansa uno por fecha'}
+              </div>
+            )}
+
+            {faseActual === 'inscripcion' ? null : esLiguilla ? (
               // En una liguilla no hay grupos tardíos: el que llega después
               // tendría que jugar contra todos los que ya empezaron. La Action
               // también lo rechaza, pero ofrecer un botón que siempre falla es

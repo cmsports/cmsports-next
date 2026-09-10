@@ -3,6 +3,8 @@ import {
   generarLiguilla,
   maxJugadoresDeLiguilla,
   partidosDeLiguilla,
+  partidosPorFecha,
+  tandasPorFecha,
   rondasDeLiguilla,
   type PartidoLiguilla,
 } from './torneoLiguilla'
@@ -84,6 +86,41 @@ describe('cuántos inscritos entran en una liguilla', () => {
     expect(partidosDeLiguilla(30, 1)).toBe(435)
     expect(rondasDeLiguilla(30, 1)).toBe(29)
     expect(maxJugadoresDeLiguilla(CONFIG.LIGUILLA_MAX_PARTIDOS, 1)).toBeGreaterThanOrEqual(30)
+  })
+})
+
+// "435 partidos en 29 fechas" no le dice al club si el formato le sirve. Lo que
+// decide eso es cuánto ocupa UNA fecha, y para saberlo hacen falta las mesas.
+describe('cuánto ocupa una fecha', () => {
+  it('se juegan la mitad de los inscritos por fecha', () => {
+    expect(partidosPorFecha(20)).toBe(10)
+    expect(partidosPorFecha(30)).toBe(15)
+  })
+
+  it('con impares, uno descansa', () => {
+    expect(partidosPorFecha(21)).toBe(10)
+    expect(partidosPorFecha(7)).toBe(3)
+  })
+
+  it('las tandas son los partidos de la fecha repartidos entre las mesas', () => {
+    expect(tandasPorFecha(21, 4)).toBe(3)   // 10 partidos / 4 mesas
+    expect(tandasPorFecha(30, 4)).toBe(4)   // 15 / 4
+    expect(tandasPorFecha(30, 8)).toBe(2)   // 15 / 8
+    expect(tandasPorFecha(8, 4)).toBe(1)    // 4 / 4, todos a la vez
+  })
+
+  // Un club que no cargó sus mesas no tiene el dato. Devolver 0 obliga a quien
+  // lo muestre a callarse, en vez de escribir "0 tandas" como si fuera un hecho.
+  it('sin mesas configuradas devuelve 0, no una división por cero', () => {
+    expect(tandasPorFecha(21, 0)).toBe(0)
+    expect(tandasPorFecha(21, -1)).toBe(0)
+  })
+
+  it('el caso real de Spinhouse: 21 inscritos, 4 mesas', () => {
+    expect(partidosDeLiguilla(21, 1)).toBe(210)
+    expect(rondasDeLiguilla(21, 1)).toBe(21)
+    expect(partidosPorFecha(21)).toBe(10)
+    expect(tandasPorFecha(21, 4)).toBe(3)
   })
 })
 

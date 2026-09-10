@@ -30,7 +30,7 @@ export default function TorneosPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
-  const [cuota, setCuota] = useState('0')
+  const [cuota, setCuota] = useState('')
   const [formatoGrupos, setFormatoGrupos] = useState<FormatoPartido>('bo5')
   const [formatoLlave, setFormatoLlave] = useState<FormatoPartido>('bo5')
   const [modalidad, setModalidad] = useState<ModalidadTorneo>('grupos')
@@ -112,12 +112,12 @@ export default function TorneosPage() {
 
   async function crearTorneo() {
     if (!nombre || !fecha) return
-    const monto = Number(cuota)
+    const monto = Number(cuota || 0)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
     const res = await crearTorneoAction({ nombre, fecha, cuota: monto, formatoGrupos, formatoLlave, modalidad, ruedas, sistemaEquipos })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
-    setNombre(''); setFecha(''); setCuota('0')
+    setNombre(''); setFecha(''); setCuota('')
     setModalidad('grupos'); setRuedas(1); setSistemaEquipos('corbillon')
     router.push(`/torneos/${res.torneoId}`)
   }
@@ -298,7 +298,7 @@ export default function TorneosPage() {
             <div style={{ marginBottom:20 }}>
               <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Cuota de inscripción (CLP)</label>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:14, outline:'none' }}
-                type="number" min="0" step="1" placeholder="5000" value={cuota} onChange={e => setCuota(e.target.value)} />
+                type="number" min="0" step="1" placeholder="0" value={cuota} onChange={e => setCuota(e.target.value)} />
             </div>
             <SelectorFormato
               fases={fasesDeSets(modalidad)}

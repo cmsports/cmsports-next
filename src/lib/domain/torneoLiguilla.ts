@@ -61,6 +61,36 @@ export function partidosDeLiguilla(numJugadores: number, ruedas: Ruedas = 1): nu
 }
 
 /**
+ * Cuántos partidos se juegan en cada fecha.
+ *
+ * Con el método del círculo todos juegan una vez por fecha, así que son la
+ * mitad de los inscritos. Con un número impar, uno descansa.
+ */
+export function partidosPorFecha(numJugadores: number): number {
+  return Math.floor(numJugadores / 2)
+}
+
+/**
+ * Cuántas tandas de mesa ocupa una fecha.
+ *
+ * Es la traducción de "10 partidos por fecha" a algo que se pueda organizar:
+ * con 4 mesas son 3 tandas, con 2 son 5. Sin esto, el club sabe cuántos
+ * partidos hay pero no cuánto ocupa una jornada, que es lo que de verdad
+ * necesita para decidir si el formato le sirve.
+ *
+ * Las mesas salen de `sede_mesas`, que ya existe desde la migración 251.
+ *
+ * ⚠️ Devuelve 0 si no hay mesas configuradas, y quien lo muestre tiene que
+ * callarse en ese caso en vez de escribir "0 tandas": un club que no cargó sus
+ * mesas no tiene el dato, y un cero ahí se lee como información cuando es
+ * ausencia de información.
+ */
+export function tandasPorFecha(numJugadores: number, mesas: number): number {
+  if (mesas <= 0) return 0
+  return Math.ceil(partidosPorFecha(numJugadores) / mesas)
+}
+
+/**
  * Cuántos inscritos entran en una liguilla sin pasarse del tope de partidos.
  *
  * Los partidos crecen al cuadrado, así que el tope de inscritos cae rápido: con

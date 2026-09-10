@@ -55,7 +55,7 @@ export default function TorneosInternosPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [nombre, setNombre] = useState('')
   const [fecha, setFecha] = useState('')
-  const [cuota, setCuota] = useState('0')
+  const [cuota, setCuota] = useState('')
   const [formatoGrupos, setFormatoGrupos] = useState<FormatoPartido>('bo5')
   const [formatoLlave, setFormatoLlave] = useState<FormatoPartido>('bo5')
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('')
@@ -164,12 +164,12 @@ export default function TorneosInternosPage() {
     if (!nombre || !fecha) return
     if (!categoriaSeleccionada) { alert('Selecciona la categoría del torneo'); return }
     if (!generoSeleccionado) { alert('Selecciona Varones o Damas'); return }
-    const monto = Number(cuota)
+    const monto = Number(cuota || 0)
     if (!Number.isSafeInteger(monto) || monto < 0) { alert('La cuota debe ser un monto igual o mayor a $0'); return }
     const res = await crearTorneoAction({ nombre, fecha, cuota: monto, tipo: 'interno', categoria: categoriaSeleccionada, genero: generoSeleccionado, formatoGrupos, formatoLlave })
     if (res.error || !res.torneoId) { alert('Error: ' + (res.error || 'No se pudo crear')); return }
     setModalOpen(false)
-    setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado('')
+    setNombre(''); setFecha(''); setCuota(''); setCategoriaSeleccionada(''); setGeneroSeleccionado('')
     router.push(`/torneos/${res.torneoId}`)
   }
 
@@ -552,7 +552,7 @@ export default function TorneosInternosPage() {
               onCambiar={(campo, formato) => campo === 'formato_grupos' ? setFormatoGrupos(formato) : setFormatoLlave(formato)}
             />
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota('0'); setCategoriaSeleccionada(''); setGeneroSeleccionado(''); setFormCategoriaAbierto(false); setTextoCategoriaNueva(''); setFormatoGrupos('bo5'); setFormatoLlave('bo5') }}
+              <button onClick={() => { setModalOpen(false); setNombre(''); setFecha(''); setCuota(''); setCategoriaSeleccionada(''); setGeneroSeleccionado(''); setFormCategoriaAbierto(false); setTextoCategoriaNueva(''); setFormatoGrupos('bo5'); setFormatoLlave('bo5') }}
                 style={{ flex: 1, background: '#f4f7fa', color: muted, border: 'none', borderRadius: 8, padding: '11px 0', fontSize: 13, cursor: 'pointer' }}>
                 Cancelar
               </button>
