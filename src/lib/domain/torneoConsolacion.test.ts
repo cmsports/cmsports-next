@@ -8,6 +8,7 @@ import {
   maxCabezasDeCuadro,
   ordenarParaCuadroDirecto,
   partidosJugadosPorJugador,
+  siguienteFaseDeCualquierCuadro,
   type PartidoJugado,
 } from './torneoConsolacion'
 import { calcularTamanoBracket, determinarFaseInicial, type JugadorTorneo } from './torneos'
@@ -26,7 +27,7 @@ function simularCuadro(n: number, decidir: (a: string, b: string) => string): Pa
   const jugados: PartidoJugado[] = []
 
   // Ronda 1 tal cual la generó el armador, respetando su orden.
-  let ronda = [...inicial].sort((a, b) => a.orden - b.orden)
+  const ronda = [...inicial].sort((a, b) => a.orden - b.orden)
   let fase: string | null = ronda[0]?.fase ?? null
   let vivos: string[] = []
 
@@ -234,6 +235,46 @@ describe('cuándo se puede armar el cuadro de consuelo', () => {
 
   it('sin partidos todavía, no está lista', () => {
     expect(consolacionLista({ partidos: [], faseInicial: '8vos' })).toBe(false)
+  })
+})
+
+// Sin esto, un partido del cuadro de consuelo se juega y su ganador no avanza
+// a ningún lado: `siguienteFase()` no conoce las fases `cons_*` y devuelve
+// null. No da error y no se ve hasta que alguien pregunta dónde está su
+// próximo partido.
+describe('los ganadores del consuelo también avanzan', () => {
+  it('salta a la fase espejo del consuelo', () => {
+    expect(siguienteFaseDeCualquierCuadro('cons_8vos')).toBe('cons_cuartos')
+    expect(siguienteFaseDeCualquierCuadro('cons_cuartos')).toBe('cons_semis')
+    expect(siguienteFaseDeCualquierCuadro('cons_semis')).toBe('cons_final')
+  })
+
+  it('la final del consuelo no lleva a ninguna parte', () => {
+    expect(siguienteFaseDeCualquierCuadro('cons_final')).toBeNull()
+  })
+
+  it('el cuadro principal sigue funcionando igual que antes', () => {
+    expect(siguienteFaseDeCualquierCuadro('8vos')).toBe('cuartos')
+    expect(siguienteFaseDeCualquierCuadro('semis')).toBe('final')
+    expect(siguienteFaseDeCualquierCuadro('final')).toBeNull()
+  })
+
+  it('una fase que no es de cuadro no avanza', () => {
+    expect(siguienteFaseDeCualquierCuadro('grupos')).toBeNull()
+    expect(siguienteFaseDeCualquierCuadro('tercer_lugar')).toBeNull()
+    expect(siguienteFaseDeCualquierCuadro(null)).toBeNull()
+    expect(siguienteFaseDeCualquierCuadro('cualquier cosa')).toBeNull()
+  })
+
+  it('nunca cruza un cuadro con el otro', () => {
+    for (const f of ['cons_avance', 'cons_32vos', 'cons_16vos', 'cons_8vos', 'cons_cuartos', 'cons_semis']) {
+      const sig = siguienteFaseDeCualquierCuadro(f)
+      expect(sig && esFaseDeConsolacion(sig), `${f} salió del consuelo`).toBe(true)
+    }
+    for (const f of ['avance', '32vos', '16vos', '8vos', 'cuartos', 'semis']) {
+      const sig = siguienteFaseDeCualquierCuadro(f)
+      expect(sig && esFaseDeConsolacion(sig)).toBe(false)
+    }
   })
 })
 

@@ -724,17 +724,41 @@ Tres decisiones que se tomaron al programar:
 **Criterios de salida, cumplidos:** 1429 pruebas en verde sin modificar ninguna
 existente, typecheck limpio, lint sin errores nuevos y `next build` completo.
 
-### Fase C — Eliminación directa con consolación
+### Fase C — Eliminación directa con consolación ✅ 2026-09-09
 
 Cuadro principal desde la inscripción (sin grupos), consolación con los perdedores
 de R1 **más los de R2 que venían de BYE** (§2.3b). Fases `cons_*`.
 `fasesParaMostrar()` aprende a ordenarlas. Siembra por potencias de 2 (§2.5).
 
-**Primer paso, antes de escribir el armador:** confirmar con una prueba la
-hipótesis de §2.5 —que con `grupoIdx` propio y `posicion: 1` las tres capas de
-grupos de `construirBracketPorRanking` se vuelven no-ops y queda el bit-reversal
-puro—. Si se confirma, no hace falta armador propio. Si no, se extrae el núcleo a
-una función aparte y las tres capas quedan donde están.
+✅ **La hipótesis de §2.5 quedó CONFIRMADA ejecutando**, no leyendo. Con
+`grupoIdx` propio por jugador y `posicion: 1`, las tres capas de grupos de
+`construirBracketPorRanking` no encuentran nada que ajustar y se apagan solas.
+**No hizo falta armador propio ni extraer el núcleo:** se reusa tal cual.
+
+**Cuatro cosas que aparecieron al programar y no estaban en el plan:**
+
+1. 🔴 **La propagación del ganador no funcionaba en el consuelo.**
+   `propagarGanadorPlayoff` usa `siguienteFase()`, que recorre
+   `CONFIG.FASES_ORDEN` — donde `cons_8vos` no existe. Devolvía `null` y el
+   ganador no avanzaba: partidos que se juegan y no llevan a ninguna parte, sin
+   error ni aviso. Lo resuelve `siguienteFaseDeCualquierCuadro()`, con una
+   prueba que comprueba que ningún cuadro se cruza con el otro.
+2. 🔴 **`fasesParaMostrar()` se comía las fases del consuelo**, porque filtra
+   contra `FASES_ORDEN`. Sus partidos habrían existido en la base sin aparecer
+   en ninguna pestaña. De ahí `fasesParaMostrarConConsuelo()`.
+3. **La eliminación directa igual crea un grupo único**, sin partidos. No es
+   un resabio: `grupo_jugadores` es de donde salen la lista de inscritos, los
+   pagos y los exportes, así que dejarla vacía rompería media pantalla para
+   ahorrarse una fila. Sus partidos van con `grupo_id: null`, como los de la
+   llave en el torneo tradicional.
+4. **El cuadro de consuelo se arma solo.** Nadie aprieta un botón: el profe está
+   en la cancha y el consuelo es parte del formato, no un extra. La Action es
+   idempotente y nunca rearma un cuadro existente — con partidos ya jugados,
+   rearmarlo les borraría el resultado.
+
+**Y el tope de cabezas cambia**, como anticipaba §2.5: `maxCabezasDeCuadro()`
+—potencias de 2, nunca más de media llave— reemplaza al de "una cabeza por
+grupo", que no significaría nada sin grupos.
 
 **Criterios de salida:**
 

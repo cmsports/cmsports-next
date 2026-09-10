@@ -30,7 +30,7 @@
 -- algo por afuera del repo entre medio, esto aborta en vez de fallar el ALTER.
 --
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
--- Corrida el: ____________  (anotar la fecha al aplicarla)
+-- Corrida el: 2026-09-09
 
 BEGIN;
 SELECT _migracion_nueva('265_fases_del_cuadro_de_consuelo');

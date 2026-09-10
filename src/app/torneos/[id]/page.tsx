@@ -9,6 +9,7 @@ import {
   corregirResultadoGrupos,
   cerrarInscripcionYGenerarGrupos,
   sincronizarLlaves as sincronizarLlavesAction,
+  armarCuadroConsolacion as armarCuadroConsolacionAction,
   finalizarTorneo as finalizarTorneoAction,
   abrirTercerLugar as abrirTercerLugarAction,
   generarGruposTardios,
@@ -36,6 +37,7 @@ import { CONFIG, type FaseOrden } from '@/lib/config'
 import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket, fasesParaMostrar, derivarTercerLugar } from '@/lib/domain/torneos'
 import { MODALIDAD_LABEL, minParticipantes, modalidadDe, ruedasDe } from '@/lib/domain/modalidadTorneo'
 import { partidosDeLiguilla, rondasDeLiguilla } from '@/lib/domain/torneoLiguilla'
+import { FASE_CONSOLACION_LABEL, esFaseDeConsolacion, fasesParaMostrarConConsuelo } from '@/lib/domain/torneoConsolacion'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { copiarTexto } from '@/lib/clipboard'
@@ -49,7 +51,9 @@ import { formatoDe, FORMATO_LABEL, FORMATO_EXPLICACION } from '@/lib/domain/marc
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
-const faseLabel: Record<string, string> = CONFIG.FASE_LABELS
+// Los nombres del cuadro principal más los del de consuelo, que no están en
+// CONFIG.FASE_LABELS porque no son pasos del camino: son un cuadro aparte.
+const faseLabel: Record<string, string> = { ...CONFIG.FASE_LABELS, ...FASE_CONSOLACION_LABEL }
 
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
@@ -328,6 +332,33 @@ export default function TorneoDetallePage() {
       .finally(() => { sincronizandoRef.current = false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partidos, grupos, torneo?.fase, cabezasNumeradas, cabezasPersistidas, perfil?.rol, loading, authLoading])
+
+  // El cuadro de consuelo se arma solo, apenas el principal cierra sus dos
+  // primeras rondas —que es cuando la lista de eliminados con un solo partido
+  // queda completa—. Nadie tiene que apretar un botón: el profe está en la
+  // cancha y el consuelo es parte del formato, no un extra.
+  //
+  // La Action es idempotente y se encarga de no rearmar lo ya armado; el ref
+  // es solo para no repetir la llamada mientras todavía está esperando.
+  const consolacionRef = useRef('')
+  useEffect(() => {
+    if (loading || authLoading) return
+    if (perfil?.rol !== 'admin') return
+    if (modalidadDe(torneo?.formato) !== 'eliminacion_consolacion') return
+    if (partidos.some((p: any) => esFaseDeConsolacion(p.fase))) return
+
+    const firma = partidos.map((p: any) => `${p.id}:${p.ganador ?? ''}`).sort().join(',')
+    if (firma === consolacionRef.current) return
+    consolacionRef.current = firma
+
+    armarCuadroConsolacionAction({ torneoId })
+      .then(res => {
+        if ('error' in res && res.error) { console.error('armarCuadroConsolacion:', res.error); return }
+        if ('creados' in res && res.creados) return cargarTorneo()
+      })
+      .catch(err => { console.error('armarCuadroConsolacion throw:', err); consolacionRef.current = '' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partidos, torneo?.formato, perfil?.rol, loading, authLoading])
 
   useEffect(() => {
     if (torneo?.id) {
@@ -791,7 +822,10 @@ export default function TorneoDetallePage() {
   const formatoLlave = formatoDe(torneo?.formato_llave)
 
   const hayTercerLugar = fasesConPartidos.has('tercer_lugar')
-  const fasesConTercerLugar = fasesParaMostrar(fasesConPartidos)
+  // Incluye el cuadro de consuelo después del principal. `fasesParaMostrar` a
+  // secas filtra contra CONFIG.FASES_ORDEN y las `cons_*` se le caen: sus
+  // partidos existirían en la base sin aparecer en ninguna pestaña.
+  const fasesConTercerLugar = fasesParaMostrarConConsuelo(fasesConPartidos)
   const partidoTercerLugar = (partidosPorFase.get('tercer_lugar') || [])[0] ?? null
   const tercerLugarPendiente = !!partidoTercerLugar && !partidoTercerLugar.ganador
   // Un torneo interno cuyas semis se marcaron ANTES de que existiera esta regla

@@ -27,6 +27,15 @@ import {
 } from '@/lib/domain/modalidadTorneo'
 import { generarLiguilla, partidosDeLiguilla } from '@/lib/domain/torneoLiguilla'
 import {
+  consolacionLista,
+  elegiblesParaConsolacion,
+  esFaseDeConsolacion,
+  generarCuadroConsolacion,
+  generarCuadroDirecto,
+  maxCabezasDeCuadro,
+  siguienteFaseDeCualquierCuadro,
+} from '@/lib/domain/torneoConsolacion'
+import {
   esResultadoValido,
   determinarGanador,
   resumirPartido,
@@ -476,7 +485,10 @@ async function propagarGanadorPlayoff(
   ganadorId: string,
 ) {
   if (!partido.torneo_id || !partido.fase || partido.fase === 'grupos') return
-  const faseSiguiente = siguienteFase(partido.fase as FaseOrden)
+  // Entiende también las fases `cons_*`: con `siguienteFase()` a secas, un
+  // partido del cuadro de consuelo se juega y su ganador no avanza a ningún
+  // lado, sin error ni aviso.
+  const faseSiguiente = siguienteFaseDeCualquierCuadro(partido.fase)
   if (!faseSiguiente) return
 
   const ordenSiguiente = Math.floor((partido.orden ?? 0) / 2)
@@ -1372,6 +1384,7 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   // viejo —o uno con la columna en algo inesperado— se arma como siempre.
   const modalidad = modalidadDe(torneoInfo?.formato)
   const esLiguilla = modalidad === 'liguilla'
+  const esEliminacion = modalidad === 'eliminacion_consolacion'
 
   const { data: gruposPrev } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
   const grupoIds = (gruposPrev || []).map(g => g.id)
@@ -1400,7 +1413,12 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
   // Una liguilla es UN grupo con todos adentro: la tabla de posiciones sale de
   // `calcularStatsGrupo` igual que la de cualquier grupo, sin nada nuevo.
-  const numGrupos = esLiguilla ? 1 : calcularNumGrupos(jugadores.length)
+  //
+  // La eliminación directa también crea un grupo único, pero por otra razón y
+  // sin partidos: es donde viven los inscritos. `grupo_jugadores` es de dónde
+  // salen la lista de la pantalla, los pagos y los exportes, así que dejarla
+  // vacía rompería media pantalla para no crear una fila.
+  const numGrupos = (esLiguilla || esEliminacion) ? 1 : calcularNumGrupos(jugadores.length)
   if (numGrupos > CONFIG.TORNEO_MAX_GRUPOS) {
     return { error: `El máximo soportado es ${CONFIG.TORNEO_MAX_GRUPOS} grupos (${CONFIG.TORNEO_MAX_CLASIFICADOS} clasificados)` }
   }
@@ -1413,7 +1431,16 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     const lecturaCabezas = await leerCabezasSerie(supabase, torneoId)
     if (lecturaCabezas.error) return { error: lecturaCabezas.error }
     cabezas.push(...lecturaCabezas.cabezas)
-    if (cabezas.length > numGrupos) {
+
+    // El tope de "una cabeza por grupo" está atado a los grupos y no significa
+    // nada en un cuadro directo. Ahí manda el estándar de siembra: potencias de
+    // 2, y nunca más de media llave — sembrar a todos no es sembrar.
+    if (esEliminacion) {
+      const max = maxCabezasDeCuadro(jugadores.length)
+      if (cabezas.length > max) {
+        return { error: `Con ${jugadores.length} inscritos se pueden sembrar hasta ${max} cabezas de serie, y hay ${cabezas.length}.` }
+      }
+    } else if (cabezas.length > numGrupos) {
       return { error: `Hay ${cabezas.length} cabezas para ${numGrupos} grupos. Debe existir como máximo una cabeza por grupo.` }
     }
   }
@@ -1465,11 +1492,11 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     await supabase.from('torneo_grupos').delete().in('id', nuevosGrupos.map(g => g.id))
   }
 
-  // En una liguilla no hay nada que repartir: entran todos al único grupo, en
-  // el orden en que se inscribieron. El serpenteo con un solo grupo daría lo
-  // mismo, pero decirlo así se lee mejor que confiar en que el caso degenerado
-  // haga lo correcto.
-  const asignaciones = esLiguilla
+  // Ni la liguilla ni la eliminación directa reparten en grupos: entran todos
+  // al único grupo, en el orden en que se inscribieron. El serpenteo con un
+  // solo grupo daría lo mismo, pero decirlo así se lee mejor que confiar en que
+  // el caso degenerado haga lo correcto.
+  const asignaciones = (esLiguilla || esEliminacion)
     ? jugadores.map(j => ({ grupoIndex: 0, jugadorId: j.id }))
     : esExterno
       ? seedingSerpenteoConClubes(jugadores, numGrupos, cabezas.map(c => c.jugadorId))
@@ -1499,8 +1526,37 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     return { error: 'La base aceptó menos inscripciones de las enviadas; no se armó ningún grupo.' }
   }
 
-  const partidos: Array<{ torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }> = []
-  for (const g of nuevosGrupos) {
+  const partidos: Array<{ torneo_id: string; grupo_id: string | null; fase: string; jugador_a: string; jugador_b: string | null; orden: number }> = []
+
+  // La eliminación directa va de la inscripción al cuadro: no hay fase de
+  // grupos que jugar. El grupo único creado arriba guarda a los inscritos y
+  // nada más, así que sus partidos no cuelgan de él (`grupo_id: null`), igual
+  // que los de la llave en el torneo tradicional.
+  //
+  // Se arma desde `miembrosCreados` —lo que la base confirmó— y no desde el
+  // array local. Es la misma regla que dejó ocho jugadores fuera de sus grupos
+  // en el torneo TC y obligó a las migraciones 213 y 214 a reponerlos a mano.
+  if (esEliminacion) {
+    const nombrePorId = new Map(jugadores.map(j => [j.id, j.nombre]))
+    const confirmados = [...miembrosCreados]
+      .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
+      .map(m => m.jugador_id)
+      .filter((id): id is string => !!id)
+      .map(id => ({ id, nombre: nombrePorId.get(id) ?? '' }))
+
+    for (const p of generarCuadroDirecto(confirmados, cabezas)) {
+      partidos.push({
+        torneo_id: torneoId,
+        grupo_id: null,
+        fase: p.fase,
+        jugador_a: p.jugadorA,
+        jugador_b: p.jugadorB,
+        orden: p.orden,
+      })
+    }
+  }
+
+  for (const g of esEliminacion ? [] : nuevosGrupos) {
     const jugadoresGrupo = miembrosCreados
       .filter(m => m.grupo_id === g.id)
       .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
@@ -1534,12 +1590,18 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     }
   }
 
+  // La eliminación directa arranca en la primera ronda de su cuadro —'8vos',
+  // '16vos', lo que toque por tamaño— y no en 'grupos', que es la fase que no
+  // va a jugar. Se toma del propio cuadro recién generado en vez de recalcular
+  // el tamaño: así no hay dos cuentas que puedan discrepar.
+  const faseDestino = esEliminacion ? (partidos[0]?.fase ?? 'grupos') : 'grupos'
+
   const { error: errFase } = await supabase.from('torneos')
-    .update({ fase: 'grupos', inscripcion_abierta: false }).eq('id', torneoId)
+    .update({ fase: faseDestino, inscripcion_abierta: false }).eq('id', torneoId)
   if (errFase) {
     // Los grupos y partidos quedaron bien; solo no avanzó la fase. No se
     // deshace nada: reintentar el botón termina el trabajo.
-    return { error: `Los grupos se crearon, pero el torneo no avanzó a fase de grupos: ${errFase.message}` }
+    return { error: `${esEliminacion ? 'El cuadro se creó' : 'Los grupos se crearon'}, pero el torneo no avanzó de fase: ${errFase.message}` }
   }
 
   return { success: true, numGrupos }
@@ -1547,6 +1609,77 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
 // Construye el cuadro desde la mitad de los grupos cerrados. La clasificación
 // se recalcula en el servidor y los cupos restantes se agregan al árbol fijo.
+/**
+ * Arma el cuadro de consuelo, de una vez y cuando corresponde.
+ *
+ * **Cuándo:** recién con las dos primeras rondas del cuadro principal
+ * terminadas. Antes de eso la lista de elegibles todavía puede crecer, y un
+ * cuadro armado a medias dejaría afuera justo a los que la segunda ronda va a
+ * eliminar — que son los sembrados que venían de BYE, o sea los que más
+ * derecho tienen a reclamar.
+ *
+ * **Idempotente:** si el cuadro ya existe no hace nada y responde bien. La
+ * llama la pantalla sola al cambiar un resultado, así que se ejecuta muchas
+ * veces con el mismo estado.
+ *
+ * No borra ni regenera un cuadro existente a propósito: una vez que la gente
+ * empezó a jugar el consuelo, rearmarlo les borraría los resultados.
+ */
+export async function armarCuadroConsolacion(params: { torneoId: string }) {
+  const { error: authErr, supabase } = await requireAdmin()
+  if (authErr) return { error: authErr }
+
+  const { torneoId } = params
+
+  const { data: torneo } = await (supabase as any).from('torneos')
+    .select('formato').eq('id', torneoId).single()
+  if (modalidadDe(torneo?.formato) !== 'eliminacion_consolacion') {
+    return { error: 'Este torneo no tiene cuadro de consolación.' }
+  }
+
+  const { data: partidos, error: errLeer } = await supabase
+    .from('torneo_partidos')
+    .select('fase, jugador_a, jugador_b, ganador, orden, ja:jugador_a(id,nombre)')
+    .eq('torneo_id', torneoId)
+  if (errLeer) return { error: `No se pudieron leer los partidos: ${errLeer.message}` }
+
+  const todos = partidos || []
+
+  // Ya está armado: no se toca. Rearmarlo borraría lo que ya se jugó.
+  if (todos.some(p => esFaseDeConsolacion(p.fase))) return { success: true, yaExistia: true }
+
+  const delCuadro = todos.filter(p => !esFaseDeConsolacion(p.fase))
+  const faseInicial = [...delCuadro].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))[0]?.fase
+  if (!faseInicial) return { error: 'El cuadro principal todavía no está armado.' }
+
+  if (!consolacionLista({ partidos: delCuadro, faseInicial: faseInicial as FaseOrden })) {
+    return { success: true, esperando: true }
+  }
+
+  const ids = elegiblesParaConsolacion(delCuadro)
+  if (ids.length < 2) return { success: true, sinElegibles: true }
+
+  // Los nombres se leen de `jugadores` y no del join, que solo trae el lado A.
+  const { data: fichas } = await supabase.from('jugadores').select('id, nombre').in('id', ids)
+  const nombrePorId = new Map((fichas || []).map(j => [j.id, j.nombre ?? '']))
+  const jugadores = ids.map(id => ({ id, nombre: nombrePorId.get(id) ?? '' }))
+
+  const nuevos = generarCuadroConsolacion(jugadores).map(p => ({
+    torneo_id: torneoId,
+    grupo_id: null,
+    fase: p.fase,
+    jugador_a: p.jugadorA,
+    jugador_b: p.jugadorB,
+    orden: p.orden,
+  }))
+  if (!nuevos.length) return { success: true, sinElegibles: true }
+
+  const { error } = await supabase.from('torneo_partidos').insert(nuevos)
+  if (error) return { error: `No se pudo armar el cuadro de consolación: ${error.message}` }
+
+  return { success: true, creados: nuevos.length }
+}
+
 export async function sincronizarLlaves(params: {
   torneoId: string
 }) {
@@ -1561,8 +1694,14 @@ export async function sincronizarLlaves(params: {
   // configuró.
   {
     const { data: t } = await (supabase as any).from('torneos').select('formato').eq('id', torneoId).single()
-    if (modalidadDe(t?.formato) === 'liguilla') {
+    const m = modalidadDe(t?.formato)
+    if (m === 'liguilla') {
       return { error: 'Una liguilla se define en la tabla de posiciones: no tiene llave.' }
+    }
+    // El cuadro de la eliminación directa se arma al cerrar la inscripción y
+    // avanza solo, partido a partido. No hay clasificados de grupos que volcar.
+    if (m === 'eliminacion_consolacion') {
+      return { error: 'En este formato el cuadro ya se armó al cerrar la inscripción.' }
     }
   }
 
@@ -2066,10 +2205,20 @@ export async function generarGruposTardios(params: {
   // entran a la llave. En una liguilla eso no existe: el que llega tarde
   // tendría que jugar contra TODOS los que ya empezaron, y meterlo en un grupo
   // aparte le armaría un torneo paralelo con su propia tabla.
-  if (modalidadDe(torneoInfo?.formato) === 'liguilla') {
+  const modalidadTardios = modalidadDe(torneoInfo?.formato)
+  if (modalidadTardios === 'liguilla') {
     return {
       error: 'En una liguilla todos juegan contra todos, así que no se pueden sumar jugadores ' +
         'después de cerrar la inscripción. Volvé a cerrar la inscripción con todos adentro.',
+    }
+  }
+  // Un cuadro de eliminación tiene su tamaño fijado y sus BYE repartidos por
+  // siembra. Meter a alguien después obligaría a rehacerlo entero, y con
+  // partidos ya jugados eso les borra el resultado.
+  if (modalidadTardios === 'eliminacion_consolacion') {
+    return {
+      error: 'El cuadro ya está armado con sus cruces y descansos. Para sumar jugadores hay que ' +
+        'volver a cerrar la inscripción con todos adentro.',
     }
   }
 

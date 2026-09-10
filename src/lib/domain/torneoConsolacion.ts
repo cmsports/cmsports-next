@@ -41,7 +41,9 @@
 import {
   calcularTamanoBracket,
   construirBracketPorRanking,
+  fasesParaMostrar,
   perdedorDePartido,
+  siguienteFase,
   type JugadorTorneo,
   type PartidoGenerado,
   type RankeadoParaBracket,
@@ -75,6 +77,30 @@ export const FASE_CONSOLACION_LABEL: Record<string, string> = {
   cons_cuartos: 'Consuelo · cuartos',
   cons_semis: 'Consuelo · semifinal',
   cons_final: 'Final de consuelo',
+}
+
+/**
+ * La fase que sigue, entienda o no de cuadros de consuelo.
+ *
+ * `siguienteFase()` recorre `CONFIG.FASES_ORDEN`, donde `cons_8vos` no existe:
+ * devuelve `null` y el ganador nunca avanza. Un cuadro de consuelo con esa
+ * propagación rota se ve como partidos que se juegan y no llevan a ninguna
+ * parte — sin error, sin aviso.
+ *
+ * Esto traduce a la fase espejo: `cons_8vos` → `cons_cuartos`, y para las del
+ * cuadro principal delega en la de siempre.
+ */
+export function siguienteFaseDeCualquierCuadro(fase: string | null | undefined): string | null {
+  if (!fase) return null
+
+  if (esFaseDeConsolacion(fase)) {
+    const base = fase.slice('cons_'.length) as FaseOrden
+    const sig = siguienteFase(base)
+    return sig ? FASES_CONSOLACION[sig] : null
+  }
+
+  if (!(CONFIG.FASES_ORDEN as readonly string[]).includes(fase)) return null
+  return siguienteFase(fase as FaseOrden)
 }
 
 /**
@@ -117,6 +143,23 @@ export function ordenarParaCuadroDirecto(
     posicion: 1 as const,
     cabezaNumero: numeroDe.get(j.id) ?? null,
   }))
+}
+
+/**
+ * Las fases a mostrar, con el cuadro de consuelo DESPUÉS del principal.
+ *
+ * `fasesParaMostrar()` filtra contra `CONFIG.FASES_ORDEN`, así que las `cons_*`
+ * se le caen: la pantalla mostraría partidos que existen en la base y no
+ * aparecen en ninguna pestaña.
+ *
+ * El orden importa y es el mismo criterio con el que la 254 intercaló el tercer
+ * lugar: primero se lee el camino principal completo, y después el consuelo,
+ * porque es a donde se llega perdiendo.
+ */
+export function fasesParaMostrarConConsuelo(fasesPresentes: ReadonlySet<string>): string[] {
+  const principales = fasesParaMostrar(fasesPresentes)
+  const consuelo = FASES_CONSOLACION_LISTA.filter(f => fasesPresentes.has(f))
+  return [...principales, ...consuelo]
 }
 
 /** El cuadro principal, desde la inscripción y sin pasar por grupos. */
