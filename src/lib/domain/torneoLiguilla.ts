@@ -61,6 +61,21 @@ export function partidosDeLiguilla(numJugadores: number, ruedas: Ruedas = 1): nu
 }
 
 /**
+ * Cuántos inscritos entran en una liguilla sin pasarse del tope de partidos.
+ *
+ * Los partidos crecen al cuadrado, así que el tope de inscritos cae rápido: con
+ * 200 partidos son 20 jugadores a una rueda y solo 14 a ida y vuelta.
+ *
+ * Existe para que el aviso de "no cabe" diga qué SÍ cabe, en vez de dejar al
+ * club adivinando cuántos sacar.
+ */
+export function maxJugadoresDeLiguilla(maxPartidos: number, ruedas: Ruedas = 1): number {
+  let n = 2
+  while (partidosDeLiguilla(n + 1, ruedas) <= maxPartidos) n++
+  return n
+}
+
+/**
  * El calendario completo, por rondas.
  *
  * Método del círculo: se fija al primero y se rota al resto. En cada ronda se

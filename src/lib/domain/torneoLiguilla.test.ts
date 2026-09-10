@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   generarLiguilla,
+  maxJugadoresDeLiguilla,
   partidosDeLiguilla,
   rondasDeLiguilla,
   type PartidoLiguilla,
 } from './torneoLiguilla'
+import { CONFIG } from '../config'
 
 const jugadores = (n: number) => Array.from({ length: n }, (_, i) => `j${i + 1}`)
 
@@ -48,6 +50,40 @@ describe('cuántos partidos y cuántas fechas', () => {
   it('las fechas también se duplican en ida y vuelta', () => {
     expect(rondasDeLiguilla(12, 2)).toBe(22)
     expect(rondasDeLiguilla(7, 2)).toBe(14)
+  })
+})
+
+// El aviso de "no cabe" tiene que decir qué SÍ cabe. Con 21 inscritos a una
+// rueda ya son 210 partidos, así que sugerir "usá una rueda" no ayuda: hay que
+// decir cuántos entran.
+describe('cuántos inscritos entran en una liguilla', () => {
+  it('con 200 partidos de tope entran 20 a una rueda y 14 a ida y vuelta', () => {
+    expect(maxJugadoresDeLiguilla(200, 1)).toBe(20)
+    expect(maxJugadoresDeLiguilla(200, 2)).toBe(14)
+  })
+
+  it('el que devuelve siempre cabe, y uno más no', () => {
+    for (const tope of [50, 120, 200, 400]) {
+      for (const ruedas of [1, 2] as const) {
+        const max = maxJugadoresDeLiguilla(tope, ruedas)
+        expect(partidosDeLiguilla(max, ruedas), `tope=${tope} ruedas=${ruedas}`).toBeLessThanOrEqual(tope)
+        expect(partidosDeLiguilla(max + 1, ruedas)).toBeGreaterThan(tope)
+      }
+    }
+  })
+
+  it('nunca devuelve menos de dos, que es el mínimo para un partido', () => {
+    expect(maxJugadoresDeLiguilla(1, 1)).toBeGreaterThanOrEqual(2)
+  })
+
+  // Spinhouse pidió soportar cerca de 30 inscritos en todos contra todos
+  // (2026-09-09). Son 435 partidos repartidos en 29 fechas: una liga semanal,
+  // no una jornada. Si alguien baja el tope, esto se lo dice antes de que el
+  // club se entere el día de la inscripción.
+  it('el tope configurado admite una liguilla de 30 a una rueda', () => {
+    expect(partidosDeLiguilla(30, 1)).toBe(435)
+    expect(rondasDeLiguilla(30, 1)).toBe(29)
+    expect(maxJugadoresDeLiguilla(CONFIG.LIGUILLA_MAX_PARTIDOS, 1)).toBeGreaterThanOrEqual(30)
   })
 })
 

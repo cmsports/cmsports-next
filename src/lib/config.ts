@@ -15,13 +15,22 @@ export const CONFIG = {
   TORNEO_MAX_GRUPOS: 32,
   TORNEO_MAX_CLASIFICADOS: 64,
 
-  // Tope de una liguilla, donde los partidos crecen al cuadrado: 12 jugadores
-  // a ida y vuelta ya son 132, y 20 son 380. Sin tope, treinta inscritos a dos
-  // ruedas generan 870 partidos de una sentada.
+  // Tope de una liguilla, donde los partidos crecen al cuadrado.
   //
-  // 200 deja pasar lo que un club de verdad juega —16 a una rueda son 120, y
-  // 12 a ida y vuelta 132— y frena lo que sería un error de dedo.
-  LIGUILLA_MAX_PARTIDOS: 200,
+  // Nació en 200 pensando en un torneo de un día, y eso estaba mal encuadrado:
+  // una liguilla NO se juega de una sentada. El calendario sale repartido en
+  // fechas —30 inscritos son 29 fechas de 15 partidos— y así se juega semana a
+  // semana, como una liga. Spinhouse pidió soportar cerca de 30 (2026-09-09).
+  //
+  // 500 cubre eso con margen:
+  //   · una rueda    → hasta 32 inscritos (496 partidos, 31 fechas)
+  //   · ida y vuelta → hasta 22 inscritos (462 partidos, 42 fechas)
+  //
+  // Y sigue frenando lo que no es una decisión sino un error de dedo: 30 a ida
+  // y vuelta son 870 partidos en 58 fechas, más de un año de liga semanal.
+  // Cuando eso pasa, el aviso propone la salida real —una sola rueda— en vez
+  // de mandar a cambiar de formato.
+  LIGUILLA_MAX_PARTIDOS: 500,
 
   FASES_ORDEN: ['avance', '32vos', '16vos', '8vos', 'cuartos', 'semis', 'final'] as const,
 

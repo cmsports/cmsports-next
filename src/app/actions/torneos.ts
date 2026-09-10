@@ -25,7 +25,7 @@ import {
   usaRuedas,
   type ModalidadTorneo,
 } from '@/lib/domain/modalidadTorneo'
-import { generarLiguilla, partidosDeLiguilla } from '@/lib/domain/torneoLiguilla'
+import { generarLiguilla, maxJugadoresDeLiguilla, partidosDeLiguilla } from '@/lib/domain/torneoLiguilla'
 import { sistemaDe, type SistemaEquipos } from '@/lib/domain/torneoEquipos'
 import {
   consolacionLista,
@@ -1455,10 +1455,21 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   if (esLiguilla) {
     const total = partidosDeLiguilla(jugadores.length, ruedas)
     if (total > CONFIG.LIGUILLA_MAX_PARTIDOS) {
+      // La salida depende de en qué rueda está. Sugerirle "usá una rueda" a
+      // quien YA está en una rueda no es un consejo: es ruido en el momento en
+      // que más necesita saber qué hacer. Con 21 inscritos a una vuelta ya son
+      // 210 partidos, y la única salida real es cambiar de formato.
+      const cabenEnUna = maxJugadoresDeLiguilla(CONFIG.LIGUILLA_MAX_PARTIDOS, 1)
+      const salida = ruedas === 2
+        ? `Probá con una sola rueda (serían ${partidosDeLiguilla(jugadores.length, 1)} partidos), ` +
+          `o usá el formato tradicional de grupos.`
+        : `Una liguilla admite hasta ${cabenEnUna} inscritos; con más, conviene el formato ` +
+          `tradicional de grupos, que reparte a todos y termina en una llave.`
+
       return {
-        error: `Con ${jugadores.length} inscritos ${ruedas === 2 ? 'a ida y vuelta ' : ''}salen ${total} partidos, ` +
-          `más de los ${CONFIG.LIGUILLA_MAX_PARTIDOS} que soporta una liguilla. ` +
-          `Usá una rueda, o el formato tradicional de grupos.`,
+        error: `Con ${jugadores.length} inscritos ${ruedas === 2 ? 'a ida y vuelta ' : ''}` +
+          `salen ${total} partidos, más de los ${CONFIG.LIGUILLA_MAX_PARTIDOS} que soporta una liguilla. ` +
+          salida,
       }
     }
   }
