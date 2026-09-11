@@ -883,15 +883,21 @@ export async function marcarGanadorPartido(params: {
 
   const { partidoId } = params
 
-  // Igual que en la corrección: primero el partido, porque el formato con el
-  // que se valida el marcador sale de su torneo Y de su fase (los grupos pueden
-  // ir al mejor de 3 y la llave al mejor de 5 en el mismo torneo).
-  const { data: partido } = await supabase.from('torneo_partidos').select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden').eq('id', partidoId).single()
+  // El formato con el que se valida el marcador sale del partido Y de su fase
+  // (los grupos pueden ir al mejor de 3 y la llave al mejor de 5 en el mismo
+  // torneo), pero no hace falta un viaje aparte para buscarlo: esta ruta
+  // corre en CADA marca, así que se trae junto con el partido, con el embed
+  // de PostgREST a `torneos` (mismo patrón que ya se usa en jugadores/[id]
+  // para traer `torneos(nombre)` desde torneo_partidos).
+  const { data: partido } = await supabase.from('torneo_partidos')
+    .select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden,torneos(formato_grupos,formato_llave)')
+    .eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (partido.ganador) return { error: 'El partido ya tiene ganador' }
   if (!partido.jugador_a || !partido.jugador_b) return { error: 'Los BYE avanzan automáticamente y no se marcan manualmente' }
 
-  const formato = await formatoDeLaFase(supabase, partido.torneo_id, partido.fase)
+  const torneoEmbebido: any = Array.isArray(partido.torneos) ? partido.torneos[0] : partido.torneos
+  const formato = formatoDe(partido.fase === 'grupos' ? torneoEmbebido?.formato_grupos : torneoEmbebido?.formato_llave)
 
   let { setsA, setsB } = params
   let puntos: { puntosA: number; puntosB: number } | null = null
@@ -929,16 +935,22 @@ export async function marcarGanadorPartido(params: {
       .is('ganador', null)
       .select('id')
     if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
+    // Las tres siguientes tocan filas distintas —la ronda de playoff que
+    // sigue, el partido por el 3er lugar, y el estado del torneo— y no
+    // dependen entre sí: antes se esperaban una detrás de otra, y cada una es
+    // un viaje entero a la base por cada llave que se marca.
+    const [errProp, errTercer] = await Promise.all([
+      propagarGanadorPlayoff(supabase, partido, ganadorId),
+      partido.fase === 'semis' && partido.torneo_id
+        ? sincronizarTercerLugarInterno(supabase, partido.torneo_id)
+        : Promise.resolve(null),
+      avanzarFaseSiEstaCompleta(supabase, partido),
+    ])
     // El error de la propagación se devuelve, no se descarta. Si el ganador no
     // llega a la ronda siguiente, el partido queda marcado y el cuadro trabado:
     // decir "listo" ahí es la peor de las dos respuestas posibles.
-    const errProp = await propagarGanadorPlayoff(supabase, partido, ganadorId)
     if (errProp) return { error: errProp }
-    if (partido.fase === 'semis' && partido.torneo_id) {
-      const errTercer = await sincronizarTercerLugarInterno(supabase, partido.torneo_id)
-      if (errTercer) return { error: errTercer }
-    }
-    await avanzarFaseSiEstaCompleta(supabase, partido)
+    if (errTercer) return { error: errTercer }
     // El cuadro actualizado vuelve en esta misma respuesta.
     //
     // Marcar una llave crea filas nuevas —la ronda siguiente, y la mini llave
@@ -968,21 +980,27 @@ export async function marcarGanadorPartido(params: {
   if (!actualizado?.length) return { error: 'El partido ya tiene ganador' }
 
   if (partido.grupo_id) {
-    const { data: gjG } = await supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', ganadorId).maybeSingle()
-    if (gjG) {
-      await supabase.from('grupo_jugadores').update({
-        partidos_ganados: (gjG.partidos_ganados || 0) + 1,
-        partidos_jugados: (gjG.partidos_jugados || 0) + 1,
-      }).eq('id', gjG.id)
-    }
-    if (perdedorId) {
-      const { data: gjP } = await supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', perdedorId).maybeSingle()
-      if (gjP) {
-        await supabase.from('grupo_jugadores').update({
-          partidos_jugados: (gjP.partidos_jugados || 0) + 1,
-        }).eq('id', gjP.id)
-      }
-    }
+    // El ganador y el perdedor son dos filas distintas de grupo_jugadores:
+    // se leen juntas y se actualizan juntas, no una detrás de la otra.
+    const [{ data: gjG }, { data: gjP }] = await Promise.all([
+      supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', ganadorId).maybeSingle(),
+      perdedorId
+        ? supabase.from('grupo_jugadores').select('id,partidos_ganados,partidos_jugados').eq('grupo_id', partido.grupo_id).eq('jugador_id', perdedorId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
+    await Promise.all([
+      gjG
+        ? supabase.from('grupo_jugadores').update({
+            partidos_ganados: (gjG.partidos_ganados || 0) + 1,
+            partidos_jugados: (gjG.partidos_jugados || 0) + 1,
+          }).eq('id', gjG.id)
+        : Promise.resolve(null),
+      gjP
+        ? supabase.from('grupo_jugadores').update({
+            partidos_jugados: (gjP.partidos_jugados || 0) + 1,
+          }).eq('id', gjP.id)
+        : Promise.resolve(null),
+    ])
   }
 
   const errProp = await propagarGanadorPlayoff(supabase, partido, ganadorId)

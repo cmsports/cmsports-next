@@ -15,9 +15,20 @@ function fakeSupabase(tablas: Record<string, Fila[]>) {
     const filtros: Array<(f: Fila) => boolean> = []
     let op: 'select' | 'insert' | 'update' | 'delete' = 'select'
     let payload: Fila | Fila[] = {}
-    const aplicar = () => filas().filter(f => filtros.every(p => p(f)))
+    let selectCols = ''
+    // `marcarGanadorPartido` trae el formato del torneo con un embed de
+    // PostgREST (`torneos(formato_grupos,formato_llave)`) en vez de una
+    // consulta aparte — el mock tiene que simular ESE embed, o la prueba pasa
+    // con un formato que el código real nunca recibió.
+    const conEmbeds = (f: Fila): Fila => {
+      if (tabla === 'torneo_partidos' && selectCols.includes('torneos(')) {
+        return { ...f, torneos: (tablas.torneos || []).find(t => t.id === f.torneo_id) ?? null }
+      }
+      return f
+    }
+    const aplicar = () => filas().filter(f => filtros.every(p => p(f))).map(conEmbeds)
     const builder: any = {
-      select: () => builder,
+      select: (cols?: string) => (selectCols = cols ?? '', builder),
       insert: (v: Fila | Fila[]) => (op = 'insert', payload = v, builder),
       update: (v: Fila) => (op = 'update', payload = v, builder),
       eq: (c: string, v: any) => (filtros.push(f => f[c] === v), builder),
