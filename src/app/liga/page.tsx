@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
 import { crearLiga, eliminarLiga } from '@/app/actions/liga'
-import { fechasRecomendadas } from '@/lib/domain/liga'
+import { fechasRecomendadas, generarBloquesHorario, esHoraHHMM, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
+import { configDelClub } from '@/lib/supabase/clubConfig'
 
 const supabase = createClient()
 
@@ -44,11 +45,18 @@ export default function LigaPage() {
   const [numDivisiones, setNumDivisiones] = useState('')
   const [jugadoresPorDivision, setJugadoresPorDivision] = useState('')
   const [totalFechas, setTotalFechas] = useState('5')
+  const [horaInicio, setHoraInicio] = useState(BLOQUE_INICIO)
+  const [horaFin, setHoraFin] = useState(BLOQUE_FIN)
   const [montoInscripcion, setMontoInscripcion] = useState('')
   const [creando, setCreando] = useState(false)
   const [error, setError] = useState('')
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
+  // Si el formulario deja elegir la ventana horaria. 'off' —lo que hay hoy en
+  // los seis clubes— deja los campos escondidos y horaInicio/horaFin quietos
+  // en BLOQUE_INICIO/BLOQUE_FIN, así que el formulario de Buin no cambia en
+  // nada aunque el código de la ventana horaria ya exista.
+  const [horarioEditable, setHorarioEditable] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -64,17 +72,28 @@ export default function LigaPage() {
         setLigas(data || [])
         setLoading(false)
       })
+    configDelClub(perfil.club_id).then(config => {
+      if (vigente) setHorarioEditable(config('liga.horario_editable') === 'on')
+    })
     return () => { vigente = false }
   }, [authLoading, perfil, router])
 
-  // Aviso de cuántas fechas hacen falta según el tamaño de las divisiones.
-  // Se calcula con la misma función que usa el programador, así que si dice
-  // que alcanza, alcanza de verdad.
+  // Aviso de cuántas fechas hacen falta según el tamaño de las divisiones. Se
+  // calcula con la misma función que usa el programador, así que si dice que
+  // alcanza, alcanza de verdad.
+  //
+  // Cuántos bloques entran en la ventana horaria: con la de siempre
+  // (09:00–17:00, cada 30 min) son 16. Con `horarioEditable` apagado —todos
+  // los clubes hoy— horaInicio/horaFin nunca se mueven de ahí, así que esto
+  // calcula exactamente lo mismo que antes de que la ventana existiera.
+  const horaValida = esHoraHHMM(horaInicio) && esHoraHHMM(horaFin) && horaFin > horaInicio
+  const bloquesPorFecha = horaValida ? generarBloquesHorario(horaInicio, horaFin).length : 0
+
   const recomendacion = (() => {
     const jugadores = parseInt(jugadoresPorDivision)
     const elegidas = parseInt(totalFechas)
-    if (!jugadores || jugadores < 2 || !elegidas || elegidas < 2) return null
-    const sugeridas = fechasRecomendadas(jugadores)
+    if (!jugadores || jugadores < 2 || !elegidas || elegidas < 2 || !bloquesPorFecha) return null
+    const sugeridas = fechasRecomendadas(jugadores, bloquesPorFecha)
     return {
       jugadores,
       partidos: (jugadores * (jugadores - 1)) / 2,
@@ -90,6 +109,7 @@ export default function LigaPage() {
     const jpd = jugadoresPorDivision ? parseInt(jugadoresPorDivision) : 0
     if (nd < 1) { setError('Debe haber al menos 1 división'); return }
     if (jpd < 2) { setError('Debe haber al menos 2 jugadores por división'); return }
+    if (!horaValida) { setError('La hora de fin tiene que ser posterior a la de inicio.'); return }
     setCreando(true); setError('')
     const res = await crearLiga({
       nombre,
@@ -97,10 +117,12 @@ export default function LigaPage() {
       jugadoresPorDivision: jugadoresPorDivision ? parseInt(jugadoresPorDivision) : undefined,
       totalFechas: totalFechas ? parseInt(totalFechas) : 5,
       montoInscripcionDefault: montoInscripcion ? parseInt(montoInscripcion) : undefined,
+      horaInicio,
+      horaFin,
     })
     setCreando(false)
     if (res.error) { setError(res.error); return }
-    setModalOpen(false); setNombre(''); setNumDivisiones(''); setJugadoresPorDivision(''); setTotalFechas('5'); setMontoInscripcion('')
+    setModalOpen(false); setNombre(''); setNumDivisiones(''); setJugadoresPorDivision(''); setTotalFechas('5'); setMontoInscripcion(''); setHoraInicio(BLOQUE_INICIO); setHoraFin(BLOQUE_FIN)
     if (res.ligaId) router.push(`/liga/${res.ligaId}`)
   }
 
@@ -274,6 +296,22 @@ export default function LigaPage() {
                   onKeyDown={e => e.key === 'Enter' && handleCrear()} />
               </div>
 
+              {/* Detrás de `liga.horario_editable`: apagado en los seis clubes
+                  hoy, así que sin encenderlo el formulario se ve exactamente
+                  igual a como se veía antes de que esta ventana existiera. */}
+              {horarioEditable && (
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Desde qué hora se juega</label>
+                    <input type="time" style={inp} value={horaInicio} onChange={e => setHoraInicio(e.target.value)} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Hasta qué hora</label>
+                    <input type="time" style={inp} value={horaFin} onChange={e => setHoraFin(e.target.value)} />
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Fechas de temporada</label>
@@ -295,6 +333,15 @@ export default function LigaPage() {
                   <input type="number" min={2} style={inp} placeholder="Ej: 12" value={jugadoresPorDivision} onChange={e => setJugadoresPorDivision(e.target.value)} />
                 </div>
               </div>
+
+              {horarioEditable && !horaValida && horaInicio && horaFin && (
+                <div style={{
+                  background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 12px',
+                  fontSize: 12, color: '#991b1b', marginTop: 12, marginBottom: 4, lineHeight: 1.5,
+                }}>
+                  ⚠️ La hora de fin tiene que ser posterior a la de inicio.
+                </div>
+              )}
 
               {recomendacion && (
                 <div style={{

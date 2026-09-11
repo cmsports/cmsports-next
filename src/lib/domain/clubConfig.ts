@@ -195,6 +195,21 @@ export const CONFIG_CLUB = [
     editablePor: 'admin',
     label: 'Puntos para quien no se presenta',
   },
+  {
+    clave: 'liga.horario_editable',
+    tipo: 'opcion',
+    opciones: ['off', 'on'],
+    defecto: 'off',
+    editablePor: 'admin',
+    label: 'Si al crear una liga se puede elegir desde y hasta qué hora se juega',
+    // 'off' es lo que hay hoy en los seis clubes: la ventana es fija en
+    // BLOQUE_INICIO/BLOQUE_FIN (09:00-17:00) y el formulario de creación no
+    // pregunta nada. Encenderlo agrega dos campos al formulario — nada más:
+    // el motor (generarBloquesHorario, fechasRecomendadas, programarDivision)
+    // ya recibía la ventana como parámetro desde antes de esta clave, así que
+    // no hay nada técnico que precondicione encenderlo. Spinhouse lo pidió
+    // porque entrena de noche, no de 9 a 17 (2026-09-10).
+  },
 
   // ── Categorías de jugador ──────────────────────────────────────────────
   {

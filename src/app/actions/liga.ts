@@ -12,6 +12,7 @@ import {
   calcularDiffDivision,
   BLOQUE_INICIO,
   BLOQUE_FIN,
+  esHoraHHMM,
   type DiffDivision,
   type PartidoAProgramar,
   type PartidoProgramado,
@@ -576,7 +577,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     : Promise.resolve({ data: [] })
 
   const [{ data: ligaConfig }, { data: fechas }, { data: mesasRaw }, { data: rawDesdefNull }, { data: rawDesdeAjuste }, { data: rawRestricciones }] = await Promise.all([
-    db.from('ligas').select('total_fechas, bloque_minutos, mesas_count').eq('id', ligaId).single(),
+    db.from('ligas').select('total_fechas, bloque_minutos, mesas_count, hora_inicio, hora_fin').eq('id', ligaId).single(),
     supabase.from('liga_fechas').select('id, numero, estado').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero', { ascending: true }),
     supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
     db.from('liga_partidos').select('id, division_id, jugador_a_id, jugador_b_id, orden_fixture').eq('liga_id', ligaId).is('fecha_id', null).not('estado', 'in', '("finalizado","walkover")').is('deleted_at', null).order('orden_fixture', { ascending: true }),
@@ -665,7 +666,7 @@ export async function generarProgramacionLiga(params: { ligaId: string }) {
     ordenFixture: p.orden_fixture,
   }))
 
-  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
+  const bloques = generarBloquesHorario(ligaConfig?.hora_inicio ?? BLOQUE_INICIO, ligaConfig?.hora_fin ?? BLOQUE_FIN, bloqueMinutos)
 
   // Agrupar partidos por división y programar cada división en su mesa asignada
   const porDivision = new Map<string, PartidoAProgramar[]>()
@@ -878,7 +879,7 @@ export async function moverPartidoLiga(params: {
   const [{ data: mesa }, { data: fecha }, { data: ligaConfig }] = await Promise.all([
     supabase.from('liga_mesas').select('id, liga_id').eq('id', mesaId).single(),
     supabase.from('liga_fechas').select('id, liga_id, estado').eq('id', fechaId).single(),
-    (supabase as any).from('ligas').select('bloque_minutos').eq('id', partido.liga_id).single(),
+    (supabase as any).from('ligas').select('bloque_minutos, hora_inicio, hora_fin').eq('id', partido.liga_id).single(),
   ])
   if (!mesa || mesa.liga_id !== partido.liga_id) return { error: 'La mesa no pertenece a esta liga' }
   if (!fecha || fecha.liga_id !== partido.liga_id) return { error: 'La fecha no pertenece a esta liga' }
@@ -910,7 +911,7 @@ export async function moverPartidoLiga(params: {
     arbitro_id: partido.arbitro_id,
   })
 
-  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, ligaConfig?.bloque_minutos ?? 30)
+  const bloques = generarBloquesHorario(ligaConfig?.hora_inicio ?? BLOQUE_INICIO, ligaConfig?.hora_fin ?? BLOQUE_FIN, ligaConfig?.bloque_minutos ?? 30)
   const { valido, motivo } = validarMovimientoPartido(
     partidoActual,
     { fechaId, mesaId, bloqueHorario },
@@ -1056,10 +1057,27 @@ export async function crearLiga(params: {
   jugadoresPorDivision?: number
   totalFechas?: number
   montoInscripcionDefault?: number
+  /** "HH:MM". Sin declarar, la ventana de siempre: 09:00 a 17:00. */
+  horaInicio?: string
+  horaFin?: string
 }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
   if (!params.nombre.trim()) return { error: 'El nombre es obligatorio' }
+
+  // Ventana horaria en la que se juega cada fecha. Antes del 2026-09-10 estaba
+  // fija en BLOQUE_INICIO/BLOQUE_FIN para TODAS las ligas de TODOS los clubes;
+  // ahora la elige el admin al crearla, y el default es exactamente esa misma
+  // ventana, así que una liga creada sin tocar el campo se comporta idéntico
+  // a como se comportaba antes de que el campo existiera.
+  const horaInicio = params.horaInicio ?? BLOQUE_INICIO
+  const horaFin = params.horaFin ?? BLOQUE_FIN
+  if (!esHoraHHMM(horaInicio) || !esHoraHHMM(horaFin)) {
+    return { error: 'La hora de inicio y de fin van en formato HH:MM (por ejemplo 18:00).' }
+  }
+  if (horaFin <= horaInicio) {
+    return { error: 'La hora de fin tiene que ser posterior a la de inicio.' }
+  }
 
   // totalFechas = fechas REGULARES pedidas por el admin; se crea una adicional de ajuste
   const nFechasRegulares = Math.max(1, params.totalFechas ?? 5)
@@ -1072,6 +1090,8 @@ export async function crearLiga(params: {
       nombre: params.nombre.trim(),
       total_fechas: totalFechas,
       monto_inscripcion_default: params.montoInscripcionDefault ?? null,
+      hora_inicio: horaInicio,
+      hora_fin: horaFin,
     })
     .select('id')
     .single()
@@ -1373,7 +1393,7 @@ export async function programarEnReajuste(params: { ligaId: string }) {
   const { ligaId } = params
 
   const [{ data: ligaConfig }, { data: fechaAjuste }, { data: mesasRaw }] = await Promise.all([
-    db.from('ligas').select('bloque_minutos').eq('id', ligaId).single(),
+    db.from('ligas').select('bloque_minutos, hora_inicio, hora_fin').eq('id', ligaId).single(),
     supabase.from('liga_fechas').select('id').eq('liga_id', ligaId).eq('es_ajuste', true).single(),
     supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero'),
   ])
@@ -1381,7 +1401,7 @@ export async function programarEnReajuste(params: { ligaId: string }) {
 
   const mesas = (mesasRaw || []) as Array<{ id: string; numero: number }>
   const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
-  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
+  const bloques = generarBloquesHorario(ligaConfig?.hora_inicio ?? BLOQUE_INICIO, ligaConfig?.hora_fin ?? BLOQUE_FIN, bloqueMinutos)
 
   // Todos los partidos no resueltos de la liga (cliente filtra por fecha)
   const { data: rawAll } = await db
@@ -1555,7 +1575,7 @@ export async function programarNuevosPartidosDivision(params: { ligaId: string; 
     { data: mesaRef },
     { data: rawNuevos },
   ] = await Promise.all([
-    db.from('ligas').select('bloque_minutos').eq('id', ligaId).single(),
+    db.from('ligas').select('bloque_minutos, hora_inicio, hora_fin').eq('id', ligaId).single(),
     supabase.from('liga_fechas').select('id, numero').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero'),
     supabase.from('liga_fechas').select('id').eq('liga_id', ligaId).eq('es_ajuste', true).single(),
     db.from('liga_partidos').select('mesa_id').eq('division_id', divisionId).not('mesa_id', 'is', null).limit(1).single(),
@@ -1573,7 +1593,7 @@ export async function programarNuevosPartidosDivision(params: { ligaId: string; 
   if (!mesaId) return { error: 'Esta división no tiene mesa asignada. Generá la programación general primero.' }
 
   const bloqueMinutos: number = ligaConfig?.bloque_minutos ?? 30
-  const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bloqueMinutos)
+  const bloques = generarBloquesHorario(ligaConfig?.hora_inicio ?? BLOQUE_INICIO, ligaConfig?.hora_fin ?? BLOQUE_FIN, bloqueMinutos)
   const fechaIds = (fechasReg || []).map((f: { id: string }) => f.id)
   if (!fechaIds.length) return { error: 'No hay fechas regulares configuradas' }
 

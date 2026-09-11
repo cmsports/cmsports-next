@@ -65,7 +65,7 @@ export function FixtureDivision({
   const cargar = useCallback(async () => {
     const db = supabase as any
     const [{ data: ligaInfo }, { data: fechasData }, { data: rawPartidos }, { data: divisionData }] = await Promise.all([
-      (supabase as any).from('ligas').select('bloque_minutos').eq('id', ligaId).single(),
+      (supabase as any).from('ligas').select('bloque_minutos, hora_inicio, hora_fin').eq('id', ligaId).single(),
       supabase.from('liga_fechas').select('id, numero, es_ajuste').eq('liga_id', ligaId).order('numero'),
       db.from('liga_partidos')
         .select('id, estado, jugador_a_id, jugador_b_id, sets_a, sets_b, ganador_id, orden_fixture, fecha_id, bloque_horario, liga_fechas(numero), liga_divisiones(nombre)')
@@ -76,7 +76,7 @@ export function FixtureDivision({
     ])
 
     const bmin: number = ligaInfo?.bloque_minutos ?? 30
-    setBloques(generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, bmin))
+    setBloques(generarBloquesHorario(ligaInfo?.hora_inicio ?? BLOQUE_INICIO, ligaInfo?.hora_fin ?? BLOQUE_FIN, bmin))
     setFechasLiga((fechasData || []).map((f: any) => ({ id: f.id, numero: f.numero, esAjuste: f.es_ajuste })))
 
     const divNombre = divisionData?.nombre ?? ''

@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { calcularRankingDivision, type FilaRanking, type PartidoFinalizado } from '@/lib/domain/liga'
+import { calcularRankingDivision, type FilaRanking, type PartidoFinalizado, type PuntajeLiga, PUNTAJE_LIGA_POR_DEFECTO } from '@/lib/domain/liga'
 import { useReordenAnimado } from '@/lib/useReordenAnimado'
+import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { configDelClub } from '@/lib/supabase/clubConfig'
 
 const supabase = createClient()
 
@@ -61,6 +63,7 @@ function CountUp({ to, duration = 800 }: { to: number; duration?: number }) {
 }
 
 export function RankingDivision({ divisionId, nombreDivision }: { divisionId: string; nombreDivision: string }) {
+  const { perfil } = usePerfil()
   const [ranking, setRanking] = useState<FilaRanking[]>([])
   const [nombres, setNombres] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
@@ -108,7 +111,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
     setError(null)
     try {
       const db = supabase as any
-      const [res1, res2] = await Promise.all([
+      const [res1, res2, config] = await Promise.all([
         supabase.from('liga_division_jugadores').select('jugador_id').eq('division_id', divisionId),
         db
           .from('liga_partidos')
@@ -116,10 +119,19 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
           .eq('division_id', divisionId)
           .in('estado', ['finalizado', 'walkover'])
           .not('estado', 'eq', 'anulado'),
+        // Puntaje del club. Sin filas en club_config —el caso de todos hoy salvo
+        // Spinhouse cuando lo configure— `configDelClub` devuelve los defaults,
+        // que son exactamente 3/1/0: nada cambia para nadie que no lo haya pedido.
+        configDelClub(perfil?.club_id),
       ])
 
       const dj = res1?.data
       const rawPartidos = res2?.data
+      const puntaje: PuntajeLiga = {
+        victoria: config('liga.puntos_victoria') as number,
+        derrota: config('liga.puntos_derrota') as number,
+        walkover: config('liga.puntos_walkover') as number,
+      }
 
       const partidosData = (rawPartidos || []) as Array<{
         jugador_a_id: string; jugador_b_id: string; ganador_id: string | null
@@ -141,7 +153,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
           setsB: p.sets_b,
         }))
 
-      setRanking(calcularRankingDivision(jugadorIds, partidos))
+      setRanking(calcularRankingDivision(jugadorIds, partidos, puntaje))
 
       if (jugadorIds.length) {
         const { data: jugadoresData } = await supabase.from('jugadores').select('id, nombre').in('id', jugadorIds)
@@ -155,7 +167,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
     } finally {
       setLoading(false)
     }
-  }, [divisionId])
+  }, [divisionId, perfil?.club_id])
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void cargar() }, 0)

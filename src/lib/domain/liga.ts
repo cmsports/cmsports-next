@@ -20,7 +20,8 @@ export function generarFixtureDivision(jugadorIds: string[]): PartidoFixtureLiga
 export { esResultadoBo5Valido, determinarGanadorBo5 } from './marcador'
 
 // ─── Ranking por división ──────────────────────────────────────────────────
-// Puntos: victoria 3, derrota 1, walkover ganado 3, walkover perdido 0.
+// Puntos por defecto: victoria 3, derrota jugada 1, walkover 0. Configurable
+// por club vía `PuntajeLiga` — ver `calcularRankingDivision`.
 // Orden: Puntos → Partidos Ganados → Diferencia de Sets → Sets a Favor →
 // enfrentamiento directo.
 
@@ -44,9 +45,23 @@ export interface FilaRanking {
   ds: number
 }
 
+/** Cuánto suma cada resultado. Los tres defaults son lo que el sistema hizo
+ *  siempre —victoria 3, derrota jugada 1, walkover 0— y son los que rigen si
+ *  no se pasa nada, así que un llamado sin este parámetro se comporta
+ *  idéntico a antes de que existiera. Spinhouse pidió 2/1/0; sale de
+ *  `club_config` (claves `liga.puntos_*`), nunca hardcodeado por club. */
+export interface PuntajeLiga {
+  victoria: number
+  derrota: number
+  walkover: number
+}
+
+export const PUNTAJE_LIGA_POR_DEFECTO: PuntajeLiga = { victoria: 3, derrota: 1, walkover: 0 }
+
 export function calcularRankingDivision(
   jugadorIds: string[],
   partidos: PartidoFinalizado[],
+  puntaje: PuntajeLiga = PUNTAJE_LIGA_POR_DEFECTO,
 ): FilaRanking[] {
   const statsMap = new Map<string, FilaRanking>()
   for (const id of jugadorIds) {
@@ -61,11 +76,11 @@ export function calcularRankingDivision(
 
     ganador.pj += 1
     ganador.pg += 1
-    ganador.pts += 3
+    ganador.pts += puntaje.victoria
 
     perdedor.pj += 1
     perdedor.pp += 1
-    perdedor.pts += p.esWalkover ? 0 : 1
+    perdedor.pts += p.esWalkover ? puntaje.walkover : puntaje.derrota
 
     if (!p.esWalkover && p.setsA !== null && p.setsB !== null) {
       const setsGanador = p.ganadorId === p.jugadorAId ? p.setsA : p.setsB
@@ -165,6 +180,19 @@ function minutosAHora(min: number): string {
   const h = String(Math.floor(min / 60)).padStart(2, '0')
   const m = String(min % 60).padStart(2, '0')
   return `${h}:${m}`
+}
+
+/**
+ * Si el texto tiene forma de hora HH:MM válida (00:00 a 23:59).
+ *
+ * Existe porque `hora_inicio`/`hora_fin` de una liga ahora los escribe el
+ * admin al crearla, y un valor mal tipeado —"9:00", "25:00", "9-00"—
+ * rompería `horaAMinutos()` en silencio: `parseInt("9-00".split(":"))` da
+ * `NaN`, y de ahí `generarBloquesHorario` no genera ningún bloque, sin decir
+ * por qué. Se valida ANTES de guardar, no después.
+ */
+export function esHoraHHMM(s: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s)
 }
 
 export function generarBloquesHorario(

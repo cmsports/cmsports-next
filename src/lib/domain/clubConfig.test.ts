@@ -13,6 +13,7 @@ import {
   puedeEditarClave,
   valorPorDefecto,
 } from './clubConfig'
+import { PUNTAJE_LIGA_POR_DEFECTO } from './liga'
 
 /**
  * Los defaults son el contrato con producción.
@@ -62,32 +63,32 @@ describe('los defaults son el comportamiento actual de Buin', () => {
     // último cupo. Ver §10.6 del plan maestro.
     expect(valorPorDefecto('inscripcion.autoservicio')).toBe('off')
   })
+
+  it('liga: el formulario NO pregunta el horario', () => {
+    // 'off' es el formulario de siempre: ventana fija 09:00-17:00, sin campos
+    // de hora. Encenderlo solo agrega dos inputs — no hay nada técnico detrás,
+    // así que si esto se pone en 'on' por defecto, los seis clubes verían un
+    // formulario distinto de la noche a la mañana sin haberlo pedido.
+    expect(valorPorDefecto('liga.horario_editable')).toBe('off')
+  })
 })
 
 /**
- * Los defaults de la liga están copiados de `liga.ts`, que los tiene como
- * números sueltos. Mientras esa copia exista, alguien puede cambiar uno de los
- * dos lados y dejarlos distintos — y la tabla de posiciones de Buin cambiaría
- * sin que ninguna prueba se queje.
- *
- * Esto no arregla la duplicación (eso pasa cuando la liga lea la config), pero
- * la caza. Es el mismo patrón de `rutas-protegidas.test.ts`: leer el archivo y
- * comprobar la regla, en vez de confiar en que alguien se acuerde.
+ * `calcularRankingDivision` ya lee el puntaje de `club_config` —el catálogo
+ * es la única fuente de verdad—, así que esto ya no necesita leer el código
+ * fuente de `liga.ts` con un regex para cazar una divergencia: la divergencia
+ * dejó de ser posible en cuanto `PUNTAJE_LIGA_POR_DEFECTO` es el propio
+ * default del parámetro. Lo que queda por comprobar es más simple y más
+ * fuerte: que ese default siga siendo exactamente el que el catálogo declara,
+ * porque ES la definición de "lo que Buin hace hoy".
  */
-describe('el puntaje de liga.ts sigue siendo el default', () => {
-  const liga = readFileSync(join(__dirname, 'liga.ts'), 'utf8')
-
-  it('el ganador suma lo que dice el catálogo', () => {
-    const m = liga.match(/ganador\.pts\s*\+=\s*(\d+)/)
-    expect(m, 'no se encontró la línea que suma puntos al ganador en liga.ts').toBeTruthy()
-    expect(Number(m![1])).toBe(valorPorDefecto('liga.puntos_victoria'))
-  })
-
-  it('el perdedor y el walkover suman lo que dice el catálogo', () => {
-    const m = liga.match(/perdedor\.pts\s*\+=\s*p\.esWalkover\s*\?\s*(\d+)\s*:\s*(\d+)/)
-    expect(m, 'no se encontró la línea que suma puntos al perdedor en liga.ts').toBeTruthy()
-    expect(Number(m![1])).toBe(valorPorDefecto('liga.puntos_walkover'))
-    expect(Number(m![2])).toBe(valorPorDefecto('liga.puntos_derrota'))
+describe('el default de PuntajeLiga coincide con el catálogo', () => {
+  it('victoria, derrota y walkover son los mismos tres números', () => {
+    expect(PUNTAJE_LIGA_POR_DEFECTO).toEqual({
+      victoria: valorPorDefecto('liga.puntos_victoria'),
+      derrota: valorPorDefecto('liga.puntos_derrota'),
+      walkover: valorPorDefecto('liga.puntos_walkover'),
+    })
   })
 })
 

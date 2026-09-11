@@ -9,6 +9,7 @@ import {
   fechasRecomendadas,
   puedeJugarEnBloque,
   generarBloquesHorario,
+  esHoraHHMM,
   BLOQUE_INICIO,
   BLOQUE_FIN,
   type PartidoFinalizado,
@@ -80,6 +81,54 @@ describe('calcularRankingDivision', () => {
       p('C', 'A', 'C', 3, 0),
     ])
     expect(filas.map(f => f.jugadorId)).toEqual(['B', 'C', 'A'])
+  })
+})
+
+// El tercer parámetro es lo que agregó el 2026-09-10: hasta entonces el 3/1/0
+// estaba escrito en el cuerpo de la función, y Spinhouse —que pidió 2/1/0—
+// solo se podía atender con un `if(clubId)`. Ahora es un parámetro con ese
+// mismo 3/1/0 como default, así que un llamado sin el tercer argumento (como
+// las pruebas de arriba) se comporta idéntico a como se comportaba antes.
+describe('calcularRankingDivision — puntaje configurable', () => {
+  const p = (aId: string, bId: string, ganadorId: string, setsA: number, setsB: number): PartidoFinalizado => ({
+    jugadorAId: aId, jugadorBId: bId, ganadorId, esWalkover: false, setsA, setsB,
+  })
+
+  it('sin puntaje declarado, sigue siendo 3/1/0 — Buin no se mueve', () => {
+    const filas = calcularRankingDivision(['A', 'B'], [p('A', 'B', 'A', 3, 1)])
+    const a = filas.find(f => f.jugadorId === 'A')!
+    const b = filas.find(f => f.jugadorId === 'B')!
+    expect(a.pts).toBe(3)
+    expect(b.pts).toBe(1)
+  })
+
+  it('con 2/1/0 (Spinhouse), el ganador suma 2 y el perdedor 1', () => {
+    const filas = calcularRankingDivision(
+      ['A', 'B'],
+      [p('A', 'B', 'A', 3, 1)],
+      { victoria: 2, derrota: 1, walkover: 0 },
+    )
+    const a = filas.find(f => f.jugadorId === 'A')!
+    const b = filas.find(f => f.jugadorId === 'B')!
+    expect(a.pts).toBe(2)
+    expect(b.pts).toBe(1)
+  })
+
+  it('el walkover usa su propio puntaje, no el de derrota', () => {
+    const filas = calcularRankingDivision(
+      ['A', 'B'],
+      [{ jugadorAId: 'A', jugadorBId: 'B', ganadorId: 'A', esWalkover: true, setsA: null, setsB: null }],
+      { victoria: 2, derrota: 1, walkover: 0 },
+    )
+    expect(filas.find(f => f.jugadorId === 'B')!.pts).toBe(0)
+  })
+
+  it('dos ligas del mismo club con distinto puntaje no se contaminan', () => {
+    const partido = p('A', 'B', 'A', 3, 0)
+    const conBuin = calcularRankingDivision(['A', 'B'], [partido], { victoria: 3, derrota: 1, walkover: 0 })
+    const conSpinhouse = calcularRankingDivision(['A', 'B'], [partido], { victoria: 2, derrota: 1, walkover: 0 })
+    expect(conBuin.find(f => f.jugadorId === 'A')!.pts).toBe(3)
+    expect(conSpinhouse.find(f => f.jugadorId === 'A')!.pts).toBe(2)
   })
 })
 
@@ -272,6 +321,49 @@ describe('programarDivision — garantía de hueco máximo', () => {
 
 // Lo único que importa de esta función: si dice que con X fechas alcanza,
 // tiene que alcanzar de verdad. Se verifica corriendo el programador real.
+describe('esHoraHHMM', () => {
+  // Un valor mal tipeado en hora_inicio/hora_fin rompe generarBloquesHorario
+  // en silencio (NaN de un split fallido), así que esto se valida ANTES de
+  // guardar y no después.
+  it('acepta horas válidas, incluidos los bordes', () => {
+    expect(esHoraHHMM('00:00')).toBe(true)
+    expect(esHoraHHMM('23:59')).toBe(true)
+    expect(esHoraHHMM('09:00')).toBe(true)
+    expect(esHoraHHMM('18:30')).toBe(true)
+  })
+
+  it('rechaza lo que no es HH:MM', () => {
+    expect(esHoraHHMM('9:00')).toBe(false)
+    expect(esHoraHHMM('24:00')).toBe(false)
+    expect(esHoraHHMM('18:60')).toBe(false)
+    expect(esHoraHHMM('18-30')).toBe(false)
+    expect(esHoraHHMM('')).toBe(false)
+    expect(esHoraHHMM('mediodía')).toBe(false)
+  })
+})
+
+// El caso que motivó esto: Spinhouse entrena de noche, no de 9 a 17. Con la
+// misma cantidad de jugadores, una ventana más corta da menos bloques por
+// fecha y por eso hacen falta MÁS fechas — el aviso de viabilidad del
+// formulario tiene que reflejar la ventana elegida, no la de siempre.
+describe('fechasRecomendadas respeta la ventana horaria elegida', () => {
+  it('una ventana de 2 horas necesita más fechas que una de 8, para los mismos jugadores', () => {
+    const bloques8h = generarBloquesHorario('09:00', '17:00', 30).length
+    const bloques2h = generarBloquesHorario('18:00', '20:00', 30).length
+    expect(bloques2h).toBeLessThan(bloques8h)
+    expect(fechasRecomendadas(14, bloques2h)).toBeGreaterThan(fechasRecomendadas(14, bloques8h))
+  })
+
+  it('el caso de Spinhouse: 14 jugadores por división, entrenando de 18:00 a 21:00', () => {
+    const bloques = generarBloquesHorario('18:00', '21:00', 30).length
+    expect(bloques).toBe(6)
+    // 14 jugadores = 91 partidos. Con 6 bloques por fecha hacen falta muchas
+    // más de las 5-6 fechas que alcanzarían con la ventana de 8 horas.
+    const necesarias = fechasRecomendadas(14, bloques)
+    expect(necesarias).toBeGreaterThan(fechasRecomendadas(14, generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, 30).length))
+  })
+})
+
 describe('fechasRecomendadas', () => {
   const bloques = generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, 30)
 

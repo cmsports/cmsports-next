@@ -18,7 +18,8 @@ import { registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
-import { calcularRankingDivision, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
+import { calcularRankingDivision, BLOQUE_INICIO, BLOQUE_FIN, type PuntajeLiga, PUNTAJE_LIGA_POR_DEFECTO } from '@/lib/domain/liga'
+import { configDelClub } from '@/lib/supabase/clubConfig'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { useTextoMonto } from '@/components/Monto'
 import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/liga'
@@ -173,7 +174,7 @@ export default function LigaDetallePage() {
   const ligaId = params.id
   const { perfil, loading: authLoading } = usePerfil()
 
-  const [liga, setLiga] = useState<{ nombre: string; montoInscripcionDefault: number | null; estado: string } | null>(null)
+  const [liga, setLiga] = useState<{ nombre: string; montoInscripcionDefault: number | null; estado: string; horaInicio: string; horaFin: string } | null>(null)
   const [divisiones, setDivisiones] = useState<Division[]>([])
   const [fechas, setFechas] = useState<Fecha[]>([])
   const [jugadoresClub, setJugadoresClub] = useState<Jugador[]>([])
@@ -247,7 +248,7 @@ export default function LigaDetallePage() {
   const cargar = useCallback(async () => {
     // 5 queries en paralelo — RLS filtra por club sin necesitar club_id explícito
     const [{ data: ligaData }, { data: divs }, { data: fch }, { data: jugs }, { data: dj }] = await Promise.all([
-      (supabase as any).from('ligas').select('nombre, monto_inscripcion_default, estado').eq('id', ligaId).single(),
+      (supabase as any).from('ligas').select('nombre, monto_inscripcion_default, estado, hora_inicio, hora_fin').eq('id', ligaId).single(),
       supabase.from('liga_divisiones').select('id, nombre, orden, fixture_generado, capacidad_max').eq('liga_id', ligaId).order('orden'),
       supabase.from('liga_fechas').select('id, numero, es_ajuste, estado').eq('liga_id', ligaId).order('numero'),
       supabase.from('jugadores').select('id, nombre, es_externo').eq('estado', 'activo').order('nombre'),
@@ -255,7 +256,7 @@ export default function LigaDetallePage() {
     ])
     if (!ligaData) { setLoading(false); return }
 
-    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null, estado: ligaData.estado ?? 'planificacion' })
+    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null, estado: ligaData.estado ?? 'planificacion', horaInicio: ligaData.hora_inicio ?? BLOQUE_INICIO, horaFin: ligaData.hora_fin ?? BLOQUE_FIN })
     setDivisiones(divs || [])
     setFechas(fch || [])
     setJugadoresClub(jugs || [])
@@ -335,7 +336,15 @@ export default function LigaDetallePage() {
         .in('division_id', divIds)
         .in('estado', ['finalizado', 'walkover'])
         .is('deleted_at', null),
-    ]).then(([{ data: djAll }, { data: rawPartidosAll }]: [{ data: any[] | null }, { data: any[] | null }]) => {
+      // Mismo puntaje que la tabla de posiciones real: sin esto el podio del
+      // modal podía mostrar un orden distinto al de `RankingDivision`.
+      configDelClub(perfil?.club_id),
+    ]).then(([{ data: djAll }, { data: rawPartidosAll }, config]: [{ data: any[] | null }, { data: any[] | null }, ReturnType<typeof configDelClub> extends Promise<infer T> ? T : never]) => {
+      const puntaje: PuntajeLiga = {
+        victoria: config('liga.puntos_victoria') as number,
+        derrota: config('liga.puntos_derrota') as number,
+        walkover: config('liga.puntos_walkover') as number,
+      }
       const results = divisiones.map(div => {
         const jugIds = (djAll || [])
           .filter((j: { division_id: string; jugador_id: string }) => j.division_id === div.id)
@@ -350,7 +359,7 @@ export default function LigaDetallePage() {
             setsA: p.sets_a ?? 0,
             setsB: p.sets_b ?? 0,
           }))
-        const ranking = calcularRankingDivision(jugIds, partidos)
+        const ranking = calcularRankingDivision(jugIds, partidos, puntaje)
         return {
           id: div.id,
           nombre: div.nombre,
@@ -1434,8 +1443,8 @@ export default function LigaDetallePage() {
         <ModalRestricciones
           jugadores={jugadoresDeLaLiga}
           numFechasRegulares={fechas.filter(f => !f.es_ajuste).length}
-          bloqueInicio={BLOQUE_INICIO}
-          bloqueFin={BLOQUE_FIN}
+          bloqueInicio={liga?.horaInicio ?? BLOQUE_INICIO}
+          bloqueFin={liga?.horaFin ?? BLOQUE_FIN}
           restriccionesIniciales={restriccionesModal}
           guardando={programando}
           onCancelar={() => setModalRestriccionesAbierto(false)}

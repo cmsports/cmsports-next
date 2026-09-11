@@ -81,7 +81,7 @@ export function TableroFecha({
   const cargar = useCallback(async () => {
     const db = supabase as any
     const [{ data: fechaData }, { data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: jugadoresData }] = await Promise.all([
-      supabase.from('liga_fechas').select('numero, estado, liga_id, ligas(nombre, bloque_minutos)').eq('id', fechaId).single(),
+      supabase.from('liga_fechas').select('numero, estado, liga_id, ligas(nombre, bloque_minutos, hora_inicio, hora_fin)').eq('id', fechaId).single(),
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
       db.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId).is('deleted_at', null),
       supabase.from('liga_divisiones').select('id, nombre').eq('liga_id', ligaId),
@@ -91,7 +91,7 @@ export function TableroFecha({
 
     const ligaRel = (Array.isArray(fechaData.ligas) ? fechaData.ligas[0] : fechaData.ligas) as Record<string, unknown> | null
     setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: String(ligaRel?.nombre ?? '') })
-    setBloques(generarBloquesHorario(BLOQUE_INICIO, BLOQUE_FIN, Number(ligaRel?.bloque_minutos ?? 30)))
+    setBloques(generarBloquesHorario(String(ligaRel?.hora_inicio ?? BLOQUE_INICIO), String(ligaRel?.hora_fin ?? BLOQUE_FIN), Number(ligaRel?.bloque_minutos ?? 30)))
 
     const divisionIds = (divisionesData || []).map((d: any) => d.id)
     const { data: divJugData } = divisionIds.length > 0
