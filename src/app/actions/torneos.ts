@@ -1745,7 +1745,19 @@ export async function armarCuadroConsolacion(params: { torneoId: string }) {
   if (todos.some(p => esFaseDeConsolacion(p.fase))) return { success: true, yaExistia: true }
 
   const delCuadro = todos.filter(p => !esFaseDeConsolacion(p.fase))
-  const faseInicial = [...delCuadro].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))[0]?.fase
+
+  // ⚠️ Antes esto ordenaba por `orden` crudo entre TODAS las fases mezcladas.
+  // `orden` se reinicia en 0 dentro de cada ronda —16vos tiene 0,1,2…, 8vos
+  // también 0,1,2…, cuartos también—, así que comparar el número sin mirar la
+  // fase es una lotería: sin un `.order()` en la consulta, dos filas con
+  // orden=0 de fases distintas pueden salir en cualquier orden. Con el torneo
+  // ya avanzado —todas las rondas presentes en `delCuadro`— esto podía elegir
+  // 'cuartos' o 'final' como si fueran la ronda inicial, y entonces
+  // `consolacionLista` esperaba para siempre algo que ya había pasado: el
+  // cuadro de consuelo no se armaba nunca, ni terminado el torneo entero.
+  // (Encontrado el 2026-09-11 probando eliminación + consolación en producción.)
+  const fasesPresentes = new Set(delCuadro.map(p => p.fase).filter((f): f is string => !!f))
+  const faseInicial = CONFIG.FASES_ORDEN.find(f => fasesPresentes.has(f))
   if (!faseInicial) return { error: 'El cuadro principal todavía no está armado.' }
 
   if (!consolacionLista({ partidos: delCuadro, faseInicial: faseInicial as FaseOrden })) {
@@ -1766,12 +1778,32 @@ export async function armarCuadroConsolacion(params: { torneoId: string }) {
     fase: p.fase,
     jugador_a: p.jugadorA,
     jugador_b: p.jugadorB,
+    // Mismo olvido que en `cerrarInscripcionYGenerarGrupos`, en el otro cuadro:
+    // `generarCuadroConsolacion` reusa `construirBracketPorRanking`, que ya
+    // trae el ganador puesto en los BYE del propio consuelo —con 10 elegibles
+    // el cuadro es de 16 y sobran 6 BYE—. Sin copiarlo, esos seis quedaban
+    // "sin jugar" para siempre y la ronda siguiente del consuelo no avanzaba.
+    // (Encontrado el 2026-09-11, mismo torneo donde apareció el primero.)
+    ganador: p.ganador ?? null,
     orden: p.orden,
   }))
   if (!nuevos.length) return { success: true, sinElegibles: true }
 
   const { error } = await supabase.from('torneo_partidos').insert(nuevos)
   if (error) return { error: `No se pudo armar el cuadro de consolación: ${error.message}` }
+
+  // Igual que en el cuadro principal: un BYE no se juega, así que
+  // `marcarGanadorPartido` lo rechaza a propósito y nadie más lo iba a
+  // propagar. `propagarGanadorPlayoff` ya entiende las fases `cons_*` via
+  // `siguienteFaseDeCualquierCuadro`.
+  const byesConGanador = nuevos.filter(p => p.ganador && !p.jugador_b)
+  if (byesConGanador.length) {
+    const erroresBye = await Promise.all(
+      byesConGanador.map(p => propagarGanadorPlayoff(supabase, p, p.ganador!)),
+    )
+    const primerError = erroresBye.find(e => e != null)
+    if (primerError) return { error: primerError }
+  }
 
   return { success: true, creados: nuevos.length }
 }

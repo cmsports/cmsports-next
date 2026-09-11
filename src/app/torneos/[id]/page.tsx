@@ -103,7 +103,7 @@ export default function TorneoDetallePage() {
   const [jugSuggestions, setJugSuggestions] = useState<any[]>([])
   const [jugadorIdSeleccionado, setJugadorIdSeleccionado] = useState<string | null>(null)
   const [empateManual, setEmpateManual] = useState<Record<string, any>>({})
-  const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'>('grupos')
+  const [tabActiva, setTabActiva] = useState<'grupos'|'bracket'|'consuelo'>('grupos')
   /** Mesas de la sede, para decir cuántas tandas ocupa una fecha de liguilla. */
   const [mesasDelClub, setMesasDelClub] = useState(0)
   const [partidoEditando, setPartidoEditando] = useState<string|null>(null)
@@ -854,6 +854,11 @@ export default function TorneoDetallePage() {
   // secas filtra contra CONFIG.FASES_ORDEN y las `cons_*` se le caen: sus
   // partidos existirían en la base sin aparecer en ninguna pestaña.
   const fasesConTercerLugar = fasesParaMostrarConConsuelo(fasesConPartidos)
+  // El cuadro de consuelo vive en su propia pestaña, no mezclado con el
+  // principal (antes solo aparecía en la lista del celular; en escritorio no
+  // se veía en ningún lado). Solo se muestra si ya tiene partidos.
+  const fasesDeConsuelo = fasesConTercerLugar.filter(esFaseDeConsolacion)
+  const hayConsuelo = fasesDeConsuelo.length > 0
   const partidoTercerLugar = (partidosPorFase.get('tercer_lugar') || [])[0] ?? null
   const tercerLugarPendiente = !!partidoTercerLugar && !partidoTercerLugar.ganador
   // Un torneo interno cuyas semis se marcaron ANTES de que existiera esta regla
@@ -1194,6 +1199,9 @@ export default function TorneoDetallePage() {
         <div style={{ display:'flex', gap:8, marginBottom:16, borderBottom:'1px solid #e2e8f0' }}>
           <button onClick={() => setTabActiva('grupos')} style={{ background:'transparent', border:'none', color: tabActiva==='grupos'?'#4f46e5': muted, borderBottom: tabActiva==='grupos'?'2px solid #4f46e5':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Fase de grupos</button>
           <button onClick={() => setTabActiva('bracket')} style={{ background:'transparent', border:'none', color: tabActiva==='bracket'?'#4f46e5': muted, borderBottom: tabActiva==='bracket'?'2px solid #4f46e5':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Bracket</button>
+          {hayConsuelo && (
+            <button onClick={() => setTabActiva('consuelo')} style={{ background:'transparent', border:'none', color: tabActiva==='consuelo'?'#4f46e5': muted, borderBottom: tabActiva==='consuelo'?'2px solid #4f46e5':'2px solid transparent', padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer' }}>Bracket de consuelo</button>
+          )}
         </div>
       )}
 
@@ -1690,7 +1698,9 @@ export default function TorneoDetallePage() {
               En desktop esta misma lista dibuja solo la mini llave del 3er
               lugar, que no cabe en la geometría del SVG. */}
           {(() => {
-            const fasesVis = isMobile ? fasesConTercerLugar : (hayTercerLugar ? ['tercer_lugar'] : [])
+            // El consuelo tiene su propia pestaña más abajo: aquí solo el
+            // cuadro principal (+ 3er lugar en desktop).
+            const fasesVis = isMobile ? fasesConTercerLugar.filter(f => !esFaseDeConsolacion(f)) : (hayTercerLugar ? ['tercer_lugar'] : [])
             if (!fasesVis.length) return null
 
             const nombre = (p: any, pos: 'a' | 'b') =>
@@ -1806,6 +1816,107 @@ export default function TorneoDetallePage() {
                 <div style={{ fontSize:18, color: text, marginTop:4 }}>{campeon.nombre}</div>
               </div>
             ) : null
+          })()}
+        </div>
+      )}
+
+      {/* BRACKET DE CONSUELO — pestaña propia porque el cuadro de consuelo no
+          comparte el número de rondas del principal y nunca calza en la
+          geometría del SVG de arriba. Reusa la misma lista de tarjetas por
+          fase, con las fases de consuelo (`cons_*`) en vez de las del cuadro
+          principal. Los perdedores de la ronda inicial del bracket principal
+          entran acá apenas se arma (elegiblesParaConsolacion). */}
+      {mostrarLlaves && tabActiva === 'consuelo' && (
+        <div>
+          <div style={{ background:'#faf5ff', border:'1px solid #e9d5ff', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#7c3aed', marginBottom:16 }}>
+            🥈 Caen aquí quienes pierden su único partido en la ronda inicial del bracket principal. Haz clic para marcar ganador.
+          </div>
+          {(() => {
+            const fasesVis = fasesDeConsuelo
+            if (!fasesVis.length) return null
+
+            const nombre = (p: any, pos: 'a' | 'b') =>
+              (pos === 'a' ? p.ja?.nombre : p.jb?.nombre) || etiquetaCupo(p, pos)
+
+            return fasesVis.map(fase => {
+              const ps = partidosPorFase.get(fase) || []
+              return (
+                <div key={fase} style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 11, color: muted, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: 8 }}>
+                    {faseLabel[fase]}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {ps.map((p, i) => {
+                      const isBye = esByeMatch(p)
+                      const editando = partidoPlayoffEditando === p.id
+                      const definidoA = !!(p as any).ja?.nombre
+                      const definidoB = !!(p as any).jb?.nombre
+                      const ganoA = !!p.ganador && p.ganador === p.jugador_a
+                      const ganoB = !!p.ganador && p.ganador === p.jugador_b
+                      const puedeMarcar = esAdmin && !p.ganador && !isBye
+
+                      const Lado = (pos: 'a' | 'b') => {
+                        const gano = pos === 'a' ? ganoA : ganoB
+                        const jid = pos === 'a' ? p.jugador_a : p.jugador_b
+                        const definido = pos === 'a' ? definidoA : definidoB
+                        const clickable = puedeMarcar && !!jid && definido
+                        return (
+                          <button
+                            onClick={clickable ? () => marcarGanador(p.id, jid!) : undefined}
+                            disabled={!clickable}
+                            style={{
+                              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              gap: 8, padding: '13px 14px', border: 'none', textAlign: 'left',
+                              background: gano ? '#f0fdf4' : 'transparent',
+                              color: gano ? '#16a34a' : definido ? text : hint,
+                              fontStyle: definido ? 'normal' : 'italic',
+                              fontWeight: gano ? 700 : 500, fontSize: 15,
+                              cursor: clickable ? 'pointer' : 'default',
+                            }}
+                          >
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {nombre(p, pos)}
+                              {jid && cabezaNumero.has(jid) && <span style={{ fontSize: 9, color: '#d97706', marginLeft: 3 }}>CS{cabezaNumero.get(jid)}</span>}
+                            </span>
+                            {gano && <span style={{ color: '#16a34a', fontSize: 15, flexShrink: 0 }}>✓</span>}
+                          </button>
+                        )
+                      }
+
+                      return (
+                        <div key={p.id} style={{ ...card, borderRadius: 12, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>Llave {i + 1}</span>
+                            {!!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado' && !editando && (
+                              <button onClick={() => setPartidoPlayoffEditando(p.id)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 13, cursor: 'pointer', padding: '0 2px' }} title="Corregir resultado">✏️</button>
+                            )}
+                          </div>
+                          {editando ? (
+                            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>¿Quién ganó?</span>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button onClick={() => corregirPlayoff(p.id, p.jugador_a)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 8, padding: '11px 6px', fontSize: 14, fontWeight: 600, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(p as any).ja?.nombre?.split(' ')[0] || 'A'}</button>
+                                <button onClick={() => corregirPlayoff(p.id, p.jugador_b)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 8, padding: '11px 6px', fontSize: 14, fontWeight: 600, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(p as any).jb?.nombre?.split(' ')[0] || 'B'}</button>
+                                <button onClick={() => setPartidoPlayoffEditando(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 18, cursor: 'pointer', padding: '0 8px' }}>✕</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {Lado('a')}
+                              {isBye ? (
+                                <div style={{ padding: '13px 14px', borderTop: '1px solid #f1f5f9', fontSize: 14, color: hint, fontStyle: 'italic' }}>BYE (pasa directo)</div>
+                              ) : (
+                                <div style={{ borderTop: '1px solid #f1f5f9' }}>{Lado('b')}</div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })
           })()}
         </div>
       )}
