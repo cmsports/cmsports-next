@@ -1831,7 +1831,139 @@ export default function TorneoDetallePage() {
           <div style={{ background:'#faf5ff', border:'1px solid #e9d5ff', borderRadius:10, padding:'10px 16px', fontSize:13, color:'#7c3aed', marginBottom:16 }}>
             🥈 Caen aquí quienes pierden su único partido en la ronda inicial del bracket principal. Haz clic para marcar ganador.
           </div>
-          {(() => {
+          {/* Mismo árbol SVG que el bracket principal (mismas medidas y
+              conectores), pero con las fases `cons_*` — es OTRO cuadro, de
+              otro tamaño, así que arma su propia geometría en vez de
+              compartir la del cuadro principal. */}
+          {!isMobile && (() => {
+            const CARD_H = 80
+            const SLOT_H = 96
+            const COL_W = 190
+            const CONN_W = 22
+
+            const fasesVis = fasesDeConsuelo
+            if (!fasesVis.length) return null
+
+            const byFase: Record<string, any[]> = {}
+            for (const f of fasesVis) {
+              byFase[f] = partidosPorFase.get(f) || []
+            }
+
+            const N0 = byFase[fasesVis[0]].length
+            const expectedN: Record<string, number> = {}
+            fasesVis.forEach((f, i) => { expectedN[f] = Math.max(1, Math.round(N0 / (2 ** i))) })
+            const totalH = N0 * SLOT_H
+            const cy = (orden: number, N: number) => ((orden + 0.5) / N) * totalH
+
+            return (
+              <div style={{ overflowX: 'auto', paddingBottom: 16, paddingTop: 44 }}>
+                <div style={{ display: 'flex', minWidth: 'max-content' }}>
+                  {fasesVis.flatMap((fase, pi) => {
+                    const ps = byFase[fase]
+                    const N = ps.length
+                    const isLast = pi === fasesVis.length - 1
+
+                    const col = (
+                      <div key={fase} style={{ width: COL_W, position: 'relative', height: totalH }}>
+                        <div style={{ position: 'absolute', top: -36, left: 0, right: 0, fontSize: 10, color: muted, textTransform: 'uppercase', letterSpacing: '1px', textAlign: 'center', background: '#f4f7fa', padding: '3px 6px', borderRadius: 5 }}>
+                          {faseLabel[fase]}
+                        </div>
+                        {ps.map((p, i) => {
+                          const eN = expectedN[fase] ?? N
+                          const top = cy(p.orden ?? i, eN) - CARD_H / 2
+                          const isBye = esByeMatch(p)
+                          const editandoEste = partidoPlayoffEditando === p.id
+                          const showEdit = !!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado'
+                          const rowH = showEdit ? `${Math.floor((CARD_H - 20) / 2)}px` : '50%'
+
+                          return (
+                            <div key={p.id} style={{ position: 'absolute', left: 0, right: 0, top, height: CARD_H, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,0.07)' }}>
+                              {editandoEste ? (
+                                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, padding: '8px 10px', background: '#fafafa' }}>
+                                  <span style={{ fontSize: 10, color: '#94a3b8', textAlign: 'center' }}>¿Quién ganó?</span>
+                                  <div style={{ display: 'flex', gap: 5 }}>
+                                    <button onClick={() => corregirPlayoff(p.id, p.jugador_a)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 5, padding: '5px 2px', fontSize: 11, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {(p as any).ja?.nombre?.split(' ')[0] || 'A'}
+                                    </button>
+                                    <button onClick={() => corregirPlayoff(p.id, p.jugador_b)} style={{ flex: 1, background: '#ede9fe', color: '#3730a3', border: 'none', borderRadius: 5, padding: '5px 2px', fontSize: 11, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {(p as any).jb?.nombre?.split(' ')[0] || 'B'}
+                                    </button>
+                                    <button onClick={() => setPartidoPlayoffEditando(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 14, cursor: 'pointer', padding: '0 4px' }}>✕</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div
+                                    onClick={() => esAdmin && !p.ganador && !isBye && p.jugador_a && marcarGanador(p.id, p.jugador_a)}
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye && p.jugador_a ? 'pointer' : 'default', background: p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent' }}>
+                                    <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                      <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
+                                      {(p as any).ja?.nombre || etiquetaCupo(p, 'a')}
+                                      {p.jugador_a && cabezaNumero.has(p.jugador_a) && <span style={{ fontSize: 8, color: '#d97706', marginLeft: 3 }}>CS{cabezaNumero.get(p.jugador_a)}</span>}
+                                    </span>
+                                    {!!p.ganador && p.ganador === p.jugador_a && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
+                                  </div>
+                                  {isBye ? (
+                                    <div style={{ height: rowH, display: 'flex', alignItems: 'center', padding: '0 10px', fontSize: 11, color: hint, fontStyle: 'italic' }}>
+                                      BYE
+                                    </div>
+                                  ) : (
+                                    <div
+                                      onClick={() => esAdmin && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}
+                                      style={{ height: rowH, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 10px', cursor: esAdmin && !p.ganador && p.jugador_b ? 'pointer' : 'default', background: p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent' }}>
+                                      <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                        <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
+                                        {(p as any).jb?.nombre || etiquetaCupo(p, 'b')}
+                                        {p.jugador_b && cabezaNumero.has(p.jugador_b) && <span style={{ fontSize: 8, color: '#d97706', marginLeft: 3 }}>CS{cabezaNumero.get(p.jugador_b)}</span>}
+                                      </span>
+                                      {!!p.ganador && p.ganador === p.jugador_b && <span style={{ color: '#16a34a', fontSize: 11, marginLeft: 4 }}>✓</span>}
+                                    </div>
+                                  )}
+                                  {showEdit && (
+                                    <div style={{ height: 20, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 6px', borderTop: '1px solid #f1f5f9' }}>
+                                      <button onClick={() => setPartidoPlayoffEditando(p.id)} style={{ background: 'transparent', border: 'none', color: '#cbd5e1', fontSize: 10, cursor: 'pointer', padding: '0 2px' }} title="Corregir resultado">✏️</button>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+
+                    if (isLast) return [col]
+
+                    const nextFase = fasesVis[pi + 1]
+                    const eN = expectedN[fase] ?? N
+                    const eN2 = expectedN[nextFase] ?? (eN / 2)
+                    const connector = (
+                      <svg key={`conn-${pi}`} width={CONN_W} height={totalH} style={{ flexShrink: 0, display: 'block' }}>
+                        {Array.from({ length: eN2 }, (_, j) => {
+                          const ordA = j * 2
+                          const ordB = j * 2 + 1
+                          const y1 = cy(ordA, eN)
+                          const y2 = cy(ordB, eN)
+                          const ym = cy(j, eN2)
+                          const mx = CONN_W / 2
+                          return ordA === ordB
+                            ? <path key={j} d={`M 0,${y1} H ${CONN_W}`} stroke="#c4b5fd" strokeWidth={1.5} fill="none" />
+                            : <path key={j} d={`M 0,${y1} H ${mx} V ${y2} M 0,${y2} H ${mx} M ${mx},${ym} H ${CONN_W}`} stroke="#c4b5fd" strokeWidth={1.5} fill="none" />
+                        })}
+                      </svg>
+                    )
+
+                    return [col, connector]
+                  })}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Lista por fase para celular — mismo motivo que la del bracket
+              principal: el árbol absoluto + SVG revienta la pestaña por
+              memoria en móvil. */}
+          {isMobile && (() => {
             const fasesVis = fasesDeConsuelo
             if (!fasesVis.length) return null
 
