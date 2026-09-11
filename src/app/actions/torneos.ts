@@ -1596,7 +1596,7 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     return { error: 'La base aceptó menos inscripciones de las enviadas; no se armó ningún grupo.' }
   }
 
-  const partidos: Array<{ torneo_id: string; grupo_id: string | null; fase: string; jugador_a: string; jugador_b: string | null; orden: number }> = []
+  const partidos: Array<{ torneo_id: string; grupo_id: string | null; fase: string; jugador_a: string; jugador_b: string | null; orden: number; ganador?: string | null }> = []
 
   // La eliminación directa va de la inscripción al cuadro: no hay fase de
   // grupos que jugar. El grupo único creado arriba guarda a los inscritos y
@@ -1621,6 +1621,13 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
         fase: p.fase,
         jugador_a: p.jugadorA,
         jugador_b: p.jugadorB,
+        // `generarCuadroDirecto` ya trae el ganador puesto en los BYE
+        // (jugador_b: null, ganador: jugadorA) — `construirBracketDesdePosiciones`
+        // lo resuelve al armar el cuadro, porque un BYE no se juega. Faltaba
+        // copiarlo acá: sin esto se insertaba `ganador: null` y el sembrado con
+        // BYE quedaba con su partido de la ronda 1 "sin jugar" para siempre,
+        // sin avanzar a la ronda 2.
+        ganador: p.ganador ?? null,
         orden: p.orden,
       })
     }
@@ -1657,6 +1664,25 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     if (error) {
       await deshacerGrupos()
       return { error: `No se pudieron crear los partidos de los grupos: ${error.message}` }
+    }
+  }
+
+  // Los BYE del cuadro directo ya tienen ganador desde que se generaron, pero
+  // insertarlos no los avanza solos: `marcarGanadorPartido` los rechaza a
+  // propósito ("los BYE avanzan automáticamente y no se marcan manualmente"),
+  // así que si nadie los propaga, el sembrado con BYE queda para siempre con
+  // la ronda 2 en "Por definir". Es el mismo paso que el bracket tradicional
+  // hace en `sincronizarLlaves` para sus propios BYE — acá se hace apenas se
+  // crea el cuadro, porque en eliminación directa no hay una segunda pasada
+  // esperando a que cierren los grupos.
+  if (esEliminacion) {
+    const byesConGanador = partidos.filter(p => p.ganador && !p.jugador_b)
+    if (byesConGanador.length) {
+      const erroresBye = await Promise.all(
+        byesConGanador.map(p => propagarGanadorPlayoff(supabase, p, p.ganador!)),
+      )
+      const primerError = erroresBye.find(e => e != null)
+      if (primerError) return { error: primerError }
     }
   }
 
