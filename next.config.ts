@@ -4,7 +4,12 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: 'datjbrohbkqduhzjtmwy.supabase.co', pathname: '/storage/v1/object/public/**' },
+      // `/object/**` y no `/object/public/**`: desde la 238 la bibliografía vive
+      // en un bucket privado y se sirve con URL firmadas, que van por
+      // `/object/sign/...`. Con el patrón viejo `next/image` las rechazaba y los
+      // thumbnails salían rotos, mientras el visor —un `<img>` pelado, sin
+      // optimizador— las mostraba bien. Sigue siendo un solo host, el nuestro.
+      { protocol: 'https', hostname: 'datjbrohbkqduhzjtmwy.supabase.co', pathname: '/storage/v1/object/**' },
     ],
   },
   env: {
