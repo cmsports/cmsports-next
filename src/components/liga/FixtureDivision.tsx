@@ -257,7 +257,7 @@ export function FixtureDivision({
   const progPct = visibles.length > 0 ? Math.round((jugados / visibles.length) * 100) : 0
   const titulo = soloFechaId === undefined
     ? `Calendario completo — ${partidos.length} partidos`
-    : soloFechaId === 'sin' ? `Sin programar todavía — ${visibles.length} partidos` : `${visibles.length} partidos en esta jornada`
+    : soloFechaId === 'sin' ? `Sin programar todavía — ${visibles.length} partidos` : `${visibles.length} partidos en esta fecha`
 
   return (
     <div style={{ marginTop:20, borderTop:'1px solid #e2e8f0', paddingTop:16 }}>
@@ -348,7 +348,7 @@ export function FixtureDivision({
                   whiteSpace:'nowrap', letterSpacing:'0.3px',
                 }}>
                   {p.fechaNumero != null
-                    ? `${porJornadas ? 'J' : 'F'}${p.fechaNumero}${p.bloqueHorario ? ` · ${p.bloqueHorario}` : ''}${porJornadas && p.mesaNumero ? ` · mesa ${p.mesaNumero}` : ''}`
+                    ? `F${p.fechaNumero}${p.bloqueHorario ? ` · ${p.bloqueHorario}` : ''}${porJornadas && p.mesaNumero ? ` · mesa ${p.mesaNumero}` : ''}`
                     : porJornadas ? 'Sin programar' : 'Sin fecha'}
                 </span>
 

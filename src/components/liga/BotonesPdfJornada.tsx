@@ -28,7 +28,7 @@ export function BotonesPdfJornada({ ligaId, numero, clubNombre, ligaNombre, pie,
     setOcupado(tipo); setAviso(null)
     try {
       const res = await leerJornada({ ligaId, numero })
-      if (res.error || !res.jornada) { setAviso({ tipo: 'error', texto: res.error ?? 'No se pudo leer la jornada' }); return }
+      if (res.error || !res.jornada) { setAviso({ tipo: 'error', texto: res.error ?? 'No se pudo leer la fecha' }); return }
       const pdf = await import('@/lib/liga-jornada-pdf')
       if (tipo === 'whatsapp') {
         const texto = pdf.textoResultadosWhatsapp(res.jornada, { ligaNombre })
@@ -58,13 +58,13 @@ export function BotonesPdfJornada({ ligaId, numero, clubNombre, ligaNombre, pie,
 
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-      <button onClick={() => bajar('programacion')} disabled={!!ocupado} style={estilo} title="La hoja oficial de la jornada, para publicar">
-        {ocupado === 'programacion' ? '…' : `⬇ Programación J${numero}`}
+      <button onClick={() => bajar('programacion')} disabled={!!ocupado} style={estilo} title="La hoja oficial de la fecha, para publicar">
+        {ocupado === 'programacion' ? '…' : `⬇ Programación F${numero}`}
       </button>
       <button onClick={() => bajar('planillas')} disabled={!!ocupado} style={estilo} title="Una hoja por mesa con casillas para los sets y la firma del árbitro">
         {ocupado === 'planillas' ? '…' : '🗒 Planillas por mesa'}
       </button>
-      <button onClick={() => bajar('resultados')} disabled={!!ocupado} style={estilo} title="Los marcadores de la jornada, para imprimir">
+      <button onClick={() => bajar('resultados')} disabled={!!ocupado} style={estilo} title="Los marcadores de la fecha, para imprimir">
         {ocupado === 'resultados' ? '…' : '📊 Resultados PDF'}
       </button>
       <button onClick={() => bajar('whatsapp')} disabled={!!ocupado} style={{ ...estilo, borderColor: '#bbf7d0', background: '#f0fdf4', color: '#166534' }} title="Copia los resultados como texto para pegar en WhatsApp">

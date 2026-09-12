@@ -191,9 +191,9 @@ export default function JornadasLigaPage() {
     const elegidas = Object.entries(sesiones).filter(([, s]) => s.activa).map(([divisionId, s]) => ({ divisionId, diaOffset: s.dia, mesas: parsearMesas(s.mesas) }))
     if (!elegidas.length) { setMensaje({ tipo: 'error', texto: 'Elige al menos una división.' }); return }
     if (elegidas.some(s => !s.mesas.length)) { setMensaje({ tipo: 'error', texto: 'Cada división necesita sus mesas (por ejemplo "1-3").' }); return }
-    if (!fechaNueva) { setMensaje({ tipo: 'error', texto: 'Falta la fecha del primer día de la jornada.' }); return }
+    if (!fechaNueva) { setMensaje({ tipo: 'error', texto: 'Falta el día (sábado) de la fecha.' }); return }
     const yaExiste = fechas.find(f => f.numero === numeroNuevo)
-    if (yaExiste && !confirm(`La jornada ${numeroNuevo} ya existe. Se vuelve a repartir lo que no se haya jugado. ¿Seguir?`)) return
+    if (yaExiste && !confirm(`La fecha ${numeroNuevo} ya existe. Se vuelve a repartir lo que no se haya jugado. ¿Seguir?`)) return
     setProyectando(true)
     const res = await proyectarJornada({ ligaId, numero: numeroNuevo, fecha: fechaNueva, horaInicio: horaNueva, sesiones: elegidas })
     setProyectando(false)
@@ -202,7 +202,7 @@ export default function JornadasLigaPage() {
       const d = divisiones.find(x => x.id === r.divisionId)
       return `${d?.nombre ?? ''}: ${r.partidos} partidos en ${r.bloques} bloques (hasta ${r.horaFin})${r.sinArbitro ? `, ${r.sinArbitro} sin árbitro` : ''}${r.huecoRespetado ? '' : ', con esperas de hasta 1 hora'}${r.pendientesRestantes ? `, quedan ${r.pendientesRestantes} por jugar` : ', ¡división completa!'}`
     })
-    setMensaje({ tipo: 'ok', texto: `Jornada ${numeroNuevo} proyectada. ${detalle.join(' · ')}` })
+    setMensaje({ tipo: 'ok', texto: `Fecha ${numeroNuevo} proyectada. ${detalle.join(' · ')}` })
     setProyectarAbierto(false)
     await cargarBase()
     setNumeroActivo(numeroNuevo)
@@ -245,16 +245,16 @@ export default function JornadasLigaPage() {
       <div style={{ maxWidth: 980, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
           <button onClick={() => router.push(`/liga/${ligaId}`)} style={{ background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', color: muted, fontSize: 13, cursor: 'pointer' }}>← Liga</button>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: ink, margin: 0, flex: 1 }}>{liga?.nombre} · Jornadas</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 800, color: ink, margin: 0, flex: 1 }}>{liga?.nombre} · Fechas</h1>
           {esAdmin && (
             <>
               <button onClick={() => { setImportarAbierto(v => !v); setProyectarAbierto(false) }} style={boton()}>📋 Pegar programación publicada</button>
-              <button onClick={abrirProyectar} style={boton(true)}>✨ Proyectar jornada {numeroNuevo}</button>
+              <button onClick={abrirProyectar} style={boton(true)}>✨ Proyectar fecha {numeroNuevo}</button>
             </>
           )}
         </div>
         <p style={{ fontSize: 12, color: hint, marginBottom: 16 }}>
-          Cada división juega una tarde: {liga?.porJugador} partidos por jugador, bloques de 30 min desde las {liga?.horaInicio}, árbitros de la misma división.
+          Cada fecha es un fin de semana: cada división juega una tarde, {liga?.porJugador} partidos por jugador, bloques de 30 min desde las {liga?.horaInicio}, árbitros de la misma división.
         </p>
 
         {mensaje && (
@@ -314,14 +314,14 @@ export default function JornadasLigaPage() {
         {/* ── Proyectar ── */}
         {proyectarAbierto && esAdmin && (
           <div style={{ ...card, padding: 18, marginBottom: 16 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: ink, marginBottom: 6 }}>Proyectar una jornada</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: ink, marginBottom: 6 }}>Proyectar una fecha</div>
             <p style={{ fontSize: 12, color: muted, marginBottom: 12, lineHeight: 1.5 }}>
               Por división: qué día del fin de semana juega y con qué mesas. El motor elige {liga?.porJugador} partidos por jugador de los que faltan,
               los reparte en bloques desde la hora de inicio y asigna árbitros de la misma división.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 12 }}>
               <div>
-                <label style={{ fontSize: 11, color: muted, fontWeight: 600, display: 'block', marginBottom: 4 }}>Jornada N°</label>
+                <label style={{ fontSize: 11, color: muted, fontWeight: 600, display: 'block', marginBottom: 4 }}>Fecha N°</label>
                 <input type="number" min={1} value={numeroNuevo} onChange={e => setNumeroNuevo(Number(e.target.value))} style={inp} />
               </div>
               <div>
@@ -360,7 +360,7 @@ export default function JornadasLigaPage() {
               })}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={proyectar} disabled={proyectando} style={boton(true)}>{proyectando ? 'Proyectando…' : `Proyectar Jornada ${numeroNuevo}`}</button>
+              <button onClick={proyectar} disabled={proyectando} style={boton(true)}>{proyectando ? 'Proyectando…' : `Proyectar Fecha ${numeroNuevo}`}</button>
               <button onClick={() => setProyectarAbierto(false)} style={{ ...boton(), color: muted }}>Cancelar</button>
             </div>
           </div>
@@ -372,7 +372,7 @@ export default function JornadasLigaPage() {
             {fechas.map(f => (
               <button key={f.id} onClick={() => setNumeroActivo(f.numero)}
                 style={{ padding: '7px 12px', borderRadius: 20, border: numeroActivo === f.numero ? `2px solid ${azul}` : '1px solid #e2e8f0', background: numeroActivo === f.numero ? '#eff6ff' : '#fff', color: numeroActivo === f.numero ? azul : muted, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                Jornada {f.numero}{f.fecha ? ` · ${f.fecha.slice(8, 10)}/${f.fecha.slice(5, 7)}` : ''} <span style={{ fontWeight: 500, opacity: 0.7 }}>· {ESTADO_FECHA[f.estado] ?? f.estado}</span>
+                Fecha {f.numero}{f.fecha ? ` · ${f.fecha.slice(8, 10)}/${f.fecha.slice(5, 7)}` : ''} <span style={{ fontWeight: 500, opacity: 0.7 }}>· {ESTADO_FECHA[f.estado] ?? f.estado}</span>
               </button>
             ))}
             <span style={{ flex: 1 }} />
@@ -380,7 +380,7 @@ export default function JornadasLigaPage() {
           </div>
         ) : (
           <div style={{ ...card, padding: 24, textAlign: 'center', color: muted, fontSize: 13, marginBottom: 16 }}>
-            Todavía no hay jornadas. Pega la programación publicada o proyecta la primera.
+            Todavía no hay fechas. Pega la programación publicada o proyecta la primera.
           </div>
         )}
 

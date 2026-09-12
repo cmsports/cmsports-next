@@ -873,20 +873,20 @@ export default function LigaDetallePage() {
               border:'1px solid rgba(255,255,255,0.18)',
             }}>
               <span style={{ fontSize:18, fontWeight:800, color:'white', fontVariantNumeric:'tabular-nums' }}><CountUp to={fechas.length} /></span>
-              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>{liga.porJornadas ? 'JORNADAS' : 'FECHAS'}</span>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>FECHAS</span>
             </div>
             {/* Liga por jornadas (Spinhouse): la programación vive en su propia pantalla */}
             {liga.porJornadas && (
               <a
                 href={`/liga/${ligaId}/jornadas`}
-                title="Programación por jornadas"
+                title="Fechas, programación y PDF"
                 style={{
                   background:'rgba(37,99,235,0.35)', border:'1px solid rgba(147,197,253,0.5)',
                   borderRadius:10, padding:'8px 14px', cursor:'pointer', fontSize:12, fontWeight:700,
                   color:'white', textDecoration:'none', display:'flex', alignItems:'center', gap:6,
                 }}
               >
-                📅 Jornadas
+                📅 Fechas y PDF
               </a>
             )}
             {/* Reporte de pagos — siempre disponible, sin importar la división/fecha activa */}
@@ -1296,6 +1296,7 @@ export default function LigaDetallePage() {
             <ProgramacionJornadas
               ligaId={ligaId}
               divisionId={division.id}
+              divisionNombre={division.nombre}
               nombres={nombrePorId}
               clubId={perfil?.club_id ?? null}
               fixtureKey={fixtureKey}

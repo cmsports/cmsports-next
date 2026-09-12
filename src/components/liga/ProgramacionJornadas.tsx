@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { programarLigaCompleta } from '@/app/actions/ligaJornadas'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
+import { TableroJornada } from '@/components/liga/TableroJornada'
 import { BotonesPdfJornada } from '@/components/liga/BotonesPdfJornada'
 import { useEnVivo } from '@/lib/useEnVivo'
 
@@ -20,9 +21,10 @@ const ink = '#0f172a', muted = '#64748b', hint = '#94a3b8', azul = '#2563eb'
 type Jornada = { id: string; numero: number; fecha: string | null; estado: string }
 const ESTADO: Record<string, string> = { programada: 'Programada', en_juego: 'En juego', finalizada: 'Terminada' }
 
-export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixtureKey, onCambio }: {
+export function ProgramacionJornadas({ ligaId, divisionId, divisionNombre, nombres, clubId, fixtureKey, onCambio }: {
   ligaId: string
   divisionId: string
+  divisionNombre: string
   nombres: Record<string, string>
   clubId: string | null
   fixtureKey: number
@@ -74,22 +76,22 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
     if (!jornadas.length && !fechaInicio) { setMensaje({ tipo: 'error', texto: 'Pon la fecha del primer sábado.' }); return }
     const rehacerDesde = rehacer && primeraRehacible ? primeraRehacible : undefined
     if (!confirm(rehacerDesde
-      ? `Se borran las jornadas desde la ${rehacerDesde} que no tengan ningún resultado y se vuelven a armar, un fin de semana cada una, hasta que todas las divisiones terminen. La Jornada 1 y las que ya tienen resultados no se tocan. ¿Seguir?`
+      ? `Se borran las fechas desde la ${rehacerDesde} que no tengan ningún resultado y se vuelven a armar, un fin de semana cada una, hasta que todas las divisiones terminen. La Fecha 1 y las que ya tienen resultados no se tocan. ¿Seguir?`
       : jornadas.length
-        ? `Se arman las jornadas que faltan a partir de la ${jornadas[jornadas.length - 1].numero + 1}, un fin de semana cada una, hasta que todas las divisiones terminen. Las jornadas que ya existen no se tocan. ¿Seguir?`
-        : 'Se arma la liga completa desde esa fecha, una jornada por fin de semana. ¿Seguir?')) return
+        ? `Se arman las fechas que faltan a partir de la ${jornadas[jornadas.length - 1].numero + 1}, un fin de semana cada una, hasta que todas las divisiones terminen. Las fechas que ya existen no se tocan. ¿Seguir?`
+        : 'Se arma la liga completa desde ese sábado, una fecha por fin de semana. ¿Seguir?')) return
     setProgramando(true)
     const res = await programarLigaCompleta({ ligaId, fechaInicio: fechaInicio || undefined, rehacerDesde })
     setProgramando(false)
     if (res.error) { setMensaje({ tipo: 'error', texto: res.error }); return }
     const n = res.jornadas?.length ?? 0
     const ultima = res.jornadas?.[n - 1]
-    setMensaje({ tipo: 'ok', texto: `Listo: ${n} jornada${n === 1 ? '' : 's'} nueva${n === 1 ? '' : 's'}${res.jornadasBorradas ? ` (${res.jornadasBorradas} rehecha${res.jornadasBorradas === 1 ? '' : 's'})` : ''}${ultima ? `, la última el ${ultima.fecha.slice(8, 10)}/${ultima.fecha.slice(5, 7)}` : ''}. Cada división repite el día y las mesas de su última jornada; para cambiar una, entra a "Jornadas".` })
+    setMensaje({ tipo: 'ok', texto: `Listo: ${n} fecha${n === 1 ? '' : 's'} nueva${n === 1 ? '' : 's'}${res.jornadasBorradas ? ` (${res.jornadasBorradas} rehecha${res.jornadasBorradas === 1 ? '' : 's'})` : ''}${ultima ? `, la última el ${ultima.fecha.slice(8, 10)}/${ultima.fecha.slice(5, 7)}` : ''}. Cada división repite el día y las mesas de su última fecha; para cambiar una, entra a "Fechas y PDF".` })
     setVersion(v => v + 1)
     onCambio?.()
   }
 
-  if (cargando) return <div style={{ fontSize: 12, color: hint, padding: '12px 0' }}>Cargando jornadas…</div>
+  if (cargando) return <div style={{ fontSize: 12, color: hint, padding: '12px 0' }}>Cargando fechas…</div>
 
   const chip = (activo: boolean, color = azul) => ({
     padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' as const,
@@ -100,10 +102,10 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: hint, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', marginRight: 4 }}>Jornadas</span>
+          <span style={{ fontSize: 11, color: hint, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', marginRight: 4 }}>Fechas</span>
           {jornadas.map(j => (
             <button key={j.id} onClick={() => setSel(j.id)} style={chip(sel === j.id, j.estado === 'finalizada' ? '#16a34a' : j.estado === 'en_juego' ? '#d97706' : azul)}>
-              J{j.numero}{j.fecha ? ` · ${j.fecha.slice(8, 10)}/${j.fecha.slice(5, 7)}` : ''} <span style={{ fontWeight: 500, opacity: 0.7 }}>· {ESTADO[j.estado] ?? j.estado}</span>
+              Fecha {j.numero}{j.fecha ? ` · ${j.fecha.slice(8, 10)}/${j.fecha.slice(5, 7)}` : ''} <span style={{ fontWeight: 500, opacity: 0.7 }}>· {ESTADO[j.estado] ?? j.estado}</span>
             </button>
           ))}
           <button onClick={() => setSel('sin')} style={chip(sel === 'sin', '#7c3aed')}>Sin programar</button>
@@ -120,11 +122,11 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
           {primeraRehacible !== null && jornadas.some(j => j.numero >= primeraRehacible) && (
             <button onClick={() => programarTodo(true)} disabled={programando} title="Borra las jornadas sin resultados y las vuelve a armar"
               style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, color: ink, background: '#fff', cursor: programando ? 'default' : 'pointer' }}>
-              ↺ Rehacer desde J{primeraRehacible}
+              ↺ Rehacer desde F{primeraRehacible}
             </button>
           )}
           <a href={`/liga/${ligaId}/jornadas`} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, color: ink, textDecoration: 'none', background: '#fff' }}>
-            🗓 Jornadas y PDF ↗
+            🗓 Fechas y PDF ↗
           </a>
         </div>
       </div>
@@ -133,16 +135,16 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
         const j = jornadas.find(x => x.id === sel)
         return j ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
-            <span style={{ fontSize: 11, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Papeles de la J{j.numero}</span>
+            <span style={{ fontSize: 11, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Papeles de la Fecha {j.numero}</span>
             <BotonesPdfJornada ligaId={ligaId} numero={j.numero} clubNombre={meta.clubNombre} ligaNombre={meta.ligaNombre} pie={meta.pie} logoUrl={meta.logoUrl} />
           </div>
         ) : null
       })()}
 
       <p style={{ fontSize: 12, color: hint, margin: '0 0 12px', lineHeight: 1.5 }}>
-        Una jornada por fin de semana; cada división juega una tarde con sus mesas, 3 partidos por jugador, árbitros de la misma división.
-        Marca el resultado en cada partido (o W.O. si alguien no llegó); la jornada se cierra sola cuando no queda ninguno abierto.
-        Los PDF traen la jornada completa (todas las divisiones).
+        Una fecha por fin de semana; cada división juega una tarde con sus mesas, 3 partidos por jugador, árbitros de la misma división.
+        Marca el resultado en cada partido (o W.O. si alguien no llegó); la fecha se cierra sola cuando no queda ninguno abierto.
+        Los PDF traen la fecha completa (todas las divisiones).
       </p>
 
       {mensaje && (
@@ -151,14 +153,26 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
         </div>
       )}
 
-      {sel && (
+      {sel === 'sin' && (
         <FixtureDivision
-          key={`${divisionId}-${sel}-${version}-${fixtureKey}`}
+          key={`${divisionId}-sin-${version}-${fixtureKey}`}
           divisionId={divisionId}
           ligaId={ligaId}
           nombres={nombres}
           porJornadas
-          soloFechaId={sel}
+          soloFechaId="sin"
+        />
+      )}
+      {sel && sel !== 'sin' && (
+        <TableroJornada
+          key={`${divisionId}-${sel}-${version}-${fixtureKey}`}
+          ligaId={ligaId}
+          fechaId={sel}
+          divisionId={divisionId}
+          divisionNombre={divisionNombre}
+          nombres={nombres}
+          clubId={clubId}
+          onCambio={() => { setVersion(v => v + 1); onCambio?.() }}
         />
       )}
     </div>
