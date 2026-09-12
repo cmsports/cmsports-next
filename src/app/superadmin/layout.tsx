@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, createContext, useContext } from 'rea
 import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import { useRouter, usePathname } from 'next/navigation'
-import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays, Database, Download, X, Eye, EyeOff, Menu } from 'lucide-react'
+import { Building2, Wallet, LogOut, Settings, ListChecks, Activity, CalendarDays, Database, Download, X, Eye, EyeOff, Menu, Gauge } from 'lucide-react'
 import { useMontos } from '@/lib/ui/MontosProvider'
 import ThemeToggle from '@/components/ThemeToggle'
 import type { Tables } from '@/types/database'
@@ -21,6 +21,7 @@ const nav = [
   { label: 'Tareas', icon: ListChecks, href: '/superadmin/tareas' },
   { label: 'Calendario', icon: CalendarDays, href: '/superadmin/calendario' },
   { label: 'Respaldos', icon: Database, href: '/superadmin/respaldos' },
+  { label: 'Rendimiento', icon: Gauge, href: '/superadmin/rendimiento' },
   { label: 'Configuración', icon: Settings, href: '/superadmin/configuracion' },
 ]
 
