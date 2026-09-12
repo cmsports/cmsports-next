@@ -22,7 +22,7 @@
 -- Corrida el: ____________  (anotar la fecha al aplicarla)
 
 BEGIN;
-SELECT _migracion_nueva('274_liga_partidos_dia_de_la_jornada');
+SELECT _migracion_nueva('275_liga_partidos_dia_de_la_jornada');
 SELECT _migracion_para_todos_los_clubes(
   'agrega una columna a liga_partidos con default 0 y rehace un índice único incluyéndola; no cambia ninguna fila');
 

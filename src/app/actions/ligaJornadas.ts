@@ -434,7 +434,7 @@ export async function leerJornada(params: { ligaId: string; numero: number }): P
     porDia.set(s.dia_offset, dia)
   }
   for (const p of (partidos || []) as Fila[]) {
-    // El partido lleva puesto su día (migración 274). Si la división no tiene
+    // El partido lleva puesto su día (migración 275). Si la división no tiene
     // sesión declarada ese día, se muestra igual, sin rango de mesas.
     const divId = p.division_id as string
     const diaOffset = Number(p.dia_offset ?? 0)
