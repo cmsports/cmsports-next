@@ -35,7 +35,7 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
   const [fechaInicio, setFechaInicio] = useState('')
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const [version, setVersion] = useState(0)
-  const [meta, setMeta] = useState<{ clubNombre: string; ligaNombre: string; pie: string | null }>({ clubNombre: '', ligaNombre: '', pie: null })
+  const [meta, setMeta] = useState<{ clubNombre: string; ligaNombre: string; pie: string | null; logoUrl: string | null }>({ clubNombre: '', ligaNombre: '', pie: null, logoUrl: null })
 
   const cargar = useCallback(async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,9 +43,9 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
     const [{ data }, { data: liga }, { data: club }] = await Promise.all([
       supabase.from('liga_fechas').select('id, numero, fecha, estado').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero'),
       sb.from('ligas').select('nombre, pie_programacion').eq('id', ligaId).single(),
-      clubId ? sb.from('clubes').select('nombre').eq('id', clubId).single() : Promise.resolve({ data: null }),
+      clubId ? sb.from('clubes').select('nombre, logo_url').eq('id', clubId).single() : Promise.resolve({ data: null }),
     ])
-    setMeta({ clubNombre: club?.nombre ?? '', ligaNombre: liga?.nombre ?? '', pie: liga?.pie_programacion ?? null })
+    setMeta({ clubNombre: club?.nombre ?? '', ligaNombre: liga?.nombre ?? '', pie: liga?.pie_programacion ?? null, logoUrl: club?.logo_url ?? null })
     const lista = (data ?? []) as Jornada[]
     setJornadas(lista)
     setSel(prev => {
@@ -134,7 +134,7 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
         return j ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
             <span style={{ fontSize: 11, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Papeles de la J{j.numero}</span>
-            <BotonesPdfJornada ligaId={ligaId} numero={j.numero} clubNombre={meta.clubNombre} ligaNombre={meta.ligaNombre} pie={meta.pie} />
+            <BotonesPdfJornada ligaId={ligaId} numero={j.numero} clubNombre={meta.clubNombre} ligaNombre={meta.ligaNombre} pie={meta.pie} logoUrl={meta.logoUrl} />
           </div>
         ) : null
       })()}

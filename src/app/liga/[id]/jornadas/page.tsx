@@ -55,7 +55,7 @@ export default function JornadasLigaPage() {
   const router = useRouter()
   const ligaId = String(params.id)
 
-  const [liga, setLiga] = useState<{ nombre: string; modo: string; horaInicio: string; porJugador: number; pie: string | null; club: string } | null>(null)
+  const [liga, setLiga] = useState<{ nombre: string; modo: string; horaInicio: string; porJugador: number; pie: string | null; club: string; logoUrl: string | null } | null>(null)
   const [fechas, setFechas] = useState<FechaResumen[]>([])
   const [divisiones, setDivisiones] = useState<Division[]>([])
   const [numeroActivo, setNumeroActivo] = useState<number | null>(null)
@@ -91,13 +91,13 @@ export default function JornadasLigaPage() {
       sb.from('ligas').select('nombre, modo_programacion, hora_inicio, partidos_por_jugador_por_fecha, pie_programacion').eq('id', ligaId).single(),
       sb.from('liga_fechas').select('id, numero, fecha, estado').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero'),
       sb.from('liga_divisiones').select('id, nombre, orden').eq('liga_id', ligaId).order('orden'),
-      sb.from('clubes').select('nombre').eq('id', perfil.club_id).single(),
+      sb.from('clubes').select('nombre, logo_url').eq('id', perfil.club_id).single(),
     ])
     if (!l) { router.replace('/liga'); return }
     setLiga({
       nombre: l.nombre, modo: l.modo_programacion ?? 'mesa_unica',
       horaInicio: String(l.hora_inicio ?? '15:00').slice(0, 5), porJugador: l.partidos_por_jugador_por_fecha ?? 3,
-      pie: l.pie_programacion ?? null, club: club?.nombre ?? '',
+      pie: l.pie_programacion ?? null, club: club?.nombre ?? '', logoUrl: club?.logo_url ?? null,
     })
     setPie(l.pie_programacion ?? '')
     const lista: FechaResumen[] = fs ?? []
@@ -376,7 +376,7 @@ export default function JornadasLigaPage() {
               </button>
             ))}
             <span style={{ flex: 1 }} />
-            {jornada && liga && <BotonesPdfJornada ligaId={ligaId} numero={jornada.numero} clubNombre={liga.club} ligaNombre={liga.nombre} pie={liga.pie} compacto />}
+            {jornada && liga && <BotonesPdfJornada ligaId={ligaId} numero={jornada.numero} clubNombre={liga.club} ligaNombre={liga.nombre} pie={liga.pie} logoUrl={liga.logoUrl} compacto />}
           </div>
         ) : (
           <div style={{ ...card, padding: 24, textAlign: 'center', color: muted, fontSize: 13, marginBottom: 16 }}>

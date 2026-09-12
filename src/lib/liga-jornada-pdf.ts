@@ -3,7 +3,7 @@
 // una página por día, cada división con su rango de mesas, y la tabla
 // Hora · Mesa · Partido · Árbitro. El pie trae las reglas del club.
 
-import { encabezado, piePagina, estiloTabla, tituloSeccion, COLOR, MARGEN, type RGB } from '@/lib/pdf/estilo'
+import { encabezado, piePagina, estiloTabla, tituloSeccion, COLOR, MARGEN, type RGB, type LogoPdf } from '@/lib/pdf/estilo'
 
 export interface JornadaParaPdf {
   numero: number
@@ -25,6 +25,8 @@ export interface MetaJornadaPdf {
   ligaNombre: string
   /** Lo que va al pie: reglas, contacto, dirección. */
   pie?: string
+  /** Logo del club, ya cargado con `cargarLogoPdf`. */
+  logo?: LogoPdf | null
 }
 
 const AZUL: RGB = [37, 99, 235]
@@ -64,6 +66,7 @@ export async function descargarJornadaPdf(jornada: JornadaParaPdf, meta: MetaJor
       titulo: `Programación oficial — Jornada ${jornada.numero}`,
       subtitulo: `${etiquetaDia(dia.fecha)}${horaInicio ? ` · desde las ${horaInicio} hrs` : ''}`,
       color: AZUL,
+      logo: meta.logo,
     })
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...COLOR.texto)
     doc.text(meta.ligaNombre.toUpperCase(), MARGEN, y)
@@ -121,6 +124,7 @@ export async function descargarPlanillasJornadaPdf(jornada: JornadaParaPdf, meta
         titulo: `Planilla de mesa ${mesa} — Jornada ${jornada.numero}`,
         subtitulo: `${etiquetaDia(dia.fecha)} · ${division}`,
         color: AZUL,
+        logo: meta.logo,
       })
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...COLOR.texto)
       doc.text('El árbitro anota los sets de cada partido, marca el ganador y firma. Espera máxima 15 min → W.O. 3-0.', MARGEN, y)
@@ -182,6 +186,7 @@ export async function descargarResultadosJornadaPdf(jornada: JornadaParaPdf, met
       titulo: `Resultados — Jornada ${jornada.numero}`,
       subtitulo: `${etiquetaDia(dia.fecha)} · ${jugados} de ${total} partidos jugados`,
       color: VERDE,
+      logo: meta.logo,
     })
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(...COLOR.texto)
     doc.text(meta.ligaNombre.toUpperCase(), MARGEN, y)
@@ -209,4 +214,31 @@ export async function descargarResultadosJornadaPdf(jornada: JornadaParaPdf, met
 
   piePagina(doc, `${meta.clubNombre} · ${meta.ligaNombre}`)
   doc.save(`Resultados Jornada ${jornada.numero} — ${meta.ligaNombre}.pdf`)
+}
+
+/**
+ * Los resultados como texto para pegar en WhatsApp: corto, con negritas de
+ * WhatsApp (*así*) y un renglón por partido. Lo que no se jugó no sale.
+ */
+export function textoResultadosWhatsapp(jornada: JornadaParaPdf, meta: { ligaNombre: string }): string {
+  const lineas: string[] = [`*${meta.ligaNombre.toUpperCase()} · RESULTADOS JORNADA ${jornada.numero}*`]
+  for (const dia of jornada.dias) {
+    const jugados = dia.divisiones.flatMap(d => d.partidos.filter(p => p.estado === 'finalizado' || p.estado === 'walkover'))
+    if (!jugados.length) continue
+    lineas.push('', `📅 *${etiquetaDia(dia.fecha)}*`)
+    for (const div of dia.divisiones) {
+      const filas = div.partidos.filter(p => p.estado === 'finalizado' || p.estado === 'walkover')
+      if (!filas.length) continue
+      lineas.push('', `🏓 *${div.nombre}*`)
+      for (const p of filas) {
+        if (p.estado === 'walkover') lineas.push(`• ${p.jugadorA} vs ${p.jugadorB} — W.O.`)
+        else lineas.push(`• ${p.jugadorA} *${p.setsA}-${p.setsB}* ${p.jugadorB}`)
+      }
+    }
+  }
+  const total = jornada.dias.flatMap(d => d.divisiones.flatMap(x => x.partidos))
+  const pendientes = total.filter(p => p.estado !== 'finalizado' && p.estado !== 'walkover').length
+  if (lineas.length === 1) lineas.push('', 'Todavía no hay resultados marcados.')
+  else if (pendientes) lineas.push('', `⏳ Quedan ${pendientes} partido${pendientes === 1 ? '' : 's'} pendiente${pendientes === 1 ? '' : 's'}.`)
+  return lineas.join('\n')
 }

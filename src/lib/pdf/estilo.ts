@@ -52,11 +52,46 @@ export function colorPorNombre(nombre: string): RGB {
 
 export const MARGEN = 14
 
+export type LogoPdf = { data: string; ancho: number; alto: number }
+
+/**
+ * Trae el logo del club y lo deja listo para incrustar (JPEG chico, fondo
+ * blanco). Si no carga —sin logo, sin red, bucket caído— devuelve null y el
+ * PDF sale igual, sin logo: el papel nunca se queda sin generar por esto.
+ */
+export async function cargarLogoPdf(url: string | null | undefined): Promise<LogoPdf | null> {
+  if (!url || typeof document === 'undefined') return null
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 6000)
+    const res = await fetch(url, { signal: controller.signal })
+    clearTimeout(timeout)
+    if (!res.ok) return null
+    const bitmap = await createImageBitmap(await res.blob())
+    const escala = Math.min(1, 320 / Math.max(bitmap.width, bitmap.height))
+    const ancho = Math.max(1, Math.round(bitmap.width * escala))
+    const alto = Math.max(1, Math.round(bitmap.height * escala))
+    const canvas = document.createElement('canvas')
+    canvas.width = ancho; canvas.height = alto
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { bitmap.close(); return null }
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, ancho, alto)
+    ctx.drawImage(bitmap, 0, 0, ancho, alto)
+    bitmap.close()
+    return { data: canvas.toDataURL('image/jpeg', 0.9), ancho, alto }
+  } catch {
+    return null
+  }
+}
+
 type EncabezadoArgs = {
   club: string
   titulo: string
   subtitulo?: string
   color?: RGB
+  /** Logo del club (ver `cargarLogoPdf`): va a la derecha de la barra, en un círculo blanco. */
+  logo?: LogoPdf | null
 }
 
 /**
@@ -64,7 +99,7 @@ type EncabezadoArgs = {
  * reporte, más un renglón de subtítulo (fecha, período, lo que corresponda).
  * Devuelve el `y` desde donde puede empezar el contenido.
  */
-export function encabezado(doc: any, { club, titulo, subtitulo, color = COLOR.primario }: EncabezadoArgs): number {
+export function encabezado(doc: any, { club, titulo, subtitulo, color = COLOR.primario, logo }: EncabezadoArgs): number {
   const W = doc.internal.pageSize.getWidth()
   const H_BARRA = 30
 
@@ -73,6 +108,21 @@ export function encabezado(doc: any, { club, titulo, subtitulo, color = COLOR.pr
   // Acento: una franja más clara al pie de la barra, sutil.
   doc.setFillColor(...tinte(color, 0.65))
   doc.rect(0, H_BARRA - 2, W, 2, 'F')
+
+  // El logo del club, en un círculo blanco a la derecha; el subtítulo se
+  // corre a la izquierda para no pisarlo.
+  let anchoLogo = 0
+  if (logo) {
+    const R = 11
+    const cx = W - MARGEN - R, cy = H_BARRA / 2 - 1
+    doc.setFillColor(...COLOR.blanco)
+    doc.circle(cx, cy, R, 'F')
+    const lado = R * 2 - 4
+    const escala = Math.min(lado / logo.ancho, lado / logo.alto)
+    const aw = logo.ancho * escala, ah = logo.alto * escala
+    doc.addImage(logo.data, 'JPEG', cx - aw / 2, cy - ah / 2, aw, ah)
+    anchoLogo = R * 2 + 6
+  }
 
   // El club arriba y chico, el reporte grande: al hojear un montón de PDF lo
   // que hay que distinguir es cuál reporte es, no de qué club (todos son del
@@ -83,12 +133,12 @@ export function encabezado(doc: any, { club, titulo, subtitulo, color = COLOR.pr
 
   doc.setTextColor(...COLOR.blanco)
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15)
-  doc.text(titulo, MARGEN, 21, { maxWidth: W - 2 * MARGEN - 60 })
+  doc.text(titulo, MARGEN, 21, { maxWidth: W - 2 * MARGEN - 60 - anchoLogo })
 
   if (subtitulo) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
     doc.setTextColor(...tinte(color, 0.15))
-    doc.text(subtitulo, W - MARGEN, 21, { align: 'right' })
+    doc.text(subtitulo, W - MARGEN - anchoLogo, 21, { align: 'right' })
   }
 
   return H_BARRA + 12
