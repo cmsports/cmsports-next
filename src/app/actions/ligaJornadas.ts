@@ -434,7 +434,13 @@ export async function programarLigaCompleta(params: {
   /** Primer sábado de la primera jornada nueva. Si ya hay jornadas, se ignora: sigue 7 días después de la última. */
   fechaInicio?: string
   horaInicio?: string
-}): Promise<{ error?: string; jornadas?: Array<{ numero: number; fecha: string; resumen: ResumenDivisionJornada[] }> }> {
+  /**
+   * Rehacer: borra antes las jornadas proyectadas que no han empezado (sin
+   * ningún resultado) desde este número, y las vuelve a armar. La Jornada 1
+   * pegada de la hoja se protege pasando 2.
+   */
+  rehacerDesde?: number
+}): Promise<{ error?: string; jornadas?: Array<{ numero: number; fecha: string; resumen: ResumenDivisionJornada[] }>; jornadasBorradas?: number }> {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr || !clubId) return { error: authErr ?? 'Sin club' }
   const db: Db = supabase
@@ -444,12 +450,32 @@ export async function programarLigaCompleta(params: {
   const horaInicio = params.horaInicio ?? String(liga.hora_inicio ?? '15:00').slice(0, 5)
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaInicio)) return { error: 'La hora de inicio va como HH:MM.' }
 
-  const [{ data: divisiones }, { data: fechas }] = await Promise.all([
+  const [{ data: divisiones }, { data: fechasRaw }] = await Promise.all([
     db.from('liga_divisiones').select('id, orden').eq('liga_id', liga.id).order('orden'),
     db.from('liga_fechas').select('id, numero, fecha, estado').eq('liga_id', liga.id).eq('es_ajuste', false).order('numero'),
   ])
   const divs = (divisiones || []) as Array<{ id: string; orden: number }>
-  const lista = (fechas || []) as Array<{ id: string; numero: number; fecha: string | null; estado: string }>
+  let lista = (fechasRaw || []) as Array<{ id: string; numero: number; fecha: string | null; estado: string }>
+
+  // Rehacer: solo jornadas que siguen "programada" y sin un solo resultado.
+  let jornadasBorradas = 0
+  if (params.rehacerDesde && params.rehacerDesde >= 1) {
+    for (const f of lista.filter(f => f.numero >= params.rehacerDesde!)) {
+      if (f.estado !== 'programada') return { error: `La jornada ${f.numero} ya está ${f.estado}; no se puede rehacer desde ahí.` }
+      const { count } = await db.from('liga_partidos').select('id', { count: 'exact', head: true })
+        .eq('fecha_id', f.id).is('deleted_at', null).in('estado', ['finalizado', 'walkover'])
+      if ((count ?? 0) > 0) return { error: `La jornada ${f.numero} ya tiene resultados; no se puede rehacer desde ahí.` }
+    }
+    for (const f of lista.filter(f => f.numero >= params.rehacerDesde!)) {
+      const errLiberar = await liberarJornada(db, f.id)
+      if (errLiberar) return { error: errLiberar }
+      // Las sesiones caen en cascada con la fecha (migración 272).
+      const { error } = await db.from('liga_fechas').delete().eq('id', f.id)
+      if (error) return { error: 'No se pudo borrar la jornada ' + f.numero + ': ' + error.message }
+      jornadasBorradas++
+    }
+    lista = lista.filter(f => f.numero < params.rehacerDesde!)
+  }
 
   // De dónde parte: después de la última jornada que existe.
   const ultima = lista[lista.length - 1] ?? null
@@ -506,7 +532,7 @@ export async function programarLigaCompleta(params: {
   }
   if (!jornadas.length) return { error: 'No queda ningún partido por programar: todas las divisiones ya tienen su liga completa.' }
 
-  return { jornadas }
+  return { jornadas, jornadasBorradas }
 }
 
 /**

@@ -52,19 +52,31 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
   useEffect(() => { void cargar() }, [cargar, version])
   useEnVivo(['liga_fechas'], clubId, () => { void cargar() }, { filtro: `liga_id=eq.${ligaId}` })
 
-  async function programarTodo() {
+  // Las jornadas proyectadas que todavía no tienen ningún resultado se
+  // pueden rehacer; la primera que ya tiene uno (o la pegada de la hoja, si
+  // es la 1) queda como está.
+  const primeraRehacible = (() => {
+    const abiertas = jornadas.filter(j => j.estado === 'programada')
+    const desde = abiertas.length ? abiertas[0].numero : null
+    return desde === null ? null : Math.max(desde, 2)
+  })()
+
+  async function programarTodo(rehacer = false) {
     setMensaje(null)
     if (!jornadas.length && !fechaInicio) { setMensaje({ tipo: 'error', texto: 'Pon la fecha del primer sábado.' }); return }
-    if (!confirm(jornadas.length
-      ? `Se arman las jornadas que faltan a partir de la ${jornadas[jornadas.length - 1].numero + 1}, un fin de semana cada una, hasta que todas las divisiones terminen. Las jornadas que ya existen no se tocan. ¿Seguir?`
-      : 'Se arma la liga completa desde esa fecha, una jornada por fin de semana. ¿Seguir?')) return
+    const rehacerDesde = rehacer && primeraRehacible ? primeraRehacible : undefined
+    if (!confirm(rehacerDesde
+      ? `Se borran las jornadas desde la ${rehacerDesde} que no tengan ningún resultado y se vuelven a armar, un fin de semana cada una, hasta que todas las divisiones terminen. La Jornada 1 y las que ya tienen resultados no se tocan. ¿Seguir?`
+      : jornadas.length
+        ? `Se arman las jornadas que faltan a partir de la ${jornadas[jornadas.length - 1].numero + 1}, un fin de semana cada una, hasta que todas las divisiones terminen. Las jornadas que ya existen no se tocan. ¿Seguir?`
+        : 'Se arma la liga completa desde esa fecha, una jornada por fin de semana. ¿Seguir?')) return
     setProgramando(true)
-    const res = await programarLigaCompleta({ ligaId, fechaInicio: fechaInicio || undefined })
+    const res = await programarLigaCompleta({ ligaId, fechaInicio: fechaInicio || undefined, rehacerDesde })
     setProgramando(false)
     if (res.error) { setMensaje({ tipo: 'error', texto: res.error }); return }
     const n = res.jornadas?.length ?? 0
     const ultima = res.jornadas?.[n - 1]
-    setMensaje({ tipo: 'ok', texto: `Listo: ${n} jornada${n === 1 ? '' : 's'} nueva${n === 1 ? '' : 's'}${ultima ? `, la última el ${ultima.fecha.slice(8, 10)}/${ultima.fecha.slice(5, 7)}` : ''}. Cada división repite el día y las mesas de su última jornada; para cambiar una, entra a "Jornadas".` })
+    setMensaje({ tipo: 'ok', texto: `Listo: ${n} jornada${n === 1 ? '' : 's'} nueva${n === 1 ? '' : 's'}${res.jornadasBorradas ? ` (${res.jornadasBorradas} rehecha${res.jornadasBorradas === 1 ? '' : 's'})` : ''}${ultima ? `, la última el ${ultima.fecha.slice(8, 10)}/${ultima.fecha.slice(5, 7)}` : ''}. Cada división repite el día y las mesas de su última jornada; para cambiar una, entra a "Jornadas".` })
     setVersion(v => v + 1)
     onCambio?.()
   }
@@ -93,10 +105,16 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
             <input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} title="Primer sábado"
               style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 10px', fontSize: 12, color: ink }} />
           )}
-          <button onClick={programarTodo} disabled={programando}
+          <button onClick={() => programarTodo(false)} disabled={programando}
             style={{ background: programando ? '#e2e8f0' : 'linear-gradient(135deg,#2563eb,#4f46e5)', color: programando ? hint : 'white', border: 'none', borderRadius: 10, padding: '8px 16px', fontSize: 12, fontWeight: 700, cursor: programando ? 'default' : 'pointer', boxShadow: programando ? 'none' : '0 4px 14px rgba(37,99,235,0.35)' }}>
             📅 {programando ? 'Programando…' : jornadas.length ? 'Programar lo que falta' : 'Programar toda la liga'}
           </button>
+          {primeraRehacible !== null && jornadas.some(j => j.numero >= primeraRehacible) && (
+            <button onClick={() => programarTodo(true)} disabled={programando} title="Borra las jornadas sin resultados y las vuelve a armar"
+              style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, color: ink, background: '#fff', cursor: programando ? 'default' : 'pointer' }}>
+              ↺ Rehacer desde J{primeraRehacible}
+            </button>
+          )}
           <a href={`/liga/${ligaId}/jornadas`} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '7px 14px', fontSize: 12, fontWeight: 700, color: ink, textDecoration: 'none', background: '#fff' }}>
             🗓 Jornadas y PDF ↗
           </a>

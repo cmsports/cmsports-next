@@ -11,6 +11,7 @@ import {
   sumarDias,
   type PartidoPendiente,
 } from './ligaJornadas'
+import { generarFixtureDivision } from './liga'
 
 // Todos contra todos de n jugadores, como los deja el fixture de la liga.
 function todosContraTodos(n: number): { jugadores: string[]; pendientes: PartidoPendiente[] } {
@@ -302,6 +303,75 @@ describe('parsearProgramacionJornada con la Jornada 1 real de Spinhouse', () => 
         for (const f of fs) expect(jugando.has(f.arbitro!)).toBe(false)
       }
     }
+  })
+})
+
+// Al armar la liga completa de Spinhouse (2026-09-12) la Primera terminaba
+// con una jornada de UN partido y la Tercera igual: el tope de 3 por jugador
+// dejaba migajas. La última jornada de una división se lleva la cola.
+describe('programarJornadaDivision: la última jornada absorbe la cola', () => {
+  function jornadasHastaTerminar(n: number, mesas: number[]): number[] {
+    const { jugadores, pendientes } = todosContraTodos(n)
+    let quedan = [...pendientes]
+    const tamanos: number[] = []
+    while (quedan.length && tamanos.length < 20) {
+      const { partidos } = programarJornadaDivision({ pendientes: quedan, jugadorIds: jugadores, porJugador: 3, mesas })
+      if (!partidos.length) break
+      const usados = new Set(partidos.map(p => p.id))
+      quedan = quedan.filter(p => !usados.has(p.id))
+      tamanos.push(partidos.length)
+    }
+    return tamanos
+  }
+
+  it('12 jugadores (66 partidos) terminan en 4 jornadas, no en 4 y un partido suelto', () => {
+    const tamanos = jornadasHastaTerminar(12, [4, 5, 6])
+    expect(tamanos.reduce((a, b) => a + b, 0)).toBe(66)
+    expect(tamanos).toHaveLength(4)
+    expect(tamanos[tamanos.length - 1]).toBeGreaterThan(3)
+  })
+
+  // El caso real: la Jornada 1 la armó el club a mano (la hoja pegada), y
+  // desde ahí sigue el motor. Con esa partida, la Primera División quedaba
+  // con J2, J3, J4 y una J5 de un solo partido.
+  it('siguiendo a la Jornada 1 real de la Primera División, termina en la J4', () => {
+    const prog = parsearProgramacionJornada(TEXTO_JORNADA_1, 2026)
+    const primera = prog.dias[0].divisiones[1]
+    expect(primera.nombre).toBe('Primera División')
+    // Mismo orden que la importación: los nombres como aparecen en la hoja
+    // (jugador A, jugador B, árbitro) y el fixture del módulo de liga.
+    const nombres = [...new Set(primera.filas.flatMap(f => [f.jugadorA, f.jugadorB, f.arbitro ?? '']))].filter(Boolean)
+    expect(nombres).toHaveLength(12)
+    const jugadas = new Set(primera.filas.map(f => [f.jugadorA, f.jugadorB].sort().join('|')))
+    let quedan: PartidoPendiente[] = generarFixtureDivision(nombres)
+      .filter(p => !jugadas.has([p.jugadorA, p.jugadorB].sort().join('|')))
+      .map(p => ({ id: `${p.jugadorA}|${p.jugadorB}`, jugadorAId: p.jugadorA, jugadorBId: p.jugadorB }))
+    expect(quedan).toHaveLength(66 - 18)
+    const tamanos: number[] = []
+    while (quedan.length && tamanos.length < 10) {
+      const { partidos } = programarJornadaDivision({ pendientes: quedan, jugadorIds: nombres, porJugador: 3, mesas: [4, 5, 6] })
+      const usados = new Set(partidos.map(p => p.id))
+      quedan = quedan.filter(p => !usados.has(p.id))
+      tamanos.push(partidos.length)
+    }
+    expect(tamanos.reduce((a, b) => a + b, 0)).toBe(48)
+    expect(tamanos).toHaveLength(3)
+  })
+
+  it('14 jugadores (91 partidos) terminan en 5 jornadas', () => {
+    const tamanos = jornadasHastaTerminar(14, [1, 2, 3])
+    expect(tamanos.reduce((a, b) => a + b, 0)).toBe(91)
+    expect(tamanos).toHaveLength(5)
+  })
+
+  it('10 jugadores (45 partidos) terminan en 3 jornadas de 15', () => {
+    expect(jornadasHastaTerminar(10, [1, 2, 3])).toEqual([15, 15, 15])
+  })
+
+  it('fuera de la cola nadie juega más de 3', () => {
+    const { jugadores, pendientes } = todosContraTodos(14)
+    const { partidos } = programarJornadaDivision({ pendientes, jugadorIds: jugadores, porJugador: 3, mesas: [1, 2, 3] })
+    for (const j of jugadores) expect(partidosDe(partidos, j)).toBeLessThanOrEqual(3)
   })
 })
 

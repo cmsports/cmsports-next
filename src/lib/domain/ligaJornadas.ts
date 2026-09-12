@@ -342,7 +342,15 @@ export function programarJornadaDivision(params: {
   porJugador: number
   mesas: readonly number[]
 }): { partidos: PartidoDeJornada[]; huecoRespetado: boolean; sinArbitro: number } {
-  const elegidos = elegirPartidosDeJornada(params.pendientes, params.jugadorIds, params.porJugador)
+  let elegidos = elegirPartidosDeJornada(params.pendientes, params.jugadorIds, params.porJugador)
+  // La cola: cuando lo que sobra cabe en dos bloques más (o menos), no vale
+  // la pena citar a la gente otro fin de semana por un puñado de partidos.
+  // La división termina hoy, aunque alguien juegue uno de más.
+  const sobran = params.pendientes.length - elegidos.length
+  if (sobran > 0 && sobran <= params.mesas.length * 2) {
+    const conColas = elegirPartidosDeJornada(params.pendientes, params.jugadorIds, params.porJugador + 1)
+    if (conColas.length === params.pendientes.length) elegidos = conColas
+  }
   const { partidos, huecoRespetado } = distribuirEnBloques(elegidos, params.mesas)
   const conArbitros = asignarArbitrosJornada(partidos, params.jugadorIds)
   return { partidos: conArbitros, huecoRespetado, sinArbitro: conArbitros.filter(p => !p.arbitroId).length }
