@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { programarLigaCompleta } from '@/app/actions/ligaJornadas'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
+import { BotonesPdfJornada } from '@/components/liga/BotonesPdfJornada'
 import { useEnVivo } from '@/lib/useEnVivo'
 
 // Pestaña "Programación" de una liga por jornadas (Spinhouse). Reemplaza al
@@ -34,10 +35,17 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
   const [fechaInicio, setFechaInicio] = useState('')
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const [version, setVersion] = useState(0)
+  const [meta, setMeta] = useState<{ clubNombre: string; ligaNombre: string; pie: string | null }>({ clubNombre: '', ligaNombre: '', pie: null })
 
   const cargar = useCallback(async () => {
-    const { data } = await supabase
-      .from('liga_fechas').select('id, numero, fecha, estado').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sb = supabase as any
+    const [{ data }, { data: liga }, { data: club }] = await Promise.all([
+      supabase.from('liga_fechas').select('id, numero, fecha, estado').eq('liga_id', ligaId).eq('es_ajuste', false).order('numero'),
+      sb.from('ligas').select('nombre, pie_programacion').eq('id', ligaId).single(),
+      clubId ? sb.from('clubes').select('nombre').eq('id', clubId).single() : Promise.resolve({ data: null }),
+    ])
+    setMeta({ clubNombre: club?.nombre ?? '', ligaNombre: liga?.nombre ?? '', pie: liga?.pie_programacion ?? null })
     const lista = (data ?? []) as Jornada[]
     setJornadas(lista)
     setSel(prev => {
@@ -47,7 +55,7 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
       return abierta?.id ?? 'sin'
     })
     setCargando(false)
-  }, [ligaId])
+  }, [ligaId, clubId])
 
   useEffect(() => { void cargar() }, [cargar, version])
   useEnVivo(['liga_fechas'], clubId, () => { void cargar() }, { filtro: `liga_id=eq.${ligaId}` })
@@ -121,9 +129,20 @@ export function ProgramacionJornadas({ ligaId, divisionId, nombres, clubId, fixt
         </div>
       </div>
 
+      {sel && sel !== 'sin' && (() => {
+        const j = jornadas.find(x => x.id === sel)
+        return j ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+            <span style={{ fontSize: 11, color: muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Papeles de la J{j.numero}</span>
+            <BotonesPdfJornada ligaId={ligaId} numero={j.numero} clubNombre={meta.clubNombre} ligaNombre={meta.ligaNombre} pie={meta.pie} />
+          </div>
+        ) : null
+      })()}
+
       <p style={{ fontSize: 12, color: hint, margin: '0 0 12px', lineHeight: 1.5 }}>
         Una jornada por fin de semana; cada división juega una tarde con sus mesas, 3 partidos por jugador, árbitros de la misma división.
         Marca el resultado en cada partido (o W.O. si alguien no llegó); la jornada se cierra sola cuando no queda ninguno abierto.
+        Los PDF traen la jornada completa (todas las divisiones).
       </p>
 
       {mensaje && (

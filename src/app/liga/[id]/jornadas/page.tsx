@@ -14,6 +14,7 @@ import {
 } from '@/app/actions/ligaJornadas'
 import { bloquesNecesarios, horaDeBloque } from '@/lib/domain/ligaJornadas'
 import { etiquetaDia } from '@/lib/liga-jornada-pdf'
+import { BotonesPdfJornada } from '@/components/liga/BotonesPdfJornada'
 import { useEnVivo } from '@/lib/useEnVivo'
 
 // La pantalla de una liga por jornadas (modo `jornadas`, migración 272):
@@ -207,12 +208,6 @@ export default function JornadasLigaPage() {
     setNumeroActivo(numeroNuevo)
   }
 
-  async function descargarPdf() {
-    if (!jornada || !liga) return
-    const { descargarJornadaPdf } = await import('@/lib/liga-jornada-pdf')
-    await descargarJornadaPdf(jornada, { clubNombre: liga.club, ligaNombre: liga.nombre, pie: liga.pie ?? undefined })
-  }
-
   async function guardarPie() {
     setGuardandoPie(true)
     const res = await guardarPieProgramacion({ ligaId, pie })
@@ -381,7 +376,7 @@ export default function JornadasLigaPage() {
               </button>
             ))}
             <span style={{ flex: 1 }} />
-            {jornada && <button onClick={descargarPdf} style={boton()}>⬇ PDF Jornada {jornada.numero}</button>}
+            {jornada && liga && <BotonesPdfJornada ligaId={ligaId} numero={jornada.numero} clubNombre={liga.club} ligaNombre={liga.nombre} pie={liga.pie} compacto />}
           </div>
         ) : (
           <div style={{ ...card, padding: 24, textAlign: 'center', color: muted, fontSize: 13, marginBottom: 16 }}>
