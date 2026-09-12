@@ -317,48 +317,6 @@ export default function TorneoDetallePage() {
     return () => mq.removeEventListener('change', on)
   }, [])
 
-  // Crea el esqueleto apenas hay grupos (con cupos pendientes para lo que no
-  // ha cerrado) y luego va completando los cupos restantes sin regenerar el
-  // árbol, salvo que una cabeza de serie provisoria cambie de mitad.
-  useEffect(() => {
-    if (loading || authLoading) return
-    if (perfil?.rol !== 'admin') return
-    if (torneo?.fase !== 'grupos') return
-    // Una liguilla no tiene cuadro que sincronizar. Sin este corte el efecto
-    // llamaría al servidor en cada cambio de resultado para recibir siempre el
-    // mismo rechazo, y el error solo se ve en la consola.
-    if (modalidadDe(torneo?.formato) === 'liguilla') return
-    if (cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')) return
-
-    const clasificados = calcularClasificados()
-    const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
-    if (gruposReales.some((g: any) => g.en_preparacion)) return
-    if (!gruposReales.length) return
-    const firmaLayout = [
-      cabezasPersistidas.map(c => c.id).join(','),
-      gruposReales.map((g: any) => g.id).sort().join(','),
-    ].join(':')
-    const firma = `${firmaLayout}|${clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')}`
-    if (firma === ultimaSyncRef.current || sincronizandoRef.current) return
-
-    sincronizandoRef.current = true
-    ultimaSyncRef.current = firma
-    sincronizarLlavesAction({ torneoId })
-      .then(res => {
-        if ('error' in res && res.error) {
-          // ponytail: NO resetear ultimaSyncRef aquí (causaba bucle de
-          // alerts si el server fallaba). Marcela usa el botón manual si
-          // quiere reintentar.
-          console.error('sincronizarLlaves error:', res.error)
-          return
-        }
-        return cargarTorneo()
-      })
-      .catch(err => { console.error('sincronizarLlaves throw:', err); ultimaSyncRef.current = '' })
-      .finally(() => { sincronizandoRef.current = false })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partidos, grupos, torneo?.fase, cabezasNumeradas, cabezasPersistidas, perfil?.rol, loading, authLoading])
-
   // El cuadro de consuelo se arma solo, apenas el principal cierra sus dos
   // primeras rondas —que es cuando la lista de eliminados con un solo partido
   // queda completa—. Nadie tiene que apretar un botón: el profe está en la
@@ -721,6 +679,50 @@ export default function TorneoDetallePage() {
     }
     return out
   }
+
+  // (Va después de calcularClasificados a propósito: el lint del compilador
+  //  de React no acepta usarla antes de declararla.)
+  // Crea el esqueleto apenas hay grupos (con cupos pendientes para lo que no
+  // ha cerrado) y luego va completando los cupos restantes sin regenerar el
+  // árbol, salvo que una cabeza de serie provisoria cambie de mitad.
+  useEffect(() => {
+    if (loading || authLoading) return
+    if (perfil?.rol !== 'admin') return
+    if (torneo?.fase !== 'grupos') return
+    // Una liguilla no tiene cuadro que sincronizar. Sin este corte el efecto
+    // llamaría al servidor en cada cambio de resultado para recibir siempre el
+    // mismo rechazo, y el error solo se ve en la consola.
+    if (modalidadDe(torneo?.formato) === 'liguilla') return
+    if (cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')) return
+
+    const clasificados = calcularClasificados()
+    const gruposReales = grupos.filter((g: any) => g.nombre !== 'MESA')
+    if (gruposReales.some((g: any) => g.en_preparacion)) return
+    if (!gruposReales.length) return
+    const firmaLayout = [
+      cabezasPersistidas.map(c => c.id).join(','),
+      gruposReales.map((g: any) => g.id).sort().join(','),
+    ].join(':')
+    const firma = `${firmaLayout}|${clasificados.map(c => `${c.grupoId}:${c.primeroId}:${c.segundoId}`).sort().join(',')}`
+    if (firma === ultimaSyncRef.current || sincronizandoRef.current) return
+
+    sincronizandoRef.current = true
+    ultimaSyncRef.current = firma
+    sincronizarLlavesAction({ torneoId })
+      .then(res => {
+        if ('error' in res && res.error) {
+          // ponytail: NO resetear ultimaSyncRef aquí (causaba bucle de
+          // alerts si el server fallaba). Marcela usa el botón manual si
+          // quiere reintentar.
+          console.error('sincronizarLlaves error:', res.error)
+          return
+        }
+        return cargarTorneo()
+      })
+      .catch(err => { console.error('sincronizarLlaves throw:', err); ultimaSyncRef.current = '' })
+      .finally(() => { sincronizandoRef.current = false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partidos, grupos, torneo?.fase, cabezasNumeradas, cabezasPersistidas, perfil?.rol, loading, authLoading])
 
   async function armarBracketAhora() {
     const totalGrupos = gruposReales.length
