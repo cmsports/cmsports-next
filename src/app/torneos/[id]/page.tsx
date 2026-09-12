@@ -783,7 +783,12 @@ export default function TorneoDetallePage() {
       .map((j: any) => [j.jugador_id, { id: j.jugador_id, nombre: j.jugadores.nombre }]),
   ).values()) as CabezaSerieJugador[]
   const cuota = torneo?.cuota_inscripcion || 0
-  const jugadoresUnicos: any[] = Array.from(new Map(jugadores.map((j: any) => [j.jugador_id, j])).values())
+  // Los participantes del torneo para todo lo financiero (pagos, deudores,
+  // informe). En grupos, liguilla y eliminación son los que pasaron de la
+  // mesa a un grupo; por equipos NADIE sale de la mesa —los equipos se arman
+  // desde ahí—, así que los participantes son los inscritos en la mesa.
+  const participantesFinancieros: any[] = modalidadDe(torneo?.formato) === 'equipos' ? jugadoresInscritos : jugadores
+  const jugadoresUnicos: any[] = Array.from(new Map(participantesFinancieros.map((j: any) => [j.jugador_id, j])).values())
   const grupoEnPreparacion = gruposReales.find((g: any) => g.en_preparacion)
   const cabezasConCambios = cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')
   const inscritosReales = gruposReales.flatMap((g: any) => jugadoresPorGrupo.get(g.id) || [])
