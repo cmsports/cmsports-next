@@ -111,6 +111,12 @@ export const MODULOS = [
   // dobles necesita cuatro personas en una tabla que tiene dos lados. Trae sus
   // propias tablas. Un club puede querer liguilla sin meterse en nada de eso.
   { key: 'torneos_equipos', label: 'Torneos por equipos' },
+  // Códigos QR para imprimir y pegar en la sede: uno que lleva al login, y
+  // uno por cada ranking que lleva a una página PÚBLICA del ranking (sin
+  // cuenta: nombre y puntos, nada más). Apagado por defecto porque publica
+  // nombres de jugadores fuera de la app; lo pidió Buin (migración 270). Sin
+  // el módulo, la página pública responde 404 aunque alguien tenga el link.
+  { key: 'qr_publico', label: 'QR para imprimir (login y ranking público)' },
   // Tareas NO va acá: es la lista privada de los superadmin
   // (/superadmin/tareas), no una función que un club pueda activar.
 ] as const

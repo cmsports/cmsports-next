@@ -647,6 +647,25 @@ export default function DashboardPage() {
           </div>
         </Link>
 
+        {/* QR de acceso para imprimir y pegar en la sede: lleva al login.
+            Los QR de cada ranking están en la pantalla de Ranking. Solo con
+            el módulo (hoy Buin). */}
+        {tiene('qr_publico') && (
+          <a href="/qr?tipo=login" target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🖨️ QR de acceso para imprimir</span>
+              </div>
+              <p style={{ fontSize: 12, color: C.muted, margin: '0 0 10px' }}>
+                Una hoja con el QR que lleva al login de la app, para pegar en la sede. El QR de cada ranking está en Ranking.
+              </p>
+              <span style={{ display: 'inline-block', background: C.skyL, color: C.skyD, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600 }}>
+                Abrir hoja →
+              </span>
+            </div>
+          </a>
+        )}
+
         {/* Crear feedback — comentario rápido a un alumno, sin salir del dashboard. */}
         {tiene('feedback') && (
           <div onClick={() => setFeedbackOpen(true)}

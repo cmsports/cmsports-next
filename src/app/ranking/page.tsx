@@ -7,24 +7,20 @@ import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { reiniciarRanking } from '@/app/actions/ranking'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
-import { calcularRankingInterno, faltaParaSubir, type ResultadoJugadorRanking, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
+import { faltaParaSubir } from '@/lib/domain/rankingInterno'
 import { TABLA_PUNTAJE } from '@/lib/domain/puntajeTorneo'
 import { enBonito } from '@/lib/domain/nombreJugador'
 import { exportarRankingPdf } from '@/lib/ranking-pdf'
 import { firmarUrls } from '@/lib/supabase/privado'
+import { cargarRankingDelClub, type CategoriaRanking } from '@/lib/supabase/rankingClub'
 import { useEnVivo } from '@/lib/useEnVivo'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const supabase = createClient()
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
-
-type CategoriaRanking = {
-  categoria: string
-  genero: string | null
-  filas: ResultadoJugadorRanking[]
-}
 
 /**
  * Los papelitos que caen detrás del podio.
@@ -59,6 +55,7 @@ export default function RankingPage() {
   const [fotoPorJugador, setFotoPorJugador] = useState<Record<string, string>>({})
   const [ayudaAbierta, setAyudaAbierta] = useState(false)
   const router = useRouter()
+  const { tiene: tieneModulo } = useModulos()
 
   useEffect(() => {
     if (authLoading) return
@@ -83,151 +80,30 @@ export default function RankingPage() {
     if (!perfil?.club_id) return
     setLoading(true)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sb = supabase as any
+    // El cálculo vive en `cargarRankingDelClub`: es el mismo que usa la API
+    // de la página pública del ranking (la del QR), así el que se pega en la
+    // sede es exactamente el que se ve acá.
+    const ranking = await cargarRankingDelClub(supabase, perfil.club_id)
+    setReiniciadoEn(ranking.reiniciadoEn)
+    setClubNombre(ranking.clubNombre)
 
-    // 1. Timestamp de reinicio del club. El nombre viene en la misma consulta:
-    // lo necesita el encabezado del PDF.
-    const { data: club } = await sb
-      .from('clubes')
-      .select('nombre,ranking_reiniciado_en')
-      .eq('id', perfil.club_id)
-      .single()
-    const reinicioTs = club?.ranking_reiniciado_en ?? null
-    setReiniciadoEn(reinicioTs)
-    setClubNombre(club?.nombre ?? '')
-
-    // 2. Torneos internos del club, solo los que ya terminaron.
-    //
-    // Los puntos salen del puesto final, y un torneo en curso todavía no tiene
-    // puestos: el que hoy va en semifinales puede terminar campeón o cuarto.
-    // Se cuentan cuando se cierran. Los archivados también: archivar es
-    // guardar un torneo terminado, no anularlo — si no, archivar le movería el
-    // ranking a todo el mundo.
-    let queryT = sb
-      .from('torneos')
-      .select('id,categoria,genero,fecha_fin,creado_en')
-      .eq('club_id', perfil.club_id)
-      .eq('tipo', 'interno')
-      .in('estado', ['finalizado', 'archivado'])
-    if (reinicioTs) queryT = queryT.gt('creado_en', reinicioTs)
-
-    const { data: torneos } = await queryT
-
-    // 2b. El ranking que el club traía en papel (migración 188). Se suma a lo
-    // que se juegue en el sistema. Se descarta si el reinicio es posterior a la
-    // carga: si no, "Reiniciar Ranking" dejaría todo en cero salvo el arrastre.
-    const { data: saldos } = await sb
-      .from('ranking_saldo_inicial')
-      .select('jugador_id,categoria,genero,puntos,creado_en')
-      .eq('club_id', perfil.club_id)
-
-    type FilaSaldo = { jugador_id: string; categoria: string; genero: string | null; puntos: number; creado_en: string }
-    const saldoPorClave = new Map<string, Map<string, number>>()
-    for (const s of ((saldos ?? []) as FilaSaldo[])) {
-      if (reinicioTs && s.creado_en <= reinicioTs) continue
-      const clave = `${s.categoria}||${s.genero ?? ''}`
-      const porJugador = saldoPorClave.get(clave) ?? new Map<string, number>()
-      porJugador.set(s.jugador_id, (porJugador.get(s.jugador_id) ?? 0) + s.puntos)
-      saldoPorClave.set(clave, porJugador)
-    }
-
-    if (!torneos?.length && saldoPorClave.size === 0) {
+    if (ranking.categorias.length === 0) {
       setRankingPorCategoria([])
       setLoading(false)
       return
     }
 
-    // 3. Mapear torneoId → { categoria, genero }
-    const torneoMeta: Record<string, { categoria: string; genero: string | null }> = {}
-    for (const t of ((torneos ?? []) as { id: string; categoria: string | null; genero: string | null }[])) {
-      torneoMeta[t.id] = { categoria: t.categoria ?? 'Sin categoría', genero: t.genero ?? null }
-    }
-    const torneoIds = Object.keys(torneoMeta)
-
-    // 4. Todos los partidos de esos torneos (1 sola query). `fase` es lo que
-    // dice hasta dónde llegó cada jugador, y de ahí sale su puesto y sus
-    // puntos — ver calcularRankingInterno.
-    //
-    // Los de la fase de grupos entran igual: son los que dicen quién participó
-    // sin clasificar a la llave, que también suma.
-    const { data: partidos } = torneoIds.length
-      ? await supabase
-          .from('torneo_partidos')
-          .select('torneo_id,jugador_a,jugador_b,ganador,fase')
-          .in('torneo_id', torneoIds)
-          .not('jugador_b', 'is', null)
-          .not('ganador', 'is', null)
-      : { data: [] }
-
-    if (!partidos?.length && saldoPorClave.size === 0) { setRankingPorCategoria([]); setLoading(false); return }
-
-    // 5. Agrupar por categoria + genero, y adentro por torneo: el puesto solo
-    // existe dentro de un torneo, así que no se pueden mezclar.
-    const torneosPorClave: Record<string, Map<string, TorneoConPartidos>> = {}
-    const jugadoresIds = new Set<string>()
-
-    // Las categorías que solo tienen saldo también son categorías del ranking:
-    // sin esto, una que todavía no jugó ningún torneo en el sistema no saldría.
-    for (const [clave, porJugador] of saldoPorClave) {
-      torneosPorClave[clave] ??= new Map()
-      for (const jugadorId of porJugador.keys()) jugadoresIds.add(jugadorId)
-    }
-
-    for (const p of (partidos ?? [])) {
-      const torneoId = p.torneo_id as string
-      const meta = torneoMeta[torneoId]
-      const clave = `${meta?.categoria ?? 'Sin categoría'}||${meta?.genero ?? ''}`
-      const porTorneo = (torneosPorClave[clave] ??= new Map())
-      const acc = porTorneo.get(torneoId) ?? { torneoId, partidos: [] }
-      acc.partidos.push({
-        jugador_a: p.jugador_a as string, jugador_b: p.jugador_b as string,
-        ganador: p.ganador as string, fase: p.fase as string | null,
-      })
-      porTorneo.set(torneoId, acc)
-      jugadoresIds.add(p.jugador_a as string)
-      jugadoresIds.add(p.jugador_b as string)
-    }
-
-    // 6. Nombres y fotos, en una sola consulta. Las fotos se firman todas
-    // juntas con `firmarUrls`: una petición por jugador dejaría la pantalla
-    // inusable con treinta en la lista.
-    const { data: jugadores } = await sb
-      .from('jugadores')
-      .select('id,nombre,foto_path')
-      .in('id', [...jugadoresIds])
-
-    const nombreMap: Record<string, string> = {}
-    for (const j of (jugadores || [])) nombreMap[j.id] = j.nombre
-
-    const firmadas = await firmarUrls((jugadores ?? []).map((j: { foto_path?: string | null }) => j.foto_path))
+    // Las fotos se firman todas juntas con `firmarUrls`: una petición por
+    // jugador dejaría la pantalla inusable con treinta en la lista.
+    const firmadas = await firmarUrls(ranking.jugadores.map(j => j.foto_path))
     const fotos: Record<string, string> = {}
-    for (const j of ((jugadores ?? []) as { id: string; foto_path?: string | null }[])) {
+    for (const j of ranking.jugadores) {
       const url = j.foto_path ? firmadas[j.foto_path] : null
       if (url) fotos[j.id] = url
     }
     setFotoPorJugador(fotos)
 
-    // 7. Construir ranking por categoria + genero
-    const conDatos: Record<string, CategoriaRanking> = {}
-    for (const [clave, porTorneo] of Object.entries(torneosPorClave)) {
-      const [categoria, genero] = clave.split('||')
-      const filas = calcularRankingInterno(
-        [...porTorneo.values()],
-        id => nombreMap[id] || 'Desconocido',
-        saldoPorClave.get(clave),
-      )
-      conDatos[clave] = { categoria, genero: genero || null, filas }
-    }
-
-    const resultado: CategoriaRanking[] = Object.values(conDatos)
-    resultado.sort((a, b) => {
-      const catCmp = a.categoria.localeCompare(b.categoria, 'es')
-      if (catCmp !== 0) return catCmp
-      // varones, damas, mixto, y sin género al final
-      const gOrder = (g: string | null) => g === 'varones' ? 0 : g === 'damas' ? 1 : g === 'mixto' ? 2 : 3
-      return gOrder(a.genero) - gOrder(b.genero)
-    })
+    const resultado: CategoriaRanking[] = ranking.categorias
 
     // El jugador solo ve la categoría donde compite. Se filtra por dónde
     // aparece él y no por su `categoria` de ficha: la del ranking sale del
@@ -325,6 +201,19 @@ export default function RankingPage() {
               >
                 {exportando ? 'Generando...' : '↓ PDF'}
               </button>
+            )}
+            {/* La hoja con el QR de ESTE ranking, para pegar en la sede. Solo
+                con el módulo (hoy Buin): el QR abre una página pública. */}
+            {esAdmin && tieneModulo('qr_publico') && rankingActivo && (
+              <a
+                href={`/qr?tipo=ranking&categoria=${encodeURIComponent(rankingActivo.categoria)}&genero=${encodeURIComponent(rankingActivo.genero ?? '')}`}
+                target="_blank"
+                rel="noreferrer"
+                title="Hoja para imprimir con el QR que lleva a este ranking, siempre actualizado"
+                style={{ background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', textDecoration: 'none' }}
+              >
+                🖨️ QR
+              </a>
             )}
             {esAdmin && (
               <button

@@ -29,6 +29,10 @@ const RUTAS_POR_MODULO: ReadonlyArray<{ modulo: ModuloClub; rutas: readonly stri
   { modulo: 'bibliografia', rutas: ['/bibliografia-tdm'] },
   { modulo: 'libro_profe', rutas: ['/libro-profe'] },
   { modulo: 'feedback', rutas: ['/feedbacks'] },
+  // La hoja imprimible con el QR. La página pública del ranking
+  // ('/ranking-publico') no va acá: no tiene sesión, la gobierna el proxy
+  // como ruta pública y el módulo lo comprueba la API que la alimenta.
+  { modulo: 'qr_publico', rutas: ['/qr'] },
   // /superadmin/tareas no se lista: el proxy ya cierra todo /superadmin a
   // quien no es superadmin, y no es un módulo que un club active.
 ]

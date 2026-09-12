@@ -18,7 +18,7 @@ export const superadminRoutes = ['/superadmin']
 // que sin sesión el middleware la dejaba pasar en vez de mandarla a /login
 // (el propio componente igual redirige, pero un rato después y en el
 // navegador, no al toque en el servidor como el resto de las pantallas admin).
-export const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/credenciales']
+export const adminRoutes = ['/dashboard', '/finanzas', '/mensualidades', '/liga', '/reportes', '/solicitudes', '/credenciales', '/qr']
 // El profesor necesita abrir el listado y la ficha para evaluar. Las acciones
 // administrativas dentro de esas pantallas siguen reservadas al admin.
 export const staffRoutes = ['/jugadores']
@@ -61,6 +61,9 @@ export const anyAuthRoutes = [
 // fútbol: no usa usePerfil() y se comparte por código, sin cuenta.
 export const rutasPublicasTorneo = [
   '/vivo', '/torneo-oficial/vivo', '/torneo-oficial/manual', '/liga-futbol/publica',
+  // El ranking que se pega en la sede con un QR: nombre y puntos, sin cuenta.
+  // La API que lo alimenta exige que el club tenga el módulo 'qr_publico'.
+  '/ranking-publico',
 ]
 
 function getRolRedirect(rol: string | null): string {

@@ -22,6 +22,15 @@
 //   node scripts/mover-archivos-a-carpeta-club.mjs <club_id>            (simulación)
 //   node scripts/mover-archivos-a-carpeta-club.mjs <club_id> --aplicar  (mueve)
 //
+// Si en la carpeta del club YA está el archivo (alguien lo copió antes), el
+// move responde "The resource already exists" y no toca nada. Para ese caso:
+//
+//   node scripts/mover-archivos-a-carpeta-club.mjs <club_id> --borrar-duplicados
+//
+// borra de la raíz SOLO los archivos cuya copia en `{club_id}/` existe y pesa
+// exactamente lo mismo. Si el tamaño difiere, lo deja y lo dice. (Buin,
+// 2026-09-12: las 16 fotos y el libro ya estaban en la carpeta.)
+//
 // El club va por parámetro a propósito: nada de ids escritos en el código
 // (regla del CLAUDE.md sobre no atar el código compartido a un club).
 //
@@ -50,6 +59,7 @@ function env(clave) {
 
 const clubId = process.argv[2]
 const aplicar = process.argv.includes('--aplicar')
+const borrarDuplicados = process.argv.includes('--borrar-duplicados')
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 if (!clubId || !UUID.test(clubId)) {
@@ -74,7 +84,11 @@ if (!club) {
 }
 
 console.log(`Club: ${club.nombre}`)
-console.log(aplicar ? 'Modo: APLICAR (mueve de verdad)\n' : 'Modo: simulación — agregá --aplicar para mover\n')
+console.log(
+  borrarDuplicados ? 'Modo: BORRAR DUPLICADOS (borra de la raíz lo que ya está, idéntico, en la carpeta)\n'
+    : aplicar ? 'Modo: APLICAR (mueve de verdad)\n'
+      : 'Modo: simulación — agregá --aplicar para mover\n',
+)
 
 let totalMovidos = 0
 let totalFallidos = 0
@@ -95,6 +109,37 @@ for (const bucket of BUCKETS) {
   }
 
   console.log(`${bucket}: ${sueltos.length} archivo(s) en la raíz`)
+
+  if (borrarDuplicados) {
+    const { data: enCarpeta, error: errCarpeta } = await db.storage.from(bucket).list(clubId, { limit: 1000 })
+    if (errCarpeta) {
+      console.log(`   no se pudo listar la carpeta del club (${errCarpeta.message})`)
+      continue
+    }
+    const tamanoEnCarpeta = new Map((enCarpeta ?? []).map(f => [f.name, f.metadata?.size]))
+    for (const f of sueltos) {
+      const tam = tamanoEnCarpeta.get(f.name)
+      if (tam == null) {
+        console.log(`   · ${f.name}: NO está en la carpeta, se deja (movelo con --aplicar)`)
+        continue
+      }
+      if (tam !== f.metadata?.size) {
+        console.log(`   ✗ ${f.name}: está en la carpeta pero pesa distinto (${tam} vs ${f.metadata?.size}), se deja`)
+        totalFallidos++
+        continue
+      }
+      const { error: errBorrar } = await db.storage.from(bucket).remove([f.name])
+      if (errBorrar) {
+        console.log(`   ✗ ${f.name}: ${errBorrar.message}`)
+        totalFallidos++
+      } else {
+        console.log(`   ✓ ${f.name}: duplicado borrado de la raíz`)
+        totalMovidos++
+      }
+    }
+    continue
+  }
+
   for (const f of sueltos) {
     const destino = `${clubId}/${f.name}`
     if (!aplicar) {
@@ -112,7 +157,10 @@ for (const bucket of BUCKETS) {
   }
 }
 
-if (aplicar) {
+if (borrarDuplicados) {
+  console.log(`\nDuplicados borrados: ${totalMovidos}. Dejados: ${totalFallidos}.`)
+  if (totalFallidos > 0) process.exit(1)
+} else if (aplicar) {
   console.log(`\nMovidos: ${totalMovidos}. Fallidos: ${totalFallidos}.`)
   if (totalFallidos > 0) process.exit(1)
 } else {
