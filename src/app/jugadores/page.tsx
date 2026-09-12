@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
@@ -41,6 +41,10 @@ const badgeCategoria: Record<string, { bg: string; color: string }> = {
 
 const categorias = ['principiante', 'intermedio', 'avanzado']
 const jugadoresCache: Record<string, any[]> = {}
+
+// No depende de nada del componente, así que vive acá y no se rearma en cada
+// render ni obliga a listarla como dependencia.
+const sinHorario = (j: any) => !j.entrena_lun && !j.entrena_mar && !j.entrena_mie && !j.entrena_jue && !j.entrena_vie
 
 const CAMPOS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,talla_polera,talla_short'
 
@@ -387,37 +391,82 @@ export default function JugadoresPage() {
 
   const [exportModalOpen, setExportModalOpen] = useState(false)
 
-  const sinHorario = (j: any) => !j.entrena_lun && !j.entrena_mar && !j.entrena_mie && !j.entrena_jue && !j.entrena_vie
-  const sinHorarioCount = jugadores.filter(sinHorario).length
+  const sinHorarioCount = useMemo(() => jugadores.filter(sinHorario).length, [jugadores])
 
-  const filtrados = jugadores
-    .filter(j => !busqueda || j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) || j.rut?.includes(busqueda))
-    // Un jugador puede competir en varias categorías (la suya por edad + TC).
-    .filter(j => filtroCat.size === 0 || [...filtroCat].some(c => (j.categorias?.length ? j.categorias.includes(c) : j.categoria === c)))
-    .filter(j => filtroSede.size === 0 || [...filtroSede].some(s => entrenaEnSede(j.sede, s)))
-    .filter(j => filtroGrupo.size === 0 || filtroGrupo.has(j.grupo))
-    .filter(j => filtroEstado.size === 0 || filtroEstado.has(j.estado))
-    .filter(j => !filtroSinHorario || sinHorario(j))
-    .filter(j => filtroDia.size === 0 || [...filtroDia].some(d => j[`entrena_${d}`] === true))
-    .filter(j => filtroFederado.size === 0 || (filtroFederado.has('si') && j.federado === true) || (filtroFederado.has('no') && !j.federado))
-    .filter(j => filtroDoc.size === 0 || (filtroDoc.has('si') && conDocumento.has(j.id)) || (filtroDoc.has('no') && !conDocumento.has(j.id)))
-    .filter(j => filtroPago.size === 0 || filtroPago.has(estadoPago[j.id] || ''))
-    .filter(j => filtroHorario.size === 0 || filtroHorario.has(j.horario || ''))
-    .filter(j => filtroPresente.size === 0 || (filtroPresente.has('presente') && asistenciaHoy.has(j.id)) || (filtroPresente.has('ausente') && !asistenciaHoy.has(j.id)))
-    .filter(j => {
-      if (!edadMin && !edadMax) return true
+  // Escribir en el buscador no bloquea el input.
+  //
+  // `useDeferredValue` deja que el campo se actualice de inmediato y React
+  // recalcule la lista en segundo plano, interrumpiendo ese trabajo si llega
+  // otra tecla. No es un debounce con temporizador: no hay retardo inventado,
+  // y si la lista es corta se siente igual que antes.
+  const busquedaDiferida = useDeferredValue(busqueda)
+
+  // Un comparador reusado en vez de `localeCompare` suelto. Cada
+  // `a.localeCompare(b, 'es')` arma por dentro un colador nuevo, y ordenar 150
+  // nombres son cientos de comparaciones: es de lo más caro que hay en JS.
+  const colador = useMemo(() => new Intl.Collator('es'), [])
+
+  // Una sola pasada, y los invariantes fuera del callback.
+  //
+  // Eran trece `.filter()` encadenados —trece arreglos intermedios— y dentro de
+  // cada uno se repetía trabajo que no depende del jugador: `toLowerCase()` de
+  // la búsqueda y un `[...set]` que creaba un arreglo nuevo POR JUGADOR, tres
+  // veces. Con 150 jugadores eso era medio millar de arreglos por tecleo.
+  //
+  // El orden de las condiciones se mantiene igual que antes para que el diff se
+  // pueda leer; van con `&&`, así que la primera que falla corta el resto.
+  const filtrados = useMemo(() => {
+    const termino = busquedaDiferida
+    const q = termino.toLowerCase()
+    const cats = [...filtroCat]
+    const sedes = [...filtroSede]
+    const dias = [...filtroDia]
+    const eMin = edadMin ? parseInt(edadMin) : null
+    const eMax = edadMax ? parseInt(edadMax) : null
+
+    const pasaEdad = (j: any) => {
+      if (eMin === null && eMax === null) return true
       const edad = calcularEdad(j.fecha_nacimiento)
       if (edad === null) return false
-      if (edadMin && edad < parseInt(edadMin)) return false
-      if (edadMax && edad > parseInt(edadMax)) return false
+      if (eMin !== null && edad < eMin) return false
+      if (eMax !== null && edad > eMax) return false
       return true
-    })
-    .sort((a, b) => orden === 'az'
-      ? (a.nombre || '').localeCompare(b.nombre || '', 'es')
-      : (b.nombre || '').localeCompare(a.nombre || '', 'es'))
+    }
 
-  const categorias = [...new Set(jugadores.map(j => j.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
-  const horarios = [...new Set(jugadores.map(j => j.horario).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+    return jugadores
+      .filter(j =>
+        (!termino || j.nombre?.toLowerCase().includes(q) || j.rut?.includes(termino))
+        // Un jugador puede competir en varias categorías (la suya por edad + TC).
+        && (cats.length === 0 || cats.some(c => (j.categorias?.length ? j.categorias.includes(c) : j.categoria === c)))
+        && (sedes.length === 0 || sedes.some(s => entrenaEnSede(j.sede, s)))
+        && (filtroGrupo.size === 0 || filtroGrupo.has(j.grupo))
+        && (filtroEstado.size === 0 || filtroEstado.has(j.estado))
+        && (!filtroSinHorario || sinHorario(j))
+        && (dias.length === 0 || dias.some(d => j[`entrena_${d}`] === true))
+        && (filtroFederado.size === 0 || (filtroFederado.has('si') && j.federado === true) || (filtroFederado.has('no') && !j.federado))
+        && (filtroDoc.size === 0 || (filtroDoc.has('si') && conDocumento.has(j.id)) || (filtroDoc.has('no') && !conDocumento.has(j.id)))
+        && (filtroPago.size === 0 || filtroPago.has(estadoPago[j.id] || ''))
+        && (filtroHorario.size === 0 || filtroHorario.has(j.horario || ''))
+        && (filtroPresente.size === 0 || (filtroPresente.has('presente') && asistenciaHoy.has(j.id)) || (filtroPresente.has('ausente') && !asistenciaHoy.has(j.id)))
+        && pasaEdad(j)
+      )
+      .sort((a, b) => orden === 'az'
+        ? colador.compare(a.nombre || '', b.nombre || '')
+        : colador.compare(b.nombre || '', a.nombre || ''))
+  }, [
+    jugadores, busquedaDiferida, filtroCat, filtroSede, filtroGrupo, filtroEstado,
+    filtroSinHorario, filtroDia, filtroFederado, filtroDoc, filtroPago, filtroHorario,
+    filtroPresente, conDocumento, estadoPago, asistenciaHoy, edadMin, edadMax, orden, colador,
+  ])
+
+  // Las dos salen de `jugadores` y de nada más: no tenían por qué recalcularse
+  // —con sort y colación incluidos— cada vez que se tecleaba una letra.
+  const categorias = useMemo(
+    () => [...new Set(jugadores.map(j => j.categoria).filter(Boolean))].sort(colador.compare),
+    [jugadores, colador])
+  const horarios = useMemo(
+    () => [...new Set(jugadores.map(j => j.horario).filter(Boolean))].sort(colador.compare),
+    [jugadores, colador])
   const esAdmin = perfil?.rol === 'admin'
   const fmtMonto = useTextoMonto()
 

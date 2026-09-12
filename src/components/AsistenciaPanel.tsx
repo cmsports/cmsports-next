@@ -4,7 +4,7 @@
 // embeberlo como tab dentro de Jugadores. El wrapper AppLayout ahora vive
 // afuera (en la página que lo usa).
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -643,20 +643,33 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   //
   // Para alguien de otro grupo está "Vino alguien de otro grupo", que se busca
   // por nombre y queda como clase extra.
-  const sedesHoy = [...new Set(bloquesDelDia.map(b => b.sede))].sort()
+  // Lo de acá abajo se recalculaba en cada render, y pasar lista son veinte
+  // clics seguidos: cada marca cambia `asistencias` y arrastraba consigo estos
+  // `Set`, `sort` y `filter` que no dependen de eso. Memoizados, un clic solo
+  // rehace lo que de verdad cambió.
+  const sedesHoy = useMemo(() => [...new Set(bloquesDelDia.map(b => b.sede))].sort(), [bloquesDelDia])
   // Con una sola sede no hay nada que elegir: el paso sobra y se salta.
   const sedeEfectiva = sedesHoy.length === 1 ? sedesHoy[0] : sedeSel
-  const bloquesDeLaSede = (sedeEfectiva
+  const bloquesDeLaSede = useMemo(() => (sedeEfectiva
     ? bloquesDelDia.filter(b => b.sede === sedeEfectiva)
     : bloquesDelDia
-  ).slice().sort((a, b) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio)))
+  ).slice().sort((a, b) => hhmm(a.hora_inicio).localeCompare(hhmm(b.hora_inicio))), [bloquesDelDia, sedeEfectiva])
 
-  const inscritosDelBloque = bloqueSel ? new Set(inscritosDe[bloqueSel] ?? []) : null
+  const inscritosDelBloque = useMemo(
+    () => bloqueSel ? new Set(inscritosDe[bloqueSel] ?? []) : null,
+    [bloqueSel, inscritosDe])
 
-  const filtrados = jugadores.filter(j =>
-    j.nombre?.toLowerCase().includes(busqueda.toLowerCase()) &&
-    (!inscritosDelBloque || inscritosDelBloque.has(j.id))
-  )
+  // El campo se actualiza al instante y la lista se filtra en segundo plano,
+  // interrumpible si llega otra tecla. Y el `toLowerCase()` de la búsqueda sale
+  // del callback: se estaba haciendo una vez por jugador.
+  const busquedaDiferida = useDeferredValue(busqueda)
+  const filtrados = useMemo(() => {
+    const q = busquedaDiferida.toLowerCase()
+    return jugadores.filter(j =>
+      j.nombre?.toLowerCase().includes(q) &&
+      (!inscritosDelBloque || inscritosDelBloque.has(j.id))
+    )
+  }, [jugadores, busquedaDiferida, inscritosDelBloque])
 
   const bloqueElegido = bloquesDelDia.find(b => b.id === bloqueSel) ?? null
 
@@ -698,16 +711,26 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   // Candidatos a clase extra: cualquiera que no esté inscrito en el bloque
   // elegido. La base vuelve a comprobarlo antes de escribir.
-  const yaTieneExtra = new Set(extrasHoy.map(e => e.jugador_id))
-  const otrosJugadores = bloqueSel
-    ? jugadores.filter(j =>
-        !inscritosDelBloque?.has(j.id) &&
-        !yaTieneExtra.has(j.id) &&
-        j.nombre?.toLowerCase().includes(buscaOtro.toLowerCase()))
-    : []
+  const yaTieneExtra = useMemo(() => new Set(extrasHoy.map(e => e.jugador_id)), [extrasHoy])
+  const buscaOtroDiferido = useDeferredValue(buscaOtro)
+  const otrosJugadores = useMemo(() => {
+    if (!bloqueSel) return []
+    const q = buscaOtroDiferido.toLowerCase()
+    return jugadores.filter(j =>
+      !inscritosDelBloque?.has(j.id) &&
+      !yaTieneExtra.has(j.id) &&
+      j.nombre?.toLowerCase().includes(q))
+  }, [bloqueSel, jugadores, inscritosDelBloque, yaTieneExtra, buscaOtroDiferido])
 
   const extrasMostradas = extrasHoy
-  const nombreDe = (id: string) => jugadores.find(j => j.id === id)?.nombre ?? '—'
+  // Un mapa en vez de `jugadores.find(...)`: esto se llama una vez por clase
+  // extra en pantalla, y cada `find` recorría la lista entera del club.
+  const nombrePorJugador = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const j of jugadores) m.set(j.id, j.nombre ?? '—')
+    return m
+  }, [jugadores])
+  const nombreDe = (id: string) => nombrePorJugador.get(id) ?? '—'
   const fmtMonto = (n: number | null) => n == null ? null : '$' + Number(n).toLocaleString('es-CL')
 
   const asistenciasMostradas = fechaVista === hoy ? asistencias : asistenciasDia
