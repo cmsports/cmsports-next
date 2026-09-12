@@ -78,7 +78,7 @@ export function elegirPartidosDeJornada(
   pendientes: readonly PartidoPendiente[],
   jugadorIds: readonly string[],
   porJugador: number,
-  intentos = 12,
+  intentos = 80,
 ): PartidoPendiente[] {
   if (!pendientes.length || porJugador < 1) return []
   const jugadores = new Set(jugadorIds)
@@ -92,6 +92,9 @@ export function elegirPartidosDeJornada(
 
   let mejor: PartidoPendiente[] = []
   let mejorPuntaje = -1
+  // Tope teórico: nadie puede jugar más que su cupo ni más que sus pendientes.
+  const tope = Math.floor(jugadorIds.reduce((t, j) => t + Math.min(porJugador, pendientesDe.get(j) ?? 0), 0) / 2)
+  const conCupoLleno = jugadorIds.filter(j => (pendientesDe.get(j) ?? 0) >= porJugador).length
 
   // Un generador determinista para que la misma entrada dé la misma salida
   // (las pruebas y el admin ven lo mismo dos veces seguidas).
@@ -134,6 +137,8 @@ export function elegirPartidosDeJornada(
     const completos = jugadorIds.filter(j => (cupo.get(j) ?? 0) === 0).length
     const puntaje = elegidos.length * 100 + completos
     if (puntaje > mejorPuntaje) { mejorPuntaje = puntaje; mejor = elegidos }
+    // Lleno y parejo: no hay nada mejor que buscar.
+    if (elegidos.length >= tope && completos >= conCupoLleno) break
   }
 
   return mejor
