@@ -117,6 +117,13 @@ export const MODULOS = [
   // nombres de jugadores fuera de la app; lo pidió Buin (migración 270). Sin
   // el módulo, la página pública responde 404 aunque alguien tenga el link.
   { key: 'qr_publico', label: 'QR para imprimir (login y ranking público)' },
+  // Ligas programadas por jornadas: cada división juega una tarde con varias
+  // mesas, 3 partidos por cabeza, árbitros de la misma división, y el día y
+  // las mesas se eligen por jornada. Es cómo corre la liga Spinhouse
+  // (migración 272/273). Va aparte de 'liga' porque cambia el motor entero de
+  // programación: el modo de siempre (una mesa por división, fecha larga)
+  // sigue siendo el de San Bernardo y no se toca.
+  { key: 'liga_jornadas', label: 'Liga por jornadas (varias mesas por división)' },
   // Tareas NO va acá: es la lista privada de los superadmin
   // (/superadmin/tareas), no una función que un club pueda activar.
 ] as const

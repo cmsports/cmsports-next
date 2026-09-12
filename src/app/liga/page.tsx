@@ -8,6 +8,7 @@ import AppLayout from '@/app/layout-app'
 import { crearLiga, eliminarLiga } from '@/app/actions/liga'
 import { fechasRecomendadas, generarBloquesHorario, esHoraHHMM, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
 import { configDelClub } from '@/lib/supabase/clubConfig'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 const supabase = createClient()
 
@@ -57,6 +58,10 @@ export default function LigaPage() {
   // en BLOQUE_INICIO/BLOQUE_FIN, así que el formulario de Buin no cambia en
   // nada aunque el código de la ventana horaria ya exista.
   const [horarioEditable, setHorarioEditable] = useState(false)
+  // Programación por jornadas (Spinhouse): solo con el módulo liga_jornadas.
+  // Sin él, el formulario es el de siempre y el modo queda en 'mesa_unica'.
+  const { tiene: tieneModulo } = useModulos()
+  const [porJornadas, setPorJornadas] = useState(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -107,8 +112,11 @@ export default function LigaPage() {
     if (!nombre.trim()) return
     const nd = numDivisiones ? parseInt(numDivisiones) : 0
     const jpd = jugadoresPorDivision ? parseInt(jugadoresPorDivision) : 0
-    if (nd < 1) { setError('Debe haber al menos 1 división'); return }
-    if (jpd < 2) { setError('Debe haber al menos 2 jugadores por división'); return }
+    // Por jornadas, las divisiones y sus jugadores salen de la programación que
+    // se pega después (con sus nombres reales): crearlas acá como "División 1"
+    // haría que la importación las viera como distintas y creara otras.
+    if (!porJornadas && nd < 1) { setError('Debe haber al menos 1 división'); return }
+    if (!porJornadas && jpd < 2) { setError('Debe haber al menos 2 jugadores por división'); return }
     if (!horaValida) { setError('La hora de fin tiene que ser posterior a la de inicio.'); return }
     setCreando(true); setError('')
     const res = await crearLiga({
@@ -119,6 +127,7 @@ export default function LigaPage() {
       montoInscripcionDefault: montoInscripcion ? parseInt(montoInscripcion) : undefined,
       horaInicio,
       horaFin,
+      modoProgramacion: porJornadas ? 'jornadas' : 'mesa_unica',
     })
     setCreando(false)
     if (res.error) { setError(res.error); return }
@@ -296,6 +305,16 @@ export default function LigaPage() {
                   onKeyDown={e => e.key === 'Enter' && handleCrear()} />
               </div>
 
+              {tieneModulo('liga_jornadas') && (
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 16, padding: '10px 12px', background: porJornadas ? '#eef2ff' : '#f8fafc', border: `1px solid ${porJornadas ? '#c7d2fe' : '#e2e8f0'}`, borderRadius: 10, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={porJornadas} onChange={e => setPorJornadas(e.target.checked)} style={{ marginTop: 3 }} />
+                  <span style={{ fontSize: 12, color: ink, lineHeight: 1.5 }}>
+                    <strong>Programar por jornadas</strong> — cada división juega una tarde con varias mesas, 3 partidos por jugador,
+                    árbitros de la misma división; el día y las mesas se eligen en cada jornada. La programación ya publicada se puede pegar tal cual.
+                  </span>
+                </label>
+              )}
+
               {/* Detrás de `liga.horario_editable`: apagado en los seis clubes
                   hoy, así que sin encenderlo el formulario se ve exactamente
                   igual a como se veía antes de que esta ventana existiera. */}
@@ -323,16 +342,23 @@ export default function LigaPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Divisiones</label>
-                  <input type="number" min={1} style={inp} placeholder="Ej: 5" value={numDivisiones} onChange={e => setNumDivisiones(e.target.value)} />
+              {porJornadas ? (
+                <div style={{ fontSize: 12, color: muted, background: '#f8fafc', border: '1px dashed #e2e8f0', borderRadius: 10, padding: '10px 12px', marginBottom: 8, lineHeight: 1.5 }}>
+                  Las divisiones y sus jugadores salen de la programación que pegues después, con sus nombres reales
+                  (por ejemplo &ldquo;División de Honor&rdquo;). Las jornadas se van creando a medida que se programan.
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Jugadores / división</label>
-                  <input type="number" min={2} style={inp} placeholder="Ej: 12" value={jugadoresPorDivision} onChange={e => setJugadoresPorDivision(e.target.value)} />
+              ) : (
+                <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Divisiones</label>
+                    <input type="number" min={1} style={inp} placeholder="Ej: 5" value={numDivisiones} onChange={e => setNumDivisiones(e.target.value)} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>Jugadores / división</label>
+                    <input type="number" min={2} style={inp} placeholder="Ej: 12" value={jugadoresPorDivision} onChange={e => setJugadoresPorDivision(e.target.value)} />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {horarioEditable && !horaValida && horaInicio && horaFin && (
                 <div style={{

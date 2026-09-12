@@ -297,7 +297,7 @@ describe('sincronizarLlaves: los BYE del cuadro tradicional avanzan solos', () =
   it('6 clasificados → cuadro de 8 con 2 BYE, y sus ganadores ya están en semis', async () => {
     const t = montar(tradicionalTresGrupos())
     const res = await sincronizarLlaves({ torneoId: 't1' })
-    expect(res.error).toBeUndefined()
+    expect((res as any).error).toBeUndefined()
     expect((res as any).bracketCreado).toBe(true)
 
     const cuartos = t.torneo_partidos.filter(p => p.fase === 'cuartos')

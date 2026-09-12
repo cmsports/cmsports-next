@@ -174,7 +174,7 @@ export default function LigaDetallePage() {
   const ligaId = params.id
   const { perfil, loading: authLoading } = usePerfil()
 
-  const [liga, setLiga] = useState<{ nombre: string; montoInscripcionDefault: number | null; estado: string; horaInicio: string; horaFin: string } | null>(null)
+  const [liga, setLiga] = useState<{ nombre: string; montoInscripcionDefault: number | null; estado: string; horaInicio: string; horaFin: string; porJornadas: boolean } | null>(null)
   const [divisiones, setDivisiones] = useState<Division[]>([])
   const [fechas, setFechas] = useState<Fecha[]>([])
   const [jugadoresClub, setJugadoresClub] = useState<Jugador[]>([])
@@ -248,7 +248,7 @@ export default function LigaDetallePage() {
   const cargar = useCallback(async () => {
     // 5 queries en paralelo — RLS filtra por club sin necesitar club_id explícito
     const [{ data: ligaData }, { data: divs }, { data: fch }, { data: jugs }, { data: dj }] = await Promise.all([
-      (supabase as any).from('ligas').select('nombre, monto_inscripcion_default, estado, hora_inicio, hora_fin').eq('id', ligaId).single(),
+      (supabase as any).from('ligas').select('nombre, monto_inscripcion_default, estado, hora_inicio, hora_fin, modo_programacion').eq('id', ligaId).single(),
       supabase.from('liga_divisiones').select('id, nombre, orden, fixture_generado, capacidad_max').eq('liga_id', ligaId).order('orden'),
       supabase.from('liga_fechas').select('id, numero, es_ajuste, estado').eq('liga_id', ligaId).order('numero'),
       supabase.from('jugadores').select('id, nombre, es_externo').eq('estado', 'activo').order('nombre'),
@@ -256,7 +256,7 @@ export default function LigaDetallePage() {
     ])
     if (!ligaData) { setLoading(false); return }
 
-    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null, estado: ligaData.estado ?? 'planificacion', horaInicio: ligaData.hora_inicio ?? BLOQUE_INICIO, horaFin: ligaData.hora_fin ?? BLOQUE_FIN })
+    setLiga({ nombre: ligaData.nombre, montoInscripcionDefault: ligaData.monto_inscripcion_default ?? null, estado: ligaData.estado ?? 'planificacion', horaInicio: ligaData.hora_inicio ?? BLOQUE_INICIO, horaFin: ligaData.hora_fin ?? BLOQUE_FIN, porJornadas: ligaData.modo_programacion === 'jornadas' })
     setDivisiones(divs || [])
     setFechas(fch || [])
     setJugadoresClub(jugs || [])
@@ -871,6 +871,20 @@ export default function LigaDetallePage() {
               <span style={{ fontSize:18, fontWeight:800, color:'white', fontVariantNumeric:'tabular-nums' }}><CountUp to={fechas.length} /></span>
               <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>FECHAS</span>
             </div>
+            {/* Liga por jornadas (Spinhouse): la programación vive en su propia pantalla */}
+            {liga.porJornadas && (
+              <a
+                href={`/liga/${ligaId}/jornadas`}
+                title="Programación por jornadas"
+                style={{
+                  background:'rgba(37,99,235,0.35)', border:'1px solid rgba(147,197,253,0.5)',
+                  borderRadius:10, padding:'8px 14px', cursor:'pointer', fontSize:12, fontWeight:700,
+                  color:'white', textDecoration:'none', display:'flex', alignItems:'center', gap:6,
+                }}
+              >
+                📅 Jornadas
+              </a>
+            )}
             {/* Reporte de pagos — siempre disponible, sin importar la división/fecha activa */}
             <button
               onClick={() => setPagosReporteAbierto(true)}

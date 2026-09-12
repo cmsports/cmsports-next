@@ -1060,10 +1060,29 @@ export async function crearLiga(params: {
   /** "HH:MM". Sin declarar, la ventana de siempre: 09:00 a 17:00. */
   horaInicio?: string
   horaFin?: string
+  /** Cómo se programa (migración 272). Sin declarar: el modo de siempre. */
+  modoProgramacion?: 'mesa_unica' | 'jornadas'
+  /** Solo en modo jornadas: partidos por jugador por jornada (Spinhouse: 3). */
+  partidosPorJugadorPorFecha?: number
 }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
   if (!params.nombre.trim()) return { error: 'El nombre es obligatorio' }
+
+  // El modo por jornadas es un módulo (liga_jornadas): esconder la opción en
+  // el formulario no impide mandarla. Se valida acá, contra la misma lista
+  // que pinta el formulario.
+  const modoProgramacion = params.modoProgramacion ?? 'mesa_unica'
+  if (modoProgramacion === 'jornadas') {
+    const { data: club } = await supabase.from('clubes').select('modulos_habilitados').eq('id', clubId!).single()
+    if (!(club?.modulos_habilitados ?? []).includes('liga_jornadas')) {
+      return { error: 'La programación por jornadas no está habilitada para este club.' }
+    }
+  }
+  const partidosPorJugador = params.partidosPorJugadorPorFecha ?? 3
+  if (!Number.isInteger(partidosPorJugador) || partidosPorJugador < 1 || partidosPorJugador > 6) {
+    return { error: 'Los partidos por jugador por jornada van de 1 a 6.' }
+  }
 
   // Ventana horaria en la que se juega cada fecha. Antes del 2026-09-10 estaba
   // fija en BLOQUE_INICIO/BLOQUE_FIN para TODAS las ligas de TODOS los clubes;
@@ -1092,10 +1111,17 @@ export async function crearLiga(params: {
       monto_inscripcion_default: params.montoInscripcionDefault ?? null,
       hora_inicio: horaInicio,
       hora_fin: horaFin,
+      modo_programacion: modoProgramacion,
+      partidos_por_jugador_por_fecha: partidosPorJugador,
     })
     .select('id')
     .single()
   if (error || !liga) return { error: 'No se pudo crear la liga: ' + (error?.message ?? '') }
+
+  // Por jornadas no se crean fechas de antemano: cada jornada nace cuando se
+  // importa o se proyecta, y la liga termina cuando se completa el todos
+  // contra todos, no en un número fijo. Tampoco hay fecha de ajuste.
+  if (modoProgramacion === 'jornadas') return { success: true, ligaId: liga.id }
 
   // Fechas 1 a nFechasRegulares son regulares; la última (nFechasRegulares+1) es ajuste
   await supabase.from('liga_fechas').insert(
