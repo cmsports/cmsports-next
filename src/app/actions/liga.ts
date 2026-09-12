@@ -22,6 +22,32 @@ import {
 import { esUuid } from '@/lib/domain/uuid'
 import { requireAdminClub } from '@/lib/auth/require'
 
+// El motor de este archivo (una mesa por división, fechas largas, reajuste)
+// es el modo `mesa_unica`. Una liga por jornadas (migración 272, Spinhouse)
+// se programa desde `ligaJornadas.ts`; si el motor de acá la toca, le pisa
+// la programación publicada —pasó el 2026-09-12 con la Jornada 1—. Por eso
+// cada entrada que programa, mueve o cierra fechas pregunta primero.
+const MSG_POR_JORNADAS = 'Esta liga se programa por jornadas: usa la pantalla "Jornadas" de la liga.'
+
+async function rechazarSiEsPorJornadas(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  ref: { ligaId?: string; fechaId?: string; partidoId?: string },
+): Promise<string | null> {
+  let ligaId = ref.ligaId ?? null
+  if (!ligaId && ref.fechaId) {
+    const { data } = await db.from('liga_fechas').select('liga_id').eq('id', ref.fechaId).maybeSingle()
+    ligaId = data?.liga_id ?? null
+  }
+  if (!ligaId && ref.partidoId) {
+    const { data } = await db.from('liga_partidos').select('liga_id').eq('id', ref.partidoId).maybeSingle()
+    ligaId = data?.liga_id ?? null
+  }
+  if (!ligaId) return null
+  const { data: liga } = await db.from('ligas').select('modo_programacion').eq('id', ligaId).maybeSingle()
+  return liga?.modo_programacion === 'jornadas' ? MSG_POR_JORNADAS : null
+}
+
 // Calcula el diff de cambiar jugadores en una división con fixture ya generado.
 // No modifica la BD — solo devuelve qué cambiaría para mostrar en el modal de
 // confirmación antes de aplicar los cambios.
@@ -556,6 +582,7 @@ export async function reincorporarJugadorALiga(params: { ligaId: string; jugador
 export async function generarProgramacionLiga(params: { ligaId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { ligaId: params.ligaId }); if (porJornadas) return { error: porJornadas } }
 
   const { ligaId } = params
   const db = supabase as any
@@ -802,6 +829,7 @@ export async function reprogramarFechasPendientes(
 ): Promise<ResultadoReprogramacion> {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { ...REPROGRAMACION_VACIA, error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { ligaId: params.ligaId }); if (porJornadas) return { ...REPROGRAMACION_VACIA, error: porJornadas } }
 
   const { ligaId } = params
   const db = supabase as any
@@ -865,6 +893,7 @@ export async function moverPartidoLiga(params: {
 }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { partidoId: params.partidoId }); if (porJornadas) return { error: porJornadas } }
 
   const { partidoId, fechaId, mesaId, bloqueHorario } = params
 
@@ -1198,6 +1227,7 @@ export async function actualizarCapacidadDivision(params: {
 export async function iniciarFecha(params: { fechaId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { fechaId: params.fechaId }); if (porJornadas) return { error: porJornadas } }
 
   const { data: fecha } = await supabase.from('liga_fechas').select('id, liga_id, estado').eq('id', params.fechaId).single()
   if (!fecha) return { error: 'Fecha no encontrada' }
@@ -1330,6 +1360,7 @@ export async function registrarWalkover(params: { partidoId: string; ganadorId: 
 export async function reprogramarPartidoAFecha5(params: { partidoId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { partidoId: params.partidoId }); if (porJornadas) return { error: porJornadas } }
 
   const { data: partido } = await supabase
     .from('liga_partidos')
@@ -1365,6 +1396,7 @@ export async function reprogramarPartidoAFecha5(params: { partidoId: string }) {
 export async function terminarFechaAction(params: { fechaId: string; forzar?: boolean }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { fechaId: params.fechaId }); if (porJornadas) return { error: porJornadas } }
 
   const { data: fecha } = await supabase
     .from('liga_fechas')
@@ -1415,6 +1447,7 @@ export async function terminarFechaAction(params: { fechaId: string; forzar?: bo
 export async function programarEnReajuste(params: { ligaId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { ligaId: params.ligaId }); if (porJornadas) return { error: porJornadas } }
   const db = supabase as any
   const { ligaId } = params
 
@@ -1522,6 +1555,7 @@ export async function asignarPartidoManual(params: {
 }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { partidoId: params.partidoId }); if (porJornadas) return { error: porJornadas } }
 
   const { partidoId, fechaId, bloqueHorario } = params
 
@@ -1590,6 +1624,7 @@ export async function asignarPartidoManual(params: {
 export async function programarNuevosPartidosDivision(params: { ligaId: string; divisionId: string }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
+  { const porJornadas = await rechazarSiEsPorJornadas(supabase, { ligaId: params.ligaId }); if (porJornadas) return { error: porJornadas } }
 
   const { ligaId, divisionId } = params
   const db = supabase as any

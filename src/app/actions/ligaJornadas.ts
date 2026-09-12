@@ -211,6 +211,10 @@ export async function importarProgramacionJornada(params: {
     fechaId = fechaExistente.id
     const { error } = await db.from('liga_fechas').update({ fecha: primerDia }).eq('id', fechaId)
     if (error) return { error: 'No se pudo actualizar la jornada: ' + error.message }
+    // Lo que esa jornada tenía y no se jugó se suelta: la hoja pegada manda.
+    // Si no, un partido que otro motor dejó ahí se quedaría colado.
+    const errLiberar = await liberarJornada(db, fechaId)
+    if (errLiberar) return { error: errLiberar }
   } else {
     const { data: nueva, error } = await db
       .from('liga_fechas').insert({ liga_id: liga.id, numero: prog.jornada, es_ajuste: false, fecha: primerDia }).select('id').single()
@@ -270,33 +274,52 @@ export interface SesionProyectada {
   mesas: number[]
 }
 
-export async function proyectarJornada(params: {
-  ligaId: string
+export interface ResumenDivisionJornada {
+  divisionId: string
+  partidos: number
+  bloques: number
+  horaFin: string
+  sinArbitro: number
+  huecoRespetado: boolean
+  pendientesRestantes: number
+}
+
+type LigaJornadas = { id: string; partidos_por_jugador_por_fecha: number | null; bloque_minutos: number | null; hora_inicio: string | null }
+
+/** Suelta lo que una jornada tenía programado y no se jugó. */
+async function liberarJornada(db: Db, fechaId: string): Promise<string | null> {
+  const { error } = await db.from('liga_partidos')
+    .update({ fecha_id: null, dia_offset: 0, mesa_id: null, bloque_horario: null, arbitro_id: null, estado: 'pendiente' })
+    .eq('fecha_id', fechaId).not('estado', 'in', '("finalizado","walkover")').is('deleted_at', null)
+  return error ? 'No se pudo liberar la jornada: ' + error.message : null
+}
+
+function validarSesiones(sesiones: SesionProyectada[]): string | null {
+  if (!sesiones.length) return 'Elige al menos una división con su día y sus mesas.'
+  for (const s of sesiones) if (!s.mesas.length) return 'Cada división necesita al menos una mesa.'
+  // Dos divisiones no pueden compartir una mesa el mismo día.
+  const ocupadas = new Set<string>()
+  for (const s of sesiones) for (const m of s.mesas) {
+    const clave = `${s.diaOffset}:${m}`
+    if (ocupadas.has(clave)) return `La mesa ${m} está repetida entre dos divisiones el mismo día.`
+    ocupadas.add(clave)
+  }
+  return null
+}
+
+/**
+ * Arma UNA jornada: la fecha (nueva o existente sin arrancar), las mesas, la
+ * sesión de cada división y sus partidos. Es lo que hace `proyectarJornada`
+ * y lo que `programarLigaCompleta` repite hasta que no quede nada por jugar.
+ */
+async function proyectarJornadaCore(db: Db, liga: LigaJornadas, params: {
   numero: number
-  /** Fecha ISO del primer día (el sábado). */
   fecha: string
   horaInicio: string
   sesiones: SesionProyectada[]
-}): Promise<{ error?: string; resumen?: Array<{ divisionId: string; partidos: number; bloques: number; horaFin: string; sinArbitro: number; huecoRespetado: boolean; pendientesRestantes: number }> }> {
-  const { error: authErr, supabase, clubId } = await requireAdminClub()
-  if (authErr || !clubId) return { error: authErr ?? 'Sin club' }
-  const db: Db = supabase
-
-  const { error: errLiga, liga } = await ligaDelClub(db, params.ligaId, clubId)
-  if (errLiga) return { error: errLiga }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(params.fecha)) return { error: 'La fecha de la jornada va como AAAA-MM-DD.' }
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(params.horaInicio)) return { error: 'La hora de inicio va como HH:MM.' }
-  if (!params.sesiones.length) return { error: 'Elige al menos una división con su día y sus mesas.' }
-  for (const s of params.sesiones) {
-    if (!s.mesas.length) return { error: 'Cada división necesita al menos una mesa.' }
-  }
-  // Dos divisiones no pueden compartir una mesa el mismo día.
-  const ocupadas = new Set<string>()
-  for (const s of params.sesiones) for (const m of s.mesas) {
-    const clave = `${s.diaOffset}:${m}`
-    if (ocupadas.has(clave)) return { error: `La mesa ${m} está repetida entre dos divisiones el mismo día.` }
-    ocupadas.add(clave)
-  }
+}): Promise<{ error?: string; resumen?: ResumenDivisionJornada[] }> {
+  const errSesiones = validarSesiones(params.sesiones)
+  if (errSesiones) return { error: errSesiones }
 
   // La jornada: existente (si no arrancó) o nueva.
   const { data: fechaExistente } = await db
@@ -306,10 +329,8 @@ export async function proyectarJornada(params: {
     if (fechaExistente.estado !== 'programada') return { error: `La jornada ${params.numero} ya está ${fechaExistente.estado}.` }
     fechaId = fechaExistente.id
     // Lo que tenía programado y no se jugó se suelta: se vuelve a repartir.
-    const { error } = await db.from('liga_partidos')
-      .update({ fecha_id: null, dia_offset: 0, mesa_id: null, bloque_horario: null, arbitro_id: null, estado: 'pendiente' })
-      .eq('fecha_id', fechaId).not('estado', 'in', '("finalizado","walkover")')
-    if (error) return { error: 'No se pudo liberar la jornada: ' + error.message }
+    const errLiberar = await liberarJornada(db, fechaId)
+    if (errLiberar) return { error: errLiberar }
     const { error: errFecha } = await db.from('liga_fechas').update({ fecha: params.fecha }).eq('id', fechaId)
     if (errFecha) return { error: 'No se pudo actualizar la jornada: ' + errFecha.message }
   } else {
@@ -330,7 +351,7 @@ export async function proyectarJornada(params: {
     for (const m of (creadas || []) as Array<{ id: string; numero: number }>) mesaIdPorNumero.set(m.numero, m.id)
   }
 
-  const resumen: NonNullable<Awaited<ReturnType<typeof proyectarJornada>>['resumen']> = []
+  const resumen: ResumenDivisionJornada[] = []
   for (const s of params.sesiones) {
     const { error: errSesion } = await db.from('liga_fecha_sesiones').upsert(
       { fecha_id: fechaId, division_id: s.divisionId, dia_offset: s.diaOffset, mesas: s.mesas },
@@ -375,6 +396,146 @@ export async function proyectarJornada(params: {
   }
 
   return { resumen }
+}
+
+export async function proyectarJornada(params: {
+  ligaId: string
+  numero: number
+  /** Fecha ISO del primer día (el sábado). */
+  fecha: string
+  horaInicio: string
+  sesiones: SesionProyectada[]
+}): Promise<{ error?: string; resumen?: ResumenDivisionJornada[] }> {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr || !clubId) return { error: authErr ?? 'Sin club' }
+  const db: Db = supabase
+
+  const { error: errLiga, liga } = await ligaDelClub(db, params.ligaId, clubId)
+  if (errLiga) return { error: errLiga }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(params.fecha)) return { error: 'La fecha de la jornada va como AAAA-MM-DD.' }
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(params.horaInicio)) return { error: 'La hora de inicio va como HH:MM.' }
+  return proyectarJornadaCore(db, liga, params)
+}
+
+/**
+ * La liga entera, como la arma Spinhouse: una jornada por fin de semana
+ * hasta que cada división termine su todos contra todos. Cada división
+ * repite el día y las mesas de su última jornada (o el reparto de la
+ * Jornada 1: dos divisiones el sábado y dos el domingo, tres mesas cada
+ * una).
+ *
+ * Nunca toca una jornada que ya existe —ni la que se pegó de la hoja
+ * publicada ni una que ya arrancó—: parte después de la última y sigue
+ * hasta que no quede nada por jugar. Para rehacer UNA jornada está
+ * `proyectarJornada` desde la pantalla de jornadas.
+ */
+export async function programarLigaCompleta(params: {
+  ligaId: string
+  /** Primer sábado de la primera jornada nueva. Si ya hay jornadas, se ignora: sigue 7 días después de la última. */
+  fechaInicio?: string
+  horaInicio?: string
+}): Promise<{ error?: string; jornadas?: Array<{ numero: number; fecha: string; resumen: ResumenDivisionJornada[] }> }> {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr || !clubId) return { error: authErr ?? 'Sin club' }
+  const db: Db = supabase
+
+  const { error: errLiga, liga } = await ligaDelClub(db, params.ligaId, clubId)
+  if (errLiga) return { error: errLiga }
+  const horaInicio = params.horaInicio ?? String(liga.hora_inicio ?? '15:00').slice(0, 5)
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(horaInicio)) return { error: 'La hora de inicio va como HH:MM.' }
+
+  const [{ data: divisiones }, { data: fechas }] = await Promise.all([
+    db.from('liga_divisiones').select('id, orden').eq('liga_id', liga.id).order('orden'),
+    db.from('liga_fechas').select('id, numero, fecha, estado').eq('liga_id', liga.id).eq('es_ajuste', false).order('numero'),
+  ])
+  const divs = (divisiones || []) as Array<{ id: string; orden: number }>
+  const lista = (fechas || []) as Array<{ id: string; numero: number; fecha: string | null; estado: string }>
+
+  // De dónde parte: después de la última jornada que existe.
+  const ultima = lista[lista.length - 1] ?? null
+  let numero = (ultima?.numero ?? 0) + 1
+  let fecha: string
+  if (ultima?.fecha) fecha = sumarDias(ultima.fecha, 7)
+  else if (params.fechaInicio && /^\d{4}-\d{2}-\d{2}$/.test(params.fechaInicio)) fecha = params.fechaInicio
+  else return { error: 'Falta la fecha del primer sábado (AAAA-MM-DD).' }
+
+  // El reparto de cada división: su última sesión, o el de la Jornada 1.
+  const sesionPorDivision = new Map<string, { diaOffset: number; mesas: number[] }>()
+  if (lista.length) {
+    const { data: sesiones } = await db
+      .from('liga_fecha_sesiones').select('division_id, dia_offset, mesas, liga_fechas!inner(numero)')
+      .in('fecha_id', lista.map(f => f.id))
+    const filas = (sesiones || []) as Array<{ division_id: string; dia_offset: number; mesas: number[]; liga_fechas: { numero: number } | Array<{ numero: number }> }>
+    const numeroDe = (x: typeof filas[number]['liga_fechas']) => (Array.isArray(x) ? x[0]?.numero : x?.numero) ?? 0
+    for (const s of filas.sort((a, b) => numeroDe(a.liga_fechas) - numeroDe(b.liga_fechas))) {
+      sesionPorDivision.set(s.division_id, { diaOffset: s.dia_offset, mesas: s.mesas })
+    }
+  }
+  const sinSesion = divs.filter(d => !sesionPorDivision.has(d.id))
+  sinSesion.forEach((d, i) => {
+    const mesasPorDivision = 3
+    const posEnDia = i % 2
+    const desde = posEnDia * mesasPorDivision + 1
+    sesionPorDivision.set(d.id, { diaOffset: Math.floor(i / 2) % 2, mesas: Array.from({ length: mesasPorDivision }, (_, k) => desde + k) })
+  })
+
+  const pendientesDe = async (divisionId: string) => {
+    const { count } = await db.from('liga_partidos').select('id', { count: 'exact', head: true })
+      .eq('division_id', divisionId).is('fecha_id', null).is('deleted_at', null)
+      .not('estado', 'in', '("finalizado","walkover")')
+    return count ?? 0
+  }
+
+  const jornadas: NonNullable<Awaited<ReturnType<typeof programarLigaCompleta>>['jornadas']> = []
+  const TOPE = 40
+  for (let i = 0; i < TOPE; i++) {
+    const sesiones: SesionProyectada[] = []
+    for (const d of divs) {
+      if ((await pendientesDe(d.id)) === 0) continue
+      const s = sesionPorDivision.get(d.id)!
+      sesiones.push({ divisionId: d.id, diaOffset: s.diaOffset, mesas: s.mesas })
+    }
+    if (!sesiones.length) break
+    const res = await proyectarJornadaCore(db, liga, { numero, fecha, horaInicio, sesiones })
+    if (res.error) return { error: `Jornada ${numero}: ${res.error}`, jornadas }
+    const programados = (res.resumen ?? []).reduce((t, r) => t + r.partidos, 0)
+    if (!programados) return { error: `La jornada ${numero} no pudo programar ningún partido; revisa que cada división tenga al menos dos jugadores.`, jornadas }
+    jornadas.push({ numero, fecha, resumen: res.resumen ?? [] })
+    numero++
+    fecha = sumarDias(fecha, 7)
+  }
+  if (!jornadas.length) return { error: 'No queda ningún partido por programar: todas las divisiones ya tienen su liga completa.' }
+
+  return { jornadas }
+}
+
+/**
+ * Después de marcar un resultado en modo jornadas: la liga pasa a "en
+ * curso" con el primer partido jugado, y la jornada queda "finalizada"
+ * cuando no le queda ningún partido abierto. Sin botones de iniciar o
+ * terminar fecha: eso es del modo mesa_unica.
+ */
+export async function actualizarEstadosJornada(params: { partidoId: string }): Promise<{ error?: string; jornadaTerminada?: boolean }> {
+  const { error: authErr, supabase, clubId } = await requireAdminClub()
+  if (authErr || !clubId) return { error: authErr ?? 'Sin club' }
+  const db: Db = supabase
+
+  const { data: partido } = await db.from('liga_partidos').select('liga_id, fecha_id').eq('id', params.partidoId).maybeSingle()
+  if (!partido) return { error: 'Partido no encontrado' }
+  const { error: errLiga } = await ligaDelClub(db, partido.liga_id, clubId)
+  if (errLiga) return { error: errLiga }
+
+  const { error: errEstado } = await db.from('ligas').update({ estado: 'en_curso' }).eq('id', partido.liga_id).eq('estado', 'planificacion')
+  if (errEstado) return { error: 'No se pudo poner la liga en curso: ' + errEstado.message }
+  if (!partido.fecha_id) return { jornadaTerminada: false }
+
+  const { count } = await db.from('liga_partidos').select('id', { count: 'exact', head: true })
+    .eq('fecha_id', partido.fecha_id).is('deleted_at', null).not('estado', 'in', '("finalizado","walkover")')
+  const abiertos = count ?? 0
+  const { error } = await db.from('liga_fechas').update({ estado: abiertos === 0 ? 'finalizada' : 'en_juego' })
+    .eq('id', partido.fecha_id).neq('estado', abiertos === 0 ? 'finalizada' : 'en_juego')
+  if (error) return { error: 'No se pudo actualizar la jornada: ' + error.message }
+  return { jornadaTerminada: abiertos === 0 }
 }
 
 /** El pie de la hoja de programación (reglas, contacto). Texto libre del club. */

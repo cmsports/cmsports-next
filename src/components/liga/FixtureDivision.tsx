@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { registrarResultadoPartido, editarResultadoPartido, asignarPartidoManual, desprogramarPartido } from '@/app/actions/liga'
+import { registrarResultadoPartido, editarResultadoPartido, asignarPartidoManual, desprogramarPartido, registrarWalkover } from '@/app/actions/liga'
+import { actualizarEstadosJornada } from '@/app/actions/ligaJornadas'
 import { generarBloquesHorario, normalizarBloque, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
 
 const supabase = createClient()
@@ -31,6 +32,8 @@ interface PartidoFila {
   fechaId: string | null
   bloqueHorario: string | null
   divisionNombre: string
+  mesaNumero: number | null
+  arbitroId: string | null
 }
 
 interface FechaLiga { id: string; numero: number; esAjuste: boolean }
@@ -39,10 +42,17 @@ export function FixtureDivision({
   divisionId,
   ligaId,
   nombres,
+  porJornadas = false,
+  soloFechaId,
 }: {
   divisionId: string
   ligaId: string
   nombres: Record<string, string>
+  /** Liga en modo jornadas: el partido muestra jornada, hora y mesa; se
+   *  programa desde la pantalla de jornadas, no fila por fila. */
+  porJornadas?: boolean
+  /** Mostrar solo los partidos de esta jornada ('sin' = los que no tienen). */
+  soloFechaId?: string | 'sin'
 }) {
   const [partidos, setPartidos] = useState<PartidoFila[]>([])
   const [fechasLiga, setFechasLiga] = useState<FechaLiga[]>([])
@@ -68,7 +78,7 @@ export function FixtureDivision({
       (supabase as any).from('ligas').select('bloque_minutos, hora_inicio, hora_fin').eq('id', ligaId).single(),
       supabase.from('liga_fechas').select('id, numero, es_ajuste').eq('liga_id', ligaId).order('numero'),
       db.from('liga_partidos')
-        .select('id, estado, jugador_a_id, jugador_b_id, sets_a, sets_b, ganador_id, orden_fixture, fecha_id, bloque_horario, liga_fechas(numero), liga_divisiones(nombre)')
+        .select('id, estado, jugador_a_id, jugador_b_id, sets_a, sets_b, ganador_id, orden_fixture, fecha_id, bloque_horario, arbitro_id, liga_fechas(numero), liga_divisiones(nombre), liga_mesas(numero)')
         .eq('division_id', divisionId)
         .is('deleted_at', null)
         .order('orden_fixture', { ascending: true }),
@@ -82,6 +92,7 @@ export function FixtureDivision({
     const divNombre = divisionData?.nombre ?? ''
     const lista: PartidoFila[] = (rawPartidos || []).map((p: any) => {
       const f = Array.isArray(p.liga_fechas) ? p.liga_fechas[0] : p.liga_fechas
+      const m = Array.isArray(p.liga_mesas) ? p.liga_mesas[0] : p.liga_mesas
       return {
         id: p.id,
         estado: p.estado,
@@ -95,6 +106,8 @@ export function FixtureDivision({
         fechaId: p.fecha_id ?? null,
         bloqueHorario: normalizarBloque(p.bloque_horario),
         divisionNombre: divNombre,
+        mesaNumero: m?.numero ?? null,
+        arbitroId: p.arbitro_id ?? null,
       }
     })
     setPartidos(lista)
@@ -118,9 +131,19 @@ export function FixtureDivision({
   async function handleGuardar(partido: PartidoFila) {
     const val = resultados[partido.id]
     if (!val) return
-    const [sA, sB] = val.split('-').map(Number)
     setGuardandoId(partido.id)
-    const res = await registrarResultadoPartido({ partidoId: partido.id, setsA: sA, setsB: sB })
+    // "wo:A" / "wo:B" es no presentación (solo en modo jornadas); lo demás, sets.
+    let res: { error?: string }
+    if (val.startsWith('wo:')) {
+      res = await registrarWalkover({ partidoId: partido.id, ganadorId: val === 'wo:A' ? partido.jugadorAId : partido.jugadorBId })
+    } else {
+      const [sA, sB] = val.split('-').map(Number)
+      res = await registrarResultadoPartido({ partidoId: partido.id, setsA: sA, setsB: sB })
+    }
+    if (!res.error && porJornadas) {
+      const est = await actualizarEstadosJornada({ partidoId: partido.id })
+      if (est.error) res = est
+    }
     setGuardandoId(null)
     if (res.error) { setErrorMsg(res.error); return }
     setResultados(prev => { const n = { ...prev }; delete n[partido.id]; return n })
@@ -186,8 +209,15 @@ export function FixtureDivision({
     <div style={{ fontSize:12, color:hint, marginTop:14 }}>Sin partidos en esta división. Generá el fixture primero.</div>
   )
 
-  const jugados = partidos.filter(p => p.estado === 'finalizado' || p.estado === 'walkover').length
-  const progPct = partidos.length > 0 ? Math.round((jugados / partidos.length) * 100) : 0
+  const visibles = soloFechaId === undefined
+    ? partidos
+    : partidos.filter(p => (soloFechaId === 'sin' ? !p.fechaId : p.fechaId === soloFechaId))
+      .sort((a, b) => (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? '') || (a.mesaNumero ?? 0) - (b.mesaNumero ?? 0))
+  const jugados = visibles.filter(p => p.estado === 'finalizado' || p.estado === 'walkover').length
+  const progPct = visibles.length > 0 ? Math.round((jugados / visibles.length) * 100) : 0
+  const titulo = soloFechaId === undefined
+    ? `Calendario completo — ${partidos.length} partidos`
+    : soloFechaId === 'sin' ? `Sin programar todavía — ${visibles.length} partidos` : `${visibles.length} partidos en esta jornada`
 
   return (
     <div style={{ marginTop:20, borderTop:'1px solid #e2e8f0', paddingTop:16 }}>
@@ -211,13 +241,13 @@ export function FixtureDivision({
       <div style={{ marginBottom:14 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:7 }}>
           <div style={{ fontSize:12, fontWeight:700, color:muted }}>
-            Calendario completo — {partidos.length} partidos
+            {titulo}
           </div>
           <div style={{
             fontSize:12, fontWeight:700,
-            color: jugados === partidos.length ? '#059669' : muted,
+            color: jugados === visibles.length ? '#059669' : muted,
           }}>
-            {jugados} / {partidos.length} jugados
+            {jugados} / {visibles.length} jugados
           </div>
         </div>
         <div style={{ height:6, background:'#e2e8f0', borderRadius:99, overflow:'hidden' }}>
@@ -232,7 +262,10 @@ export function FixtureDivision({
       </div>
 
       <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-        {partidos.map(p => {
+        {visibles.length === 0 && (
+          <div style={{ fontSize:12, color:hint, padding:'10px 0' }}>Nada por acá.</div>
+        )}
+        {visibles.map(p => {
           const jugado = p.estado === 'finalizado' || p.estado === 'walkover'
           const esWalkover = p.estado === 'walkover'
           const nombreA = nombres[p.jugadorAId] ?? '—'
@@ -275,8 +308,8 @@ export function FixtureDivision({
                   whiteSpace:'nowrap', letterSpacing:'0.3px',
                 }}>
                   {p.fechaNumero != null
-                    ? `F${p.fechaNumero}${p.bloqueHorario ? ` · ${p.bloqueHorario}` : ''}`
-                    : 'Sin fecha'}
+                    ? `${porJornadas ? 'J' : 'F'}${p.fechaNumero}${p.bloqueHorario ? ` · ${p.bloqueHorario}` : ''}${porJornadas && p.mesaNumero ? ` · mesa ${p.mesaNumero}` : ''}`
+                    : porJornadas ? 'Sin programar' : 'Sin fecha'}
                 </span>
 
                 {/* Jugadores */}
@@ -284,6 +317,9 @@ export function FixtureDivision({
                   <span style={{ fontWeight: p.ganadorId === p.jugadorAId ? 700 : 400 }}>{nombreA}</span>
                   <span style={{ color:hint, margin:'0 6px' }}>vs</span>
                   <span style={{ fontWeight: p.ganadorId === p.jugadorBId ? 700 : 400 }}>{nombreB}</span>
+                  {porJornadas && p.arbitroId && !jugado && (
+                    <span style={{ color:hint, marginLeft:8, fontSize:11 }}>· árbitro {nombres[p.arbitroId] ?? ''}</span>
+                  )}
                 </span>
 
                 {/* Resultado o selector */}
@@ -312,6 +348,8 @@ export function FixtureDivision({
                     >
                       <option value="">— resultado —</option>
                       {RESULTADOS_BO5.map(r => <option key={r} value={r}>{r}</option>)}
+                      {porJornadas && <option value="wo:A">W.O. · gana {nombreA.split(' ')[0]}</option>}
+                      {porJornadas && <option value="wo:B">W.O. · gana {nombreB.split(' ')[0]}</option>}
                     </select>
                     <button
                       onClick={() => handleGuardar(p)}
@@ -329,8 +367,8 @@ export function FixtureDivision({
                 )}
               </div>
 
-              {/* Sub-fila de programación (solo partidos no jugados) */}
-              {!jugado && (
+              {/* Sub-fila de programación (solo partidos no jugados, modo mesa_unica) */}
+              {!jugado && !porJornadas && (
                 <div style={{
                   display:'flex', gap:5, padding:'6px 12px 9px',
                   alignItems:'center', flexWrap:'wrap',

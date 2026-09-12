@@ -18,6 +18,7 @@ import { registrarPagoLiga } from '@/app/actions/liga-pagos'
 import { TableroFecha } from '@/components/liga/TableroFecha'
 import { RankingDivision } from '@/components/liga/RankingDivision'
 import { FixtureDivision } from '@/components/liga/FixtureDivision'
+import { ProgramacionJornadas } from '@/components/liga/ProgramacionJornadas'
 import { calcularRankingDivision, BLOQUE_INICIO, BLOQUE_FIN, type PuntajeLiga, PUNTAJE_LIGA_POR_DEFECTO } from '@/lib/domain/liga'
 import { configDelClub } from '@/lib/supabase/clubConfig'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -496,8 +497,11 @@ export default function LigaDetallePage() {
     if (res.jugadoresRemovidos) partes.push(`${res.jugadoresRemovidos} removido${res.jugadoresRemovidos !== 1 ? 's' : ''}`)
     if (res.partidosAnulados) partes.push(`${res.partidosAnulados} partido${res.partidosAnulados !== 1 ? 's' : ''} anulado${res.partidosAnulados !== 1 ? 's' : ''}`)
 
-    // Nuevos partidos → programarlos automáticamente en los huecos reales de cada fecha
-    if ((res.partidosCreados ?? 0) > 0) {
+    // Nuevos partidos → programarlos automáticamente en los huecos reales de cada fecha.
+    // En modo jornadas quedan pendientes y entran en la próxima jornada que se arme.
+    if ((res.partidosCreados ?? 0) > 0 && liga?.porJornadas) {
+      partes.push(`${res.partidosCreados} partido${(res.partidosCreados ?? 0) !== 1 ? 's' : ''} nuevo${(res.partidosCreados ?? 0) !== 1 ? 's' : ''} (entran en la próxima jornada que se programe)`)
+    } else if ((res.partidosCreados ?? 0) > 0) {
       const progRes = await programarNuevosPartidosDivision({ ligaId, divisionId: division.id })
       if (progRes.error) {
         partes.push(`${res.partidosCreados} partido${(res.partidosCreados ?? 0) !== 1 ? 's' : ''} creado${(res.partidosCreados ?? 0) !== 1 ? 's' : ''} (pendiente programar: ${progRes.error})`)
@@ -869,7 +873,7 @@ export default function LigaDetallePage() {
               border:'1px solid rgba(255,255,255,0.18)',
             }}>
               <span style={{ fontSize:18, fontWeight:800, color:'white', fontVariantNumeric:'tabular-nums' }}><CountUp to={fechas.length} /></span>
-              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>FECHAS</span>
+              <span style={{ fontSize:10, color:'rgba(255,255,255,0.6)', fontWeight:600, letterSpacing:'0.5px' }}>{liga.porJornadas ? 'JORNADAS' : 'FECHAS'}</span>
             </div>
             {/* Liga por jornadas (Spinhouse): la programación vive en su propia pantalla */}
             {liga.porJornadas && (
@@ -1282,12 +1286,25 @@ export default function LigaDetallePage() {
                 )}
               </div>
 
-              <FixtureDivision key={`${division.id}-${division.fixture_generado}-${fixtureKey}`} divisionId={division.id} ligaId={ligaId} nombres={nombrePorId} />
+              <FixtureDivision key={`${division.id}-${division.fixture_generado}-${fixtureKey}`} divisionId={division.id} ligaId={ligaId} nombres={nombrePorId} porJornadas={liga.porJornadas} />
             </div>
           </div>}
 
           {/* ── Tab Programación ──────────────────────────────────────────── */}
-          {subTab === 'programacion' && <div className="liga-fade">
+          {/* ── Tab Programación, liga por jornadas (Spinhouse) ─────────────── */}
+          {subTab === 'programacion' && liga.porJornadas && <div className="liga-fade">
+            <ProgramacionJornadas
+              ligaId={ligaId}
+              divisionId={division.id}
+              nombres={nombrePorId}
+              clubId={perfil?.club_id ?? null}
+              fixtureKey={fixtureKey}
+              onCambio={() => { setFixtureKey(k => k + 1); cargar() }}
+            />
+          </div>}
+
+          {/* ── Tab Programación, modo mesa_unica ─────────────────────────── */}
+          {subTab === 'programacion' && !liga.porJornadas && <div className="liga-fade">
             {/* Barra: selector de fecha + acciones */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:14, flexWrap:'wrap', gap:10 }}>
               {/* Stepper de fechas */}

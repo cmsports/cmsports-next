@@ -243,6 +243,8 @@ describe('reprogramarFechasPendientes', () => {
     }
     const fechasChain: any = {
       eq: vi.fn(() => fechasChain),
+      // El portazo del modo jornadas mira la liga antes; acá es del modo de siempre.
+      maybeSingle: vi.fn().mockResolvedValue({ data: { modo_programacion: 'mesa_unica' }, error: null }),
       then: (res: any) => Promise.resolve({ data: [{ id: 'f4', numero: 4 }], error: null }).then(res),
     }
     const supabase = {
@@ -279,6 +281,21 @@ describe('reprogramarFechasPendientes', () => {
     mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
     const res = await reprogramarFechasPendientes({ ligaId: 'l' })
     expect(res.error).toBe('Acceso denegado')
+  })
+
+  // 2026-09-12: en la liga de Spinhouse (por jornadas) alguien apretó
+  // "Programar fecha" y este motor le pisó la Jornada 1 recién cargada.
+  it('no toca una liga que se programa por jornadas', async () => {
+    const fake = fakeSupabase({
+      ligas: [{ id: 'liga-j', modo_programacion: 'jornadas' }],
+      liga_fechas: [{ id: 'f1', numero: 1, liga_id: 'liga-j', estado: 'programada' }],
+    })
+    mocks.requireAdminClub.mockResolvedValue({ error: null, supabase: fake.cliente, clubId: 'club-1', userId: 'u1' })
+
+    const res = await reprogramarFechasPendientes({ ligaId: 'liga-j' })
+
+    expect(res.error).toMatch(/por jornadas/i)
+    expect(fake.escrituras('liga_partidos')).toHaveLength(0)
   })
 })
 
@@ -333,6 +350,7 @@ describe('asignarPartidoManual', () => {
       eq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
     }
     const supabase = { from: vi.fn(() => ({ select: vi.fn(() => selectChain) })) }
     mocks.requireAdminClub.mockResolvedValue({ error: null, supabase, clubId: 'club-1' })
