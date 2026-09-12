@@ -2307,7 +2307,19 @@ async function podioDeLiguilla(
 
   if (jugadores.length < 2) return { error: 'La liguilla no tiene jugadores inscritos.' }
 
-  const { stats } = calcularStatsGrupo(jugadores, partidos || [])
+  // Las filas vienen en snake_case (jugador_a, puntos_a) y `calcularStatsGrupo`
+  // lee camelCase. Sin traducir, no veía sets ni puntos y el triple empate lo
+  // resolvía por orden de inscripción: la tabla decía un campeón y el
+  // torneo guardaba otro (probado el 2026-09-13 en Spinhouse).
+  const { stats } = calcularStatsGrupo(jugadores, (partidos || []).map((p: any) => ({
+    jugadorA: p.jugador_a,
+    jugadorB: p.jugador_b,
+    ganador: p.ganador,
+    setsA: p.sets_a,
+    setsB: p.sets_b,
+    puntosA: p.puntos_a,
+    puntosB: p.puntos_b,
+  })))
   if (stats.length < 2) return { error: 'No se pudo calcular la tabla de posiciones.' }
 
   return {
@@ -2339,8 +2351,11 @@ export async function finalizarTorneo(params: { torneoId: string }) {
       }).eq('id', params.torneoId)
       if (error) return { error: `No se pudo finalizar la liguilla: ${error.message}` }
 
+      // Igual que en el tradicional: la limpieza no puede tumbar una
+      // finalización que ya quedó escrita; si falla, vuelve como aviso.
       const avisoLimpieza = await limpiarExternosDeTorneo(
         params.torneoId, podio.campeonId, podio.subcampeonId, podio.terceroId)
+        .catch(e => e instanceof Error ? e.message : 'No se pudo limpiar a los jugadores externos')
       return { success: true, ...(avisoLimpieza ? { aviso: avisoLimpieza } : {}) }
     }
 

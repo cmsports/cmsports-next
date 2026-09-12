@@ -251,6 +251,40 @@ describe('finalizarTorneo con cuadro de consuelo', () => {
   })
 })
 
+// Probado en Spinhouse el 2026-09-13: la tabla de la liguilla decía Rojas,
+// Cerda, Cabrera y el torneo guardó campeón a Cabrera. `podioDeLiguilla` le
+// pasaba filas en snake_case a `calcularStatsGrupo`, que lee camelCase: sin
+// sets ni puntos, el triple empate lo resolvía el orden de inscripción.
+describe('finalizarTorneo en liguilla: el podio es el de la tabla', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('un triple empate se resuelve por puntos entre los empatados, no por orden de inscripción', async () => {
+    // cabrera, rojas, cerda, tobar. Cada uno de los tres primeros gana 2 y
+    // pierde 1 (ciclo: rojas > cerda > cabrera > rojas; todos le ganan a tobar).
+    const ids = ['cabrera', 'rojas', 'cerda', 'tobar']
+    const t = montar({
+      torneos: [{ id: 't1', club_id: 'club', tipo: 'externo', formato: 'liguilla', fase: 'grupos', estado: 'en_curso', ruedas: 1 }],
+      torneo_grupos: [{ id: 'gA', torneo_id: 't1', nombre: 'A', orden: 0, en_preparacion: false }],
+      grupo_jugadores: ids.map((id, i) => ({ id: `m${i}`, grupo_id: 'gA', jugador_id: id, orden: i, jugadores: { id, nombre: id, es_externo: false } })),
+      torneo_partidos: [
+        { id: 'p1', torneo_id: 't1', grupo_id: 'gA', fase: 'grupos', orden: 0, jugador_a: 'cabrera', jugador_b: 'tobar', ganador: 'cabrera', sets_a: 3, sets_b: 0, puntos_a: 33, puntos_b: 21 },
+        { id: 'p2', torneo_id: 't1', grupo_id: 'gA', fase: 'grupos', orden: 1, jugador_a: 'rojas', jugador_b: 'cerda', ganador: 'rojas', sets_a: 3, sets_b: 0, puntos_a: 33, puntos_b: 13 },
+        { id: 'p3', torneo_id: 't1', grupo_id: 'gA', fase: 'grupos', orden: 2, jugador_a: 'cerda', jugador_b: 'cabrera', ganador: 'cerda', sets_a: 3, sets_b: 0, puntos_a: 33, puntos_b: 14 },
+        { id: 'p4', torneo_id: 't1', grupo_id: 'gA', fase: 'grupos', orden: 3, jugador_a: 'rojas', jugador_b: 'tobar', ganador: 'rojas', sets_a: 3, sets_b: 1, puntos_a: 43, puntos_b: 38 },
+        { id: 'p5', torneo_id: 't1', grupo_id: 'gA', fase: 'grupos', orden: 4, jugador_a: 'cabrera', jugador_b: 'rojas', ganador: 'cabrera', sets_a: 3, sets_b: 0, puntos_a: 33, puntos_b: 21 },
+        { id: 'p6', torneo_id: 't1', grupo_id: 'gA', fase: 'grupos', orden: 5, jugador_a: 'cerda', jugador_b: 'tobar', ganador: 'cerda', sets_a: 3, sets_b: 0, puntos_a: 33, puntos_b: 23 },
+      ] as Fila[],
+    })
+    const res = await finalizarTorneo({ torneoId: 't1' })
+    expect(res.error).toBeUndefined()
+    // Entre los tres empatados: sets 3-3 cada uno; puntos rojas 54-46,
+    // cerda 46-47, cabrera 47-54.
+    expect(t.torneos[0].campeon_id).toBe('rojas')
+    expect(t.torneos[0].subcampeon_id).toBe('cerda')
+    expect(t.torneos[0].tercer_id).toBe('cabrera')
+  })
+})
+
 describe('guardarPremios con premio del consuelo', () => {
   it('manda p_consuelo al RPC, y NULL cuando no se declara', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { movimientos_creados: 1 }, error: null })
