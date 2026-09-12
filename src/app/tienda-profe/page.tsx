@@ -288,7 +288,7 @@ export default function TiendaProfePage() {
                     ícono de verdad (no un emoji perdido en gris) cuando no hay foto */}
                 <div style={{ background: `linear-gradient(160deg, ${tinteCategoria(colorCat, 0.88)}, ${tinteCategoria(colorCat, 0.96)})`, aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 12 }}>
                   {p.imagen_url
-                    ? <img src={p.imagen_url} alt={p.nombre} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
+                    ? <img src={p.imagen_url} alt={p.nombre} loading="lazy" decoding="async" style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
                     : (
                       <div style={{ width: 60, height: 60, borderRadius: '50%', background: colorCat, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, boxShadow: `0 6px 16px ${tinteCategoria(colorCat, 0.4)}` }}>
                         {emojiCategoriaTienda(p.categoria)}
