@@ -2343,6 +2343,25 @@ export async function finalizarTorneo(params: { torneoId: string }) {
         params.torneoId, podio.campeonId, podio.subcampeonId, podio.terceroId)
       return { success: true, ...(avisoLimpieza ? { aviso: avisoLimpieza } : {}) }
     }
+
+    // Por equipos se define en la tabla de encuentros. El campeón es un
+    // EQUIPO, y `campeon_id` apunta a un jugador, así que queda vacío: el
+    // podio vive en la pantalla de equipos. No se limpian externos: acá
+    // ningún jugador es "el campeón".
+    if (modalidadDe(t?.formato) === 'equipos') {
+      const { data: encuentros, error: errEnc } = await (supabase as any)
+        .from('torneo_encuentros').select('id, ganador_equipo_id').eq('torneo_id', params.torneoId)
+      if (errEnc) return { error: 'No se pudieron leer los encuentros: ' + errEnc.message }
+      const lista = (encuentros || []) as Array<{ ganador_equipo_id: string | null }>
+      if (!lista.length) return { error: 'Todavía no hay encuentros: genera el todos contra todos antes de finalizar.' }
+      const abiertos = lista.filter(e => !e.ganador_equipo_id).length
+      if (abiertos) return { error: `Faltan ${abiertos} encuentro${abiertos === 1 ? '' : 's'} por terminar.` }
+      const { error } = await supabase.from('torneos').update({
+        estado: 'finalizado', fase: 'finalizado', fecha_fin: fechaChile(),
+      }).eq('id', params.torneoId)
+      if (error) return { error: `No se pudo finalizar el torneo por equipos: ${error.message}` }
+      return { success: true }
+    }
   }
 
   const { data: final, error: finalError } = await supabase
