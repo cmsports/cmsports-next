@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import GraficoAsistencia from '@/components/GraficoAsistencia'
+import dynamic from 'next/dynamic'
 import {
   asignarMontoClaseExtraordinaria, corregirAsistencia, eliminarAsistencia, eliminarClaseExtraordinaria,
   registrarAsistenciaAction, registrarClaseExtraordinaria,
@@ -30,6 +30,19 @@ import {
 import { cachedFetch } from '@/lib/query-cache'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { useModulos } from '@/lib/hooks/useModulos'
+
+// El gráfico arrastra chart.js + react-chartjs-2 (~190 KB) y queda bajo el
+// fold, pero al importarlo estático entraba en el bundle de esta pantalla: había
+// que descargarlo y parsearlo antes de poder marcar una asistencia, que es lo
+// único que el profe viene a hacer acá. Diferido se carga recién cuando ya hay
+// algo con qué interactuar. Mismo patrón que `QRCodeSVG` en torneos.
+// `ssr: false` porque chart.js necesita el canvas del navegador.
+const GraficoAsistencia = dynamic(() => import('@/components/GraficoAsistencia'), {
+  ssr: false,
+  // Alto aproximado del gráfico (card de 170 + padding + encabezado), para que
+  // al aparecer no empuje hacia abajo lo que viene después.
+  loading: () => <div style={{ height: 258 }} />,
+})
 
 const supabase = createClient()
 

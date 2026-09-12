@@ -42,6 +42,50 @@ const badgeCategoria: Record<string, { bg: string; color: string }> = {
 const categorias = ['principiante', 'intermedio', 'avanzado']
 const jugadoresCache: Record<string, any[]> = {}
 
+const CAMPOS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,talla_polera,talla_short'
+
+/**
+ * Los jugadores y el estado de pago del mes, en un solo viaje.
+ *
+ * Antes eran dos en fila: se esperaba la lista de jugadores solo para sacarle
+ * los ids y recién ahí se pedían las mensualidades con `.in('jugador_id', ids)`.
+ * Pero `mensualidades` tiene su propio `club_id` —y el índice
+ * `idx_mensualidades_club_periodo` es justo por club y periodo—, así que la
+ * segunda consulta nunca necesitó a la primera y las dos pueden salir juntas.
+ *
+ * Filtrar por club en vez de por la lista de ids trae además las mensualidades
+ * de los jugadores externos, que la lista no muestra. No molesta: el mapa se
+ * lee por id de jugador, así que las de más no se consultan nunca.
+ *
+ * El `club_id` de `mensualidades` es nullable en el schema, pero desde la
+ * migración 110 el trigger `mensualidades_check_club` exige que coincida con el
+ * club del jugador, así que no puede quedar en NULL al insertar ni al
+ * actualizar.
+ *
+ * Estaba duplicado en la carga inicial y en la recarga, con la misma cascada en
+ * las dos copias. Acá vive una sola vez.
+ */
+async function traerJugadoresYPagos(clubId: string) {
+  const mes  = new Date().getMonth() + 1
+  const anio = new Date().getFullYear()
+  const [jug, mens] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
+      .from('jugadores')
+      .select(CAMPOS_JUGADOR)
+      .eq('club_id', clubId)
+      .or('es_externo.is.null,es_externo.eq.false')
+      .order('nombre'),
+    supabase.from('mensualidades')
+      .select('jugador_id,estado')
+      .eq('club_id', clubId).eq('mes', mes).eq('anio', anio),
+  ])
+  const pagos: Record<string, string> = {}
+  for (const m of (mens.data ?? [])) pagos[m.jugador_id] = m.estado
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { jugadores: (jug.data ?? []) as any[], error: jug.error, pagos }
+}
+
 
 export default function JugadoresPage() {
   const { perfil, loading: authLoading } = usePerfil()
@@ -115,32 +159,15 @@ export default function JugadoresPage() {
       }
       supabase.from('clubes').select('nombre').eq('id', id).single()
         .then(({ data }) => { if (activo && data) setClubNombre(data.nombre) })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase as any)
-        .from('jugadores')
-        .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,talla_polera,talla_short')
-        .eq('club_id', id)
-        .or('es_externo.is.null,es_externo.eq.false')
-        .order('nombre')
+      const { jugadores: data, error, pagos } = await traerJugadoresYPagos(id)
       if (!activo) return
       if (error) {
         setToast('Error al cargar jugadores')
         setTimeout(() => setToast(''), 3000)
       } else {
-        jugadoresCache[id] = data || []
-        setJugadores(data || [])
-        const ids = (data || []).map((j: any) => j.id)
-        if (ids.length > 0) {
-          const mes = new Date().getMonth() + 1
-          const anio = new Date().getFullYear()
-          supabase.from('mensualidades').select('jugador_id,estado').in('jugador_id', ids).eq('mes', mes).eq('anio', anio)
-            .then(({ data: mens }) => {
-              if (!activo) return
-              const map: Record<string, string> = {}
-              for (const m of (mens || [])) map[m.jugador_id] = m.estado
-              setEstadoPago(map)
-            })
-        }
+        jugadoresCache[id] = data
+        setJugadores(data)
+        setEstadoPago(pagos)
       }
       setLoading(false)
     }
@@ -165,27 +192,11 @@ export default function JugadoresPage() {
   const cargarJugadores = useCallback(async (cid?: string) => {
     const id = cid || clubId
     if (!id) return
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase as any)
-      .from('jugadores')
-      .select('id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,talla_polera,talla_short')
-      .eq('club_id', id)
-      .or('es_externo.is.null,es_externo.eq.false')
-      .order('nombre')
+    const { jugadores: data, error, pagos } = await traerJugadoresYPagos(id)
     if (error) { mostrarToast('Error al cargar jugadores'); return }
-    if (id) jugadoresCache[id] = data || []
-    setJugadores(data || [])
-    const ids = (data || []).map((j: any) => j.id)
-    if (ids.length > 0) {
-      const mes = new Date().getMonth() + 1
-      const anio = new Date().getFullYear()
-      supabase.from('mensualidades').select('jugador_id,estado').in('jugador_id', ids).eq('mes', mes).eq('anio', anio)
-        .then(({ data: mens }) => {
-          const map: Record<string, string> = {}
-          for (const m of (mens || [])) map[m.jugador_id] = m.estado
-          setEstadoPago(map)
-        })
-    }
+    jugadoresCache[id] = data
+    setJugadores(data)
+    setEstadoPago(pagos)
   }, [clubId])
 
   useEffect(() => {

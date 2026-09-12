@@ -23,7 +23,22 @@ const nextConfig: NextConfig = {
       // static: 0 es inválido (mínimo 30) y Next lo ignoraba cayendo al
       // default de 300s — cinco minutos de HTML viejo, lo contrario de la
       // intención. 30 es lo más fresco que la config permite.
-      dynamic: 0,
+      // dynamic estuvo en 0 —Router Cache apagado—, y eso significaba que
+      // cambiar de módulo y volver volvía a pedir el payload RSC al servidor,
+      // pagando otra vez el proxy entero. El prefetch de los <Link> del
+      // sidebar tampoco servía de nada: lo que traía se descartaba al instante.
+      //
+      // Con 30 eso deja de pasar, y acá no arriesga mostrar datos viejos
+      // porque el payload RSC de esta app no lleva datos: las pantallas son
+      // client components y piden todo al navegador al montarse (la única
+      // página servidor es /clases, que solo redirige). Al volver a una ruta el
+      // componente se monta de nuevo y sus efectos vuelven a consultar; lo
+      // único que se reutiliza es el armazón.
+      //
+      // El `no-store` de los headers se queda como está: ese cubre el deploy
+      // nuevo tapado por HTML viejo, que es otra cosa, y sigue respaldado
+      // además por el chequeo de NEXT_PUBLIC_BUILD_TIME en layout-app.tsx.
+      dynamic: 30,
       static: 30,
     },
   },

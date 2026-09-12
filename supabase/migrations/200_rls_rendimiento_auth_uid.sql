@@ -34,7 +34,12 @@
 -- cuántas veces se evalúa una función que devuelve siempre lo mismo.
 --
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
--- Corrida el: ____________  (anotar la fecha al aplicarla)
+-- Corrida el: ____________  (no se anotó la fecha en su momento)
+--
+-- Pero sí está aplicada: el 2026-09-12, preparando la 272, se leyeron las
+-- políticas vivas desde `pg_policy` en la base de Buin y todas mostraban
+-- `(SELECT auth.uid())` envuelto. La verificación 1 de este archivo devuelve
+-- cero filas.
 
 BEGIN;
 
