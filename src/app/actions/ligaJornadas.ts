@@ -217,9 +217,10 @@ export async function importarProgramacionJornada(params: {
     if (error || !nueva) return { error: 'No se pudo crear la jornada: ' + (error?.message ?? '') }
     fechaId = nueva.id
   }
+  const diaOffsetDe = (fechaISO: string) => Math.round((Date.parse(fechaISO) - Date.parse(primerDia)) / 86_400_000)
   for (const d of prog.dias) for (const x of d.divisiones) {
     const divId = divisionPorNombre.get(normalizarNombre(x.nombre))!.id
-    const diaOffset = Math.round((Date.parse(d.fecha!) - Date.parse(primerDia)) / 86_400_000)
+    const diaOffset = diaOffsetDe(d.fecha!)
     const { error } = await db.from('liga_fecha_sesiones').upsert(
       { fecha_id: fechaId, division_id: divId, dia_offset: diaOffset, mesas: x.mesas },
       { onConflict: 'fecha_id,division_id' },
@@ -249,7 +250,8 @@ export async function importarProgramacionJornada(params: {
         continue
       }
       const { error } = await db.from('liga_partidos').update({
-        fecha_id: fechaId, mesa_id: mesaIdPorNumero.get(f.mesa) ?? null, bloque_horario: f.hora, arbitro_id: arb, estado: 'programado',
+        fecha_id: fechaId, dia_offset: diaOffsetDe(d.fecha!), mesa_id: mesaIdPorNumero.get(f.mesa) ?? null,
+        bloque_horario: f.hora, arbitro_id: arb, estado: 'programado',
       }).eq('id', par.id)
       if (error) return { error: `No se pudo programar ${f.jugadorA} vs ${f.jugadorB}: ${error.message}` }
       partidosProgramados++
@@ -305,7 +307,7 @@ export async function proyectarJornada(params: {
     fechaId = fechaExistente.id
     // Lo que tenía programado y no se jugó se suelta: se vuelve a repartir.
     const { error } = await db.from('liga_partidos')
-      .update({ fecha_id: null, mesa_id: null, bloque_horario: null, arbitro_id: null, estado: 'pendiente' })
+      .update({ fecha_id: null, dia_offset: 0, mesa_id: null, bloque_horario: null, arbitro_id: null, estado: 'pendiente' })
       .eq('fecha_id', fechaId).not('estado', 'in', '("finalizado","walkover")')
     if (error) return { error: 'No se pudo liberar la jornada: ' + error.message }
     const { error: errFecha } = await db.from('liga_fechas').update({ fecha: params.fecha }).eq('id', fechaId)
@@ -352,6 +354,7 @@ export async function proyectarJornada(params: {
     for (const p of partidos) {
       const { error } = await db.from('liga_partidos').update({
         fecha_id: fechaId,
+        dia_offset: s.diaOffset,
         mesa_id: mesaIdPorNumero.get(p.mesa) ?? null,
         bloque_horario: horaDeBloque(p.bloque, params.horaInicio, liga.bloque_minutos ?? 30),
         arbitro_id: p.arbitroId,
@@ -415,7 +418,7 @@ export async function leerJornada(params: { ligaId: string; numero: number }): P
   const [{ data: sesiones }, { data: partidos }, { data: divisiones }, { data: mesas }] = await Promise.all([
     db.from('liga_fecha_sesiones').select('division_id, dia_offset, mesas').eq('fecha_id', fecha.id),
     db.from('liga_partidos')
-      .select('id, division_id, bloque_horario, mesa_id, arbitro_id, estado, sets_a, sets_b, ja:jugador_a_id(nombre), jb:jugador_b_id(nombre), arb:arbitro_id(nombre)')
+      .select('id, division_id, dia_offset, bloque_horario, mesa_id, arbitro_id, estado, sets_a, sets_b, ja:jugador_a_id(nombre), jb:jugador_b_id(nombre), arb:arbitro_id(nombre)')
       .eq('fecha_id', fecha.id).is('deleted_at', null),
     db.from('liga_divisiones').select('id, nombre, orden').eq('liga_id', params.ligaId).order('orden'),
     db.from('liga_mesas').select('id, numero').eq('liga_id', params.ligaId),
@@ -431,20 +434,15 @@ export async function leerJornada(params: { ligaId: string; numero: number }): P
     porDia.set(s.dia_offset, dia)
   }
   for (const p of (partidos || []) as Fila[]) {
+    // El partido lleva puesto su día (migración 274). Si la división no tiene
+    // sesión declarada ese día, se muestra igual, sin rango de mesas.
     const divId = p.division_id as string
-    let colocado = false
-    for (const dia of porDia.values()) {
-      const d = dia.get(divId)
-      if (d) { d.partidos.push(p); colocado = true; break }
-    }
-    if (!colocado) {
-      // Partido de una división sin sesión declarada: va al primer día.
-      const dia = porDia.get(0) ?? new Map()
-      const d = dia.get(divId) ?? { mesas: [], partidos: [] }
-      d.partidos.push(p)
-      dia.set(divId, d)
-      porDia.set(0, dia)
-    }
+    const diaOffset = Number(p.dia_offset ?? 0)
+    const dia = porDia.get(diaOffset) ?? new Map()
+    const d = dia.get(divId) ?? { mesas: [], partidos: [] }
+    d.partidos.push(p)
+    dia.set(divId, d)
+    porDia.set(diaOffset, dia)
   }
 
   const ordenDivision = new Map<string, number>(((divisiones || []) as Array<{ id: string; orden: number }>).map(d => [d.id, d.orden]))
