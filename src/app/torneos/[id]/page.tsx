@@ -115,6 +115,7 @@ export default function TorneoDetallePage() {
   const [premio1, setPremio1] = useState('')
   const [premio2, setPremio2] = useState('')
   const [premio3, setPremio3] = useState('')
+  const [premioConsuelo, setPremioConsuelo] = useState('')
   const [premioTerceroOpen, setPremioTerceroOpen] = useState(false)
   const [premioMetodo, setPremioMetodo] = useState<'efectivo'|'transferencia'>('efectivo')
   const [guardandoPremios, setGuardandoPremios] = useState(false)
@@ -171,7 +172,7 @@ export default function TorneoDetallePage() {
       { data: gj },
       { data: cabezasData },
     ] = await Promise.all([
-      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,campeon_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave,formato,ruedas').eq('id', torneoId).single(),
+      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,premio_consuelo,campeon_id,campeon_consuelo_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave,formato,ruedas').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
@@ -392,6 +393,7 @@ export default function TorneoDetallePage() {
       const p3 = torneo.premio_tercero?.toString() ?? ''
       setPremio3(p3)
       setPremioTerceroOpen(!!p3)
+      setPremioConsuelo(torneo.premio_consuelo?.toString() ?? '')
     }
   }, [torneo?.id])
 
@@ -2105,6 +2107,9 @@ export default function TorneoDetallePage() {
         // informe sigue mostrando el monto sin dueño, como antes.
         const pTercero = (partidosPorFase.get('tercer_lugar') || []).find(p => p.ganador)
         const tercero = pTercero ? ((pTercero as any).jg) : null
+        // El campeón del consuelo tiene su propio premio (migración 271). Solo
+        // aparece si el torneo tuvo consuelo: en los otros formatos no existe.
+        const consuelo = campeonConsuelo
 
         const inputStyle = {
           width: '100%', background: '#f4f7fa', border: '1px solid #e2e8f0',
@@ -2166,6 +2171,21 @@ export default function TorneoDetallePage() {
               </div>
             )}
 
+            {consuelo && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 5 }}>
+                  🥈 Campeón del consuelo — {consuelo.nombre}
+                </label>
+                <input
+                  type="number"
+                  placeholder="$ monto"
+                  value={premioConsuelo}
+                  onChange={e => setPremioConsuelo(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            )}
+
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 5 }}>💵 ¿Cómo se pagó el premio?</label>
               <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
@@ -2178,7 +2198,7 @@ export default function TorneoDetallePage() {
               </div>
             </div>
 
-            {(torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null) ? (
+            {(torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null || torneo?.premio_consuelo != null) ? (
               <div style={{ width: '100%', padding: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#16a34a', textAlign: 'center' }}>
                 ✓ Premios guardados
               </div>
@@ -2196,6 +2216,7 @@ export default function TorneoDetallePage() {
               const p1 = premio1 ? parseInt(premio1) : null
               const p2 = premio2 ? parseInt(premio2) : null
               const p3 = premioTerceroOpen && premio3 ? parseInt(premio3) : null
+              const pC = consuelo && premioConsuelo ? parseInt(premioConsuelo) : null
               const fmtM = fmt
               return (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
@@ -2220,6 +2241,12 @@ export default function TorneoDetallePage() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
                           <span style={{ color: text }}>🥉 Premio 3°</span>
                           <strong style={{ color: p3 > 0 ? '#dc2626' : muted, fontVariantNumeric: 'tabular-nums' }}>{p3 > 0 ? `− ${fmtM(p3)}` : '$0'}</strong>
+                        </div>
+                      )}
+                      {pC !== null && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                          <span style={{ color: text }}>🥈 Campeón del consuelo{consuelo ? ` — ${consuelo.nombre}` : ''}</span>
+                          <strong style={{ color: pC > 0 ? '#dc2626' : muted, fontVariantNumeric: 'tabular-nums' }}>{pC > 0 ? `− ${fmtM(pC)}` : '$0'}</strong>
                         </div>
                       )}
                     </div>
@@ -2257,7 +2284,7 @@ export default function TorneoDetallePage() {
                       <button
                         onClick={async () => {
                           setGuardandoPremios(true)
-                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
+                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, consuelo: pC, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
                           setGuardandoPremios(false)
                           setModalPremios(false)
                           if (res.error) { alert(res.error); return }
@@ -2441,7 +2468,10 @@ export default function TorneoDetallePage() {
                     { lugar: '1° lugar', nombre: campeon1?.nombre, monto: torneo?.premio_primero },
                     { lugar: '2° lugar', nombre: subcampeon?.nombre, monto: torneo?.premio_segundo },
                     { lugar: '3° lugar', nombre: tercero?.nombre ?? null, monto: torneo?.premio_tercero },
+                    // Solo en eliminación + consolación; en el resto no existe la fila.
+                    ...(campeonConsuelo ? [{ lugar: 'Campeón del consuelo', nombre: campeonConsuelo.nombre as string, monto: torneo?.premio_consuelo }] : []),
                   ]
+                  const premiosYaGuardados = torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null || torneo?.premio_consuelo != null
                   const gastos = gastosGestion
                     .filter(g => g.tipo.trim() && g.monto)
                     .map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 }))
@@ -2449,7 +2479,6 @@ export default function TorneoDetallePage() {
                     const res = await guardarGastosGestion({ torneoId, torneoNombre: torneo?.nombre || '', gastos })
                     if (res.error) { alert('Error al guardar gastos: ' + res.error); return }
                   }
-                  const premiosYaGuardados = torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null
                   const { descargarInformeFinancieroPdf } = await import('@/lib/torneo-informe-pdf')
                   descargarInformeFinancieroPdf({
                     torneoNombre: torneo?.nombre || 'Torneo',

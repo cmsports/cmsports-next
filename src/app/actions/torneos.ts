@@ -2372,11 +2372,15 @@ export async function finalizarTorneo(params: { torneoId: string }) {
 
   // El cuadro de consuelo es parte del formato, no un extra: si existe, se
   // termina antes de cerrar el torneo, igual que el 3er lugar. Antes se podía
-  // finalizar con la final del consuelo sin jugar y nadie avisaba.
+  // finalizar con la final del consuelo sin jugar y nadie avisaba. Y su
+  // campeón queda en el torneo (migración 271): el formato promete "un
+  // segundo cuadro con su propio campeón", y hasta acá ese campeón se perdía
+  // al cerrar.
+  let campeonConsueloId: string | null = null
   {
     const { data: consuelo, error: consueloError } = await supabase
       .from('torneo_partidos')
-      .select('fase, ganador')
+      .select('fase, orden, ganador')
       .eq('torneo_id', params.torneoId)
       .like('fase', 'cons_%')
     if (consueloError) return { error: 'No se pudo revisar el cuadro de consuelo.' }
@@ -2384,9 +2388,11 @@ export async function finalizarTorneo(params: { torneoId: string }) {
     if (pendientes > 0) {
       return { error: `Faltan ${pendientes} partido(s) del cuadro de consuelo antes de finalizar el torneo.` }
     }
+    campeonConsueloId = (consuelo || []).find(p => p.fase === 'cons_final' && p.orden === 0)?.ganador ?? null
   }
 
-  const { error } = await supabase.from('torneos').update({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).from('torneos').update({
     estado: 'finalizado',
     fase: 'finalizado',
     // Hora de Chile, como la rama de liguilla más arriba: con toISOString()
@@ -2395,6 +2401,7 @@ export async function finalizarTorneo(params: { torneoId: string }) {
     campeon_id: podio.campeonId,
     subcampeon_id: podio.subcampeonId,
     ...(tercer?.ganador ? { tercer_id: tercer.ganador } : {}),
+    ...(campeonConsueloId ? { campeon_consuelo_id: campeonConsueloId } : {}),
   }).eq('id', params.torneoId)
   if (error) return { error: `No se pudo finalizar el torneo: ${error.message}` }
 
@@ -2406,7 +2413,7 @@ export async function finalizarTorneo(params: { torneoId: string }) {
   // Sigue sin poder tumbar la finalización (el torneo YA está finalizado y eso
   // no se revierte por una limpieza), pero ahora, si algo queda sin limpiar, se
   // devuelve como aviso en vez de desaparecer en un `.catch(() => {})`.
-  const avisoLimpieza = await limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId, tercer?.ganador ?? null)
+  const avisoLimpieza = await limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId, tercer?.ganador ?? null, campeonConsueloId)
     .catch(e => e instanceof Error ? e.message : 'No se pudo limpiar a los jugadores externos')
 
   return avisoLimpieza ? { success: true, aviso: avisoLimpieza } : { success: true }
@@ -2418,6 +2425,7 @@ async function limpiarExternosDeTorneo(
   campeonId: string | null,
   subcampeonId: string | null,
   terceroId: string | null = null,
+  campeonConsueloId: string | null = null,
 ): Promise<string | null> {
   const admin = createAdminClient()
 
@@ -2436,7 +2444,8 @@ async function limpiarExternosDeTorneo(
   if (!rows?.length) return null
 
   // Excluir el podio: campeón, subcampeón y —desde que se disputa— el tercero.
-  const keep = new Set([campeonId, subcampeonId, terceroId].filter(Boolean))
+  // y el campeón del consuelo (migración 271), que también es del podio.
+  const keep = new Set([campeonId, subcampeonId, terceroId, campeonConsueloId].filter(Boolean))
   const candidatos = [...new Set((rows as { jugador_id: string }[]).map(r => r.jugador_id).filter(id => !keep.has(id)))]
   if (!candidatos.length) return null
 
@@ -3231,6 +3240,9 @@ export async function guardarPremios(params: {
   primero: number | null
   segundo: number | null
   tercero: number | null
+  /** Premio al campeón del cuadro de consuelo (eliminación + consolación).
+   *  Sin declarar, el RPC lo deja en NULL (migración 271). */
+  consuelo?: number | null
   metodo?: 'efectivo' | 'transferencia'
   gastosGestion?: { tipo: string; monto: number }[]
   idempotencyKey?: string
@@ -3238,12 +3250,15 @@ export async function guardarPremios(params: {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
 
-  const { data, error } = await supabase.rpc('guardar_premios_torneo_atomico', {
+  // `p_consuelo` no está en los tipos generados (migración 271).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('guardar_premios_torneo_atomico', {
     p_torneo_id: params.torneoId,
     p_torneo_nombre: params.torneoNombre,
     p_primero: params.primero,
     p_segundo: params.segundo,
     p_tercero: params.tercero,
+    p_consuelo: params.consuelo ?? null,
     p_metodo: params.metodo ?? 'efectivo',
     p_gastos: params.gastosGestion ?? [],
     p_idempotency_key: params.idempotencyKey ?? crypto.randomUUID(),

@@ -12,6 +12,7 @@ import {
   volverAGrupos,
   finalizarTorneo,
   sincronizarLlaves,
+  guardarPremios,
 } from './torneos'
 import { partidosDeLiguilla } from '@/lib/domain/torneoLiguilla'
 
@@ -228,15 +229,38 @@ describe('finalizarTorneo con cuadro de consuelo', () => {
     expect(res.error).toMatch(/1 partido/)
   })
 
-  it('con el consuelo jugado finaliza, y la fecha de fin es la de Chile (sin hora)', async () => {
+  it('con el consuelo jugado finaliza, guarda a su campeón, y la fecha de fin es la de Chile (sin hora)', async () => {
     const t = montar(terminado())
     t.torneo_partidos.find(p => p.id === 'cf')!.ganador = 'p'
     const res = await finalizarTorneo({ torneoId: 't1' })
     expect(res.error).toBeUndefined()
     expect(t.torneos[0].estado).toBe('finalizado')
     expect(t.torneos[0].campeon_id).toBe('x')
+    // El campeón del consuelo queda en el torneo (migración 271).
+    expect(t.torneos[0].campeon_consuelo_id).toBe('p')
     // Antes: new Date().toISOString(), que después de las 21:00 caía en mañana.
     expect(t.torneos[0].fecha_fin).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('un torneo sin consuelo finaliza sin tocar campeon_consuelo_id', async () => {
+    const t = montar(terminado())
+    t.torneo_partidos = t.torneo_partidos.filter(p => !String(p.fase).startsWith('cons_'))
+    const res = await finalizarTorneo({ torneoId: 't1' })
+    expect(res.error).toBeUndefined()
+    expect(t.torneos[0].campeon_consuelo_id).toBeUndefined()
+  })
+})
+
+describe('guardarPremios con premio del consuelo', () => {
+  it('manda p_consuelo al RPC, y NULL cuando no se declara', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { movimientos_creados: 1 }, error: null })
+    mocks.requireAdmin.mockResolvedValue({ error: null, supabase: { rpc }, perfil: { club_id: 'club' } })
+
+    await guardarPremios({ torneoId: 't1', torneoNombre: 'T', primero: 100, segundo: 50, tercero: null, consuelo: 30 })
+    expect(rpc).toHaveBeenCalledWith('guardar_premios_torneo_atomico', expect.objectContaining({ p_consuelo: 30, p_primero: 100 }))
+
+    await guardarPremios({ torneoId: 't1', torneoNombre: 'T', primero: 100, segundo: 50, tercero: null })
+    expect(rpc).toHaveBeenLastCalledWith('guardar_premios_torneo_atomico', expect.objectContaining({ p_consuelo: null }))
   })
 })
 

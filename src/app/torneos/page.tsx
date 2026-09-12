@@ -69,7 +69,7 @@ export default function TorneosPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase as any)
       .from('torneos')
-      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,campeon:campeon_id(nombre)')
+      .select('id,nombre,estado,fase,fecha_inicio,cuota_inscripcion,creado_en,campeon:campeon_id(nombre),campeon_consuelo:campeon_consuelo_id(nombre)')
       .eq('club_id', id)
       .eq('tipo', 'externo')
       .order('creado_en', { ascending: false })
@@ -105,6 +105,10 @@ export default function TorneosPage() {
       campeon: Array.isArray(t.campeon)
         ? (t.campeon[0] as { nombre?: string } | undefined)?.nombre
         : (t.campeon as { nombre?: string } | null)?.nombre,
+      // Solo en eliminación + consolación (migración 271); vacío en el resto.
+      campeonConsuelo: Array.isArray(t.campeon_consuelo)
+        ? (t.campeon_consuelo[0] as { nombre?: string } | undefined)?.nombre
+        : (t.campeon_consuelo as { nombre?: string } | null)?.nombre,
     }))
     if (id) torneosCache[`${id}:${mostrarArchivados ? 'archivados' : 'activos'}`] = lista
     setTorneos(lista)
@@ -204,6 +208,12 @@ export default function TorneosPage() {
                     <div style={{ display:'flex', alignItems:'center', gap:6, background:'#fffbeb', border:'1px solid #fde68a', borderRadius:20, padding:'4px 12px' }}>
                       <span style={{ fontSize:14 }}>🏆</span>
                       <span style={{ fontSize:12, fontWeight:700, color:'#d97706' }}>{t.campeon}</span>
+                    </div>
+                  )}
+                  {t.campeonConsuelo && (
+                    <div title="Campeón del cuadro de consuelo" style={{ display:'flex', alignItems:'center', gap:6, background:'#faf5ff', border:'1px solid #e9d5ff', borderRadius:20, padding:'4px 12px' }}>
+                      <span style={{ fontSize:14 }}>🥈</span>
+                      <span style={{ fontSize:12, fontWeight:700, color:'#7c3aed' }}>{t.campeonConsuelo}</span>
                     </div>
                   )}
                   {esAdmin && !mostrarArchivados && (
