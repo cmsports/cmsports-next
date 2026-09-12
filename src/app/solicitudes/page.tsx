@@ -31,7 +31,17 @@ const text  = '#0f172a'
 const hint  = '#94a3b8'
 
 async function obtenerSolicitudes(clubId: string) {
-  let { data: invitaciones } = await supabase.from('invitaciones').select('codigo').eq('club_id', clubId).eq('activa', true).limit(1)
+  // Las dos salen juntas: el código de invitación arma el link y las
+  // solicitudes llenan la tabla, y ninguna necesita a la otra. Encadenadas eran
+  // dos viajes a Supabase en fila, y desde el navegador cada uno cuesta ~320 ms.
+  const [inv, sol] = await Promise.all([
+    supabase.from('invitaciones').select('codigo').eq('club_id', clubId).eq('activa', true).limit(1),
+    supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,nombres,apellido1,apellido2,apellido3,talla_polera,talla_short').eq('club_id', clubId).order('creado_en', { ascending: false }),
+  ])
+
+  // Crear la invitación que falta sí es secuencial, pero pasa una sola vez en
+  // la vida del club: la primera vez que alguien abre esta pantalla.
+  let invitaciones = inv.data
   if (!invitaciones?.length) {
     await supabase.from('invitaciones').insert({ club_id: clubId })
     const { data } = await supabase.from('invitaciones').select('codigo').eq('club_id', clubId).eq('activa', true).limit(1)
@@ -39,8 +49,7 @@ async function obtenerSolicitudes(clubId: string) {
   }
   const codigo = invitaciones?.[0]?.codigo || ''
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const { data: solicitudes } = await supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,nombres,apellido1,apellido2,apellido3,talla_polera,talla_short').eq('club_id', clubId).order('creado_en', { ascending: false })
-  return { link: `${origin}/registro?club=${clubId}&code=${codigo}`, solicitudes: solicitudes || [] }
+  return { link: `${origin}/registro?club=${clubId}&code=${codigo}`, solicitudes: sol.data || [] }
 }
 
 // El formulario obliga a escribir "no" cuando el postulante no tiene el dato,
