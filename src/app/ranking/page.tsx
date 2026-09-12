@@ -504,6 +504,11 @@ function Retrato({ url, nombre, tam, destacado = false }: {
   if (url) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={url} alt={nombre}
+      // El líder va inmediato: está arriba del todo y suele ser el elemento que
+      // marca el LCP. Los demás son fila de lista y se difieren, así abrir el
+      // ranking no baja el retrato de todo el club de una vez.
+      loading={destacado ? undefined : 'lazy'}
+      decoding="async"
       style={{ width: tam, height: tam, borderRadius: '50%', objectFit: 'cover',
         flexShrink: 0, display: 'block', ...anillo }} />
   }

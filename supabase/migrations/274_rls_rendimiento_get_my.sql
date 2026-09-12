@@ -49,15 +49,20 @@
 -- El cambio inverso es el mismo regexp al revés. Pero antes de eso: la lógica
 -- queda igual, y la verificación del final lo comprueba tabla por tabla.
 --
--- ── OJO: el archivo es 272 y el portazo dice 213. No es un error ──────────
+-- ── OJO: el archivo es 274 y el portazo dice 213. No es un error ──────────
 -- Esta migración se escribió y se corrió desde una copia del repo que estaba
 -- 197 commits atrás, donde el siguiente número libre parecía ser el 213. En
 -- main el 213 ya existe (`213_recuperar_grupo_jugadores_torneo_tc.sql`), así
--- que el archivo se renumeró al 272, que es el que sigue de verdad.
+-- que el archivo se renumeró.
+--
+-- Y se renumeró dos veces: primero al 272, que chocó con
+-- `272_liga_modo_jornadas.sql` porque esa entró a main mientras el PR estaba
+-- abierto. Es exactamente lo que describe `migraciones-numeracion.test.ts`:
+-- dos ramas miran el último número a la vez y las dos suman uno. Quedó en 274.
 --
 -- El portazo conserva el nombre viejo a propósito: en producción quedó
 -- registrada como `213_rls_rendimiento_get_my`, y con ese nombre es con el que
--- la base la reconoce. Si dijera 272, la base no la daría por aplicada y la
+-- la base la reconoce. Si dijera 274, la base no la daría por aplicada y la
 -- volvería a ejecutar. Correrla de nuevo no rompe nada —la transformación es
 -- idempotente y no tocaría ninguna política—, pero la regla del proyecto es
 -- que una migración aplicada no se vuelve a ejecutar, y esa manda.

@@ -625,7 +625,10 @@ export default function JugadoresPage() {
               ...card, padding:'12px 14px', marginBottom:8, display:'flex', alignItems:'center', gap:12, cursor:'pointer',
             }}>
               <div style={{ width:36, height:36, borderRadius:'50%', background:'linear-gradient(135deg,#3730a3,#4f46e5)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:700, color:'white', overflow:'hidden', flexShrink:0 }}>
-                {foto ? <img src={foto} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : ini}
+                {/* `lazy`: el club tiene más de cien jugadores y esto se pinta
+                    una vez por cada uno. Sin esto el navegador baja las cien
+                    fotos al abrir la pantalla, aunque se vean seis. */}
+                {foto ? <img src={foto} alt="" loading="lazy" decoding="async" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : ini}
               </div>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:14, fontWeight:600, color: text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{j.nombre}</div>
@@ -665,7 +668,7 @@ export default function JugadoresPage() {
                           {(() => {
                             const foto = (j.foto_path ? fotosFirmadas[j.foto_path] : j.foto_url) || null
                             return foto
-                              ? <img src={foto} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                              ? <img src={foto} alt="" loading="lazy" decoding="async" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                               : j.nombre?.split(' ').map((n: string) => n[0]).join('').slice(0,2).toUpperCase()
                           })()}
                         </div>
