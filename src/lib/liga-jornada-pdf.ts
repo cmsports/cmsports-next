@@ -246,30 +246,3 @@ export async function descargarResultadosJornadaPdf(jornada: JornadaParaPdf, met
   piePagina(doc, `${meta.clubNombre} · ${meta.ligaNombre}`)
   doc.save(`Resultados Jornada ${jornada.numero} — ${meta.ligaNombre}.pdf`)
 }
-
-/**
- * Los resultados como texto para pegar en WhatsApp: corto, con negritas de
- * WhatsApp (*así*) y un renglón por partido. Lo que no se jugó no sale.
- */
-export function textoResultadosWhatsapp(jornada: JornadaParaPdf, meta: { ligaNombre: string }): string {
-  const lineas: string[] = [`*${meta.ligaNombre.toUpperCase()} · RESULTADOS JORNADA ${jornada.numero}*`]
-  for (const dia of jornada.dias) {
-    const jugados = dia.divisiones.flatMap(d => d.partidos.filter(p => p.estado === 'finalizado' || p.estado === 'walkover'))
-    if (!jugados.length) continue
-    lineas.push('', `📅 *${etiquetaDia(dia.fecha)}*`)
-    for (const div of dia.divisiones) {
-      const filas = div.partidos.filter(p => p.estado === 'finalizado' || p.estado === 'walkover')
-      if (!filas.length) continue
-      lineas.push('', `🏓 *${div.nombre}*`)
-      for (const p of filas) {
-        if (p.estado === 'walkover') lineas.push(`• ${p.jugadorA} vs ${p.jugadorB} — W.O.`)
-        else lineas.push(`• ${p.jugadorA} *${p.setsA}-${p.setsB}* ${p.jugadorB}${p.parciales?.length ? ` (${p.parciales.map(([a, b]) => `${a}-${b}`).join(', ')})` : ''}`)
-      }
-    }
-  }
-  const total = jornada.dias.flatMap(d => d.divisiones.flatMap(x => x.partidos))
-  const pendientes = total.filter(p => p.estado !== 'finalizado' && p.estado !== 'walkover').length
-  if (lineas.length === 1) lineas.push('', 'Todavía no hay resultados marcados.')
-  else if (pendientes) lineas.push('', `⏳ Quedan ${pendientes} partido${pendientes === 1 ? '' : 's'} pendiente${pendientes === 1 ? '' : 's'}.`)
-  return lineas.join('\n')
-}
