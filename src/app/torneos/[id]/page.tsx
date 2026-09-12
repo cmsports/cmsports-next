@@ -692,7 +692,7 @@ export default function TorneoDetallePage() {
     // Una liguilla no tiene cuadro que sincronizar. Sin este corte el efecto
     // llamaría al servidor en cada cambio de resultado para recibir siempre el
     // mismo rechazo, y el error solo se ve en la consola.
-    if (modalidadDe(torneo?.formato) === 'liguilla') return
+    if (modalidadDe(torneo?.formato) === 'liguilla' || modalidadDe(torneo?.formato) === 'equipos') return
     if (cabezasNumeradas.map(c => c.id).join(',') !== cabezasPersistidas.map(c => c.id).join(',')) return
 
     const clasificados = calcularClasificados()
@@ -826,6 +826,9 @@ export default function TorneoDetallePage() {
   const modalidad = modalidadDe(torneo?.formato)
   const esLiguilla = modalidad === 'liguilla'
   const esEliminacion = modalidad === 'eliminacion_consolacion'
+  // Por equipos: los equipos, los encuentros y los resultados viven en su
+  // propia pantalla (/torneos/[id]/equipos). Acá queda la inscripción.
+  const esEquipos = modalidad === 'equipos'
 
   const partidosFaseActual = faseActual ? (partidosPorFase.get(faseActual) || []) : []
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
@@ -1011,6 +1014,12 @@ export default function TorneoDetallePage() {
         )}
         <h1 style={{ fontSize:20, fontWeight:700, color: text, margin:0, flex:'1 1 auto' }}>{torneo?.nombre}</h1>
         <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600 }}>{faseActual === 'grupos' && hayBracket ? 'Grupos + playoffs' : (faseLabel[faseActual] || faseActual)}</span>
+        {esEquipos && (
+          <button onClick={() => router.push(`/torneos/${torneoId}/equipos`)}
+            style={{ background:'linear-gradient(135deg,#2563eb,#4f46e5)', color:'white', border:'none', borderRadius:10, padding:'8px 14px', fontSize:13, fontWeight:700, cursor:'pointer', boxShadow:'0 4px 14px rgba(37,99,235,0.35)' }}>
+            👥 Equipos y encuentros →
+          </button>
+        )}
         {/* La modalidad se muestra solo cuando NO es la tradicional. Un club
             que corre siempre grupos + llave no gana nada leyendo "Tradicional"
             en cada torneo: gana una etiqueta más que ignorar. */}
@@ -2722,7 +2731,12 @@ export default function TorneoDetallePage() {
               </div>
             )}
 
-            {faseActual === 'inscripcion' ? (
+            {faseActual === 'inscripcion' && esEquipos ? (
+              <button onClick={() => router.push(`/torneos/${torneoId}/equipos`)}
+                style={{ width:'100%', padding:12, background:'#eff6ff', color:'#1d4ed8', border:'1px solid #bfdbfe', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                👥 Armar los equipos con estos {jugadoresInscritos.length} inscritos →
+              </button>
+            ) : faseActual === 'inscripcion' ? (
               <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < minimoInscritos || cerrandoInscripcion}
                 style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'pointer':'not-allowed' }}>
                 {cerrandoInscripcion
