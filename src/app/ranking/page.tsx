@@ -95,13 +95,20 @@ export default function RankingPage() {
 
     // Las fotos se firman todas juntas con `firmarUrls`: una petición por
     // jugador dejaría la pantalla inusable con treinta en la lista.
-    const firmadas = await firmarUrls(ranking.jugadores.map(j => j.foto_path))
-    const fotos: Record<string, string> = {}
-    for (const j of ranking.jugadores) {
-      const url = j.foto_path ? firmadas[j.foto_path] : null
-      if (url) fotos[j.id] = url
-    }
-    setFotoPorJugador(fotos)
+    //
+    // Y sin `await`: firmar es otro viaje a Supabase —~320 ms desde el
+    // navegador— y la tabla no lo necesita para pintarse. `Retrato` ya muestra
+    // las iniciales cuando no hay foto, así que el ranking aparece de
+    // inmediato y los retratos entran encima cuando llegan. Antes la pantalla
+    // se quedaba en blanco esperándolos.
+    void firmarUrls(ranking.jugadores.map(j => j.foto_path)).then(firmadas => {
+      const fotos: Record<string, string> = {}
+      for (const j of ranking.jugadores) {
+        const url = j.foto_path ? firmadas[j.foto_path] : null
+        if (url) fotos[j.id] = url
+      }
+      setFotoPorJugador(fotos)
+    })
 
     const resultado: CategoriaRanking[] = ranking.categorias
 
