@@ -24,15 +24,18 @@ export async function sesionApi(): Promise<SesionApi> {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
   )
-  const { data: { user } } = await supabaseAuth.auth.getUser()
-  if (!user) return { ok: false, error: 'No autenticado', status: 401 }
+  // Sin viaje a Supabase Auth: se verifica la firma del token acá, como en
+  // `require.ts` y en el middleware. Ver la nota en `usuarioActual`.
+  const { data: claims } = await supabaseAuth.auth.getClaims()
+  const userId = claims?.claims?.sub
+  if (typeof userId !== 'string' || !userId) return { ok: false, error: 'No autenticado', status: 401 }
 
   const admin = createAdminClient()
   const { data: perfil } = await admin
-    .from('perfiles').select('club_id, rol').eq('id', user.id).maybeSingle()
+    .from('perfiles').select('club_id, rol').eq('id', userId).maybeSingle()
 
   if (!perfil?.club_id) return { ok: false, error: 'Tu cuenta no tiene club asignado', status: 403 }
-  return { ok: true, userId: user.id, clubId: perfil.club_id, rol: perfil.rol ?? 'jugador' }
+  return { ok: true, userId, clubId: perfil.club_id, rol: perfil.rol ?? 'jugador' }
 }
 
 export function esAdminApi(rol: string): boolean {

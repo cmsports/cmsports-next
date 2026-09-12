@@ -118,6 +118,12 @@ export function fakeSupabase(
       getUser: vi.fn(() => Promise.resolve({
         data: { user: usuario ? { id: usuario.id ?? 'usuario-1' } : null },
       })),
+      // Lo que usan `require.ts` y `sesionApi` desde el 2026-09-12: la firma
+      // del token verificada acá, sin viaje. Mismo usuario que getUser.
+      getClaims: vi.fn(() => Promise.resolve({
+        data: usuario ? { claims: { sub: usuario.id ?? 'usuario-1' } } : null,
+        error: null,
+      })),
     },
   }
 
