@@ -1080,7 +1080,9 @@ export default function TorneoDetallePage() {
         {esAdmin && faseActual === 'grupos' && hayBracket && (
           <button onClick={() => setTabActiva('bracket')} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Ver llaves →</button>
         )}
-        {esAdmin && faseActual === 'grupos' && (
+        {/* Liguilla y equipos no tienen llave: el servidor lo rechaza, y un
+            botón que siempre falla es peor que ninguno. */}
+        {esAdmin && faseActual === 'grupos' && !esLiguilla && !esEquipos && (
           <button
             onClick={armarBracketAhora}
             title="Fuerza el armado/rellenado del cuadro con los grupos ya cerrados"
@@ -1108,6 +1110,11 @@ export default function TorneoDetallePage() {
             style={{ background:'#fffbeb', color:'#b45309', border:'1px solid #fde68a', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
             {tercerLugarSinCupos ? '🥉 Rellenar el 3er lugar' : '🥉 Abrir el 3er lugar'}
           </button>
+        )}
+        {/* La liguilla se define en la tabla: se finaliza apenas se juega el
+            último partido del grupo, sin pasar por ninguna final. */}
+        {esAdmin && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && (
+          <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar liguilla</button>
         )}
         {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && !consueloPendiente && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
@@ -1199,8 +1206,9 @@ export default function TorneoDetallePage() {
         </div>
       )}
 
-      {/* BOTÓN INSCRIPCIÓN TARDÍA */}
-      {esAdmin && faseActual === 'grupos' && !hayBracketJugado && (
+      {/* BOTÓN INSCRIPCIÓN TARDÍA — no en liguilla (todos contra todos ya
+          armado) ni en equipos (sus altas van por la pantalla de equipos). */}
+      {esAdmin && faseActual === 'grupos' && !hayBracketJugado && !esLiguilla && !esEquipos && (
         <div style={{ marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           <button onClick={() => setMesaOpen(true)} style={{ background:'#ffffff', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
             + Inscribir jugador adicional
@@ -1251,7 +1259,7 @@ export default function TorneoDetallePage() {
 
       {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && (
         <>
-      {faseActual === 'grupos' && !hayBracketJugado && esAdmin && (
+      {faseActual === 'grupos' && !hayBracketJugado && esAdmin && !esLiguilla && !esEquipos && (
         <div style={{ marginBottom:16 }}>
           <CabezasSerieEditor
             cabezas={cabezasNumeradas}
@@ -1272,7 +1280,7 @@ export default function TorneoDetallePage() {
       </>
       )}
 
-      {faseActual === 'grupos' && (() => {
+      {faseActual === 'grupos' && !esLiguilla && !esEquipos && (() => {
         const previa = previewSiembra()
         if (previa.length === 0) return null
         const numGrupos = gruposReales.length
