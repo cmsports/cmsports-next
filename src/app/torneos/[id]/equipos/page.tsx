@@ -7,6 +7,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
 import MarcadorSets from '@/components/torneos/MarcadorSets'
 import { armarEncuentro, borrarEncuentros, eliminarEquipo, generarEncuentros, guardarEquipo, marcarPartidoDeEncuentro } from '@/app/actions/torneoEquipos'
+import { finalizarTorneo } from '@/app/actions/torneos'
 import { modalidadDe } from '@/lib/domain/modalidadTorneo'
 import {
   CRUCES, SISTEMA_LABEL, individualesQuePide, minJugadoresPorEquipo, resultadoEncuentro, sistemaDe,
@@ -42,7 +43,7 @@ export default function TorneoEquiposPage() {
   const torneoId = String(params.id)
   const esAdmin = perfil?.rol === 'admin'
 
-  const [torneo, setTorneo] = useState<{ nombre: string; fase: string; sistema: SistemaEquipos; esEquipos: boolean } | null>(null)
+  const [torneo, setTorneo] = useState<{ nombre: string; fase: string; estado: string; sistema: SistemaEquipos; esEquipos: boolean } | null>(null)
   const [equipos, setEquipos] = useState<Equipo[]>([])
   const [inscritos, setInscritos] = useState<string[]>([])
   const [nombres, setNombres] = useState<Record<string, string>>({})
@@ -62,13 +63,13 @@ export default function TorneoEquiposPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sb = supabase as any
     const [{ data: t }, { data: eqs }, { data: mesa }, { data: encs }] = await Promise.all([
-      sb.from('torneos').select('nombre, fase, formato, sistema_equipos').eq('id', torneoId).maybeSingle(),
+      sb.from('torneos').select('nombre, fase, estado, formato, sistema_equipos').eq('id', torneoId).maybeSingle(),
       sb.from('torneo_equipos').select('id, nombre, club_procedencia, orden, torneo_equipo_jugadores(jugador_id, orden)').eq('torneo_id', torneoId).order('orden'),
       sb.from('torneo_grupos').select('id').eq('torneo_id', torneoId).eq('nombre', 'MESA').maybeSingle(),
       sb.from('torneo_encuentros').select('id, orden, equipo_a_id, equipo_b_id, ganador_equipo_id').eq('torneo_id', torneoId).order('orden'),
     ])
     if (!t) { router.replace('/torneos'); return }
-    setTorneo({ nombre: t.nombre, fase: t.fase, sistema: sistemaDe(t.sistema_equipos), esEquipos: modalidadDe(t.formato) === 'equipos' })
+    setTorneo({ nombre: t.nombre, fase: t.fase, estado: t.estado, sistema: sistemaDe(t.sistema_equipos), esEquipos: modalidadDe(t.formato) === 'equipos' })
     const listaEq: Equipo[] = ((eqs || []) as Array<Record<string, unknown>>).map(e => ({
       id: e.id as string, nombre: e.nombre as string, club: (e.club_procedencia as string | null) ?? null, orden: e.orden as number,
       jugadores: ((e.torneo_equipo_jugadores as Array<{ jugador_id: string; orden: number }>) ?? []).sort((x, y) => x.orden - y.orden).map(j => j.jugador_id),
@@ -198,6 +199,17 @@ export default function TorneoEquiposPage() {
     await cargar()
   }
 
+  async function finalizar() {
+    const campeon = tabla[0]?.equipo.nombre ?? '—'
+    if (!confirm(`¿Finalizar el torneo? Campeón: ${campeon}.`)) return
+    setOcupado(true); setMensaje(null)
+    const res = await finalizarTorneo({ torneoId })
+    setOcupado(false)
+    if (res.error) { setMensaje({ tipo: 'error', texto: res.error }); return }
+    setMensaje({ tipo: 'ok', texto: `Torneo finalizado. Campeón: ${campeon}.` })
+    await cargar()
+  }
+
   async function marcar(p: Partido, parciales: Array<[number, number]>) {
     setOcupado(true); setMensaje(null)
     const res = await marcarPartidoDeEncuentro({ torneoId, partidoId: p.id, parciales })
@@ -230,6 +242,12 @@ export default function TorneoEquiposPage() {
           )}
           {esAdmin && hayEncuentros && encuentros.every(e => e.partidos.every(p => !p.ganador)) && (
             <button onClick={deshacerEncuentros} disabled={ocupado} style={boton(false, true)}>↩ Borrar encuentros</button>
+          )}
+          {esAdmin && hayEncuentros && torneo?.estado !== 'finalizado' && encuentros.every(e => !!e.ganador) && (
+            <button onClick={finalizar} disabled={ocupado} style={{ ...boton(true), background: '#16a34a' }}>🏆 Finalizar torneo</button>
+          )}
+          {torneo?.estado === 'finalizado' && (
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#15803d', background: '#dcfce7', borderRadius: 20, padding: '4px 12px' }}>✅ Finalizado · campeón {tabla[0]?.equipo.nombre ?? '—'}</span>
           )}
         </div>
         <p style={{ fontSize: 12, color: hint, marginBottom: 16 }}>
