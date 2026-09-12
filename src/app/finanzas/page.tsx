@@ -131,27 +131,31 @@ function FinanzasContent() {
     const ultimoDia = new Date(anio, mes, 0).getDate()
     const inicio = `${anio}-${mesStr}-01`
     const fin = `${anio}-${mesStr}-${String(ultimoDia).padStart(2,'0')}`
-    // Solo movimientos: la lista de jugadores no cambia por mes, se carga aparte una sola vez
-    const { data } = await supabase.from('movimientos').select('id,tipo,categoria,descripcion,monto,fecha,registrado_por_nombre,creado_en,mensualidad_id,torneo_id,profesor_id,mes_correspondiente,anio_correspondiente').eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
+    // Solo movimientos: la lista de jugadores no cambia por mes, se carga aparte una sola vez.
+    //
+    // Los bloqueos vienen embebidos en la misma consulta. Antes eran dos idas y
+    // vueltas en fila —primero los movimientos, después preguntar por sus ids en
+    // `liga_abonos` y `clases_extraordinarias`—, y desde el navegador cada viaje
+    // cuesta ~320 ms. Las dos tablas apuntan a `movimientos(id)` con clave
+    // foránea, así que PostgREST puede traerlas anidadas de una vez. Esto corre
+    // en cada cambio de mes y cada vez que realtime avisa de un movimiento.
+    const { data } = await supabase.from('movimientos')
+      .select('id,tipo,categoria,descripcion,monto,fecha,registrado_por_nombre,creado_en,mensualidad_id,torneo_id,profesor_id,mes_correspondiente,anio_correspondiente,liga_abonos(movimiento_id),clases_extraordinarias(movimiento_id)')
+      .eq('club_id', id).gte('fecha', inicio).lte('fecha', fin).order('creado_en', { ascending: false })
     setMovimientos(data || [])
-    await cargarBloqueados(data || [])
+    marcarBloqueados(data || [])
   }
 
   // Un movimiento que es el reflejo de otra cosa no se edita desde acá. El
   // vínculo con mensualidad y torneo viaja en la propia fila; el de liga y
-  // clases extra vive en la otra tabla, así que hay que ir a buscarlo. Si la
-  // consulta falla se asume desbloqueado: la RPC igual lo rechaza, solo se
-  // pierde el candado de la tabla.
-  async function cargarBloqueados(movs: any[]) {
-    const ids = movs.map(m => m.id)
-    if (ids.length === 0) { setBloqueados(new Set()); return }
-    const [{ data: abonos }, { data: extras }] = await Promise.all([
-      supabase.from('liga_abonos').select('movimiento_id').in('movimiento_id', ids),
-      supabase.from('clases_extraordinarias').select('movimiento_id').in('movimiento_id', ids),
-    ])
+  // clases extra vive en la otra tabla, y ahora llega anidado en la misma
+  // consulta, así que solo hay que leerlo. Si viniera vacío se asume
+  // desbloqueado: la RPC igual lo rechaza, solo se pierde el candado visual.
+  function marcarBloqueados(movs: any[]) {
     const set = new Set<string>()
-    ;(abonos || []).forEach((a: any) => a.movimiento_id && set.add(a.movimiento_id))
-    ;(extras || []).forEach((c: any) => c.movimiento_id && set.add(c.movimiento_id))
+    for (const m of movs) {
+      if (m.liga_abonos?.length || m.clases_extraordinarias?.length) set.add(m.id)
+    }
     setBloqueados(set)
   }
 

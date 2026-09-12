@@ -303,12 +303,15 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const cargarSuspension = useCallback(async (fecha: string, cid?: string) => {
     const id = cid || clubId
     if (!id || !esAdminOProfesor) return
-    const { data: bl } = await supabase.from('bloques_horario')
-      .select('id').eq('club_id', id)
-    const ids = (bl ?? []).map((b: { id: string }) => b.id)
-    if (ids.length === 0) { setSuspension(null); return }
+    // Un solo viaje en vez de dos. Antes se traían todos los bloques del club
+    // solo para quedarse con sus ids y volver a preguntar por las excepciones
+    // de esa fecha; el `!inner` deja que Postgres haga ese cruce por la clave
+    // foránea `bloque_id` y filtre por club del otro lado. Desde el navegador
+    // cada viaje son ~320 ms, y esto se llama cada vez que se cambia de día.
     const { data } = await supabase.from('bloque_excepciones')
-      .select('motivo').in('bloque_id', ids).eq('fecha', fecha)
+      .select('motivo,bloques_horario!inner(club_id)')
+      .eq('fecha', fecha)
+      .eq('bloques_horario.club_id', id)
     const filas = (data ?? []) as { motivo: string | null }[]
     setSuspension(filas.length === 0
       ? null
