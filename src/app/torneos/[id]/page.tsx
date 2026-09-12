@@ -34,7 +34,7 @@ import {
   guardarGastosGestion,
 } from '@/app/actions/torneos'
 import { CONFIG, type FaseOrden } from '@/lib/config'
-import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket, fasesParaMostrar, derivarTercerLugar } from '@/lib/domain/torneos'
+import { calcularNumGrupos, construirLlavesLayoutNumerado, calcularStatsGrupo, rankearClasificados, calcularTamanoBracket, fasesParaMostrar, derivarTercerLugar, grupoTieneSusDosCuposDecididos } from '@/lib/domain/torneos'
 import { MODALIDAD_LABEL, minParticipantes, modalidadDe, ruedasDe } from '@/lib/domain/modalidadTorneo'
 import { partidosDeLiguilla, partidosPorFecha, rondasDeLiguilla, tandasPorFecha } from '@/lib/domain/torneoLiguilla'
 import { FASE_CONSOLACION_LABEL, esFaseDeConsolacion, fasesParaMostrarConConsuelo } from '@/lib/domain/torneoConsolacion'
@@ -679,7 +679,12 @@ export default function TorneoDetallePage() {
     return { stats, ordenados, hayTripleEmpate, empatados, primeroFijo }
   }
 
-  // Grupos clasificados: todos jugados O el 3° no puede alcanzar al 2° matemáticamente
+  // Grupos clasificados, con la MISMA regla que el servidor
+  // (`grupoTieneSusDosCuposDecididos`, la que usa `calcularClasificadosDesdeBD`):
+  // quiénes pasan Y cuál es 1° y cuál 2°. Esta pantalla tenía su propia copia
+  // que solo miraba lo primero, así que la vista previa podía dar por cerrado
+  // un grupo con un orden provisorio que el servidor todavía no aceptaba —el
+  // mismo caso del sub19 que motivó la regla— (auditoría del 2026-09-11).
   function calcularClasificados(): { grupoId: string; primeroId: string; segundoId: string }[] {
     const out: { grupoId: string; primeroId: string; segundoId: string }[] = []
     for (const grupo of gruposReales) {
@@ -689,19 +694,17 @@ export default function TorneoDetallePage() {
       const { ordenados, hayTripleEmpate } = calcularStats(grupo.id)
 
       const todosJugados = partidosGrupo.every(p => !!p.ganador)
-      if (!todosJugados) {
-        // Cierre matemático: verificar que ningún jugador desde la 3ª posición
-        // pueda alcanzar los puntos del 2°, contando los partidos que le faltan.
-        if (ordenados.length < 2) continue
-        const pts2 = ordenados[1].pts
-        const alguienPuedeLlegarA2 = ordenados.slice(2).some((j: any) => {
-          const restantes = partidosGrupo.filter((p: any) =>
-            !p.ganador && (p.jugador_a === j.jugador?.id || p.jugador_b === j.jugador?.id)
-          ).length
-          return j.pts + 2 * restantes >= pts2
-        })
-        if (alguienPuedeLlegarA2) continue
+      const pendientes = new Map<string, number>()
+      for (const p of partidosGrupo) {
+        if (p.ganador) continue
+        for (const jid of [p.jugador_a, p.jugador_b]) {
+          if (jid) pendientes.set(jid, (pendientes.get(jid) ?? 0) + 1)
+        }
       }
+      const tabla = ordenados
+        .filter((j: any) => !!j.jugador?.id)
+        .map((j: any) => ({ jugadorId: j.jugador.id as string, pts: j.pts as number }))
+      if (!grupoTieneSusDosCuposDecididos(tabla, pendientes, todosJugados)) continue
       let primeroId: string | undefined
       let segundoId: string | undefined
       if (hayTripleEmpate) {
@@ -742,11 +745,16 @@ export default function TorneoDetallePage() {
   }
 
   async function volverAGrupos() {
-    if (!confirm('⚠️ ¿Volver a la fase de grupos?\n\nSe borrarán todos los partidos de playoffs. Los resultados de grupos se conservan.')) return
+    // En eliminación directa no hay grupos a los que volver: se rearma el
+    // cuadro desde cero con los mismos inscritos (y se pierde el consuelo).
+    const aviso = esEliminacion
+      ? '⚠️ ¿Rearmar el cuadro desde cero?\n\nSe borran todos los resultados de la llave y del cuadro de consuelo, y se vuelve a sortear con los mismos inscritos y cabezas de serie.'
+      : '⚠️ ¿Volver a la fase de grupos?\n\nSe borrarán todos los partidos de playoffs. Los resultados de grupos se conservan.'
+    if (!confirm(aviso)) return
     try {
       const res = await volverAGruposAction({ torneoId })
       if (res.error) { alert(res.error); return }
-      setTabActiva('grupos')
+      setTabActiva(esEliminacion ? 'bracket' : 'grupos')
       await cargarTorneo()
     } catch (cause) {
       alert(cause instanceof Error ? cause.message : 'No se pudo reiniciar el bracket.')
@@ -859,6 +867,11 @@ export default function TorneoDetallePage() {
   // se veía en ningún lado). Solo se muestra si ya tiene partidos.
   const fasesDeConsuelo = fasesConTercerLugar.filter(esFaseDeConsolacion)
   const hayConsuelo = fasesDeConsuelo.length > 0
+  // El consuelo es parte del formato: el servidor no deja finalizar mientras
+  // tenga partidos sin jugar, igual que con el 3er lugar. Un BYE ya viene con
+  // ganador, así que no cuenta como pendiente.
+  const consueloPendiente = fasesDeConsuelo.some(f => (partidosPorFase.get(f) || []).some((p: any) => !p.ganador))
+  const campeonConsuelo = ((partidosPorFase.get('cons_final') || []).find((p: any) => p.ganador) as any)?.jg ?? null
   const partidoTercerLugar = (partidosPorFase.get('tercer_lugar') || [])[0] ?? null
   const tercerLugarPendiente = !!partidoTercerLugar && !partidoTercerLugar.ganador
   // Un torneo interno cuyas semis se marcaron ANTES de que existiera esta regla
@@ -1078,8 +1091,19 @@ export default function TorneoDetallePage() {
             {tercerLugarSinCupos ? '🥉 Rellenar el 3er lugar' : '🥉 Abrir el 3er lugar'}
           </button>
         )}
-        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && (
+        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && !consueloPendiente && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
+        )}
+        {/* Igual que con el 3er lugar: el servidor rechaza finalizar con el
+            consuelo a medias, así que en vez del botón se dice qué falta y se
+            lleva a la pestaña donde se resuelve. */}
+        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && consueloPendiente && (
+          <button
+            onClick={() => setTabActiva('consuelo')}
+            title="Marca los resultados del cuadro de consuelo para poder finalizar"
+            style={{ background:'#faf5ff', color:'#7c3aed', border:'1px solid #e9d5ff', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+            🥈 Falta el consuelo
+          </button>
         )}
         {/* Con el 3er lugar sin jugar, el servidor rechaza finalizar. Mostrar el
             botón igual sería ofrecer un error: se dice qué falta y se lleva al
@@ -1163,7 +1187,9 @@ export default function TorneoDetallePage() {
           <button onClick={() => setMesaOpen(true)} style={{ background:'#ffffff', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
             + Inscribir jugador adicional
           </button>
-          {faseActual === 'grupos' && !hayBracketJugado && !gruposReales.some((g: any) => g.en_preparacion) && (
+          {/* Una liguilla es un solo grupo con todos adentro: un grupo aparte
+              sería un torneo paralelo. El servidor también lo rechaza. */}
+          {faseActual === 'grupos' && !hayBracketJugado && !esLiguilla && !gruposReales.some((g: any) => g.en_preparacion) && (
             <button disabled={creandoGrupoManual} onClick={async () => {
               if (creandoGrupoManual) return
               setCreandoGrupoManual(true)
@@ -1343,7 +1369,11 @@ export default function TorneoDetallePage() {
                           </span>
                         : <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:10, fontSize:10 }}>Pend.</span>
                     })()}
-                    {esAdmin && !hayBracketJugado && !grupoConResultados && (
+                    {/* En eliminación directa este grupo es solo la lista de
+                        inscritos: el cuadro ya está armado y el servidor
+                        rechaza reordenar o quitar (el ausente se resuelve en
+                        la llave, marcando al rival). */}
+                    {esAdmin && !hayBracketJugado && !grupoConResultados && !esEliminacion && (
                       <div style={{ display:'flex', gap:4 }}>
                         {isMobile && grupoEnPreparacion && grupo.id !== grupoEnPreparacion.id && (
                           <button
@@ -2050,6 +2080,17 @@ export default function TorneoDetallePage() {
               )
             })
           })()}
+
+          {/* El consuelo tiene su propio campeón. No hay columna para él en
+              `torneos` ni premio en el panel: eso es una decisión pendiente
+              del club; acá al menos se nombra. */}
+          {campeonConsuelo && (
+            <div style={{ background:'#faf5ff', border:'1px solid #e9d5ff', borderRadius:16, padding:24, textAlign:'center', marginBottom:16 }}>
+              <div style={{ fontSize:40, marginBottom:8 }}>🥈</div>
+              <div style={{ fontSize:20, fontWeight:800, color:'#7c3aed' }}>Campeón del consuelo</div>
+              <div style={{ fontSize:18, color: text, marginTop:4 }}>{campeonConsuelo.nombre}</div>
+            </div>
+          )}
         </div>
       )}
 

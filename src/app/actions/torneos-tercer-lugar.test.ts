@@ -37,6 +37,8 @@ function fakeSupabase(tablas: Record<string, Fila[]>) {
       neq: (col: string, val: any) => (filtros.push(f => f[col] !== val), builder),
       is: (col: string, val: any) => (filtros.push(f => (f[col] ?? null) === val), builder),
       in: (col: string, vals: any[]) => (filtros.push(f => vals.includes(f[col])), builder),
+      // `finalizarTorneo` revisa el consuelo con `.like('fase', 'cons_%')`.
+      like: (col: string, patron: string) => (filtros.push(f => new RegExp(`^${patron.replace(/%/g, '.*')}$`).test(String(f[col] ?? ''))), builder),
       order: (col: string, o?: { ascending?: boolean }) => (orden = { col, asc: o?.ascending !== false }, builder),
       limit: (n: number) => (tope = n, builder),
       maybeSingle: () => Promise.resolve({ data: aplicar()[0] ?? null, error: null }),

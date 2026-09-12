@@ -11,12 +11,29 @@ import {
   type PartidoVivo,
   type SnapshotTorneoVivo,
 } from '@/lib/domain/torneo-vivo'
+import { CONFIG } from '@/lib/config'
+import { FASE_CONSOLACION_LABEL, fasesParaMostrarConConsuelo } from '@/lib/domain/torneoConsolacion'
 
 const supabase = createClient()
 
+// Los mismos nombres que usa la pantalla del admin, y de la misma fuente.
+// Antes esta lista estaba escrita a mano acá y se quedó sin `tercer_lugar`,
+// sin las fases del consuelo (`cons_*`) y sin las de los cuadros grandes: la
+// pestaña "Llaves" no mostraba ni el partido por el 3er lugar ni el cuadro de
+// consuelo, y en "En vivo" esos partidos salían bajo un "Playoffs" genérico
+// (auditoría del 2026-09-11).
 const FASE_LABELS: Record<string, string> = {
-  grupos: 'Fase de grupos', avance: 'Llave de avance', '32vos': '32vos', '16vos': '16vos',
-  '8vos': '8vos', cuartos: 'Cuartos', semis: 'Semifinal', final: 'Final', finalizado: 'Finalizado',
+  ...CONFIG.FASE_LABELS,
+  tercer_lugar: '3er y 4to lugar',
+  ...FASE_CONSOLACION_LABEL,
+}
+
+// El orden en que se leen: el cuadro principal con el 3er lugar antes de la
+// final, y después el de consuelo. `fasesParaMostrarConConsuelo` es la misma
+// función que ordena las pestañas del admin.
+function fasesEnOrden(partidos: Partido[]): string[] {
+  const presentes = new Set(partidos.map(p => p.fase ?? '').filter(f => f && f !== 'grupos'))
+  return fasesParaMostrarConConsuelo(presentes)
 }
 
 type Jugador = JugadorVivo
@@ -356,11 +373,11 @@ function Vivo({ snap, yo, cambiar }: { snap: Snapshot; yo: { jugadorId: string |
   }, [partidos])
 
   const llavesPorFase = useMemo(() => {
-    const playoff = partidos.filter(p => !p.grupo_id && p.fase && FASE_LABELS[p.fase] && p.fase !== 'grupos')
+    const playoff = partidos.filter(p => !p.grupo_id && p.fase && p.fase !== 'grupos')
     const secc: { fase: string; titulo: string; partidos: Partido[] }[] = []
-    for (const f of Object.keys(FASE_LABELS)) {
+    for (const f of fasesEnOrden(playoff)) {
       const ps = playoff.filter(p => p.fase === f).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
-      if (ps.length) secc.push({ fase: f, titulo: FASE_LABELS[f], partidos: ps })
+      if (ps.length) secc.push({ fase: f, titulo: FASE_LABELS[f] ?? f, partidos: ps })
     }
     return secc
   }, [partidos])
@@ -550,14 +567,16 @@ function agruparPartidos(lista: Partido[], grupos: Grupo[]): { titulo: string; p
     const ps = lista.filter(p => p.grupo_id === g.id)
     if (ps.length) secc.push({ titulo: `Grupo ${g.nombre}`, partidos: ps })
   }
-  // playoffs (sin grupo), agrupados por fase según el orden de FASE_LABELS
+  // playoffs (sin grupo), agrupados por fase en el orden del cuadro
   const playoff = lista.filter(p => !p.grupo_id)
-  for (const fase of Object.keys(FASE_LABELS)) {
+  const conocidas = new Set<string>()
+  for (const fase of fasesEnOrden(playoff)) {
+    conocidas.add(fase)
     const ps = playoff.filter(p => (p.fase ?? '') === fase).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
-    if (ps.length) secc.push({ titulo: FASE_LABELS[fase], partidos: ps })
+    if (ps.length) secc.push({ titulo: FASE_LABELS[fase] ?? fase, partidos: ps })
   }
   // fases desconocidas al final
-  const otras = playoff.filter(p => !(p.fase ?? '') || !FASE_LABELS[p.fase ?? ''])
+  const otras = playoff.filter(p => !conocidas.has(p.fase ?? ''))
   if (otras.length) secc.push({ titulo: 'Playoffs', partidos: otras })
   return secc
 }

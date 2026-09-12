@@ -97,9 +97,45 @@ function ordenarMiembros<T extends { orden?: number | null; jugador_id?: string 
   return [...miembros].sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(a.jugador_id ?? '').localeCompare(String(b.jugador_id ?? '')))
 }
 
-// Reescribe el orden de un grupo y regenera su round robin desde cero.
+/**
+ * La modalidad y las ruedas de un torneo, para las acciones que rearman un
+ * grupo. Un torneo viejo o sin la columna cae en 'grupos' (ver `modalidadDe`).
+ */
+async function modalidadDelTorneo(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  torneoId: string,
+): Promise<{ modalidad: ModalidadTorneo; ruedas: 1 | 2 }> {
+  const { data: t } = await supabase.from('torneos').select('formato, ruedas').eq('id', torneoId).single()
+  return { modalidad: modalidadDe(t?.formato), ruedas: ruedasDe(t?.ruedas) }
+}
+
+/**
+ * Rechaza reordenar, quitar o mover jugadores del grupo único de una
+ * eliminación directa.
+ *
+ * Ese grupo no juega: solo guarda a los inscritos, y el cuadro ya está armado
+ * con sus cruces y descansos. Antes estas acciones no miraban la modalidad
+ * (auditoría del 2026-09-11): "quitar" a un ausente le rehacía al grupo un
+ * round robin completo de fase 'grupos' —con 6 inscritos, 10 partidos que el
+ * formato no tiene— y el quitado seguía en la llave igual. El ausente en una
+ * eliminación se resuelve en la llave: se marca al rival como ganador.
+ */
+function rechazarSiEsEliminacion(modalidad: ModalidadTorneo, queHace: string): string | null {
+  if (modalidad !== 'eliminacion_consolacion') return null
+  return `En eliminación directa el cuadro ya está armado, así que ${queHace}. ` +
+    'Si alguien no vino, marca a su rival como ganador en la llave.'
+}
+
+// Reescribe el orden de un grupo y regenera sus partidos desde cero.
 // Devuelve el mensaje de error o null. Los grupos en preparación quedan sin
 // partidos: se crean recién al finalizarlos.
+//
+// Regenera con el MISMO generador que armó el grupo al cerrar la inscripción:
+// el round robin para el torneo tradicional, y `generarLiguilla` para la
+// liguilla. Antes siempre era el round robin, así que quitar o reordenar a
+// alguien en una liguilla a dos ruedas le borraba la vuelta entera y perdía
+// el calendario por fechas (auditoría del 2026-09-11).
 async function regenerarGrupo(
   supabase: AdminSupabase,
   torneoId: string,
@@ -113,7 +149,11 @@ async function regenerarGrupo(
   if (deleteErr) return 'No se pudieron regenerar los partidos del grupo.'
   if (enPreparacion) return null
   const ids = ordenados.map(m => m.jugador_id).filter((id): id is string => !!id)
-  const partidos = generarRoundRobin(ids).map(([jugador_a, jugador_b], orden) => ({
+  const { modalidad, ruedas } = await modalidadDelTorneo(supabase, torneoId)
+  const parejas: Array<[string, string]> = modalidad === 'liguilla'
+    ? generarLiguilla(ids, ruedas).map(p => [p.jugadorA, p.jugadorB])
+    : generarRoundRobin(ids)
+  const partidos = parejas.map(([jugador_a, jugador_b], orden) => ({
     torneo_id: torneoId,
     grupo_id: grupoId,
     fase: 'grupos',
@@ -1099,6 +1139,12 @@ export async function crearGrupoManual(params: { torneoId: string }) {
     .select('id,fase,club_id').eq('id', params.torneoId).single()
   if (!torneo || torneo.club_id !== perfil.club_id) return { error: 'Torneo no encontrado' }
   if (torneo.fase !== 'grupos') return { error: 'Solo puedes crear grupos manuales durante la fase de grupos' }
+  // Una liguilla también vive en fase 'grupos', pero es UN grupo con todos
+  // adentro: un segundo grupo sería un torneo paralelo con su propia tabla.
+  {
+    const no = await rechazarSiEsLiguilla(supabase, params.torneoId, 'no se pueden crear grupos aparte')
+    if (no) return { error: no }
+  }
 
   const { data: bracket } = await supabase.from('torneo_partidos')
     .select('ganador, jugador_b').eq('torneo_id', params.torneoId).neq('fase', 'grupos')
@@ -1180,6 +1226,12 @@ export async function moverJugadorEntreGrupos(params: {
 
   const { torneoId, jugadorId, grupoOrigenId, grupoDestinoId } = params
   if (grupoOrigenId === grupoDestinoId) return { success: true }
+
+  {
+    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    const no = rechazarSiEsEliminacion(modalidad, 'no hay grupos entre los que mover')
+    if (no) return { error: no }
+  }
 
   const { data: gruposMovimiento } = await supabase.from('torneo_grupos')
     .select('id,en_preparacion').eq('torneo_id', torneoId).in('id', [grupoOrigenId, grupoDestinoId])
@@ -1325,6 +1377,12 @@ export async function reordenarJugadorEnGrupo(params: {
 
   const { torneoId, grupoId, jugadorId, direccion } = params
 
+  {
+    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    const no = rechazarSiEsEliminacion(modalidad, 'el orden de la lista no cambia nada')
+    if (no) return { error: no }
+  }
+
   const { data: partidosGrupo } = await supabase
     .from('torneo_partidos')
     .select('id, ganador')
@@ -1371,6 +1429,12 @@ export async function quitarJugadorDeGrupo(params: {
   if (authErr) return { error: authErr }
 
   const { torneoId, grupoId, jugadorId } = params
+
+  {
+    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    const no = rechazarSiEsEliminacion(modalidad, 'no se puede sacar a nadie de la lista')
+    if (no) return { error: no }
+  }
 
   const { data: grupo } = await supabase.from('torneo_grupos')
     .select('id,nombre,en_preparacion').eq('id', grupoId).eq('torneo_id', torneoId).maybeSingle()
@@ -1757,7 +1821,15 @@ export async function armarCuadroConsolacion(params: { torneoId: string }) {
     .eq('torneo_id', torneoId)
   if (errLeer) return { error: `No se pudieron leer los partidos: ${errLeer.message}` }
 
-  const todos = partidos || []
+  // En el orden del cuadro (ronda inicial primero, y dentro de cada ronda por
+  // llave): `elegiblesParaConsolacion` siembra el consuelo "en el orden en que
+  // perdieron", y sin esto ese orden era el que la base devolviera las filas.
+  const indiceFase = (f: string | null) => {
+    const i = (CONFIG.FASES_ORDEN as readonly string[]).indexOf(f ?? '')
+    return i < 0 ? CONFIG.FASES_ORDEN.length : i
+  }
+  const todos = [...(partidos || [])].sort((a, b) =>
+    indiceFase(a.fase) - indiceFase(b.fase) || (a.orden ?? 0) - (b.orden ?? 0))
 
   // Ya está armado: no se toca. Rearmarlo borraría lo que ya se jugó.
   if (todos.some(p => esFaseDeConsolacion(p.fase))) return { success: true, yaExistia: true }
@@ -2145,6 +2217,21 @@ export async function volverAGrupos(params: { torneoId: string }) {
   if (!torneo) return { error: 'Torneo no encontrado' }
   if (torneo.fase === 'inscripcion') return { error: 'El torneo aún está en inscripción' }
 
+  // En eliminación directa no hay grupos a los que volver: "reiniciar" es
+  // rearmar el cuadro desde los mismos inscritos, que es exactamente lo que
+  // hace cerrar la inscripción (borra todo lo del torneo y lo genera de nuevo,
+  // consuelo incluido, y deja la fase en la ronda inicial). Antes esto dejaba
+  // el torneo en fase 'grupos' sin ningún grupo que jugar: la pantalla perdía
+  // las pestañas y "Armar bracket" respondía error para este formato.
+  {
+    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (modalidad === 'eliminacion_consolacion') {
+      const res = await cerrarInscripcionYGenerarGrupos({ torneoId })
+      if ('error' in res && res.error) return { error: res.error }
+      return { success: true, cuadroRearmado: true }
+    }
+  }
+
   // Vale también durante la fase de grupos: borra el cuadro parcialmente armado
   // para que se reconstruya limpio desde los resultados actuales.
   const { data: bracketRows } = await supabase
@@ -2283,10 +2370,28 @@ export async function finalizarTorneo(params: { torneoId: string }) {
     return { error: 'Falta jugar el partido por el 3er lugar antes de finalizar el torneo.' }
   }
 
+  // El cuadro de consuelo es parte del formato, no un extra: si existe, se
+  // termina antes de cerrar el torneo, igual que el 3er lugar. Antes se podía
+  // finalizar con la final del consuelo sin jugar y nadie avisaba.
+  {
+    const { data: consuelo, error: consueloError } = await supabase
+      .from('torneo_partidos')
+      .select('fase, ganador')
+      .eq('torneo_id', params.torneoId)
+      .like('fase', 'cons_%')
+    if (consueloError) return { error: 'No se pudo revisar el cuadro de consuelo.' }
+    const pendientes = (consuelo || []).filter(p => !p.ganador).length
+    if (pendientes > 0) {
+      return { error: `Faltan ${pendientes} partido(s) del cuadro de consuelo antes de finalizar el torneo.` }
+    }
+  }
+
   const { error } = await supabase.from('torneos').update({
     estado: 'finalizado',
     fase: 'finalizado',
-    fecha_fin: new Date().toISOString(),
+    // Hora de Chile, como la rama de liguilla más arriba: con toISOString()
+    // (UTC) un torneo cerrado después de las 21:00 quedaba fechado mañana.
+    fecha_fin: fechaChile(),
     campeon_id: podio.campeonId,
     subcampeon_id: podio.subcampeonId,
     ...(tercer?.ganador ? { tercer_id: tercer.ganador } : {}),
@@ -2790,6 +2895,18 @@ export async function intercambiarJugadores(params: {
       siguiente.jugador_b = nuevo.jugador
       siguiente.slot_b_grupo_id = nuevo.grupoId
       siguiente.slot_b_posicion = nuevo.posicion
+    }
+    // Un BYE vive siempre en `jugador_a`. Arrastrar al jugador_a de una llave
+    // real al cupo vacío de un BYE dejaba la llave de origen como (vacío, Y):
+    // no era BYE, no avanzaba sola y no se podía marcar. Se normaliza acá igual
+    // que lo hace el RPC (migración 269): el que queda solo pasa al lado A.
+    if (!siguiente.jugador_a && siguiente.jugador_b) {
+      siguiente.jugador_a = siguiente.jugador_b
+      siguiente.slot_a_grupo_id = siguiente.slot_b_grupo_id
+      siguiente.slot_a_posicion = siguiente.slot_b_posicion
+      siguiente.jugador_b = null
+      siguiente.slot_b_grupo_id = null
+      siguiente.slot_b_posicion = null
     }
     siguiente.ganador = !siguiente.slot_b_grupo_id && siguiente.jugador_a ? siguiente.jugador_a : null
     return siguiente
