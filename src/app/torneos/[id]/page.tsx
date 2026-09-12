@@ -172,7 +172,7 @@ export default function TorneoDetallePage() {
       { data: gj },
       { data: cabezasData },
     ] = await Promise.all([
-      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,premio_consuelo,campeon_id,campeon_consuelo_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave,formato,ruedas').eq('id', torneoId).single(),
+      supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,premio_consuelo,campeon_id,subcampeon_id,tercer_id,campeon_consuelo_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave,formato,ruedas').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
@@ -834,6 +834,19 @@ export default function TorneoDetallePage() {
   // Por equipos: los equipos, los encuentros y los resultados viven en su
   // propia pantalla (/torneos/[id]/equipos). Acá queda la inscripción.
   const esEquipos = modalidad === 'equipos'
+
+  // El podio guardado en el torneo, con nombre. Es lo que deja finalizarTorneo
+  // en una liguilla, que se define en la tabla y no tiene partido 'final'.
+  const nombreDeJugador = (id: string | null | undefined): { id: string; nombre: string } | null => {
+    if (!id) return null
+    const j = [...jugadores, ...jugadoresInscritos].find((x: any) => x.jugador_id === id)
+    return j?.jugadores?.nombre ? { id, nombre: j.jugadores.nombre } : null
+  }
+  const podioGuardado = {
+    campeon: nombreDeJugador(torneo?.campeon_id),
+    subcampeon: nombreDeJugador(torneo?.subcampeon_id),
+    tercero: nombreDeJugador(torneo?.tercer_id),
+  }
 
   const partidosFaseActual = faseActual ? (partidosPorFase.get(faseActual) || []) : []
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
@@ -2123,14 +2136,15 @@ export default function TorneoDetallePage() {
       {/* PANEL PREMIOS */}
       {esAdmin && faseActual === 'finalizado' && (() => {
         const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
-        const campeon1 = pFinal ? (pFinal as any).jg : null
+        const campeon1 = pFinal ? (pFinal as any).jg : podioGuardado.campeon
         const subcampeon = pFinal
           ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja)
-          : null
-        // El 3er lugar solo tiene nombre si se jugó su partido. Sin él, el
-        // informe sigue mostrando el monto sin dueño, como antes.
+          : podioGuardado.subcampeon
+        // El 3er lugar solo tiene nombre si se jugó su partido (o si la
+        // liguilla lo dejó guardado). Sin él, el informe sigue mostrando el
+        // monto sin dueño, como antes.
         const pTercero = (partidosPorFase.get('tercer_lugar') || []).find(p => p.ganador)
-        const tercero = pTercero ? ((pTercero as any).jg) : null
+        const tercero = pTercero ? ((pTercero as any).jg) : podioGuardado.tercero
         // El campeón del consuelo tiene su propio premio (migración 271). Solo
         // aparece si el torneo tuvo consuelo: en los otros formatos no existe.
         const consuelo = campeonConsuelo
@@ -2473,10 +2487,10 @@ export default function TorneoDetallePage() {
               <button
                 onClick={async () => {
                   const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
-                  const campeon1 = pFinal ? (pFinal as any).jg : null
-                  const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : null
+                  const campeon1 = pFinal ? (pFinal as any).jg : podioGuardado.campeon
+                  const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : podioGuardado.subcampeon
                   const pTercero = (partidosPorFase.get('tercer_lugar') || []).find(p => p.ganador)
-                  const tercero = pTercero ? ((pTercero as any).jg) : null
+                  const tercero = pTercero ? ((pTercero as any).jg) : podioGuardado.tercero
                   const listaJug = jugadoresUnicos.map((j: any) => {
                     const pago = pagos.find(p => p.jugador_id === j.jugador_id)
                     return {
