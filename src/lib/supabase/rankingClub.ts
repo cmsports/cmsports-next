@@ -31,41 +31,52 @@ export type RankingDelClub = {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function cargarRankingDelClub(sb: any, clubId: string): Promise<RankingDelClub> {
-  // 1. Timestamp de reinicio del club. El nombre viene en la misma consulta:
-  // lo necesita el encabezado del PDF y de la página pública.
-  const { data: club } = await sb
-    .from('clubes')
-    .select('nombre,ranking_reiniciado_en')
-    .eq('id', clubId)
-    .single()
+  // Las tres primeras salen juntas, no en fila.
+  //
+  // 1. El club: de ahí sale el timestamp de reinicio, y el nombre que necesita
+  //    el encabezado del PDF y de la página pública.
+  // 2. Los torneos internos del club que ya terminaron.
+  //
+  //    Los puntos salen del puesto final, y un torneo en curso todavía no
+  //    tiene puestos: el que hoy va en semifinales puede terminar campeón o
+  //    cuarto. Se cuentan cuando se cierran. Los archivados también: archivar
+  //    es guardar un torneo terminado, no anularlo — si no, archivar le movería
+  //    el ranking a todo el mundo.
+  // 3. El ranking que el club traía en papel (migración 188). Se suma a lo que
+  //    se juegue en el sistema.
+  //
+  // El reinicio recorta 2 y 3, así que antes la consulta de torneos esperaba a
+  // la del club solo para conocer ese timestamp y mandarlo como filtro. Ese
+  // `await` de por medio costaba un viaje entero, y desde el navegador cada
+  // viaje a Supabase son ~320 ms medidos. El recorte se hace más abajo sobre lo
+  // que llegó, que es como los saldos ya lo venían haciendo.
+  const [clubRes, torneosRes, saldosRes] = await Promise.all([
+    sb.from('clubes')
+      .select('nombre,ranking_reiniciado_en')
+      .eq('id', clubId)
+      .single(),
+    sb.from('torneos')
+      .select('id,categoria,genero,fecha_fin,creado_en')
+      .eq('club_id', clubId)
+      .eq('tipo', 'interno')
+      .in('estado', ['finalizado', 'archivado']),
+    sb.from('ranking_saldo_inicial')
+      .select('jugador_id,categoria,genero,puntos,creado_en')
+      .eq('club_id', clubId),
+  ])
+
+  const club = clubRes.data
   const reinicioTs: string | null = club?.ranking_reiniciado_en ?? null
   const clubNombre: string = club?.nombre ?? ''
   const vacio = (): RankingDelClub => ({ clubNombre, reiniciadoEn: reinicioTs, categorias: [], jugadores: [] })
 
-  // 2. Torneos internos del club, solo los que ya terminaron.
-  //
-  // Los puntos salen del puesto final, y un torneo en curso todavía no tiene
-  // puestos: el que hoy va en semifinales puede terminar campeón o cuarto.
-  // Se cuentan cuando se cierran. Los archivados también: archivar es
-  // guardar un torneo terminado, no anularlo — si no, archivar le movería el
-  // ranking a todo el mundo.
-  let queryT = sb
-    .from('torneos')
-    .select('id,categoria,genero,fecha_fin,creado_en')
-    .eq('club_id', clubId)
-    .eq('tipo', 'interno')
-    .in('estado', ['finalizado', 'archivado'])
-  if (reinicioTs) queryT = queryT.gt('creado_en', reinicioTs)
-
-  const { data: torneos } = await queryT
-
-  // 2b. El ranking que el club traía en papel (migración 188). Se suma a lo
-  // que se juegue en el sistema. Se descarta si el reinicio es posterior a la
-  // carga: si no, "Reiniciar Ranking" dejaría todo en cero salvo el arrastre.
-  const { data: saldos } = await sb
-    .from('ranking_saldo_inicial')
-    .select('jugador_id,categoria,genero,puntos,creado_en')
-    .eq('club_id', clubId)
+  // El mismo corte que antes hacía el `.gt('creado_en', ...)` en la consulta.
+  // Se descartan los anteriores al reinicio: si no, "Reiniciar Ranking" dejaría
+  // todo en cero salvo el arrastre.
+  type FilaTorneo = { id: string; categoria: string | null; genero: string | null; creado_en: string }
+  const torneos = ((torneosRes.data ?? []) as FilaTorneo[])
+    .filter(t => !reinicioTs || t.creado_en > reinicioTs)
+  const saldos = saldosRes.data
 
   type FilaSaldo = { jugador_id: string; categoria: string; genero: string | null; puntos: number; creado_en: string }
   const saldoPorClave = new Map<string, Map<string, number>>()
