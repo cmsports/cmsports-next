@@ -589,7 +589,7 @@ export async function leerJornada(params: { ligaId: string; numero: number }): P
       divisionId: string
       nombre: string
       mesas: number[]
-      partidos: Array<{ id: string; hora: string; mesa: number; jugadorA: string; jugadorB: string; arbitro: string | null; estado: string; setsA: number | null; setsB: number | null }>
+      partidos: Array<{ id: string; hora: string; mesa: number; jugadorA: string; jugadorB: string; arbitro: string | null; estado: string; setsA: number | null; setsB: number | null; parciales: Array<[number, number]> | null }>
     }>
   }>
 } }> {
@@ -605,7 +605,7 @@ export async function leerJornada(params: { ligaId: string; numero: number }): P
   const [{ data: sesiones }, { data: partidos }, { data: divisiones }, { data: mesas }] = await Promise.all([
     db.from('liga_fecha_sesiones').select('division_id, dia_offset, mesas').eq('fecha_id', fecha.id),
     db.from('liga_partidos')
-      .select('id, division_id, dia_offset, bloque_horario, mesa_id, arbitro_id, estado, sets_a, sets_b, ja:jugador_a_id(nombre), jb:jugador_b_id(nombre), arb:arbitro_id(nombre)')
+      .select('id, division_id, dia_offset, bloque_horario, mesa_id, arbitro_id, estado, sets_a, sets_b, parciales, ja:jugador_a_id(nombre), jb:jugador_b_id(nombre), arb:arbitro_id(nombre)')
       .eq('fecha_id', fecha.id).is('deleted_at', null),
     db.from('liga_divisiones').select('id, nombre, orden').eq('liga_id', params.ligaId).order('orden'),
     db.from('liga_mesas').select('id, numero').eq('liga_id', params.ligaId),
@@ -653,6 +653,7 @@ export async function leerJornada(params: { ligaId: string; numero: number }): P
             estado: p.estado as string,
             setsA: (p.sets_a as number | null) ?? null,
             setsB: (p.sets_b as number | null) ?? null,
+            parciales: Array.isArray(p.parciales) ? (p.parciales as Array<[number, number]>) : null,
           }))
           .sort((a, b) => a.hora.localeCompare(b.hora) || a.mesa - b.mesa),
       })),

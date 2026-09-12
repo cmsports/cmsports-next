@@ -32,6 +32,10 @@ export interface PartidoFinalizado {
   esWalkover: boolean
   setsA: number | null
   setsB: number | null
+  /** Puntos totales (suma de los sets). Opcionales: los partidos cargados
+   *  sin parciales cuentan 0 y 0, y no mueven a nadie. */
+  puntosA?: number | null
+  puntosB?: number | null
 }
 
 export interface FilaRanking {
@@ -43,6 +47,10 @@ export interface FilaRanking {
   sf: number
   sc: number
   ds: number
+  /** Puntos a favor, en contra y diferencia: el último escalón del desempate. */
+  pf: number
+  pc: number
+  dp: number
 }
 
 /** Cuánto suma cada resultado. Los tres defaults son lo que el sistema hizo
@@ -65,7 +73,7 @@ export function calcularRankingDivision(
 ): FilaRanking[] {
   const statsMap = new Map<string, FilaRanking>()
   for (const id of jugadorIds) {
-    statsMap.set(id, { jugadorId: id, pj: 0, pg: 0, pp: 0, pts: 0, sf: 0, sc: 0, ds: 0 })
+    statsMap.set(id, { jugadorId: id, pj: 0, pg: 0, pp: 0, pts: 0, sf: 0, sc: 0, ds: 0, pf: 0, pc: 0, dp: 0 })
   }
 
   for (const p of partidos) {
@@ -89,10 +97,18 @@ export function calcularRankingDivision(
       ganador.sc += setsPerdedor
       perdedor.sf += setsPerdedor
       perdedor.sc += setsGanador
+      if (p.puntosA != null && p.puntosB != null) {
+        const puntosGanador = p.ganadorId === p.jugadorAId ? p.puntosA : p.puntosB
+        const puntosPerdedor = p.ganadorId === p.jugadorAId ? p.puntosB : p.puntosA
+        ganador.pf += puntosGanador
+        ganador.pc += puntosPerdedor
+        perdedor.pf += puntosPerdedor
+        perdedor.pc += puntosGanador
+      }
     }
   }
 
-  for (const fila of statsMap.values()) fila.ds = fila.sf - fila.sc
+  for (const fila of statsMap.values()) { fila.ds = fila.sf - fila.sc; fila.dp = fila.pf - fila.pc }
 
   const filas = Array.from(statsMap.values())
 
@@ -102,7 +118,10 @@ export function calcularRankingDivision(
     if (b.pts !== a.pts) return b.pts - a.pts
     if (b.pg !== a.pg) return b.pg - a.pg
     if (b.ds !== a.ds) return b.ds - a.ds
-    return b.sf - a.sf
+    if (b.sf !== a.sf) return b.sf - a.sf
+    // Después de los sets, los puntos (con parciales cargados; si no, 0 y 0).
+    if (b.dp !== a.dp) return b.dp - a.dp
+    return b.pf - a.pf
   })
 
   // Fase 2: para cada grupo de jugadores con estadísticas idénticas, aplicar
@@ -111,7 +130,7 @@ export function calcularRankingDivision(
   // (A > B > C > A), produciendo orden indefinido en JS. El mini-ranking calcula
   // puntos/DS/SF solo entre los empatados: en un ciclo perfecto quedan iguales
   // y el orden del Fase 1 se preserva (estable y reproducible).
-  const claveOrden = (f: FilaRanking) => `${f.pts}|${f.pg}|${f.ds}|${f.sf}`
+  const claveOrden = (f: FilaRanking) => `${f.pts}|${f.pg}|${f.ds}|${f.sf}|${f.dp}|${f.pf}`
   let i = 0
   while (i < filas.length) {
     let j = i + 1
@@ -125,8 +144,8 @@ export function calcularRankingDivision(
       )
 
       if (partidosGrupo.length > 0) {
-        const mini = new Map<string, { pts: number; ds: number; sf: number }>()
-        for (const id of grupoIds) mini.set(id, { pts: 0, ds: 0, sf: 0 })
+        const mini = new Map<string, { pts: number; ds: number; sf: number; dp: number }>()
+        for (const id of grupoIds) mini.set(id, { pts: 0, ds: 0, sf: 0, dp: 0 })
 
         for (const p of partidosGrupo) {
           const mg = mini.get(p.ganadorId)
@@ -140,6 +159,12 @@ export function calcularRankingDivision(
             const sP = p.ganadorId === p.jugadorAId ? p.setsB : p.setsA
             mg.sf += sG; mg.ds += sG - sP
             mp.sf += sP; mp.ds += sP - sG
+            if (p.puntosA != null && p.puntosB != null) {
+              const pG = p.ganadorId === p.jugadorAId ? p.puntosA : p.puntosB
+              const pP = p.ganadorId === p.jugadorAId ? p.puntosB : p.puntosA
+              mg.dp += pG - pP
+              mp.dp += pP - pG
+            }
           }
         }
 
@@ -148,7 +173,8 @@ export function calcularRankingDivision(
           const mb = mini.get(b.jugadorId)!
           if (mb.pts !== ma.pts) return mb.pts - ma.pts
           if (mb.ds !== ma.ds) return mb.ds - ma.ds
-          return mb.sf - ma.sf
+          if (mb.sf !== ma.sf) return mb.sf - ma.sf
+          return mb.dp - ma.dp
         })
         for (let k = 0; k < grupo.length; k++) filas[i + k] = grupo[k]
       }

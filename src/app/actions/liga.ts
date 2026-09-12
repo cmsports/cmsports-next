@@ -20,7 +20,34 @@ import {
   type RestriccionDisponibilidad,
 } from '@/lib/domain/liga'
 import { esUuid } from '@/lib/domain/uuid'
+import { resumirPartido } from '@/lib/domain/marcador'
 import { requireAdminClub } from '@/lib/auth/require'
+
+/**
+ * Los parciales que manda la pantalla (11-9, 11-7, …) → sets y puntos. Se
+ * valida acá y no solo en el navegador. Si no vienen parciales (el modo de
+ * siempre, que carga 3-1 a secas) se usan los sets tal cual y los puntos
+ * quedan en NULL.
+ */
+function marcadorLiga(setsA: number, setsB: number, parciales: unknown):
+  { setsA: number; setsB: number; puntosA: number | null; puntosB: number | null; parciales: Array<[number, number]> | null } | { error: string } {
+  if (parciales === undefined || parciales === null) {
+    if (!esResultadoBo5Valido(setsA, setsB)) {
+      return { error: 'Marcador inválido. Resultados permitidos en Mejor de 5: 3-0, 3-1, 3-2, 0-3, 1-3, 2-3' }
+    }
+    return { setsA, setsB, puntosA: null, puntosB: null, parciales: null }
+  }
+  const invalido = { error: 'Parciales inválidos. Cada set se gana a 11 con dos de ventaja (o 12-10, 13-11…), y el partido termina al llegar a 3 sets.' }
+  if (!Array.isArray(parciales)) return invalido
+  const pares: Array<[number, number]> = []
+  for (const set of parciales) {
+    if (!Array.isArray(set) || set.length !== 2 || typeof set[0] !== 'number' || typeof set[1] !== 'number') return invalido
+    pares.push([set[0], set[1]])
+  }
+  const resumen = resumirPartido(pares, 'bo5')
+  if (!resumen) return invalido
+  return { setsA: resumen.setsA, setsB: resumen.setsB, puntosA: resumen.puntosA, puntosB: resumen.puntosB, parciales: pares }
+}
 
 // El motor de este archivo (una mesa por división, fechas largas, reajuste)
 // es el modo `mesa_unica`. Una liga por jornadas (migración 272, Spinhouse)
@@ -1251,14 +1278,16 @@ export async function registrarResultadoPartido(params: {
   setsA: number
   setsB: number
   observaciones?: string
+  /** Los sets uno por uno (11-9, 11-7, …). Si vienen, mandan sobre setsA/setsB y dan los puntos. */
+  parciales?: Array<[number, number]>
 }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { partidoId, setsA, setsB, observaciones } = params
-  if (!esResultadoBo5Valido(setsA, setsB)) {
-    return { error: 'Marcador inválido. Resultados permitidos en Mejor de 5: 3-0, 3-1, 3-2, 0-3, 1-3, 2-3' }
-  }
+  const { partidoId, observaciones } = params
+  const marcador = marcadorLiga(params.setsA, params.setsB, params.parciales)
+  if ('error' in marcador) return { error: marcador.error }
+  const { setsA, setsB } = marcador
 
   const { data: partido } = await supabase
     .from('liga_partidos')
@@ -1275,7 +1304,10 @@ export async function registrarResultadoPartido(params: {
   // Guard atómico: solo escribe si el partido sigue abierto (evita doble registro)
   const { data: actualizado, error } = await supabase
     .from('liga_partidos')
-    .update({ sets_a: setsA, sets_b: setsB, ganador_id: ganadorId, estado: 'finalizado', observaciones: observaciones || null })
+    .update({
+      sets_a: setsA, sets_b: setsB, ganador_id: ganadorId, estado: 'finalizado', observaciones: observaciones || null,
+      puntos_a: marcador.puntosA, puntos_b: marcador.puntosB, parciales: marcador.parciales,
+    })
     .eq('id', partidoId)
     .not('estado', 'in', '("finalizado","walkover")')
     .select('id')
@@ -1291,14 +1323,15 @@ export async function editarResultadoPartido(params: {
   partidoId: string
   setsA: number
   setsB: number
+  parciales?: Array<[number, number]>
 }) {
   const { error: authErr, supabase } = await requireAdminClub()
   if (authErr) return { error: authErr }
 
-  const { partidoId, setsA, setsB } = params
-  if (!esResultadoBo5Valido(setsA, setsB)) {
-    return { error: 'Marcador inválido. Resultados permitidos en Mejor de 5: 3-0, 3-1, 3-2, 0-3, 1-3, 2-3' }
-  }
+  const { partidoId } = params
+  const marcador = marcadorLiga(params.setsA, params.setsB, params.parciales)
+  if ('error' in marcador) return { error: marcador.error }
+  const { setsA, setsB } = marcador
 
   const { data: partido } = await supabase
     .from('liga_partidos')
@@ -1314,7 +1347,10 @@ export async function editarResultadoPartido(params: {
 
   const { error } = await (supabase as any)
     .from('liga_partidos')
-    .update({ sets_a: setsA, sets_b: setsB, ganador_id: ganadorId, estado: 'finalizado', es_walkover: false })
+    .update({
+      sets_a: setsA, sets_b: setsB, ganador_id: ganadorId, estado: 'finalizado', es_walkover: false,
+      puntos_a: marcador.puntosA, puntos_b: marcador.puntosB, parciales: marcador.parciales,
+    })
     .eq('id', partidoId)
   if (error) return { error: 'No se pudo actualizar: ' + error.message }
 
@@ -1347,7 +1383,7 @@ export async function registrarWalkover(params: { partidoId: string; ganadorId: 
   // Guard atómico: solo escribe si sigue abierto (evita doble walkover concurrente)
   const { data: actualizado, error } = await supabase
     .from('liga_partidos')
-    .update({ ganador_id: ganadorId, estado: 'walkover', es_walkover: true, sets_a: null, sets_b: null })
+    .update({ ganador_id: ganadorId, estado: 'walkover', es_walkover: true, sets_a: null, sets_b: null, puntos_a: null, puntos_b: null, parciales: null })
     .eq('id', partidoId)
     .not('estado', 'in', '("finalizado","walkover")')
     .select('id')

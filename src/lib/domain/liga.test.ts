@@ -82,6 +82,31 @@ describe('calcularRankingDivision', () => {
     ])
     expect(filas.map(f => f.jugadorId)).toEqual(['B', 'C', 'A'])
   })
+
+  // Migración 276: con parciales cargados, después de los sets desempatan
+  // los puntos. Sin parciales (San Bernardo, resultados viejos) cuentan 0 y
+  // 0, y el orden es el de siempre.
+  it('con los sets iguales, desempata por diferencia de puntos', () => {
+    // Ciclo perfecto: todos 4 pts, 1 PG, DS 0 (3-1 y 1-3 cada uno) y SF 4.
+    const filas = calcularRankingDivision(['A', 'B', 'C'], [
+      { ...p('A', 'B', 'A', 3, 1), puntosA: 44, puntosB: 30 }, // A gana holgado
+      { ...p('B', 'C', 'B', 3, 1), puntosA: 42, puntosB: 40 }, // B gana ajustado
+      { ...p('C', 'A', 'C', 3, 1), puntosA: 42, puntosB: 40 }, // C gana ajustado
+    ])
+    expect(new Set(filas.map(f => f.pts)).size).toBe(1)
+    expect(new Set(filas.map(f => f.ds)).size).toBe(1)
+    // A: +14 −2 = +12 · B: +2 −14 = −12 · C: +2 +2 = 0... a favor: A 84, C 82, B 72.
+    expect(filas.map(f => f.jugadorId)).toEqual(['A', 'C', 'B'])
+    expect(filas[0].dp).toBe(12)
+  })
+
+  it('sin parciales, los puntos no mueven a nadie', () => {
+    const conPuntos = calcularRankingDivision(['A', 'B', 'C'], [
+      p('A', 'B', 'A', 3, 2), p('B', 'C', 'B', 3, 0), p('C', 'A', 'C', 3, 0),
+    ])
+    expect(conPuntos.every(f => f.pf === 0 && f.pc === 0 && f.dp === 0)).toBe(true)
+    expect(conPuntos.map(f => f.jugadorId)).toEqual(['B', 'C', 'A'])
+  })
 })
 
 // El tercer parámetro es lo que agregó el 2026-09-10: hasta entonces el 3/1/0

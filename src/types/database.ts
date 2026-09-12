@@ -1654,6 +1654,10 @@ export interface Database {
           estado: string
           sets_a: number | null
           sets_b: number | null
+          puntos_a: number | null
+          puntos_b: number | null
+          parciales: [number, number][] | null
+          dia_offset: number
           ganador_id: string | null
           es_walkover: boolean
           observaciones: string | null
@@ -1673,6 +1677,10 @@ export interface Database {
           estado?: string
           sets_a?: number | null
           sets_b?: number | null
+          puntos_a?: number | null
+          puntos_b?: number | null
+          parciales?: [number, number][] | null
+          dia_offset?: number
           ganador_id?: string | null
           es_walkover?: boolean
           observaciones?: string | null
@@ -1692,6 +1700,10 @@ export interface Database {
           estado?: string
           sets_a?: number | null
           sets_b?: number | null
+          puntos_a?: number | null
+          puntos_b?: number | null
+          parciales?: [number, number][] | null
+          dia_offset?: number
           ganador_id?: string | null
           es_walkover?: boolean
           observaciones?: string | null

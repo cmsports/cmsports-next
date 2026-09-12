@@ -115,7 +115,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
         supabase.from('liga_division_jugadores').select('jugador_id').eq('division_id', divisionId),
         db
           .from('liga_partidos')
-          .select('jugador_a_id, jugador_b_id, ganador_id, es_walkover, sets_a, sets_b')
+          .select('jugador_a_id, jugador_b_id, ganador_id, es_walkover, sets_a, sets_b, puntos_a, puntos_b')
           .eq('division_id', divisionId)
           .in('estado', ['finalizado', 'walkover'])
           .not('estado', 'eq', 'anulado'),
@@ -136,6 +136,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
       const partidosData = (rawPartidos || []) as Array<{
         jugador_a_id: string; jugador_b_id: string; ganador_id: string | null
         es_walkover: boolean; sets_a: number | null; sets_b: number | null
+        puntos_a?: number | null; puntos_b?: number | null
       }>
 
       const divJugIds = (dj || []).map((j: { jugador_id: string }) => j.jugador_id)
@@ -151,6 +152,8 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
           esWalkover: p.es_walkover ?? false,
           setsA: p.sets_a,
           setsB: p.sets_b,
+          puntosA: p.puntos_a ?? null,
+          puntosB: p.puntos_b ?? null,
         }))
 
       setRanking(calcularRankingDivision(jugadorIds, partidos, puntaje))
@@ -190,20 +193,21 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
 
     autoTable(doc, {
       startY: y,
-      head: [['#', 'Jugador', 'PJ', 'PG', 'PP', 'PTS', 'SF', 'SC', 'DS']],
+      head: [['#', 'Jugador', 'PJ', 'PG', 'PP', 'PTS', 'SF', 'SC', 'DS', 'DP']],
       body: ranking.map((row, i) => [
         i + 1,
         nombres[row.jugadorId] ?? '—',
         row.pj, row.pg, row.pp, row.pts, row.sf, row.sc,
         row.ds > 0 ? `+${row.ds}` : row.ds,
+        row.dp > 0 ? `+${row.dp}` : row.dp,
       ]),
       ...estiloTabla(dc),
-      columnStyles: { 0: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center', fontStyle: 'bold' }, 6: { halign: 'center' }, 7: { halign: 'center' }, 8: { halign: 'center' } },
+      columnStyles: { 0: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center', fontStyle: 'bold' }, 6: { halign: 'center' }, 7: { halign: 'center' }, 8: { halign: 'center' }, 9: { halign: 'center' } },
     })
     y = (doc as any).lastAutoTable.finalY + 6
 
     doc.setFontSize(7.5); doc.setFont('helvetica', 'italic'); doc.setTextColor(...COLOR.tenue)
-    doc.text('PJ Jugados · PG Ganados · PP Perdidos · PTS Puntos · SF Sets a favor · SC Sets en contra · DS Diferencia de sets', 14, y)
+    doc.text('PJ Jugados · PG Ganados · PP Perdidos · PTS Puntos · SF Sets a favor · SC Sets en contra · DS Diferencia de sets · DP Diferencia de puntos', 14, y)
 
     piePagina(doc, `CmSports · Ranking · ${nombreDivision}`)
     doc.save(`ranking_${nombreDivision.replace(/\s+/g, '_')}.pdf`)
@@ -367,6 +371,12 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
               }}>
                 DS {dsStr}
               </div>
+              {/* DP: diferencia de puntos, el último desempate (solo si hay parciales cargados) */}
+              {(row.pf > 0 || row.pc > 0) && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: row.dp > 0 ? '#059669' : row.dp < 0 ? '#dc2626' : '#94a3b8', fontFamily: 'monospace', flexShrink: 0 }} title="Diferencia de puntos">
+                  DP {row.dp > 0 ? `+${row.dp}` : row.dp}
+                </div>
+              )}
 
               {/* Badge de puntos con count-up */}
               <div style={{

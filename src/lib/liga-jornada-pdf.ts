@@ -14,7 +14,7 @@ export interface JornadaParaPdf {
       mesas: number[]
       partidos: Array<{
         hora: string; mesa: number; jugadorA: string; jugadorB: string; arbitro: string | null
-        estado?: string; setsA?: number | null; setsB?: number | null
+        estado?: string; setsA?: number | null; setsB?: number | null; parciales?: Array<[number, number]> | null
       }>
     }>
   }>
@@ -96,9 +96,10 @@ export async function descargarJornadaPdf(jornada: JornadaParaPdf, meta: MetaJor
 }
 
 /**
- * Las planillas de mesa: una hoja por mesa y día, con los partidos de esa
- * mesa en orden y casillas vacías para que el árbitro anote los sets, el
- * resultado y firme. Es el papel que se deja en cada mesa.
+ * Las planillas de mesa: una hoja por día y división, con sus mesas una
+ * debajo de otra —cada mesa, sus partidos en orden— y casillas para que el
+ * árbitro anote los sets, el ganador y firme. Compacta: la Honor entera
+ * (3 mesas, 15 partidos) cabe en una carilla.
  */
 export async function descargarPlanillasJornadaPdf(jornada: JornadaParaPdf, meta: MetaJornadaPdf) {
   const { default: jsPDF } = await import('jspdf')
@@ -106,47 +107,74 @@ export async function descargarPlanillasJornadaPdf(jornada: JornadaParaPdf, meta
 
   const doc = new jsPDF()
   const W = doc.internal.pageSize.getWidth()
+  const H = doc.internal.pageSize.getHeight()
+  const ancho = W - 2 * MARGEN
   let primera = true
 
+  // Geometría: Hora | Partido (A / B en dos renglones) | S1..S5 | Sets | Ganador · firma
+  const C_HORA = 12, C_SET = 9, C_SETS = 12
+  const C_FIRMA = 40
+  const C_PARTIDO = ancho - C_HORA - 5 * C_SET - C_SETS - C_FIRMA
+
   for (const dia of jornada.dias) {
-    // Cada mesa con su división (en una jornada una mesa es de una sola división).
-    const porMesa = new Map<number, { division: string; partidos: JornadaParaPdf['dias'][number]['divisiones'][number]['partidos'] }>()
-    for (const div of dia.divisiones) for (const p of div.partidos) {
-      const m = porMesa.get(p.mesa) ?? { division: div.nombre, partidos: [] }
-      m.partidos.push(p)
-      porMesa.set(p.mesa, m)
-    }
-    for (const [mesa, { division, partidos }] of [...porMesa.entries()].sort((a, b) => a[0] - b[0])) {
+    for (const div of dia.divisiones) {
+      if (!div.partidos.length) continue
       if (!primera) doc.addPage()
       primera = false
       let y = encabezado(doc, {
         club: meta.clubNombre,
-        titulo: `Planilla de mesa ${mesa} — Jornada ${jornada.numero}`,
-        subtitulo: `${etiquetaDia(dia.fecha)} · ${division}`,
+        titulo: `Planilla de resultados — Jornada ${jornada.numero}`,
+        subtitulo: `${etiquetaDia(dia.fecha)} · ${div.nombre}`,
         color: AZUL,
         logo: meta.logo,
       })
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...COLOR.texto)
-      doc.text('El árbitro anota los sets de cada partido, marca el ganador y firma. Espera máxima 15 min → W.O. 3-0.', MARGEN, y)
-      y += 6
-      autoTable(doc, {
-        ...estiloTabla(AZUL),
-        startY: y,
-        head: [['Hora', 'Jugador A', 'Jugador B', 'S1', 'S2', 'S3', 'S4', 'S5', 'Sets', 'Ganador', 'Árbitro / firma']],
-        body: partidos.sort((a, b) => a.hora.localeCompare(b.hora)).map(p => [p.hora, p.jugadorA, p.jugadorB, '', '', '', '', '', '', '', p.arbitro ?? '']),
-        theme: 'grid',
-        styles: { ...estiloTabla(AZUL).styles, lineWidth: 0.3, minCellHeight: 12, valign: 'middle' },
-        columnStyles: {
-          0: { cellWidth: 13, halign: 'center' },
-          1: { cellWidth: 34 },
-          2: { cellWidth: 34 },
-          3: { cellWidth: 9, halign: 'center' }, 4: { cellWidth: 9, halign: 'center' }, 5: { cellWidth: 9, halign: 'center' },
-          6: { cellWidth: 9, halign: 'center' }, 7: { cellWidth: 9, halign: 'center' },
-          8: { cellWidth: 12, halign: 'center' },
-          9: { cellWidth: 22 },
-          10: { cellWidth: (W - 2 * MARGEN) - 13 - 34 - 34 - 45 - 12 - 22 },
-        },
-      })
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...COLOR.tenue)
+      doc.text('El árbitro anota los puntos de cada set, el total de sets y firma junto al ganador. Espera máxima 15 min → W.O. 3-0.', MARGEN, y - 4)
+
+      const porMesa = new Map<number, JornadaParaPdf['dias'][number]['divisiones'][number]['partidos']>()
+      for (const p of div.partidos) porMesa.set(p.mesa, [...(porMesa.get(p.mesa) ?? []), p])
+
+      for (const [mesa, partidos] of [...porMesa.entries()].sort((a, b) => a[0] - b[0])) {
+        const altoBloque = 7 + 6 + partidos.length * 11
+        if (y + altoBloque > H - 20) {
+          doc.addPage()
+          y = encabezado(doc, { club: meta.clubNombre, titulo: `Planilla de resultados — Jornada ${jornada.numero}`, subtitulo: `${etiquetaDia(dia.fecha)} · ${div.nombre}`, color: AZUL, logo: meta.logo })
+        }
+        // Franja de la mesa.
+        doc.setFillColor(...AZUL)
+        doc.rect(MARGEN, y, ancho, 6.5, 'F')
+        doc.setTextColor(...COLOR.blanco); doc.setFont('helvetica', 'bold'); doc.setFontSize(9)
+        doc.text(`MESA ${mesa}`, MARGEN + 3, y + 4.6)
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8)
+        doc.text(`${partidos.length} partidos · ${partidos[0]?.hora ?? ''} a ${partidos[partidos.length - 1]?.hora ?? ''}`, W - MARGEN - 3, y + 4.6, { align: 'right' })
+        y += 6.5
+
+        autoTable(doc, {
+          ...estiloTabla(AZUL),
+          theme: 'grid',
+          startY: y,
+          margin: { left: MARGEN, right: MARGEN, bottom: 18 },
+          head: [['Hora', 'Partido  ·  árbitro', 'S1', 'S2', 'S3', 'S4', 'S5', 'Sets', 'Ganador / firma']],
+          body: [...partidos].sort((a, b) => a.hora.localeCompare(b.hora)).map(p => [
+            p.hora,
+            `${p.jugadorA}\nvs ${p.jugadorB}${p.arbitro ? `   ·   árb. ${p.arbitro}` : ''}`,
+            '', '', '', '', '', '', '',
+          ]),
+          headStyles: { ...estiloTabla(AZUL).headStyles, fillColor: [226, 232, 240] as RGB, textColor: COLOR.texto, fontSize: 7, cellPadding: 1.5 },
+          bodyStyles: { fontSize: 8, textColor: COLOR.texto, cellPadding: { top: 1.5, bottom: 1.5, left: 2, right: 2 }, minCellHeight: 10.5, valign: 'middle' },
+          alternateRowStyles: { fillColor: [255, 255, 255] as RGB },
+          styles: { lineColor: [148, 163, 184] as RGB, lineWidth: 0.25, overflow: 'linebreak' as const },
+          columnStyles: {
+            0: { cellWidth: C_HORA, halign: 'center', fontStyle: 'bold' },
+            1: { cellWidth: C_PARTIDO },
+            2: { cellWidth: C_SET }, 3: { cellWidth: C_SET }, 4: { cellWidth: C_SET }, 5: { cellWidth: C_SET }, 6: { cellWidth: C_SET },
+            7: { cellWidth: C_SETS },
+            8: { cellWidth: C_FIRMA },
+          },
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        y = ((doc as any).lastAutoTable?.finalY ?? y) + 5
+      }
     }
   }
 
@@ -167,6 +195,8 @@ export async function descargarResultadosJornadaPdf(jornada: JornadaParaPdf, met
   const W = doc.internal.pageSize.getWidth()
   const VERDE: RGB = [5, 150, 105]
 
+  const parciales = (p: JornadaParaPdf['dias'][number]['divisiones'][number]['partidos'][number]) =>
+    p.parciales?.length ? p.parciales.map(([a, b]) => `${a}-${b}`).join(', ') : ''
   const marcador = (p: JornadaParaPdf['dias'][number]['divisiones'][number]['partidos'][number]) => {
     if (p.estado === 'walkover') return 'W.O.'
     if (p.estado === 'finalizado' && p.setsA != null && p.setsB != null) return `${p.setsA} - ${p.setsB}`
@@ -197,14 +227,15 @@ export async function descargarResultadosJornadaPdf(jornada: JornadaParaPdf, met
       autoTable(doc, {
         ...estiloTabla(VERDE),
         startY: y,
-        head: [['Hora', 'Mesa', 'Partido', 'Resultado', 'Ganador']],
-        body: div.partidos.map(p => [p.hora, String(p.mesa), `${p.jugadorA}  vs  ${p.jugadorB}`, marcador(p), ganador(p)]),
+        head: [['Hora', 'Mesa', 'Partido', 'Sets', 'Parciales', 'Ganador']],
+        body: div.partidos.map(p => [p.hora, String(p.mesa), `${p.jugadorA}  vs  ${p.jugadorB}`, marcador(p), parciales(p), ganador(p)]),
         columnStyles: {
           0: { cellWidth: 16, halign: 'center' },
           1: { cellWidth: 14, halign: 'center' },
-          2: { cellWidth: (W - 2 * MARGEN) - 16 - 14 - 24 - 48 },
-          3: { cellWidth: 24, halign: 'center' },
-          4: { cellWidth: 48 },
+          2: { cellWidth: (W - 2 * MARGEN) - 16 - 14 - 18 - 40 - 40 },
+          3: { cellWidth: 18, halign: 'center' },
+          4: { cellWidth: 40, fontSize: 7.5 },
+          5: { cellWidth: 40 },
         },
       })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -232,7 +263,7 @@ export function textoResultadosWhatsapp(jornada: JornadaParaPdf, meta: { ligaNom
       lineas.push('', `🏓 *${div.nombre}*`)
       for (const p of filas) {
         if (p.estado === 'walkover') lineas.push(`• ${p.jugadorA} vs ${p.jugadorB} — W.O.`)
-        else lineas.push(`• ${p.jugadorA} *${p.setsA}-${p.setsB}* ${p.jugadorB}`)
+        else lineas.push(`• ${p.jugadorA} *${p.setsA}-${p.setsB}* ${p.jugadorB}${p.parciales?.length ? ` (${p.parciales.map(([a, b]) => `${a}-${b}`).join(', ')})` : ''}`)
       }
     }
   }

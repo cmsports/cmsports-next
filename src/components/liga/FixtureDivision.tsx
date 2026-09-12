@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { registrarResultadoPartido, editarResultadoPartido, asignarPartidoManual, desprogramarPartido, registrarWalkover } from '@/app/actions/liga'
 import { actualizarEstadosJornada } from '@/app/actions/ligaJornadas'
+import MarcadorSets from '@/components/torneos/MarcadorSets'
 import { generarBloquesHorario, normalizarBloque, BLOQUE_INICIO, BLOQUE_FIN } from '@/lib/domain/liga'
 
 const supabase = createClient()
@@ -34,6 +35,7 @@ interface PartidoFila {
   divisionNombre: string
   mesaNumero: number | null
   arbitroId: string | null
+  parciales: Array<[number, number]> | null
 }
 
 interface FechaLiga { id: string; numero: number; esAjuste: boolean }
@@ -71,6 +73,9 @@ export function FixtureDivision({
   const [editando, setEditando] = useState<PartidoFila | null>(null)
   const [editRes, setEditRes] = useState('3-0')
   const [guardandoEdit, setGuardandoEdit] = useState(false)
+  // Modo jornadas: el resultado se carga set a set (los puntos desempatan el
+  // ranking). `marcando` es el partido con la planilla abierta.
+  const [marcando, setMarcando] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
     const db = supabase as any
@@ -78,7 +83,7 @@ export function FixtureDivision({
       (supabase as any).from('ligas').select('bloque_minutos, hora_inicio, hora_fin').eq('id', ligaId).single(),
       supabase.from('liga_fechas').select('id, numero, es_ajuste').eq('liga_id', ligaId).order('numero'),
       db.from('liga_partidos')
-        .select('id, estado, jugador_a_id, jugador_b_id, sets_a, sets_b, ganador_id, orden_fixture, fecha_id, bloque_horario, arbitro_id, liga_fechas(numero), liga_divisiones(nombre), liga_mesas(numero)')
+        .select('id, estado, jugador_a_id, jugador_b_id, sets_a, sets_b, ganador_id, orden_fixture, fecha_id, bloque_horario, arbitro_id, parciales, liga_fechas(numero), liga_divisiones(nombre), liga_mesas(numero)')
         .eq('division_id', divisionId)
         .is('deleted_at', null)
         .order('orden_fixture', { ascending: true }),
@@ -108,6 +113,7 @@ export function FixtureDivision({
         divisionNombre: divNombre,
         mesaNumero: m?.numero ?? null,
         arbitroId: p.arbitro_id ?? null,
+        parciales: Array.isArray(p.parciales) ? p.parciales : null,
       }
     })
     setPartidos(lista)
@@ -147,6 +153,40 @@ export function FixtureDivision({
     setGuardandoId(null)
     if (res.error) { setErrorMsg(res.error); return }
     setResultados(prev => { const n = { ...prev }; delete n[partido.id]; return n })
+    cargar()
+  }
+
+  async function guardarConParciales(partido: PartidoFila, parciales: Array<[number, number]>) {
+    setGuardandoId(partido.id)
+    setErrorMsg('')
+    const setsA = parciales.filter(([a, b]) => a > b).length
+    const setsB = parciales.length - setsA
+    const jugado = partido.estado === 'finalizado' || partido.estado === 'walkover'
+    let res: { error?: string } = jugado
+      ? await editarResultadoPartido({ partidoId: partido.id, setsA, setsB, parciales })
+      : await registrarResultadoPartido({ partidoId: partido.id, setsA, setsB, parciales })
+    if (!res.error) {
+      const est = await actualizarEstadosJornada({ partidoId: partido.id })
+      if (est.error) res = est
+    }
+    setGuardandoId(null)
+    if (res.error) { setErrorMsg(res.error); return }
+    setMarcando(null)
+    cargar()
+  }
+
+  async function guardarWalkover(partido: PartidoFila, ganadorId: string) {
+    if (!confirm(`¿${nombres[ganadorId] ?? 'Este jugador'} gana por W.O. (el rival no se presentó)?`)) return
+    setGuardandoId(partido.id)
+    setErrorMsg('')
+    let res: { error?: string } = await registrarWalkover({ partidoId: partido.id, ganadorId })
+    if (!res.error) {
+      const est = await actualizarEstadosJornada({ partidoId: partido.id })
+      if (est.error) res = est
+    }
+    setGuardandoId(null)
+    if (res.error) { setErrorMsg(res.error); return }
+    setMarcando(null)
     cargar()
   }
 
@@ -272,7 +312,7 @@ export function FixtureDivision({
           const nombreB = nombres[p.jugadorBId] ?? '—'
           const ganadorNombre = p.ganadorId ? (nombres[p.ganadorId] ?? '').split(' ')[0] : null
           const resStr = jugado && p.setsA !== null && p.setsB !== null
-            ? `${p.setsA}–${p.setsB}`
+            ? `${p.setsA}–${p.setsB}${porJornadas && p.parciales ? ` (${p.parciales.map(([a, b]) => `${a}-${b}`).join(', ')})` : ''}`
             : p.estado === 'walkover' ? 'W/O' : null
           const fSelActual = selFecha[p.id] ?? ''
           const bSelActual = selBloque[p.id] ?? ''
@@ -325,7 +365,7 @@ export function FixtureDivision({
                 {/* Resultado o selector */}
                 {jugado ? (
                   <button
-                    onClick={() => abrirEdicion(p)}
+                    onClick={() => porJornadas ? setMarcando(m => (m === p.id ? null : p.id)) : abrirEdicion(p)}
                     title="Clic para ver / editar resultado"
                     style={{
                       flexShrink:0, fontWeight:700,
@@ -339,6 +379,23 @@ export function FixtureDivision({
                     <span>{resStr}{ganadorNombre ? ` (${ganadorNombre})` : ''}</span>
                     <span style={{ fontSize:10, color:'#4ade80' }}>✎</span>
                   </button>
+                ) : porJornadas ? (
+                  <div style={{ display:'flex', gap:5, alignItems:'center', flexShrink:0 }}>
+                    <button
+                      onClick={() => setMarcando(m => (m === p.id ? null : p.id))}
+                      style={{ background: marcando === p.id ? '#e0e7ff' : '#4f46e5', color: marcando === p.id ? '#3730a3' : 'white', border:'none', borderRadius:6, padding:'4px 12px', fontSize:11, fontWeight:700, cursor:'pointer' }}
+                    >
+                      {marcando === p.id ? 'Cerrar' : '📝 Marcar'}
+                    </button>
+                    <button onClick={() => guardarWalkover(p, p.jugadorAId)} disabled={guardandoId === p.id} title={`W.O.: gana ${nombreA}`}
+                      style={{ background:'#fffbeb', color:'#92400e', border:'1px solid #fde68a', borderRadius:6, padding:'4px 8px', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                      W.O. ← {nombreA.split(' ')[0]}
+                    </button>
+                    <button onClick={() => guardarWalkover(p, p.jugadorBId)} disabled={guardandoId === p.id} title={`W.O.: gana ${nombreB}`}
+                      style={{ background:'#fffbeb', color:'#92400e', border:'1px solid #fde68a', borderRadius:6, padding:'4px 8px', fontSize:10, fontWeight:700, cursor:'pointer' }}>
+                      W.O. → {nombreB.split(' ')[0]}
+                    </button>
+                  </div>
                 ) : (
                   <div style={{ display:'flex', gap:5, alignItems:'center', flexShrink:0 }}>
                     <select
@@ -348,8 +405,6 @@ export function FixtureDivision({
                     >
                       <option value="">— resultado —</option>
                       {RESULTADOS_BO5.map(r => <option key={r} value={r}>{r}</option>)}
-                      {porJornadas && <option value="wo:A">W.O. · gana {nombreA.split(' ')[0]}</option>}
-                      {porJornadas && <option value="wo:B">W.O. · gana {nombreB.split(' ')[0]}</option>}
                     </select>
                     <button
                       onClick={() => handleGuardar(p)}
@@ -366,6 +421,20 @@ export function FixtureDivision({
                   </div>
                 )}
               </div>
+
+              {porJornadas && marcando === p.id && (
+                <div style={{ padding:'0 12px 10px' }}>
+                  <MarcadorSets
+                    key={`${p.id}-${p.setsA ?? ''}-${p.setsB ?? ''}`}
+                    nombreA={nombreA}
+                    nombreB={nombreB}
+                    formato="bo5"
+                    guardando={guardandoId === p.id}
+                    onCancelar={() => setMarcando(null)}
+                    onListo={parciales => guardarConParciales(p, parciales)}
+                  />
+                </div>
+              )}
 
               {/* Sub-fila de programación (solo partidos no jugados, modo mesa_unica) */}
               {!jugado && !porJornadas && (
