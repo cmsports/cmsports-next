@@ -33,9 +33,7 @@ import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { CATEGORIAS_EDAD, MANOS, NIVELES, categoriaPorEdad, manoLabel, nivelLabel } from '@/lib/domain/perfilDeportivo'
 import PanelPerfilTecnico from '@/components/PanelPerfilTecnico'
 import PanelConsentimientos from '@/components/PanelConsentimientos'
-import { cargarHistorialJugador } from '@/lib/supabase/historial'
 import { idsInactivos } from '@/lib/supabase/inactivos'
-import { sesionesDelMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
 
 const supabase = createClient()
@@ -659,7 +657,7 @@ export default function JugadorDetallePage() {
       // Asistencia, mensualidades y ranking en paralelo
       const [{ data: asist }, { data: mens3 }, { data: club }] = await Promise.all([
         supabase.from('asistencia').select('fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', desde).order('fecha'),
-        supabase.from('mensualidades').select('mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(3),
+        supabase.from('mensualidades').select('mes,anio,estado,monto,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }).limit(6),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (supabase as any).from('clubes').select('ranking_reiniciado_en').eq('id', jugador.club_id).single(),
       ])
@@ -678,18 +676,6 @@ export default function JugadorDetallePage() {
         .in('estado', ['finalizado', 'archivado'])
       if (reinicioTs) queryTorneos = queryTorneos.gt('creado_en', reinicioTs)
       const { data: torneosClub } = await queryTorneos
-
-      // Las sesiones del mes salen del calendario de sus bloques, no de las
-      // columnas de `jugadores`: esas arrastran el total del mes anterior.
-      const hoyISO = fechaChile()
-      const [anioMes, mesNum] = hoyISO.split('-').map(Number)
-      const historialMes = await cargarHistorialJugador(
-        jugador.club_id,
-        jugadorId,
-        `${hoyISO.slice(0, 7)}-01`,
-        `${hoyISO.slice(0, 7)}-${new Date(anioMes, mesNum, 0).getDate()}`,
-      )
-      const sesiones = sesionesDelMes(jugadorId, { ...historialMes, hoy: hoyISO }, hoyISO)
 
       // El ranking del jugador en CADA categoría donde jugó.
       //
@@ -770,156 +756,31 @@ export default function JugadorDetallePage() {
         rankingsPorCategoria.sort((a, b) => a.rank - b.rank || a.categoria.localeCompare(b.categoria, 'es'))
       }
 
-      // La tarjeta de arriba tiene lugar para un número solo, así que va el
-      // mejor puesto. El detalle por categoría va en su tabla, más abajo.
-      const mejorRanking = rankingsPorCategoria[0] ?? null
 
-      const fechasAsistencia = new Set((asist || []).map((a: any) => a.fecha))
-
-      // Calendario de asistencias (últimos 90 días).
-      //
-      // Cada casilla se etiqueta con la fecha de Chile. Con `toISOString()` el
-      // PDF generado de noche corría el calendario entero un día, y como las
-      // fechas de `asistencia` sí vienen en hora de Chile, los puntitos caían
-      // en el casillero equivocado.
-      const dias: { fecha: string; asistio: boolean }[] = []
-      const hoyCal = fechaChile()
-      for (let i = 89; i >= 0; i--) {
-        const iso = sumarDias(hoyCal, -i)
-        dias.push({ fecha: iso, asistio: fechasAsistencia.has(iso) })
-      }
-      const totalAsist = fechasAsistencia.size
-      const semanas: typeof dias[] = []
-      for (let i = 0; i < dias.length; i += 7) semanas.push(dias.slice(i, i + 7))
-
-      const fmtFecha = (f: string) => new Date(f + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })
-      const mesLabel = (m: number) => ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m - 1]
-      const estadoMens = (e: string) => e === 'pagado' ? '✓ Pagado' : e === 'atrasado' ? '✗ Atrasado' : '⏳ Pendiente'
-      const colorMens = (e: string) => e === 'pagado' ? '#16a34a' : e === 'atrasado' ? '#dc2626' : '#d97706'
-
-      const { default: jsPDF } = await import('jspdf')
-      const { default: autoTable } = await import('jspdf-autotable')
-      const { COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion } = await import('@/lib/pdf/estilo')
-
-      const doc = new jsPDF()
-      const W = doc.internal.pageSize.getWidth()
-      const halfW = (W - 32) / 2
-
-      const badges = [jugador.categoria, jugador.estado === 'activo' ? 'Activo' : 'Inactivo', jugador.es_externo ? 'Externo' : ''].filter(Boolean).join(' · ')
-      let y = encabezado(doc, {
-        club: jugador.nombre,
-        titulo: `${badges}  ·  Período: últimos 3 meses`,
-        subtitulo: `${clubNombre || 'Club'}  ·  ${new Date().toLocaleDateString('es-CL')}`,
-      })
-      y += 4
-
-      y = filaTarjetas(doc, y, [
-        { valor: String(totalAsist), etiqueta: 'Asistencias (90 días)', color: COLOR.primario },
-        { valor: mejorRanking ? `#${mejorRanking.rank} / ${mejorRanking.total}` : '—',
-          etiqueta: mejorRanking ? `Mejor ranking · ${categoriaLabel(mejorRanking.categoria)}` : 'Ranking',
-          color: COLOR.verde },
-        { valor: jugador.mensualidad ? `$${jugador.mensualidad.toLocaleString('es-CL')}` : 'Por asignar', etiqueta: 'Mensualidad', color: COLOR.celeste },
+      // ── El informe, sobre el molde v2 (lib/pdf/papel.ts) ────────────────
+      const fechasAsistencia = new Set<string>((asist || []).map((a: any) => a.fecha as string))
+      const [{ data: clubFila }, { default: descargar }, { marcaDelClub }] = await Promise.all([
+        (supabase as any).from('clubes').select('nombre, logo_url').eq('id', jugador.club_id).single(),
+        import('@/lib/reporte-jugador-pdf').then(m => ({ default: m.descargarReporteJugador })),
+        import('@/lib/pdf/papel'),
       ])
-
-      // Info personal
-      const infoRows: [string, string][] = []
-      if (jugador.rut) infoRows.push(['RUT', jugador.rut])
-      if (jugador.fecha_nacimiento) infoRows.push(['Nacimiento', fmtFecha(jugador.fecha_nacimiento) + (edad ? ` (${edad} años)` : '')])
-      if (jugador.email) infoRows.push(['Email', jugador.email])
-      if (jugador.telefono) infoRows.push(['Telefono', jugador.telefono])
-      if (jugador.contacto_emergencia_nombre) infoRows.push(['Emergencia', jugador.contacto_emergencia_nombre])
-      if (jugador.indicaciones_medicas) infoRows.push(['Ind. medicas', jugador.indicaciones_medicas])
-      if (!infoRows.length) infoRows.push(['—', '—'])
-
-      // Plan
-      const planRows: [string, string][] = []
-      planRows.push(['Plan', jugador.tipo_plan || 'Mensual'])
-      if (jugador.entrenamientos_por_semana) planRows.push(['Ent./semana', String(jugador.entrenamientos_por_semana)])
-      if (jugador.tipo_plan !== 'libre' && sesiones && sesiones.limite > 0) {
-        planRows.push(['Sesiones', `${sesiones.usadas} / ${sesiones.limite}`])
-      }
-      if (jugador.horario) planRows.push(['Horario', jugador.horario])
-      if (jugador.grupo) planRows.push(['Grupo', grupoLabel(jugador.grupo)])
-      if (jugador.sede) planRows.push(['Sede', sedeLabel(jugador.sede)])
-      const diasEntrena = [jugador.entrena_lun ? 'Lu' : '', jugador.entrena_mar ? 'Ma' : '', jugador.entrena_mie ? 'Mi' : '', jugador.entrena_jue ? 'Ju' : '', jugador.entrena_vie ? 'Vi' : ''].filter(Boolean).join(' · ')
-      if (diasEntrena) planRows.push(['Dias', diasEntrena])
-
-      const startY2cols = y
-      autoTable(doc, {
-        startY: startY2cols, head: [['Información personal', '']], body: infoRows,
-        theme: 'striped', headStyles: { fillColor: COLOR.primario, textColor: COLOR.blanco, fontStyle: 'bold' },
-        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: COLOR.mutado as any } },
-        styles: { fontSize: 9, lineColor: COLOR.borde, lineWidth: 0.1 }, alternateRowStyles: { fillColor: COLOR.fondoSuave },
-        tableWidth: halfW, margin: { left: 14 },
+      const marca = await marcaDelClub({ nombre: clubFila?.nombre || clubNombre || 'CmSports', logo_url: clubFila?.logo_url ?? null })
+      const diasDeClase = [jugador.entrena_lun ? 1 : 0, jugador.entrena_mar ? 2 : 0, jugador.entrena_mie ? 3 : 0, jugador.entrena_jue ? 4 : 0, jugador.entrena_vie ? 5 : 0].filter(Boolean)
+      const nombresDias = [jugador.entrena_lun ? 'Lunes' : '', jugador.entrena_mar ? 'Martes' : '', jugador.entrena_mie ? 'Miércoles' : '', jugador.entrena_jue ? 'Jueves' : '', jugador.entrena_vie ? 'Viernes' : ''].filter(Boolean)
+      await descargar({
+        marca,
+        generado: new Date().toLocaleDateString('es-CL'),
+        periodo: 'últimos 90 días',
+        jugador: {
+          nombre: jugador.nombre, categoria: jugador.categoria, estado: jugador.estado, esExterno: !!jugador.es_externo, edad,
+          rut: jugador.rut, telefono: jugador.telefono, email: jugador.email, fechaNacimiento: jugador.fecha_nacimiento, fotoUrl: jugador.foto_url,
+          plan: { tipo: jugador.tipo_plan, mensualidad: jugador.mensualidad, horario: jugador.horario, dias: nombresDias, entrenamientosSemana: jugador.entrenamientos_por_semana },
+          contactoEmergencia: { nombre: jugador.contacto_emergencia_nombre, telefono: jugador.contacto_emergencia_telefono },
+          asistencia: { desde, hasta: fechaChile(), asistio: fechasAsistencia, diasDeClase },
+          mensualidades: (mens3 || []) as any[],
+          rankings: rankingsPorCategoria,
+        },
       })
-      const yAfterInfo = (doc as any).lastAutoTable.finalY
-
-      autoTable(doc, {
-        startY: startY2cols, head: [['Plan & membresía', '']], body: planRows,
-        theme: 'striped', headStyles: { fillColor: COLOR.celeste, textColor: COLOR.blanco, fontStyle: 'bold' },
-        columnStyles: { 0: { cellWidth: 32, fontStyle: 'bold', textColor: COLOR.mutado as any } },
-        styles: { fontSize: 9, lineColor: COLOR.borde, lineWidth: 0.1 }, alternateRowStyles: { fillColor: COLOR.fondoSuave },
-        tableWidth: halfW, margin: { left: 14 + halfW + 4 },
-      })
-      const yAfterPlan = (doc as any).lastAutoTable.finalY
-
-      y = Math.max(yAfterInfo, yAfterPlan) + 10
-
-      // Mensualidades
-      if ((mens3 || []).length > 0) {
-        y = tituloSeccion(doc, y, 'Mensualidades recientes')
-        autoTable(doc, {
-          startY: y, head: [['Período', 'Monto', 'Estado', 'Fecha pago']],
-          body: (mens3 || []).map((m: any) => [`${mesLabel(m.mes)} ${m.anio}`, m.monto ? `$${m.monto.toLocaleString('es-CL')}` : '—', estadoMens(m.estado), m.fecha_pago ? fmtFecha(m.fecha_pago) : '—']),
-          theme: 'striped', headStyles: { fillColor: COLOR.verde, textColor: COLOR.blanco, fontStyle: 'bold' },
-          styles: { fontSize: 9, lineColor: COLOR.borde, lineWidth: 0.1 }, alternateRowStyles: { fillColor: COLOR.fondoSuave }, margin: { left: 14, right: 14 },
-          didParseCell: (data: any) => {
-            if (data.section === 'body' && data.column.index === 2) {
-              const e = (mens3 || [])[data.row.index]?.estado
-              data.cell.styles.textColor = e === 'pagado' ? COLOR.verde : e === 'atrasado' ? COLOR.rojo : COLOR.ambar
-              data.cell.styles.fontStyle = 'bold'
-            }
-          },
-        })
-        y = (doc as any).lastAutoTable.finalY + 10
-      }
-
-      // Ranking: una fila por cada categoría en la que compitió.
-      if (rankingsPorCategoria.length > 0) {
-        y = tituloSeccion(doc, y, 'Ranking interno')
-        autoTable(doc, {
-          startY: y, head: [['Categoría', 'Posición', 'Victorias', 'Derrotas', 'Jugados', 'Puntos']],
-          body: rankingsPorCategoria.map(r => [
-            categoriaLabel(r.categoria), `#${r.rank} de ${r.total}`,
-            `${r.victorias}`, `${r.derrotas}`, `${r.jugados}`, `${r.pts}`,
-          ]),
-          theme: 'striped', headStyles: { fillColor: COLOR.morado, textColor: COLOR.blanco, fontStyle: 'bold' },
-          styles: { fontSize: 9, halign: 'center', lineColor: COLOR.borde, lineWidth: 0.1 }, margin: { left: 14, right: 14 },
-        })
-        y = (doc as any).lastAutoTable.finalY + 10
-      }
-
-      // Asistencia: cuadrícula de puntos (13 semanas × 7 días)
-      y = tituloSeccion(doc, y, `Asistencia — últimos 90 días (${totalAsist} sesiones)`)
-      const dotSize = 3.2, dotGap = 1.2, calX = 14
-      semanas.forEach((semana, si) => {
-        semana.forEach((d, di) => {
-          const px = calX + si * (dotSize + dotGap)
-          const py = y + di * (dotSize + dotGap)
-          if (d.asistio) doc.setFillColor(...COLOR.verde)
-          else doc.setFillColor(...COLOR.borde)
-          doc.rect(px, py, dotSize, dotSize, 'F')
-        })
-      })
-      y += 7 * (dotSize + dotGap) + 4
-      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...COLOR.mutado)
-      doc.setFillColor(...COLOR.verde); doc.rect(calX, y, 3, 3, 'F')
-      doc.text('Asistió', calX + 5, y + 2.5)
-      doc.setFillColor(...COLOR.borde); doc.rect(calX + 24, y, 3, 3, 'F')
-      doc.text('No asistió', calX + 29, y + 2.5)
-
-      piePagina(doc, `${clubNombre || 'Club'} · Ficha de jugador · ${jugador.nombre}`)
-      doc.save(`reporte_${jugador.nombre.replace(/ /g, '_')}_${fechaChile()}.pdf`)
     } finally {
       setGenerandoReporte(false)
     }

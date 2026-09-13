@@ -23,7 +23,7 @@ import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { indexar, calendarioJugador } from '@/lib/domain/historialAsistencia'
 import { armarHistorialDetallado, type BloqueInfo } from '@/lib/domain/historialDetalladoAsistencia'
 import { ETIQUETAS, categoriasGastoDe, categoriasIngresoDe } from '@/lib/domain/categoriasFinanzas'
-import { analizarGeneral, type Dato, type Hallazgo, type Tono } from '@/lib/domain/reporteGeneral'
+import { analizarGeneral } from '@/lib/domain/reporteGeneral'
 
 const supabase = createClient()
 
@@ -1087,10 +1087,35 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       })
       return
     }
+
+    // ── JUGADOR, molde v2 ────────────────────────────────────────────────
+    if (categoriaRep === 'jugador' && preview.jugador) {
+      const { marcaDelClub } = await import('@/lib/pdf/papel')
+      const { descargarReporteJugador } = await import('@/lib/reporte-jugador-pdf')
+      const marca = await marcaDelClub({ nombre: clubNombre || 'CmSports', logo_url: clubLogoUrl })
+      const j = preview.jugador
+      const { inicio, fin } = getRango()
+      const diasDeClase = [j.entrena_lun ? 1 : 0, j.entrena_mar ? 2 : 0, j.entrena_mie ? 3 : 0, j.entrena_jue ? 4 : 0, j.entrena_vie ? 5 : 0].filter(Boolean)
+      const nombresDias = [j.entrena_lun ? 'Lunes' : '', j.entrena_mar ? 'Martes' : '', j.entrena_mie ? 'Miércoles' : '', j.entrena_jue ? 'Jueves' : '', j.entrena_vie ? 'Viernes' : ''].filter(Boolean)
+      await descargarReporteJugador({
+        marca,
+        generado: new Date().toLocaleDateString('es-CL'),
+        periodo: titulo,
+        jugador: {
+          nombre: j.nombre, categoria: j.categoria, estado: j.estado, rut: j.rut, telefono: j.telefono, email: j.email, fotoUrl: j.foto_url,
+          plan: { tipo: j.tipo_plan, mensualidad: j.mensualidad, horario: j.horario, dias: nombresDias },
+          asistencia: { desde: inicio, hasta: fin, asistio: new Set<string>((preview.asistencias || []).map((a: any) => a.fecha as string)), diasDeClase },
+          mensualidades: preview.mensualidades || [],
+          torneos: (preview.torneos || []).map((t: any) => ({ nombre: t.torneos?.nombre ?? '—', fecha: t.torneos?.fecha_inicio ?? null, estado: t.torneos?.estado ?? null })),
+          ligas: (preview.ligas || []).map((l: any) => ({ liga: l.liga_divisiones?.ligas?.nombre ?? '—', division: l.liga_divisiones?.nombre ?? '—' })),
+        },
+      })
+      return
+    }
     const { default: jsPDF } = await import('jspdf')
     const { default: autoTable } = await import('jspdf-autotable')
     const {
-      COLOR, MARGEN, encabezado, piePagina, filaTarjetas, tituloSeccion, sinDatos, estiloTabla,
+      COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion, sinDatos, estiloTabla,
       asegurarEspacio, trasTabla, panelDatos, barrasCategoria, barrasColumnas, franjaTotal,
       colorEstado, variacion, tinte,
     } = await import('@/lib/pdf/estilo')
@@ -1118,105 +1143,8 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
 
     // El General ya salió arriba por el molde v2.
 
-    if (categoriaRep === 'jugador' && preview.jugador) {
-      const j = preview.jugador
-      const saldo = preview.totalPendiente
+    // El informe del jugador ya salió arriba por el molde v2.
 
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(17)
-      doc.setTextColor(...COLOR.texto)
-      doc.text(j.nombre, MARGEN, y + 2)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
-      doc.setTextColor(...COLOR.mutado)
-      doc.text(`${j.categoria || 'Sin categoría'}  ·  ${j.tipo_plan || 'sin plan'}`, MARGEN, y + 8)
-      y += 16
-
-      y = panelDatos(doc, y, [
-        ['RUT', j.rut || '—'],
-        ['Estado', j.estado || '—'],
-        ['Plan', j.tipo_plan || '—'],
-        ['Mensualidad', j.mensualidad ? fmt(j.mensualidad) : '—'],
-        ['Email', j.email || '—'],
-        ['Teléfono', j.telefono || '—'],
-      ], 3)
-
-      y = filaTarjetas(doc, y, [
-        { valor: fmt(preview.totalPagado), etiqueta: 'Pagado en el período', color: COLOR.verde },
-        { valor: fmt(saldo), etiqueta: 'Pendiente', color: saldo > 0 ? COLOR.rojo : COLOR.verde },
-        { valor: String(preview.asistencias.length), etiqueta: 'Clases asistidas', color: COLOR.primario },
-        { valor: `${preview.pagadas.length}/${preview.mensPeriodo.length}`, etiqueta: 'Cuotas al día', color: preview.pendientes.length === 0 ? COLOR.verde : COLOR.ambar },
-      ])
-
-      if (saldo > 0) {
-        y = franjaTotal(doc, y, `Deuda vigente — ${preview.pendientes.length} cuotas`, fmt(saldo), COLOR.rojo)
-      }
-
-      y = asegurarEspacio(doc, y, 55, cab)
-      y = tituloSeccion(doc, y, 'Historial de mensualidades', `${preview.mensualidades.length} registros`)
-      if (preview.mensualidades.length === 0) {
-        y = sinDatos(doc, y, 'Este jugador no tiene mensualidades registradas.')
-      } else {
-        autoTable(doc, {
-          startY: y,
-          head: [['Mes', 'Monto', 'Estado', 'Fecha de pago']],
-          // Esta columna decía "undefined" en cada fila: la consulta trae mes y
-          // año, no una fecha, y el PDF pedía `m.fecha`, que no existe.
-          body: preview.mensualidades.map((m: any) => [mesDe(m), m.monto ? fmt(m.monto) : '—', m.estado, m.fecha_pago || '—']),
-          ...estiloTabla(),
-          ...pintaEstado(2),
-          columnStyles: { 1: { cellWidth: 34, halign: 'right' }, 2: { cellWidth: 30, halign: 'center' }, 3: { cellWidth: 34, halign: 'center' } },
-        })
-        y = trasTabla(doc)
-      }
-
-      if (preview.asistencias.length > 0) {
-        y = asegurarEspacio(doc, y, 60, cab)
-        y = tituloSeccion(doc, y, 'Asistencia del período', `${preview.asistencias.length} clases`, COLOR.verde)
-        const porMesAsist: Record<string, number> = {}
-        for (const a of preview.asistencias) porMesAsist[a.fecha.slice(0, 7)] = (porMesAsist[a.fecha.slice(0, 7)] || 0) + 1
-        y = barrasColumnas(doc, y, Object.entries(porMesAsist).sort().map(([mk, v]) => ({ etiqueta: nombreMes(mk).slice(0, 3), valor: v })), COLOR.verde)
-
-        // Los días exactos: si el apoderado reclama por una clase, la lista es
-        // la respuesta y evita entrar al sistema a buscarla.
-        const lineas = doc.splitTextToSize(preview.asistencias.map((a: any) => a.fecha).join('   '), doc.internal.pageSize.getWidth() - 2 * MARGEN - 10)
-        y = asegurarEspacio(doc, y, lineas.length * 4.2 + 16, cab)
-        doc.setFillColor(...COLOR.fondoSuave)
-        doc.roundedRect(MARGEN, y - 4, doc.internal.pageSize.getWidth() - 2 * MARGEN, lineas.length * 4.2 + 9, 2, 2, 'F')
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5)
-        doc.setTextColor(...COLOR.mutado)
-        doc.text(lineas, MARGEN + 5, y + 1)
-        y += lineas.length * 4.2 + 15
-      }
-
-      if (preview.torneos.length > 0) {
-        y = asegurarEspacio(doc, y, 45, cab)
-        y = tituloSeccion(doc, y, 'Torneos', String(preview.torneos.length), COLOR.naranja)
-        autoTable(doc, {
-          startY: y,
-          head: [['Torneo', 'Fecha', 'Estado']],
-          body: preview.torneos.map((t: any) => [t.torneos?.nombre || '—', t.torneos?.fecha_inicio || '—', t.torneos?.estado || '—']),
-          ...estiloTabla(COLOR.naranja),
-          ...pintaEstado(2),
-          columnStyles: { 1: { cellWidth: 32 }, 2: { cellWidth: 32, halign: 'center' } },
-        })
-        y = trasTabla(doc)
-      }
-
-      if (preview.ligas.length > 0) {
-        y = asegurarEspacio(doc, y, 45, cab)
-        y = tituloSeccion(doc, y, 'Ligas', String(preview.ligas.length), COLOR.morado)
-        autoTable(doc, {
-          startY: y,
-          head: [['Liga', 'División']],
-          body: preview.ligas.map((l: any) => [l.liga_divisiones?.ligas?.nombre || '—', l.liga_divisiones?.nombre || '—']),
-          ...estiloTabla(COLOR.morado),
-          columnStyles: { 1: { cellWidth: 60 } },
-        })
-      }
-    }
-
-    // ── FINANZAS ──────────────────────────────────────────────────────────
-    // Estado de resultados y cuentas por cobrar. No repite el tablero del
-    // reporte General: acá la pregunta es contable, no de dirección.
     if (categoriaRep === 'finanzas') {
       const balance = preview.ingresos - preview.gastos
       const balancePrev = preview.ingresosPrev - preview.gastosPrev

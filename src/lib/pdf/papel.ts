@@ -428,7 +428,7 @@ export function anillo(doc: any, cx: number, cy: number, r: number, pct: number,
   const p = Math.max(0, Math.min(100, pct))
   if (p > 0) {
     doc.setDrawColor(...color)
-    doc.setLineCap('round')
+    doc.setLineCap(1)
     // Arco por segmentos: jsPDF no tiene arcos, se aproxima con líneas.
     const pasos = Math.max(8, Math.round(p * 0.9))
     const ini = -Math.PI / 2
@@ -442,7 +442,7 @@ export function anillo(doc: any, cx: number, cy: number, r: number, pct: number,
       px = nx; py = ny
     }
   }
-  doc.setLineCap('butt')
+  doc.setLineCap(0)
   fuente(doc, 'bold', r * 0.9, TINTA)
   doc.text(`${Math.round(p)}%`, cx, cy + r * 0.32, { align: 'center' })
   if (etiqueta) {

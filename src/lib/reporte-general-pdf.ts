@@ -94,7 +94,7 @@ export async function construirReporteGeneral(args: ArgsGeneral): Promise<any> {
   ])
 
   // ── 2. Qué hay que mirar ─────────────────────────────────────────────────
-  y = seccion(doc, y, marca, 'Lo que hay que mirar', `comparado con ${p.tituloPrev}`)
+  y = seccion(doc, y, marca, 'Hallazgos del período', `comparado con ${p.tituloPrev}`)
   y = hallazgos(doc, y, an.hallazgos)
 
   // ── 3. La plata ──────────────────────────────────────────────────────────
@@ -103,12 +103,12 @@ export async function construirReporteGeneral(args: ArgsGeneral): Promise<any> {
   if (topIng.length || topGas.length) {
     const altoBarras = 6 + Math.max(topIng.length, topGas.length) * 7.2 + 4
     y = asegurar(doc, y, altoBarras + 12, marca, cab)
-    y = seccion(doc, y, marca, 'La plata', an.activos ? `cada alumno deja ${pesos(p.ingresos / an.activos)} y cuesta ${pesos(p.gastos / an.activos)}` : undefined)
+    y = seccion(doc, y, marca, 'Ingresos y gastos', an.activos ? `ingreso por alumno ${pesos(p.ingresos / an.activos)} · costo por alumno ${pesos(p.gastos / an.activos)}` : undefined)
     const mitad = (W - 2 * MARGEN - 8) / 2
     const y0 = y
     let yI = y0, yG = y0
-    if (topIng.length) yI = barras(doc, y0, marca, topIng.map(([c, v]) => ({ etiqueta: nombreCategoria(c), valor: v, texto: pesos(v), color: VERDE })), { x: MARGEN, ancho: mitad, titulo: 'De dónde entra' })
-    if (topGas.length) yG = barras(doc, y0, marca, topGas.map(([c, v]) => ({ etiqueta: nombreCategoria(c), valor: v, texto: pesos(v), color: ROJO })), { x: MARGEN + mitad + 8, ancho: mitad, titulo: 'A qué se va' })
+    if (topIng.length) yI = barras(doc, y0, marca, topIng.map(([c, v]) => ({ etiqueta: nombreCategoria(c), valor: v, texto: pesos(v), color: VERDE })), { x: MARGEN, ancho: mitad, titulo: 'Ingresos por categoría' })
+    if (topGas.length) yG = barras(doc, y0, marca, topGas.map(([c, v]) => ({ etiqueta: nombreCategoria(c), valor: v, texto: pesos(v), color: ROJO })), { x: MARGEN + mitad + 8, ancho: mitad, titulo: 'Gastos por categoría' })
     y = Math.max(yI, yG) + 2
   }
 
@@ -123,18 +123,18 @@ export async function construirReporteGeneral(args: ArgsGeneral): Promise<any> {
     }
     const cols = [...porMes.entries()].sort().map(([k, v]) => ({ etiqueta: `${MESES[Number(k.slice(5, 7)) - 1]} ${k.slice(2, 4)}`, valores: [v.ingresos, v.gastos] }))
     y = asegurar(doc, y, 60, marca, cab)
-    y = seccion(doc, y, marca, 'Mes a mes')
+    y = seccion(doc, y, marca, 'Evolución mensual')
     y = columnas(doc, y + 2, cols, [{ nombre: 'Ingresos', color: VERDE }, { nombre: 'Gastos', color: ROJO }], { alto: 38, formato: n => `$${Math.round(n / 1000)}k` })
   }
 
   // ── 4. La gente ──────────────────────────────────────────────────────────
   y = asegurar(doc, y, 70, marca, cab)
-  y = seccion(doc, y, marca, 'La gente', `${an.activos} activos de ${p.jugadores.length} fichas`)
+  y = seccion(doc, y, marca, 'Asistencia', `${an.activos} jugadores activos de ${p.jugadores.length} fichas`)
   const asistencias = p.asistencias.length
   const cifrasGente = [
     { etiqueta: 'Asistencias', valor: asistencias ? String(asistencias) : '—', variacion: variacion(asistencias, p.asistPrev), detalle: `vs ${abreviar(p.tituloPrev)}`, color: AZUL },
     { etiqueta: 'Días con clase', valor: p.diasConAsist ? String(p.diasConAsist) : '—', detalle: p.promedioAsist ? `${p.promedioAsist} jugadores por clase` : undefined, color: AZUL },
-    { etiqueta: 'No vinieron nunca', valor: an.sinVenir.length ? String(an.sinVenir.length) : '—', detalle: an.activos ? `${Math.round((an.sinVenir.length / an.activos) * 100)}% de los activos` : undefined, color: ROJO },
+    { etiqueta: 'Sin asistencia', valor: an.sinVenir.length ? String(an.sinVenir.length) : '—', detalle: an.activos ? `${Math.round((an.sinVenir.length / an.activos) * 100)}% de los activos` : undefined, color: ROJO },
     { etiqueta: 'Torneos', valor: p.torneos.length ? String(p.torneos.length) : '—', detalle: p.torneos.slice(0, 2).map(t => t.nombre).join(' · '), color: AMBAR },
   ]
   y = cifras(doc, y, marca, cifrasGente)
@@ -187,7 +187,7 @@ export async function construirReporteGeneral(args: ArgsGeneral): Promise<any> {
       porCategoria.set(d.categoria, f)
     }
     y = asegurar(doc, y, 60, marca, cab)
-    y = seccion(doc, y, marca, 'A quién cobrarle', `${pesos(an.deudaPeriodo)} en ${deudores.length} jugador${deudores.length === 1 ? '' : 'es'}`)
+    y = seccion(doc, y, marca, 'Cuotas pendientes de cobro', `${pesos(an.deudaPeriodo)} en ${deudores.length} jugador${deudores.length === 1 ? '' : 'es'}`)
     y = barras(doc, y, marca, [...porCategoria.entries()].sort((a, b) => b[1].monto - a[1].monto).map(([c, f]) => ({
       etiqueta: `${c} · ${f.jugadores}`, valor: f.monto, texto: pesos(f.monto), color: AMBAR,
     })), { titulo: 'Por categoría' })
@@ -204,7 +204,7 @@ export async function construirReporteGeneral(args: ArgsGeneral): Promise<any> {
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     y = ((doc as any).lastAutoTable?.finalY ?? y) + 4
-    if (an.morososQueVienen) y = nota(doc, y, `${an.morososQueVienen} de ellos siguen viniendo a entrenar: se les puede cobrar en la cancha.`)
+    if (an.morososQueVienen) y = nota(doc, y, `${an.morososQueVienen} de ellos asisten regularmente a entrenar.`)
     y += 4
   }
 
@@ -215,7 +215,7 @@ export async function construirReporteGeneral(args: ArgsGeneral): Promise<any> {
       .map(f => ({ ...f, pct: Math.round((f.clases / p.diasConAsist) * 100) }))
       .sort((a, b) => b.clases - a.clases || a.nombre.localeCompare(b.nombre, 'es'))
     y = asegurar(doc, y, 50, marca, cab)
-    y = seccion(doc, y, marca, 'Plantel y asistencia', `${p.diasConAsist} días con clase`)
+    y = seccion(doc, y, marca, 'Asistencia por jugador', `${p.diasConAsist} días con clase`)
     autoTable(doc, {
       ...tabla(marca, { numericas: [3], anchos: { 0: 10, 3: 16, 4: 44 } }),
       startY: y,
@@ -243,7 +243,7 @@ export async function construirReporteGeneral(args: ArgsGeneral): Promise<any> {
     y = ((doc as any).lastAutoTable?.finalY ?? y) + 4
   } else if (an.activos) {
     y = asegurar(doc, y, 20, marca, cab)
-    y = seccion(doc, y, marca, 'Plantel y asistencia')
+    y = seccion(doc, y, marca, 'Asistencia por jugador')
     y = nota(doc, y, 'No hay asistencia registrada en el período.')
   }
 

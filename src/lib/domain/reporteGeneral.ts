@@ -55,24 +55,24 @@ export function analizarGeneral(p: any, fmt: (n: number) => string) {
   // Solo entra el hallazgo que el dato justifica. Si no hay nada que decir, se
   // dice eso mismo: un reporte que no afirma nada es peor que uno corto.
   const hallazgos: Hallazgo[] = []
-  if (balance < 0) hallazgos.push({ texto: `El período cerró en rojo: faltaron ${fmt(Math.abs(balance))} para cubrir los gastos.`, tono: 'mal' })
-  else if ((p.ingresosPrev ?? 0) > 0 && !vBalance.sube) hallazgos.push({ texto: `El resultado bajó ${vBalance.texto}, aunque el período cerró a favor.`, tono: 'ojo' })
+  if (balance < 0) hallazgos.push({ texto: `El período cerró con resultado negativo: los gastos superaron a los ingresos en ${fmt(Math.abs(balance))}.`, tono: 'mal' })
+  else if ((p.ingresosPrev ?? 0) > 0 && !vBalance.sube) hallazgos.push({ texto: `El resultado disminuyó ${vBalance.texto}, aunque el período cerró con saldo positivo.`, tono: 'ojo' })
   if (topIngreso && p.ingresos > 0 && topIngreso[1] / p.ingresos > 0.5)
-    hallazgos.push({ texto: `${nombreCat(topIngreso[0])} aporta el ${pct(topIngreso[1], p.ingresos)} de los ingresos: el club depende casi por completo de una sola entrada.`, tono: 'ojo' })
+    hallazgos.push({ texto: `${nombreCat(topIngreso[0])} representa el ${pct(topIngreso[1], p.ingresos)} de los ingresos: existe una alta dependencia de una sola fuente.`, tono: 'ojo' })
   if (topGasto && p.gastos > 0)
-    hallazgos.push({ texto: `${nombreCat(topGasto[0])} se lleva el ${pct(topGasto[1], p.gastos)} de los gastos (${fmt(topGasto[1])}).`, tono: 'neutro' })
+    hallazgos.push({ texto: `${nombreCat(topGasto[0])} concentra el ${pct(topGasto[1], p.gastos)} de los gastos (${fmt(topGasto[1])}).`, tono: 'neutro' })
   if (deudaPeriodo > 0)
-    hallazgos.push({ texto: `Quedaron ${fmt(deudaPeriodo)} sin cobrar en ${impagas.length} cuotas: se cobró el ${cobranza}% de lo emitido.`, tono: cobranza >= 90 ? 'ojo' : 'mal' })
+    hallazgos.push({ texto: `Quedan ${fmt(deudaPeriodo)} pendientes de cobro en ${impagas.length} cuotas: se recaudó el ${cobranza}% de lo emitido.`, tono: cobranza >= 90 ? 'ojo' : 'mal' })
   if (morososQueVienen > 0)
-    hallazgos.push({ texto: `${morososQueVienen} de los ${p.morosos.length} que deben siguen entrenando: se les puede cobrar en la cancha.`, tono: 'ojo' })
+    hallazgos.push({ texto: `${morososQueVienen} de los ${p.morosos.length} jugadores con cuotas pendientes asisten regularmente a entrenar.`, tono: 'ojo' })
   if (sinVenir.length > 0)
-    hallazgos.push({ texto: `${sinVenir.length} jugadores activos (${pct(sinVenir.length, activos)} del plantel) no aparecieron ni una vez.`, tono: 'mal' })
+    hallazgos.push({ texto: `${sinVenir.length} jugadores activos (${pct(sinVenir.length, activos)} del plantel) no registran asistencia en el período.`, tono: 'mal' })
   if ((p.asistPrev ?? 0) > 0 && !vAsist.sube)
-    hallazgos.push({ texto: `La asistencia bajó ${vAsist.texto}.`, tono: 'mal' })
+    hallazgos.push({ texto: `La asistencia disminuyó ${vAsist.texto}.`, tono: 'mal' })
   if (diaFuerte && diaFlojo && diaFuerte[0] !== diaFlojo[0] && diaFlojo[1] * 2 < diaFuerte[1])
-    hallazgos.push({ texto: `${DIAS_SEMANA[+diaFuerte[0]]} concentra ${diaFuerte[1]} asistencias y ${DIAS_SEMANA[+diaFlojo[0]]} apenas ${diaFlojo[1]}: hay horario desaprovechado.`, tono: 'info' })
+    hallazgos.push({ texto: `${DIAS_SEMANA[+diaFuerte[0]]} concentra ${diaFuerte[1]} asistencias y ${DIAS_SEMANA[+diaFlojo[0]]} solo ${diaFlojo[1]}: hay capacidad disponible en ese horario.`, tono: 'info' })
   if (hallazgos.length === 0)
-    hallazgos.push({ texto: 'Sin deuda pendiente, sin ausentes totales y con el período cerrado a favor.', tono: 'bien' })
+    hallazgos.push({ texto: 'Sin cuotas pendientes, sin jugadores ausentes en todo el período y con resultado positivo.', tono: 'bien' })
 
   const plata: Dato[] = [
     { etiqueta: 'Ingresos', valor: fmt(p.ingresos), detalle: vIngresos.texto, tono: 'bien' },
