@@ -99,15 +99,37 @@ function ordenarMiembros<T extends { orden?: number | null; jugador_id?: string 
 
 /**
  * La modalidad y las ruedas de un torneo, para las acciones que rearman un
- * grupo. Un torneo viejo o sin la columna cae en 'grupos' (ver `modalidadDe`).
+ * grupo. Un torneo viejo con la columna vacía cae en 'grupos' (ver
+ * `modalidadDe`); pero si el torneo NO SE PUDO LEER, se corta con error.
+ *
+ * La diferencia importa: con la lectura fallando y sin este corte, la
+ * modalidad caía en 'grupos' y cada acción seguía por el camino del torneo
+ * tradicional —así se cerró una eliminación directa como 10 grupos de 3 en
+ * Spinhouse (2026-09-13)—. El fallback es para torneos viejos, no para fallas.
  */
 async function modalidadDelTorneo(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   torneoId: string,
-): Promise<{ modalidad: ModalidadTorneo; ruedas: 1 | 2 }> {
-  const { data: t } = await supabase.from('torneos').select('formato, ruedas').eq('id', torneoId).single()
-  return { modalidad: modalidadDe(t?.formato), ruedas: ruedasDe(t?.ruedas) }
+): Promise<{ modalidad: ModalidadTorneo; ruedas: 1 | 2; estado: string | null; fase: string | null; error?: string }> {
+  const { data: t, error } = await supabase.from('torneos').select('formato, ruedas, estado, fase').eq('id', torneoId).maybeSingle()
+  if (error) return { modalidad: 'grupos', ruedas: 1, estado: null, fase: null, error: `No se pudo leer el torneo: ${error.message}` }
+  if (!t) return { modalidad: 'grupos', ruedas: 1, estado: null, fase: null, error: 'Torneo no encontrado' }
+  return { modalidad: modalidadDe(t.formato), ruedas: ruedasDe(t.ruedas), estado: t.estado ?? null, fase: t.fase ?? null }
+}
+
+/**
+ * Un torneo cerrado no cambia: ni resultados, ni inscritos, ni grupos. Lo que
+ * se quiera corregir después de finalizar pasa por `reabrirTorneo`, que deja
+ * rastro. Antes ninguna acción lo miraba y un partido de grupos se podía
+ * reescribir con el torneo ya cerrado, moviendo el ranking sin que nadie lo
+ * pidiera.
+ */
+function rechazarSiEstaCerrado(estado: string | null, queHace: string): string | null {
+  if (estado === 'finalizado') return `El torneo ya está finalizado: ${queHace}. Si hay que corregir algo, reábrelo primero.`
+  if (estado === 'archivado') return `El torneo está archivado: ${queHace}.`
+  if (estado === 'cancelado') return `El torneo está cancelado: ${queHace}.`
+  return null
 }
 
 /**
@@ -149,7 +171,8 @@ async function regenerarGrupo(
   if (deleteErr) return 'No se pudieron regenerar los partidos del grupo.'
   if (enPreparacion) return null
   const ids = ordenados.map(m => m.jugador_id).filter((id): id is string => !!id)
-  const { modalidad, ruedas } = await modalidadDelTorneo(supabase, torneoId)
+  const { modalidad, ruedas, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+  if (errModalidad) return errModalidad
   const parejas: Array<[string, string]> = modalidad === 'liguilla'
     ? generarLiguilla(ids, ruedas).map(p => [p.jugadorA, p.jugadorB])
     : generarRoundRobin(ids)
@@ -703,8 +726,9 @@ async function rechazarSiEsLiguilla(
   torneoId: string,
   queHace: string,
 ): Promise<string | null> {
-  const { data: t } = await supabase.from('torneos').select('formato').eq('id', torneoId).single()
-  if (modalidadDe(t?.formato) !== 'liguilla') return null
+  const { modalidad, error } = await modalidadDelTorneo(supabase, torneoId)
+  if (error) return error
+  if (modalidad !== 'liguilla') return null
   return `Una liguilla se define en la tabla de posiciones: no tiene llave, así que ${queHace}.`
 }
 
@@ -751,6 +775,12 @@ export async function corregirResultadoGrupos(params: {
   if (!partido.ganador) return { error: 'El partido no tiene resultado aún' }
   if (partido.fase !== 'grupos') return { error: 'Solo se pueden corregir partidos de grupos' }
   if (!partido.jugador_a || !partido.jugador_b) return { error: 'El partido no tiene sus dos jugadores' }
+  if (partido.torneo_id) {
+    const { estado, error: errTorneo } = await modalidadDelTorneo(supabase, partido.torneo_id)
+    if (errTorneo) return { error: errTorneo }
+    const cerrado = rechazarSiEstaCerrado(estado, 'sus resultados no se corrigen')
+    if (cerrado) return { error: cerrado }
+  }
 
   const formato = await formatoDeLaFase(supabase, partido.torneo_id, partido.fase)
 
@@ -930,13 +960,17 @@ export async function marcarGanadorPartido(params: {
   // de PostgREST a `torneos` (mismo patrón que ya se usa en jugadores/[id]
   // para traer `torneos(nombre)` desde torneo_partidos).
   const { data: partido } = await supabase.from('torneo_partidos')
-    .select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden,torneos(formato_grupos,formato_llave)')
+    .select('id,ganador,fase,jugador_a,jugador_b,torneo_id,grupo_id,orden,torneos(formato_grupos,formato_llave,estado)')
     .eq('id', partidoId).single()
   if (!partido) return { error: 'Partido no encontrado' }
   if (partido.ganador) return { error: 'El partido ya tiene ganador' }
   if (!partido.jugador_a || !partido.jugador_b) return { error: 'Los BYE avanzan automáticamente y no se marcan manualmente' }
 
   const torneoEmbebido: any = Array.isArray(partido.torneos) ? partido.torneos[0] : partido.torneos
+  {
+    const cerrado = rechazarSiEstaCerrado(torneoEmbebido?.estado ?? null, 'no se registran más resultados')
+    if (cerrado) return { error: cerrado }
+  }
   const formato = formatoDe(partido.fase === 'grupos' ? torneoEmbebido?.formato_grupos : torneoEmbebido?.formato_llave)
 
   let { setsA, setsB } = params
@@ -1144,6 +1178,10 @@ export async function crearGrupoManual(params: { torneoId: string }) {
   {
     const no = await rechazarSiEsLiguilla(supabase, params.torneoId, 'no se pueden crear grupos aparte')
     if (no) return { error: no }
+    const { modalidad } = await modalidadDelTorneo(supabase, params.torneoId)
+    if (modalidad === 'equipos') return { error: 'Un torneo por equipos no tiene grupos: los equipos se arman desde su pantalla.' }
+    const noElim = rechazarSiEsEliminacion(modalidad, 'no se crean grupos')
+    if (noElim) return { error: noElim }
   }
 
   const { data: bracket } = await supabase.from('torneo_partidos')
@@ -1228,14 +1266,21 @@ export async function moverJugadorEntreGrupos(params: {
   if (grupoOrigenId === grupoDestinoId) return { success: true }
 
   {
-    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    const { modalidad, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (errModalidad) return { error: errModalidad }
+    const cerrado = rechazarSiEstaCerrado(estado, 'sus grupos no se tocan')
+    if (cerrado) return { error: cerrado }
     const no = rechazarSiEsEliminacion(modalidad, 'no hay grupos entre los que mover')
     if (no) return { error: no }
   }
 
   const { data: gruposMovimiento } = await supabase.from('torneo_grupos')
-    .select('id,en_preparacion').eq('torneo_id', torneoId).in('id', [grupoOrigenId, grupoDestinoId])
+    .select('id,nombre,en_preparacion').eq('torneo_id', torneoId).in('id', [grupoOrigenId, grupoDestinoId])
   if (!gruposMovimiento || gruposMovimiento.length !== 2) return { error: 'Los grupos no pertenecen a este torneo' }
+  // La MESA es la bolsa de inscripción, no un grupo que juegue: moverse a
+  // ella le armaría un round robin de fase 'grupos' a la mesa, y sacar a
+  // alguien de ella es `quitarJugadorDeMesa` / `generarGruposTardios`.
+  if (gruposMovimiento.some(g => g.nombre === 'MESA')) return { error: 'La mesa de inscripción no es un grupo: usa "inscribir tardíos" o quítalo de la mesa.' }
   const origenGrupo = gruposMovimiento.find(g => g.id === grupoOrigenId)
   const { data: miembroOrigen } = await supabase.from('grupo_jugadores')
     .select('id').eq('grupo_id', grupoOrigenId).eq('jugador_id', jugadorId).maybeSingle()
@@ -1378,7 +1423,10 @@ export async function reordenarJugadorEnGrupo(params: {
   const { torneoId, grupoId, jugadorId, direccion } = params
 
   {
-    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    const { modalidad, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (errModalidad) return { error: errModalidad }
+    const cerrado = rechazarSiEstaCerrado(estado, 'sus grupos no se tocan')
+    if (cerrado) return { error: cerrado }
     const no = rechazarSiEsEliminacion(modalidad, 'el orden de la lista no cambia nada')
     if (no) return { error: no }
   }
@@ -1431,7 +1479,10 @@ export async function quitarJugadorDeGrupo(params: {
   const { torneoId, grupoId, jugadorId } = params
 
   {
-    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    const { modalidad, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (errModalidad) return { error: errModalidad }
+    const cerrado = rechazarSiEstaCerrado(estado, 'sus grupos no se tocan')
+    if (cerrado) return { error: cerrado }
     const no = rechazarSiEsEliminacion(modalidad, 'no se puede sacar a nadie de la lista')
     if (no) return { error: no }
   }
@@ -1494,8 +1545,20 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   // torneo de eliminación directa o una liguilla se armaban como torneo
   // tradicional, sin un solo error (Spinhouse, 2026-09-13).
   const { data: torneoInfo, error: errTorneo } = await (supabase as any).from('torneos')
-    .select('tipo, formato, ruedas').eq('id', torneoId).single()
+    .select('tipo, formato, ruedas, estado').eq('id', torneoId).single()
   if (errTorneo || !torneoInfo) return { error: `No se pudo leer el torneo${errTorneo ? ': ' + errTorneo.message : ''}` }
+  {
+    const cerrado = rechazarSiEstaCerrado(torneoInfo.estado ?? null, 'no se puede volver a armar')
+    if (cerrado) return { error: cerrado }
+  }
+  // Por equipos la inscripción se cierra desde su propia pantalla
+  // (`generarEncuentros`): los inscritos se quedan en la mesa y de ahí salen
+  // los equipos. Pasar por acá los repartiría en grupos de 3 con round robin,
+  // como si fuera un torneo tradicional —y el botón "Regenerar grupos" de la
+  // pantalla llegaba hasta acá—.
+  if (modalidadDe(torneoInfo.formato) === 'equipos') {
+    return { error: 'En un torneo por equipos la inscripción se cierra al generar los encuentros, desde la pantalla de equipos.' }
+  }
   const esExterno = torneoInfo?.tipo === 'externo'
 
   // La modalidad decide cómo se reparten los inscritos y qué partidos se crean.
@@ -1814,9 +1877,9 @@ export async function armarCuadroConsolacion(params: { torneoId: string }) {
 
   const { torneoId } = params
 
-  const { data: torneo } = await (supabase as any).from('torneos')
-    .select('formato').eq('id', torneoId).single()
-  if (modalidadDe(torneo?.formato) !== 'eliminacion_consolacion') {
+  const { modalidad, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+  if (errModalidad) return { error: errModalidad }
+  if (modalidad !== 'eliminacion_consolacion') {
     return { error: 'Este torneo no tiene cuadro de consolación.' }
   }
 
@@ -1916,8 +1979,10 @@ export async function sincronizarLlaves(params: {
   // grupo único y armaría una "final" de dos, que no es el torneo que el club
   // configuró.
   {
-    const { data: t } = await (supabase as any).from('torneos').select('formato').eq('id', torneoId).single()
-    const m = modalidadDe(t?.formato)
+    const { modalidad: m, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (errModalidad) return { error: errModalidad }
+    const cerrado = rechazarSiEstaCerrado(estado, 'su cuadro no se rearma')
+    if (cerrado) return { error: cerrado }
     if (m === 'liguilla') {
       return { error: 'Una liguilla se define en la tabla de posiciones: no tiene llave.' }
     }
@@ -1925,6 +1990,9 @@ export async function sincronizarLlaves(params: {
     // avanza solo, partido a partido. No hay clasificados de grupos que volcar.
     if (m === 'eliminacion_consolacion') {
       return { error: 'En este formato el cuadro ya se armó al cerrar la inscripción.' }
+    }
+    if (m === 'equipos') {
+      return { error: 'Un torneo por equipos no tiene llave: se define en la tabla de encuentros.' }
     }
   }
 
@@ -2229,7 +2297,11 @@ export async function volverAGrupos(params: { torneoId: string }) {
   // el torneo en fase 'grupos' sin ningún grupo que jugar: la pantalla perdía
   // las pestañas y "Armar bracket" respondía error para este formato.
   {
-    const { modalidad } = await modalidadDelTorneo(supabase, torneoId)
+    const { modalidad, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (errModalidad) return { error: errModalidad }
+    const cerrado = rechazarSiEstaCerrado(estado, 'su cuadro no se deshace')
+    if (cerrado) return { error: cerrado }
+    if (modalidad === 'equipos') return { error: 'Un torneo por equipos no tiene llave que deshacer.' }
     if (modalidad === 'eliminacion_consolacion') {
       const res = await cerrarInscripcionYGenerarGrupos({ torneoId })
       if ('error' in res && res.error) return { error: res.error }
@@ -2287,9 +2359,12 @@ async function podioDeLiguilla(
   torneoId: string,
 ): Promise<{ error: string } | { campeonId: string; subcampeonId: string; terceroId: string | null }> {
   const { data: grupos } = await supabase
-    .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
-  const grupoIds = (grupos || []).map((g: { id: string }) => g.id)
+    .from('torneo_grupos').select('id, nombre, desempate_primero_id, desempate_segundo_id').eq('torneo_id', torneoId)
+  type GrupoLiguilla = { id: string; nombre: string | null; desempate_primero_id: string | null; desempate_segundo_id: string | null }
+  const grupoIds = (grupos || []).map((g: GrupoLiguilla) => g.id)
   if (!grupoIds.length) return { error: 'La liguilla todavía no tiene su calendario armado.' }
+  // El grupo que juega (no la MESA): ahí queda el desempate manual del juez.
+  const grupoJuego: GrupoLiguilla | undefined = (grupos || []).find((g: GrupoLiguilla) => g.nombre !== 'MESA') ?? (grupos || [])[0]
 
   const [{ data: miembros }, { data: partidos }] = await Promise.all([
     supabase.from('grupo_jugadores')
@@ -2316,7 +2391,7 @@ async function podioDeLiguilla(
   // lee camelCase. Sin traducir, no veía sets ni puntos y el triple empate lo
   // resolvía por orden de inscripción: la tabla decía un campeón y el
   // torneo guardaba otro (probado el 2026-09-13 en Spinhouse).
-  const { stats } = calcularStatsGrupo(jugadores, (partidos || []).map((p: any) => ({
+  const { stats, hayTripleEmpate } = calcularStatsGrupo(jugadores, (partidos || []).map((p: any) => ({
     jugadorA: p.jugador_a,
     jugadorB: p.jugador_b,
     ganador: p.ganador,
@@ -2326,6 +2401,26 @@ async function podioDeLiguilla(
     puntosB: p.puntos_b,
   })))
   if (stats.length < 2) return { error: 'No se pudo calcular la tabla de posiciones.' }
+
+  // Un empate que ni los sets ni los puntos separan no lo decide el orden de
+  // inscripción a escondidas: lo decide el juez con el desempate manual del
+  // grupo (`guardarDesempateGrupo`, el mismo que usa el torneo tradicional).
+  // Antes se cerraba igual y el campeón salía del orden en que se anotaron.
+  if (hayTripleEmpate) {
+    const primero = grupoJuego?.desempate_primero_id ?? null
+    const segundo = grupoJuego?.desempate_segundo_id ?? null
+    const puntosCorte = stats[1]?.pts
+    const empatados = new Set(stats.filter(s => s.pts === puntosCorte).map(s => s.jugadorId))
+    const encima = stats.filter(s => puntosCorte != null && s.pts > puntosCorte)
+    const valido = !!primero && !!segundo && primero !== segundo && (encima.length === 1
+      ? primero === encima[0].jugadorId && empatados.has(segundo)
+      : empatados.has(primero) && empatados.has(segundo))
+    if (!valido) {
+      return { error: 'Hay un empate en la punta que los sets y los puntos no separan. Define el desempate en la tabla antes de finalizar.' }
+    }
+    const resto = stats.map(s => s.jugadorId).filter(id => id !== primero && id !== segundo)
+    return { campeonId: primero!, subcampeonId: segundo!, terceroId: resto[0] ?? null }
+  }
 
   return {
     campeonId: stats[0].jugadorId,
@@ -2340,9 +2435,14 @@ export async function finalizarTorneo(params: { torneoId: string }) {
 
   // Una liguilla se define en la tabla, no en una final. Se resuelve acá y se
   // sale antes de buscar un partido 'final' que no existe.
+  const lecturaTorneo = await modalidadDelTorneo(supabase, params.torneoId)
+  if (lecturaTorneo.error) return { error: lecturaTorneo.error }
   {
-    const { data: t } = await (supabase as any).from('torneos').select('formato').eq('id', params.torneoId).single()
-    if (modalidadDe(t?.formato) === 'liguilla') {
+    const cerrado = rechazarSiEstaCerrado(lecturaTorneo.estado, 'no se finaliza de nuevo')
+    if (cerrado) return { error: cerrado }
+  }
+  {
+    if (lecturaTorneo.modalidad === 'liguilla') {
       const podio = await podioDeLiguilla(supabase, params.torneoId)
       if ('error' in podio) return { error: podio.error }
 
@@ -2368,7 +2468,7 @@ export async function finalizarTorneo(params: { torneoId: string }) {
     // EQUIPO, y `campeon_id` apunta a un jugador, así que queda vacío: el
     // podio vive en la pantalla de equipos. No se limpian externos: acá
     // ningún jugador es "el campeón".
-    if (modalidadDe(t?.formato) === 'equipos') {
+    if (lecturaTorneo.modalidad === 'equipos') {
       const { data: encuentros, error: errEnc } = await (supabase as any)
         .from('torneo_encuentros').select('id, ganador_equipo_id').eq('torneo_id', params.torneoId)
       if (errEnc) return { error: 'No se pudieron leer los encuentros: ' + errEnc.message }
@@ -2456,6 +2556,57 @@ export async function finalizarTorneo(params: { torneoId: string }) {
     .catch(e => e instanceof Error ? e.message : 'No se pudo limpiar a los jugadores externos')
 
   return avisoLimpieza ? { success: true, aviso: avisoLimpieza } : { success: true }
+}
+
+/**
+ * Reabre un torneo finalizado para corregir un resultado.
+ *
+ * Existía la mitad del camino: el RPC de corrección decía "Reabre el torneo
+ * antes de corregir la final" y no había ninguna forma de reabrirlo, así que
+ * una final marcada al revés quedaba así para siempre (auditoría del
+ * 2026-09-13). Vuelve a 'en_curso', borra el podio guardado y deja la fase en
+ * la última ronda del cuadro (o en 'grupos' para liguilla y equipos).
+ *
+ * No se reabre si los premios ya se pagaron: ese dinero salió por Finanzas a
+ * nombre de un podio, y cambiarlo después es contabilidad, no un torneo.
+ * Los externos que la finalización ya retiró no vuelven: sus fichas se
+ * borraron y sus partidos quedaron sin jugador.
+ */
+export async function reabrirTorneo(params: { torneoId: string }) {
+  const { error: authErr, supabase, perfil } = await requireAdmin()
+  if (authErr) return { error: authErr }
+  if (!esUuid(params.torneoId)) return { error: 'Torneo inválido' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: torneo, error: errTorneo } = await (supabase as any).from('torneos')
+    .select('id, club_id, estado, fase, formato, premio_primero, premio_segundo, premio_tercero, premio_consuelo')
+    .eq('id', params.torneoId).maybeSingle()
+  if (errTorneo) return { error: `No se pudo leer el torneo: ${errTorneo.message}` }
+  if (!torneo || torneo.club_id !== perfil.club_id) return { error: 'Torneo no encontrado' }
+  if (torneo.estado !== 'finalizado') return { error: 'El torneo no está finalizado.' }
+  if (torneo.premio_primero != null || torneo.premio_segundo != null || torneo.premio_tercero != null || torneo.premio_consuelo != null) {
+    return { error: 'Los premios de este torneo ya están registrados en Finanzas: no se puede reabrir. Si el podio estaba mal, corrígelo en Finanzas.' }
+  }
+
+  const modalidad = modalidadDe(torneo.formato)
+  let fase = 'grupos'
+  if (modalidad === 'grupos' || modalidad === 'eliminacion_consolacion') {
+    const { data: fases, error: errFases } = await supabase.from('torneo_partidos')
+      .select('fase').eq('torneo_id', params.torneoId).neq('fase', 'grupos')
+    if (errFases) return { error: `No se pudo leer el cuadro: ${errFases.message}` }
+    const presentes = new Set((fases || []).map(p => p.fase))
+    // La última ronda del camino principal que exista (la final, normalmente).
+    fase = [...CONFIG.FASES_ORDEN].reverse().find(f => presentes.has(f)) ?? 'grupos'
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: reabierto, error } = await (supabase as any).from('torneos').update({
+    estado: 'en_curso', fase, fecha_fin: null,
+    campeon_id: null, subcampeon_id: null, tercer_id: null, campeon_consuelo_id: null,
+  }).eq('id', params.torneoId).eq('estado', 'finalizado').select('id')
+  if (error) return { error: `No se pudo reabrir el torneo: ${error.message}` }
+  if (!reabierto?.length) return { error: 'El torneo ya no estaba finalizado.' }
+  return { success: true, fase }
 }
 
 /** Devuelve null si limpió todo, o un aviso legible si algo quedó sin limpiar. */
@@ -2580,7 +2731,12 @@ export async function generarGruposTardios(params: {
 
   const { torneoId } = params
 
-  const { data: torneoInfo } = await (supabase as any).from('torneos').select('tipo, formato').eq('id', torneoId).single()
+  const { data: torneoInfo, error: errTorneoTardios } = await (supabase as any).from('torneos').select('tipo, formato, estado').eq('id', torneoId).single()
+  if (errTorneoTardios || !torneoInfo) return { error: `No se pudo leer el torneo${errTorneoTardios ? ': ' + errTorneoTardios.message : ''}` }
+  {
+    const cerrado = rechazarSiEstaCerrado(torneoInfo.estado ?? null, 'no entran más jugadores')
+    if (cerrado) return { error: cerrado }
+  }
   const esExterno = torneoInfo?.tipo === 'externo'
 
   // Los tardíos forman grupos independientes de hasta cuatro, que después
@@ -2602,6 +2758,9 @@ export async function generarGruposTardios(params: {
       error: 'El cuadro ya está armado con sus cruces y descansos. Para sumar jugadores hay que ' +
         'volver a cerrar la inscripción con todos adentro.',
     }
+  }
+  if (modalidadTardios === 'equipos') {
+    return { error: 'Por equipos no hay grupos tardíos: inscribe al jugador en la mesa y súmalo a su equipo desde la pantalla de equipos.' }
   }
 
   const { data: grupoMesa } = await supabase
@@ -3036,8 +3195,12 @@ export async function inscribirEnMesa(params: {
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: torneo } = await (supabase as any).from('torneos').select('cuota_inscripcion,club_id,tipo').eq('id', torneoId).single()
+  const { data: torneo } = await (supabase as any).from('torneos').select('cuota_inscripcion,club_id,tipo,estado').eq('id', torneoId).single()
   if (!torneo || torneo.club_id !== perfil.club_id) return { error: 'Torneo no encontrado' }
+  {
+    const cerrado = rechazarSiEstaCerrado(torneo.estado ?? null, 'no se inscribe a nadie')
+    if (cerrado) return { error: cerrado }
+  }
   const { data: bracket } = await supabase.from('torneo_partidos')
     .select('ganador, jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')
   if ((bracket || []).some(llaveFueJugada)) return { error: 'No se pueden inscribir jugadores después de jugar partidos del bracket' }
@@ -3173,6 +3336,18 @@ export async function quitarJugadorDeMesa(params: { torneoId: string; jugadorId:
   if (authErr || !supabase) return { error: authErr }
 
   const { torneoId, jugadorId } = params
+  {
+    const { modalidad, estado, fase, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (errModalidad) return { error: errModalidad }
+    const cerrado = rechazarSiEstaCerrado(estado, 'sus inscritos no se tocan')
+    if (cerrado) return { error: cerrado }
+    // En eliminación directa la mesa es la lista de TODO el torneo: sacar a
+    // alguien de ahí con el cuadro armado lo deja en la llave sin estar
+    // inscrito. El ausente se resuelve en la llave (rival como ganador).
+    if (modalidad === 'eliminacion_consolacion' && fase !== 'inscripcion') {
+      return { error: rechazarSiEsEliminacion(modalidad, 'no se puede sacar a nadie de la lista')! }
+    }
+  }
 
   // SOLO el grupo MESA, que es la bolsa de inscripción. Antes el filtro era
   // "todos los grupos de este torneo": llamada sobre alguien ya repartido a un

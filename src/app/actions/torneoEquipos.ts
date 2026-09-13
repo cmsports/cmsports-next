@@ -42,6 +42,13 @@ async function torneoDeEquipos(db: Db, torneoId: string, clubId: string) {
   return { error: null, torneo: { ...t, sistema: sistemaDe(t.sistema_equipos) as SistemaEquipos } }
 }
 
+/** Un torneo cerrado no cambia. Lo que haya que corregir pasa por reabrirlo. */
+function cerrado(torneo: { estado: string | null }, queHace: string): string | null {
+  if (torneo.estado === 'finalizado') return `El torneo ya está finalizado: ${queHace}. Si hay que corregir algo, reábrelo primero.`
+  if (torneo.estado === 'archivado' || torneo.estado === 'cancelado') return `El torneo está ${torneo.estado}: ${queHace}.`
+  return null
+}
+
 async function hayEncuentros(db: Db, torneoId: string): Promise<boolean> {
   const { count } = await db.from('torneo_encuentros').select('id', { count: 'exact', head: true }).eq('torneo_id', torneoId)
   return (count ?? 0) > 0
@@ -68,6 +75,7 @@ export async function guardarEquipo(params: {
   const db: Db = supabase
   const { error: errT, torneo } = await torneoDeEquipos(db, params.torneoId, clubId)
   if (errT) return { error: errT }
+  { const c = cerrado(torneo, 'los equipos no se tocan'); if (c) return { error: c } }
 
   const nombre = params.nombre.trim().slice(0, 60)
   if (!nombre) return { error: 'El equipo necesita un nombre.' }
@@ -119,6 +127,7 @@ export async function eliminarEquipo(params: { torneoId: string; equipoId: strin
   const db: Db = supabase
   const { error: errT, torneo } = await torneoDeEquipos(db, params.torneoId, clubId)
   if (errT) return { error: errT }
+  { const c = cerrado(torneo, 'los equipos no se tocan'); if (c) return { error: c } }
   if (await hayEncuentros(db, torneo.id)) return { error: 'Los encuentros ya están armados: no se puede borrar un equipo.' }
   const { error } = await db.from('torneo_equipos').delete().eq('id', params.equipoId).eq('torneo_id', torneo.id)
   if (error) return { error: 'No se pudo borrar el equipo: ' + error.message }
@@ -132,6 +141,7 @@ export async function generarEncuentros(params: { torneoId: string }): Promise<{
   const db: Db = supabase
   const { error: errT, torneo } = await torneoDeEquipos(db, params.torneoId, clubId)
   if (errT) return { error: errT }
+  { const c = cerrado(torneo, 'los encuentros no se rearman'); if (c) return { error: c } }
   if (await hayEncuentros(db, torneo.id)) return { error: 'Los encuentros ya están generados.' }
 
   const { data: equipos } = await db.from('torneo_equipos').select('id, nombre, orden').eq('torneo_id', torneo.id).order('orden')
@@ -164,6 +174,7 @@ export async function borrarEncuentros(params: { torneoId: string }): Promise<{ 
   const db: Db = supabase
   const { error: errT, torneo } = await torneoDeEquipos(db, params.torneoId, clubId)
   if (errT) return { error: errT }
+  { const c = cerrado(torneo, 'los encuentros no se borran'); if (c) return { error: c } }
   const { count } = await db.from('torneo_partidos').select('id', { count: 'exact', head: true })
     .eq('torneo_id', torneo.id).not('encuentro_id', 'is', null).not('ganador', 'is', null)
   if ((count ?? 0) > 0) return { error: 'Ya hay resultados cargados: no se pueden borrar los encuentros.' }
@@ -190,6 +201,7 @@ export async function armarEncuentro(params: {
   const db: Db = supabase
   const { error: errT, torneo } = await torneoDeEquipos(db, params.torneoId, clubId)
   if (errT) return { error: errT }
+  { const c = cerrado(torneo, 'las alineaciones no se tocan'); if (c) return { error: c } }
 
   const { data: enc } = await db.from('torneo_encuentros').select('id, orden, equipo_a_id, equipo_b_id, sistema')
     .eq('id', params.encuentroId).eq('torneo_id', torneo.id).maybeSingle()
@@ -251,6 +263,7 @@ export async function marcarPartidoDeEncuentro(params: {
   const db: Db = supabase
   const { error: errT, torneo } = await torneoDeEquipos(db, params.torneoId, clubId)
   if (errT) return { error: errT }
+  { const c = cerrado(torneo, 'no se registran más resultados'); if (c) return { error: c } }
 
   const { data: partido } = await db.from('torneo_partidos')
     .select('id, encuentro_id, numero_en_encuentro, jugador_a, jugador_b')

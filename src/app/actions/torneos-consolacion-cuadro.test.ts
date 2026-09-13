@@ -40,6 +40,7 @@ function fakeSupabase(tablas: Record<string, Fila[]>) {
       eq: (col: string, val: any) => (filtros.push(f => f[col] === val), builder),
       in: (col: string, vals: any[]) => (filtros.push(f => vals.includes(f[col])), builder),
       single: () => Promise.resolve({ data: aplicar()[0] ?? null, error: null }),
+      maybeSingle: () => Promise.resolve({ data: aplicar()[0] ?? null, error: null }),
       then: (resolve: any) => {
         if (op === 'insert') {
           const nuevas = (Array.isArray(payload) ? payload : [payload]).map((v, i) => ({ id: `gen-${i}`, ...v }))

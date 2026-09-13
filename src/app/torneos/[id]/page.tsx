@@ -8,6 +8,7 @@ import AppLayout from '@/app/layout-app'
 import {
   corregirResultadoGrupos,
   cerrarInscripcionYGenerarGrupos,
+  reabrirTorneo as reabrirTorneoAction,
   sincronizarLlaves as sincronizarLlavesAction,
   armarCuadroConsolacion as armarCuadroConsolacionAction,
   finalizarTorneo as finalizarTorneoAction,
@@ -773,6 +774,13 @@ export default function TorneoDetallePage() {
     }
   }
 
+  async function reabrirTorneo() {
+    if (!confirm('¿Reabrir el torneo?\n\nVuelve a estar en curso para corregir un resultado. El podio guardado se borra y hay que finalizarlo de nuevo. Los jugadores externos que ya se retiraron no vuelven.')) return
+    const res = await reabrirTorneoAction({ torneoId })
+    if (res.error) { alert(res.error); return }
+    await cargarTorneo()
+  }
+
   async function finalizarTorneo() {
     if (!confirm('¿Finalizar el torneo?')) return
     const res = await finalizarTorneoAction({ torneoId })
@@ -860,6 +868,12 @@ export default function TorneoDetallePage() {
   const todosJugadosFase = partidosFaseActual.length > 0 && partidosFaseActual.every(p => p.ganador !== null && p.ganador !== undefined)
 
   const numGruposEstimados = calcularNumGrupos(jugadoresInscritos.length)
+  // Una liguilla con la punta empatada y sin desempate del juez no se puede
+  // cerrar: el servidor lo rechaza, y acá se dice antes de que lo intente.
+  const liguillaEmpatadaSinResolver = esLiguilla && gruposReales.some((g: any) => {
+    const s = statsPorGrupo.get(g.id)
+    return !!s?.hayTripleEmpate && !(g.desempate_primero_id && g.desempate_segundo_id && g.desempate_primero_id !== g.desempate_segundo_id)
+  })
 
   // Lo que se le muestra al admin ANTES de cerrar la inscripción, que es el
   // único momento en que el número existe y todavía se puede echar pie atrás:
@@ -1103,7 +1117,7 @@ export default function TorneoDetallePage() {
         )}
         {/* Liguilla y equipos no tienen llave: el servidor lo rechaza, y un
             botón que siempre falla es peor que ninguno. */}
-        {esAdmin && faseActual === 'grupos' && !esLiguilla && !esEquipos && (
+        {esAdmin && faseActual === 'grupos' && !esLiguilla && !esEquipos && !esEliminacion && (
           <button
             onClick={armarBracketAhora}
             title="Fuerza el armado/rellenado del cuadro con los grupos ya cerrados"
@@ -1111,7 +1125,7 @@ export default function TorneoDetallePage() {
             🔄 Armar bracket ahora
           </button>
         )}
-        {esAdmin && faseActual === 'grupos' && !hayBracketJugado && !hayResultadoDeGrupos && (
+        {esAdmin && faseActual === 'grupos' && !hayBracketJugado && !hayResultadoDeGrupos && !esEquipos && (
           <button
             onClick={regenerarGrupos}
             disabled={cerrandoInscripcion}
@@ -1134,8 +1148,15 @@ export default function TorneoDetallePage() {
         )}
         {/* La liguilla se define en la tabla: se finaliza apenas se juega el
             último partido del grupo, sin pasar por ninguna final. */}
-        {esAdmin && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && (
+        {esAdmin && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && !liguillaEmpatadaSinResolver && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar liguilla</button>
+        )}
+        {esAdmin && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && liguillaEmpatadaSinResolver && (
+          <span style={{ background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600 }}>Empate en la punta: define el desempate en la tabla para finalizar</span>
+        )}
+        {/* Reabrir: la única puerta para corregir algo con el torneo cerrado. */}
+        {esAdmin && torneo?.estado === 'finalizado' && (
+          <button onClick={reabrirTorneo} title="Vuelve el torneo a en curso para corregir un resultado. Borra el podio guardado." style={{ background:'#fff7ed', color:'#c2410c', border:'1px solid #fed7aa', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>↩ Reabrir torneo</button>
         )}
         {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && !consueloPendiente && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>

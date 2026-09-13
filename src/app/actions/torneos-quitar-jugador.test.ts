@@ -52,6 +52,8 @@ function fakeSupabase(tablas: Record<string, Fila[]>) {
 
 function escenario(overrides: { partidos?: Fila[]; miembros?: Fila[]; enPreparacion?: boolean } = {}) {
   return {
+    // La acción lee el torneo para saber su modalidad y su estado: sin la fila, corta.
+    torneos: [{ id: 't1', formato: 'grupos', ruedas: 1, estado: 'en_curso', fase: 'grupos' }],
     torneo_grupos: [{ id: 'g1', torneo_id: 't1', nombre: 'A', en_preparacion: overrides.enPreparacion ?? false }],
     torneo_partidos: overrides.partidos ?? [
       { id: 'p1', torneo_id: 't1', grupo_id: 'g1', fase: 'grupos', ganador: null, jugador_a: 'j1', jugador_b: 'j2', orden: 0 },
