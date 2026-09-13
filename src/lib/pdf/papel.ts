@@ -57,7 +57,8 @@ export interface Marca {
 }
 
 /** Pesos y monedas, para que todos los reportes digan la plata igual. */
-export const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-CL')}`
+/** "$55.000"; en negativo "−$55.000", no "$-55.000". */
+export const pesos = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString('es-CL')}`
 export const porcentaje = (n: number) => `${Math.round(n)}%`
 
 // ─── Fuente ─────────────────────────────────────────────────────────────────
