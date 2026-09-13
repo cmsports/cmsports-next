@@ -24,6 +24,7 @@ import {
   type JugadorTorneo,
   type ClasificadoConStats,
   type RankeadoParaBracket,
+  type LlavesLayout,
 } from './torneos'
 
 function jugadores(n: number): JugadorTorneo[] {
@@ -1108,6 +1109,86 @@ describe('siembra tradicional (cabezas ancladas)', () => {
     const a = construirLayoutPorRanking(buin)
     const b = construirLayoutPorRanking(buin)
     expect(a).toEqual(b)
+  })
+})
+
+// ─── Mismo grupo → mitades opuestas, siempre ───────────────────────────────
+// Regla de Spinhouse (2026-09-12), por encima de cualquier otra: dos jugadores
+// que compartieron grupo solo pueden volver a cruzarse en la final. Antes se
+// intentaba con un corrector posterior al sembrado, y con 7 grupos separaba un
+// grupo rompiendo otro y se quedaba a medio camino.
+
+describe('el 1° y el 2° de un grupo van a mitades opuestas', () => {
+  function cl(
+    jugadorId: string, grupoIdx: number, posicion: 1 | 2,
+    victorias: number, setsFavor: number, setsContra: number,
+    puntosFavor: number, puntosContra: number, cabezaNumero: number | null = null,
+  ): ClasificadoConStats {
+    return { jugadorId, grupoIdx, posicion, victorias, setsFavor, setsContra, puntosFavor, puntosContra, cabezaNumero }
+  }
+  const mitadDe = (matches: LlavesLayout['matches'], slot: { grupoIdx: number; pos: number }) => {
+    const i = matches.findIndex(m =>
+      (m.a?.grupoIdx === slot.grupoIdx && m.a?.pos === slot.pos) || (m.b?.grupoIdx === slot.grupoIdx && m.b?.pos === slot.pos))
+    return i < matches.length / 2 ? 'arriba' : 'abajo'
+  }
+
+  // "Torneo tradicional (prueba)" de Spinhouse, 12-09-2026: 7 grupos, stats
+  // reales. Salía julian (1° A, con BYE) en el mismo cuarto que benji (2° A):
+  // si benji ganaba su llave, se cruzaban de nuevo en cuartos.
+  const spinhouse: ClasificadoConStats[] = [
+    cl('julian', 0, 1, 2, 6, 0, 69, 34), cl('benji', 0, 2, 1, 3, 3, 63, 54, 1),
+    cl('charles', 1, 1, 2, 6, 0, 66, 45), cl('ailyn', 1, 2, 1, 3, 3, 60, 45),
+    cl('cristian', 2, 1, 2, 6, 0, 66, 36), cl('vicente', 2, 2, 1, 3, 3, 51, 51, 3),
+    cl('remikio', 3, 1, 2, 6, 0, 66, 33, 4), cl('claudia', 3, 2, 1, 3, 3, 51, 50),
+    cl('sofije', 4, 1, 2, 6, 0, 66, 27, 5), cl('miguel', 4, 2, 1, 3, 3, 42, 48),
+    cl('carne amarga', 5, 1, 2, 6, 0, 66, 33, 6), cl('harry', 5, 2, 1, 3, 3, 51, 51),
+    cl('felipe', 6, 1, 2, 6, 0, 66, 18, 7), cl('esteban', 6, 2, 1, 3, 3, 39, 48),
+  ]
+
+  it('regresión Spinhouse: julian y benji (grupo A) quedan en mitades distintas, y felipe y esteban (G) también', () => {
+    const { matches } = construirLayoutPorRanking(spinhouse)
+    for (const g of [0, 1, 2, 3, 4, 5, 6]) {
+      expect(mitadDe(matches, { grupoIdx: g, pos: 1 }), `grupo ${g}`).not.toBe(mitadDe(matches, { grupoIdx: g, pos: 2 }))
+    }
+    // Y el resto de las reglas sigue en pie: descansan los 1° de A y B, ningún
+    // 1° contra otro 1°, y un solo 2° contra 2° (inevitable con 7 grupos).
+    const byes = matches.filter(m => !m.b).map(m => m.a!)
+    expect(byes.map(b => `${b.grupoIdx}:${b.pos}`).sort()).toEqual(['0:1', '1:1'])
+    const pares = matches.filter(m => m.a && m.b).map(m => [m.a!.pos, m.b!.pos])
+    expect(pares.filter(([x, y]) => x === 1 && y === 1)).toHaveLength(0)
+    expect(pares.filter(([x, y]) => x === 2 && y === 2)).toHaveLength(1)
+  })
+
+  it('con cualquier cantidad de grupos y cualquier rendimiento, nunca comparten mitad', () => {
+    // Generador determinístico, para que una falla se pueda repetir.
+    let semilla = 20260912
+    const azar = () => { semilla = (semilla * 1103515245 + 12345) % 2147483648; return semilla / 2147483648 }
+    for (let vuelta = 0; vuelta < 300; vuelta++) {
+      const numGrupos = 2 + Math.floor(azar() * 15) // 2 a 16 grupos
+      const clasificados: ClasificadoConStats[] = []
+      for (let g = 0; g < numGrupos; g++) {
+        for (const pos of [1, 2] as const) {
+          const cabeza = azar() < 0.3 ? 1 + Math.floor(azar() * numGrupos) : null
+          clasificados.push(cl(`j${g}_${pos}`, g, pos, pos === 1 ? 2 : 1, 3 + Math.floor(azar() * 4), Math.floor(azar() * 4), Math.floor(azar() * 70), Math.floor(azar() * 70), cabeza))
+        }
+      }
+      const { matches } = construirLayoutPorRanking(clasificados)
+      expect(matches.length).toBeGreaterThan(0)
+      for (let g = 0; g < numGrupos; g++) {
+        expect(mitadDe(matches, { grupoIdx: g, pos: 1 }), `vuelta ${vuelta}, ${numGrupos} grupos, grupo ${g}`)
+          .not.toBe(mitadDe(matches, { grupoIdx: g, pos: 2 }))
+      }
+      // Nadie se pierde ni se repite.
+      const ids = matches.flatMap(m => [m.a, m.b]).filter(Boolean).map(s => `${s!.grupoIdx}:${s!.pos}`)
+      expect(new Set(ids).size).toBe(numGrupos * 2)
+      // Los BYE descansan a los mejores del ranking (los 1° de los primeros grupos).
+      const byes = matches.filter(m => !m.b).length
+      const tam = calcularTamanoBracket(numGrupos * 2)
+      expect(byes).toBe(tam - numGrupos * 2)
+      // Ningún 1° contra otro 1° mientras haya 2° para cruzar.
+      const pares = matches.filter(m => m.a && m.b).map(m => [m.a!.pos, m.b!.pos])
+      expect(pares.filter(([x, y]) => x === 1 && y === 1), `vuelta ${vuelta}`).toHaveLength(0)
+    }
   })
 })
 

@@ -565,13 +565,31 @@ export interface RankeadoParaBracket {
 
 /**
  * Arma la ronda inicial del cuadro a partir de los clasificados YA ordenados
- * por mérito (índice 0 = mejor). El BYE lo reciben los mejores seeds porque el
- * sembrado bit-reversal empareja sus posiciones con las que quedan vacías.
+ * por mérito (índice 0 = mejor).
  *
- * Único ajuste sobre el sembrado puro: si un 1° y su propio 2° caen en la
- * misma llave inicial (R4), se corre al 2° a la posición ocupada más cercana
- * que no genere otro choque. Ese corrimiento nunca toca una posición con BYE,
- * así que no le quita el descanso a nadie que lo haya ganado.
+ * **La regla que manda sobre todas las demás (Spinhouse, 2026-09-12): dos
+ * jugadores que compartieron grupo solo pueden volver a cruzarse en la
+ * final.** O sea, el 1° y el 2° de un mismo grupo van a mitades opuestas del
+ * cuadro, siempre. Antes eso se intentaba *después* de sembrar, con un
+ * corrector que cambiaba jugadores de lugar; con 7 grupos el corrector
+ * separaba un grupo rompiendo otro, lo deshacía a la vuelta siguiente y se
+ * quedaba a medio camino (julian y benji, del grupo A, quedaban en el mismo
+ * cuarto). Ahora la separación sale por construcción, en dos pasos:
+ *
+ * 1. **Se decide la mitad de cada grupo.** Se recorren los grupos en orden de
+ *    mérito y al 1° se le da la mitad que le corresponde por su semilla en el
+ *    sembrado estándar (semilla 1 arriba, 2 abajo, 3 abajo, 4 arriba…); el 2°
+ *    va a la otra, sin excepción. Solo se le cambia la mitad a un grupo
+ *    cuando lo obligan dos cuentas: que los BYE se repartan parejo (así
+ *    descansan los mejores del ranking, como en el sembrado estándar) y que
+ *    los ganadores de grupo queden repartidos entre las dos mitades (así
+ *    ningún ganador enfrenta a otro ganador mientras haya segundos).
+ * 2. **Cada mitad se siembra sola**, por ranking, con el mismo sembrado
+ *    estándar de tamaño mitad. Los BYE de cada mitad caen en sus mejores.
+ *
+ * Si nadie comparte grupo (cuadro directo, donde cada jugador trae su propio
+ * `grupoIdx`), el paso 1 no cambia nada y el resultado es el sembrado
+ * bit-reversal puro: `torneoConsolacion.test.ts` lo comprueba.
  */
 export function construirBracketPorRanking(
   rankeados: readonly RankeadoParaBracket[],
@@ -580,28 +598,74 @@ export function construirBracketPorRanking(
   if (n < 2) return []
   const tam = calcularTamanoBracket(n)
   const fase = determinarFaseInicial(tam)
+  const mitadTam = tam / 2
   const seedPos = posicionesSembradas(tam) // seedPos[i] = posición del seed i+1
+  const rangoDe = new Map(rankeados.map((r, i) => [r.jugadorId, i]))
 
+  // ── 1. La mitad de cada grupo ─────────────────────────────────────────────
+  // Los que descansan son los tam − n mejores del ranking, repartidos entre
+  // las mitades (con n impar una mitad tiene un BYE más, y también un jugador
+  // menos: el sembrado estándar ya lo deja así).
+  const byes = tam - n
+  const byesPorMitad = Math.ceil(byes / 2)
+  const descansan = new Set(rankeados.slice(0, byes).map(r => r.jugadorId))
+  const totalPrimeros = rankeados.filter(r => r.posicion === 1).length
+  const topeJugadores = Math.ceil(n / 2)
+  const topePrimeros = Math.ceil(totalPrimeros / 2)
+  const cuenta = [
+    { jugadores: 0, primeros: 0, descansan: 0 },
+    { jugadores: 0, primeros: 0, descansan: 0 },
+  ]
+  const mitadDeJugador = new Map<string, 0 | 1>()
+
+  // Grupos en orden de mérito de su mejor clasificado.
+  const grupos: RankeadoParaBracket[][] = []
+  const porGrupo = new Map<number, RankeadoParaBracket[]>()
+  for (const r of rankeados) {
+    let g = porGrupo.get(r.grupoIdx)
+    if (!g) { g = []; porGrupo.set(r.grupoIdx, g); grupos.push(g) }
+    g.push(r)
+  }
+
+  const cabe = (r: RankeadoParaBracket, mitad: 0 | 1) =>
+    cuenta[mitad].jugadores < topeJugadores &&
+    (r.posicion !== 1 || cuenta[mitad].primeros < topePrimeros) &&
+    (!descansan.has(r.jugadorId) || cuenta[mitad].descansan < byesPorMitad)
+  const poner = (r: RankeadoParaBracket, mitad: 0 | 1) => {
+    mitadDeJugador.set(r.jugadorId, mitad)
+    cuenta[mitad].jugadores++
+    if (r.posicion === 1) cuenta[mitad].primeros++
+    if (descansan.has(r.jugadorId)) cuenta[mitad].descansan++
+  }
+
+  for (const g of grupos) {
+    const [mejor, otro] = g
+    const canonica: 0 | 1 = seedPos[rangoDe.get(mejor.jugadorId)!] < mitadTam ? 0 : 1
+    const opuesta: 0 | 1 = canonica === 0 ? 1 : 0
+    // Primero como dice la semilla; si alguna cuenta no da, al revés. Si
+    // ninguna da (no debería pasar: las cuentas se eligieron para que siempre
+    // haya una), se respeta la semilla y la separación del grupo igual.
+    const sirve = (m: 0 | 1) => cabe(mejor, m) && (!otro || cabe(otro, m === 0 ? 1 : 0))
+    const mitadMejor = sirve(canonica) ? canonica : sirve(opuesta) ? opuesta : canonica
+    poner(mejor, mitadMejor)
+    if (otro) poner(otro, mitadMejor === 0 ? 1 : 0)
+    // Un grupo con más de dos clasificados no existe hoy; si llegara, los de
+    // más se reparten a la mitad menos cargada para no perderlos.
+    for (const extra of g.slice(2)) poner(extra, cuenta[0].jugadores <= cuenta[1].jugadores ? 0 : 1)
+  }
+
+  // ── 2. Cada mitad se siembra sola ─────────────────────────────────────────
   const arr: Array<RankeadoParaBracket | null> = Array(tam).fill(null)
-  rankeados.forEach((r, i) => { arr[seedPos[i]] = r })
-
-  // Regla de Luis: el 2° de un grupo va a la mitad OPUESTA de su propio 1°.
-  // Esto también evita que se crucen en la primera ronda.
-  separarMitades(arr, tam)
+  const seedPosMitad = posicionesSembradas(mitadTam)
+  for (const mitad of [0, 1] as const) {
+    const propios = rankeados.filter(r => mitadDeJugador.get(r.jugadorId) === mitad)
+    propios.forEach((r, i) => { arr[mitad * mitadTam + seedPosMitad[i]] = r })
+  }
 
   // Un ganador de grupo debe enfrentar a un 2°, no a otro ganador, mientras
-  // aritméticamente se pueda.
+  // aritméticamente se pueda. Solo intercambia dentro de la misma mitad, así
+  // que la separación por grupo no se toca.
   emparejarPrimeroContraSegundo(arr, tam)
-
-  // Backstop: si la separación por mitades no pudo (sin swap válido), al menos
-  // que dos del mismo grupo no queden en la misma llave inicial.
-  for (let k = 0; k < tam / 2; k++) {
-    const posA = 2 * k
-    const posB = 2 * k + 1
-    const a = arr[posA]
-    const b = arr[posB]
-    if (a && b && a.grupoIdx === b.grupoIdx) resolverChoqueDeGrupo(arr, posA, posB)
-  }
 
   return construirBracketDesdePosiciones(
     arr.map(r => (r ? { id: r.jugadorId, nombre: r.nombre } : null)),
@@ -621,7 +685,7 @@ export function construirBracketPorRanking(
  * sin cabeza caen justo ahí.
  *
  * Solo intercambia DENTRO de la misma mitad: así ningún jugador cambia de lado
- * y la separación de `separarMitades` queda intacta. Nunca mueve una cabeza de
+ * y la separación por grupo (1° y 2° en mitades opuestas) queda intacta. Nunca mueve una cabeza de
  * su ancla ni toca una posición con BYE. Si no hay swap válido deja la llave
  * como está, igual criterio que el resto del armado.
  */
@@ -660,123 +724,6 @@ function emparejarPrimeroContraSegundo(arr: Array<RankeadoParaBracket | null>, t
         }
       }
     }
-  }
-}
-
-/**
- * Separa a los dos del mismo grupo que cayeron en la llave `posA`/`posB`.
- * Mueve al 2° del grupo (nunca al 1°, para no alterar la orientación de seeds
- * altos) hacia la posición OCUPADA más cercana que no arme otro choque. Como
- * dos del mismo grupo solo pueden ser 1° y 2° (un grupo tiene un único 1°),
- * siempre hay exactamente un jugador de posición 2 en el par.
- *
- * Solo intercambia entre posiciones ocupadas: nunca mueve a nadie a una
- * posición con BYE ni saca a nadie de una, así el conjunto de BYE es idéntico
- * antes y después (preserva R1). Si no hay swap válido —caso extremo con pocos
- * grupos— deja el choque, igual que `seedingSerpenteoConClubes` cuando el
- * choque de club es inevitable.
- */
-function resolverChoqueDeGrupo(
-  arr: Array<RankeadoParaBracket | null>,
-  posA: number,
-  posB: number,
-): void {
-  const a = arr[posA]!
-  // Mover al 2° del grupo: el 1° tiene mejor semilla y moverlo alteraría más
-  // el orden. Como un grupo tiene un solo 1°, siempre hay exactamente un 2°.
-  const moverPos = a.posicion === 2 ? posA : posB
-  const quedaPos = moverPos === posA ? posB : posA
-  const mover = arr[moverPos]!
-  const seFija = arr[quedaPos]!
-
-  let mejor: number | null = null
-  let mejorDist = Infinity
-  for (let p = 0; p < arr.length; p++) {
-    if (p === posA || p === posB) continue
-    const cand = arr[p]
-    if (!cand) continue                          // posición con BYE: no se toca
-    if (cand.posicion !== mover.posicion) continue // conservar el nivel (1°/2°)
-    const par = p % 2 === 0 ? p + 1 : p - 1
-    const vecino = arr[par]
-    if (!vecino) continue                        // p da BYE: moverse ahí lo robaría
-    if (cand.grupoIdx === seFija.grupoIdx) continue // cand chocaría al llegar a moverPos
-    if (vecino.grupoIdx === mover.grupoIdx) continue // mover chocaría al llegar a p
-    const dist = Math.abs(p - moverPos)
-    if (dist < mejorDist) { mejorDist = dist; mejor = p }
-  }
-
-  if (mejor != null) {
-    arr[moverPos] = arr[mejor]
-    arr[mejor] = mover
-  }
-}
-
-/**
- * Lleva a un grupo (1° y 2°) a mitades opuestas del cuadro. Nunca mueve una
- * cabeza de serie (está anclada en su esquina): mueve al otro miembro, o al 2°
- * si ninguno es cabeza. Busca un swap con alguien del MISMO nivel (1°/2°) en la
- * mitad de destino que no arme otro choque de grupo, ni de mitad ni de primera
- * ronda. Solo intercambia posiciones ocupadas, así el conjunto de BYE no cambia.
- *
- * Ceiling: es un pase greedy, un intento por grupo. Con muchos grupos y clubes
- * apretados puede quedar algún grupo sin separar del todo; en ese caso el
- * backstop de primera ronda evita al menos que se crucen de entrada. Si hiciera
- * falta separación garantizada, upgrade a un emparejamiento por mitades.
- */
-function separarMitades(arr: Array<RankeadoParaBracket | null>, tam: number): void {
-  const mitad = tam / 2
-  const lado = (p: number) => (p < mitad ? 0 : 1)
-  const grupos = [...new Set(arr.flatMap(r => (r ? [r.grupoIdx] : [])))]
-
-  // Intenta llevar el grupo `g` a mitades opuestas con un swap. Devuelve si movió.
-  // Se llama en un bucle hasta punto fijo porque separar un grupo puede liberar
-  // el slot que otro necesitaba: una sola pasada deja casos resolubles sin tocar.
-  const separarUno = (g: number): boolean => {
-    const p1 = arr.findIndex(r => r?.grupoIdx === g && r.posicion === 1)
-    const p2 = arr.findIndex(r => r?.grupoIdx === g && r.posicion === 2)
-    if (p1 < 0 || p2 < 0) return false
-    if (lado(p1) !== lado(p2)) return false // ya están en mitades opuestas
-
-    // Nunca mover a quien ya tiene BYE: perdería el descanso que le tocó por
-    // siembra y se lo llevaría alguien peor ubicado. Se prefiere mover al 2°.
-    const tieneBye = (p: number) => arr[p % 2 === 0 ? p + 1 : p - 1] == null
-    let moverPos: number
-    if (!tieneBye(p2)) moverPos = p2
-    else if (!tieneBye(p1)) moverPos = p1
-    else return false // los dos descansan: separarlos costaría un BYE
-    const mover = arr[moverPos]!
-    const seFija = arr[moverPos === p1 ? p2 : p1]!
-    const ladoDestino = 1 - lado(moverPos)
-
-    let mejor: number | null = null
-    let mejorDist = Infinity
-    for (let p = 0; p < tam; p++) {
-      if (lado(p) !== ladoDestino) continue
-      const cand = arr[p]
-      if (!cand) continue                            // BYE: no se toca
-      if (cand.posicion !== mover.posicion) continue // conservar nivel
-      if (cand.grupoIdx === mover.grupoIdx) continue // mismo grupo que mover
-      if (cand.grupoIdx === seFija.grupoIdx) continue // cand chocaría en destino con el fijo
-      const vecP = p % 2 === 0 ? p + 1 : p - 1
-      const vP = arr[vecP]
-      if (vP && vP.grupoIdx === mover.grupoIdx) continue // mover chocaría en 1ª ronda al llegar a p
-      const vecM = moverPos % 2 === 0 ? moverPos + 1 : moverPos - 1
-      const vM = arr[vecM]
-      if (vM && vM.grupoIdx === cand.grupoIdx) continue // cand chocaría en 1ª ronda al llegar a moverPos
-      const dist = Math.abs(p - moverPos)
-      if (dist < mejorDist) { mejorDist = dist; mejor = p }
-    }
-    if (mejor == null) return false
-    const tmp = arr[moverPos]; arr[moverPos] = arr[mejor]; arr[mejor] = tmp
-    return true
-  }
-
-  // Punto fijo: repetir mientras alguna pasada logre separar un grupo. Cota dura
-  // de vueltas (cada vuelta arregla ≥1 grupo o corta) para no colgarse nunca.
-  for (let vuelta = 0; vuelta < grupos.length + 1; vuelta++) {
-    let cambio = false
-    for (const g of grupos) if (separarUno(g)) cambio = true
-    if (!cambio) break
   }
 }
 
