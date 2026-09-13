@@ -300,7 +300,7 @@ export default function TorneoEquiposPage() {
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
             {equipos.map(e => (
-              <div key={e.id} style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, background: '#fafbff' }}>
+              <div key={e.id} style={{ border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, background: '#f8fafc' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
                   <div style={{ fontWeight: 800, color: ink, fontSize: 14 }}>{e.nombre}</div>
                   {esAdmin && !hayEncuentros && (

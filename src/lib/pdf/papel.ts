@@ -343,7 +343,7 @@ export interface FilaBarra { etiqueta: string; valor: number; texto?: string; co
  * proporcionales al mayor. Para "ingresos por categoría" y parecidos.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function barras(doc: any, y: number, marca: Marca, filas: FilaBarra[], opts: { x?: number; ancho?: number; titulo?: string } = {}): number {
+export function barras(doc: any, y: number, marca: Marca, filas: FilaBarra[], opts: { x?: number; ancho?: number; titulo?: string; anchoEtiqueta?: number } = {}): number {
   const W = doc.internal.pageSize.getWidth()
   const x = opts.x ?? MARGEN
   const ancho = opts.ancho ?? W - 2 * MARGEN
@@ -353,7 +353,7 @@ export function barras(doc: any, y: number, marca: Marca, filas: FilaBarra[], op
     y += 5
   }
   const max = Math.max(1, ...filas.map(f => f.valor))
-  const anchoEtiqueta = Math.min(52, ancho * 0.38)
+  const anchoEtiqueta = opts.anchoEtiqueta ?? Math.min(52, ancho * 0.38)
   const anchoValor = 26
   const anchoBarra = ancho - anchoEtiqueta - anchoValor - 4
   for (const f of filas) {
@@ -459,6 +459,10 @@ export function tabla(marca: Marca, opts: { numericas?: number[]; anchos?: Recor
   for (const [i, w] of Object.entries(opts.anchos ?? {})) columnStyles[Number(i)] = { ...(columnStyles[Number(i)] ?? {}), cellWidth: w }
   return {
     theme: 'plain' as const,
+    // El total va una sola vez, al final: repetido en cada página parece que
+    // la tabla terminó cuando todavía sigue.
+    showFoot: 'lastPage' as const,
+    showHead: 'everyPage' as const,
     margin: { left: MARGEN, right: MARGEN, bottom: ALTO_PIE + 4 },
     styles: { font: interDisponible ? 'Inter' : 'helvetica', fontSize: 8.5, textColor: TEXTO, cellPadding: { top: 2.6, bottom: 2.6, left: 2.5, right: 2.5 }, lineWidth: 0, lineColor: BLANCO, overflow: 'linebreak' as const },
     tableLineWidth: 0,

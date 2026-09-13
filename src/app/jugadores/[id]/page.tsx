@@ -773,7 +773,9 @@ export default function JugadorDetallePage() {
         periodo: 'últimos 90 días',
         jugador: {
           nombre: jugador.nombre, categoria: jugador.categoria, estado: jugador.estado, esExterno: !!jugador.es_externo, edad,
-          rut: jugador.rut, telefono: jugador.telefono, email: jugador.email, fechaNacimiento: jugador.fecha_nacimiento, fotoUrl: jugador.foto_url,
+          rut: jugador.rut, telefono: jugador.telefono, email: jugador.email, fechaNacimiento: jugador.fecha_nacimiento,
+          // La foto va en el bucket privado: sirve el enlace firmado, no foto_url.
+          fotoUrl: fotoUrl ?? jugador.foto_url,
           plan: { tipo: jugador.tipo_plan, mensualidad: jugador.mensualidad, horario: jugador.horario, dias: nombresDias, entrenamientosSemana: jugador.entrenamientos_por_semana },
           contactoEmergencia: { nombre: jugador.contacto_emergencia_nombre, telefono: jugador.contacto_emergencia_telefono },
           asistencia: { desde, hasta: fechaChile(), asistio: fechasAsistencia, diasDeClase },

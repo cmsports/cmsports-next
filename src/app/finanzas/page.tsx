@@ -937,7 +937,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       const [{ data: jugador }, { data: mens }, { data: asist }, { data: torneoJug }, { data: ligaJug }] = await Promise.all([
         // `estado` va en el select porque el reporte lo imprime: sin él la
         // ficha del PDF mostraba "undefined" en el estado del jugador.
-        supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,estado,foto_url,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('id', jugadorId).single(),
+        supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,estado,foto_url,foto_path,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('id', jugadorId).single(),
         supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }),
         supabase.from('asistencia').select('id,jugador_id,fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('torneo_jugadores').select('id,torneo_id,torneos(id,nombre,fecha_inicio,estado)').eq('jugador_id', jugadorId),
@@ -1001,10 +1001,14 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     }
 
     if (categoriaRep === 'asistencia') {
-      const [{ data: asist }, { data: jug }, { data: bloquesRaw }] = await Promise.all([
+      const prev = getRangoAnterior()
+      const [{ data: asist }, { data: jug }, { data: bloquesRaw }, { count: totalPrev }] = await Promise.all([
         supabase.from('asistencia').select('jugador_id,fecha,bloque_id,jugadores(nombre,categoria)').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
-        supabase.from('jugadores').select('id,nombre,categoria,estado').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
+        // Los días de entrenamiento van para que el PDF compare a cada jugador
+        // contra SUS clases, no contra todos los días en que el club abrió.
+        supabase.from('jugadores').select('id,nombre,categoria,estado,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
         supabase.from('bloques_horario').select('id,nombre,sede,hora_inicio,hora_fin').eq('club_id', clubId),
+        supabase.from('asistencia').select('id', { count: 'exact', head: true }).eq('club_id', clubId).eq('estado', 'presente').gte('fecha', prev.inicio).lte('fecha', prev.fin),
       ])
       const porDia: Record<string, number> = {}, porJugador: Record<string, { nombre: string; count: number }> = {}, porDiaSemana: Record<number, number> = { 0:0,1:0,2:0,3:0,4:0,5:0,6:0 }
       const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
@@ -1039,18 +1043,47 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         calendariosPorJugador,
       )
 
-      datos = { asistencias: asist || [], porDia, porJugador, diaMasAsistido, diaSemanaMax: diaSemanaMax ? { dia: diasSemana[parseInt(diaSemanaMax[0])], count: diaSemanaMax[1] } : null, topJugadores: Object.values(porJugador).sort((a, b) => b.count - a.count).slice(0, 10), sinAsistencia: (jug || []).filter(j => !porJugador[j.id]), totalAsist: (asist || []).length, diasUnicos: Object.keys(porDia).length, promedioDiario: Object.keys(porDia).length > 0 ? Math.round((asist || []).length / Object.keys(porDia).length) : 0, diasSemana, porDiaSemana, activos: jug || [], historialDetallado }
+      datos = { asistencias: asist || [], porDia, porJugador, diaMasAsistido, diaSemanaMax: diaSemanaMax ? { dia: diasSemana[parseInt(diaSemanaMax[0])], count: diaSemanaMax[1] } : null, topJugadores: Object.values(porJugador).sort((a, b) => b.count - a.count).slice(0, 10), sinAsistencia: (jug || []).filter(j => !porJugador[j.id]), totalAsist: (asist || []).length, diasUnicos: Object.keys(porDia).length, promedioDiario: Object.keys(porDia).length > 0 ? Math.round((asist || []).length / Object.keys(porDia).length) : 0, diasSemana, porDiaSemana, activos: jug || [], historialDetallado, totalPrev: totalPrev ?? null, tituloPrev: prev.titulo, inicio, fin }
     }
 
     if (categoriaRep === 'torneos') {
-      const [{ data: torn }, { data: ligas }, { data: mov }] = await Promise.all([
-        supabase.from('torneos').select('id,nombre,estado,fecha_inicio,tipo').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin).order('fecha_inicio'),
-        supabase.from('ligas').select('id,nombre,estado,liga_divisiones(id,nombre,liga_division_jugadores(jugador_id)),liga_partidos(count),liga_fechas(count)').eq('club_id', clubId),
-        supabase.from('movimientos').select('id,tipo,monto,categoria,fecha').eq('club_id', clubId).eq('categoria', 'inscripcion_torneo').gte('fecha', inicio).lte('fecha', fin),
+      const prev = getRangoAnterior()
+      const [{ data: torn }, { data: ligas }, { data: movLiga }, { count: torneosPrev }] = await Promise.all([
+        // Inscritos (los grupos, incluida la MESA de inscripción) y partidos
+        // con o sin ganador: con eso el PDF muestra cuánto avanzó cada torneo.
+        (supabase as any).from('torneos').select('id,nombre,estado,fase,tipo,formato,fecha_inicio,categoria,cuota_inscripcion,campeon:campeon_id(nombre),subcampeon:subcampeon_id(nombre),torneo_grupos(grupo_jugadores(jugador_id,jugadores(nombre))),torneo_partidos(ganador)').eq('club_id', clubId).gte('fecha_inicio', inicio).lte('fecha_inicio', fin).order('fecha_inicio'),
+        (supabase as any).from('ligas').select('id,nombre,estado,liga_divisiones(id,nombre,liga_division_jugadores(jugador_id)),liga_partidos(estado),liga_fechas(count)').eq('club_id', clubId),
+        supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion').eq('club_id', clubId).in('categoria', ['inscripcion_liga', 'premio_liga']).gte('fecha', inicio).lte('fecha', fin),
+        supabase.from('torneos').select('id', { count: 'exact', head: true }).eq('club_id', clubId).gte('fecha_inicio', prev.inicio).lte('fecha_inicio', prev.fin),
       ])
+      // La plata de cada torneo se busca por torneo_id, no por fecha: los
+      // premios se pagan después de la fecha del torneo y se perderían.
+      const idsTorneos = (torn || []).map((t: any) => t.id as string)
+      const { data: movTorneos } = idsTorneos.length
+        ? await supabase.from('movimientos').select('id,tipo,monto,categoria,fecha,descripcion,torneo_id').eq('club_id', clubId).in('torneo_id', idsTorneos)
+        : { data: [] as any[] }
       const torneosPorEstado: Record<string, number> = {}
-      ;(torn || []).forEach(t => { torneosPorEstado[t.estado] = (torneosPorEstado[t.estado] || 0) + 1 })
-      datos = { torneos: torn || [], ligas: ligas || [], ingresosInscripcion: (mov || []).reduce((s, m) => s + m.monto, 0), torneosPorEstado, movimientos: mov || [] }
+      ;(torn || []).forEach((t: any) => { torneosPorEstado[t.estado] = (torneosPorEstado[t.estado] || 0) + 1 })
+      const torneos = (torn || []).map((t: any) => {
+        const vistos = new Map<string, { id: string; nombre: string }>()
+        for (const g of t.torneo_grupos || []) for (const gj of g.grupo_jugadores || []) if (gj.jugador_id && !vistos.has(gj.jugador_id)) vistos.set(gj.jugador_id, { id: gj.jugador_id, nombre: gj.jugadores?.nombre || '—' })
+        const partidos = t.torneo_partidos || []
+        return {
+          id: t.id, nombre: t.nombre, estado: t.estado, fase: t.fase, tipo: t.tipo, formato: t.formato, fecha_inicio: t.fecha_inicio, categoria: t.categoria, cuota_inscripcion: t.cuota_inscripcion,
+          campeon: t.campeon?.nombre ?? null, subcampeon: t.subcampeon?.nombre ?? null,
+          participantes: [...vistos.values()], partidosTotal: partidos.length, partidosJugados: partidos.filter((p: any) => p.ganador).length,
+        }
+      })
+      const ligasResumen = (ligas || []).map((l: any) => ({
+        id: l.id, nombre: l.nombre, estado: l.estado,
+        divisiones: (l.liga_divisiones || []).map((d: any) => ({ nombre: d.nombre, jugadores: (d.liga_division_jugadores || []).length })),
+        fechas: (l.liga_fechas || [{ count: 0 }])[0]?.count || 0,
+        partidosTotal: (l.liga_partidos || []).length,
+        partidosJugados: (l.liga_partidos || []).filter((p: any) => p.estado === 'finalizado' || p.estado === 'walkover').length,
+      }))
+      const movimientos = [...(movTorneos || []), ...(movLiga || []).map(m => ({ ...m, torneo_id: null }))]
+      const ingresosInscripcion = movimientos.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0)
+      datos = { torneos, ligas: ligas || [], ligasResumen, ingresosInscripcion, torneosPorEstado, movimientos, torneosPrev: torneosPrev ?? null, tituloPrev: prev.titulo }
     }
 
       setPreview(datos)
@@ -1070,7 +1103,6 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
     setErrorRep('')
     try {
     const { titulo } = getRango()
-    const catInfo = categoriasReporte.find(c => c.key === categoriaRep)!
 
     // ── GENERAL, molde v2 (lib/pdf/papel.ts) ─────────────────────────────
     if (categoriaRep === 'general') {
@@ -1095,6 +1127,9 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       const marca = await marcaDelClub({ nombre: clubNombre || 'CmSports', logo_url: clubLogoUrl })
       const j = preview.jugador
       const { inicio, fin } = getRango()
+      // La foto está en el bucket privado: hay que firmar el enlace.
+      const { firmarUrl } = await import('@/lib/supabase/privado')
+      const fotoUrl = j.foto_path ? await firmarUrl(j.foto_path) : (j.foto_url ?? null)
       const diasDeClase = [j.entrena_lun ? 1 : 0, j.entrena_mar ? 2 : 0, j.entrena_mie ? 3 : 0, j.entrena_jue ? 4 : 0, j.entrena_vie ? 5 : 0].filter(Boolean)
       const nombresDias = [j.entrena_lun ? 'Lunes' : '', j.entrena_mar ? 'Martes' : '', j.entrena_mie ? 'Miércoles' : '', j.entrena_jue ? 'Jueves' : '', j.entrena_vie ? 'Viernes' : ''].filter(Boolean)
       await descargarReporteJugador({
@@ -1102,7 +1137,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         generado: new Date().toLocaleDateString('es-CL'),
         periodo: titulo,
         jugador: {
-          nombre: j.nombre, categoria: j.categoria, estado: j.estado, rut: j.rut, telefono: j.telefono, email: j.email, fotoUrl: j.foto_url,
+          nombre: j.nombre, categoria: j.categoria, estado: j.estado, rut: j.rut, telefono: j.telefono, email: j.email, fotoUrl,
           plan: { tipo: j.tipo_plan, mensualidad: j.mensualidad, horario: j.horario, dias: nombresDias },
           asistencia: { desde: inicio, hasta: fin, asistio: new Set<string>((preview.asistencias || []).map((a: any) => a.fecha as string)), diasDeClase },
           mensualidades: preview.mensualidades || [],
@@ -1112,348 +1147,62 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       })
       return
     }
-    const { default: jsPDF } = await import('jspdf')
-    const { default: autoTable } = await import('jspdf-autotable')
-    const {
-      COLOR, encabezado, piePagina, filaTarjetas, tituloSeccion, sinDatos, estiloTabla,
-      asegurarEspacio, trasTabla, panelDatos, barrasCategoria, barrasColumnas, franjaTotal,
-      colorEstado, variacion, tinte,
-    } = await import('@/lib/pdf/estilo')
-    const doc = new jsPDF()
-    const club = clubNombre || 'CmSports'
-    const hoy = new Date().toLocaleDateString('es-CL')
-    const cab = { club, titulo: `Reporte ${catInfo.label}`, subtitulo: `${titulo}  ·  generado el ${hoy}` }
 
-    const nombreMes = (mk: string) => `${mesesN[parseInt(mk.slice(5, 7)) - 1]} ${mk.slice(0, 4)}`
-    const mesDe = (m: any) => (m?.mes ? `${mesesN[m.mes - 1]} ${m.anio}` : '—')
-    const pct = (parte: number, total: number) => (total > 0 ? `${Math.round((parte / total) * 100)}%` : '—')
-    // Las columnas de estado se pintan con el color del estado en vez de dejar
-    // la palabra en negro: en una lista de 100 cuotas, buscar "atrasado"
-    // leyendo texto gris no lo hace nadie.
-    const pintaEstado = (col: number) => ({
-      didParseCell: (d: any) => {
-        if (d.section === 'body' && d.column.index === col) {
-          d.cell.styles.textColor = colorEstado(String(d.cell.raw ?? ''))
-          d.cell.styles.fontStyle = 'bold'
-        }
-      },
-    })
-
-    let y = encabezado(doc, cab)
-
-    // El General ya salió arriba por el molde v2.
-
-    // El informe del jugador ya salió arriba por el molde v2.
-
+    // ── FINANZAS, molde v2 ───────────────────────────────────────────────
     if (categoriaRep === 'finanzas') {
-      const balance = preview.ingresos - preview.gastos
-      const balancePrev = preview.ingresosPrev - preview.gastosPrev
-      const margen = preview.ingresos > 0 ? Math.round((balance / preview.ingresos) * 100) : 0
-      const meses = Object.entries(preview.porMes).sort() as [string, any][]
-
-      const linea = (cats: Record<string, number>, prev: Record<string, number>, base: number) =>
-        Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([c, v]) => {
-          const antes = prev[c] || 0
-          const delta = antes === 0 ? (v > 0 ? 'nuevo' : '—') : `${v - antes >= 0 ? '+' : ''}${Math.round(((v - antes) / antes) * 100)}%`
-          return [`   ${catLabel[c] || c}`, fmt(v), pct(v, base), fmt(antes), delta]
-        })
-
-      const filasIngreso = linea(preview.desgloseIngresos, preview.prevIngresos, preview.ingresos)
-      const filasGasto = linea(preview.desgloseGastos, preview.prevGastos, preview.gastos)
-
-      y = franjaTotal(doc, y, `Resultado del período  ·  margen ${margen}%`, fmt(balance), balance >= 0 ? COLOR.verde : COLOR.rojo)
-
-      y = tituloSeccion(doc, y, 'Estado de resultados', `vs ${preview.tituloPrev}`)
-      const cuerpo: any[] = [
-        ['INGRESOS', '', '', '', ''],
-        ...filasIngreso,
-        ['Total ingresos', fmt(preview.ingresos), '100%', fmt(preview.ingresosPrev), variacion(preview.ingresos, preview.ingresosPrev).texto.split(' ')[0]],
-        ['GASTOS', '', '', '', ''],
-        ...filasGasto,
-        ['Total gastos', fmt(preview.gastos), '100%', fmt(preview.gastosPrev), variacion(preview.gastos, preview.gastosPrev).texto.split(' ')[0]],
-      ]
-      // Los renglones de sección y subtotal se marcan por texto, no por índice:
-      // el número de categorías cambia en cada período.
-      const esTitulo = (t: string) => t === 'INGRESOS' || t === 'GASTOS'
-      const esSubtotal = (t: string) => t.startsWith('Total ')
-      autoTable(doc, {
-        startY: y,
-        head: [['Cuenta', 'Monto', '% del total', preview.tituloPrev, 'Var.']],
-        body: cuerpo,
-        foot: [['RESULTADO DEL PERÍODO', fmt(balance), `margen ${margen}%`, fmt(balancePrev), variacion(balance, balancePrev).texto.split(' ')[0]]],
-        ...estiloTabla(),
-        columnStyles: {
-          1: { cellWidth: 30, halign: 'right' }, 2: { cellWidth: 24, halign: 'right' },
-          3: { cellWidth: 30, halign: 'right', textColor: COLOR.mutado }, 4: { cellWidth: 20, halign: 'right' },
-        },
-        didParseCell: (d: any) => {
-          if (d.section !== 'body') return
-          const etiqueta = String(cuerpo[d.row.index][0]).trim()
-          const esIngreso = d.row.index <= filasIngreso.length + 1
-          if (esTitulo(etiqueta)) {
-            d.cell.styles.fillColor = tinte(esIngreso ? COLOR.verde : COLOR.rojo, 0.12)
-            d.cell.styles.fontStyle = 'bold'
-            d.cell.styles.textColor = esIngreso ? COLOR.verde : COLOR.rojo
-          } else if (esSubtotal(etiqueta)) {
-            d.cell.styles.fontStyle = 'bold'
-            d.cell.styles.fillColor = COLOR.blanco
-          }
-          if (d.column.index === 4 && !esTitulo(etiqueta)) {
-            const t = String(d.cell.raw)
-            d.cell.styles.textColor = t.startsWith('+') ? (esIngreso ? COLOR.verde : COLOR.rojo)
-              : t.startsWith('-') ? (esIngreso ? COLOR.rojo : COLOR.verde) : COLOR.tenue
-          }
-        },
+      const { marcaDelClub } = await import('@/lib/pdf/papel')
+      const { descargarReporteFinanzas } = await import('@/lib/reporte-finanzas-pdf')
+      const marca = await marcaDelClub({ nombre: clubNombre || 'CmSports', logo_url: clubLogoUrl })
+      await descargarReporteFinanzas({
+        marca,
+        periodo: titulo,
+        generado: new Date().toLocaleDateString('es-CL'),
+        datos: preview,
+        nombreCategoria: (c: string) => catLabel[c] || c,
       })
-      y = trasTabla(doc)
-
-      if (meses.length > 1) {
-        y = asegurarEspacio(doc, y, 75, cab)
-        y = tituloSeccion(doc, y, 'Resultado mes a mes', `${meses.length} meses`)
-        y = barrasColumnas(doc, y, meses.map(([mk, v]) => ({ etiqueta: nombreMes(mk).slice(0, 3), valor: v.ingresos - v.gastos })), COLOR.primario)
-        y = asegurarEspacio(doc, y, 45, cab)
-        autoTable(doc, {
-          startY: y,
-          head: [['Mes', 'Ingresos', 'Gastos', 'Resultado', 'Margen']],
-          body: meses.map(([mk, v]) => [nombreMes(mk), fmt(v.ingresos), fmt(v.gastos), fmt(v.ingresos - v.gastos), pct(v.ingresos - v.gastos, v.ingresos)]),
-          foot: [['Total', fmt(preview.ingresos), fmt(preview.gastos), fmt(balance), `${margen}%`]],
-          ...estiloTabla(),
-          columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right', fontStyle: 'bold' }, 4: { cellWidth: 22, halign: 'right' } },
-          didParseCell: (d: any) => {
-            if (d.column.index !== 3 || d.section === 'head') return
-            const neto = d.section === 'foot' ? balance : (meses[d.row.index]?.[1].ingresos ?? 0) - (meses[d.row.index]?.[1].gastos ?? 0)
-            d.cell.styles.textColor = neto < 0 ? COLOR.rojo : COLOR.verde
-          },
-        })
-        y = trasTabla(doc)
-      }
-
-      // Cuentas por cobrar con antigüedad. Toda la deuda viva del club, no solo
-      // la del período: una cuota de hace cuatro meses no deja de existir
-      // porque el reporte sea de agosto.
-      const refe = preview.finAnio * 12 + preview.finMes
-      const tramos = [
-        { nombre: 'Del período en curso', min: 0, max: 0, color: COLOR.ambar },
-        { nombre: '1 mes de atraso', min: 1, max: 1, color: COLOR.naranja },
-        { nombre: '2 meses de atraso', min: 2, max: 2, color: COLOR.rojo },
-        { nombre: '3 meses o más', min: 3, max: 999, color: COLOR.rojo },
-      ]
-      const edad = (m: any) => refe - (m.anio * 12 + m.mes)
-      const porTramo = tramos.map(t => {
-        const filas = preview.porCobrar.filter((m: any) => { const e = edad(m); return e >= t.min && e <= t.max })
-        return { ...t, filas, monto: filas.reduce((s: number, m: any) => s + (m.monto || 0), 0) }
-      }).filter(t => t.filas.length > 0)
-
-      doc.addPage()
-      y = encabezado(doc, { ...cab, titulo: 'Cuentas por cobrar' })
-      y = franjaTotal(doc, y, `${preview.porCobrar.length} cuotas impagas en total`, fmt(preview.totalPorCobrar), preview.totalPorCobrar > 0 ? COLOR.rojo : COLOR.verde)
-
-      if (preview.porCobrar.length === 0) {
-        y = sinDatos(doc, y, 'No hay mensualidades pendientes. Todo cobrado.')
-      } else {
-        y = tituloSeccion(doc, y, 'Antigüedad de la deuda', 'toda la deuda viva del club', COLOR.rojo)
-        y = barrasCategoria(doc, y, porTramo.map(t => ({
-          etiqueta: t.nombre, valor: t.monto, texto: `${fmt(t.monto)} · ${t.filas.length}`, color: t.color,
-        })), COLOR.rojo, cab)
-
-        y = asegurarEspacio(doc, y, 50, cab)
-        y = tituloSeccion(doc, y, 'Detalle por jugador', `${preview.porCobrar.length} cuotas`, COLOR.rojo)
-        autoTable(doc, {
-          startY: y,
-          head: [['Jugador', 'Categoría', 'Mes', 'Atraso', 'Monto', 'Estado']],
-          body: [...preview.porCobrar]
-            .sort((a: any, b: any) => edad(b) - edad(a) || (a.jugadores?.nombre || '').localeCompare(b.jugadores?.nombre || ''))
-            .map((m: any) => {
-              const e = edad(m)
-              return [m.jugadores?.nombre || '—', m.jugadores?.categoria || '—', mesDe(m),
-                e <= 0 ? 'al día' : e === 1 ? '1 mes' : `${e} meses`, m.monto ? fmt(m.monto) : '—', m.estado]
-            }),
-          foot: [['Total', '', '', '', fmt(preview.totalPorCobrar), '']],
-          ...estiloTabla(COLOR.rojo),
-          ...pintaEstado(5),
-          columnStyles: { 1: { cellWidth: 26 }, 2: { cellWidth: 26 }, 3: { cellWidth: 20, halign: 'center' }, 4: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }, 5: { cellWidth: 22, halign: 'center' } },
-        })
-      }
-
-      // El libro del período, movimiento por movimiento: es lo que se revisa
-      // cuando un total no cuadra, y era justo lo que el reporte no traía.
-      if (preview.movimientos.length > 0) {
-        doc.addPage()
-        y = encabezado(doc, { ...cab, titulo: 'Libro de movimientos' })
-        y = tituloSeccion(doc, y, 'Todos los movimientos del período', `${preview.movimientos.length} registros`)
-        autoTable(doc, {
-          startY: y,
-          head: [['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Monto']],
-          body: preview.movimientos.map((m: any) => [
-            m.fecha, m.tipo === 'ingreso' ? 'Ingreso' : 'Gasto',
-            catLabel[m.categoria] || m.categoria, m.descripcion || '—',
-            (m.tipo === 'ingreso' ? '+' : '-') + fmt(m.monto),
-          ]),
-          foot: [['', '', '', 'Resultado del período', fmt(balance)]],
-          ...estiloTabla(),
-          columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 20, halign: 'center' }, 2: { cellWidth: 34 }, 4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' } },
-          didParseCell: (d: any) => {
-            if (d.section === 'body' && (d.column.index === 1 || d.column.index === 4)) {
-              d.cell.styles.textColor = preview.movimientos[d.row.index]?.tipo === 'ingreso' ? COLOR.verde : COLOR.rojo
-            }
-            if (d.section === 'foot' && d.column.index === 4) d.cell.styles.textColor = balance < 0 ? COLOR.rojo : COLOR.verde
-          },
-        })
-      }
+      return
     }
 
-    // ── ASISTENCIA ────────────────────────────────────────────────────────
+    // ── ASISTENCIA, molde v2 ─────────────────────────────────────────────
     if (categoriaRep === 'asistencia') {
-      const activos = preview.activos.length
-      const cobertura = activos > 0 ? Math.round((preview.promedioDiario / activos) * 100) : 0
-      const conClase = Object.entries(preview.porDiaSemana).filter(([, v]) => (v as number) > 0) as [string, number][]
-      const flojo = [...conClase].sort((a, b) => a[1] - b[1])[0]
-
-      y = filaTarjetas(doc, y, [
-        { valor: String(preview.totalAsist), etiqueta: 'Asistencias', color: COLOR.primario },
-        { valor: String(preview.diasUnicos), etiqueta: 'Días con clase', color: COLOR.celeste },
-        { valor: String(preview.promedioDiario), etiqueta: 'Promedio por clase', color: COLOR.verde },
-        { valor: String(preview.sinAsistencia.length), etiqueta: 'Activos que no vinieron', color: preview.sinAsistencia.length > 0 ? COLOR.rojo : COLOR.verde },
-      ])
-
-      y = tituloSeccion(doc, y, 'La semana', 'asistencias por día', COLOR.primario)
-      y = barrasColumnas(doc, y, preview.diasSemana.map((d: string, i: number) => ({ etiqueta: d.slice(0, 3), valor: preview.porDiaSemana[i] })), COLOR.primario)
-
-      y = asegurarEspacio(doc, y, 45, cab)
-      y = panelDatos(doc, y, [
-        ['Día más lleno', preview.diaMasAsistido ? `${preview.diaMasAsistido[0]} (${preview.diaMasAsistido[1]})` : '—'],
-        ['Día de semana fuerte', preview.diaSemanaMax ? `${preview.diaSemanaMax.dia} (${preview.diaSemanaMax.count})` : '—'],
-        ['Día de semana flojo', flojo ? `${preview.diasSemana[parseInt(flojo[0])]} (${flojo[1]})` : '—'],
-        ['Plantel activo', String(activos)],
-        ['Ocupación media', `${cobertura}%`],
-        ['Nunca vinieron', `${preview.sinAsistencia.length} (${pct(preview.sinAsistencia.length, activos)})`],
-      ], 3)
-
-      y = asegurarEspacio(doc, y, 60, cab)
-      y = tituloSeccion(doc, y, 'Los que más entrenaron', 'top 10', COLOR.verde)
-      y = barrasCategoria(doc, y, preview.topJugadores.map((j: any) => ({ etiqueta: j.nombre, valor: j.count, texto: `${j.count} clases` })), COLOR.verde, cab)
-
-      // El plantel completo, no el top 10: el reporte sirve para ver quién se
-      // está descolgando, y para eso hay que ver a todos.
-      doc.addPage()
-      y = encabezado(doc, { ...cab, titulo: 'Asistencia jugador por jugador' })
-      const conteo = new Map<string, number>()
-      for (const j of preview.activos) conteo.set(j.id, preview.porJugador[j.id]?.count ?? 0)
-      const filasAsist = [...preview.activos].sort((a: any, b: any) =>
-        (conteo.get(b.id) ?? 0) - (conteo.get(a.id) ?? 0) || a.nombre.localeCompare(b.nombre))
-      y = tituloSeccion(doc, y, 'Todos los activos', `${filasAsist.length} jugadores · ${preview.diasUnicos} días con clase`)
-      autoTable(doc, {
-        startY: y,
-        head: [['#', 'Jugador', 'Categoría', 'Clases', '% de los días']],
-        body: filasAsist.map((j: any, i: number) => {
-          const n = conteo.get(j.id) ?? 0
-          return [String(i + 1), j.nombre, j.categoria || '—', String(n), pct(n, preview.diasUnicos)]
-        }),
-        foot: [['', 'Total', '', String(preview.totalAsist), '']],
-        ...estiloTabla(),
-        columnStyles: { 0: { cellWidth: 10, halign: 'right', textColor: COLOR.tenue }, 2: { cellWidth: 34 }, 3: { cellWidth: 22, halign: 'right' }, 4: { cellWidth: 28, halign: 'right' } },
-        didParseCell: (d: any) => {
-          if (d.section !== 'body' || d.column.index !== 4) return
-          const n = conteo.get(filasAsist[d.row.index]?.id) ?? 0
-          const p = preview.diasUnicos > 0 ? (n / preview.diasUnicos) * 100 : 0
-          d.cell.styles.fontStyle = 'bold'
-          d.cell.styles.textColor = n === 0 ? COLOR.rojo : p >= 60 ? COLOR.verde : p >= 30 ? COLOR.ambar : COLOR.rojo
+      const { marcaDelClub } = await import('@/lib/pdf/papel')
+      const { descargarReporteAsistencia } = await import('@/lib/reporte-asistencia-pdf')
+      const marca = await marcaDelClub({ nombre: clubNombre || 'CmSports', logo_url: clubLogoUrl })
+      const hoy = fechaChile()
+      await descargarReporteAsistencia({
+        marca,
+        periodo: titulo,
+        generado: new Date().toLocaleDateString('es-CL'),
+        datos: {
+          desde: preview.inicio,
+          // Los días que todavía no llegan no cuentan como clase esperada.
+          hasta: preview.fin < hoy ? preview.fin : hoy,
+          totalAsist: preview.totalAsist, totalPrev: preview.totalPrev, tituloPrev: preview.tituloPrev,
+          porDia: preview.porDia, porDiaSemana: preview.porDiaSemana,
+          activos: (preview.activos as any[]).map(j => ({
+            id: j.id, nombre: j.nombre, categoria: j.categoria,
+            dias: [j.entrena_lun ? 1 : 0, j.entrena_mar ? 2 : 0, j.entrena_mie ? 3 : 0, j.entrena_jue ? 4 : 0, j.entrena_vie ? 5 : 0].filter(Boolean),
+          })),
+          porJugador: preview.porJugador,
+          historialDetallado: preview.historialDetallado,
         },
       })
-      y = trasTabla(doc)
-
-      if (preview.sinAsistencia.length > 0) {
-        y = asegurarEspacio(doc, y, 50, cab)
-        y = tituloSeccion(doc, y, 'No asistieron ni una vez', String(preview.sinAsistencia.length), COLOR.rojo)
-        autoTable(doc, {
-          startY: y,
-          head: [['Jugador', 'Categoría']],
-          body: preview.sinAsistencia.map((j: any) => [j.nombre, j.categoria || '—']),
-          ...estiloTabla(COLOR.rojo),
-          columnStyles: { 1: { cellWidth: 60 } },
-        })
-      }
-
-      // Historial detallado — jugador, fecha, bloque, horario y sede. Va
-      // completo, sin los filtros de sede/bloque que solo existen en pantalla:
-      // el PDF es lo que se archiva, y ahí conviene llevar todo el período.
-      if (preview.historialDetallado.length > 0) {
-        doc.addPage()
-        y = encabezado(doc, { ...cab, titulo: 'Historial detallado de asistencia' })
-        const filasHist = [...preview.historialDetallado].sort((a: any, b: any) =>
-          b.fecha.localeCompare(a.fecha) || a.jugadorNombre.localeCompare(b.jugadorNombre))
-        y = tituloSeccion(doc, y, 'Quién, a qué bloque y en qué sede', `${filasHist.length} registros`)
-        autoTable(doc, {
-          startY: y,
-          head: [['Jugador', 'Fecha', 'Bloque', 'Horario', 'Sede']],
-          body: filasHist.map((f: any) => [
-            f.jugadorNombre, f.fecha, f.bloqueNombre + (f.inferido && f.bloqueId ? ' (inferido)' : ''), f.horario, f.sede,
-          ]),
-          ...estiloTabla(),
-          columnStyles: { 1: { cellWidth: 26 }, 3: { cellWidth: 26 }, 4: { cellWidth: 30 } },
-        })
-      }
+      return
     }
 
-    // ── TORNEOS Y LIGAS ───────────────────────────────────────────────────
+    // ── TORNEOS Y LIGAS, molde v2 ────────────────────────────────────────
     if (categoriaRep === 'torneos') {
-      const jugadoresEnLigas = preview.ligas.reduce((s: number, l: any) =>
-        s + (l.liga_divisiones || []).reduce((t: number, d: any) => t + (d.liga_division_jugadores || []).length, 0), 0)
-
-      y = filaTarjetas(doc, y, [
-        { valor: String(preview.torneos.length), etiqueta: 'Torneos del período', color: COLOR.naranja },
-        { valor: String(preview.ligas.length), etiqueta: 'Ligas', color: COLOR.morado },
-        { valor: String(jugadoresEnLigas), etiqueta: 'Inscritos en ligas', color: COLOR.celeste },
-        { valor: fmt(preview.ingresosInscripcion), etiqueta: 'Ingresos por inscripción', color: COLOR.verde },
-      ])
-
-      if (Object.keys(preview.torneosPorEstado).length > 0) {
-        y = tituloSeccion(doc, y, 'Torneos por estado', String(preview.torneos.length), COLOR.naranja)
-        y = barrasCategoria(doc, y, Object.entries(preview.torneosPorEstado)
-          .map(([e, c]) => ({ etiqueta: e, valor: c as number, texto: String(c), color: colorEstado(e) })), COLOR.naranja, cab)
-      }
-
-      if (preview.torneos.length > 0) {
-        y = asegurarEspacio(doc, y, 50, cab)
-        y = tituloSeccion(doc, y, 'Detalle de torneos')
-        autoTable(doc, {
-          startY: y,
-          head: [['Nombre', 'Fecha', 'Tipo', 'Estado']],
-          // "Fase" salía siempre en raya: es columna de torneo_partidos, no de
-          // torneos. En su lugar va el tipo, que sí viene en la consulta.
-          body: preview.torneos.map((t: any) => [t.nombre, t.fecha_inicio || '—', t.tipo || '—', t.estado]),
-          ...estiloTabla(COLOR.naranja),
-          ...pintaEstado(3),
-          columnStyles: { 1: { cellWidth: 28 }, 2: { cellWidth: 30 }, 3: { cellWidth: 30, halign: 'center' } },
-        })
-        y = trasTabla(doc)
-      }
-
-      if (preview.ligas.length > 0) {
-        y = asegurarEspacio(doc, y, 50, cab)
-        y = tituloSeccion(doc, y, 'Ligas', String(preview.ligas.length), COLOR.morado)
-        autoTable(doc, {
-          startY: y,
-          head: [['Liga', 'Estado', 'Divisiones', 'Jugadores', 'Fechas', 'Partidos']],
-          body: preview.ligas.map((l: any) => [
-            l.nombre, l.estado,
-            String((l.liga_divisiones || []).length),
-            String((l.liga_divisiones || []).reduce((s: number, d: any) => s + (d.liga_division_jugadores || []).length, 0)),
-            String((l.liga_fechas || [{ count: 0 }])[0]?.count || 0),
-            String((l.liga_partidos || [{ count: 0 }])[0]?.count || 0),
-          ]),
-          ...estiloTabla(COLOR.morado),
-          ...pintaEstado(1),
-          columnStyles: { 1: { cellWidth: 26, halign: 'center' }, 2: { cellWidth: 24, halign: 'right' }, 3: { cellWidth: 24, halign: 'right' }, 4: { cellWidth: 20, halign: 'right' }, 5: { cellWidth: 22, halign: 'right' } },
-        })
-      }
-
-      if (preview.torneos.length === 0 && preview.ligas.length === 0) sinDatos(doc, y)
+      const { marcaDelClub } = await import('@/lib/pdf/papel')
+      const { descargarReporteTorneos } = await import('@/lib/reporte-torneos-pdf')
+      const marca = await marcaDelClub({ nombre: clubNombre || 'CmSports', logo_url: clubLogoUrl })
+      await descargarReporteTorneos({
+        marca,
+        periodo: titulo,
+        generado: new Date().toLocaleDateString('es-CL'),
+        datos: { torneos: preview.torneos, ligas: preview.ligasResumen, movimientos: preview.movimientos, torneosPrev: preview.torneosPrev, tituloPrev: preview.tituloPrev },
+      })
+      return
     }
-
-    piePagina(doc, `${club}  ·  Reporte ${catInfo.label}  ·  ${titulo}`)
-    const jn = categoriaRep === 'jugador' && preview.jugador ? `_${preview.jugador.nombre.replace(/ /g, '_')}` : ''
-    doc.save(`reporte_${categoriaRep}${jn}_${titulo.replace(/ /g, '_')}.pdf`)
     } catch (e: any) {
       console.error('[reportes] falló generar el PDF', e)
       setErrorRep(`No se pudo generar el PDF: ${e?.message || e}`)
