@@ -51,7 +51,7 @@ export function TableroFecha({
   divisionId?: string
   ligaId: string
 }) {
-  const [fecha, setFecha] = useState<{ numero: number; estado: string; ligaId: string; ligaNombre: string } | null>(null)
+  const [fecha, setFecha] = useState<{ numero: number; estado: string; ligaId: string; ligaNombre: string; clubId: string | null } | null>(null)
   const [bloques, setBloques] = useState<string[]>(() => generarBloquesHorario())
   const [mesas, setMesas] = useState<Mesa[]>([])
   const [partidos, setPartidos] = useState<PartidoBoard[]>([])
@@ -81,7 +81,7 @@ export function TableroFecha({
   const cargar = useCallback(async () => {
     const db = supabase as any
     const [{ data: fechaData }, { data: mesasData }, { data: rawPartidos }, { data: divisionesData }, { data: jugadoresData }] = await Promise.all([
-      supabase.from('liga_fechas').select('numero, estado, liga_id, ligas(nombre, bloque_minutos, hora_inicio, hora_fin)').eq('id', fechaId).single(),
+      supabase.from('liga_fechas').select('numero, estado, liga_id, ligas(nombre, bloque_minutos, hora_inicio, hora_fin, club_id)').eq('id', fechaId).single(),
       supabase.from('liga_mesas').select('id, numero').eq('liga_id', ligaId).order('numero', { ascending: true }),
       db.from('liga_partidos').select('id, division_id, mesa_id, bloque_horario, jugador_a_id, jugador_b_id, arbitro_id, estado, sets_a, sets_b').eq('fecha_id', fechaId).is('deleted_at', null),
       supabase.from('liga_divisiones').select('id, nombre').eq('liga_id', ligaId),
@@ -90,7 +90,7 @@ export function TableroFecha({
     if (!fechaData) { setLoading(false); return }
 
     const ligaRel = (Array.isArray(fechaData.ligas) ? fechaData.ligas[0] : fechaData.ligas) as Record<string, unknown> | null
-    setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: String(ligaRel?.nombre ?? '') })
+    setFecha({ numero: fechaData.numero, estado: fechaData.estado, ligaId: fechaData.liga_id, ligaNombre: String(ligaRel?.nombre ?? ''), clubId: ligaRel?.club_id ? String(ligaRel.club_id) : null })
     setBloques(generarBloquesHorario(String(ligaRel?.hora_inicio ?? BLOQUE_INICIO), String(ligaRel?.hora_fin ?? BLOQUE_FIN), Number(ligaRel?.bloque_minutos ?? 30)))
 
     const divisionIds = (divisionesData || []).map((d: any) => d.id)
@@ -280,290 +280,34 @@ export function TableroFecha({
     if (res.error) { setError(res.error); if (anterior) setPartidos(prev => prev.map(p => p.id === partidoId ? anterior : p)) }
   }
 
-  async function exportarPDFHorarios() {
-    const { default: jsPDF } = await import('jspdf')
-    const { default: autoTable } = await import('jspdf-autotable')
-    const { encabezado, piePagina, colorPorNombre, estiloTabla, sinDatos, COLOR } = await import('@/lib/pdf/estilo')
-    if (!fecha) return
-    const f = fecha
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
-
-    const y = encabezado(doc, {
-      club: f.ligaNombre,
-      titulo: `Fecha ${f.numero} · Programación por horario`,
-      subtitulo: hoy,
-    })
-
-    const sorted = [...partidosVisibles]
+  // Los PDF salen de lib/liga-fecha-pdf.ts (molde v2); acá solo se arma la
+  // lista de partidos con nombres y número de mesa.
+  async function partidosParaPdf() {
+    const [pdf, { marcaDesdeClub }] = await Promise.all([import('@/lib/liga-fecha-pdf'), import('@/lib/pdf/marcaClub')])
+    const marca = await marcaDesdeClub(supabase, fecha?.clubId)
+    const partidos = partidosVisibles
       .filter(p => p.bloqueHorario && p.mesaId)
-      .sort((a, b) => {
-        const bc = (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? '')
-        return bc !== 0 ? bc : (mesas.find(m => m.id === a.mesaId)?.numero ?? 0) - (mesas.find(m => m.id === b.mesaId)?.numero ?? 0)
-      })
+      .map(p => ({
+        bloqueHorario: p.bloqueHorario ?? '',
+        mesaNumero: mesas.find(m => m.id === p.mesaId)?.numero ?? 0,
+        divisionNombre: p.divisionNombre,
+        jugadorA: nombres[p.jugadorAId] ?? '—',
+        jugadorB: nombres[p.jugadorBId] ?? '—',
+        arbitro: p.arbitroId ? (nombres[p.arbitroId] ?? null) : null,
+      }))
+    return { pdf, marca, partidos }
+  }
 
-    if (sorted.length === 0) {
-      sinDatos(doc, y, 'Todavía no hay partidos programados en esta fecha.')
-    } else {
-      // Agrupado por bloque de hora: una fila-título que ocupa todo el ancho
-      // antes de cada grupo, para que de un vistazo se vea "qué se juega a
-      // qué hora" — sin esto queda una tabla plana donde hay que leer la
-      // columna Hora fila por fila para notar dónde cambia el bloque.
-      //
-      // Sin columna Mesa: cada división juega siempre en la misma mesa fija,
-      // así que "Mesa" y "División" son el mismo dato dos veces — mostrar las
-      // dos es ruido, no información. La división ya alcanza (y va coloreada).
-      const NUM_COLS = 5
-      const body: any[] = []
-      let bloqueActual: string | null = null
-      for (const p of sorted) {
-        const b = p.bloqueHorario ?? '—'
-        if (b !== bloqueActual) {
-          bloqueActual = b
-          const cuantos = sorted.filter(x => (x.bloqueHorario ?? '—') === b).length
-          body.push([{
-            // Nada de emojis: las fuentes estándar de PDF (helvetica/times) no
-            // los soportan y salen como caracteres rotos ("Ø=ÝP" en vez de 🕐).
-            content: `${b}   ·   ${cuantos} partido${cuantos !== 1 ? 's' : ''}`,
-            colSpan: NUM_COLS,
-            styles: { fillColor: COLOR.primarioOs, textColor: COLOR.blanco, fontStyle: 'bold', fontSize: 10.5, cellPadding: { top: 3, bottom: 3, left: 3, right: 3 } },
-          }])
-        }
-        body.push([
-          p.divisionNombre,
-          nombres[p.jugadorAId] ?? '—',
-          '', // el punto "VS" se dibuja a mano en didDrawCell, no como texto de celda
-          nombres[p.jugadorBId] ?? '—',
-          p.arbitroId ? (nombres[p.arbitroId] ?? '') : '—',
-        ])
-      }
-
-      autoTable(doc, {
-        startY: y,
-        head: [['División', 'Jugador A', '', 'Jugador B', 'Árbitro']],
-        body,
-        ...estiloTabla(),
-        styles: { ...estiloTabla().styles, fontSize: 9.5, cellPadding: 3 },
-        columnStyles: {
-          0: { cellWidth: 34, fontStyle: 'bold' },
-          1: { fontStyle: 'bold', font: 'times', fontSize: 11 },
-          // "vs": el padding por defecto de la tabla (2.8mm por lado) no deja
-          // ancho para el texto y lo corta letra por letra ("v" / "s" apiladas).
-          // Acá se dibuja a mano un punto de color en vez de solo texto —
-          // ordena la fila y marca de un vistazo el color de la división.
-          2: { cellWidth: 11, halign: 'center', valign: 'middle', textColor: COLOR.blanco, fontSize: 6.5, cellPadding: { top: 2.8, bottom: 2.8, left: 0, right: 0 } },
-          3: { fontStyle: 'bold', font: 'times', fontSize: 11 },
-          4: { cellWidth: 36 },
-        },
-        didParseCell: hookData => {
-          if (hookData.section === 'body' && hookData.column.index === 0 && typeof hookData.cell.raw === 'string') {
-            hookData.cell.styles.textColor = colorPorNombre(hookData.cell.raw)
-            hookData.cell.styles.fontStyle = 'bold'
-          }
-        },
-        didDrawCell: hookData => {
-          if (hookData.section !== 'body' || hookData.column.index !== 2) return
-          const divisionNombre = String((hookData.row.raw as any[])[0])
-          const dc = colorPorNombre(divisionNombre)
-          const cx = hookData.cell.x + hookData.cell.width / 2
-          const cy = hookData.cell.y + hookData.cell.height / 2
-          doc.setFillColor(...dc)
-          doc.circle(cx, cy, 3.4, 'F')
-          doc.setTextColor(...COLOR.blanco); doc.setFont('helvetica', 'bold'); doc.setFontSize(6)
-          doc.text('VS', cx, cy + 1, { align: 'center' })
-        },
-      })
-    }
-
-    piePagina(doc, `${f.ligaNombre} · Fecha ${f.numero} · Programación por horario`)
-    doc.save(`fecha${f.numero}_horarios.pdf`)
+  async function exportarPDFHorarios() {
+    if (!fecha) return
+    const { pdf, marca, partidos } = await partidosParaPdf()
+    await pdf.descargarFechaPorHorarioPdf(partidos, { marca, ligaNombre: fecha.ligaNombre, numero: fecha.numero })
   }
 
   async function exportarPDFMesa() {
-    const { default: jsPDF } = await import('jspdf')
-    const { encabezado, piePagina, colorPorNombre, tinte, sinDatos, COLOR } = await import('@/lib/pdf/estilo')
     if (!fecha) return
-    const f = fecha
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const W = doc.internal.pageSize.getWidth()
-    const H = doc.internal.pageSize.getHeight()
-    const M = 10
-    const CW = W - 2 * M
-    const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
-    const VERDE: [number, number, number] = [5, 150, 105]
-
-    // Geometría de columnas
-    const STRIPE = 3
-    const C_HORA = 18
-    const C_JUG  = 58
-    const C_SET  = 10.4
-    const C_RES  = 15
-    const C_ARB  = CW - STRIPE - C_HORA - C_JUG - 5 * C_SET - C_RES
-    const RH = 15   // alto de fila por partido — más aire para letra más grande
-    const TH = 8    // alto de encabezado de columnas
-    const MH = 9    // alto de sub-encabezado de mesa
-    const PIE_RESERVA = 16 // espacio que deja libre el pie de página compartido
-
-    const xHora = M + STRIPE
-    const xJug  = xHora + C_HORA
-    const xS    = (i: number) => xJug + C_JUG + i * C_SET
-    const xRes  = xJug + C_JUG + 5 * C_SET
-    const xArb  = xRes + C_RES
-    const xR    = W - M
-
-    const allMatches = [...partidosVisibles]
-      .filter(p => p.bloqueHorario && p.mesaId)
-      .sort((a, b) => {
-        const mn = (p: PartidoBoard) => mesas.find(m => m.id === p.mesaId)?.numero ?? 0
-        const diff = mn(a) - mn(b)
-        return diff !== 0 ? diff : (a.bloqueHorario ?? '').localeCompare(b.bloqueHorario ?? '')
-      })
-
-    const mesaGrupos: { mesa: Mesa; matches: PartidoBoard[] }[] = []
-    for (const p of allMatches) {
-      const mesa = mesas.find(m => m.id === p.mesaId)
-      if (!mesa) continue
-      const last = mesaGrupos[mesaGrupos.length - 1]
-      if (last?.mesa.id === mesa.id) last.matches.push(p)
-      else mesaGrupos.push({ mesa, matches: [p] })
-    }
-
-    let y = 0
-    function dibujarEncabezadoColumnas() {
-      doc.setFillColor(...COLOR.primarioOs)
-      doc.rect(M, y, CW, TH, 'F')
-      doc.setTextColor(210, 214, 255); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
-      const chY = y + TH / 2 + 1
-      doc.text('HORA', xHora + C_HORA / 2, chY, { align: 'center' })
-      doc.text('JUGADORES', xJug + C_JUG / 2, chY, { align: 'center' })
-      for (let s = 1; s <= 5; s++) doc.text(`S${s}`, xS(s - 1) + C_SET / 2, chY, { align: 'center' })
-      doc.text('RES', xRes + C_RES / 2, chY, { align: 'center' })
-      doc.text('ÁRBITRO', xArb + C_ARB / 2, chY, { align: 'center' })
-      y += TH
-    }
-    function nuevaPagina() {
-      y = encabezado(doc, { club: f.ligaNombre, titulo: `Fecha ${f.numero} · Programación por mesa`, subtitulo: hoy, color: VERDE })
-      dibujarEncabezadoColumnas()
-    }
-    function saltoDePaginaSiNoCabe(alto: number) {
-      if (y + alto > H - PIE_RESERVA) { doc.addPage(); nuevaPagina() }
-    }
-
-    nuevaPagina()
-
-    if (allMatches.length === 0) {
-      sinDatos(doc, y, 'Todavía no hay partidos programados en esta fecha.')
-    }
-
-    for (const { mesa, matches } of mesaGrupos) {
-      saltoDePaginaSiNoCabe(MH + RH)
-
-      // Cada mesa es fija de UNA división durante toda la fecha — mostrar los
-      // dos por separado en cada fila era el mismo dato repetido. Acá se funden
-      // en un solo encabezado, coloreado con el color de esa división: así el
-      // color de la barra ya dice qué división es, sin tener que leer nada más,
-      // y ese mismo color se repite en el resto del documento (Por horario,
-      // Ranking) — un color = una división, en todos lados.
-      const divisionDeMesa = matches[0]?.divisionNombre ?? '—'
-      const colorMesa = colorPorNombre(divisionDeMesa)
-      doc.setFillColor(...colorMesa)
-      doc.rect(M, y, CW, MH, 'F')
-      doc.setTextColor(...COLOR.blanco); doc.setFontSize(9.5); doc.setFont('helvetica', 'bold')
-      doc.text(`Mesa ${mesa.numero}`, M + 4, y + MH / 2 + 1.2)
-      const anchoMesaTxt = doc.getTextWidth(`Mesa ${mesa.numero}`)
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
-      doc.text(`·  ${divisionDeMesa}`, M + 4 + anchoMesaTxt + 3, y + MH / 2 + 1.2)
-      doc.setFontSize(7.5)
-      doc.setTextColor(...tinte(colorMesa, 0.15))
-      doc.text(`${matches.length} partido${matches.length !== 1 ? 's' : ''}`, xR - 3, y + MH / 2 + 1.2, { align: 'right' })
-      y += MH
-
-      for (const p of matches) {
-        saltoDePaginaSiNoCabe(RH)
-
-        const dc = colorMesa
-        const lt = tinte(dc, 0.07)
-        const jA = nombres[p.jugadorAId] ?? '—'
-        const jB = nombres[p.jugadorBId] ?? '—'
-        const arb = p.arbitroId ? nombres[p.arbitroId] ?? '' : ''
-        const rMid = y + RH / 2
-
-        doc.setFillColor(...lt)
-        doc.rect(M, y, CW, RH, 'F')
-        doc.setFillColor(...dc)
-        doc.rect(M, y, STRIPE, RH, 'F')
-
-        doc.setTextColor(28, 40, 78); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
-        doc.text(p.bloqueHorario ?? '—', xHora + C_HORA / 2, rMid + 1, { align: 'center' })
-
-        // Sin la división acá: ya está en el encabezado de la mesa, así que
-        // el nombre del jugador arranca más arriba y entra con letra más grande.
-        doc.setFont('times', 'bold')
-        doc.setTextColor(8, 18, 42); doc.setFontSize(10.5)
-        doc.text(jA, xJug + 2, y + RH / 2 - 1.2, { maxWidth: C_JUG - 4 })
-
-        doc.setFont('times', 'italic')
-        doc.setTextColor(45, 58, 95); doc.setFontSize(9.5)
-        doc.text(jB, xJug + 2, y + RH - 3, { maxWidth: C_JUG - 4 })
-
-        doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.2)
-        doc.line(xJug, rMid, xR, rMid)
-
-        for (let s = 0; s < 5; s++) {
-          const xsCol = xS(s)
-          doc.setFillColor(...COLOR.blanco)
-          doc.setDrawColor(168, 188, 212); doc.setLineWidth(0.35)
-          doc.rect(xsCol + 0.8, y + 0.8, C_SET - 1.6, RH / 2 - 1, 'FD')
-          doc.rect(xsCol + 0.8, rMid + 0.5, C_SET - 1.6, RH / 2 - 1.3, 'FD')
-        }
-
-        doc.setFillColor(238, 242, 255)
-        doc.setDrawColor(...dc); doc.setLineWidth(0.5)
-        doc.rect(xRes + 0.5, y + 0.8, C_RES - 1, RH / 2 - 1, 'FD')
-        doc.rect(xRes + 0.5, rMid + 0.5, C_RES - 1, RH / 2 - 1.3, 'FD')
-
-        if (arb) {
-          doc.setFont('helvetica', 'bold')
-          doc.setTextColor(30, 45, 75); doc.setFontSize(8)
-          doc.text(arb, xArb + 2, rMid + 1, { maxWidth: C_ARB - 4 })
-        } else {
-          doc.setFont('helvetica', 'italic')
-          doc.setTextColor(...COLOR.tenue); doc.setFontSize(7)
-          doc.text('sin asignar', xArb + 2, rMid + 1, { maxWidth: C_ARB - 4 })
-        }
-
-        doc.setDrawColor(172, 190, 212); doc.setLineWidth(0.25)
-        for (const x of [xHora, xJug, xS(0), xS(1), xS(2), xS(3), xS(4), xRes, xArb]) {
-          doc.line(x, y, x, y + RH)
-        }
-        doc.setDrawColor(165, 185, 210); doc.setLineWidth(0.4)
-        doc.line(M, y + RH, xR, y + RH)
-
-        y += RH
-      }
-    }
-
-    // ── Observaciones ─────────────────────────────────────────────────
-    if (allMatches.length > 0) {
-      const OBS_H = 22
-      saltoDePaginaSiNoCabe(OBS_H + 4)
-      y += 4
-      doc.setFillColor(...COLOR.fondoSuave)
-      doc.rect(M, y, CW, OBS_H, 'F')
-      doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.35)
-      doc.rect(M, y, CW, OBS_H, 'S')
-      doc.setTextColor(...COLOR.mutado); doc.setFontSize(8); doc.setFont('helvetica', 'bold')
-      doc.text('Observaciones:', M + 3, y + 6)
-      doc.setDrawColor(...COLOR.borde); doc.setLineWidth(0.3)
-      doc.line(M + 3, y + 11, xR - 3, y + 11)
-      doc.line(M + 3, y + 17, xR - 3, y + 17)
-      doc.setTextColor(...COLOR.tenue); doc.setFontSize(7.5); doc.setFont('helvetica', 'normal')
-      doc.text('Firma árbitro:', M + 3, y + OBS_H - 2)
-      doc.line(M + 28, y + OBS_H - 1.5, M + 90, y + OBS_H - 1.5)
-    }
-
-    piePagina(doc, `${f.ligaNombre} · Fecha ${f.numero} · Programación por mesa`)
-    doc.save(`fecha${f.numero}_por_mesa.pdf`)
+    const { pdf, marca, partidos } = await partidosParaPdf()
+    await pdf.descargarFechaPorMesaPdf(partidos, { marca, ligaNombre: fecha.ligaNombre, numero: fecha.numero })
   }
 
 

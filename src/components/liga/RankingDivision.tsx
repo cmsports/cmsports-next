@@ -178,39 +178,11 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
   }, [cargar])
 
   async function exportarPDF() {
-    const { default: jsPDF } = await import('jspdf')
-    const { default: autoTable } = await import('jspdf-autotable')
-    const { COLOR, hexARgb, encabezado, piePagina, estiloTabla } = await import('@/lib/pdf/estilo')
-    const doc = new jsPDF()
-    const dc = hexARgb(accent)
-
-    let y = encabezado(doc, {
-      club: 'CmSports',
-      titulo: `Tabla de posiciones — ${nombreDivision}`,
-      subtitulo: new Date().toLocaleDateString('es-CL'),
-      color: dc,
-    })
-
-    autoTable(doc, {
-      startY: y,
-      head: [['#', 'Jugador', 'PJ', 'PG', 'PP', 'PTS', 'SF', 'SC', 'DS', 'DP']],
-      body: ranking.map((row, i) => [
-        i + 1,
-        nombres[row.jugadorId] ?? '—',
-        row.pj, row.pg, row.pp, row.pts, row.sf, row.sc,
-        row.ds > 0 ? `+${row.ds}` : row.ds,
-        row.dp > 0 ? `+${row.dp}` : row.dp,
-      ]),
-      ...estiloTabla(dc),
-      columnStyles: { 0: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'center', fontStyle: 'bold' }, 6: { halign: 'center' }, 7: { halign: 'center' }, 8: { halign: 'center' }, 9: { halign: 'center' } },
-    })
-    y = (doc as any).lastAutoTable.finalY + 6
-
-    doc.setFontSize(7.5); doc.setFont('helvetica', 'italic'); doc.setTextColor(...COLOR.tenue)
-    doc.text('PJ Jugados · PG Ganados · PP Perdidos · PTS Puntos · SF Sets a favor · SC Sets en contra · DS Diferencia de sets · DP Diferencia de puntos', 14, y)
-
-    piePagina(doc, `CmSports · Ranking · ${nombreDivision}`)
-    doc.save(`ranking_${nombreDivision.replace(/\s+/g, '_')}.pdf`)
+    const [{ descargarTablaDivisionPdf }, { marcaDesdeClub }] = await Promise.all([
+      import('@/lib/liga-tabla-pdf'), import('@/lib/pdf/marcaClub'),
+    ])
+    const marca = await marcaDesdeClub(supabase, perfil?.club_id)
+    await descargarTablaDivisionPdf({ marca, nombreDivision, ranking, nombreDe: id => nombres[id] ?? '—' })
   }
 
   if (loading) return (

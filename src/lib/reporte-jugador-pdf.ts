@@ -13,7 +13,7 @@
 import type { Marca } from '@/lib/pdf/papel'
 import {
   MARGEN, TINTA, TEXTO, GRIS, GRIS_CLARO, LINEA, FONDO, BLANCO, VERDE, ROJO, AMBAR, AZUL,
-  prepararFuentes, portada, pieDePagina, asegurar, seccion, cifras, tabla, mezclar, pesos, nota, anillo, colorDePorcentaje,
+  prepararFuentes, portada, pieDePagina, asegurar, seccion, cifras, tabla, mezclar, pesos, nota, anillo, colorDePorcentaje, retrato,
 } from '@/lib/pdf/papel'
 import { cargarLogoPdf, type LogoPdf } from '@/lib/pdf/estilo'
 
@@ -163,21 +163,7 @@ export async function construirReporteJugador(args: ArgsJugador): Promise<any> {
 
   // La foto, a la derecha del encabezado, en círculo.
   const foto: LogoPdf | null = await cargarLogoPdf(j.fotoUrl)
-  if (foto) {
-    const R = 12, cx = W - MARGEN - R, cy = 26
-    doc.setFillColor(...BLANCO); doc.setDrawColor(...marca.acento); doc.setLineWidth(0.6)
-    doc.circle(cx, cy, R + 0.8, 'FD')
-    // Recorte circular: la imagen se dibuja y encima se "borra" el contorno
-    // con un anillo blanco grueso (jsPDF no recorta con máscaras).
-    const esc = Math.max((R * 2) / foto.ancho, (R * 2) / foto.alto)
-    const aw = foto.ancho * esc, ah = foto.alto * esc
-    doc.addImage(foto.data, 'JPEG', cx - aw / 2, cy - ah / 2, aw, ah)
-    doc.setDrawColor(...BLANCO); doc.setLineWidth(R * 0.9)
-    doc.circle(cx, cy, R + R * 0.45 + 0.2, 'S')
-    doc.setDrawColor(...marca.acento); doc.setLineWidth(0.6)
-    doc.circle(cx, cy, R + 0.8, 'S')
-    doc.setLineWidth(0.3)
-  }
+  if (foto) retrato(doc, W - MARGEN - 12, 26, 12, j.nombre, foto, marca.acento)
 
   // ── 1. Asistencia ────────────────────────────────────────────────────────
   y = seccion(doc, y, marca, 'Asistencia', args.periodo)

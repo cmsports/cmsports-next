@@ -724,9 +724,10 @@ export default function LigaDetallePage() {
 
   async function exportarPDFPagos() {
     if (!liga) return
-    const { default: jsPDF } = await import('jspdf')
-    const { default: autoTable } = await import('jspdf-autotable')
-    const { encabezado, piePagina, filaTarjetas, sinDatos, estiloTabla, COLOR } = await import('@/lib/pdf/estilo')
+    const [{ nuevoDocumento, pieDePagina, seccion, cifras, hallazgos, barras, tabla, nota, pesos, TINTA, GRIS_CLARO, VERDE, ROJO, AMBAR }, { marcaDesdeClub }] = await Promise.all([
+      import('@/lib/pdf/papel'), import('@/lib/pdf/marcaClub'),
+    ])
+    const marca = await marcaDesdeClub(supabase, perfil?.club_id)
     const nombres = Object.fromEntries(jugadoresClub.map(j => [j.id, j.nombre]))
 
     const totalRecaudado = pagosReporteFilas.reduce((s, f) => s + f.montoPagado, 0)
@@ -734,47 +735,72 @@ export default function LigaDetallePage() {
     const cantPagado = pagosReporteFilas.filter(f => f.estado === 'pagado').length
     // 'exento' es quien se retiró de la liga: no se le cobra, así que no es
     // deuda. Sin esto seguía contando como deudor para siempre.
-    const cantPendientes = pagosReporteFilas.filter(f => f.estado !== 'pagado' && f.estado !== 'exento').length
+    const conSaldo = pagosReporteFilas.filter(f => f.estado !== 'pagado' && f.estado !== 'exento')
+    const saldo = conSaldo.reduce((s, f) => s + (f.montoTotal - f.montoPagado), 0)
 
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const hoy = new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })
-
-    let y = encabezado(doc, { club: liga.nombre, titulo: 'Reporte de pagos', subtitulo: hoy })
-
-    y = filaTarjetas(doc, y, [
-      { valor: `$${totalRecaudado.toLocaleString('es-CL')}`, etiqueta: 'RECAUDADO', color: COLOR.verde },
-      { valor: `$${totalEsperado.toLocaleString('es-CL')}`, etiqueta: 'ESPERADO', color: COLOR.primario },
-      { valor: `${cantPagado}`, etiqueta: 'PAGO COMPLETO', color: COLOR.verde },
-      { valor: `${cantPendientes}`, etiqueta: 'CON SALDO', color: COLOR.ambar },
+    const cab = { titulo: 'Reporte de pagos', subtitulo: liga.nombre, nota: `Generado el ${new Date().toLocaleDateString('es-CL')}` }
+    const { doc, autoTable, y: y0 } = await nuevoDocumento(marca, cab)
+    let y = cifras(doc, y0, marca, [
+      { etiqueta: 'Recaudado', valor: pesos(totalRecaudado), detalle: totalEsperado ? `${Math.round((totalRecaudado / totalEsperado) * 100)}% de lo esperado` : undefined, color: VERDE },
+      { etiqueta: 'Por cobrar', valor: saldo > 0 ? pesos(saldo) : 'Sin deuda', detalle: conSaldo.length ? `${conSaldo.length} jugador${conSaldo.length === 1 ? '' : 'es'} con saldo` : 'todos al día', color: saldo > 0 ? AMBAR : VERDE },
+      { etiqueta: 'Pago completo', valor: String(cantPagado), detalle: `de ${pagosReporteFilas.length} inscritos`, color: VERDE },
+      { etiqueta: 'Esperado', valor: pesos(totalEsperado), detalle: 'inscripciones de la liga' },
     ])
 
     if (pagosReporteFilas.length === 0) {
-      sinDatos(doc, y, 'No hay jugadores registrados en ninguna división todavía.')
+      nota(doc, y, 'No hay jugadores registrados en ninguna división todavía.')
     } else {
-      const body = pagosReporteFilas.map(f => [
-        f.divisionNombre,
-        nombres[f.jugadorId] ?? '—',
-        f.estado === 'pagado' ? 'Pagado' : f.estado === 'parcial' ? 'Parcial' : 'Pendiente',
-        `$${f.montoPagado.toLocaleString('es-CL')}`,
-        `$${f.montoTotal.toLocaleString('es-CL')}`,
-        `$${(f.montoTotal - f.montoPagado).toLocaleString('es-CL')}`,
+      // Por división: cuánto recaudó cada una contra lo esperado.
+      const divisiones = [...new Set(pagosReporteFilas.map(f => f.divisionNombre))]
+      const porDivision = divisiones.map(d => {
+        const filas = pagosReporteFilas.filter(f => f.divisionNombre === d)
+        const pagado = filas.reduce((s, f) => s + f.montoPagado, 0)
+        const esperado = filas.reduce((s, f) => s + f.montoTotal, 0)
+        return { nombre: d, pagado, esperado, pendientes: filas.filter(f => f.estado !== 'pagado' && f.estado !== 'exento').length }
+      })
+      const peor = [...porDivision].filter(d => d.esperado > 0).sort((a, b) => a.pagado / a.esperado - b.pagado / b.esperado)[0]
+      y = seccion(doc, y, marca, 'Hallazgos')
+      y = hallazgos(doc, y, [
+        { texto: `Se recaudó ${pesos(totalRecaudado)} de ${pesos(totalEsperado)} esperados; ${cantPagado} de ${pagosReporteFilas.length} inscritos pagaron completo.`, tono: conSaldo.length ? 'ojo' : 'bien' },
+        ...(peor && peor.pendientes > 0 ? [{ texto: `La división con más pendientes es ${peor.nombre}: ${peor.pendientes} con saldo (${Math.round((peor.pagado / peor.esperado) * 100)}% recaudado).`, tono: 'ojo' as const }] : []),
       ])
+      if (divisiones.length > 1) {
+        y = seccion(doc, y, marca, 'Por división')
+        y = barras(doc, y, marca, porDivision.map(d => ({ etiqueta: d.nombre, valor: d.esperado ? d.pagado / d.esperado : 0, texto: `${pesos(d.pagado)} de ${pesos(d.esperado)}`, color: d.pagado >= d.esperado ? VERDE : marca.acento })))
+      }
+
+      // Primero los que deben, para que no haya que buscar.
+      const orden = [...pagosReporteFilas].sort((a, b) => {
+        const peso = (e: string) => (e === 'pagado' ? 2 : e === 'exento' ? 3 : e === 'parcial' ? 1 : 0)
+        return peso(a.estado) - peso(b.estado) || a.divisionNombre.localeCompare(b.divisionNombre, 'es') || (nombres[a.jugadorId] ?? '').localeCompare(nombres[b.jugadorId] ?? '', 'es')
+      })
+      const etiqueta = (e: string) => (e === 'pagado' ? 'Pagado' : e === 'parcial' ? 'Parcial' : e === 'exento' ? 'Exento' : 'Pendiente')
+      y = seccion(doc, y, marca, 'Jugador por jugador', `${pagosReporteFilas.length} inscritos`)
       autoTable(doc, {
+        ...tabla(marca, {
+          numericas: [3, 4, 5], anchos: { 0: 30, 2: 24, 3: 26, 4: 26, 5: 26 },
+          alParsear: d => {
+            if (d.section !== 'body') return
+            const f = orden[d.row.index]
+            if (d.column.index === 2 && f) {
+              d.cell.styles.fontStyle = 'bold'
+              d.cell.styles.textColor = f.estado === 'pagado' ? VERDE : f.estado === 'parcial' ? AMBAR : f.estado === 'exento' ? GRIS_CLARO : ROJO
+            }
+            if (d.column.index === 5 && f && f.montoTotal - f.montoPagado > 0 && f.estado !== 'exento') { d.cell.styles.textColor = ROJO; d.cell.styles.fontStyle = 'bold' }
+          },
+        }),
         startY: y,
         head: [['División', 'Jugador', 'Estado', 'Pagado', 'Total', 'Saldo']],
-        body,
-        ...estiloTabla(),
-        didParseCell: hookData => {
-          if (hookData.section === 'body' && hookData.column.index === 2) {
-            const val = String(hookData.cell.raw)
-            hookData.cell.styles.textColor = val === 'Pagado' ? COLOR.verde : val === 'Parcial' ? COLOR.ambar : COLOR.tenue
-            hookData.cell.styles.fontStyle = 'bold'
-          }
-        },
+        body: orden.map(f => [
+          f.divisionNombre, nombres[f.jugadorId] ?? '—', etiqueta(f.estado),
+          pesos(f.montoPagado), pesos(f.montoTotal), f.estado === 'exento' ? '—' : pesos(f.montoTotal - f.montoPagado),
+        ]),
+        foot: [['Total', '', '', pesos(totalRecaudado), pesos(totalEsperado), pesos(saldo)]],
       })
     }
 
-    piePagina(doc, `${liga.nombre} · Reporte de pagos`)
+    doc.setTextColor(...TINTA)
+    pieDePagina(doc, marca, `${liga.nombre} · Reporte de pagos`)
     doc.save(`${liga.nombre.replace(/\s+/g, '_').toLowerCase()}_pagos.pdf`)
   }
 

@@ -273,107 +273,104 @@ export default function FinanzasSuperadminPage() {
 
   async function generarReportePDF() {
     setGenerandoPDF(true)
-    const { default: jsPDF } = await import('jspdf')
-    const { default: autoTable } = await import('jspdf-autotable')
-    const doc = new jsPDF()
-    const W = doc.internal.pageSize.getWidth()
-    const fmt = formatCLP
-    const hoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })
+    try {
+      const { nuevoDocumento, portada, pieDePagina, asegurar, seccion, cifras, barras, tabla, trasTabla, marcaDelClub, pesos, TINTA, GRIS, VERDE, ROJO, AMBAR, AZUL } = await import('@/lib/pdf/papel')
+      const marca = await marcaDelClub({ nombre: 'CmSports', logo_url: '/logo.png' })
+      const { mrr: mrrTotal, activos: planesActivos, vencidos: pagosVencidos, totalClubes: totalPDF } = metricasPlanes(clubes)
+      const cab = { titulo: 'Reporte de finanzas', subtitulo: 'CmSports · todos los clubes', nota: `Generado el ${new Date().toLocaleDateString('es-CL')}` }
+      const { doc, autoTable, y: y0 } = await nuevoDocumento(marca, cab)
+      let y = y0
 
-    doc.setFillColor(79, 70, 229); doc.rect(0, 0, W, 32, 'F')
-    doc.setTextColor(255, 255, 255); doc.setFontSize(18); doc.setFont('helvetica', 'bold')
-    doc.text('CmSports — Reporte de Finanzas', 14, 20)
-    doc.setFontSize(10); doc.setFont('helvetica', 'normal')
-    doc.text(hoy, W - 14, 20, { align: 'right' })
+      y = cifras(doc, y, marca, [
+        { etiqueta: 'Balance histórico', valor: pesos(resumen.balance), detalle: `${pesos(resumen.ingresos)} ingresos · ${pesos(resumen.egresos)} gastos`, color: resumen.balance >= 0 ? VERDE : ROJO },
+        { etiqueta: 'MRR', valor: pesos(mrrTotal), detalle: `${planesActivos} planes activos de ${totalPDF}`, color: AZUL },
+        { etiqueta: 'Este mes', valor: pesos(resumen.ingresosMes - resumen.egresosMes), detalle: `${pesos(resumen.ingresosMes)} cobrado · ${pesos(resumen.egresosMes)} gastado`, color: resumen.ingresosMes - resumen.egresosMes >= 0 ? VERDE : ROJO },
+        { etiqueta: 'Pagos vencidos', valor: pagosVencidos ? String(pagosVencidos) : '—', detalle: pagosVencidos ? 'clubes con pago atrasado' : 'ninguno', color: pagosVencidos ? AMBAR : VERDE },
+      ])
 
-    let y = 44
-    const { mrr: mrrTotal, activos: planesActivos, vencidos: pagosVencidos, totalClubes: totalPDF } = metricasPlanes(clubes)
-
-    doc.setTextColor(40, 40, 40); doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-    doc.text('Resumen', 14, y); y += 8
-    autoTable(doc, {
-      startY: y,
-      head: [['Concepto', 'Valor']],
-      body: [
-        ['Ingresos históricos', fmt(resumen.ingresos)],
-        ['Gastos históricos', fmt(resumen.egresos)],
-        ['Balance', fmt(resumen.balance)],
-        ['MRR total', fmt(mrrTotal)],
-        ['Cobrado este mes', fmt(resumen.ingresosMes)],
-        ['Gastado este mes', fmt(resumen.egresosMes)],
-        ['Planes activos', `${planesActivos} (de ${totalPDF} clubes, el resto en prueba)`],
-        ['Pagos vencidos', String(pagosVencidos)],
-      ],
-      theme: 'striped',
-      headStyles: { fillColor: [79, 70, 229] },
-      margin: { left: 14, right: 14 },
-    })
-    y = (doc as any).lastAutoTable.finalY + 12
-
-    doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-    doc.text('Suscripción por club', 14, y); y += 8
-    autoTable(doc, {
-      startY: y,
-      head: [['Club', 'Plan mensual', 'Estado plan', 'Próx. vencimiento', 'Total pagado', 'Último pago']],
-      body: clubes.map(c => {
+      y = seccion(doc, y, marca, 'Suscripción por club', `${clubes.length} clubes`)
+      const filasClubes = clubes.map(c => {
         const ep = (c.estado_plan || 'prueba') as EstadoPlan
         const hist = resumen.porClub.get(c.id)
-        return [
+        return { c, ep, hist }
+      })
+      autoTable(doc, {
+        ...tabla(marca, {
+          numericas: [1, 4], anchos: { 1: 28, 2: 26, 3: 30, 4: 30, 5: 24 },
+          alParsear: d => {
+            if (d.section !== 'body' || d.column.index !== 2) return
+            const ep = filasClubes[d.row.index]?.ep
+            d.cell.styles.fontStyle = 'bold'
+            d.cell.styles.textColor = ep === 'activo' ? VERDE : ep === 'suspendido' || ep === 'cancelado' ? ROJO : AMBAR
+          },
+        }),
+        startY: y,
+        head: [['Club', 'Plan mensual', 'Estado', 'Próx. vencimiento', 'Total pagado', 'Último pago']],
+        body: filasClubes.map(({ c, ep, hist }) => [
           c.nombre,
-          c.plan_mensual > 0 ? fmt(c.plan_mensual) : 'Por definir',
+          c.plan_mensual > 0 ? pesos(c.plan_mensual) : 'Por definir',
           PLAN_COLOR[ep]?.label || ep,
           fechaCorta(c.proximo_vencimiento),
-          fmt(hist?.total || 0),
+          pesos(hist?.total || 0),
           hist?.ultimo ? fechaCorta(hist.ultimo) : '—',
-        ]
-      }),
-      theme: 'striped',
-      headStyles: { fillColor: [14, 165, 233] },
-      margin: { left: 14, right: 14 },
-      styles: { fontSize: 9 },
-    })
-    y = (doc as any).lastAutoTable.finalY + 12
-
-    if (pagos.length > 0) {
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.text('Ingresos — historial completo', 14, y); y += 8
-      autoTable(doc, {
-        startY: y,
-        head: [['Fecha', 'Club', 'Concepto', 'Período', 'Método', 'Neto', 'IVA', 'Monto']],
-        body: pagos.map(p => [
-          fechaCorta(p.fecha_pago),
-          p.clubes?.nombre || '—',
-          LABEL_CONCEPTO[p.concepto] || p.concepto,
-          `${MESES[p.periodo_mes - 1]} ${p.periodo_anio}`,
-          p.metodo || '—',
-          p.monto_neto != null ? fmt(p.monto_neto) : '—',
-          p.monto_neto != null ? fmt(p.monto - p.monto_neto) : '—',
-          fmt(p.monto),
         ]),
-        theme: 'striped',
-        headStyles: { fillColor: [22, 163, 74] },
-        margin: { left: 14, right: 14 },
-        styles: { fontSize: 9 },
       })
-      y = (doc as any).lastAutoTable.finalY + 12
-    }
+      y = trasTabla(doc)
 
-    if (gastos.length > 0) {
-      doc.setFontSize(13); doc.setFont('helvetica', 'bold')
-      doc.text('Gastos', 14, y); y += 8
-      autoTable(doc, {
-        startY: y,
-        head: [['Fecha', 'Categoría', 'Descripción', 'Proveedor', 'Monto']],
-        body: gastos.map(g => [fechaCorta(g.fecha), g.categoria, g.descripcion, g.proveedor || '—', fmt(g.monto)]),
-        theme: 'striped',
-        headStyles: { fillColor: [220, 38, 38] },
-        margin: { left: 14, right: 14 },
-        styles: { fontSize: 9 },
-      })
-    }
+      const pagadoPorClub = filasClubes.filter(x => (x.hist?.total || 0) > 0).sort((a, b) => (b.hist?.total || 0) - (a.hist?.total || 0))
+      if (pagadoPorClub.length > 1) {
+        y = asegurar(doc, y, 20 + pagadoPorClub.length * 7.2, marca, cab)
+        y = seccion(doc, y, marca, 'Ingresos históricos por club')
+        y = barras(doc, y, marca, pagadoPorClub.map(x => ({ etiqueta: x.c.nombre, valor: x.hist?.total || 0, texto: pesos(x.hist?.total || 0) })), { anchoEtiqueta: 70 })
+      }
 
-    doc.save(`CmSports_Finanzas_${fechaChile()}.pdf`)
-    setGenerandoPDF(false)
+      if (pagos.length > 0) {
+        doc.addPage()
+        y = portada(doc, marca, { ...cab, titulo: 'Ingresos' })
+        y = seccion(doc, y, marca, 'Historial completo', `${pagos.length} pagos`)
+        autoTable(doc, {
+          ...tabla(marca, {
+            tamano: 8, numericas: [5, 6, 7], anchos: { 0: 20, 3: 26, 4: 22, 5: 22, 6: 20, 7: 24 },
+            alParsear: d => { if (d.section === 'body' && d.column.index === 7) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = VERDE } if (d.section === 'body' && d.column.index === 0) d.cell.styles.textColor = GRIS },
+          }),
+          startY: y,
+          head: [['Fecha', 'Club', 'Concepto', 'Período', 'Método', 'Neto', 'IVA', 'Monto']],
+          body: pagos.map(p => [
+            fechaCorta(p.fecha_pago),
+            p.clubes?.nombre || '—',
+            LABEL_CONCEPTO[p.concepto] || p.concepto,
+            `${MESES[p.periodo_mes - 1]} ${p.periodo_anio}`,
+            p.metodo || '—',
+            p.monto_neto != null ? pesos(p.monto_neto) : '—',
+            p.monto_neto != null ? pesos(p.monto - p.monto_neto) : '—',
+            pesos(p.monto),
+          ]),
+          foot: [['Total', '', '', '', '', '', '', pesos(resumen.ingresos)]],
+        })
+        y = trasTabla(doc)
+      }
+
+      if (gastos.length > 0) {
+        y = asegurar(doc, y, 40, marca, cab)
+        y = seccion(doc, y, marca, 'Gastos', `${gastos.length} registros`)
+        autoTable(doc, {
+          ...tabla(marca, {
+            tamano: 8, numericas: [4], anchos: { 0: 20, 1: 30, 3: 34, 4: 26 },
+            alParsear: d => { if (d.section === 'body' && d.column.index === 4) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = ROJO } if (d.section === 'body' && d.column.index === 0) d.cell.styles.textColor = GRIS },
+          }),
+          startY: y,
+          head: [['Fecha', 'Categoría', 'Descripción', 'Proveedor', 'Monto']],
+          body: gastos.map(g => [fechaCorta(g.fecha), g.categoria, g.descripcion, g.proveedor || '—', pesos(g.monto)]),
+          foot: [['Total', '', '', '', pesos(resumen.egresos)]],
+        })
+      }
+
+      doc.setTextColor(...TINTA)
+      pieDePagina(doc, marca, 'Reporte de finanzas · uso interno')
+      doc.save(`CmSports_Finanzas_${fechaChile()}.pdf`)
+    } finally {
+      setGenerandoPDF(false)
+    }
   }
 
   const resumen = resumenCmsports(pagos, gastos)

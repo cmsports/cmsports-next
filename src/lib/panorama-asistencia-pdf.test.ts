@@ -143,8 +143,9 @@ describe('lo que distingue una falta de una lista sin pasar', () => {
 describe('el estilo sale del módulo compartido', () => {
   it('ningún generador inventa su propio encabezado ni su propia paleta', () => {
     for (const archivo of [pdf, bloquePdf]) {
-      expect(archivo).toContain("from '@/lib/pdf/estilo'")
-      for (const fn of ['encabezado', 'piePagina', 'estiloTabla']) expect(archivo).toContain(fn)
+      // El molde v2: portada, pie y tablas salen de papel.ts.
+      expect(archivo).toContain("from '@/lib/pdf/papel'")
+      for (const fn of ['nuevoDocumento', 'pieDePagina', 'tabla(']) expect(archivo).toContain(fn)
     }
     for (const archivo of [xls, bloqueXls]) {
       expect(archivo).toContain("from '@/lib/excel/estilo'")
@@ -154,9 +155,12 @@ describe('el estilo sale del módulo compartido', () => {
 
   it('jsPDF y xlsx se cargan con import dinámico', () => {
     // Son ~300 KB cada uno: si entraran en el bundle los pagaría toda la app.
+    // Los PDF los cargan a través de nuevoDocumento (papel.ts).
+    const papel = leer('src/lib/pdf/papel.ts')
+    expect(papel).toMatch(/await import\('jspdf'\)/)
+    expect(papel).toMatch(/await import\('jspdf-autotable'\)/)
     for (const archivo of [pdf, bloquePdf]) {
-      expect(archivo).toMatch(/await import\('jspdf'\)/)
-      expect(archivo).toMatch(/await import\('jspdf-autotable'\)/)
+      expect(archivo).not.toMatch(/from 'jspdf/)
     }
     for (const archivo of [xls, bloqueXls]) {
       expect(archivo).toMatch(/await import\('xlsx-js-style'\)/)

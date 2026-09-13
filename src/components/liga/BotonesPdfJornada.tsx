@@ -27,10 +27,9 @@ export function BotonesPdfJornada({ ligaId, numero, clubNombre, ligaNombre, pie,
     try {
       const res = await leerJornada({ ligaId, numero })
       if (res.error || !res.jornada) { setAviso({ tipo: 'error', texto: res.error ?? 'No se pudo leer la fecha' }); return }
-      const pdf = await import('@/lib/liga-jornada-pdf')
-      const { cargarLogoPdf } = await import('@/lib/pdf/estilo')
-      const logo = await cargarLogoPdf(logoUrl)
-      const meta = { clubNombre, ligaNombre, pie: pie ?? undefined, logo }
+      const [pdf, { marcaDelClub }] = await Promise.all([import('@/lib/liga-jornada-pdf'), import('@/lib/pdf/papel')])
+      const marca = await marcaDelClub({ nombre: clubNombre, logo_url: logoUrl })
+      const meta = { marca, ligaNombre, pie: pie ?? undefined }
       if (tipo === 'programacion') await pdf.descargarJornadaPdf(res.jornada, meta)
       else if (tipo === 'planillas') await pdf.descargarPlanillasJornadaPdf(res.jornada, meta)
       else await pdf.descargarResultadosJornadaPdf(res.jornada, meta)

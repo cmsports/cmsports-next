@@ -1,8 +1,10 @@
 'use client'
 
-import type { jsPDF } from 'jspdf'
+// Los PDF del torneo oficial (asociación): programa, grupos, llaves y la
+// grilla mural. Molde v2 (lib/pdf/papel.ts). Reciben `club` y, si la
+// pantalla la tiene, la `marca` con logo; sin marca salen con el nombre.
 
-type RGB = [number, number, number]
+import type { Marca } from '@/lib/pdf/papel'
 
 export type FilaPrograma = {
   hora: string
@@ -15,113 +17,122 @@ export type FilaPrograma = {
   arbitro?: string | null
 }
 
+async function marcaDe(club: string, marca?: Marca): Promise<Marca> {
+  if (marca) return marca
+  const { marcaDelClub } = await import('@/lib/pdf/papel')
+  return marcaDelClub({ nombre: club, logo_url: null })
+}
+
 export async function exportarProgramaOficialPdf(params: {
   titulo: string
   subtitulo?: string
   club: string
+  marca?: Marca
   filas: FilaPrograma[]
   nombreArchivo: string
 }) {
-  const { default: jsPDF } = await import('jspdf')
-  const { default: autoTable } = await import('jspdf-autotable')
-  const { encabezado, piePagina, estiloTabla, sinDatos } = await import('@/lib/pdf/estilo')
-
-  const doc = new jsPDF({ orientation: 'landscape' })
-  const y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: params.subtitulo })
+  const { nuevoDocumento, pieDePagina, tabla, nota, TINTA, GRIS, GRIS_CLARO, VERDE } = await import('@/lib/pdf/papel')
+  const marca = await marcaDe(params.club, params.marca)
+  const { doc, autoTable, y } = await nuevoDocumento(marca, { titulo: params.titulo, subtitulo: params.subtitulo, nota: `Generado el ${new Date().toLocaleDateString('es-CL')}` }, { apaisado: true })
 
   if (!params.filas.length) {
-    sinDatos(doc, y, 'No hay partidos programados')
+    nota(doc, y, 'No hay partidos programados.')
   } else {
     autoTable(doc, {
+      ...tabla(marca, {
+        tamano: 8.5, centradas: [0, 1, 2], anchos: { 0: 12, 1: 18, 2: 14, 5: 70, 6: 34, 7: 26 },
+        alParsear: d => {
+          if (d.section !== 'body') return
+          if (d.column.index === 0) d.cell.styles.textColor = GRIS_CLARO
+          if (d.column.index === 1) d.cell.styles.fontStyle = 'bold'
+          if (d.column.index === 6) d.cell.styles.textColor = params.filas[d.row.index]?.arbitro ? GRIS : GRIS_CLARO
+          if (d.column.index === 7 && params.filas[d.row.index]?.resultado) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = VERDE }
+        },
+      }),
       startY: y,
       head: [['#', 'Hora', 'Mesa', 'Evento', 'Fase', 'Partido', 'Árbitro', 'Resultado']],
       body: params.filas.map(f => [
-        f.numeroIttf != null ? String(f.numeroIttf) : '—',
-        f.hora,
-        String(f.mesa),
-        f.evento,
-        f.fase,
-        f.partido,
-        f.arbitro || '—',
-        f.resultado || '—',
+        f.numeroIttf != null ? String(f.numeroIttf) : '—', f.hora, String(f.mesa), f.evento, f.fase, f.partido, f.arbitro || '—', f.resultado || '—',
       ]),
-      ...estiloTabla(),
-      columnStyles: {
-        0: { cellWidth: 12, halign: 'center' },
-        1: { cellWidth: 20 },
-        2: { cellWidth: 12, halign: 'center' },
-        5: { cellWidth: 55 },
-        6: { cellWidth: 28 },
-      },
     })
   }
 
-  piePagina(doc, params.club)
+  doc.setTextColor(...TINTA)
+  pieDePagina(doc, marca, params.titulo)
   doc.save(params.nombreArchivo)
 }
 
 export async function exportarGruposOficialPdf(params: {
   titulo: string
   club: string
+  marca?: Marca
   grupos: Array<{
     nombre: string
     filas: Array<{ pos: number; nombre: string; pts: number; pg: number; pp: number }>
   }>
   nombreArchivo: string
 }) {
-  const { default: jsPDF } = await import('jspdf')
-  const { default: autoTable } = await import('jspdf-autotable')
-  const { encabezado, piePagina, estiloTabla, COLOR } = await import('@/lib/pdf/estilo')
-
-  const doc = new jsPDF()
-  let y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: 'Clasificación ITTF (2/1/0)' })
+  const { nuevoDocumento, pieDePagina, asegurar, seccion, tabla, trasTabla, TINTA, GRIS_CLARO } = await import('@/lib/pdf/papel')
+  const marca = await marcaDe(params.club, params.marca)
+  const cab = { titulo: params.titulo, subtitulo: 'Clasificación ITTF (2/1/0)', nota: `Generado el ${new Date().toLocaleDateString('es-CL')}` }
+  const { doc, autoTable, y: y0 } = await nuevoDocumento(marca, cab)
+  let y = y0
 
   for (const g of params.grupos) {
-    if (y > 250) { doc.addPage(); y = 20 }
-    doc.setFontSize(11)
-    doc.setTextColor(...(COLOR.primarioOs as RGB))
-    doc.text(`Grupo ${g.nombre}`, 14, y)
-    y += 4
+    y = asegurar(doc, y, 20 + g.filas.length * 7, marca, cab)
+    y = seccion(doc, y, marca, `Grupo ${g.nombre}`, `${g.filas.length} jugadores`)
     autoTable(doc, {
+      ...tabla(marca, {
+        centradas: [0, 2, 3, 4], anchos: { 0: 10, 2: 18, 3: 18, 4: 18 },
+        alParsear: d => {
+          if (d.section !== 'body') return
+          if (d.column.index === 0) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = d.row.index < 2 ? marca.acento : GRIS_CLARO }
+          if (d.column.index === 2) d.cell.styles.fontStyle = 'bold'
+        },
+      }),
       startY: y,
       head: [['#', 'Jugador', 'Pts', 'PG', 'PP']],
       body: g.filas.map(r => [String(r.pos), r.nombre, String(r.pts), String(r.pg), String(r.pp)]),
-      ...estiloTabla(),
-      margin: { left: 14, right: 14 },
     })
-    y = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y
-    y += 10
+    y = trasTabla(doc, 8)
   }
 
-  piePagina(doc, params.club)
+  doc.setTextColor(...TINTA)
+  pieDePagina(doc, marca, params.titulo)
   doc.save(params.nombreArchivo)
 }
 
 export async function exportarLlavesOficialPdf(params: {
   titulo: string
   club: string
+  marca?: Marca
   filas: Array<{ fase: string; partido: string; resultado: string }>
   nombreArchivo: string
 }) {
-  const { default: jsPDF } = await import('jspdf')
-  const { default: autoTable } = await import('jspdf-autotable')
-  const { encabezado, piePagina, estiloTabla, sinDatos } = await import('@/lib/pdf/estilo')
-
-  const doc = new jsPDF()
-  const y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: 'Cuadro eliminatorio' })
+  const { nuevoDocumento, pieDePagina, tabla, nota, TINTA, GRIS, VERDE } = await import('@/lib/pdf/papel')
+  const marca = await marcaDe(params.club, params.marca)
+  const { doc, autoTable, y } = await nuevoDocumento(marca, { titulo: params.titulo, subtitulo: 'Cuadro eliminatorio', nota: `Generado el ${new Date().toLocaleDateString('es-CL')}` })
 
   if (!params.filas.length) {
-    sinDatos(doc, y, 'No hay llaves generadas')
+    nota(doc, y, 'No hay llaves generadas.')
   } else {
     autoTable(doc, {
+      ...tabla(marca, {
+        anchos: { 0: 34, 2: 36 },
+        alParsear: d => {
+          if (d.section !== 'body') return
+          if (d.column.index === 0) d.cell.styles.textColor = GRIS
+          if (d.column.index === 2 && params.filas[d.row.index]?.resultado && params.filas[d.row.index].resultado !== '—') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = VERDE }
+        },
+      }),
       startY: y,
       head: [['Fase', 'Partido', 'Resultado']],
       body: params.filas.map(f => [f.fase, f.partido, f.resultado]),
-      ...estiloTabla(),
     })
   }
 
-  piePagina(doc, params.club)
+  doc.setTextColor(...TINTA)
+  pieDePagina(doc, marca, params.titulo)
   doc.save(params.nombreArchivo)
 }
 
@@ -138,16 +149,14 @@ export async function exportarProgramaMuralPdf(params: {
   titulo: string
   subtitulo?: string
   club: string
+  marca?: Marca
   mesasCount: number
   celdas: CeldaMuralPdf[]
   nombreArchivo: string
 }) {
-  const { default: jsPDF } = await import('jspdf')
-  const { default: autoTable } = await import('jspdf-autotable')
-  const { encabezado, piePagina, estiloTabla, sinDatos } = await import('@/lib/pdf/estilo')
-
-  const doc = new jsPDF({ orientation: 'landscape' })
-  const y = encabezado(doc, { club: params.club, titulo: params.titulo, subtitulo: params.subtitulo })
+  const { nuevoDocumento, pieDePagina, tabla, nota, mezclar, TINTA } = await import('@/lib/pdf/papel')
+  const marca = await marcaDe(params.club, params.marca)
+  const { doc, autoTable, y } = await nuevoDocumento(marca, { titulo: params.titulo, subtitulo: params.subtitulo, nota: `Generado el ${new Date().toLocaleDateString('es-CL')}` }, { apaisado: true })
   const mesas = Array.from({ length: Math.max(params.mesasCount, 1) }, (_, i) => i + 1)
   const horas = [...new Set(params.celdas.map(c => c.hora))].sort()
   const porCelda = new Map<string, CeldaMuralPdf>()
@@ -157,31 +166,29 @@ export async function exportarProgramaMuralPdf(params: {
   }
 
   if (!horas.length) {
-    sinDatos(doc, y, 'No hay partidos programados')
+    nota(doc, y, 'No hay partidos programados.')
   } else {
     autoTable(doc, {
+      ...tabla(marca, {
+        conGrilla: true, tamano: 7, centradas: mesas.map((_, i) => i + 1), anchos: { 0: 16 },
+        alParsear: d => {
+          if (d.section !== 'body') return
+          if (d.column.index === 0) d.cell.styles.fontStyle = 'bold'
+          const h = horas[d.row.index]
+          if (porCelda.get(`esp|${h}`)) { d.cell.styles.fillColor = mezclar(marca.acento, 0.1); d.cell.styles.fontStyle = 'bold' }
+        },
+      }),
       startY: y,
       head: [['Hora', ...mesas.map(m => `Mesa ${m}`)]],
       body: horas.map(h => {
         const esp = porCelda.get(`esp|${h}`)
-        if (esp) {
-          return [h, ...mesas.map((_, i) => (i === 0 ? esp.etiqueta : ''))]
-        }
-        return [
-          h,
-          ...mesas.map(m => {
-            const c = porCelda.get(`${m}|${h}`)
-            if (!c) return ''
-            return c.detalle ? `${c.etiqueta}\n${c.detalle}` : c.etiqueta
-          }),
-        ]
+        if (esp) return [h, ...mesas.map((_, i) => (i === 0 ? esp.etiqueta : ''))]
+        return [h, ...mesas.map(m => { const c = porCelda.get(`${m}|${h}`); return c ? (c.detalle ? `${c.etiqueta}\n${c.detalle}` : c.etiqueta) : '' })]
       }),
-      ...estiloTabla(),
-      styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-      columnStyles: { 0: { cellWidth: 16, fontStyle: 'bold' } },
     })
   }
 
-  piePagina(doc, params.club)
+  doc.setTextColor(...TINTA)
+  pieDePagina(doc, marca, params.titulo)
   doc.save(params.nombreArchivo)
 }

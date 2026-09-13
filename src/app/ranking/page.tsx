@@ -157,7 +157,9 @@ export default function RankingPage() {
     if (!rankingActivo) return
     setExportando(true)
     try {
-      await exportarRankingPdf(rankingActivo, { clubNombre, reiniciadoEn })
+      const { marcaDesdeClub } = await import('@/lib/pdf/marcaClub')
+      const marca = await marcaDesdeClub(supabase, perfil?.club_id, clubNombre)
+      await exportarRankingPdf(rankingActivo, { marca, reiniciadoEn, fotos: fotoPorJugador })
     } catch (e) {
       alert(`No se pudo generar el PDF: ${e instanceof Error ? e.message : e}`)
     } finally {

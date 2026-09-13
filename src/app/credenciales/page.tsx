@@ -232,27 +232,19 @@ export default function CredencialesPage() {
   }
 
   async function exportarPdf() {
-    const { default: jsPDF } = await import('jspdf')
-    const { default: autoTable } = await import('jspdf-autotable')
-    const { COLOR, encabezado, piePagina, tituloSeccion, estiloTabla } = await import('@/lib/pdf/estilo')
-    const doc = new jsPDF()
+    const [{ nuevoDocumento, pieDePagina, seccion, tabla, trasTabla, aviso, asegurar, TINTA, GRIS_CLARO }, { marcaDesdeClub }, { createClient }] = await Promise.all([
+      import('@/lib/pdf/papel'), import('@/lib/pdf/marcaClub'), import('@/lib/supabase/client'),
+    ])
+    const marca = await marcaDesdeClub(createClient(), perfil?.club_id)
 
     const partes: string[] = []
-    if (verAdmins) partes.push(`Admins: ${admins.length}`)
-    if (verProfes) partes.push(`Profes: ${profes.length}`)
-    if (verJugadores) partes.push(`Jugadores: ${jugadores.length}`)
+    if (verAdmins) partes.push(`${admins.length} administrador${admins.length === 1 ? '' : 'es'}`)
+    if (verProfes) partes.push(`${profes.length} profesor${profes.length === 1 ? '' : 'es'}`)
+    if (verJugadores) partes.push(`${jugadores.length} jugador${jugadores.length === 1 ? '' : 'es'}`)
 
-    let y = encabezado(doc, {
-      club: 'Credenciales del club',
-      titulo: partes.join(' · '),
-      subtitulo: `Generado el ${new Date().toLocaleDateString('es-CL')}`,
-    })
-
-    doc.setFillColor(...COLOR.ambarSuave)
-    doc.roundedRect(14, y - 4, doc.internal.pageSize.getWidth() - 28, 9, 1.5, 1.5, 'F')
-    doc.setTextColor(...COLOR.ambar); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5)
-    doc.text('⚠ Documento confidencial — contiene contraseñas de acceso. No compartir públicamente.', 18, y + 2)
-    y += 12
+    const cab = { titulo: 'Credenciales de acceso', subtitulo: partes.join(' · '), nota: `Generado el ${new Date().toLocaleDateString('es-CL')}` }
+    const { doc, autoTable, y: y0 } = await nuevoDocumento(marca, cab)
+    let y = aviso(doc, y0, 'Documento confidencial: contiene contraseñas de acceso. No compartir ni dejar a la vista.')
 
     const bloques: Array<{ titulo: string; filas: FilaCredencial[] }> = []
     if (verAdmins && admins.length > 0) bloques.push({ titulo: 'Administradores', filas: admins })
@@ -260,18 +252,26 @@ export default function CredencialesPage() {
     if (verJugadores && jugadores.length > 0) bloques.push({ titulo: 'Jugadores', filas: jugadores })
 
     for (const b of bloques) {
-      y = tituloSeccion(doc, y, b.titulo)
+      y = asegurar(doc, y, 30, marca, cab)
+      y = seccion(doc, y, marca, b.titulo, `${b.filas.length}`)
       autoTable(doc, {
+        ...tabla(marca, {
+          numericas: [0], anchos: { 0: 10, 2: 46, 3: 36, 4: 24 },
+          alParsear: d => {
+            if (d.section !== 'body') return
+            if (d.column.index === 0) d.cell.styles.textColor = GRIS_CLARO
+            if (d.column.index === 3) { d.cell.styles.fontStyle = 'bold'; if (!b.filas[d.row.index]?.passwordPlano) d.cell.styles.textColor = GRIS_CLARO }
+          },
+        }),
         startY: y,
         head: [['#', 'Nombre', 'Usuario', 'Contraseña', 'Tipo']],
-        body: b.filas.map((f, i) => [i + 1, f.nombre, f.usuarioLogin || '—', f.passwordPlano || '(sin registro)', tipoLabel[f.tipoLogin]]),
-        ...estiloTabla(),
+        body: b.filas.map((f, i) => [String(i + 1), f.nombre, f.usuarioLogin || '—', f.passwordPlano || '(sin registro)', tipoLabel[f.tipoLogin]]),
       })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      y = (doc as any).lastAutoTable.finalY + 10
+      y = trasTabla(doc)
     }
 
-    piePagina(doc, 'CmSports · Credenciales del club — Confidencial')
+    doc.setTextColor(...TINTA)
+    pieDePagina(doc, marca, 'Credenciales de acceso · confidencial')
 
     // Nombre del archivo cuenta qué grupos vienen adentro, para que
     // credenciales-solo-jugadores.pdf no se confunda con el completo.

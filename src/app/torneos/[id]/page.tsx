@@ -2517,13 +2517,17 @@ export default function TorneoDetallePage() {
                     const res = await guardarGastosGestion({ torneoId, torneoNombre: torneo?.nombre || '', gastos })
                     if (res.error) { alert('Error al guardar gastos: ' + res.error); return }
                   }
-                  const { descargarInformeFinancieroPdf } = await import('@/lib/torneo-informe-pdf')
-                  descargarInformeFinancieroPdf({
+                  const [{ descargarInformeFinancieroPdf }, { marcaDesdeClub }] = await Promise.all([
+                    import('@/lib/torneo-informe-pdf'), import('@/lib/pdf/marcaClub'),
+                  ])
+                  const marca = await marcaDesdeClub(supabase, torneo?.club_id ?? perfil?.club_id)
+                  await descargarInformeFinancieroPdf({
                     torneoNombre: torneo?.nombre || 'Torneo',
+                    fecha: torneo?.fecha_inicio ? new Date(torneo.fecha_inicio + 'T12:00:00').toLocaleDateString('es-CL') : null,
                     cuota, totalInscritos, pagados, recaudado,
                     recaudadoEfectivo, recaudadoTransferencia, recaudadoPendienteSubir: recaudadoPendiente,
                     jugadores: listaJug, premios, gastos, gastosRegistradosEnFinanzas: premiosYaGuardados, metodoPremio: premioMetodo,
-                  })
+                  }, marca)
                   setInformeOpen(false)
                 }}
                 style={{ flex:1, padding:11, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>

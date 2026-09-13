@@ -290,7 +290,10 @@ export function cifras(doc: any, y: number, marca: Marca, lista: Cifra[]): numbe
     doc.rect(x, y, 1.2, alto, 'F')
     fuente(doc, 'semibold', 7.5, GRIS)
     doc.text(c.etiqueta.toUpperCase(), x + 5, y + 4.5, { charSpace: 0.3 })
-    fuente(doc, 'bold', 19, TINTA)
+    // Un valor largo (un nombre, por ejemplo) se achica hasta que quepa.
+    let tam = 19
+    fuente(doc, 'bold', tam, TINTA)
+    while (doc.getTextWidth(c.valor) > ancho - 7 && tam > 9) { tam -= 1; fuente(doc, 'bold', tam, TINTA) }
     doc.text(c.valor, x + 5, y + 14)
     let dx = x + 5
     if (c.variacion != null && Number.isFinite(c.variacion)) {
@@ -401,7 +404,10 @@ export function columnas(doc: any, y: number, cols: ColumnaVertical[], series: A
   // repartirse en toda la hoja con barras de palito.
   const grupoW = Math.min(64, ancho / Math.max(1, cols.length))
   const inicio = x0 + (ancho - grupoW * cols.length) / 2
-  const barW = Math.min(16, (grupoW - 8) / Math.max(1, series.length))
+  // Con muchas columnas el espacio entre grupos se achica para que las
+  // barras sigan teniendo cuerpo.
+  const separacion = cols.length > 8 ? 1.5 : 8
+  const barW = Math.min(16, (grupoW - separacion) / Math.max(1, series.length))
   cols.forEach((c, i) => {
     const gx = inicio + i * grupoW + (grupoW - barW * series.length) / 2
     c.valores.forEach((v, k) => {
@@ -453,11 +459,64 @@ export function anillo(doc: any, cx: number, cy: number, r: number, pct: number,
   doc.setLineWidth(0.3)
 }
 
+/**
+ * Abre un documento con la fuente y la portada puestas. Devuelve jsPDF,
+ * autotable y el `y` donde empieza el contenido, para no repetir el mismo
+ * arranque en cada reporte.
+ */
+export async function nuevoDocumento(marca: Marca, p: Portada, opts: { apaisado?: boolean } = {}) {
+  const { default: jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+  const doc = new jsPDF({ orientation: opts.apaisado ? 'landscape' : 'portrait' })
+  await prepararFuentes(doc)
+  const y = portada(doc, marca, p)
+  return { doc, autoTable, y }
+}
+
+/** Dónde terminó la última tabla, más un respiro. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function trasTabla(doc: any, respiro = 10): number {
+  return (doc.lastAutoTable?.finalY ?? MARGEN) + respiro
+}
+
+/** La línea de acento bajo la cabecera de una tabla, para `didDrawCell`. */
+export function lineaCabecera(marca: Marca) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data: any) => {
+    if (data.section !== 'head') return
+    const c = data.cell
+    data.doc.setDrawColor(...marca.acento)
+    data.doc.setLineWidth(0.5)
+    data.doc.line(c.x, c.y + c.height, c.x + c.width, c.y + c.height)
+  }
+}
+
+export interface OpcionesTabla {
+  /** Columnas alineadas a la derecha (cabecera incluida). */
+  numericas?: number[]
+  /** Columnas centradas (cabecera incluida). */
+  centradas?: number[]
+  anchos?: Record<number, number>
+  /** Gancho propio sobre cada celda; corre después del de la tabla. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  alParsear?: (data: any) => void
+  /** Gancho propio al dibujar cada celda; corre después de la línea de cabecera. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  alDibujar?: (data: any) => void
+  /** Con líneas entre celdas: para planillas que se llenan a mano. */
+  conGrilla?: boolean
+  tamano?: number
+}
+
 /** Estilo de tabla limpio: cabecera en tinta sobre fondo claro, línea de acento, zebra suave. */
-export function tabla(marca: Marca, opts: { numericas?: number[]; anchos?: Record<number, number> } = {}) {
+export function tabla(marca: Marca, opts: OpcionesTabla = {}) {
   const columnStyles: Record<number, Record<string, unknown>> = {}
   for (const i of opts.numericas ?? []) columnStyles[i] = { halign: 'right' }
+  for (const i of opts.centradas ?? []) columnStyles[i] = { halign: 'center' }
   for (const [i, w] of Object.entries(opts.anchos ?? {})) columnStyles[Number(i)] = { ...(columnStyles[Number(i)] ?? {}), cellWidth: w }
+  const grilla = !!opts.conGrilla
+  const tam = opts.tamano ?? 8.5
+  const relleno = { top: tam * 0.3, bottom: tam * 0.3, left: 2.5, right: 2.5 }
   return {
     theme: 'plain' as const,
     // El total va una sola vez, al final: repetido en cada página parece que
@@ -465,29 +524,85 @@ export function tabla(marca: Marca, opts: { numericas?: number[]; anchos?: Recor
     showFoot: 'lastPage' as const,
     showHead: 'everyPage' as const,
     margin: { left: MARGEN, right: MARGEN, bottom: ALTO_PIE + 4 },
-    styles: { font: interDisponible ? 'Inter' : 'helvetica', fontSize: 8.5, textColor: TEXTO, cellPadding: { top: 2.6, bottom: 2.6, left: 2.5, right: 2.5 }, lineWidth: 0, lineColor: BLANCO, overflow: 'linebreak' as const },
+    styles: { font: interDisponible ? 'Inter' : 'helvetica', fontSize: tam, textColor: TEXTO, cellPadding: relleno, lineWidth: grilla ? 0.2 : 0, lineColor: grilla ? GRIS_CLARO : BLANCO, overflow: 'linebreak' as const },
     tableLineWidth: 0,
     // La cabecera se alinea igual que su columna (autotable no lo hace solo).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     didParseCell: (data: any) => {
       if (data.section === 'head' && (opts.numericas ?? []).includes(data.column.index)) data.cell.styles.halign = 'right'
+      if (data.section === 'head' && (opts.centradas ?? []).includes(data.column.index)) data.cell.styles.halign = 'center'
+      opts.alParsear?.(data)
     },
-    headStyles: { fontStyle: (interDisponible ? 'semibold' : 'bold') as 'bold', fontSize: 7.5, textColor: GRIS, fillColor: BLANCO, cellPadding: { top: 2, bottom: 2.4, left: 2.5, right: 2.5 } },
+    headStyles: { fontStyle: (interDisponible ? 'semibold' : 'bold') as 'bold', fontSize: Math.max(6.5, tam - 1), textColor: GRIS, fillColor: BLANCO, cellPadding: { top: 2, bottom: 2.4, left: 2.5, right: 2.5 } },
     bodyStyles: { fillColor: BLANCO },
-    alternateRowStyles: { fillColor: FONDO },
+    alternateRowStyles: { fillColor: grilla ? BLANCO : FONDO },
     footStyles: { fontStyle: 'bold' as const, textColor: TINTA, fillColor: mezclar(marca.acento, 0.10) },
     columnStyles,
     // Línea de acento bajo la cabecera, celda por celda (así sale también
     // cuando la tabla sigue en otra página).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     didDrawCell: (data: any) => {
-      if (data.section !== 'head') return
-      const c = data.cell
-      data.doc.setDrawColor(...marca.acento)
-      data.doc.setLineWidth(0.5)
-      data.doc.line(c.x, c.y + c.height, c.x + c.width, c.y + c.height)
+      lineaCabecera(marca)(data)
+      opts.alDibujar?.(data)
     },
   }
+}
+
+/**
+ * Retrato en círculo: la foto recortada de verdad (con clip), o las iniciales
+ * sobre el color cuando no hay foto. `r` en mm.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function retrato(doc: any, cx: number, cy: number, r: number, nombre: string, foto: LogoPdf | null | undefined, color: RGB) {
+  if (foto) {
+    const esc = Math.max((r * 2) / foto.ancho, (r * 2) / foto.alto)
+    const aw = foto.ancho * esc, ah = foto.alto * esc
+    doc.saveGraphicsState()
+    doc.circle(cx, cy, r, null)
+    doc.clip()
+    doc.discardPath()
+    doc.addImage(foto.data, 'JPEG', cx - aw / 2, cy - ah / 2, aw, ah)
+    doc.restoreGraphicsState()
+    doc.setDrawColor(...color); doc.setLineWidth(0.8)
+    doc.circle(cx, cy, r, 'S')
+  } else {
+    doc.setFillColor(...mezclar(color, 0.15)); doc.setDrawColor(...color); doc.setLineWidth(0.8)
+    doc.circle(cx, cy, r, 'FD')
+    const ini = nombre.split(' ').filter(Boolean).map(p => p[0]).join('').slice(0, 2).toUpperCase()
+    fuente(doc, 'bold', r * 0.95, color)
+    doc.text(ini, cx, cy + r * 0.34, { align: 'center' })
+  }
+  doc.setLineWidth(0.3)
+}
+
+/** Una franja de título con fondo de acento y texto blanco (mesa, día, bloque). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function franja(doc: any, y: number, marca: Marca, texto: string, derecha?: string, alto = 6.5): number {
+  const W = doc.internal.pageSize.getWidth()
+  doc.setFillColor(...marca.acento)
+  doc.roundedRect(MARGEN, y, W - 2 * MARGEN, alto, 1, 1, 'F')
+  fuente(doc, 'bold', 8.5, BLANCO)
+  doc.text(texto, MARGEN + 3, y + alto * 0.68)
+  if (derecha) {
+    fuente(doc, 'normal', 7.5, BLANCO)
+    doc.text(derecha, W - MARGEN - 3, y + alto * 0.68, { align: 'right' })
+  }
+  return y + alto
+}
+
+/** Un aviso destacado (ámbar u otro tono), de una o dos líneas. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function aviso(doc: any, y: number, texto: string, color: RGB = AMBAR): number {
+  const W = doc.internal.pageSize.getWidth()
+  fuente(doc, 'semibold', 8.5, color)
+  const lineas: string[] = doc.splitTextToSize(texto, W - 2 * MARGEN - 10)
+  const alto = lineas.length * 4.4 + 4.5
+  doc.setFillColor(...mezclar(color, 0.1))
+  doc.roundedRect(MARGEN, y, W - 2 * MARGEN, alto, 1.5, 1.5, 'F')
+  doc.setFillColor(...color)
+  doc.rect(MARGEN, y, 1.2, alto, 'F')
+  doc.text(lineas, MARGEN + 5, y + 5.2)
+  return y + alto + 6
 }
 
 /**
@@ -496,15 +611,17 @@ export function tabla(marca: Marca, opts: { numericas?: number[]; anchos?: Recor
  * llevar el número (0–100) como texto y se dibuja encima.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function barraEnCelda(doc: any, cell: any, pct: number, color: RGB) {
+export function barraEnCelda(doc: any, cell: any, pct: number, color: RGB, texto: string | null = `${Math.round(pct)}%`) {
   const x = cell.x + 2.5, y = cell.y + cell.height / 2 - 1.4
-  const w = cell.width - 5 - 12
+  const w = cell.width - 5 - (texto ? 12 : 0)
   doc.setFillColor(...FONDO)
   doc.roundedRect(x, y, w, 2.8, 0.8, 0.8, 'F')
   doc.setFillColor(...color)
   doc.roundedRect(x, y, Math.max(0.8, (Math.max(0, Math.min(100, pct)) / 100) * w), 2.8, 0.8, 0.8, 'F')
-  fuente(doc, 'semibold', 7.5, TINTA)
-  doc.text(`${Math.round(pct)}%`, cell.x + cell.width - 2.5, cell.y + cell.height / 2 + 1.1, { align: 'right' })
+  if (texto) {
+    fuente(doc, 'semibold', 7.5, TINTA)
+    doc.text(texto, cell.x + cell.width - 2.5, cell.y + cell.height / 2 + 1.1, { align: 'right' })
+  }
 }
 
 export const colorDePorcentaje = (pct: number): RGB => (pct >= 75 ? VERDE : pct >= 50 ? AMBAR : ROJO)
