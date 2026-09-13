@@ -172,3 +172,27 @@ describe('eliminación directa: el BYE avanza solo a la ronda siguiente', () => 
     for (const p of reales) expect(p.ganador).toBeFalsy()
   })
 })
+
+// Spinhouse, 2026-09-13: un torneo de eliminación directa se cerró como torneo
+// tradicional (10 grupos de 3 con round robin) sin un solo error. La lectura
+// del torneo había fallado y `modalidadDe(undefined)` cae en 'grupos'. Si el
+// torneo no se puede leer, el cierre tiene que cortar ahí.
+describe('si no se puede leer el torneo, no se arma nada', () => {
+  it('devuelve error y no toca la mesa ni crea grupos ni partidos', async () => {
+    const tablas = escenario()
+    const base = fakeSupabase(tablas as any)
+    const fallando = {
+      from: (tabla: string) => {
+        if (tabla !== 'torneos') return base.from(tabla)
+        const b: any = { select: () => b, eq: () => b, single: () => Promise.resolve({ data: null, error: { message: 'JWT expired' } }) }
+        return b
+      },
+    }
+    mocks.requireAdmin.mockResolvedValue({ error: null, supabase: fallando, perfil: { club_id: 'club' } })
+    const res = await cerrarInscripcionYGenerarGrupos({ torneoId: 't1' })
+    expect(res.error).toMatch(/No se pudo leer el torneo/)
+    expect(tablas.torneo_grupos.map(g => g.nombre)).toEqual(['MESA'])
+    expect(tablas.grupo_jugadores).toHaveLength(11)
+    expect(tablas.torneo_partidos).toHaveLength(0)
+  })
+})

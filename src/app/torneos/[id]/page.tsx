@@ -124,6 +124,10 @@ export default function TorneoDetallePage() {
   const [dragJugadorGrupo, setDragJugadorGrupo] = useState<{ jugadorId: string; grupoId: string } | null>(null)
   const [moviendoJugadorId, setMoviendoJugadorId] = useState<string | null>(null)
   const [cerrandoInscripcion, setCerrandoInscripcion] = useState(false)
+  // El estado de arriba pinta el botón; esta ref frena el segundo clic, que
+  // llega antes de que React vuelva a pintar. Dos cierres corriendo a la vez
+  // se pisan: uno borra la mesa mientras el otro la lee.
+  const cerrandoRef = useRef(false)
   const [generandoTardios, setGenerandoTardios] = useState(false)
   const [creandoGrupoManual, setCreandoGrupoManual] = useState(false)
   const [accionGrupoManual, setAccionGrupoManual] = useState<{ grupoId: string; tipo: 'finalizar' | 'cancelar' } | null>(null)
@@ -538,7 +542,8 @@ export default function TorneoDetallePage() {
 
   async function cerrarInscripcion() {
     if (!confirm('¿Cerrar inscripción y generar grupos?')) return
-    if (cerrandoInscripcion) return
+    if (cerrandoInscripcion || cerrandoRef.current) return
+    cerrandoRef.current = true
     setCerrandoInscripcion(true)
     try {
       if (cabezasConCambios) {
@@ -551,6 +556,7 @@ export default function TorneoDetallePage() {
       setMesaOpen(false)
       await cargarTorneo()
     } finally {
+      cerrandoRef.current = false
       setCerrandoInscripcion(false)
     }
   }
@@ -561,7 +567,8 @@ export default function TorneoDetallePage() {
   // apretar el botón — en ese caso se guardan primero, igual que al cerrar.
   async function regenerarGrupos() {
     if (!confirm('¿Regenerar los grupos? Se recalculan desde los jugadores inscritos, conservando las cabezas de serie guardadas.')) return
-    if (cerrandoInscripcion) return
+    if (cerrandoInscripcion || cerrandoRef.current) return
+    cerrandoRef.current = true
     setCerrandoInscripcion(true)
     try {
       if (cabezasConCambios) {
@@ -573,6 +580,7 @@ export default function TorneoDetallePage() {
       if (res.error) { alert(res.error); return }
       await cargarTorneo()
     } finally {
+      cerrandoRef.current = false
       setCerrandoInscripcion(false)
     }
   }
@@ -2771,12 +2779,14 @@ export default function TorneoDetallePage() {
               <button onClick={cerrarInscripcion} disabled={jugadoresInscritos.length < minimoInscritos || cerrandoInscripcion}
                 style={{ width:'100%', padding:12, background: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#f0fdf4':'#f4f7fa', color: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#16a34a': hint, border:`1px solid ${jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'#bbf7d0':'#e2e8f0'}`, borderRadius:8, fontSize:13, fontWeight:600, cursor: jugadoresInscritos.length >= minimoInscritos && !cerrandoInscripcion?'pointer':'not-allowed' }}>
                 {cerrandoInscripcion
-                  ? (esLiguilla ? 'Cerrando y armando el calendario…' : 'Guardando y generando grupos…')
+                  ? (esLiguilla ? 'Cerrando y armando el calendario…' : esEliminacion ? 'Cerrando y armando el cuadro…' : 'Guardando y generando grupos…')
                   : jugadoresInscritos.length < minimoInscritos
                     ? `Mínimo ${minimoInscritos} jugadores (faltan ${minimoInscritos - jugadoresInscritos.length})`
                     : esLiguilla
                       ? `✓ Cerrar inscripción · ${partidosLiguilla} partidos en ${fechasLiguilla} fechas`
-                      : `✓ ${cabezasConCambios ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · generar ${numGruposEstimados} grupos`}
+                      : esEliminacion
+                        ? `✓ ${cabezasConCambios ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · armar el cuadro con ${jugadoresInscritos.length} jugadores`
+                        : `✓ ${cabezasConCambios ? 'Guardar cabezas y cerrar' : 'Cerrar inscripción'} · generar ${numGruposEstimados} grupos`}
               </button>
             ) : null}
 

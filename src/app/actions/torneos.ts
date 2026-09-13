@@ -1489,8 +1489,13 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
 
   const { torneoId } = params
 
-  const { data: torneoInfo } = await (supabase as any).from('torneos')
+  // Si el torneo no se puede leer, se corta acá. Antes seguía con
+  // `torneoInfo` en null: `modalidadDe(undefined)` cae en 'grupos', y un
+  // torneo de eliminación directa o una liguilla se armaban como torneo
+  // tradicional, sin un solo error (Spinhouse, 2026-09-13).
+  const { data: torneoInfo, error: errTorneo } = await (supabase as any).from('torneos')
     .select('tipo, formato, ruedas').eq('id', torneoId).single()
+  if (errTorneo || !torneoInfo) return { error: `No se pudo leer el torneo${errTorneo ? ': ' + errTorneo.message : ''}` }
   const esExterno = torneoInfo?.tipo === 'externo'
 
   // La modalidad decide cómo se reparten los inscritos y qué partidos se crean.
