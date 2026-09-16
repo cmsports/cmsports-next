@@ -20,6 +20,7 @@ export interface Database {
           estado_plan: string
           fecha_inicio_plan: string | null
           proximo_vencimiento: string | null
+          plan_mensual_neto: number | null
         }
         Insert: {
           id?: string
@@ -37,6 +38,7 @@ export interface Database {
           estado_plan?: string
           fecha_inicio_plan?: string | null
           proximo_vencimiento?: string | null
+          plan_mensual_neto?: number | null
         }
         Update: {
           id?: string
@@ -54,6 +56,7 @@ export interface Database {
           estado_plan?: string
           fecha_inicio_plan?: string | null
           proximo_vencimiento?: string | null
+          plan_mensual_neto?: number | null
         }
         Relationships: []
       }

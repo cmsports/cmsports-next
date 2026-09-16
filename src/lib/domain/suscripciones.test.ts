@@ -133,7 +133,28 @@ describe('las cuentas de CmSports', () => {
 
   it('sin pagos ni gastos no revienta: todo en cero', () => {
     const r = resumenCmsports([], [], '2026-09-03')
-    expect(r).toMatchObject({ ingresos: 0, egresos: 0, balance: 0, ingresosMes: 0, egresosMes: 0 })
+    expect(r).toMatchObject({ ingresos: 0, egresos: 0, balance: 0, ingresosMes: 0, egresosMes: 0, deudaSocio: 0 })
     expect(r.porClub.size).toBe(0)
+  })
+
+  it('deudaSocio: lo retirado menos lo repuesto', () => {
+    const conRetiro = [
+      { monto: 12000, fecha: '2026-07-01' },
+      { monto: 60902, fecha: '2026-08-25', categoria: 'Retiro socio' },
+      { monto: 9990, fecha: '2026-08-29', categoria: 'Retiro socio' },
+    ]
+    const conReembolso = [
+      ...pagos,
+      { club_id: null, monto: 5700, fecha_pago: '2026-09-15', categoria: 'Reembolso' },
+    ]
+    const r = resumenCmsports(conReembolso, conRetiro, '2026-09-16')
+    expect(r.deudaSocio).toBe(60902 + 9990 - 5700)
+  })
+
+  it('deudaSocio no baja de cero aunque se reponga de más', () => {
+    const gastos = [{ monto: 1000, fecha: '2026-08-01', categoria: 'Retiro socio' }]
+    const pagosConReembolso = [{ club_id: null, monto: 5000, fecha_pago: '2026-09-01', categoria: 'Reembolso' }]
+    const r = resumenCmsports(pagosConReembolso, gastos, '2026-09-16')
+    expect(r.deudaSocio).toBe(0)
   })
 })
