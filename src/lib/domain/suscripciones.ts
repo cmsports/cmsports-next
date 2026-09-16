@@ -106,7 +106,7 @@ export const CONCEPTOS: { valor: ConceptoPago; label: string }[] = [
 
 export const LABEL_CONCEPTO = Object.fromEntries(CONCEPTOS.map(c => [c.valor, c.label])) as Record<string, string>
 
-type PagoRecibido = { club_id: string; monto: number | null; fecha_pago: string }
+type PagoRecibido = { club_id: string | null; monto: number | null; fecha_pago: string }
 type GastoEmpresa = { monto: number | null; fecha: string }
 
 const suma = (filas: { monto: number | null }[]) => filas.reduce((total, f) => total + Number(f.monto || 0), 0)
@@ -136,8 +136,11 @@ export function resumenCmsports(pagos: PagoRecibido[], gastos: GastoEmpresa[], h
   const ingresos = suma(pagos)
   const egresos = suma(gastos)
 
+  // Sin club_id el ingreso no es de ningún club — no entra al acumulado por
+  // club, solo al total general de más arriba.
   const porClub = new Map<string, { total: number; pagos: number; ultimo: string | null }>()
   for (const p of pagos) {
+    if (!p.club_id) continue
     const acum = porClub.get(p.club_id) || { total: 0, pagos: 0, ultimo: null }
     acum.total += Number(p.monto || 0)
     acum.pagos += 1
