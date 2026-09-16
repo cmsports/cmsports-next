@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { PerfilProvider } from "@/lib/auth/PerfilProvider";
 import { MontosProvider } from "@/lib/ui/MontosProvider";
 import { ModulosProvider } from "@/lib/hooks/useModulos";
@@ -48,6 +49,7 @@ export default function RootLayout({
             </MontosProvider>
           </ModulosProvider>
         </PerfilProvider>
+        <Analytics />
       </body>
     </html>
   );
