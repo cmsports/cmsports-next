@@ -20,6 +20,9 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 // esto es un `datalist`, no una lista cerrada.
 const CATEGORIAS_GASTO = ['Servidores y hosting', 'Dominio', 'Herramientas y licencias', 'Marketing', 'Contabilidad', 'Equipamiento', 'Traslados', 'Otro']
 
+// Ingresos que no son de un club (migración 278). También texto libre.
+const CATEGORIAS_INGRESO = ['Reembolso', 'Aporte', 'Venta directa', 'Otro']
+
 const ACEPTA_FACTURA = '.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'
 
 const ESTADO_COLOR: Record<string, { bg: string; fg: string }> = {
@@ -37,7 +40,7 @@ const PLAN_COLOR: Record<EstadoPlan, { bg: string; fg: string; label: string }> 
 
 const fechaCorta = (iso: string | null) => iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('es-CL') : '—'
 
-type Pago = { id: string; club_id: string; monto: number; periodo_mes: number; periodo_anio: number; fecha_pago: string; metodo: string | null; notas: string | null; concepto: string; factura_path: string | null; factura_nombre: string | null; monto_neto: number | null; clubes?: { nombre: string } | null }
+type Pago = { id: string; club_id: string | null; monto: number; periodo_mes: number; periodo_anio: number; fecha_pago: string; metodo: string | null; notas: string | null; concepto: string; categoria: string | null; factura_path: string | null; factura_nombre: string | null; monto_neto: number | null; clubes?: { nombre: string } | null }
 type Gasto = { id: string; fecha: string; monto: number; categoria: string; descripcion: string; proveedor: string | null; factura_path: string | null; factura_nombre: string | null }
 
 export default function FinanzasSuperadminPage() {
@@ -50,8 +53,8 @@ export default function FinanzasSuperadminPage() {
   const [loadingDatos, setLoadingDatos] = useState(true)
   const [editandoPlan, setEditandoPlan] = useState<string | null>(null)
   const [planForm, setPlanForm] = useState<{ monto: string; estado: EstadoPlan; fechaInicio: string }>({ monto: '', estado: 'prueba', fechaInicio: '' })
-  const [modalPago, setModalPago] = useState<{ clubId: string; nombre: string; pagoId?: string } | null>(null)
-  const [pagoForm, setPagoForm] = useState({ monto: '', montoNeto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '', fecha: fechaChile(), concepto: 'mensualidad' as ConceptoPago })
+  const [modalPago, setModalPago] = useState<{ clubId?: string; nombre: string; pagoId?: string } | null>(null)
+  const [pagoForm, setPagoForm] = useState({ monto: '', montoNeto: '', mes: new Date().getMonth() + 1, anio: new Date().getFullYear(), metodo: 'transferencia', notas: '', fecha: fechaChile(), concepto: 'mensualidad' as ConceptoPago, categoria: '' })
   const [modalGasto, setModalGasto] = useState<{ gastoId?: string } | null>(null)
   const [gastoForm, setGastoForm] = useState({ fecha: fechaChile(), monto: '', categoria: '', descripcion: '', proveedor: '' })
   const [guardando, setGuardando] = useState(false)
@@ -110,9 +113,29 @@ export default function FinanzasSuperadminPage() {
       notas: '',
       fecha: fechaChile(),
       concepto: 'mensualidad',
+      categoria: '',
     })
     setError('')
     setModalPago({ clubId: club.id, nombre: club.nombre })
+  }
+
+  // Plata que entró pero no es de ningún club (migración 278): reembolso,
+  // aporte, lo que sea. Va con categoría en vez de club.
+  function abrirOtroIngreso() {
+    const hoy = new Date()
+    setPagoForm({
+      monto: '',
+      montoNeto: '',
+      mes: hoy.getMonth() + 1,
+      anio: hoy.getFullYear(),
+      metodo: 'transferencia',
+      notas: '',
+      fecha: fechaChile(),
+      concepto: 'otro',
+      categoria: '',
+    })
+    setError('')
+    setModalPago({ nombre: 'Otro ingreso' })
   }
 
   function abrirEditarPago(pago: Pago) {
@@ -125,9 +148,10 @@ export default function FinanzasSuperadminPage() {
       notas: pago.notas || '',
       fecha: pago.fecha_pago,
       concepto: (pago.concepto as ConceptoPago) || 'mensualidad',
+      categoria: pago.categoria || '',
     })
     setError('')
-    setModalPago({ clubId: pago.club_id, nombre: pago.clubes?.nombre || '', pagoId: pago.id })
+    setModalPago({ clubId: pago.club_id || undefined, nombre: pago.clubes?.nombre || pago.categoria || 'Otro ingreso', pagoId: pago.id })
   }
 
   async function confirmarPago() {
@@ -146,10 +170,12 @@ export default function FinanzasSuperadminPage() {
           notas: pagoForm.notas,
           fechaPago: pagoForm.fecha,
           concepto: pagoForm.concepto,
+          categoria: pagoForm.categoria,
           montoNeto,
         })
       : await registrarPagoClub({
           clubId: modalPago.clubId,
+          categoria: pagoForm.categoria,
           monto: Number(pagoForm.monto),
           periodoMes: pagoForm.mes,
           periodoAnio: pagoForm.anio,
@@ -410,6 +436,13 @@ export default function FinanzasSuperadminPage() {
           <p style={{ fontSize: 12, color: '#94a3b8' }}>Lo que CmSports cobra a cada club y lo que gasta</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={abrirOtroIngreso} style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 14px', background: '#fff', color: '#16a34a',
+            border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+          }}>
+            <Plus size={15} /> Registrar otro ingreso
+          </button>
           <button onClick={() => { setError(''); setGastoForm({ fecha: fechaChile(), monto: '', categoria: '', descripcion: '', proveedor: '' }); setModalGasto({}) }} style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '8px 14px', background: '#fff', color: '#dc2626',
@@ -524,7 +557,13 @@ export default function FinanzasSuperadminPage() {
                 {pagos.map(p => (
                   <tr key={p.id} style={{ borderTop: '1px solid #f1f5f9', fontSize: 13 }}>
                     <td style={{ padding: '10px 18px', color: '#64748b' }}>{fechaCorta(p.fecha_pago)}</td>
-                    <td style={{ padding: '10px 18px', color: '#0f172a', fontWeight: 500 }}>{p.clubes?.nombre || '—'}</td>
+                    <td style={{ padding: '10px 18px', color: '#0f172a', fontWeight: 500 }}>
+                      {p.clubes?.nombre || (
+                        <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
+                          {p.categoria || 'Otro'}
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '10px 18px' }}>
                       <span style={{ background: p.concepto === 'mensualidad' ? '#eef2ff' : '#fef3c7', color: p.concepto === 'mensualidad' ? '#4338ca' : '#b45309', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
                         {LABEL_CONCEPTO[p.concepto] || p.concepto}
@@ -636,16 +675,29 @@ export default function FinanzasSuperadminPage() {
                 <input type="date" value={pagoForm.fecha} onChange={e => setPagoForm({ ...pagoForm, fecha: e.target.value })}
                   style={{ width: '100%', marginTop: 4, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
               </label>
-              <label style={{ fontSize: 11, color: '#64748b' }}>Concepto
-                <select value={pagoForm.concepto} onChange={e => setPagoForm({ ...pagoForm, concepto: e.target.value as ConceptoPago })}
-                  style={{ width: '100%', marginTop: 4, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }}>
-                  {CONCEPTOS.map(c => <option key={c.valor} value={c.valor}>{c.label}</option>)}
-                </select>
-              </label>
-              {pagoForm.concepto !== 'mensualidad' && (
-                <div style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, padding: '7px 9px', lineHeight: 1.4 }}>
-                  Un cobro que no es mensualidad no corre el próximo vencimiento del plan. El período sirve solo para saber a qué mes pertenece.
-                </div>
+              {modalPago.clubId ? (
+                <>
+                  <label style={{ fontSize: 11, color: '#64748b' }}>Concepto
+                    <select value={pagoForm.concepto} onChange={e => setPagoForm({ ...pagoForm, concepto: e.target.value as ConceptoPago })}
+                      style={{ width: '100%', marginTop: 4, padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }}>
+                      {CONCEPTOS.map(c => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                    </select>
+                  </label>
+                  {pagoForm.concepto !== 'mensualidad' && (
+                    <div style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, padding: '7px 9px', lineHeight: 1.4 }}>
+                      Un cobro que no es mensualidad no corre el próximo vencimiento del plan. El período sirve solo para saber a qué mes pertenece.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <input placeholder="¿De dónde vino? (ej: Reembolso)" list="categorias-ingreso" value={pagoForm.categoria}
+                    onChange={e => setPagoForm({ ...pagoForm, categoria: e.target.value })}
+                    style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }} />
+                  <datalist id="categorias-ingreso">
+                    {CATEGORIAS_INGRESO.map(c => <option key={c} value={c} />)}
+                  </datalist>
+                </>
               )}
               <label style={{ fontSize: 11, color: '#64748b' }}>Período que cubre
                 <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

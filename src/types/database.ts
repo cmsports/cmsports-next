@@ -60,7 +60,7 @@ export interface Database {
       pagos_clubes: {
         Row: {
           id: string
-          club_id: string
+          club_id: string | null
           monto: number
           periodo_mes: number
           periodo_anio: number
@@ -68,6 +68,7 @@ export interface Database {
           metodo: string | null
           notas: string | null
           concepto: string
+          categoria: string | null
           factura_path: string | null
           factura_nombre: string | null
           monto_neto: number | null
@@ -75,7 +76,7 @@ export interface Database {
         }
         Insert: {
           id?: string
-          club_id: string
+          club_id?: string | null
           monto: number
           periodo_mes: number
           periodo_anio: number
@@ -83,6 +84,7 @@ export interface Database {
           metodo?: string | null
           notas?: string | null
           concepto?: string
+          categoria?: string | null
           factura_path?: string | null
           factura_nombre?: string | null
           monto_neto?: number | null
@@ -90,7 +92,7 @@ export interface Database {
         }
         Update: {
           id?: string
-          club_id?: string
+          club_id?: string | null
           monto?: number
           periodo_mes?: number
           periodo_anio?: number
@@ -98,6 +100,7 @@ export interface Database {
           metodo?: string | null
           notas?: string | null
           concepto?: string
+          categoria?: string | null
           factura_path?: string | null
           factura_nombre?: string | null
           monto_neto?: number | null
