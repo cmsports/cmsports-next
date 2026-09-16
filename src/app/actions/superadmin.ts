@@ -338,13 +338,19 @@ export async function actualizarModulosClub(input: { clubId: string; modulos: st
 const actualizarPlanSchema = z.object({
   clubId: z.string().uuid('Club inválido'),
   planMensual: z.number().finite().min(0, 'El plan mensual no puede ser negativo'),
+  // El neto sin IVA del plan, igual que en un pago (migración 256): opcional,
+  // y si se completa no puede superar el total.
+  planMensualNeto: z.number().finite().positive('El neto debe ser mayor a cero').optional(),
   estadoPlan: z.enum(['prueba', 'activo', 'suspendido', 'cancelado']),
   fechaInicioPlan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de inicio inválida').nullable(),
+}).refine(d => d.planMensualNeto === undefined || d.planMensualNeto <= d.planMensual, {
+  message: 'El neto no puede ser mayor que el plan mensual', path: ['planMensualNeto'],
 })
 
 export async function actualizarPlanClub(input: {
   clubId: string
   planMensual: number
+  planMensualNeto?: number
   estadoPlan: 'prueba' | 'activo' | 'suspendido' | 'cancelado'
   fechaInicioPlan: string | null
 }) {
@@ -380,6 +386,7 @@ export async function actualizarPlanClub(input: {
   const { error } = await supabase.from('clubes')
     .update({
       plan_mensual: data.planMensual,
+      plan_mensual_neto: data.planMensualNeto ?? null,
       estado_plan: data.estadoPlan,
       fecha_inicio_plan: fechaInicio,
       proximo_vencimiento: proximoVencimiento,
