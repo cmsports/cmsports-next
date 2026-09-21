@@ -287,6 +287,36 @@ export const CONFIG_CLUB = [
     // exige antes la función atómica de inscripción — sin ella, dos alumnos
     // toman el mismo último cupo. Ver §10.6 del plan maestro.
   },
+
+  // ── Hasta dónde llega el profesor ──────────────────────────────────────
+  //
+  // Dos clubes pueden tener el mismo módulo de clases y no estar de acuerdo
+  // en qué le toca ver al entrenador. En Buin el profe es parte de la
+  // administración; en Spinhouse es un entrenador contratado y la plata del
+  // alumno no es asunto suyo. Eso es comportamiento, no catálogo: va acá.
+  {
+    clave: 'profe.ve_mensualidad',
+    tipo: 'opcion',
+    opciones: ['si', 'no'],
+    defecto: 'si',
+    editablePor: 'admin',
+    label: 'Si el profesor ve cuánto paga cada alumno',
+    // 'si' porque es lo que pasa HOY, no lo que parece razonable: la ficha le
+    // muestra el monto al profesor (`jugadores/[id]`) y la política de la 046
+    // le entrega todas las columnas de `jugadores`. Cambiar este default
+    // haría que Buin dejara de ver algo que hoy usa.
+  },
+  {
+    clave: 'profe.gestiona_torneos',
+    tipo: 'opcion',
+    opciones: ['no', 'si'],
+    defecto: 'no',
+    editablePor: 'admin',
+    label: 'Si el profesor puede crear y administrar torneos',
+    // 'no' es lo de hoy: las Server Actions de torneos exigen admin
+    // (`require.ts`). En 'si' el profesor pasa a poder crearlos y manejar sus
+    // inscritos, incluidos los jugadores externos.
+  },
 ] as const
 
 // ── Tipos derivados del catálogo ─────────────────────────────────────────
