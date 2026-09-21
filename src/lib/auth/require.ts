@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { esAdminDeClub } from '@/lib/auth/roles'
+import { crearLectorConfig, type FilaConfig } from '@/lib/domain/clubConfig'
 
 // Helpers de autorización compartidos por las Server Actions.
 // Antes cada archivo tenía su propia copia — un solo lugar donde auditar
@@ -70,6 +71,41 @@ export async function requireAdmin() {
   const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,nombre').eq('id', user.id).single()
   if (!perfil || !esAdminDeClub(perfil.rol)) return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
   return { error: null, supabase, perfil }
+}
+
+/**
+ * Quién puede administrar torneos internos y externos.
+ *
+ * Es `requireAdmin()` más el profesor de los clubes que lo habilitaron en
+ * `club_config` (`profe.gestiona_torneos`). El default de la clave es `'no'`,
+ * así que un club sin la fila se comporta como antes: solo admin.
+ *
+ * No se ensanchó `requireAdmin()` directamente porque lo comparten
+ * `torneo-oficial.ts` y `ranking.ts`, y el permiso pedido era solo el de los
+ * torneos del club. Un solo helper para las dos pantallas —interno y
+ * externo— porque comparten el mismo archivo de acciones.
+ *
+ * El RLS es el que manda de verdad (migración 281): esto solo evita que la
+ * acción llegue a la base para que la rechace ahí con un error feo.
+ */
+export async function requireGestorTorneos() {
+  const supabase = await createClient()
+  const user = await usuarioActual(supabase)
+  if (!user) return { error: 'No autenticado' as const, supabase: null, perfil: null }
+  const { data: perfil } = await supabase.from('perfiles').select('id,club_id,rol,nombre').eq('id', user.id).single()
+  if (!perfil) return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
+  if (esAdminDeClub(perfil.rol)) return { error: null, supabase, perfil }
+
+  if (perfil.rol === 'profesor' && perfil.club_id) {
+    const { data: filas } = await supabase
+      .from('club_config').select('clave,valor')
+      .eq('club_id', perfil.club_id).eq('clave', 'profe.gestiona_torneos')
+    // crearLectorConfig aplica el default cuando la fila no está o viene rota.
+    if (crearLectorConfig((filas ?? []) as FilaConfig[])('profe.gestiona_torneos') === 'si') {
+      return { error: null, supabase, perfil }
+    }
+  }
+  return { error: 'Acceso denegado' as const, supabase: null, perfil: null }
 }
 
 // Superadmin — gestión multi-club.

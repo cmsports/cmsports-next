@@ -3,6 +3,15 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      // Migración 248. Las claves válidas y sus valores los define el catálogo
+      // `src/lib/domain/clubConfig.ts`, no estos tipos: acá `valor` es Json
+      // porque la columna es jsonb y guarda números, textos y booleanos.
+      club_config: {
+        Row: { club_id: string; clave: string; valor: Json; actualizado_en: string | null }
+        Insert: { club_id: string; clave: string; valor: Json; actualizado_en?: string | null }
+        Update: { club_id?: string; clave?: string; valor?: Json; actualizado_en?: string | null }
+        Relationships: []
+      }
       clubes: {
         Row: {
           id: string

@@ -12,6 +12,7 @@ import { fasesDeSets, modalidadesDisponibles, type ModalidadTorneo } from '@/lib
 import { type SistemaEquipos } from '@/lib/domain/torneoEquipos'
 import { useModulos } from '@/lib/hooks/useModulos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { usePuedeGestionarTorneos } from '@/lib/hooks/usePuedeGestionarTorneos'
 import { useTextoMonto } from '@/components/Monto'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
 
@@ -126,6 +127,8 @@ export default function TorneosPage() {
     router.push(`/torneos/${res.torneoId}`)
   }
 
+  const puedeGestionar = usePuedeGestionarTorneos()
+  // Borrar un torneo no se deshace: queda solo para el admin.
   const esAdmin = perfil?.rol === 'admin'
   const fmtMonto = useTextoMonto()
 
@@ -150,7 +153,7 @@ export default function TorneosPage() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
         <h1 style={{ fontSize:20, fontWeight:600, color: text }}>Torneos Externos</h1>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          {esAdmin && (
+          {puedeGestionar && (
             <button
               onClick={() => { if (clubId) { delete torneosCache[`${clubId}:activos`]; delete torneosCache[`${clubId}:archivados`] } setMostrarArchivados(v => !v) }}
               style={{ background:mostrarArchivados ? '#ede9fe' : '#ffffff', color:mostrarArchivados ? '#3730a3' : muted, border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }}
@@ -158,7 +161,7 @@ export default function TorneosPage() {
               {mostrarArchivados ? 'Ver activos' : 'Ver archivados'}
             </button>
           )}
-          {esAdmin && !mostrarArchivados && (
+          {puedeGestionar && !mostrarArchivados && (
             <button
               onClick={() => setModalOpen(true)}
               style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, fontWeight:600, cursor:'pointer' }}
