@@ -42,6 +42,13 @@ describe('registrarSolicitud', () => {
       p_apellido3: 'no',
       p_talla_polera: null,
       p_talla_short: null,
+      // Perfil deportivo (280). Un club sin el módulo no los manda y llegan
+      // NULL, que es justo lo que este caso comprueba.
+      p_nivel: null,
+      p_licencia_fechiteme: null,
+      p_mano_habil: null,
+      p_estilo_juego: null,
+      p_material: null,
     })
   })
 })

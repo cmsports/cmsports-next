@@ -255,6 +255,11 @@ export interface Database {
           sede: string | null
           talla_polera: string | null
           talla_short: string | null
+          nivel: string | null
+          licencia_fechiteme: string | null
+          mano_habil: string | null
+          estilo_juego: string | null
+          material: string | null
           matricula_pagada: boolean
           matricula_monto: number | null
           cobrar_desde: string | null
@@ -297,6 +302,11 @@ export interface Database {
           sede?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
           matricula_pagada?: boolean
           matricula_monto?: number | null
           cobrar_desde?: string | null
@@ -339,6 +349,11 @@ export interface Database {
           sede?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
           matricula_pagada?: boolean
           matricula_monto?: number | null
           cobrar_desde?: string | null
@@ -1088,6 +1103,11 @@ export interface Database {
           veces_corregida: number
           talla_polera: string | null
           talla_short: string | null
+          nivel: string | null
+          licencia_fechiteme: string | null
+          mano_habil: string | null
+          estilo_juego: string | null
+          material: string | null
         }
         Insert: {
           id?: string
@@ -1118,6 +1138,11 @@ export interface Database {
           apellido3?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
         }
         Update: {
           id?: string
@@ -1148,6 +1173,11 @@ export interface Database {
           veces_corregida?: number
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
         }
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },

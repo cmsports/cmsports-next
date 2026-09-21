@@ -22,6 +22,11 @@ export async function registrarSolicitud(input: {
   indicaciones_medicas?: string
   talla_polera?: string
   talla_short?: string
+  nivel?: string
+  licencia_fechiteme?: string
+  mano_habil?: string
+  estilo_juego?: string
+  material?: string
 }) {
   const parsed = solicitudSchema.safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
@@ -46,6 +51,11 @@ export async function registrarSolicitud(input: {
     p_apellido3: parsed.data.apellido3,
     p_talla_polera: input.talla_polera || null,
     p_talla_short: input.talla_short || null,
+    p_nivel: input.nivel || null,
+    p_licencia_fechiteme: input.licencia_fechiteme || null,
+    p_mano_habil: input.mano_habil || null,
+    p_estilo_juego: input.estilo_juego || null,
+    p_material: input.material || null,
   })
 
   if (error) return { error: 'Error al enviar solicitud. Intenta de nuevo.' }
