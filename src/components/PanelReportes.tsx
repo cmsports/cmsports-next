@@ -80,7 +80,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
   const [abierto, setAbierto] = useState<Set<string>>(new Set())
   const [cargando, setCargando] = useState(true)
   const [exportando, setExportando] = useState<'excel' | 'pdf' | null>(null)
-  const [sedeGrupos, setSedeGrupos] = useState('buin')
+  const [sedeGrupos, setSedeGrupos] = useState('')
 
   const [bloques, setBloques]           = useState<BloqueMes[]>([])
   const [asignaciones, setAsignaciones] = useState<AsignacionProfesor[]>([])
