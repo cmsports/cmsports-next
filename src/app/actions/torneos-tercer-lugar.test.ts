@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ requireAdmin: vi.fn(), createAdminClient: vi.fn() }))
-vi.mock('@/lib/auth/require', () => ({ requireAdmin: mocks.requireAdmin }))
+// torneos.ts autoriza por requireGestorTorneos (admin, o profesor donde el
+// club encendió profe.gestiona_torneos). Mismo mock: acá se prueba la lógica
+// del torneo, no quién entra — eso vive en require-gestor-torneos.test.ts.
+vi.mock('@/lib/auth/require', () => ({ requireAdmin: mocks.requireAdmin, requireGestorTorneos: mocks.requireAdmin }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.createAdminClient }))
 
 import { marcarGanadorPartido, finalizarTorneo, abrirTercerLugar } from './torneos'

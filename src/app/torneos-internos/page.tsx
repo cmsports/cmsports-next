@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { archivarTorneo, crearTorneo as crearTorneoAction, crearCategoriaPersonalizada, contarTorneosDeCategoria, eliminarCategoriaPersonalizada, eliminarTorneoDefinitivo } from '@/app/actions/torneos'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { usePuedeGestionarTorneos } from '@/lib/hooks/usePuedeGestionarTorneos'
 import { useTextoMonto } from '@/components/Monto'
 import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
@@ -225,6 +226,8 @@ export default function TorneosInternosPage() {
     }
   }
 
+  const puedeGestionar = usePuedeGestionarTorneos()
+  // Borrar un torneo no se deshace: queda solo para el admin.
   const esAdmin = perfil?.rol === 'admin'
   const fmtMonto = useTextoMonto()
 
@@ -265,7 +268,7 @@ export default function TorneosInternosPage() {
           <div style={{ fontSize: 12, color: muted, marginTop: 2 }}>Los resultados alimentan el Ranking del club</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {esAdmin && (
+          {puedeGestionar && (
             <button
               onClick={() => { if (clubId) { delete cache[`int:${clubId}:true`]; delete cache[`int:${clubId}:false`] } setMostrarArchivados(v => !v) }}
               style={{ background: mostrarArchivados ? '#ede9fe' : '#ffffff', color: mostrarArchivados ? '#3730a3' : muted, border: '1px solid #c4b5fd', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
@@ -273,7 +276,7 @@ export default function TorneosInternosPage() {
               {mostrarArchivados ? 'Ver activos' : 'Ver archivados'}
             </button>
           )}
-          {esAdmin && !mostrarArchivados && (
+          {puedeGestionar && !mostrarArchivados && (
             <button
               onClick={() => setModalOpen(true)}
               style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}

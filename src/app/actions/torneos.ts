@@ -49,7 +49,7 @@ import {
 } from '@/lib/domain/marcador'
 import { CONFIG, type FaseOrden } from '@/lib/config'
 import { esUuid } from '@/lib/domain/uuid'
-import { requireAdmin } from '@/lib/auth/require'
+import { requireAdmin, requireGestorTorneos } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fechaChile } from '@/lib/domain/fechaChile'
 
@@ -242,7 +242,7 @@ export async function crearTorneo(params: {
   /** Swaythling o Corbillon. Solo lo mira la modalidad por equipos. */
   sistemaEquipos?: SistemaEquipos
 }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
@@ -313,7 +313,7 @@ export async function crearTorneo(params: {
  * nadie.
  */
 export async function crearCategoriaPersonalizada(nombre: string) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
@@ -340,7 +340,7 @@ export async function crearCategoriaPersonalizada(nombre: string) {
  * traído en papel sí.
  */
 export async function contarTorneosDeCategoria(nombre: string) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
@@ -380,7 +380,7 @@ export async function contarTorneosDeCategoria(nombre: string) {
  * aunque el torneo ya no esté. Misma regla que al dar de baja a un jugador.
  */
 export async function eliminarCategoriaPersonalizada(nombre: string, conRanking = false) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   if (!perfil.club_id) return { error: 'Perfil sin club asignado' }
 
@@ -733,7 +733,7 @@ async function rechazarSiEsLiguilla(
 }
 
 export async function abrirTercerLugar(params: { torneoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   if (!esUuid(params.torneoId)) return { error: 'Torneo inválido' }
 
@@ -762,7 +762,7 @@ export async function corregirResultadoGrupos(params: {
   setsB?: number
   parciales?: ParcialSet[]
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { partidoId } = params
@@ -948,7 +948,7 @@ export async function marcarGanadorPartido(params: {
    *  ellos: los sets y los puntos totales se derivan de acá. */
   parciales?: ParcialSet[]
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { partidoId } = params
@@ -1088,7 +1088,7 @@ export async function configurarCabezasSerie(params: {
   torneoId: string
   jugadorIds: string[]
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const jugadorIds = params.jugadorIds.filter(Boolean)
@@ -1107,7 +1107,7 @@ export async function guardarDesempateGrupo(params: {
   primeroId: string | null
   segundoId: string | null
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId, grupoId, primeroId, segundoId } = params
@@ -1167,7 +1167,7 @@ export async function guardarDesempateGrupo(params: {
 }
 
 export async function crearGrupoManual(params: { torneoId: string }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   const { data: torneo } = await supabase.from('torneos')
     .select('id,fase,club_id').eq('id', params.torneoId).single()
@@ -1205,7 +1205,7 @@ export async function crearGrupoManual(params: { torneoId: string }) {
 }
 
 export async function finalizarGrupoManual(params: { torneoId: string; grupoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   const { data: grupo } = await supabase.from('torneo_grupos')
     .select('id,en_preparacion').eq('id', params.grupoId).eq('torneo_id', params.torneoId).single()
@@ -1240,7 +1240,7 @@ export async function finalizarGrupoManual(params: { torneoId: string; grupoId: 
 }
 
 export async function eliminarGrupoManualVacio(params: { torneoId: string; grupoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   const { data: grupo } = await supabase.from('torneo_grupos')
     .select('id,en_preparacion').eq('id', params.grupoId).eq('torneo_id', params.torneoId).single()
@@ -1259,7 +1259,7 @@ export async function moverJugadorEntreGrupos(params: {
   grupoOrigenId: string
   grupoDestinoId: string
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId, jugadorId, grupoOrigenId, grupoDestinoId } = params
@@ -1417,7 +1417,7 @@ export async function reordenarJugadorEnGrupo(params: {
   jugadorId: string
   direccion: 'arriba' | 'abajo'
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId, grupoId, jugadorId, direccion } = params
@@ -1473,7 +1473,7 @@ export async function quitarJugadorDeGrupo(params: {
   grupoId: string
   jugadorId: string
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId, grupoId, jugadorId } = params
@@ -1535,7 +1535,7 @@ export async function quitarJugadorDeGrupo(params: {
 export async function cerrarInscripcionYGenerarGrupos(params: {
   torneoId: string
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId } = params
@@ -1872,7 +1872,7 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
  * empezó a jugar el consuelo, rearmarlo les borraría los resultados.
  */
 export async function armarCuadroConsolacion(params: { torneoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId } = params
@@ -1969,7 +1969,7 @@ export async function armarCuadroConsolacion(params: { torneoId: string }) {
 export async function sincronizarLlaves(params: {
   torneoId: string
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId } = params
@@ -2248,7 +2248,7 @@ export async function sincronizarLlaves(params: {
 }
 
 export async function corregirResultadoPlayoff(params: { partidoId: string; nuevoGanadorId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { partidoId, nuevoGanadorId } = params
@@ -2276,7 +2276,7 @@ export async function corregirResultadoPlayoff(params: { partidoId: string; nuev
 }
 
 export async function volverAGrupos(params: { torneoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   {
@@ -2430,7 +2430,7 @@ async function podioDeLiguilla(
 }
 
 export async function finalizarTorneo(params: { torneoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   // Una liguilla se define en la tabla, no en una final. Se resuelve acá y se
@@ -2573,7 +2573,7 @@ export async function finalizarTorneo(params: { torneoId: string }) {
  * borraron y sus partidos quedaron sin jugador.
  */
 export async function reabrirTorneo(params: { torneoId: string }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
   if (!esUuid(params.torneoId)) return { error: 'Torneo inválido' }
 
@@ -2692,7 +2692,7 @@ async function limpiarExternosDeTorneo(
 }
 
 export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId } = params
@@ -2726,7 +2726,7 @@ export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
 export async function generarGruposTardios(params: {
   torneoId: string
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId } = params
@@ -2980,7 +2980,7 @@ export async function actualizarEstadoPago(params: {
   estado: 'pagado' | 'pendiente' | 'exento'
   metodoPago?: 'efectivo' | 'transferencia'
 }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId, jugadorId, estado, metodoPago } = params
@@ -3058,7 +3058,7 @@ export async function intercambiarJugadores(params: {
   slotA: { partidoId: string; posicion: 'jugador_a' | 'jugador_b' }
   slotB: { partidoId: string; posicion: 'jugador_a' | 'jugador_b' }
 }): Promise<{ error?: string; success?: boolean }> {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId, slotA, slotB } = params
@@ -3186,7 +3186,7 @@ export async function inscribirEnMesa(params: {
    */
   confirmadoExterno?: boolean
 }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { torneoId, busqueda, jugadorId: jugadorIdParam, rut, metodoPago, clubProcedencia, confirmadoExterno } = params
@@ -3307,7 +3307,7 @@ export async function inscribirEnMesa(params: {
 }
 
 export async function archivarTorneo(params: { torneoId: string }) {
-  const { error: authErr, supabase, perfil } = await requireAdmin()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr || !supabase || !perfil) return { error: authErr ?? 'Acceso denegado' }
   // Sin club, el `.eq('club_id', null)` de abajo no matchea nada: el update
   // afectaba 0 filas y la función respondía éxito igual.
@@ -3332,7 +3332,7 @@ export async function archivarTorneo(params: { torneoId: string }) {
 export const eliminarTorneo = archivarTorneo
 
 export async function quitarJugadorDeMesa(params: { torneoId: string; jugadorId: string }) {
-  const { error: authErr, supabase } = await requireAdmin()
+  const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr || !supabase) return { error: authErr }
 
   const { torneoId, jugadorId } = params
