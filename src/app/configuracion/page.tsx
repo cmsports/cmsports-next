@@ -11,6 +11,7 @@ import { actualizarClubAction } from '@/app/actions/club'
 import { cambiarPasswordPropia } from '@/app/actions/credenciales'
 import { subirLogoAction, actualizarInfoClubAction } from '@/app/actions/redes-sociales'
 import { Building2, Upload, Loader2, Check, Lock } from 'lucide-react'
+import GestionAdministradores from '@/components/configuracion/GestionAdministradores'
 import GestionProfesores from '@/components/configuracion/GestionProfesores'
 import GestionKioscos from '@/components/configuracion/GestionKioscos'
 import PerfilPersonalConfig from '@/components/configuracion/PerfilPersonalConfig'
@@ -251,6 +252,7 @@ export default function ConfiguracionPage() {
         </div>
       </div>
 
+      {perfil.club_id && perfil.rol === 'admin' && <GestionAdministradores />}
       {perfil.club_id && <GestionProfesores clubId={perfil.club_id} />}
       {perfil.club_id && <GestionKioscos />}
       {/* Detrás del módulo, y no visible para todo admin: este panel tiene el
