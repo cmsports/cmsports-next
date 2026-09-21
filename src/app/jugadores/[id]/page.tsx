@@ -7,6 +7,8 @@ import { useRouter, useParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { puedeVerPantallasDeClub } from '@/lib/auth/roles'
+import { configDelClub } from '@/lib/supabase/clubConfig'
+import type { LectorConfig } from '@/lib/domain/clubConfig'
 import { useTextoMonto } from '@/components/Monto'
 import { crearAccesoJugador, resetearPasswordJugador, subirFotoJugador, registrarMatricula, desmarcarMatricula } from '@/app/actions/jugadores'
 import { credencialDelJugador } from '@/app/actions/credenciales'
@@ -169,6 +171,27 @@ export default function JugadorDetallePage() {
   const jugadorId = params.id as string
 
 
+  // Qué alcanza a ver el profesor en este club. Se pide antes que la ficha
+  // porque de esto depende QUÉ COLUMNAS se piden: si el monto no se va a
+  // mostrar, tampoco se trae. Esconderlo solo al pintar lo deja igual de
+  // visible en la pestaña de red del navegador, que para un dato de plata es
+  // no haberlo escondido.
+  const [configClub, setConfigClub] = useState<LectorConfig | undefined>(undefined)
+  useEffect(() => {
+    const cid = perfil?.club_id
+    if (!cid) return
+    let vivo = true
+    void configDelClub(cid).then(c => { if (vivo) setConfigClub(() => c) })
+    return () => { vivo = false }
+  }, [perfil?.club_id])
+
+  // El admin siempre la ve. El profesor, solo si su club lo permite — y
+  // mientras la config no llegue, NO: un control de privacidad que falla
+  // abierto mientras carga muestra el monto igual, solo que por medio
+  // segundo. El default del catálogo es 'si', así que Buin no cambia.
+  const veMensualidad = perfil?.rol !== 'profesor'
+    || (configClub ? configClub('profe.ve_mensualidad') === 'si' : false)
+
   useEffect(() => {
     async function cargar() {
       if (authLoading) return
@@ -177,6 +200,10 @@ export default function JugadorDetallePage() {
         router.replace(perfil.rol === 'jugador' ? '/perfil' : '/')
         return
       }
+      // El profesor espera a saber qué puede ver. Sin esto la ficha se pide
+      // con el monto incluido y después se oculta, que es justo lo que este
+      // cambio viene a evitar.
+      if (perfil.rol === 'profesor' && !configClub) return
 
       const mesActual = new Date().getMonth() + 1
       const anioActual = new Date().getFullYear()
@@ -186,7 +213,13 @@ export default function JugadorDetallePage() {
       // donde la migración 254 todavía no corrió devuelve error y la ficha
       // entera queda en blanco — para todos los clubes, no solo para el que
       // las usa. Así, la consulta de Buin es exactamente la de antes.
-      const COLUMNAS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,necesidades_accesibilidad,federado,talla_polera,talla_short,matricula_pagada,matricula_monto,matricula_fecha'
+      // Las de plata van aparte por lo mismo: se nombran solo si se van a
+      // mostrar. `sesiones_usadas` y `sesiones_limite` NO están acá y no es un
+      // descuido — cuántas sesiones le quedan al alumno es justo lo que el
+      // entrenador necesita para la clase; lo que no le toca es el precio.
+      const COLUMNAS_PLATA = 'mensualidad,matricula_monto,matricula_fecha,matricula_pagada'
+      const COLUMNAS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,necesidades_accesibilidad,federado,talla_polera,talla_short'
+        + (veMensualidad ? ',' + COLUMNAS_PLATA : '')
         + (tiene('perfil_deportivo') ? ',nivel,licencia_fechiteme,mano_habil,estilo_juego,material' : '')
 
       try {
@@ -242,7 +275,7 @@ export default function JugadorDetallePage() {
       setLoading(false)
     }
     cargar()
-  }, [authLoading, perfil, jugadorId, recargaVersion, router])
+  }, [authLoading, perfil, jugadorId, recargaVersion, router, configClub, veMensualidad])
 
   useEffect(() => {
     if (!jugadorId || !perfil?.club_id || !['admin', 'profesor'].includes(perfil.rol || '')) return
@@ -776,7 +809,12 @@ export default function JugadorDetallePage() {
           rut: jugador.rut, telefono: jugador.telefono, email: jugador.email, fechaNacimiento: jugador.fecha_nacimiento,
           // La foto va en el bucket privado: sirve el enlace firmado, no foto_url.
           fotoUrl: fotoUrl ?? jugador.foto_url,
-          plan: { tipo: jugador.tipo_plan, mensualidad: jugador.mensualidad, horario: jugador.horario, dias: nombresDias, entrenamientosSemana: jugador.entrenamientos_por_semana },
+          // El PDF sale con lo que el que lo genera puede ver. Para un profesor
+          // sin permiso, `jugador.mensualidad` ni siquiera se pidió a la base:
+          // pasa `null` y el reporte lo imprime como "sin cuota". El `?? null`
+          // no es defensivo de más — sin él llegaría `undefined` y el plan
+          // quedaría con una línea en blanco sin explicación.
+          plan: { tipo: jugador.tipo_plan, mensualidad: veMensualidad ? jugador.mensualidad : null, horario: jugador.horario, dias: nombresDias, entrenamientosSemana: jugador.entrenamientos_por_semana },
           contactoEmergencia: { nombre: jugador.contacto_emergencia_nombre, telefono: jugador.contacto_emergencia_telefono },
           asistencia: { desde, hasta: fechaChile(), asistio: fechasAsistencia, diasDeClase },
           mensualidades: (mens3 || []) as any[],
@@ -1169,18 +1207,33 @@ export default function JugadorDetallePage() {
         <div style={cardStyle}>
           <CardHeader title="Plan & Membresía" onEdit={puedeEditar ? abrirEditPlan : undefined} />
           <div style={{ padding:'16px 20px' }}>
-            <div style={{ fontSize: jugador.mensualidad ? 24 : 15, fontWeight:800, color: jugador.mensualidad ? text : '#c2410c', marginBottom:4 }}>
-              {jugador.mensualidad
-                ? <>{fmtMonto(jugador.mensualidad)}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span></>
-                : SIN_CUOTA}
-            </div>
+            {/* El monto solo para quien puede verlo. Cuando no, la tarjeta no
+                queda coja: el titular pasa a ser el tipo de plan, que es lo
+                que al entrenador le sirve —y las sesiones disponibles siguen
+                abajo, intactas—. Un hueco en blanco invita a preguntar "¿por
+                qué no carga?"; un plan sin precio se lee como lo que es. */}
+            {veMensualidad ? (
+              <div style={{ fontSize: jugador.mensualidad ? 24 : 15, fontWeight:800, color: jugador.mensualidad ? text : '#c2410c', marginBottom:4 }}>
+                {jugador.mensualidad
+                  ? <>{fmtMonto(jugador.mensualidad)}<span style={{ fontSize:13, fontWeight:400, color: muted }}>/mes</span></>
+                  : SIN_CUOTA}
+              </div>
+            ) : (
+              <div style={{ fontSize:18, fontWeight:800, color: text, marginBottom:4 }}>
+                {jugador.tipo_plan === 'libre' ? 'Libre acceso' : 'Plan mensual'}
+              </div>
+            )}
             <div style={{ fontSize:13, color: muted }}>
               {jugador.tipo_plan ? jugador.tipo_plan.charAt(0).toUpperCase() + jugador.tipo_plan.slice(1) : 'Mensual'}
               {jugador.tipo_plan === 'libre' ? ' — Libre acceso' : jugador.entrenamientos_por_semana ? ` — ${jugador.entrenamientos_por_semana} entrenamientos/semana` : ''}
             </div>
 
             {/* Matrícula. Va en esta tarjeta y no en una propia porque es parte
-                de lo que el jugador paga por pertenecer, igual que la cuota. */}
+                de lo que el jugador paga por pertenecer, igual que la cuota.
+                Y por eso mismo desaparece entera con el monto: dejarla visible
+                mostraría el valor de la matrícula, que también es cuánto paga
+                el alumno. */}
+            {veMensualidad && (
             <div style={{ marginTop:14, paddingTop:12, borderTop:'1px solid #e2e8f0',
               display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, flexWrap:'wrap' }}>
               <div>
@@ -1210,6 +1263,7 @@ export default function JugadorDetallePage() {
                 </button>
               )}
             </div>
+            )}
 
             {/* Lo que debe por venir a grupos que no son el suyo. Va aparte de
                 la cuota a propósito: no es una mensualidad más cara, son clases

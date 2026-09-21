@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { formatRut } from '@/lib/rut'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { configDelClub } from '@/lib/supabase/clubConfig'
+import type { LectorConfig } from '@/lib/domain/clubConfig'
 import { crearJugador, editarJugador, toggleEstadoJugador, eliminarJugador, actualizarMensualidad } from '@/app/actions/jugadores'
 import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento } from '@/lib/domain/categoriaBuin'
 import { fechaChile } from '@/lib/domain/fechaChile'
@@ -69,14 +71,16 @@ const CAMPOS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,tipo_plan,entrena
  * Estaba duplicado en la carga inicial y en la recarga, con la misma cascada en
  * las dos copias. Acá vive una sola vez.
  */
-async function traerJugadoresYPagos(clubId: string) {
+async function traerJugadoresYPagos(clubId: string, veMensualidad: boolean) {
   const mes  = new Date().getMonth() + 1
   const anio = new Date().getFullYear()
   const [jug, mens] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any)
       .from('jugadores')
-      .select(CAMPOS_JUGADOR)
+      // El monto no se pide cuando no se va a mostrar. Sacarlo recién al
+      // pintar lo deja igual de legible en la pestaña de red.
+      .select(veMensualidad ? CAMPOS_JUGADOR : CAMPOS_JUGADOR.replace(',mensualidad', ''))
       .eq('club_id', clubId)
       .or('es_externo.is.null,es_externo.eq.false')
       .order('nombre'),
@@ -93,6 +97,15 @@ async function traerJugadoresYPagos(clubId: string) {
 
 export default function JugadoresPage() {
   const { perfil, loading: authLoading } = usePerfil()
+  // Hasta dónde llega el profesor en este club. Va acá arriba y no junto a
+  // `esAdmin` porque de esto depende qué columnas pide la consulta, y la
+  // consulta corre antes.
+  const [configClub, setConfigClub] = useState<LectorConfig | undefined>(undefined)
+  // Mientras la config no llegue, el profesor NO ve el monto. Un control de
+  // privacidad que falla abierto mientras carga lo muestra igual. El default
+  // del catálogo es 'si', así que para Buin no cambia nada.
+  const veMensualidad = perfil?.rol !== 'profesor'
+    || (configClub ? configClub('profe.ve_mensualidad') === 'si' : false)
   const [jugadores, setJugadores] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const searchParams = useSearchParams()
@@ -163,7 +176,7 @@ export default function JugadoresPage() {
       }
       supabase.from('clubes').select('nombre').eq('id', id).single()
         .then(({ data }) => { if (activo && data) setClubNombre(data.nombre) })
-      const { jugadores: data, error, pagos } = await traerJugadoresYPagos(id)
+      const { jugadores: data, error, pagos } = await traerJugadoresYPagos(id, veMensualidad)
       if (!activo) return
       if (error) {
         setToast('Error al cargar jugadores')
@@ -193,10 +206,18 @@ export default function JugadoresPage() {
     return () => { activo = false }
   }, [clubId])
 
+  useEffect(() => {
+    const cid = perfil?.club_id
+    if (!cid) return
+    let vivo = true
+    void configDelClub(cid).then(c => { if (vivo) setConfigClub(() => c) })
+    return () => { vivo = false }
+  }, [perfil?.club_id])
+
   const cargarJugadores = useCallback(async (cid?: string) => {
     const id = cid || clubId
     if (!id) return
-    const { jugadores: data, error, pagos } = await traerJugadoresYPagos(id)
+    const { jugadores: data, error, pagos } = await traerJugadoresYPagos(id, veMensualidad)
     if (error) { mostrarToast('Error al cargar jugadores'); return }
     jugadoresCache[id] = data
     setJugadores(data)
@@ -749,9 +770,13 @@ export default function JugadoresPage() {
                         <span
                           onClick={esAdmin ? () => { setEditandoMensualidadId(j.id); setMensualidadTemp(j.mensualidad != null ? String(j.mensualidad) : '') } : undefined}
                           title={esAdmin ? 'Clic para editar' : undefined}
-                          style={{ fontSize: j.mensualidad ? 13 : 11, color: j.mensualidad ? text : '#c2410c', fontWeight: j.mensualidad ? 600 : 500, cursor: esAdmin ? 'pointer' : 'default' }}
+                          style={{ fontSize: veMensualidad && j.mensualidad ? 13 : 11, color: !veMensualidad ? hint : j.mensualidad ? text : '#c2410c', fontWeight: veMensualidad && j.mensualidad ? 600 : 500, cursor: esAdmin ? 'pointer' : 'default' }}
                         >
-                          {j.mensualidad ? fmtMonto(j.mensualidad) : SIN_CUOTA}
+                          {/* Un guion y no la columna escondida: sacar la
+                              columna entera correría el encabezado y las otras
+                              doce celdas de cada fila. El guion dice "acá hay
+                              un dato que no te toca" sin mover la tabla. */}
+                          {!veMensualidad ? '—' : j.mensualidad ? fmtMonto(j.mensualidad) : SIN_CUOTA}
                         </span>
                       )}
                     </td>
