@@ -20,6 +20,14 @@ export async function aprobarSolicitud(params: {
   indicaciones_medicas: string
   talla_polera: string
   talla_short: string
+  /** Perfil deportivo (módulo 'perfil_deportivo', migración 254). Opcionales
+   *  en la firma y no solo en la pantalla: los clubes sin el módulo nunca los
+   *  mandan, y ninguno es obligatorio ni siquiera para los que sí lo tienen. */
+  nivel?: string
+  licencia_fechiteme?: string
+  mano_habil?: string
+  estilo_juego?: string
+  material?: string
   password: string
   categoria: string
   tipo_plan: string
@@ -60,6 +68,7 @@ export async function aprobarSolicitud(params: {
     fecha_nacimiento, direccion, comuna,
     contacto_emergencia_nombre, contacto_emergencia_telefono, indicaciones_medicas,
     talla_polera, talla_short,
+    nivel, licencia_fechiteme, mano_habil, estilo_juego, material,
     password, bloqueIds, matriculaPagada, matriculaMonto, cobrarDesde,
     ...planFields
   } = params
@@ -90,6 +99,11 @@ export async function aprobarSolicitud(params: {
     indicaciones_medicas: indicaciones_medicas || null,
     talla_polera: talla_polera || null,
     talla_short: talla_short || null,
+    nivel: nivel || null,
+    licencia_fechiteme: licencia_fechiteme || null,
+    mano_habil: mano_habil || null,
+    estilo_juego: estilo_juego || null,
+    material: material || null,
     ...planFields,
     estado: 'activo',
     es_externo: false,

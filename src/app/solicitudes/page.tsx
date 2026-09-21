@@ -21,6 +21,8 @@ import { montoIngresado } from '@/lib/domain/mensualidades'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
+import { NIVELES, MANOS, nivelLabel, manoLabel } from '@/lib/domain/perfilDeportivo'
+import { useModulos } from '@/lib/hooks/useModulos'
 
 
 const supabase = createClient()
@@ -36,7 +38,7 @@ async function obtenerSolicitudes(clubId: string) {
   // dos viajes a Supabase en fila, y desde el navegador cada uno cuesta ~320 ms.
   const [inv, sol] = await Promise.all([
     supabase.from('invitaciones').select('codigo').eq('club_id', clubId).eq('activa', true).limit(1),
-    supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,nombres,apellido1,apellido2,apellido3,talla_polera,talla_short').eq('club_id', clubId).order('creado_en', { ascending: false }),
+    supabase.from('solicitudes_jugador').select('id,nombre,rut,email,telefono,estado,creado_en,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,nombres,apellido1,apellido2,apellido3,talla_polera,talla_short,nivel,licencia_fechiteme,mano_habil,estilo_juego,material').eq('club_id', clubId).order('creado_en', { ascending: false }),
   ])
 
   // Crear la invitación que falta sí es secuencial, pero pasa una sola vez en
@@ -74,6 +76,7 @@ function camposIncompletos(s: Record<string, unknown>): string[] {
 
 export default function SolicitudesPage() {
   const { perfil, loading: authLoading } = usePerfil()
+  const { tiene } = useModulos()
   const [solicitudes, setSolicitudes] = useState<any[]>([])
   const [linkInvitacion, setLink]     = useState('')
   const [loading, setLoading]         = useState(true)
@@ -85,6 +88,7 @@ export default function SolicitudesPage() {
     contacto_emergencia_nombre: '', contacto_emergencia_telefono: '',
     indicaciones_medicas: '', password: '', passwordConfirm: '',
     talla_polera: '', talla_short: '',
+    nivel: '', licencia_fechiteme: '', mano_habil: '', estilo_juego: '', material: '',
   })
   const [planForm, setPlanForm]       = useState({ categoria: 'principiante', tipo_plan: 'mensual', entrenamientos_por_semana: '3', mensualidad: '' })
   // Arranca sin marcar: el que recién entra solo figura con la matrícula al día
@@ -186,6 +190,11 @@ export default function SolicitudesPage() {
       indicaciones_medicas: infoForm.indicaciones_medicas,
       talla_polera: infoForm.talla_polera,
       talla_short: infoForm.talla_short,
+      nivel: infoForm.nivel,
+      licencia_fechiteme: infoForm.licencia_fechiteme,
+      mano_habil: infoForm.mano_habil,
+      estilo_juego: infoForm.estilo_juego,
+      material: infoForm.material,
       password: infoForm.password,
       categoria: planForm.categoria,
       tipo_plan: planForm.tipo_plan,
@@ -340,6 +349,11 @@ export default function SolicitudesPage() {
                               indicaciones_medicas: s.indicaciones_medicas || '',
                               talla_polera: s.talla_polera || '',
                               talla_short: s.talla_short || '',
+                              nivel: s.nivel || '',
+                              licencia_fechiteme: s.licencia_fechiteme || '',
+                              mano_habil: s.mano_habil || '',
+                              estilo_juego: s.estilo_juego || '',
+                              material: s.material || '',
                               password: '',
                               passwordConfirm: '',
                             })
@@ -450,6 +464,50 @@ export default function SolicitudesPage() {
                 </select>
               </div>
             </div>
+
+            {/* SECCIÓN: Perfil deportivo — solo con el módulo (254).
+                Viene precargado con lo que el jugador puso al inscribirse, y
+                es editable: quien aprueba suele saber mejor el nivel que el
+                que recién llega. */}
+            {tiene('perfil_deportivo') && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Nivel</label>
+                    <select style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                      value={infoForm.nivel} onChange={e => setInfoForm(f => ({ ...f, nivel: e.target.value }))}>
+                      <option value="">No especificado</option>
+                      {NIVELES.map(n => <option key={n} value={n}>{nivelLabel(n)}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Mano hábil</label>
+                    <select style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                      value={infoForm.mano_habil} onChange={e => setInfoForm(f => ({ ...f, mano_habil: e.target.value }))}>
+                      <option value="">No especificada</option>
+                      {MANOS.map(m => <option key={m} value={m}>{manoLabel(m)}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Estilo de juego</label>
+                    <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                      value={infoForm.estilo_juego} onChange={e => setInfoForm(f => ({ ...f, estilo_juego: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Licencia FECHITEME</label>
+                    <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                      value={infoForm.licencia_fechiteme} onChange={e => setInfoForm(f => ({ ...f, licencia_fechiteme: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 11, color: muted, display: 'block', marginBottom: 3, fontWeight: 600 }}>Material</label>
+                  <input style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                    value={infoForm.material} onChange={e => setInfoForm(f => ({ ...f, material: e.target.value }))} />
+                </div>
+              </>
+            )}
 
             {/* SECCIÓN: Emergencia */}
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 16 }}>Contacto de emergencia</div>
