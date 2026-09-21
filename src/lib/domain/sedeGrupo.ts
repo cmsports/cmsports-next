@@ -1,10 +1,16 @@
-// Sedes y grupos de entrenamiento de la Asociación Buin.
-// El valor guardado en la base es la clave corta; el label es lo que se muestra.
+// Sedes y grupos de entrenamiento. El valor guardado en la base es la clave
+// corta; el label es lo que se muestra, con la dirección para que en pantalla
+// se lea el lugar y no un apodo.
+//
+// El catálogo junta las sedes de TODOS los clubes, así que nadie lo recorre
+// para pintar pestañas: las de cada club salen de `sedesDe()`, que las deriva
+// de sus propios bloques. Recorrer `SEDES` le ponía a Spinhouse las sedes de
+// Buin y a Buin una pestaña vacía de Spinhouse.
 
 export const SEDES = [
   { value: 'buin',  label: 'Buin (Aníbal Pinto 158)' },
   { value: 'paine', label: 'Paine (Centro deportivo Fátima)' },
-  { value: 'spinhouse', label: 'Spinhouse' },
+  { value: 'spinhouse', label: 'Spinhouse (José Ananías 128, Macul)' },
   { value: 'ambos', label: 'Ambos centros' },
 ] as const
 

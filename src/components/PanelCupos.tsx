@@ -25,7 +25,7 @@ export default function PanelCupos({ clubId, esStaff }: { clubId: string; esStaf
   const [jugadores, setJugadores] = useState<Jugador[]>([])
   const [inscritos, setInscritos] = useState<Record<string, string[]>>({})  // bloque_id -> jugador_id[]
   const [cargando, setCargando]   = useState(true)
-  const [sedeActiva, setSede]     = useState('buin')
+  const [sedeActiva, setSede]     = useState('')
   const [abierto, setAbierto]     = useState<Bloque | null>(null)
   const [busqueda, setBusqueda]   = useState('')
   const [guardando, setGuardando] = useState<string | null>(null)
