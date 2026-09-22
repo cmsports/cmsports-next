@@ -17,8 +17,9 @@ import { useOnlineStatus } from '@/lib/offline/useOnlineStatus'
 import { fechaChile, horaChile } from '@/lib/domain/fechaChile'
 import { diaDesdeFecha, hhmm, rangoHorario, ventanaAbierta } from '@/lib/domain/horario'
 import { entrenaEnSede, sedeLabel } from '@/lib/domain/sedeGrupo'
-import { cargarHistorialClub } from '@/lib/supabase/historial'
-import { indexar, sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
+import { cargarHistorialClub, cargarHistorialJugador } from '@/lib/supabase/historial'
+import { indexar, sesionesDelMes, calendarioJugador, indicadores, type SesionesMes, type DiaCalendario, type Indicadores } from '@/lib/domain/historialAsistencia'
+import { sumarDias } from '@/lib/domain/cuposDia'
 import {
   guardarJugadoresCache,
   obtenerJugadoresCache,
@@ -54,6 +55,18 @@ const hint = '#94a3b8'
 const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 function formatFechaLarga(fecha: string) {
   return new Date(fecha + 'T12:00:00').toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+const DIA_CORTO: Record<string, string> = { lun: 'Lun', mar: 'Mar', mie: 'Mié', jue: 'Jue', vie: 'Vie', sab: 'Sáb', dom: 'Dom' }
+function fechaCorta(iso: string, dia: string): string {
+  const [, m, d] = iso.split('-')
+  return `${DIA_CORTO[dia] ?? dia} ${Number(d)} ${nombresMes[Number(m) - 1]?.slice(0, 3).toLowerCase() ?? m}`
+}
+const ESTADO_ASISTENCIA: Record<string, { label: string; color: string; bg: string }> = {
+  presente: { label: 'Asistió', color: '#16a34a', bg: '#f0fdf4' },
+  ausente: { label: 'Faltó', color: '#dc2626', bg: '#fef2f2' },
+  pendiente: { label: 'Por marcar', color: '#2563eb', bg: '#eff6ff' },
+  extraordinaria: { label: 'Clase extra', color: '#7c3aed', bg: '#f5f3ff' },
 }
 
 function marcaTiempoActual() {
@@ -111,6 +124,11 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const [jugadorPropio, setJugadorPropio] = useState<any>(null)
   const [yaRegistroHoy, setYaRegistroHoy] = useState(false)
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  // Vista del jugador: sus últimos 40 días con fecha, no solo el día de hoy.
+  // Mismo motor que Asistencia Histórica (calendarioJugador), así que un día
+  // vencido sin registro cuenta como falta acá también.
+  const [diasMiAsistencia, setDiasMiAsistencia] = useState<DiaCalendario[]>([])
+  const [indMiAsistencia, setIndMiAsistencia] = useState<Indicadores | null>(null)
 
   const [pendientesCount, setPendientesCount] = useState(0)
   // Asistencias de la cola offline que el servidor rechazó definitivamente.
@@ -327,6 +345,19 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     setCargandoDia(false)
   }, [clubId])
 
+  // Los últimos 40 días del jugador, para su propia vista. Separado de
+  // `cargarDatos` porque ese trae el padrón del día para pasar lista y este
+  // trae el calendario de una sola persona a 40 días — cosas distintas que
+  // conviene poder refrescar por separado.
+  const cargarMiHistorial = useCallback(async () => {
+    if (!perfil?.jugador_id || !clubId) return
+    const desde = sumarDias(hoy, -40)
+    const historial = await cargarHistorialJugador(clubId, perfil.jugador_id, desde, hoy)
+    const dias = calendarioJugador(perfil.jugador_id, desde, hoy, { ...historial, hoy })
+    setDiasMiAsistencia(dias.slice().reverse())
+    setIndMiAsistencia(indicadores(dias))
+  }, [clubId, perfil?.jugador_id, hoy])
+
   useEffect(() => {
     async function cargar() {
       if (!perfil) { router.push('/login'); return }
@@ -334,6 +365,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         const cliente = createClient()
         const { data: j } = await cliente.from('jugadores').select('id,nombre').eq('id', perfil.jugador_id).single()
         setJugadorPropio(j)
+        void cargarMiHistorial()
       }
       if (perfil.club_id) {
         if (navigator.onLine) await sincronizarCola(perfil.club_id)
@@ -343,7 +375,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       setLoading(false)
     }
     void cargar()
-  }, [cargarDatos, cargarExtras, perfil, router, sincronizarCola])
+  }, [cargarDatos, cargarExtras, cargarMiHistorial, perfil, router, sincronizarCola])
 
   // Las extras y el aviso de día suspendido se recargan al cambiar el día que
   // se está mirando.
@@ -474,11 +506,12 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     void cargarDatos(clubId)
     void cargarExtras(fechaVista)
     if (fechaVista !== hoy) void cargarAsistenciasDia(fechaVista)
+    if (perfil?.rol === 'jugador') void cargarMiHistorial()
     // Los grupos del día y sus inscritos viven en otro efecto, con la fecha en
     // las dependencias. Sin este contador no se enteran de un cambio de
     // inscripciones, que es justo lo que hay que reflejar.
     setRevision(r => r + 1)
-  }, [cargarAsistenciasDia, cargarDatos, cargarExtras, clubId, fechaVista, hoy])
+  }, [cargarAsistenciasDia, cargarDatos, cargarExtras, cargarMiHistorial, clubId, fechaVista, hoy, perfil?.rol])
 
   useEnVivo(
     ['asistencia', 'clases_extraordinarias', 'bloque_jugadores', 'bloques_horario', 'bloque_excepciones'],
@@ -866,7 +899,58 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
         </div>
       )}
 
-      {/* ASISTENCIAS DEL DÍA */}
+      {/* MI ASISTENCIA (jugador) — últimos 40 días con fecha, no solo hoy */}
+      {esJugador && (
+        <div style={{ ...card, overflow: 'hidden', marginBottom: 24 }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: text }}>Mi asistencia</span>
+            <span style={{ fontSize: 11, color: hint }}>Últimos 40 días</span>
+          </div>
+
+          {indMiAsistencia && indMiAsistencia.programados > 0 && (
+            <div style={{ display: 'flex', padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+              {([
+                [
+                  indMiAsistencia.porcentaje === null ? '—' : `${indMiAsistencia.porcentaje}%`,
+                  'Asistencia',
+                  indMiAsistencia.porcentaje === null ? muted : indMiAsistencia.porcentaje >= 75 ? '#16a34a' : indMiAsistencia.porcentaje >= 50 ? '#d97706' : '#dc2626',
+                ],
+                [String(indMiAsistencia.presentes), 'Asistió', '#16a34a'],
+                [String(indMiAsistencia.ausentes), 'Faltó', '#dc2626'],
+              ] as const).map(([valor, label, color], i) => (
+                <div key={label} style={{ flex: 1, textAlign: 'center', borderLeft: i > 0 ? '1px solid #e2e8f0' : 'none' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{valor}</div>
+                  <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {diasMiAsistencia.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: hint, fontSize: 13 }}>Sin entrenamientos programados en los últimos 40 días</div>
+          ) : (
+            <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+              {diasMiAsistencia.map(d => {
+                const info = ESTADO_ASISTENCIA[d.estado]
+                return (
+                  <div key={d.fecha} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid #f1f5f9' }}>
+                    <div>
+                      <div style={{ fontSize: 13, color: text, fontWeight: 600 }}>{fechaCorta(d.fecha, d.dia)}</div>
+                      {d.bloques.length > 0 && <div style={{ fontSize: 11, color: hint, marginTop: 1 }}>{d.bloques.join(' · ')}</div>}
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: info.bg, color: info.color, whiteSpace: 'nowrap' }}>
+                      {info.label}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ASISTENCIAS DEL DÍA (Admin/Profesor) */}
+      {!esJugador && (
       <div style={{ ...card, overflow: 'hidden', marginBottom: 24 }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text, textTransform: 'capitalize' }}>
           Asistencias {fechaVista === hoy ? 'de hoy' : `del ${formatFechaLarga(fechaVista)}`} ({asistenciasFiltradas.length})
@@ -986,6 +1070,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
           )}
         </div>
       </div>
+      )}
 
       {/* GRÁFICO DE ASISTENCIA (Admin/Profesor) */}
       {esAdminOProfesor && clubId && (

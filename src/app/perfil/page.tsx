@@ -11,8 +11,7 @@ import MarcasAuspiciadores from '@/components/MarcasAuspiciadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import { firmarUrl } from '@/lib/supabase/privado'
 import { cargarHistorialJugador } from '@/lib/supabase/historial'
-import { sesionesDelMes, calendarioJugador, indicadores, type SesionesMes, type DiaCalendario, type Indicadores } from '@/lib/domain/historialAsistencia'
-import { sumarDias } from '@/lib/domain/cuposDia'
+import { sesionesDelMes, type SesionesMes } from '@/lib/domain/historialAsistencia'
 import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
 import { SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useEnVivo } from '@/lib/useEnVivo'
@@ -38,20 +37,6 @@ function edadDesde(fecha: string | null | undefined): number | null {
   return edad
 }
 
-const DIA_CORTO: Record<string, string> = { lun: 'Lun', mar: 'Mar', mie: 'Mié', jue: 'Jue', vie: 'Vie', sab: 'Sáb', dom: 'Dom' }
-
-function fechaCorta(iso: string, dia: string): string {
-  const [, m, d] = iso.split('-')
-  return `${DIA_CORTO[dia] ?? dia} ${Number(d)} ${MESES[Number(m) - 1]?.slice(0, 3) ?? m}`
-}
-
-const ESTADO_ASISTENCIA: Record<string, { label: string; color: string; bg: string }> = {
-  presente: { label: 'Asistió', color: '#16a34a', bg: '#f0fdf4' },
-  ausente: { label: 'Faltó', color: '#dc2626', bg: '#fef2f2' },
-  pendiente: { label: 'Por marcar', color: '#2563eb', bg: '#eff6ff' },
-  extraordinaria: { label: 'Clase extra', color: '#7c3aed', bg: '#f5f3ff' },
-}
-
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
 const text = '#0f172a'
 const muted = '#64748b'
@@ -75,11 +60,7 @@ export default function PerfilPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const [jugador, setJugador] = useState<any>(null)
   const [fotoUrl, setFotoUrl] = useState<string | null>(null)
-  // Los últimos 40 días de su calendario, con fecha y si vino o faltó. Salen
-  // del mismo motor que Asistencia Histórica (calendarioJugador), así que un
-  // día sin registro cuenta como falta acá igual que en todos lados.
-  const [diasAsistencia, setDiasAsistencia] = useState<DiaCalendario[]>([])
-  const [indAsistencia, setIndAsistencia] = useState<Indicadores | null>(null)
+  const [asistencias, setAsistencias] = useState<any[]>([])
   const [mensualidadActual, setMensualidadActual] = useState<any>(null)
   const [extrasImpagas, setExtrasImpagas] = useState<ClaseExtraJugador[]>([])
   const [loading, setLoading] = useState(true)
@@ -106,6 +87,9 @@ export default function PerfilPage() {
       // Todo lo suyo, en paralelo.
       const resultados = await Promise.all([
         supabase.from('jugadores').select(CAMPOS_FICHA).eq('id', perfil.jugador_id).single(),
+        // Solo presencias: la lista se llama "Últimas asistencias" y el aviso
+        // de hoy dice "¡Buen entrenamiento!" — una falta registrada no es eso.
+        supabase.from('asistencia').select('id,jugador_id,fecha,hora').eq('jugador_id', perfil.jugador_id).eq('estado', 'presente').order('fecha', { ascending: false }).limit(10),
         supabase.from('mensualidades').select('id,mes,anio,monto,estado').eq('jugador_id', perfil.jugador_id).eq('mes', mesActual).eq('anio', anioActual).maybeSingle(),
         supabase.from('asistencia').select('id').eq('jugador_id', perfil.jugador_id).eq('fecha', hoy).eq('estado', 'presente'),
         // Las clases extra impagas también son deuda. Sin esto el hero decía
@@ -124,6 +108,7 @@ export default function PerfilPage() {
 
       const [
         { data: j },
+        { data: a },
         { data: mens },
         { data: asistHoy },
         { data: ex },
@@ -131,28 +116,21 @@ export default function PerfilPage() {
 
       setJugador(j)
       setFotoUrl(await firmarUrl((j as any)?.foto_path))
+      setAsistencias(a || [])
       setMensualidadActual(mens)
       setYaRegistroHoy((asistHoy || []).length > 0)
       setExtrasImpagas((ex ?? []) as ClaseExtraJugador[])
 
-      // Las sesiones del mes y el bloque de asistencia salen del mismo
-      // calendario de sus bloques, igual que en Asistencia Histórica, para que
-      // ninguna pantalla pueda decir números distintos.
+      // Las sesiones del mes salen del calendario de sus bloques, igual que
+      // en Asistencia Histórica, para que las dos pantallas no puedan decir
+      // números distintos.
       if (perfil.club_id) {
         // El mes entero, no hasta hoy: el límite incluye los días que faltan,
         // y un feriado ya cargado para el 20 tiene que descontarse desde ya.
-        const desdeMes = `${hoy.slice(0, 7)}-01`
+        const desde = `${hoy.slice(0, 7)}-01`
         const hasta = `${hoy.slice(0, 7)}-${new Date(anioActual, mesActual, 0).getDate()}`
-        const desde40 = sumarDias(hoy, -40)
-        // Un solo viaje para las dos vistas: el mes completo (para el límite de
-        // sesiones) y los últimos 40 días (para el bloque de asistencia), lo
-        // que llegue más atrás.
-        const desde = desde40 < desdeMes ? desde40 : desdeMes
         const historial = await cargarHistorialJugador(perfil.club_id, perfil.jugador_id, desde, hasta)
         setSesiones(sesionesDelMes(perfil.jugador_id, { ...historial, hoy }, hoy))
-        const dias = calendarioJugador(perfil.jugador_id, desde40, hoy, { ...historial, hoy })
-        setDiasAsistencia(dias.slice().reverse())
-        setIndAsistencia(indicadores(dias))
       }
     }
     setLoading(false)
@@ -160,9 +138,7 @@ export default function PerfilPage() {
 
   useEffect(() => { void cargar() }, [cargar])
   // Si el jugador (o el admin) cambia la ficha, esta pantalla se actualiza sola.
-  // 'asistencia' entra acá también: si no, el bloque de asistencia queda mudo
-  // cuando el profe pasa la lista y solo se refresca si el alumno recarga.
-  useEnVivo(['jugadores', 'asistencia'], perfil?.club_id ?? null, cargar, { conClub: ['jugadores', 'asistencia'] })
+  useEnVivo(['jugadores'], perfil?.club_id ?? null, cargar, { conClub: ['jugadores'] })
 
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#a9bac8' }}>
@@ -348,52 +324,19 @@ export default function PerfilPage() {
         </div>
       )}
 
-      {/* Asistencia */}
+      {/* Últimas asistencias */}
       <div style={{ ...card, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: text }}>Asistencia</span>
-          <span style={{ fontSize: 11, color: hint }}>Últimos 40 días</span>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 600, color: text }}>
+          Últimas asistencias
         </div>
-
-        {indAsistencia && indAsistencia.programados > 0 && (
-          <div style={{ display: 'flex', padding: '16px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
-            {([
-              [
-                indAsistencia.porcentaje === null ? '—' : `${indAsistencia.porcentaje}%`,
-                'Asistencia',
-                indAsistencia.porcentaje === null ? muted : indAsistencia.porcentaje >= 75 ? '#16a34a' : indAsistencia.porcentaje >= 50 ? '#d97706' : '#dc2626',
-              ],
-              [String(indAsistencia.presentes), 'Asistió', '#16a34a'],
-              [String(indAsistencia.ausentes), 'Faltó', '#dc2626'],
-            ] as const).map(([valor, label, color], i) => (
-              <div key={label} style={{ flex: 1, textAlign: 'center', borderLeft: i > 0 ? '1px solid #e2e8f0' : 'none' }}>
-                <div style={{ fontSize: 22, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>{valor}</div>
-                <div style={{ fontSize: 10, color: muted, marginTop: 2 }}>{label}</div>
-              </div>
-            ))}
+        {asistencias.length === 0 ? (
+          <div style={{ padding: 30, textAlign: 'center', color: hint, fontSize: 13 }}>Sin asistencias registradas</div>
+        ) : asistencias.map(a => (
+          <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 20px', borderBottom: '1px solid #f1f5f9' }}>
+            <span style={{ fontSize: 13, color: text }}>{a.fecha}</span>
+            <span style={{ fontSize: 13, color: muted }}>{a.hora?.slice(0, 5)}</span>
           </div>
-        )}
-
-        {diasAsistencia.length === 0 ? (
-          <div style={{ padding: 30, textAlign: 'center', color: hint, fontSize: 13 }}>Sin entrenamientos programados en los últimos 40 días</div>
-        ) : (
-          <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-            {diasAsistencia.map(d => {
-              const info = ESTADO_ASISTENCIA[d.estado]
-              return (
-                <div key={d.fecha} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', borderBottom: '1px solid #f1f5f9' }}>
-                  <div>
-                    <div style={{ fontSize: 13, color: text, fontWeight: 600 }}>{fechaCorta(d.fecha, d.dia)}</div>
-                    {d.bloques.length > 0 && <div style={{ fontSize: 11, color: hint, marginTop: 1 }}>{d.bloques.join(' · ')}</div>}
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: info.bg, color: info.color, whiteSpace: 'nowrap' }}>
-                    {info.label}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
+        ))}
       </div>
     </AppLayout>
   )
