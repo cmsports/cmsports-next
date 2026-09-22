@@ -33,7 +33,7 @@ const boton = (primario = false, peligro = false) => ({
 const LETRAS = ['A', 'B', 'C', 'D', 'E']
 
 type Equipo = { id: string; nombre: string; club: string | null; orden: number; jugadores: string[] }
-type Partido = { id: string; encuentroId: string; numero: number; a: string | null; a2: string | null; b: string | null; b2: string | null; ganador: string | null; setsA: number | null; setsB: number | null }
+type Partido = { id: string; encuentroId: string; numero: number; a: string | null; a2: string | null; b: string | null; b2: string | null; ganador: string | null; setsA: number | null; setsB: number | null; esWalkover: boolean }
 type Encuentro = { id: string; orden: number; equipoA: string | null; equipoB: string | null; ganador: string | null; partidos: Partido[] }
 
 export default function TorneoEquiposPage() {
@@ -85,13 +85,14 @@ export default function TorneoEquiposPage() {
     let partidos: Partido[] = []
     if (encIds.length) {
       const { data: ps } = await sb.from('torneo_partidos')
-        .select('id, encuentro_id, numero_en_encuentro, jugador_a, jugador_a2, jugador_b, jugador_b2, ganador, sets_a, sets_b')
+        .select('id, encuentro_id, numero_en_encuentro, jugador_a, jugador_a2, jugador_b, jugador_b2, ganador, sets_a, sets_b, es_walkover')
         .in('encuentro_id', encIds).order('numero_en_encuentro')
       partidos = ((ps || []) as Array<Record<string, unknown>>).map(p => ({
         id: p.id as string, encuentroId: p.encuentro_id as string, numero: p.numero_en_encuentro as number,
         a: (p.jugador_a as string | null) ?? null, a2: (p.jugador_a2 as string | null) ?? null,
         b: (p.jugador_b as string | null) ?? null, b2: (p.jugador_b2 as string | null) ?? null,
         ganador: (p.ganador as string | null) ?? null, setsA: (p.sets_a as number | null) ?? null, setsB: (p.sets_b as number | null) ?? null,
+        esWalkover: !!p.es_walkover,
       }))
     }
     setEncuentros(((encs || []) as Array<Record<string, unknown>>).map(e => ({
@@ -210,9 +211,9 @@ export default function TorneoEquiposPage() {
     await cargar()
   }
 
-  async function marcar(p: Partido, parciales: Array<[number, number]>) {
+  async function marcar(p: Partido, parciales: Array<[number, number]>, walkoverGanadorId?: string) {
     setOcupado(true); setMensaje(null)
-    const res = await marcarPartidoDeEncuentro({ torneoId, partidoId: p.id, parciales })
+    const res = await marcarPartidoDeEncuentro({ torneoId, partidoId: p.id, parciales, walkoverGanadorId })
     setOcupado(false)
     if (res.error) { setMensaje({ tipo: 'error', texto: res.error }); return }
     setMarcando(null)
@@ -446,7 +447,7 @@ export default function TorneoEquiposPage() {
                               <span style={{ fontSize: 11, color: hint }}>vs</span>
                               <span style={{ fontSize: 13, color: jugado && !ganoA ? '#15803d' : ink, fontWeight: jugado && !ganoA ? 800 : 600 }}>{nombre(p.b)}{p.b2 ? ` / ${nombre(p.b2)}` : ''}</span>
                               <span style={{ flex: 1 }} />
-                              {jugado && <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#15803d', background: '#dcfce7', borderRadius: 6, padding: '2px 8px', fontSize: 12 }}>{p.setsA}–{p.setsB}</span>}
+                              {jugado && <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#15803d', background: '#dcfce7', borderRadius: 6, padding: '2px 8px', fontSize: 12 }}>{p.setsA}–{p.setsB}{p.esWalkover ? ' W.O.' : ''}</span>}
                               {noSeJuega && !jugado && <span style={{ fontSize: 11, color: muted }}>no se juega</span>}
                               {esAdmin && !noSeJuega && (
                                 <button onClick={() => setMarcando(abiertoP ? null : p.id)} style={{ ...boton(!jugado), padding: '4px 10px', fontSize: 11 }}>{abiertoP ? 'Cerrar' : jugado ? 'Corregir' : '📝 Marcar'}</button>
@@ -461,6 +462,7 @@ export default function TorneoEquiposPage() {
                                 guardando={ocupado}
                                 onCancelar={() => setMarcando(null)}
                                 onListo={parciales => marcar(p, parciales)}
+                                onWalkover={ganaA => marcar(p, [], (ganaA ? p.a : p.b) as string)}
                               />
                             )}
                           </div>

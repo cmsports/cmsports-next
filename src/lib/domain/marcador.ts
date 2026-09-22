@@ -134,6 +134,16 @@ export function resumirPartido(
   return { setsA, setsB, puntosA, puntosB }
 }
 
+/**
+ * El marcador reglamentario de un walkover: el que se presentó gana todos los
+ * sets 11-0. Se guarda como parciales normales para que la tabla del grupo, el
+ * ratio de sets y el de puntos lo cuenten igual que el estándar; la marca
+ * `es_walkover` es la que dice que no se jugó.
+ */
+export function parcialesDeWalkover(formato: FormatoPartido, ganaA: boolean): Array<[number, number]> {
+  return Array.from({ length: setsParaGanar(formato) }, () => (ganaA ? [11, 0] : [0, 11]) as [number, number])
+}
+
 export function resumirBo5(
   parciales: ReadonlyArray<readonly [number, number]>,
 ): ResumenBo5 | null {

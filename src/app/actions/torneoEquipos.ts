@@ -3,7 +3,7 @@
 import { requireAdminClub } from '@/lib/auth/require'
 import { modalidadDe } from '@/lib/domain/modalidadTorneo'
 import { generarRoundRobin } from '@/lib/domain/torneos'
-import { resumirPartido } from '@/lib/domain/marcador'
+import { parcialesDeWalkover, resumirPartido } from '@/lib/domain/marcador'
 import {
   generarPartidosDelEncuentro,
   minJugadoresPorEquipo,
@@ -257,6 +257,8 @@ export async function marcarPartidoDeEncuentro(params: {
   torneoId: string
   partidoId: string
   parciales: Array<[number, number]>
+  /** No presentación: quién sí se presentó (jugador_a o jugador_b del partido). */
+  walkoverGanadorId?: string
 }): Promise<{ error?: string; encuentroTerminado?: boolean }> {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr || !clubId) return { error: authErr ?? 'Sin club' }
@@ -271,8 +273,13 @@ export async function marcarPartidoDeEncuentro(params: {
   if (!partido || !partido.encuentro_id) return { error: 'Partido no encontrado' }
   if (!partido.jugador_a || !partido.jugador_b) return { error: 'Este partido no tiene los dos lados armados.' }
 
+  const esWalkover = !!params.walkoverGanadorId
+  if (esWalkover && params.walkoverGanadorId !== partido.jugador_a && params.walkoverGanadorId !== partido.jugador_b) {
+    return { error: 'El que se presentó debe ser uno de los jugadores del partido' }
+  }
+  const parcialesEntrada = esWalkover ? parcialesDeWalkover('bo5', params.walkoverGanadorId === partido.jugador_a) : (params.parciales ?? [])
   const pares: Array<[number, number]> = []
-  for (const set of params.parciales ?? []) {
+  for (const set of parcialesEntrada) {
     if (!Array.isArray(set) || set.length !== 2 || typeof set[0] !== 'number' || typeof set[1] !== 'number') return { error: 'Parciales inválidos.' }
     pares.push([set[0], set[1]])
   }
@@ -295,7 +302,7 @@ export async function marcarPartidoDeEncuentro(params: {
 
   const ganador = resumen.setsA > resumen.setsB ? partido.jugador_a : partido.jugador_b
   const { error } = await db.from('torneo_partidos').update({
-    ganador, sets_a: resumen.setsA, sets_b: resumen.setsB, puntos_a: resumen.puntosA, puntos_b: resumen.puntosB,
+    ganador, sets_a: resumen.setsA, sets_b: resumen.setsB, puntos_a: resumen.puntosA, puntos_b: resumen.puntosB, es_walkover: esWalkover,
   }).eq('id', partido.id)
   if (error) return { error: 'No se pudo guardar el resultado: ' + error.message }
 

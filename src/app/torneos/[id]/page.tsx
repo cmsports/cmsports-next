@@ -48,7 +48,7 @@ const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.Q
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
 import MarcadorSets from '@/components/torneos/MarcadorSets'
-import { formatoDe, FORMATO_LABEL, FORMATO_EXPLICACION } from '@/lib/domain/marcador'
+import { formatoDe, FORMATO_LABEL, FORMATO_EXPLICACION, parcialesDeWalkover } from '@/lib/domain/marcador'
 
 const supabase = createClient()
 const fasesOrden = CONFIG.FASES_ORDEN
@@ -157,7 +157,7 @@ export default function TorneoDetallePage() {
   const cargarPartidos = useCallback(async () => {
     const { data } = await supabase
       .from('torneo_partidos')
-      .select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)')
+      .select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,es_walkover,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)')
       .eq('torneo_id', torneoId)
     if (data) setPartidos(data)
   }, [torneoId])
@@ -179,7 +179,7 @@ export default function TorneoDetallePage() {
     ] = await Promise.all([
       supabase.from('torneos').select('id,nombre,tipo,estado,fase,codigo,inscripcion_abierta,cuota_inscripcion,precio_entrada,premio_primero,premio_segundo,premio_tercero,premio_consuelo,campeon_id,subcampeon_id,tercer_id,campeon_consuelo_id,club_id,categoria,genero,fecha_inicio,fecha_fin,formato_grupos,formato_llave,formato,ruedas').eq('id', torneoId).single(),
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
-      supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
+      supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,es_walkover,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
       supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,club_procedencia,jugadores(id,nombre,es_externo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
@@ -456,7 +456,7 @@ export default function TorneoDetallePage() {
     }
   }
 
-  async function marcarGanador(partidoId: string, ganadorId: string, setsA?: number, setsB?: number, parciales?: Array<[number, number]>) {
+  async function marcarGanador(partidoId: string, ganadorId: string, setsA?: number, setsB?: number, parciales?: Array<[number, number]>, walkoverGanadorId?: string) {
     // ponytail: semáforo anti-doble-tap (iPhone registra dos touches a veces)
     if (marcandoRef.current.has(partidoId)) return
     marcandoRef.current.add(partidoId)
@@ -468,7 +468,7 @@ export default function TorneoDetallePage() {
       : partido?.jugador_b === ganadorId ? (partido as any).jb : null
     const puntosA = parciales?.reduce((t, [a]) => t + a, 0)
     const puntosB = parciales?.reduce((t, [, b]) => t + b, 0)
-    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador, sets_a: setsA ?? p.sets_a, sets_b: setsB ?? p.sets_b, puntos_a: puntosA ?? p.puntos_a, puntos_b: puntosB ?? p.puntos_b } : p))
+    setPartidos(prev => prev.map(p => p.id === partidoId ? { ...p, ganador: ganadorId, jg: ganador, sets_a: setsA ?? p.sets_a, sets_b: setsB ?? p.sets_b, puntos_a: puntosA ?? p.puntos_a, puntos_b: puntosB ?? p.puntos_b, es_walkover: !!walkoverGanadorId } : p))
 
     try {
       // ponytail: fetch a API route en vez de server action directa. La server
@@ -479,7 +479,7 @@ export default function TorneoDetallePage() {
       const res = await fetch('/api/marcar-ganador', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ partidoId, ganadorId, setsA, setsB, parciales }),
+        body: JSON.stringify({ partidoId, ganadorId, setsA, setsB, parciales, walkoverGanadorId }),
       }).then(r => r.json())
       if (res.error) { setPartidos(previo); alert(res.error); return }
       // Para grupos: el update optimista es suficiente; calcularStats() re-deriva
@@ -1579,6 +1579,7 @@ export default function TorneoDetallePage() {
                                 {p.puntos_a != null && p.puntos_b != null && (
                                   <span style={{ color:'#94a3b8' }}> · {p.puntos_a}-{p.puntos_b} pts</span>
                                 )}
+                                {p.es_walkover && <span style={{ color:'#b91c1c' }}> · W.O.</span>}
                               </span>
                               {esAdmin && faseActual === 'grupos' && (
                                 <button onClick={() => setPartidoEditando(p.id)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'2px 4px' }} title="Corregir resultado">✏️</button>
@@ -1609,6 +1610,26 @@ export default function TorneoDetallePage() {
                                   const setsB = parciales.length - setsA
                                   const ganadorId = setsA > setsB ? p.jugador_a : p.jugador_b
                                   await marcarGanador(p.id, ganadorId, setsA, setsB, parciales)
+                                  setPartidoEditando(null)
+                                }
+                              } finally {
+                                setGuardandoMarcador(null)
+                              }
+                            }}
+                            onWalkover={async ganaA => {
+                              const walkoverGanadorId = (ganaA ? p.jugador_a : p.jugador_b) as string
+                              setGuardandoMarcador(p.id)
+                              try {
+                                if (p.ganador) {
+                                  const res = await corregirResultadoGrupos({ partidoId: p.id, walkoverGanadorId })
+                                  if ('error' in res && res.error) { alert(res.error); return }
+                                  setPartidoEditando(null)
+                                  await cargarTorneo()
+                                } else {
+                                  const parciales = parcialesDeWalkover(formatoGrupos, ganaA)
+                                  const setsA = parciales.filter(([a, b]) => a > b).length
+                                  const setsB = parciales.length - setsA
+                                  await marcarGanador(p.id, walkoverGanadorId, setsA, setsB, parciales, walkoverGanadorId)
                                   setPartidoEditando(null)
                                 }
                               } finally {

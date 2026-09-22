@@ -19,6 +19,7 @@ export default function MarcadorSets({
   formato = 'bo5',
   onListo,
   onCancelar,
+  onWalkover,
 }: {
   nombreA: string
   nombreB: string
@@ -28,6 +29,9 @@ export default function MarcadorSets({
   formato?: FormatoPartido
   onListo: (parciales: Array<[number, number]>) => void
   onCancelar: () => void
+  /** No presentación: se omite si no se ofrece W.O. (p. ej. el bracket, donde
+   *  ya se puede avanzar sin marcador tocando el nombre). `true` = ganó A. */
+  onWalkover?: (ganaA: boolean) => void
 }) {
   // Un casillero vacío es '' y no 0: 0 es un puntaje válido (11-0).
   const meta = setsParaGanar(formato)
@@ -126,6 +130,24 @@ export default function MarcadorSets({
           >{guardando ? 'Guardando…' : 'Listo'}</button>
         </span>
       </div>
+
+      {onWalkover && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e2e8f0' }}>
+          <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 4 }}>No se presentó alguien — marcar W.O.:</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              disabled={guardando}
+              onClick={() => onWalkover(true)}
+              style={{ flex: 1, background: 'transparent', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 6, padding: '5px 8px', fontSize: 10, cursor: guardando ? 'default' : 'pointer' }}
+            >W.O. a favor de {nombreA || 'A'}</button>
+            <button
+              disabled={guardando}
+              onClick={() => onWalkover(false)}
+              style={{ flex: 1, background: 'transparent', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 6, padding: '5px 8px', fontSize: 10, cursor: guardando ? 'default' : 'pointer' }}
+            >W.O. a favor de {nombreB || 'B'}</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

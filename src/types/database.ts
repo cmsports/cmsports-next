@@ -792,6 +792,8 @@ export interface Database {
           jugador_b2: string | null
           /** Posición dentro del encuentro, 1 a 5. */
           numero_en_encuentro: number | null
+          /** El partido se cerró por no presentación (W.O.); migración 278. */
+          es_walkover: boolean
         }
         Insert: {
           id?: string
@@ -811,6 +813,7 @@ export interface Database {
           slot_b_posicion?: number | null
           orden?: number | null
           creado_en?: string | null
+          es_walkover?: boolean
         }
         Update: {
           id?: string
@@ -830,6 +833,7 @@ export interface Database {
           slot_b_posicion?: number | null
           orden?: number | null
           creado_en?: string | null
+          es_walkover?: boolean
         }
         Relationships: [
           { foreignKeyName: 'torneo_partidos_torneo_id_fkey'; columns: ['torneo_id']; referencedRelation: 'torneos'; referencedColumns: ['id'] },

@@ -45,6 +45,7 @@ import {
   marcadoresPermitidosTexto,
   setsParaGanar,
   formatoDe,
+  parcialesDeWalkover,
   type FormatoPartido,
 } from '@/lib/domain/marcador'
 import { CONFIG, type FaseOrden } from '@/lib/config'
@@ -761,6 +762,8 @@ export async function corregirResultadoGrupos(params: {
   setsA?: number
   setsB?: number
   parciales?: ParcialSet[]
+  /** Corregir a un W.O.: quién se presentó. Manda sobre sets y parciales. */
+  walkoverGanadorId?: string
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -784,12 +787,22 @@ export async function corregirResultadoGrupos(params: {
 
   const formato = await formatoDeLaFase(supabase, partido.torneo_id, partido.fase)
 
+  // Un W.O. es un marcador reglamentario con la marca puesta: pasa por el
+  // mismo camino que cualquier corrección.
+  let parcialesCorregidos = params.parciales
+  if (params.walkoverGanadorId) {
+    if (params.walkoverGanadorId !== partido.jugador_a && params.walkoverGanadorId !== partido.jugador_b) {
+      return { error: 'El que se presentó debe ser uno de los jugadores del partido' }
+    }
+    parcialesCorregidos = parcialesDeWalkover(formato, params.walkoverGanadorId === partido.jugador_a)
+  }
+
   let setsA = params.setsA
   let setsB = params.setsB
   let puntosA: number | null = null
   let puntosB: number | null = null
-  if (params.parciales !== undefined) {
-    const desdeParciales = marcadorDesdeParciales(params.parciales, formato)
+  if (parcialesCorregidos !== undefined) {
+    const desdeParciales = marcadorDesdeParciales(parcialesCorregidos, formato)
     if ('error' in desdeParciales) return desdeParciales
     setsA = desdeParciales.setsA
     setsB = desdeParciales.setsB
@@ -852,7 +865,7 @@ export async function corregirResultadoGrupos(params: {
   }
 
   // Limpiar ganador actual antes de reusar marcarGanadorPartido
-  await supabase.from('torneo_partidos').update({ ganador: null, sets_a: null, sets_b: null, puntos_a: null, puntos_b: null }).eq('id', partidoId)
+  await supabase.from('torneo_partidos').update({ ganador: null, sets_a: null, sets_b: null, puntos_a: null, puntos_b: null, es_walkover: false }).eq('id', partidoId)
   if (partido.grupo_id) {
     await supabase.from('torneo_grupos').update({
       desempate_primero_id: null,
@@ -861,7 +874,7 @@ export async function corregirResultadoGrupos(params: {
   }
 
   // Aplicar nuevo resultado (reutiliza la lógica existente)
-  const marcado = await marcarGanadorPartido({ partidoId, setsA, setsB, parciales: params.parciales })
+  const marcado = await marcarGanadorPartido({ partidoId, setsA, setsB, parciales: parcialesCorregidos, walkoverGanadorId: params.walkoverGanadorId })
   if ('error' in marcado && marcado.error) return marcado
 
   if (llavesExistentes?.length) {
@@ -885,7 +898,7 @@ async function partidosDelTorneo(supabase: AdminSupabase, torneoId: string | nul
   if (!torneoId) return null
   const { data } = await supabase
     .from('torneo_partidos')
-    .select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)')
+    .select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,es_walkover,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)')
     .eq('torneo_id', torneoId)
   return data ?? null
 }
@@ -947,6 +960,12 @@ export async function marcarGanadorPartido(params: {
   /** Puntos de cada set: [[11,9],[11,7],[9,11],[11,6]]. Cuando vienen, mandan
    *  ellos: los sets y los puntos totales se derivan de acá. */
   parciales?: ParcialSet[]
+  /**
+   * No presentación: quién SÍ se presentó. Se guarda el marcador
+   * reglamentario (todos los sets 11-0) con la marca `es_walkover`, así la
+   * tabla lo cuenta como el estándar y la pantalla dice "W.O.".
+   */
+  walkoverGanadorId?: string
 }) {
   const { error: authErr, supabase } = await requireAdmin()
   if (authErr) return { error: authErr }
@@ -973,10 +992,19 @@ export async function marcarGanadorPartido(params: {
   }
   const formato = formatoDe(partido.fase === 'grupos' ? torneoEmbebido?.formato_grupos : torneoEmbebido?.formato_llave)
 
+  const esWalkover = !!params.walkoverGanadorId
+  let parcialesEntrada = params.parciales
+  if (esWalkover) {
+    if (params.walkoverGanadorId !== partido.jugador_a && params.walkoverGanadorId !== partido.jugador_b) {
+      return { error: 'El que se presentó debe ser uno de los jugadores del partido' }
+    }
+    parcialesEntrada = parcialesDeWalkover(formato, params.walkoverGanadorId === partido.jugador_a)
+  }
+
   let { setsA, setsB } = params
   let puntos: { puntosA: number; puntosB: number } | null = null
-  if (params.parciales !== undefined) {
-    const desdeParciales = marcadorDesdeParciales(params.parciales, formato)
+  if (parcialesEntrada !== undefined) {
+    const desdeParciales = marcadorDesdeParciales(parcialesEntrada, formato)
     if ('error' in desdeParciales) return desdeParciales
     setsA = desdeParciales.setsA
     setsB = desdeParciales.setsB
@@ -997,9 +1025,10 @@ export async function marcarGanadorPartido(params: {
   if (!ganadorId) return { error: 'Falta indicar quién ganó' }
   if (ganadorId !== partido.jugador_a && ganadorId !== partido.jugador_b) return { error: 'El ganador debe ser uno de los jugadores del partido' }
 
-  const marcador = sets
-    ? { sets_a: sets.a, sets_b: sets.b, ...(puntos ? { puntos_a: puntos.puntosA, puntos_b: puntos.puntosB } : {}) }
-    : {}
+  const marcador = {
+    ...(sets ? { sets_a: sets.a, sets_b: sets.b, ...(puntos ? { puntos_a: puntos.puntosA, puntos_b: puntos.puntosB } : {}) } : {}),
+    es_walkover: esWalkover,
+  }
 
   if (partido.fase !== 'grupos') {
     const { data: actualizado } = await supabase

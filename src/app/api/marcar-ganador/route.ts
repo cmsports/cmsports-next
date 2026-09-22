@@ -43,14 +43,14 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Origen no permitido' }, { status: 403 })
   }
 
-  let cuerpo: { partidoId?: unknown; ganadorId?: unknown; setsA?: unknown; setsB?: unknown; parciales?: unknown }
+  let cuerpo: { partidoId?: unknown; ganadorId?: unknown; setsA?: unknown; setsB?: unknown; parciales?: unknown; walkoverGanadorId?: unknown }
   try {
     cuerpo = await req.json()
   } catch {
     return Response.json({ error: 'Cuerpo inválido' }, { status: 400 })
   }
 
-  const { partidoId, ganadorId, setsA, setsB, parciales } = cuerpo
+  const { partidoId, ganadorId, setsA, setsB, parciales, walkoverGanadorId } = cuerpo
   if (typeof partidoId !== 'string' || !partidoId) {
     return Response.json({ error: 'Faltan datos' }, { status: 400 })
   }
@@ -59,7 +59,8 @@ export async function POST(req: Request) {
   const tieneGanador = typeof ganadorId === 'string' && !!ganadorId
   const tieneSets = typeof setsA === 'number' && typeof setsB === 'number'
   const tieneParciales = esParciales(parciales)
-  if (!tieneGanador && !tieneSets && !tieneParciales) {
+  const tieneWalkover = typeof walkoverGanadorId === 'string' && !!walkoverGanadorId
+  if (!tieneGanador && !tieneSets && !tieneParciales && !tieneWalkover) {
     return Response.json({ error: 'Faltan datos' }, { status: 400 })
   }
 
@@ -69,6 +70,7 @@ export async function POST(req: Request) {
     setsA: tieneSets ? setsA : undefined,
     setsB: tieneSets ? setsB : undefined,
     parciales: tieneParciales ? parciales : undefined,
+    walkoverGanadorId: tieneWalkover ? walkoverGanadorId : undefined,
   })
   return Response.json(result)
 }
