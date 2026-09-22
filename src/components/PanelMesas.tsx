@@ -206,7 +206,10 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ minWidth: 240, flex: 1 }}>
             <label htmlFor="total-mesas" style={{ fontSize: 14, fontWeight: 600, color: text, display: 'block' }}>
-              Mesas en {sedeLabel(sede)}
+              {/* Sin sede todavía no se inventa una: antes caía en la escrita
+                  duro y un club nuevo leía "Mesas en Buin (Aníbal Pinto 158)",
+                  que no es su dirección ni de lejos. */}
+              {sede ? `Mesas en ${sedeLabel(sede)}` : 'Mesas de tu sede'}
             </label>
             <p style={{ margin: '3px 0 0', fontSize: 11.5, color: hint, lineHeight: 1.55 }}>
               Cámbialo cuando quieras: de acá sale cuántas quedan libres a cada hora.

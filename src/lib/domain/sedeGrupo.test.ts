@@ -2,8 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { sedeLabel, sedesDe } from './sedeGrupo'
 
 describe('sedeLabel', () => {
-  it('nombra la sede nueva de Spinhouse', () => {
-    expect(sedeLabel('spinhouse')).toBe('Spinhouse')
+  // Con la dirección: la etiqueta se lee en "Mesas en …", donde un apodo suelto
+  // no dice dónde queda.
+  it('nombra la sede de Spinhouse con su dirección', () => {
+    expect(sedeLabel('spinhouse')).toBe('Spinhouse (José Ananías 128, Macul)')
+  })
+
+  // Ninguna sede todavía: quien llame decide qué poner, pero nunca hereda la
+  // de otro club.
+  it('no inventa una sede cuando no hay ninguna', () => {
+    expect(sedeLabel('')).toBe('—')
+    expect(sedeLabel(null)).toBe('—')
   })
 
   it('devuelve el valor crudo si no está en el catálogo', () => {

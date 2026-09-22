@@ -3,6 +3,15 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
+      // Migración 248. Las claves válidas y sus valores los define el catálogo
+      // `src/lib/domain/clubConfig.ts`, no estos tipos: acá `valor` es Json
+      // porque la columna es jsonb y guarda números, textos y booleanos.
+      club_config: {
+        Row: { club_id: string; clave: string; valor: Json; actualizado_en: string | null }
+        Insert: { club_id: string; clave: string; valor: Json; actualizado_en?: string | null }
+        Update: { club_id?: string; clave?: string; valor?: Json; actualizado_en?: string | null }
+        Relationships: []
+      }
       clubes: {
         Row: {
           id: string
@@ -20,6 +29,7 @@ export interface Database {
           estado_plan: string
           fecha_inicio_plan: string | null
           proximo_vencimiento: string | null
+          plan_mensual_neto: number | null
         }
         Insert: {
           id?: string
@@ -37,6 +47,7 @@ export interface Database {
           estado_plan?: string
           fecha_inicio_plan?: string | null
           proximo_vencimiento?: string | null
+          plan_mensual_neto?: number | null
         }
         Update: {
           id?: string
@@ -54,13 +65,14 @@ export interface Database {
           estado_plan?: string
           fecha_inicio_plan?: string | null
           proximo_vencimiento?: string | null
+          plan_mensual_neto?: number | null
         }
         Relationships: []
       }
       pagos_clubes: {
         Row: {
           id: string
-          club_id: string
+          club_id: string | null
           monto: number
           periodo_mes: number
           periodo_anio: number
@@ -68,6 +80,7 @@ export interface Database {
           metodo: string | null
           notas: string | null
           concepto: string
+          categoria: string | null
           factura_path: string | null
           factura_nombre: string | null
           monto_neto: number | null
@@ -75,7 +88,7 @@ export interface Database {
         }
         Insert: {
           id?: string
-          club_id: string
+          club_id?: string | null
           monto: number
           periodo_mes: number
           periodo_anio: number
@@ -83,6 +96,7 @@ export interface Database {
           metodo?: string | null
           notas?: string | null
           concepto?: string
+          categoria?: string | null
           factura_path?: string | null
           factura_nombre?: string | null
           monto_neto?: number | null
@@ -90,7 +104,7 @@ export interface Database {
         }
         Update: {
           id?: string
-          club_id?: string
+          club_id?: string | null
           monto?: number
           periodo_mes?: number
           periodo_anio?: number
@@ -98,6 +112,7 @@ export interface Database {
           metodo?: string | null
           notas?: string | null
           concepto?: string
+          categoria?: string | null
           factura_path?: string | null
           factura_nombre?: string | null
           monto_neto?: number | null
@@ -249,6 +264,11 @@ export interface Database {
           sede: string | null
           talla_polera: string | null
           talla_short: string | null
+          nivel: string | null
+          licencia_fechiteme: string | null
+          mano_habil: string | null
+          estilo_juego: string | null
+          material: string | null
           matricula_pagada: boolean
           matricula_monto: number | null
           cobrar_desde: string | null
@@ -291,6 +311,11 @@ export interface Database {
           sede?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
           matricula_pagada?: boolean
           matricula_monto?: number | null
           cobrar_desde?: string | null
@@ -333,6 +358,11 @@ export interface Database {
           sede?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
           matricula_pagada?: boolean
           matricula_monto?: number | null
           cobrar_desde?: string | null
@@ -1086,6 +1116,11 @@ export interface Database {
           veces_corregida: number
           talla_polera: string | null
           talla_short: string | null
+          nivel: string | null
+          licencia_fechiteme: string | null
+          mano_habil: string | null
+          estilo_juego: string | null
+          material: string | null
         }
         Insert: {
           id?: string
@@ -1116,6 +1151,11 @@ export interface Database {
           apellido3?: string | null
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
         }
         Update: {
           id?: string
@@ -1146,6 +1186,11 @@ export interface Database {
           veces_corregida?: number
           talla_polera?: string | null
           talla_short?: string | null
+          nivel?: string | null
+          licencia_fechiteme?: string | null
+          mano_habil?: string | null
+          estilo_juego?: string | null
+          material?: string | null
         }
         Relationships: [
           { foreignKeyName: 'solicitudes_jugador_club_id_fkey'; columns: ['club_id']; referencedRelation: 'clubes'; referencedColumns: ['id'] },

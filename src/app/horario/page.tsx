@@ -82,7 +82,11 @@ export default function HorarioPage() {
   const [profesores, setProfesores] = useState<Profesor[]>([])
   const [planes, setPlanes]         = useState<Plan[]>([])
   const [cargando, setCargando]     = useState(true)
-  const [sedeActiva, setSedeActiva] = useState('buin')
+  const [sedeActiva, setSedeActiva] = useState('')
+  // Las sedes que el club declaró en Mesas. Un club recién entregado todavía
+  // no tiene bloques, y sin esto `sedesDe([])` volvía vacío y la pestaña de
+  // Mesas caía en la sede escrita duro: a Spinhouse le decía "Buin".
+  const [sedesMesas, setSedesMesas]  = useState<string[]>([])
   const [tab, setTab]               = useState<'grilla' | 'cupos' | 'mesas' | 'recuperaciones' | 'profesores' | 'reportes'>('grilla')
   const [modal, setModal]           = useState<null | 'nuevo' | Bloque>(null)
   const [form, setForm]             = useState(FORM_VACIO)
@@ -108,7 +112,7 @@ export default function HorarioPage() {
   const esStaff = perfil?.rol === 'admin' || perfil?.rol === 'superadmin' || perfil?.rol === 'profesor'
 
   const cargar = useCallback(async (cid: string) => {
-    const [{ data: bloquesData }, { data: profesoresData }, { data: rel }, { data: planesData }] = await Promise.all([
+    const [{ data: bloquesData }, { data: profesoresData }, { data: rel }, { data: planesData }, { data: mesasData }] = await Promise.all([
       // `activo` no alcanza: dar de baja un grupo le cierra la vigencia y deja
       // `activo` en true. Sin este filtro, el grupo que borrabas seguía acá.
       soloVigentes(supabase.from('bloques_horario')
@@ -120,6 +124,7 @@ export default function HorarioPage() {
       // Las plantillas de sesión del módulo técnico (migración 168). Si el club
       // no lo tiene, la consulta vuelve vacía y el selector no aparece.
       supabase.from('tecnico_planes').select('id,nombre').eq('club_id', cid).eq('activo', true).order('nombre'),
+      supabase.from('sede_mesas').select('sede').eq('club_id', cid),
     ])
 
     // `rol` es null en las filas anteriores a la migración 257, y ahí
@@ -139,6 +144,7 @@ export default function HorarioPage() {
     })) as Bloque[])
     setProfesores((profesoresData ?? []) as Profesor[])
     setPlanes((planesData ?? []) as Plan[])
+    setSedesMesas(((mesasData ?? []) as { sede: string }[]).map(m => m.sede).filter(Boolean))
     setCargando(false)
   }, [])
 
@@ -327,7 +333,9 @@ export default function HorarioPage() {
   // la primera que sí: sin esto Spinhouse arrancaba en 'buin' —el valor inicial
   // del estado— y su grilla salía vacía. Con el club sin bloques todavía, se
   // queda en la elegida para que el formulario de alta tenga algo que proponer.
-  const sedesDelClub = sedesDe(bloques)
+  // Las de los bloques mandan; las declaradas en Mesas completan al club que
+  // todavía no armó su grilla.
+  const sedesDelClub = sedesDe([...bloques, ...sedesMesas.map(sede => ({ sede }))])
   const sedeVista = sedesDelClub.includes(sedeActiva) ? sedeActiva : (sedesDelClub[0] ?? sedeActiva)
   const bloquesSede = bloques.filter(b => b.sede === sedeVista)
   const franjas = franjasDe(bloquesSede)

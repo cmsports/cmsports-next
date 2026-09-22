@@ -34,9 +34,29 @@ const NAV = [
   { href: '#que-es', label: 'Qué es' },
   { href: '#demo', label: 'Demo' },
   { href: '#modulos', label: 'Módulos' },
+  { href: '#clientes', label: 'Clientes' },
   { href: '#resultados', label: 'Resultados' },
   { href: '#equipo', label: 'Equipo' },
   { href: '#contacto', label: 'Contacto' },
+]
+
+const CLIENTES = [
+  {
+    nombre: 'Spin House',
+    lugar: 'Santiago, Chile',
+    logo: '/clientes/spin-house.png',
+    texto:
+      'Escuela de tenis de mesa. Lleva clases, plantel y el seguimiento técnico de sus alumnos dentro de CMsports.',
+    usa: ['Plantel', 'Clases y asistencia', 'Módulo técnico'],
+  },
+  {
+    nombre: 'Asociación TDM Buin y Paine',
+    lugar: 'Buin y Paine, Chile',
+    logo: '/clientes/tdm-buin.png',
+    texto:
+      'Opera el día a día completo en la plataforma: plantel, asistencia, finanzas, torneos y credenciales.',
+    usa: ['Plantel', 'Asistencia', 'Finanzas', 'Torneos'],
+  },
 ]
 
 const BENEFICIOS = [
@@ -285,9 +305,19 @@ export default function LandingPublica() {
               </Link>
               <a href="#contacto" className={styles.btnGhost}>Contacto</a>
             </div>
-            <p className={styles.heroNote}>
-              Asociación TDM Buin y Paine ya opera con CMsports.
-            </p>
+            <a href="#clientes" className={styles.heroClientes}>
+              <span className={styles.heroClientesLabel}>Ya operan con CMsports</span>
+              <span className={styles.heroClientesLogos}>
+                {CLIENTES.map((c) => (
+                  <span key={c.nombre} className={styles.heroClienteLogo} title={c.nombre}>
+                    <Image src={c.logo} alt={c.nombre} width={30} height={30} />
+                  </span>
+                ))}
+              </span>
+              <span className={styles.heroClientesMas}>
+                <span className={styles.pulso} aria-hidden /> +2 en implementación
+              </span>
+            </a>
           </div>
 
           <div className={styles.heroDemo}>
@@ -407,8 +437,70 @@ export default function LandingPublica() {
         </div>
       </section>
 
+      {/* CLIENTES */}
+      <section id="clientes" className={styles.sectionAlt}>
+        <div className={styles.sectionInner}>
+          <EncabezadoSeccion
+            label="Clientes"
+            titulo="Clubes que ya trabajan con CMsports"
+            intro="No es una promesa: son clubes reales usando la plataforma todos los días. Y hay dos implementaciones más en curso."
+          />
+          <div className={styles.clientesGrid}>
+            {CLIENTES.map((c, i) => (
+              <motion.article
+                key={c.nombre}
+                className={styles.clienteCard}
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-40px' }}
+                transition={{ delay: i * 0.08, duration: 0.45 }}
+              >
+                <span className={styles.clienteEstado}>
+                  <span className={styles.pulso} aria-hidden /> En producción
+                </span>
+                <div className={styles.clienteLogo}>
+                  <Image src={c.logo} alt={`Logo de ${c.nombre}`} width={96} height={96} />
+                </div>
+                <h3 className={styles.clienteNombre}>{c.nombre}</h3>
+                <p className={styles.clienteLugar}>{c.lugar}</p>
+                <p className={styles.clienteTexto}>{c.texto}</p>
+                <ul className={styles.clienteUsa}>
+                  {c.usa.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+              </motion.article>
+            ))}
+
+            <motion.article
+              className={`${styles.clienteCard} ${styles.clienteProximo}`}
+              initial={{ opacity: 0, y: 18 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-40px' }}
+              transition={{ delay: 0.16, duration: 0.45 }}
+            >
+              <span className={`${styles.clienteEstado} ${styles.clienteEstadoProximo}`}>
+                <span className={styles.pulso} aria-hidden /> En implementación
+              </span>
+              {/* ponytail: sin nombres — los dos clubes todavía no son públicos. */}
+              <div className={styles.clienteLogoProximo} aria-hidden>
+                <span>+2</span>
+              </div>
+              <h3 className={styles.clienteNombre}>Dos clubes más en camino</h3>
+              <p className={styles.clienteLugar}>Chile · 2026</p>
+              <p className={styles.clienteTexto}>
+                Dos implementaciones en curso, hoy en levantamiento y carga de datos. Anunciaremos los clubes cuando salgan a producción.
+              </p>
+              <a href="#contacto" className={styles.clienteCta}>
+                Quiero ser el siguiente <ArrowRight size={15} />
+              </a>
+            </motion.article>
+          </div>
+        </div>
+      </section>
+
       {/* IMPLEMENTACIÓN */}
-      <section id="implementacion" className={styles.sectionAlt}>
+      <section id="implementacion" className={styles.section}>
         <div className={styles.sectionInner}>
           <EncabezadoSeccion
             label="Implementación"
@@ -437,7 +529,7 @@ export default function LandingPublica() {
       </section>
 
       {/* RESULTADOS 3 / 6 / 12 */}
-      <section id="resultados" className={styles.section}>
+      <section id="resultados" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
           <EncabezadoSeccion
             label="Horizonte"
@@ -471,7 +563,7 @@ export default function LandingPublica() {
       </section>
 
       {/* FUTURO */}
-      <section id="futuro" className={styles.sectionAlt}>
+      <section id="futuro" className={styles.section}>
         <div className={styles.sectionInner}>
           <EncabezadoSeccion
             label="Próximos pasos"
@@ -499,7 +591,7 @@ export default function LandingPublica() {
       </section>
 
       {/* ALCANCE + CLIENTES */}
-      <section id="alcance" className={styles.section}>
+      <section id="alcance" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
           <EncabezadoSeccion
             label="Presencia"
@@ -508,10 +600,10 @@ export default function LandingPublica() {
           />
           <div className={styles.presenceGrid}>
             <article className={styles.presenceCard}>
-              <p className={styles.presenceEyebrow}>En producción</p>
-              <h3>Asociación TDM Buin y Paine</h3>
+              <p className={styles.presenceEyebrow}>Alcance</p>
+              <h3>Clubes y asociaciones</h3>
               <p>
-                Ya utilizan CMsports para la operación diaria: plantel, asistencia, finanzas y más.
+                Dos clubes en producción y dos implementaciones en curso. La plataforma sirve tanto a una escuela con sus clases como a una asociación con torneos y finanzas.
               </p>
             </article>
             <article className={styles.presenceCard}>
@@ -529,7 +621,7 @@ export default function LandingPublica() {
       </section>
 
       {/* EQUIPO / MISIÓN */}
-      <section id="equipo" className={styles.sectionAlt}>
+      <section id="equipo" className={styles.section}>
         <div className={styles.sectionInner}>
           <EncabezadoSeccion label="Equipo" titulo="Quiénes somos" />
           <div className={styles.missionGrid}>

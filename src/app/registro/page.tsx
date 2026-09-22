@@ -7,6 +7,7 @@ import { formatRut, rutValido } from '@/lib/rut'
 import { Suspense } from 'react'
 import { registrarSolicitud } from '@/app/actions/auth'
 import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
+import { NIVELES, MANOS, nivelLabel, manoLabel } from '@/lib/domain/perfilDeportivo'
 import ThemeToggle from '@/components/ThemeToggle'
 
 const text = '#0f172a'
@@ -81,7 +82,12 @@ function RegistroForm() {
     contacto_emergencia_nombre: '', contacto_emergencia_telefono: '',
     indicaciones_medicas: '',
     talla_polera: '', talla_short: '',
+    // Perfil deportivo: solo se muestran si el club tiene el módulo, y
+    // NINGUNO es obligatorio. Quien se inscribe puede no saber todavía con qué
+    // goma juega, y eso no puede ser motivo para no poder entrar al club.
+    nivel: '', licencia_fechiteme: '', mano_habil: '', estilo_juego: '', material: '',
   })
+  const [perfilDeportivo, setPerfilDeportivo] = useState(false)
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -111,6 +117,10 @@ function RegistroForm() {
       setResolvedClubId(match.club_id)
       setValido(true)
       if (match.club_nombre) setClubNombre(match.club_nombre)
+      // El club_id del navegador no sirve para preguntar por los módulos: esta
+      // página es pública y `clubes` no se lee sin sesión. Viene en la
+      // respuesta del RPC (migración 280).
+      setPerfilDeportivo(match.perfil_deportivo === true)
     }
     verificar()
   }, [clubIdParam, codigo])
@@ -170,6 +180,13 @@ function RegistroForm() {
       indicaciones_medicas: form.indicaciones_medicas || undefined,
       talla_polera: form.talla_polera || undefined,
       talla_short: form.talla_short || undefined,
+      // Si el club no tiene el módulo, los cinco van vacíos y la función los
+      // guarda como NULL. No hace falta condicionar el envío.
+      nivel: form.nivel || undefined,
+      licencia_fechiteme: form.licencia_fechiteme || undefined,
+      mano_habil: form.mano_habil || undefined,
+      estilo_juego: form.estilo_juego || undefined,
+      material: form.material || undefined,
     })
     if (result.error) { setError(result.error); setEnviando(false); return }
     setEnviado(true)
@@ -187,7 +204,15 @@ function RegistroForm() {
       <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 20, padding: 32, maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
         <div style={{ fontSize: 48, marginBottom: 16 }}>❌</div>
         <div style={{ fontSize: 18, fontWeight: 600, color: text, marginBottom: 8 }}>Link inválido</div>
-        <div style={{ fontSize: 13, color: muted }}>Este link de invitación no es válido o ha expirado. Contacta al administrador del club.</div>
+        {/* El RPC devuelve vacío por dos motivos distintos —código inválido y
+            cuota agotada— y no los distingue a propósito, para no confirmarle a
+            nadie que un código existe. El texto cubre los dos: antes decía solo
+            "no es válido o ha expirado" y quien caía en la cuota entendía que
+            el link estaba muerto y no volvía a intentar. */}
+        <div style={{ fontSize: 13, color: muted }}>
+          Este link no es válido, ya expiró, o hay mucha gente inscribiéndose al mismo tiempo.
+          Espera unos minutos y vuelve a abrirlo. Si sigue igual, contacta al administrador del club.
+        </div>
       </div>
     </div>
   )
@@ -314,6 +339,55 @@ function RegistroForm() {
               </select>
             </div>
           </div>
+
+          {/* ── Perfil deportivo — solo los clubes con el módulo (254) ──
+              Ninguno es obligatorio y se dice en pantalla: quien recién entra
+              puede no saber su nivel ni con qué goma juega, y eso no puede
+              frenarle la inscripción. El entrenador los completa después desde
+              la ficha. */}
+          {perfilDeportivo && (
+            <>
+              <div style={section}>Perfil deportivo</div>
+              <div style={{ ...hintStyle, marginTop: -6, marginBottom: 12 }}>
+                Todo esto es opcional — si no lo sabes, déjalo en blanco y lo vemos en el club.
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>Nivel</label>
+                  <select style={inputStyle} value={form.nivel} onChange={e => set('nivel', e.target.value)}>
+                    <option value="">No especificado</option>
+                    {NIVELES.map(n => <option key={n} value={n}>{nivelLabel(n)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Mano hábil</label>
+                  <select style={inputStyle} value={form.mano_habil} onChange={e => set('mano_habil', e.target.value)}>
+                    <option value="">No especificada</option>
+                    {MANOS.map(m => <option key={m} value={m}>{manoLabel(m)}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Estilo de juego</label>
+                <input style={inputStyle} type="text" placeholder="Ej: ofensivo de derecha, penholder, defensivo"
+                  value={form.estilo_juego} onChange={e => set('estilo_juego', e.target.value)} />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Material</label>
+                <input style={inputStyle} type="text" placeholder="Madera y gomas. Ej: Viscaria con Tenergy 05 y pupo largo"
+                  value={form.material} onChange={e => set('material', e.target.value)} />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Licencia FECHITEME</label>
+                <input style={inputStyle} type="text" placeholder="Número de licencia, si tienes"
+                  value={form.licencia_fechiteme} onChange={e => set('licencia_fechiteme', e.target.value)} />
+              </div>
+            </>
+          )}
 
           {/* ── Contacto de emergencia ── */}
           <div style={section}>Contacto de emergencia</div>

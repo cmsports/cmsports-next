@@ -106,8 +106,15 @@ export const CONCEPTOS: { valor: ConceptoPago; label: string }[] = [
 
 export const LABEL_CONCEPTO = Object.fromEntries(CONCEPTOS.map(c => [c.valor, c.label])) as Record<string, string>
 
-type PagoRecibido = { club_id: string; monto: number | null; fecha_pago: string }
-type GastoEmpresa = { monto: number | null; fecha: string }
+type PagoRecibido = { club_id: string | null; monto: number | null; fecha_pago: string; categoria?: string | null }
+type GastoEmpresa = { monto: number | null; fecha: string; categoria?: string | null }
+
+// Plata que alguien sacó de las cuentas de CmSports para algo personal
+// (categoría 'Retiro socio' en gastos_cmsports) menos lo que ya repuso
+// (categoría 'Reembolso' en pagos_clubes). Son las mismas dos categorías que
+// ofrece la pantalla — cambiarlas ahí sin tocar acá las desengancha.
+export const CATEGORIA_RETIRO_SOCIO = 'Retiro socio'
+export const CATEGORIA_REEMBOLSO_SOCIO = 'Reembolso'
 
 const suma = (filas: { monto: number | null }[]) => filas.reduce((total, f) => total + Number(f.monto || 0), 0)
 
@@ -136,8 +143,18 @@ export function resumenCmsports(pagos: PagoRecibido[], gastos: GastoEmpresa[], h
   const ingresos = suma(pagos)
   const egresos = suma(gastos)
 
+  // Lo que se sacó pendiente de reponer. Si repuso de más, no es "deuda
+  // negativa": es otra pregunta (CmSports le debería a la persona), así que
+  // acá se corta en cero.
+  const retirado = suma(gastos.filter(g => g.categoria === CATEGORIA_RETIRO_SOCIO))
+  const repuesto = suma(pagos.filter(p => p.categoria === CATEGORIA_REEMBOLSO_SOCIO))
+  const deudaSocio = Math.max(0, retirado - repuesto)
+
+  // Sin club_id el ingreso no es de ningún club — no entra al acumulado por
+  // club, solo al total general de más arriba.
   const porClub = new Map<string, { total: number; pagos: number; ultimo: string | null }>()
   for (const p of pagos) {
+    if (!p.club_id) continue
     const acum = porClub.get(p.club_id) || { total: 0, pagos: 0, ultimo: null }
     acum.total += Number(p.monto || 0)
     acum.pagos += 1
@@ -150,6 +167,7 @@ export function resumenCmsports(pagos: PagoRecibido[], gastos: GastoEmpresa[], h
     ingresos,
     egresos,
     balance: ingresos - egresos,
+    deudaSocio,
     ingresosMes: suma(pagos.filter(p => delMes({ fecha: p.fecha_pago }))),
     egresosMes: suma(gastos.filter(delMes)),
     porClub,

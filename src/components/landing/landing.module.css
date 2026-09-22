@@ -423,6 +423,228 @@
   color: var(--muted);
 }
 
+/* Prueba social del hero: la misma información que la sección Clientes, en
+   una línea, para que se vea sin hacer scroll. */
+.heroClientes {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 10px 16px 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--velo);
+  color: var(--body) !important;
+  text-decoration: none;
+  transition: background 0.25s var(--curva), border-color 0.25s var(--curva);
+}
+
+.heroClientes:hover {
+  background: var(--velo-hover);
+  border-color: var(--velo-borde);
+}
+
+.heroClientesLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.heroClientesLogos {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Los logos vienen sobre fondo blanco: la teja blanca los deja legibles en
+   tema oscuro y claro sin pedir una versión monocroma de cada marca. */
+.heroClienteLogo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.heroClienteLogo + .heroClienteLogo {
+  margin-left: -10px;
+}
+
+.heroClienteLogo img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.heroClientesMas {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--blue);
+}
+
+.pulso {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 currentColor;
+  animation: latido 2.2s var(--curva) infinite;
+}
+
+@keyframes latido {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulso { animation: none; }
+}
+
+/* Clientes */
+
+.clientesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+
+.clienteCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 28px 24px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--tarjeta);
+  transition: transform 0.3s var(--curva), border-color 0.3s var(--curva);
+}
+
+.clienteCard:hover {
+  transform: translateY(-4px);
+  border-color: var(--velo-borde);
+}
+
+.clienteEstado {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--chip-ok);
+  color: var(--chip-ok-tx);
+}
+
+.clienteEstadoProximo {
+  background: var(--chip-info);
+  color: var(--chip-info-tx);
+}
+
+.clienteLogo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 104px;
+  height: 104px;
+  margin: 22px 0 18px;
+  border-radius: 24px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.clienteLogo img {
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+}
+
+.clienteLogoProximo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 104px;
+  height: 104px;
+  margin: 22px 0 18px;
+  border-radius: 24px;
+  border: 1px dashed var(--velo-borde);
+  background: var(--velo);
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--blue);
+}
+
+.clienteNombre {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--titulo);
+  line-height: 1.25;
+}
+
+.clienteLugar {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.clienteTexto {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--body);
+}
+
+.clienteUsa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  list-style: none;
+  padding: 0;
+}
+
+.clienteUsa li {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--velo);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--body);
+}
+
+.clienteCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--blue) !important;
+  text-decoration: none;
+}
+
+.clienteCta:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .clientesGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Sections */
 
 .section,

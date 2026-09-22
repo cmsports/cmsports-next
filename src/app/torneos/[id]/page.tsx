@@ -40,6 +40,7 @@ import { MODALIDAD_LABEL, minParticipantes, modalidadDe, ruedasDe } from '@/lib/
 import { partidosDeLiguilla, partidosPorFecha, rondasDeLiguilla, tandasPorFecha } from '@/lib/domain/torneoLiguilla'
 import { FASE_CONSOLACION_LABEL, esFaseDeConsolacion, fasesParaMostrarConConsuelo } from '@/lib/domain/torneoConsolacion'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
+import { usePuedeGestionarTorneos } from '@/lib/hooks/usePuedeGestionarTorneos'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { copiarTexto } from '@/lib/clipboard'
 import { useTextoMonto } from '@/components/Monto'
@@ -792,6 +793,9 @@ export default function TorneoDetallePage() {
     await cargarTorneo()
   }
 
+  const puedeGestionar = usePuedeGestionarTorneos()
+  // La plata del club (subir a Finanzas, premios, gastos de gestión) sigue
+  // siendo solo del admin, aunque el profe dirija el torneo.
   const esAdmin = perfil?.rol === 'admin'
   const candidatosCabezas = Array.from(new Map(
     [...jugadores, ...jugadoresInscritos]
@@ -1042,7 +1046,7 @@ export default function TorneoDetallePage() {
       {/* Header */}
       <div style={{ display:'flex', gap:10, marginBottom:20, alignItems:'center', flexWrap:'wrap' }}>
         <button onClick={() => router.push(torneo?.tipo === 'interno' ? '/torneos-internos' : '/torneos')} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer' }}>← Volver</button>
-        {esAdmin && (
+        {puedeGestionar && (
           <button onClick={async () => {
             if (!confirm(`¿Archivar "${torneo?.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
             const res = await archivarTorneo({ torneoId })
@@ -1090,10 +1094,10 @@ export default function TorneoDetallePage() {
             📺 En vivo: <span style={{ fontFamily:'monospace', letterSpacing:1 }}>{torneo.codigo}</span> QR
           </button>
         )}
-        {esAdmin && torneo?.inscripcion_abierta && !hayBracketJugado && (
+        {puedeGestionar && torneo?.inscripcion_abierta && !hayBracketJugado && (
           <button onClick={() => setMesaOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
         )}
-        {esAdmin && faseActual !== 'inscripcion' && (
+        {puedeGestionar && faseActual !== 'inscripcion' && (
           <button
             onClick={async () => {
               const { descargarExcelTorneo } = await import('@/lib/torneo-excel')
@@ -1104,7 +1108,7 @@ export default function TorneoDetallePage() {
             📊 Descargar Excel
           </button>
         )}
-        {esAdmin && faseActual === 'finalizado' && (
+        {puedeGestionar && faseActual === 'finalizado' && (
           <button
             onClick={() => setInformeOpen(true)}
             title="Descargar informe financiero del torneo (PDF)"
@@ -1112,12 +1116,12 @@ export default function TorneoDetallePage() {
             📄 Informe financiero
           </button>
         )}
-        {esAdmin && faseActual === 'grupos' && hayBracket && (
+        {puedeGestionar && faseActual === 'grupos' && hayBracket && (
           <button onClick={() => setTabActiva('bracket')} style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>⚔️ Ver llaves →</button>
         )}
         {/* Liguilla y equipos no tienen llave: el servidor lo rechaza, y un
             botón que siempre falla es peor que ninguno. */}
-        {esAdmin && faseActual === 'grupos' && !esLiguilla && !esEquipos && !esEliminacion && (
+        {puedeGestionar && faseActual === 'grupos' && !esLiguilla && !esEquipos && !esEliminacion && (
           <button
             onClick={armarBracketAhora}
             title="Fuerza el armado/rellenado del cuadro con los grupos ya cerrados"
@@ -1125,7 +1129,7 @@ export default function TorneoDetallePage() {
             🔄 Armar bracket ahora
           </button>
         )}
-        {esAdmin && faseActual === 'grupos' && !hayBracketJugado && !hayResultadoDeGrupos && !esEquipos && (
+        {puedeGestionar && faseActual === 'grupos' && !hayBracketJugado && !hayResultadoDeGrupos && !esEquipos && (
           <button
             onClick={regenerarGrupos}
             disabled={cerrandoInscripcion}
@@ -1134,7 +1138,7 @@ export default function TorneoDetallePage() {
             🔁 Regenerar grupos
           </button>
         )}
-        {esAdmin && sePuedeAbrirTercerLugar && (
+        {puedeGestionar && sePuedeAbrirTercerLugar && (
           <button
             onClick={async () => {
               const res = await abrirTercerLugarAction({ torneoId })
@@ -1148,23 +1152,23 @@ export default function TorneoDetallePage() {
         )}
         {/* La liguilla se define en la tabla: se finaliza apenas se juega el
             último partido del grupo, sin pasar por ninguna final. */}
-        {esAdmin && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && !liguillaEmpatadaSinResolver && (
+        {puedeGestionar && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && !liguillaEmpatadaSinResolver && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar liguilla</button>
         )}
-        {esAdmin && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && liguillaEmpatadaSinResolver && (
+        {puedeGestionar && esLiguilla && faseActual === 'grupos' && torneo?.estado !== 'finalizado' && partidos.length > 0 && partidos.every((p: any) => p.ganador) && liguillaEmpatadaSinResolver && (
           <span style={{ background:'#fef2f2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600 }}>Empate en la punta: define el desempate en la tabla para finalizar</span>
         )}
         {/* Reabrir: la única puerta para corregir algo con el torneo cerrado. */}
-        {esAdmin && torneo?.estado === 'finalizado' && (
+        {puedeGestionar && torneo?.estado === 'finalizado' && (
           <button onClick={reabrirTorneo} title="Vuelve el torneo a en curso para corregir un resultado. Borra el podio guardado." style={{ background:'#fff7ed', color:'#c2410c', border:'1px solid #fed7aa', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>↩ Reabrir torneo</button>
         )}
-        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && !consueloPendiente && (
+        {puedeGestionar && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && !consueloPendiente && (
           <button onClick={finalizarTorneo} style={{ background:'#16a34a', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🏆 Finalizar torneo</button>
         )}
         {/* Igual que con el 3er lugar: el servidor rechaza finalizar con el
             consuelo a medias, así que en vez del botón se dice qué falta y se
             lleva a la pestaña donde se resuelve. */}
-        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && consueloPendiente && (
+        {puedeGestionar && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && !tercerLugarPendiente && consueloPendiente && (
           <button
             onClick={() => setTabActiva('consuelo')}
             title="Marca los resultados del cuadro de consuelo para poder finalizar"
@@ -1175,7 +1179,7 @@ export default function TorneoDetallePage() {
         {/* Con el 3er lugar sin jugar, el servidor rechaza finalizar. Mostrar el
             botón igual sería ofrecer un error: se dice qué falta y se lleva al
             único lugar donde se resuelve, que es la mini llave. */}
-        {esAdmin && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && tercerLugarPendiente && (
+        {puedeGestionar && faseActual === 'final' && todosJugadosFase && torneo?.estado !== 'finalizado' && tercerLugarPendiente && (
           <button
             onClick={() => document.getElementById('mini-llave-tercer-lugar')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
             title="Marca al ganador del 3er lugar para poder finalizar"
@@ -1250,7 +1254,7 @@ export default function TorneoDetallePage() {
 
       {/* BOTÓN INSCRIPCIÓN TARDÍA — no en liguilla (todos contra todos ya
           armado) ni en equipos (sus altas van por la pantalla de equipos). */}
-      {esAdmin && faseActual === 'grupos' && !hayBracketJugado && !esLiguilla && !esEquipos && (
+      {puedeGestionar && faseActual === 'grupos' && !hayBracketJugado && !esLiguilla && !esEquipos && (
         <div style={{ marginBottom:16, display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
           <button onClick={() => setMesaOpen(true)} style={{ background:'#ffffff', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer' }}>
             + Inscribir jugador adicional
@@ -1301,7 +1305,7 @@ export default function TorneoDetallePage() {
 
       {(faseActual === 'grupos' || esPlayoffs) && (!mostrarLlaves || tabActiva === 'grupos') && (
         <>
-      {faseActual === 'grupos' && !hayBracketJugado && esAdmin && !esLiguilla && !esEquipos && (
+      {faseActual === 'grupos' && !hayBracketJugado && puedeGestionar && !esLiguilla && !esEquipos && (
         <div style={{ marginBottom:16 }}>
           <CabezasSerieEditor
             cabezas={cabezasNumeradas}
@@ -1366,8 +1370,8 @@ export default function TorneoDetallePage() {
 
             return (
               <div key={grupo.id} style={{ ...card, overflow:'hidden' }}
-                onDragOver={esAdmin && !hayBracketJugado ? (e) => e.preventDefault() : undefined}
-                onDrop={esAdmin && !hayBracketJugado ? (e) => {
+                onDragOver={puedeGestionar && !hayBracketJugado ? (e) => e.preventDefault() : undefined}
+                onDrop={puedeGestionar && !hayBracketJugado ? (e) => {
                   e.preventDefault()
                   if (dragJugadorGrupo) moverAGrupo(dragJugadorGrupo.jugadorId, dragJugadorGrupo.grupoId, grupo.id)
                   setDragJugadorGrupo(null)
@@ -1416,9 +1420,9 @@ export default function TorneoDetallePage() {
                 )}
                 {ordenados.map((j: any, i: number) => (
                   <div key={`${grupo.id}-${j.jugador?.id ?? i}`}
-                    draggable={esAdmin && !hayBracketJugado && !!j.jugador?.id}
-                    onDragStart={esAdmin && !hayBracketJugado && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
-                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: esAdmin && !hayBracketJugado ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
+                    draggable={puedeGestionar && !hayBracketJugado && !!j.jugador?.id}
+                    onDragStart={puedeGestionar && !hayBracketJugado && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
+                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: puedeGestionar && !hayBracketJugado ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
                     <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, color: text }}>
@@ -1429,7 +1433,7 @@ export default function TorneoDetallePage() {
                       </div>
                       <div style={{ fontSize:10, color: muted }}>{j.pg}G {j.pp}P · {j.pts}pts</div>
                     </div>
-                    {esAdmin && cuota > 0 && (() => {
+                    {puedeGestionar && cuota > 0 && (() => {
                       const pago = pagos.find(p => p.jugador_id === j.jugador?.id)
                       return pago?.estado === 'pagado'
                         ? <span style={{ background:'#f0fdf4', color:'#16a34a', padding:'2px 6px', borderRadius:10, fontSize:10 }}>
@@ -1441,7 +1445,7 @@ export default function TorneoDetallePage() {
                         inscritos: el cuadro ya está armado y el servidor
                         rechaza reordenar o quitar (el ausente se resuelve en
                         la llave, marcando al rival). */}
-                    {esAdmin && !hayBracketJugado && !grupoConResultados && !esEliminacion && (
+                    {puedeGestionar && !hayBracketJugado && !grupoConResultados && !esEliminacion && (
                       <div style={{ display:'flex', gap:4 }}>
                         {isMobile && grupoEnPreparacion && grupo.id !== grupoEnPreparacion.id && (
                           <button
@@ -1494,7 +1498,7 @@ export default function TorneoDetallePage() {
                   </div>
                 ))}
                 {/* PANEL TRIPLE EMPATE */}
-                {hayTripleEmpate && partidosGrupo.every((p:any) => !!p.ganador) && !desempateResuelto && esAdmin && (
+                {hayTripleEmpate && partidosGrupo.every((p:any) => !!p.ganador) && !desempateResuelto && puedeGestionar && (
                   <div style={{ background:'#fff7ed', borderTop:'1px solid #fed7aa', padding:'12px 16px' }}>
                     <div style={{ fontSize:12, color:'#f43f5e', fontWeight:600, marginBottom:8 }}>⚠️ Triple empate — elige el orden manualmente</div>
                     <div style={{ fontSize:11, color: muted, marginBottom:10 }}>Revisa las papeletas y marca quién queda 1° y quién queda 2°</div>
@@ -1538,7 +1542,7 @@ export default function TorneoDetallePage() {
                     )}
                   </div>
                 )}
-                {hayTripleEmpate && desempateResuelto && esAdmin && (
+                {hayTripleEmpate && desempateResuelto && puedeGestionar && (
                   <div style={{ background:'#f0fdf4', borderTop:'1px solid #bbf7d0', padding:'10px 16px', display:'flex', alignItems:'center', gap:10 }}>
                     <span style={{ flex:1, fontSize:11, color:'#166534' }}>1° {nombreDesempate(grupo.desempate_primero_id)} · 2° {nombreDesempate(grupo.desempate_segundo_id)}</span>
                     {!hayBracketJugado && <button onClick={async () => {
@@ -1566,7 +1570,7 @@ export default function TorneoDetallePage() {
                           <span style={{ flex:1, color: p.ganador===p.jugador_a?'#16a34a': text, textAlign:'right' }}>{nombreA}</span>
                           <span style={{ color: hint, fontSize:10 }}>vs</span>
                           <span style={{ flex:1, color: p.ganador===p.jugador_b?'#16a34a': text }}>{nombreB}</span>
-                          {esAdmin && !p.ganador && !editando && (
+                          {puedeGestionar && !p.ganador && !editando && (
                             <button
                               onClick={() => setPartidoEditando(p.id)}
                               style={{ background:'#ede9fe', color:'#3730a3', border:'none', borderRadius:6, padding:'4px 10px', fontSize:10, cursor:'pointer', whiteSpace:'nowrap' }}
@@ -1581,13 +1585,13 @@ export default function TorneoDetallePage() {
                                 )}
                                 {p.es_walkover && <span style={{ color:'#b91c1c' }}> · W.O.</span>}
                               </span>
-                              {esAdmin && faseActual === 'grupos' && (
+                              {puedeGestionar && faseActual === 'grupos' && (
                                 <button onClick={() => setPartidoEditando(p.id)} style={{ background:'transparent', border:'none', color:'#94a3b8', fontSize:10, cursor:'pointer', padding:'2px 4px' }} title="Corregir resultado">✏️</button>
                               )}
                             </div>
                           )}
                         </div>
-                        {esAdmin && editando && (
+                        {puedeGestionar && editando && (
                           <MarcadorSets
                             key={`${p.id}-${p.ganador ?? 'nuevo'}`}
                             nombreA={nombreA}
@@ -1657,12 +1661,12 @@ export default function TorneoDetallePage() {
                 ? '💡 El cuadro se arma cuando cierren TODOS los grupos, con el descanso (BYE) repartido por rendimiento real. Mientras tanto, mira la vista previa en la pestaña de grupos.'
                 : '💡 Haz clic para marcar ganador. En la ronda inicial puedes arrastrar cualquier cupo a cualquier llave mientras no esté jugada.'}
             </div>
-            {esAdmin && faseActual === 'grupos' && (
+            {puedeGestionar && faseActual === 'grupos' && (
               <button onClick={armarBracketAhora} title="Fuerza el armado/rellenado con los grupos ya cerrados" style={{ background:'#ede9fe', color:'#3730a3', border:'1px solid #c4b5fd', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
                 🔄 Armar bracket ahora
               </button>
             )}
-            {esAdmin && hayBracket && faseActual !== 'finalizado' && (
+            {puedeGestionar && hayBracket && faseActual !== 'finalizado' && (
               <button onClick={volverAGrupos} style={{ background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:8, padding:'8px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap' }}>
                 ⚠️ Reiniciar bracket
               </button>
@@ -1711,9 +1715,9 @@ export default function TorneoDetallePage() {
                           const top = cy(p.orden ?? i, eN) - CARD_H / 2
                           const isBye = esByeMatch(p)
                           const editandoEste = partidoPlayoffEditando === p.id
-                          const showEdit = !!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado'
+                          const showEdit = !!p.ganador && puedeGestionar && !isBye && faseActual !== 'finalizado'
                           const rowH = showEdit ? `${Math.floor((CARD_H - 20) / 2)}px` : '50%'
-                          const puedeMover = esAdmin && p.fase === llavesLayout?.faseInicial && !(p.ganador && p.jugador_b)
+                          const puedeMover = puedeGestionar && p.fase === llavesLayout?.faseInicial && !(p.ganador && p.jugador_b)
 
                           return (
                             <div key={p.id} style={{ position: 'absolute', left: 0, right: 0, top, height: CARD_H, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,0.07)' }}>
@@ -1733,13 +1737,13 @@ export default function TorneoDetallePage() {
                               ) : (
                                 <>
                                   <div
-                                    onClick={() => esAdmin && !p.ganador && !isBye && p.jugador_a && marcarGanador(p.id, p.jugador_a)}
+                                    onClick={() => puedeGestionar && !p.ganador && !isBye && p.jugador_a && marcarGanador(p.id, p.jugador_a)}
                                     draggable={puedeMover && !!p.jugador_a}
                                     onDragStart={puedeMover && p.jugador_a ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_a' }) : undefined}
                                     onDragOver={puedeMover && p.jugador_a ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_a' }) } : undefined}
                                     onDrop={puedeMover && p.jugador_a ? (e) => { e.preventDefault(); intercambiarCupos(p.id, 'jugador_a') } : undefined}
                                     onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: puedeMover && p.jugador_a ? 'grab' : esAdmin && !p.ganador && !isBye && p.jugador_a ? 'pointer' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.45 : 1 }}>
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: puedeMover && p.jugador_a ? 'grab' : puedeGestionar && !p.ganador && !isBye && p.jugador_a ? 'pointer' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_a' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_a' ? 0.45 : 1 }}>
                                     <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                       <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
                                       {(p as any).ja?.nombre || etiquetaCupo(p, 'a')}
@@ -1756,13 +1760,13 @@ export default function TorneoDetallePage() {
                                     </div>
                                   ) : (
                                     <div
-                                      onClick={() => esAdmin && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}
+                                      onClick={() => puedeGestionar && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}
                                       draggable={puedeMover && !!p.jugador_b}
                                       onDragStart={puedeMover && p.jugador_b ? () => setDragSlot({ partidoId: p.id, posicion: 'jugador_b' }) : undefined}
                                       onDragOver={puedeMover && p.jugador_b ? (e) => { e.preventDefault(); setDragOver({ partidoId: p.id, posicion: 'jugador_b' }) } : undefined}
                                       onDrop={puedeMover && p.jugador_b ? (e) => { e.preventDefault(); intercambiarCupos(p.id, 'jugador_b') } : undefined}
                                       onDragEnd={() => { setDragSlot(null); setDragOver(null) }}
-                                      style={{ height: rowH, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 10px', cursor: puedeMover && p.jugador_b ? 'grab' : esAdmin && !p.ganador && p.jugador_b ? 'pointer' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.45 : 1 }}>
+                                      style={{ height: rowH, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 10px', cursor: puedeMover && p.jugador_b ? 'grab' : puedeGestionar && !p.ganador && p.jugador_b ? 'pointer' : 'default', background: dragOver?.partidoId === p.id && dragOver?.posicion === 'jugador_b' ? '#dbeafe' : p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent', opacity: dragSlot?.partidoId === p.id && dragSlot?.posicion === 'jugador_b' ? 0.45 : 1 }}>
                                       <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                         <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
                                         {(p as any).jb?.nombre || etiquetaCupo(p, 'b')}
@@ -1843,7 +1847,7 @@ export default function TorneoDetallePage() {
                       sabía que el torneo la está esperando para finalizar. */}
                   {fase === 'tercer_lugar' && tercerLugarPendiente && (
                     <div style={{ fontSize: 12, color: '#92400e', marginBottom: 10 }}>
-                      {esAdmin
+                      {puedeGestionar
                         ? 'Toca al que ganó para cerrar el podio. Hasta entonces el torneo no se puede finalizar.'
                         : 'Falta jugar el partido por el 3er lugar.'}
                     </div>
@@ -1856,7 +1860,7 @@ export default function TorneoDetallePage() {
                       const definidoB = !!(p as any).jb?.nombre
                       const ganoA = !!p.ganador && p.ganador === p.jugador_a
                       const ganoB = !!p.ganador && p.ganador === p.jugador_b
-                      const puedeMarcar = esAdmin && !p.ganador && !isBye
+                      const puedeMarcar = puedeGestionar && !p.ganador && !isBye
 
                       const Lado = (pos: 'a' | 'b') => {
                         const gano = pos === 'a' ? ganoA : ganoB
@@ -1892,7 +1896,7 @@ export default function TorneoDetallePage() {
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>
                               {fase === 'tercer_lugar' ? '3er y 4to lugar' : `Llave ${i + 1}`}
                             </span>
-                            {!!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado' && !editando && (
+                            {!!p.ganador && puedeGestionar && !isBye && faseActual !== 'finalizado' && !editando && (
                               <button onClick={() => setPartidoPlayoffEditando(p.id)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 13, cursor: 'pointer', padding: '0 2px' }} title="Corregir resultado">✏️</button>
                             )}
                           </div>
@@ -1992,7 +1996,7 @@ export default function TorneoDetallePage() {
                           const top = cy(p.orden ?? i, eN) - CARD_H / 2
                           const isBye = esByeMatch(p)
                           const editandoEste = partidoPlayoffEditando === p.id
-                          const showEdit = !!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado'
+                          const showEdit = !!p.ganador && puedeGestionar && !isBye && faseActual !== 'finalizado'
                           const rowH = showEdit ? `${Math.floor((CARD_H - 20) / 2)}px` : '50%'
 
                           return (
@@ -2013,8 +2017,8 @@ export default function TorneoDetallePage() {
                               ) : (
                                 <>
                                   <div
-                                    onClick={() => esAdmin && !p.ganador && !isBye && p.jugador_a && marcarGanador(p.id, p.jugador_a)}
-                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: esAdmin && !p.ganador && !isBye && p.jugador_a ? 'pointer' : 'default', background: p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent' }}>
+                                    onClick={() => puedeGestionar && !p.ganador && !isBye && p.jugador_a && marcarGanador(p.id, p.jugador_a)}
+                                    style={{ height: rowH, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', borderBottom: '1px solid #f1f5f9', cursor: puedeGestionar && !p.ganador && !isBye && p.jugador_a ? 'pointer' : 'default', background: p.ganador && p.ganador === p.jugador_a ? '#f0fdf4' : 'transparent' }}>
                                     <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_a ? '#16a34a' : (p as any).ja?.nombre ? text : hint, fontStyle: (p as any).ja?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                       <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 1}</span>
                                       {(p as any).ja?.nombre || etiquetaCupo(p, 'a')}
@@ -2028,8 +2032,8 @@ export default function TorneoDetallePage() {
                                     </div>
                                   ) : (
                                     <div
-                                      onClick={() => esAdmin && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}
-                                      style={{ height: rowH, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 10px', cursor: esAdmin && !p.ganador && p.jugador_b ? 'pointer' : 'default', background: p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent' }}>
+                                      onClick={() => puedeGestionar && !p.ganador && p.jugador_b && marcarGanador(p.id, p.jugador_b)}
+                                      style={{ height: rowH, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 10px', cursor: puedeGestionar && !p.ganador && p.jugador_b ? 'pointer' : 'default', background: p.ganador && p.ganador === p.jugador_b ? '#f0fdf4' : 'transparent' }}>
                                       <span style={{ fontSize: 12, color: p.ganador && p.ganador === p.jugador_b ? '#16a34a' : (p as any).jb?.nombre ? text : hint, fontStyle: (p as any).jb?.nombre ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                                         <span style={{ fontSize: 9, background: '#ede9fe', color: '#3730a3', padding: '1px 3px', borderRadius: 3, marginRight: 4 }}>{i * 2 + 2}</span>
                                         {(p as any).jb?.nombre || etiquetaCupo(p, 'b')}
@@ -2104,7 +2108,7 @@ export default function TorneoDetallePage() {
                       const definidoB = !!(p as any).jb?.nombre
                       const ganoA = !!p.ganador && p.ganador === p.jugador_a
                       const ganoB = !!p.ganador && p.ganador === p.jugador_b
-                      const puedeMarcar = esAdmin && !p.ganador && !isBye
+                      const puedeMarcar = puedeGestionar && !p.ganador && !isBye
 
                       const Lado = (pos: 'a' | 'b') => {
                         const gano = pos === 'a' ? ganoA : ganoB
@@ -2138,7 +2142,7 @@ export default function TorneoDetallePage() {
                         <div key={p.id} style={{ ...card, borderRadius: 12, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#3730a3' }}>Llave {i + 1}</span>
-                            {!!p.ganador && esAdmin && !isBye && faseActual !== 'finalizado' && !editando && (
+                            {!!p.ganador && puedeGestionar && !isBye && faseActual !== 'finalizado' && !editando && (
                               <button onClick={() => setPartidoPlayoffEditando(p.id)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 13, cursor: 'pointer', padding: '0 2px' }} title="Corregir resultado">✏️</button>
                             )}
                           </div>
@@ -2184,7 +2188,7 @@ export default function TorneoDetallePage() {
       )}
 
       {/* PANEL PREMIOS */}
-      {esAdmin && faseActual === 'finalizado' && (() => {
+      {puedeGestionar && faseActual === 'finalizado' && (() => {
         const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
         const campeon1 = pFinal ? (pFinal as any).jg : podioGuardado.campeon
         const subcampeon = pFinal
@@ -2393,7 +2397,7 @@ export default function TorneoDetallePage() {
       })()}
 
       {/* PAGOS PENDIENTES */}
-      {esAdmin && cuota > 0 && (
+      {puedeGestionar && cuota > 0 && (
         <div style={{ ...card, padding:16, marginBottom:16, marginTop:16 }}>
           <div style={{ fontSize:13, fontWeight:600, color: text, marginBottom:12 }}>💳 Pagos</div>
 

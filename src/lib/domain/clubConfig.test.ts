@@ -58,6 +58,22 @@ describe('los defaults son el comportamiento actual de Buin', () => {
     expect(valorPorDefecto('liga.puntos_walkover')).toBe(0)
   })
 
+  it('profesor: HOY ve la mensualidad y NO maneja torneos', () => {
+    // Los dos defaults son lo que el sistema hace hoy, no lo que suena bien.
+    //
+    // 'si' verificado en `jugadores/[id]/page.tsx`: la tarjeta de Plan imprime
+    // `fmtMonto(jugador.mensualidad)` sin preguntar el rol, y la política
+    // `jugadores_select` (migración 046) le entrega al profesor todas las
+    // columnas. Si alguien pone 'no' acá "porque parece más prolijo", los
+    // profes de Buin pierden un dato que usan a diario.
+    expect(valorPorDefecto('profe.ve_mensualidad')).toBe('si')
+
+    // 'no' verificado en `require.ts`: las Server Actions de torneos piden
+    // admin. Ponerlo en 'si' por defecto le abriría la creación de torneos al
+    // profesorado de los seis clubes sin que ninguno lo pidiera.
+    expect(valorPorDefecto('profe.gestiona_torneos')).toBe('no')
+  })
+
   it('inscripción: el alumno NO se inscribe solo', () => {
     // Encenderlo sin la función atómica deja que dos alumnos tomen el mismo
     // último cupo. Ver §10.6 del plan maestro.

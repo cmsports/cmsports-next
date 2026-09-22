@@ -338,13 +338,19 @@ export async function actualizarModulosClub(input: { clubId: string; modulos: st
 const actualizarPlanSchema = z.object({
   clubId: z.string().uuid('Club inválido'),
   planMensual: z.number().finite().min(0, 'El plan mensual no puede ser negativo'),
+  // El neto sin IVA del plan, igual que en un pago (migración 256): opcional,
+  // y si se completa no puede superar el total.
+  planMensualNeto: z.number().finite().positive('El neto debe ser mayor a cero').optional(),
   estadoPlan: z.enum(['prueba', 'activo', 'suspendido', 'cancelado']),
   fechaInicioPlan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de inicio inválida').nullable(),
+}).refine(d => d.planMensualNeto === undefined || d.planMensualNeto <= d.planMensual, {
+  message: 'El neto no puede ser mayor que el plan mensual', path: ['planMensualNeto'],
 })
 
 export async function actualizarPlanClub(input: {
   clubId: string
   planMensual: number
+  planMensualNeto?: number
   estadoPlan: 'prueba' | 'activo' | 'suspendido' | 'cancelado'
   fechaInicioPlan: string | null
 }) {
@@ -380,6 +386,7 @@ export async function actualizarPlanClub(input: {
   const { error } = await supabase.from('clubes')
     .update({
       plan_mensual: data.planMensual,
+      plan_mensual_neto: data.planMensualNeto ?? null,
       estado_plan: data.estadoPlan,
       fecha_inicio_plan: fechaInicio,
       proximo_vencimiento: proximoVencimiento,
@@ -392,7 +399,8 @@ export async function actualizarPlanClub(input: {
 }
 
 export async function registrarPagoClub(input: {
-  clubId: string
+  clubId?: string
+  categoria?: string
   monto: number
   periodoMes: number
   periodoAnio: number
@@ -406,7 +414,10 @@ export async function registrarPagoClub(input: {
   if (authErr || !supabase) return { error: authErr }
 
   const parsed = z.object({
-    clubId: z.string().uuid('Club inválido'),
+    clubId: z.string().uuid('Club inválido').optional(),
+    // Un ingreso que no es de ningún club (reembolso, aporte, etc) lleva
+    // categoría en su lugar — igual que `gastos_cmsports.categoria`.
+    categoria: z.string().trim().min(2, 'Escribe de dónde vino').max(60).optional(),
     monto: z.number().finite().positive('El monto debe ser mayor a cero'),
     periodoMes: z.number().int().min(1).max(12),
     periodoAnio: z.number().int().min(2020).max(2100),
@@ -422,19 +433,28 @@ export async function registrarPagoClub(input: {
     montoNeto: z.number().finite().positive('El neto debe ser mayor a cero').optional(),
   }).refine(d => d.montoNeto === undefined || d.montoNeto <= d.monto, {
     message: 'El neto no puede ser mayor que el monto total', path: ['montoNeto'],
+  }).refine(d => !!d.clubId || !!d.categoria, {
+    message: 'Elige un club o escribe de dónde vino el ingreso', path: ['categoria'],
   }).safeParse(input)
   if (!parsed.success) return { error: parsed.error.issues[0].message }
   const data = parsed.data
-  const concepto = data.concepto ?? 'mensualidad'
+  // Sin club no hay suscripción que correr: la mensualidad solo existe para
+  // un club, así que el concepto por defecto de un ingreso suelto es 'otro'.
+  const concepto = data.clubId ? (data.concepto ?? 'mensualidad') : (data.concepto ?? 'otro')
 
-  const { data: club, error: clubError } = await supabase.from('clubes')
-    .select('estado_plan,proximo_vencimiento,fecha_inicio_plan')
-    .eq('id', data.clubId)
-    .single()
-  if (clubError || !club) return { error: 'No se encontró el club' }
+  let club: { estado_plan: string | null; proximo_vencimiento: string | null; fecha_inicio_plan: string | null } | null = null
+  if (data.clubId) {
+    const { data: clubEncontrado, error: clubError } = await supabase.from('clubes')
+      .select('estado_plan,proximo_vencimiento,fecha_inicio_plan')
+      .eq('id', data.clubId)
+      .single()
+    if (clubError || !clubEncontrado) return { error: 'No se encontró el club' }
+    club = clubEncontrado
+  }
 
   const { data: creado, error } = await supabase.from('pagos_clubes').insert({
-    club_id: data.clubId,
+    club_id: data.clubId ?? null,
+    categoria: data.clubId ? null : data.categoria,
     monto: data.monto,
     periodo_mes: data.periodoMes,
     periodo_anio: data.periodoAnio,
@@ -446,10 +466,11 @@ export async function registrarPagoClub(input: {
   }).select('id').single()
   if (error || !creado) return { error: 'Error al registrar el pago' }
 
-  // Solo la mensualidad corre el vencimiento. La implementación y el soporte
-  // se cobran una vez y no compran un mes de plan: contarlos como tal regalaba
-  // un mes cada vez que se registraba uno.
-  if (concepto === 'mensualidad') {
+  // Solo la mensualidad de un club corre el vencimiento. La implementación y
+  // el soporte se cobran una vez y no compran un mes de plan: contarlos como
+  // tal regalaba un mes cada vez que se registraba uno. Sin club no hay
+  // vencimiento que correr.
+  if (concepto === 'mensualidad' && data.clubId && club) {
     const { error: estadoError } = await supabase.from('clubes')
       .update({
         estado_pago: 'pagado',
@@ -478,6 +499,7 @@ const pagoClubSchema = z.object({
   notas: z.string().trim().max(500, 'Las notas son demasiado largas'),
   fechaPago: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha de pago inválida'),
   concepto: z.enum(['mensualidad', 'implementacion', 'soporte', 'otro']),
+  categoria: z.string().trim().max(60).optional(),
   montoNeto: z.number().finite().positive('El neto debe ser mayor a cero').optional(),
 }).refine(d => d.montoNeto === undefined || d.montoNeto <= d.monto, {
   message: 'El neto no puede ser mayor que el monto total', path: ['montoNeto'],
@@ -503,6 +525,7 @@ export async function editarPagoClub(input: {
   notas: string
   fechaPago: string
   concepto: string
+  categoria?: string
   montoNeto?: number
 }) {
   const { error: authErr, supabase } = await requireSuperadmin()
@@ -521,6 +544,7 @@ export async function editarPagoClub(input: {
     metodo: data.metodo,
     notas: data.notas || null,
     concepto: data.concepto,
+    categoria: data.categoria || null,
     monto_neto: data.montoNeto ?? null,
   }).eq('id', input.pagoId)
   if (error) return { error: 'Error al editar el pago' }
