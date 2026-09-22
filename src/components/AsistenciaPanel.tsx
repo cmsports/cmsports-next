@@ -165,7 +165,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
   const hoy = fechaChile()
   const hora = horaChile()
   const clubId = perfil?.club_id ?? null
-  const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor'
+  const esAdminOProfesor = perfil?.rol === 'admin' || perfil?.rol === 'profesor' || perfil?.rol === 'superadmin'
   // El profesor marca la clase extra; el precio lo decide un administrador.
   const puedeMontos = perfil?.rol === 'admin' || perfil?.rol === 'superadmin'
   // El calendario llega a los días que todavía no pasan, para poder revisar qué
