@@ -133,7 +133,9 @@ export default function FinanzasSuperadminPage() {
       notas: '',
       fecha: fechaChile(),
       concepto: 'otro',
-      categoria: '',
+      // Lo más común sin club es reponer un retiro: se asume Reembolso y se
+      // puede cambiar desde el datalist si vino de otro lado.
+      categoria: CATEGORIA_REEMBOLSO_SOCIO,
     })
     setError('')
     setModalPago({ nombre: 'Otro ingreso' })
