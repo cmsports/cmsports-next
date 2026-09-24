@@ -10,7 +10,7 @@ vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidatePath }))
 vi.mock('@/lib/auth/require', () => ({ requireSuperadmin: mocks.requireSuperadmin }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.createAdminClient }))
 
-import { crearClub, eliminarClub } from './superadmin'
+import { crearClub, eliminarClub, registrarPagoClub } from './superadmin'
 
 describe('crearClub desde Superadmin', () => {
   const club = { id: '11111111-1111-4111-8111-111111111111', nombre: 'Club Integración' }
@@ -195,5 +195,48 @@ describe('eliminarClub desde Superadmin', () => {
     expect(deleteUser.mock.invocationCallOrder[0])
       .toBeLessThan(borrados.clubes.mock.invocationCallOrder[0])
     expect(llamadas.some(l => l.tabla === 'jugadores')).toBe(true)
+  })
+})
+
+describe('registrarPagoClub: categoría vacía con club elegido', () => {
+  const clubId = '33333333-3333-4333-8333-333333333333'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    const supabase = {
+      from: vi.fn((tabla: string) => {
+        if (tabla === 'clubes') {
+          return {
+            select: () => ({ eq: () => ({ single: vi.fn().mockResolvedValue({
+              data: { estado_plan: 'activo', proximo_vencimiento: '2026-09-15', fecha_inicio_plan: '2026-01-15' },
+              error: null,
+            }) }) }),
+            update: () => ({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+          }
+        }
+        if (tabla === 'pagos_clubes') {
+          return { insert: () => ({ select: () => ({ single: vi.fn().mockResolvedValue({ data: { id: 'pago-1' }, error: null }) }) }) }
+        }
+        throw new Error(`Tabla inesperada: ${tabla}`)
+      }),
+    }
+    mocks.requireSuperadmin.mockResolvedValue({ error: null, supabase })
+  })
+
+  // El bug: el form manda categoria '' aunque haya club, y el .min(2) la
+  // rechazaba antes del refine. Con club elegido, '' debe pasar como "sin categoría".
+  it('registra el pago aunque llegue categoria vacía', async () => {
+    const res = await registrarPagoClub({
+      clubId, categoria: '', monto: 60000, montoNeto: 50000,
+      periodoMes: 10, periodoAnio: 2026, metodo: 'transferencia', notas: '',
+    })
+    expect(res).toEqual({ success: true, pagoId: 'pago-1' })
+  })
+
+  it('sin club y sin categoría sí falla (el refine sigue vivo)', async () => {
+    const res = await registrarPagoClub({
+      categoria: '', monto: 6750, periodoMes: 9, periodoAnio: 2026, metodo: 'transferencia', notas: '',
+    })
+    expect(res.error).toBeTruthy()
   })
 })
