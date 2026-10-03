@@ -107,7 +107,7 @@ export default function SolicitudesPage() {
   const [errorAprobar, setErrorAprobar] = useState('')
   const [rechazandoId, setRechazandoId] = useState<string|null>(null)
   const [errorRechazar, setErrorRechazar] = useState('')
-  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; email: string | null; telefono: string | null; cuentaCreada?: boolean; password?: string }>(null)
+  const [aprobadoInfo, setAprobadoInfo] = useState<null | { nombre: string; login: string; accesoSinCorreo: boolean; telefono: string | null; cuentaCreada?: boolean; password?: string }>(null)
   const router = useRouter()
   const clubId = perfil?.club_id ?? null
   // Qué categorías ofrece este club y si las sugiere por edad. La pantalla ya no
@@ -217,7 +217,10 @@ export default function SolicitudesPage() {
     void cargarSolicitudes()
     setAprobadoInfo({
       nombre: res.jugador?.nombre ?? infoForm.nombre,
-      email: res.jugador?.email ?? infoForm.email,
+      // El usuario puede no ser el correo: si el correo ya es de un hermano,
+      // entra con su celular o su RUT. Se muestra lo que el servidor usó.
+      login: res.login || infoForm.email,
+      accesoSinCorreo: !!res.accesoSinCorreo,
       telefono: res.jugador?.telefono ?? infoForm.telefono,
       cuentaCreada: res.cuentaCreada,
       password: infoForm.password,
@@ -226,7 +229,7 @@ export default function SolicitudesPage() {
 
   function linkAvisoAprobado(info: NonNullable<typeof aprobadoInfo>) {
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud fue aprobada. Ya puedes entrar en ${origin}/login con:\n📧 Email: ${info.email ?? ''}\n🔑 Contraseña: ${info.password ?? ''}\n¡Nos vemos en el club!`
+    const msg = `¡Hola ${info.nombre}! 🏓 Tu solicitud fue aprobada. Ya puedes entrar en ${origin}/login con:\n👤 Usuario: ${info.login}\n🔑 Contraseña: ${info.password ?? ''}\n¡Nos vemos en el club!`
     return linkWhatsApp(info.telefono, msg)
   }
 
@@ -603,7 +606,7 @@ export default function SolicitudesPage() {
                       style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', fontSize: 13, outline: 'none', marginTop: 8 }}
                       value={matriculaForm.monto} onChange={e => setMatriculaForm(f => ({ ...f, monto: e.target.value }))} />
                     <div style={{ fontSize: 11, color: hint, marginTop: 5 }}>
-                      Se registra como ingreso en Finanzas. Poné <strong>0</strong> si se la eximís.
+                      Se registra como ingreso en Finanzas. Pon <strong>0</strong> si se la eximes.
                     </div>
                   </>
                 ) : (
@@ -618,6 +621,9 @@ export default function SolicitudesPage() {
             <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 16 }}>Credenciales de acceso</div>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', marginBottom: 10, fontSize: 12, color: muted }}>
               Email de acceso: <strong>{infoForm.email || '—'}</strong>
+              <div style={{ marginTop: 4 }}>
+                Si ese correo ya lo usa otra cuenta (por ejemplo, un hermano), entra con su RUT o su celular.
+              </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
               <div>
@@ -705,10 +711,15 @@ export default function SolicitudesPage() {
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>Credenciales de acceso</div>
               <div style={{ fontSize: 13, color: '#166534', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div>📧 <strong>Email:</strong> {aprobadoInfo.email}</div>
+                <div>👤 <strong>Usuario:</strong> {aprobadoInfo.login}</div>
                 <div>🔑 <strong>Contraseña:</strong> {aprobadoInfo.password}</div>
               </div>
             </div>
+            {aprobadoInfo.accesoSinCorreo && (
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#c2410c', lineHeight: 1.5 }}>
+                El correo de la solicitud ya es el usuario de otra cuenta (probablemente un hermano), así que entra con este usuario y no con el correo.
+              </div>
+            )}
 
             {(() => {
               const url = linkAvisoAprobado(aprobadoInfo)

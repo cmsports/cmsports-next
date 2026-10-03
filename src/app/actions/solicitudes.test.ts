@@ -20,6 +20,7 @@ describe('aprobarSolicitud', () => {
   function mockear({
     ficha = null as { id: string } | null,
     perfil = null as { id: string } | null,
+    correoDeOtraCuenta = false,
   } = {}) {
     jugadorInsert.mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: { id: 'jugador-id' }, error: null }) }) })
     jugadorUpdate.mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) })
@@ -45,7 +46,10 @@ describe('aprobarSolicitud', () => {
       auth: { admin: { createUser, deleteUser } },
       from: vi.fn((tabla: string) => {
         if (tabla === 'perfiles') return {
-          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ maybeSingle: perfilPorJugador }) }),
+          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({
+            maybeSingle: perfilPorJugador,
+            limit: vi.fn().mockResolvedValue({ data: correoDeOtraCuenta ? [{ id: 'cuenta-hermana' }] : [], error: null }),
+          }) }),
           upsert: perfilUpsert,
         }
         return { upsert: perfilUpsert }
@@ -147,8 +151,51 @@ describe('aprobarSolicitud', () => {
 
     const resultado = await aprobarSolicitud(input)
 
-    expect(resultado).toEqual({ error: 'Este RUT ya está en el club y tiene cuenta. Abrí su ficha para cambiar el plan.' })
+    expect(resultado).toEqual({ error: 'Este RUT ya está en el club y tiene cuenta. Abre su ficha para cambiar el plan.' })
     expect(jugadorUpdate).not.toHaveBeenCalled()
     expect(createUser).not.toHaveBeenCalled()
+  })
+
+  // Caso hermanas González Rozas: las dos inscritas con el correo de la mamá.
+  describe('correo que ya es el usuario de otra cuenta', () => {
+    it('crea la cuenta con el RUT y deja la ficha sin ese correo', async () => {
+      mockear({ correoDeOtraCuenta: true })
+
+      const resultado = await aprobarSolicitud(input)
+
+      expect(resultado).toEqual(expect.objectContaining({
+        success: true, login: '12345678-9', accesoSinCorreo: true,
+      }))
+      expect(createUser).toHaveBeenCalledWith(expect.objectContaining({ email: '123456789@rut.cmsports.cl' }))
+      expect(perfilUpsert).toHaveBeenCalledWith(expect.objectContaining({ email: '123456789@rut.cmsports.cl' }))
+      // Con el correo en la ficha, el informe y el reseteo recalcularían el
+      // usuario del hermano.
+      expect(jugadorInsert).toHaveBeenCalledWith(expect.objectContaining({ email: null }))
+      expect(perfilUpsert).toHaveBeenCalledWith(expect.objectContaining({ usuario_login: '12345678-9', tipo_login: 'rut' }))
+    })
+
+    it('usa el celular si es de 9 dígitos, igual que el resto del sistema', async () => {
+      mockear({ correoDeOtraCuenta: true })
+
+      const resultado = await aprobarSolicitud({ ...input, telefono: '911111111' })
+
+      expect(resultado).toEqual(expect.objectContaining({ login: '911111111' }))
+      expect(createUser).toHaveBeenCalledWith(expect.objectContaining({ email: '911111111@cel.cmsports.cl' }))
+    })
+
+    it('sin RUT ni celular válido pide otro correo y no crea nada', async () => {
+      mockear({ correoDeOtraCuenta: true })
+
+      const resultado = await aprobarSolicitud({ ...input, rut: '', telefono: '' })
+
+      expect(resultado.error).toMatch(/otra cuenta/)
+      expect(jugadorInsert).not.toHaveBeenCalled()
+      expect(createUser).not.toHaveBeenCalled()
+    })
+
+    it('un correo libre sigue siendo el usuario', async () => {
+      const resultado = await aprobarSolicitud(input)
+      expect(resultado).toEqual(expect.objectContaining({ login: 'pedrito@email.cl', accesoSinCorreo: false }))
+    })
   })
 })

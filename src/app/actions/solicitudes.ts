@@ -3,7 +3,7 @@
 import { requireAdminClub } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { asignarBloquesJugador } from '@/app/actions/horario'
-import { usuarioLoginDe } from '@/lib/domain/credenciales'
+import { authEmailDe, usuarioLoginDe } from '@/lib/domain/credenciales'
 import { fechaChile } from '@/lib/domain/fechaChile'
 
 export async function aprobarSolicitud(params: {
@@ -86,10 +86,36 @@ export async function aprobarSolicitud(params: {
   if (!emailNormalizado) return { error: 'La solicitud no tiene un correo válido' }
   if (!password || password.length < 6) return { error: 'La contraseña debe tener al menos 6 caracteres' }
 
+  const admin = createAdminClient()
+
+  // Hermanos inscritos con el correo del apoderado: el primero se queda con el
+  // correo y el segundo chocaba con "ese correo ya tiene una cuenta", sin otra
+  // salida que inventarle uno (caso hermanas González Rozas, 2026-10-03).
+  //
+  // Si el correo ya es el usuario de otra cuenta, éste entra con su celular o
+  // su RUT, y el correo NO queda en su ficha. No es descuido: el informe de
+  // credenciales, el reseteo y el WhatsApp recalculan el usuario desde
+  // `jugadores.email`, y con el correo ahí le mostrarían al admin el usuario
+  // del hermano —y el reseteo intentaría moverle la cuenta a ese correo—.
+  // El correo sigue en la solicitud y en la ficha del hermano que lo tiene.
+  const { data: correoOcupado } = await admin.from('perfiles')
+    .select('id').eq('email', emailNormalizado).limit(1)
+  const correoEsDeOtraCuenta = !!correoOcupado?.length
+  const identidad = {
+    email: correoEsDeOtraCuenta ? null : emailNormalizado,
+    telefono: telefono || null,
+    rut: rut || null,
+  }
+  const authEmail = correoEsDeOtraCuenta ? authEmailDe(identidad) : emailNormalizado
+  if (!authEmail) {
+    return { error: 'Ese correo ya es el usuario de otra cuenta (¿un hermano?). Para que entre sin correo hace falta su RUT o un celular de 9 dígitos; complétalo o usa otro correo.' }
+  }
+  const { login, tipo } = usuarioLoginDe(identidad)
+
   const datosFicha = {
     nombre: nombre.trim(),
     rut: rut || null,
-    email: emailNormalizado,
+    email: identidad.email,
     telefono: telefono || null,
     fecha_nacimiento: fecha_nacimiento || null,
     direccion: direccion || null,
@@ -114,8 +140,6 @@ export async function aprobarSolicitud(params: {
     matricula_pagada: !!matriculaPagada,
   }
 
-  const admin = createAdminClient()
-
   // Una visita de ranking o de torneo ya tiene ficha (con puntos, partidos,
   // pagos). Insertar otra choca con el RUT único y además partiría el
   // historial. Se reutiliza esa fila: se le pone plan, correo y acceso.
@@ -133,7 +157,7 @@ export async function aprobarSolicitud(params: {
       const { data: yaTieneCuenta } = await admin.from('perfiles')
         .select('id').eq('jugador_id', existente.id).maybeSingle()
       if (yaTieneCuenta) {
-        return { error: 'Este RUT ya está en el club y tiene cuenta. Abrí su ficha para cambiar el plan.' }
+        return { error: 'Este RUT ya está en el club y tiene cuenta. Abre su ficha para cambiar el plan.' }
       }
 
       const { error: updateErr } = await supabase.from('jugadores')
@@ -154,7 +178,7 @@ export async function aprobarSolicitud(params: {
     if (insertErr || !nuevoJugador) {
       const duplicado = insertErr?.message?.includes('jugadores_rut_key') || insertErr?.code === '23505'
       return { error: duplicado
-        ? 'Este RUT ya tiene ficha. Si es una visita del club, recargá e intentá de nuevo.'
+        ? 'Este RUT ya tiene ficha. Si es una visita del club, recarga e intenta de nuevo.'
         : 'Error al crear jugador: ' + (insertErr?.message ?? '') }
     }
     jugadorId = nuevoJugador.id
@@ -165,10 +189,10 @@ export async function aprobarSolicitud(params: {
     if (fichaNueva && jugadorId) await supabase.from('jugadores').delete().eq('id', jugadorId)
   }
 
-  const jugador = { nombre: nombre.trim(), email: emailNormalizado, telefono: telefono || null }
+  const jugador = { nombre: nombre.trim(), email: identidad.email, telefono: telefono || null }
 
   const { data: creado, error: createError } = await admin.auth.admin.createUser({
-    email: emailNormalizado,
+    email: authEmail,
     password,
     email_confirm: true,
     user_metadata: { nombre: nombre.trim() },
@@ -178,12 +202,14 @@ export async function aprobarSolicitud(params: {
   if (createError || !userId) {
     await revertirFichaNueva()
     return { error: createError?.message?.toLowerCase().includes('already')
-      ? 'Ese correo ya tiene una cuenta. Usa otro correo.'
+      ? (correoEsDeOtraCuenta
+        ? `El correo ya era de otra cuenta y ${login} también tiene una. Usa otro correo.`
+        : 'Ese correo ya tiene una cuenta. Usa otro correo.')
       : 'No se pudo crear la cuenta de acceso del jugador.' }
   }
 
   const { error: perfilError } = await admin.from('perfiles').upsert({
-    id: userId, club_id: clubId, nombre: nombre.trim(), email: emailNormalizado, rol: 'jugador', jugador_id: jugadorId,
+    id: userId, club_id: clubId, nombre: nombre.trim(), email: authEmail, rol: 'jugador', jugador_id: jugadorId,
   })
   if (perfilError) {
     await admin.auth.admin.deleteUser(userId)
@@ -195,7 +221,6 @@ export async function aprobarSolicitud(params: {
   // el reporte del dashboard. Si falla, el alta sigue en pie: la clave la sabe
   // el jugador (la eligió él), y no tener el espejo se arregla con el botón
   // "Resetear" desde el reporte. Es peor abortar el alta por esto.
-  const { login, tipo } = usuarioLoginDe({ email: emailNormalizado, telefono: telefono || null, rut: rut || null })
   await admin.from('credencial_visible').upsert({
     usuario_id: userId, club_id: clubId, password_plano: password,
     usuario_login: login, tipo_login: tipo,
@@ -242,6 +267,9 @@ export async function aprobarSolicitud(params: {
     success: true,
     cuentaCreada: true,
     jugador,
+    /** Lo que escribe en la pantalla de login. No siempre es el correo. */
+    login,
+    accesoSinCorreo: correoEsDeOtraCuenta,
     aviso: avisoMatricula ?? undefined,
   }
 }
