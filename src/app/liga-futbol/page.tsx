@@ -360,7 +360,7 @@ export default function LigaFutbolPage() {
               Sin ligas todavía
             </div>
             <div style={{ fontSize: 14, color: '#94a3b8', maxWidth: 340, margin: '0 auto' }}>
-              Creá la primera liga para empezar a inscribir equipos, armar el fixture y llevar la tabla de posiciones
+              Crea la primera liga para empezar a inscribir equipos, armar el fixture y llevar la tabla de posiciones
             </div>
           </div>
         )}

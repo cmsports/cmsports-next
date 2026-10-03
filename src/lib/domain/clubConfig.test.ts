@@ -74,6 +74,13 @@ describe('los defaults son el comportamiento actual de Buin', () => {
     expect(valorPorDefecto('profe.gestiona_torneos')).toBe('no')
   })
 
+  it('mensualidades: la emisión automática sigue como estaba', () => {
+    // 'auto' verificado en la migración 107: el cron emitía solo para Buin.
+    // 'si' por defecto le crearía cuotas a los otros clubes sin pedirlo; 'no'
+    // dejaría a Buin sin cuotas el día 1.
+    expect(valorPorDefecto('mensualidad.emision_automatica')).toBe('auto')
+  })
+
   it('inscripción: el alumno NO se inscribe solo', () => {
     // Encenderlo sin la función atómica deja que dos alumnos tomen el mismo
     // último cupo. Ver §10.6 del plan maestro.

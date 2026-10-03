@@ -58,7 +58,7 @@ export async function crearFeedbackMasivo(params: {
   const comentario = params.comentario.trim()
   if (!comentario) return { error: 'El comentario no puede estar vacío' }
   const jugadorIds = [...new Set(params.jugadorIds)]
-  if (jugadorIds.length === 0) return { error: 'Elegí al menos un alumno' }
+  if (jugadorIds.length === 0) return { error: 'Elige al menos un alumno' }
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: 'Sin sesión' }

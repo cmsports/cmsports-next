@@ -47,7 +47,7 @@ export default function GestionAdministradores() {
         <span style={{ fontSize: 14, fontWeight: 600 }}>Administradores</span>
       </div>
       <div style={{ fontSize: 11, color: '#64748b', marginBottom: 14 }}>
-        Entra con los mismos permisos que vos: ve finanzas, mensualidades y puede
+        Entra con los mismos permisos que tú: ve finanzas, mensualidades y puede
         crear otros administradores. Dáselo solo a quien maneje el club.
       </div>
 

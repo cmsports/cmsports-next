@@ -371,7 +371,7 @@ export default function PanelClasesExtra({ clubId }: { clubId: string | null }) 
                 borderRadius: 8, padding: '10px 12px', color: text, fontSize: 14, outline: 'none' }}
               value={montoTexto} onChange={e => setMontoTexto(e.target.value)} />
             <div style={{ fontSize: 11, color: hint, marginTop: 6, marginBottom: 16 }}>
-              Vacío = pendiente ({SIN_CUOTA}). Poné <strong>0</strong> si el profe debe esta clase y no se cobra.
+              Vacío = pendiente ({SIN_CUOTA}). Pon <strong>0</strong> si el profe debe esta clase y no se cobra.
             </div>
 
             {errorMonto && (

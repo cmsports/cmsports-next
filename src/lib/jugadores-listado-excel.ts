@@ -3,6 +3,7 @@
 // formato de cada campo (ver ModalExportarJugadores).
 
 import { camposDesdeIds, type ContextoExportJugadores } from '@/lib/domain/jugadorExport'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 export async function exportarJugadoresExcel(jugadores: any[], camposIds: string[], ctx: ContextoExportJugadores) {
   const campos = camposDesdeIds(camposIds)
@@ -15,5 +16,5 @@ export async function exportarJugadoresExcel(jugadores: any[], camposIds: string
   const ws = utils.json_to_sheet(datos)
   const wb = utils.book_new()
   utils.book_append_sheet(wb, ws, 'Jugadores')
-  writeFile(wb, `jugadores_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  writeFile(wb, `jugadores_${fechaChile()}.xlsx`)
 }

@@ -178,7 +178,7 @@ export default function PanelAsistenciaHistorica({ clubId, puedeMontos = false }
   if (!elegido) {
     return (
       <div style={{ ...card, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>Elegí un jugador</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>Elige un jugador</div>
         <div style={{ fontSize: 12, color: hint, marginBottom: 12 }}>
           Cada uno tiene su propio calendario, según los días que entrena.
         </div>
@@ -422,7 +422,7 @@ export default function PanelAsistenciaHistorica({ clubId, puedeMontos = false }
               ) : (
                 <>
                   <div style={{ fontSize: 11, color: hint, marginBottom: 8, marginTop: suyas.length > 0 ? 10 : 0 }}>
-                    {suyas.length > 0 ? '¿Vino a otro grupo más ese día?' : '¿Vino a otro grupo ese día? Elegí a cuál.'}
+                    {suyas.length > 0 ? '¿Vino a otro grupo más ese día?' : '¿Vino a otro grupo ese día? Elige a cuál.'}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 10 }}>
                     {candidatos.map(b => {

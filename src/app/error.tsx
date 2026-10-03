@@ -35,7 +35,7 @@ export default function ErrorApp({ error, reset }: { error: Error & { digest?: s
         <h1 style={{ margin: 0, color: '#0f172a', fontSize: 19, fontWeight: 700 }}>Esta pantalla se cayó</h1>
         <p style={{ margin: '10px 0 20px', color: '#64748b', fontSize: 13, lineHeight: 1.6 }}>
           No es algo que hayas hecho mal, y no se perdió nada de lo que ya estaba guardado.
-          Probá de nuevo; si vuelve a pasar, avisale al administrador del sistema.
+          Prueba de nuevo; si vuelve a pasar, avísale al administrador del sistema.
         </p>
 
         <button onClick={reset}

@@ -72,12 +72,12 @@ export default function SinClubPage() {
         <div style={{ fontSize:44, marginBottom:14 }}>👋</div>
 
         <h1 style={{ fontSize:19, fontWeight:700, color:'#0f172a', margin:'0 0 10px' }}>
-          Ya no formás parte del club
+          Ya no formas parte del club
         </h1>
 
         <p style={{ fontSize:13, color:'#64748b', lineHeight:1.6, margin:'0 0 22px' }}>
           Tu cuenta fue dada de baja por el administrador, así que dejaste de tener
-          acceso a las pantallas del club. Si creés que fue un error, o quieres volver,
+          acceso a las pantallas del club. Si crees que fue un error, o quieres volver,
           puedes enviar una solicitud de ingreso nueva.
         </p>
 

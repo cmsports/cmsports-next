@@ -105,7 +105,7 @@ export default function LigaFutbolPublica() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#f4f7fa', gap: 8 }}>
       <div style={{ fontSize: 40 }}>⚽</div>
       <div style={{ fontSize: 16, fontWeight: 700, color: muted }}>Liga no encontrada</div>
-      <div style={{ fontSize: 13, color: hint }}>Revisá el código e intentá de nuevo</div>
+      <div style={{ fontSize: 13, color: hint }}>Revisa el código e intenta de nuevo</div>
     </div>
   )
 

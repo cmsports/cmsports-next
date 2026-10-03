@@ -458,7 +458,7 @@ export default function LigaDetallePage() {
   async function handleRegistrarJugadores(division: Division) {
     const ids = divisionJugadores[division.id] || []
     if (ids.length < 2) {
-      setMensaje('Seleccioná al menos 2 jugadores para continuar')
+      setMensaje('Selecciona al menos 2 jugadores para continuar')
       return
     }
     if (division.fixture_generado) {
@@ -618,12 +618,12 @@ export default function LigaDetallePage() {
       if (porRestriccion > 0) {
         partes.push(
           `${porRestriccion} no entran por la disponibilidad de ${nombres.join(', ')}. ` +
-          `Podés soltarles una restricción, o dejarlos para la fecha de ajuste.`,
+          `Puedes soltarles una restricción, o dejarlos para la fecha de ajuste.`,
         )
       }
       if (porEspacio > 0) {
         partes.push(
-          `${porEspacio} no caben en el horario disponible. Agregá fechas o ampliá el horario de juego.`,
+          `${porEspacio} no caben en el horario disponible. Agrega fechas o amplía el horario de juego.`,
         )
       }
       setMensaje(partes.join(' '))
@@ -1308,7 +1308,7 @@ export default function LigaDetallePage() {
                   {aplicandoDiff ? 'Guardando...' : '💾 Registrar jugadores'}
                 </button>
                 {jugadoresDeDivision.length < 2 && (
-                  <div style={{ fontSize:11, color: hint, marginTop:6 }}>Seleccioná al menos 2 jugadores</div>
+                  <div style={{ fontSize:11, color: hint, marginTop:6 }}>Selecciona al menos 2 jugadores</div>
                 )}
               </div>
 
@@ -1515,7 +1515,7 @@ export default function LigaDetallePage() {
           <div style={{ background:'#ffffff', border:'1px solid #e2e8f0', borderRadius:16, padding:28, width:'100%', maxWidth:440, boxShadow:'0 8px 32px rgba(15,23,42,0.14)' }}>
             <div style={{ fontSize:16, fontWeight:600, color: text, marginBottom:6 }}>Cambios en {pendingDivision.nombre}</div>
             <div style={{ fontSize:12, color: muted, marginBottom:18 }}>
-              Revisá qué va a cambiar antes de confirmar. Los partidos ya jugados no se tocan.
+              Revisa qué va a cambiar antes de confirmar. Los partidos ya jugados no se tocan.
             </div>
 
             <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:20 }}>
@@ -1583,7 +1583,7 @@ export default function LigaDetallePage() {
               {confirmPendientes.cantidad === 1
                 ? 'Hay 1 partido sin resultado en esta fecha.'
                 : `Hay ${confirmPendientes.cantidad} partidos sin resultado en esta fecha.`}{' '}
-              Si la terminás ahora esos partidos quedarán sin resolver y no contarán en el ranking.
+              Si la terminas ahora esos partidos quedarán sin resolver y no contarán en el ranking.
             </div>
             <div style={{ display:'flex', gap:10 }}>
               <button

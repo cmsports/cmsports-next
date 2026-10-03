@@ -442,13 +442,18 @@ export async function eliminarJugador(params: { jugadorId: string }) {
 export async function verificarBloqueoPerfil(): Promise<boolean> {
   try {
     const supabase = await createServerClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return false
+    // `getClaims()` y no `getSession()`: en el servidor `getSession()` lee la
+    // cookie tal cual, sin verificar la firma del token. Es lo mismo que usan
+    // el proxy y los helpers de require.ts.
+    const { data: auth } = await supabase.auth.getClaims()
+    const userId = typeof auth?.claims?.sub === 'string' ? auth.claims.sub : null
+    if (!userId) return false
+    const emailSesion = typeof auth?.claims?.email === 'string' ? auth.claims.email : ''
 
     const { data: perfil } = await supabase
       .from('perfiles')
       .select('jugador_id,rol,club_id')
-      .eq('id', session.user.id)
+      .eq('id', userId)
       .single()
 
     if (perfil?.rol !== 'jugador') return false
@@ -462,10 +467,16 @@ export async function verificarBloqueoPerfil(): Promise<boolean> {
     }
 
     // jugador_id no vinculado: buscar por email del usuario autenticado
-    if (session.user.email && perfil?.club_id) {
+    // `.eq` sobre el correo en minúsculas, no `.ilike`: en LIKE el `_` es un
+    // comodín y `juan_perez@x.cl` matcheaba también `juanXperez@x.cl`. Con dos
+    // coincidencias `maybeSingle()` da error y esto devolvía "no bloqueado",
+    // mientras el proxy —que ya usaba `.eq`— decía que sí: la pantalla de
+    // cuenta bloqueada y el proxy se contradecían. Mismo criterio que proxy.ts.
+    const email = emailSesion.trim().toLowerCase()
+    if (email && perfil?.club_id) {
       const { data: jug } = await admin
         .from('jugadores').select('estado')
-        .eq('club_id', perfil.club_id).ilike('email', session.user.email).maybeSingle()
+        .eq('club_id', perfil.club_id).eq('email', email).maybeSingle()
       return jug?.estado === 'bloqueado'
     }
 

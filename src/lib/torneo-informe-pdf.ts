@@ -70,7 +70,7 @@ export function analizarInforme(d: InformeFinanciero): Array<{ texto: string; to
     lista.push({ texto: `Hay ${pesos(d.recaudadoPendienteSubir)} cobrados que todavía no se subieron a Finanzas.`, tono: 'mal' })
   }
   if (d.gastos.length && !d.gastosRegistradosEnFinanzas) {
-    lista.push({ texto: 'Los gastos de gestión aún no están registrados en Finanzas: use "Guardar premios" para subirlos.', tono: 'ojo' })
+    lista.push({ texto: 'Los gastos de gestión aún no están registrados en Finanzas: se registran al descargar este informe desde la pantalla del torneo.', tono: 'ojo' })
   }
   return lista
 }

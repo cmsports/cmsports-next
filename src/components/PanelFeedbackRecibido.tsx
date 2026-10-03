@@ -77,7 +77,7 @@ export default function PanelFeedbackRecibido({
     <>
       <p style={{ fontSize: 12, color: hint, margin: '0 0 12px', lineHeight: 1.5 }}>
         {esAdmin
-          ? 'Lo que los alumnos escribieron a cada profesor. Los anónimos no muestran autor, tampoco para vos.'
+          ? 'Lo que los alumnos escribieron a cada profesor. Los anónimos no muestran autor, tampoco para ti.'
           : 'Lo que tus alumnos te escribieron. Los que eligieron el anonimato no muestran quién los escribió.'}
       </p>
 

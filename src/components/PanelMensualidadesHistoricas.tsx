@@ -135,7 +135,7 @@ export default function PanelMensualidadesHistoricas({ clubId }: { clubId: strin
   if (!elegido) {
     return (
       <div style={{ ...card, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>Elegí un jugador</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>Elige un jugador</div>
         <div style={{ fontSize: 12, color: hint, marginBottom: 12 }}>
           Desde acá se corrigen meses pasados. Cada cambio deja su rastro y genera un ajuste en el libro.
         </div>

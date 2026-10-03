@@ -453,7 +453,7 @@ export async function generarFixtureLiga(ligaId: string) {
   let partidos
   if (liga.formato === 'grupos_playoffs') {
     const { data: grupos } = await supabase.from('lf_grupos').select('id').eq('liga_id', ligaId).order('orden')
-    if (!grupos || grupos.length === 0) return { error: 'Creá al menos un grupo antes de generar el fixture' }
+    if (!grupos || grupos.length === 0) return { error: 'Crea al menos un grupo antes de generar el fixture' }
     const sinGrupo = equipos.filter(e => !e.grupo_id)
     if (sinGrupo.length > 0) return { error: `Hay ${sinGrupo.length} equipo(s) sin grupo asignado` }
     partidos = generarFixtureGrupos(

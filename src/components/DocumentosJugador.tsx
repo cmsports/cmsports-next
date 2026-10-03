@@ -12,7 +12,7 @@ const DOCS: { tipo: TipoDocumento; label: string; icono: string; plantilla?: str
     // El formulario en blanco vive en /public: es el mismo para todos y no
     // tiene datos de nadie, así que no hace falta pasarlo por la base.
     plantilla: '/documentos/formulario-ingreso-federado.docx',
-    comoSeHace: 'Descargá el formulario, imprimilo, llenalo a mano y firmalo. Después escanealo y subilo acá.',
+    comoSeHace: 'Descarga el formulario, imprímelo, llénalo a mano y fírmalo. Después escanéalo y súbelo acá.',
     nota: 'El punto 3 del formulario es solo para menores de edad. Si el jugador es mayor de edad, ese punto no aplica y se deja en blanco.',
   },
 ]

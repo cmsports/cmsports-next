@@ -33,7 +33,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             <h1 style={{ margin: 0, color: '#0f172a', fontSize: 19, fontWeight: 700 }}>CmSports no pudo iniciar</h1>
             <p style={{ margin: '10px 0 20px', color: '#64748b', fontSize: 13, lineHeight: 1.6 }}>
               Algo falló antes de que la aplicación terminara de cargar. Tus datos están a salvo.
-              Probá recargar; si sigue igual, avisale al administrador del sistema.
+              Prueba recargar; si sigue igual, avísale al administrador del sistema.
             </p>
 
             <button onClick={reset}

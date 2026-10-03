@@ -116,7 +116,7 @@ describe('un torneo finalizado no cambia', () => {
       torneo_partidos: [{ id: 'p1', torneo_id: 't1', fase: 'grupos', grupo_id: 'g1', jugador_a: 'a', jugador_b: 'b', ganador: null, orden: 0, torneos: { formato_grupos: 'bo5', formato_llave: 'bo5', estado: 'finalizado' } }],
     })
     const res = await marcarGanadorPartido({ partidoId: 'p1', setsA: 3, setsB: 0 })
-    expect(res.error).toMatch(/finalizado/)
+    expect('error' in res && res.error).toMatch(/finalizado/)
   })
 
   it('no se corrige un resultado de grupos', async () => {
@@ -125,7 +125,7 @@ describe('un torneo finalizado no cambia', () => {
       torneo_partidos: [{ id: 'p1', torneo_id: 't1', fase: 'grupos', grupo_id: 'g1', jugador_a: 'a', jugador_b: 'b', ganador: 'a', sets_a: 3, sets_b: 0, orden: 0 }],
     })
     const res = await corregirResultadoGrupos({ partidoId: 'p1', setsA: 0, setsB: 3 })
-    expect(res.error).toMatch(/finalizado/)
+    expect('error' in res && res.error).toMatch(/finalizado/)
     expect(t.torneo_partidos[0].ganador).toBe('a')
   })
 

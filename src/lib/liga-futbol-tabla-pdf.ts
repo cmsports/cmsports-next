@@ -3,6 +3,7 @@
 
 import { TINTA, GRIS_CLARO, VERDE, ROJO, nuevoDocumento, pieDePagina, seccion, tabla, barraEnCelda, marcaDelClub, type Marca } from '@/lib/pdf/papel'
 import type { EquipoStats } from '@/lib/domain/liga-futbol'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 export async function exportarTablaLigaFutbolPdf(
   ligaNombre: string,
@@ -55,5 +56,5 @@ export async function exportarTablaLigaFutbolPdf(
   doc.setTextColor(...TINTA)
   pieDePagina(doc, marca, ligaNombre)
   const slug = ligaNombre.replace(/[^a-zA-Z0-9]+/g, '_')
-  doc.save(`tabla_${slug}_${new Date().toISOString().slice(0, 10)}.pdf`)
+  doc.save(`tabla_${slug}_${fechaChile()}.pdf`)
 }

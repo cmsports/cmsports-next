@@ -112,7 +112,7 @@ export default function BracketOficial(props: {
     <p style={{ fontSize: 12, color: torneoUi.muted, margin: '0 0 10px' }}>
       {fasesMain.length
         ? `Cuadro desde ${FASE_LABELS[fasesMain[0]] || fasesMain[0]}. ${rondasOcultas.map(f => FASE_LABELS[f] || f).join(', ')} se ven con el filtro de arriba.`
-        : 'Este cuadro es grande: usá los filtros de ronda (32vos, 16vos…) para cargar resultados.'}
+        : 'Este cuadro es grande: usa los filtros de ronda (32vos, 16vos…) para cargar resultados.'}
     </p>
   )
 

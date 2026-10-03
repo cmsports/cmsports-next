@@ -126,8 +126,8 @@ export default function ModalRestricciones({
             ¿Alguien avisó que no puede?
           </div>
           <div style={{ fontSize: 12, color: mutado, lineHeight: 1.5 }}>
-            Marcá acá lo que sepas y el horario se arma respetándolo. Si no hay nada que marcar,
-            apretá Programar directo.
+            Marca acá lo que sepas y el horario se arma respetándolo. Si no hay nada que marcar,
+            aprieta Programar directo.
           </div>
         </div>
 
@@ -176,7 +176,7 @@ export default function ModalRestricciones({
                   <div style={{ marginTop: 9 }}>
                     <div style={{ fontSize: 11, color: mutado, marginBottom: 5 }}>
                       {fila.fechas.size === 0
-                        ? 'En todas las fechas — tocá una para que valga sólo en esa'
+                        ? 'En todas las fechas — toca una para que valga sólo en esa'
                         : `Sólo en la${fila.fechas.size > 1 ? 's' : ''} fecha${fila.fechas.size > 1 ? 's' : ''} ${[...fila.fechas].sort((a, b) => a - b).join(', ')}`}
                     </div>
                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>

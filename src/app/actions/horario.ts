@@ -284,7 +284,7 @@ export async function guardarGrupo(params: {
   // el club podía ver sus bloques pero no guardar uno, y el mensaje era
   // "Sede inválida" sobre su propia sede.
   if (!SEDES.some(s => s.value === params.sede)) return { error: 'Sede inválida' }
-  if (params.dias.length === 0) return { error: 'Marcá al menos un día' }
+  if (params.dias.length === 0) return { error: 'Marca al menos un día' }
   if (params.cupoMaximo < 0 || params.cupoLibres < 0) return { error: 'Los cupos no pueden ser negativos' }
   // Una clave que no está en el catálogo la rechazaría el CHECK de la base con
   // un error de Postgres crudo. Mejor decirlo acá y en español.

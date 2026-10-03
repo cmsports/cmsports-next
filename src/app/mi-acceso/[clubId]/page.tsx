@@ -11,7 +11,7 @@ const supabase = createClient()
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
-const mensajeGenerico = 'No encontramos una cuenta con ese RUT. Revisá el número o hablá con el club.'
+const mensajeGenerico = 'No encontramos una cuenta con ese RUT. Revisa el número o habla con el club.'
 
 type Estado = 'idle' | 'loading' | 'ok' | 'error' | 'limitado'
 type Resultado = { nombre: string; usuario: string; password: string }
@@ -37,7 +37,7 @@ export default function MiAccesoPage() {
     const limpio = rut.replace(/[^0-9kK]/g, '')
     if (limpio.length < 8) {
       setEstado('error')
-      setMensaje('Ingresá tu RUT completo')
+      setMensaje('Ingresa tu RUT completo')
       return
     }
     if (!clubId) {
@@ -66,7 +66,7 @@ export default function MiAccesoPage() {
     }
     if (fila.limitado) {
       setEstado('limitado')
-      setMensaje('Demasiados intentos. Esperá un minuto y volvé a probar.')
+      setMensaje('Demasiados intentos. Espera un minuto y vuelve a probar.')
       return
     }
     if (!fila.encontrado || !fila.usuario_login || !fila.password_plano) {
@@ -104,7 +104,7 @@ export default function MiAccesoPage() {
           <div style={{ width: 72, height: 72, background: 'linear-gradient(135deg,#3730a3,#4f46e5)', borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 26, color: 'white', margin: '0 auto 16px' }}>CM</div>
           <div style={{ fontSize: 22, fontWeight: 800, color: text }}>Tu acceso a CmSports</div>
           <div style={{ fontSize: 13, color: muted, marginTop: 6, lineHeight: 1.5 }}>
-            Poné tu RUT y vas a ver tu usuario y tu contraseña. Nadie más ve los datos de otra persona.
+            Pon tu RUT y vas a ver tu usuario y tu contraseña. Nadie más ve los datos de otra persona.
           </div>
         </div>
 
@@ -164,7 +164,7 @@ export default function MiAccesoPage() {
               {estado === 'loading' ? 'Buscando...' : 'Ver mis datos →'}
             </button>
             <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: hint }}>
-              ¿Problemas? Avisale al club.
+              ¿Problemas? Avísale al club.
             </div>
           </div>
         )}

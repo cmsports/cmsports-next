@@ -142,7 +142,7 @@ export default function OficialVivoPage() {
     return (
       <div style={{ padding: 40, textAlign: 'center' }}>
         <h1 style={{ fontSize: 20, color: '#0f172a' }}>Campeonato no encontrado</h1>
-        <p style={{ color: '#64748b' }}>Revisá el código del mural ({codigo || '—'}).</p>
+        <p style={{ color: '#64748b' }}>Revisa el código del mural ({codigo || '—'}).</p>
       </div>
     )
   }

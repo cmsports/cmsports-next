@@ -96,7 +96,7 @@ export default function MiHorarioPage() {
     <AppLayout perfil={perfil}>
       <h1 style={{ fontSize: 20, fontWeight: 600, color: text, margin: 0 }}>Mi horario</h1>
       <p style={{ fontSize: 12, color: hint, marginTop: 2, marginBottom: 18 }}>
-        Los grupos en los que entrenás. Lo define el profe: si te cambia de grupo, acá se actualiza solo.
+        Los grupos en los que entrenas. Lo define el profe: si te cambia de grupo, acá se actualiza solo.
       </p>
 
       {cargando ? (

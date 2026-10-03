@@ -269,7 +269,7 @@ export default function JugadorDetallePage() {
         setExternos(ext || [])
         setMensualidadActual(mens)
       } catch {
-        setErrorCarga('No se pudieron cargar los datos del jugador. Verificá tu conexión.')
+        setErrorCarga('No se pudieron cargar los datos del jugador. Verifica tu conexión.')
       }
 
       setLoading(false)
@@ -434,7 +434,7 @@ export default function JugadorDetallePage() {
 
   async function desmarcarMatriculaJugador() {
     if (!jugador) return
-    if (!confirm('¿Marcar la matrícula como no pagada?\n\nEl ingreso que ya se haya registrado en Finanzas se mantiene: esa plata entró de verdad. Si volvés a marcarla, se te pedirá el monto y se registra un ingreso nuevo.')) return
+    if (!confirm('¿Marcar la matrícula como no pagada?\n\nEl ingreso que ya se haya registrado en Finanzas se mantiene: esa plata entró de verdad. Si vuelves a marcarla, se te pedirá el monto y se registra un ingreso nuevo.')) return
     setGuardandoMatricula(true)
     const res = await desmarcarMatricula({ jugadorId: jugador.id })
     setGuardandoMatricula(false)
@@ -445,7 +445,7 @@ export default function JugadorDetallePage() {
   async function guardarMatricula() {
     if (!jugador) return
     const monto = montoIngresado(montoMatricula)
-    if (monto == null) { setErrorMatricula('Escribí un monto. Si no le cobrás nada, poné 0.'); return }
+    if (monto == null) { setErrorMatricula('Escribe un monto. Si no le cobras nada, pon 0.'); return }
     if (monto < 0) { setErrorMatricula('El monto no puede ser negativo.'); return }
     claveMatricula.current ??= crypto.randomUUID()
     setGuardandoMatricula(true)
@@ -1460,7 +1460,7 @@ export default function JugadorDetallePage() {
                     <div style={{ borderTop:'1px solid #e2e8f0', margin:'20px 0', paddingTop:20 }}>
                       <div style={{ fontSize:12, fontWeight:600, color: muted, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:4 }}>Perfil deportivo</div>
                       <div style={{ fontSize:11, color: hint, marginBottom:12 }}>
-                        El nivel es aparte de la categoría: la categoría la pone la edad y el nivel lo pones vos.
+                        El nivel es aparte de la categoría: la categoría la pone la edad y el nivel lo pones tú.
                       </div>
                     </div>
                     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
@@ -1642,7 +1642,7 @@ export default function JugadorDetallePage() {
               <button onClick={() => setEditDias(false)} style={{ background:'#f1f5f9', border:'none', borderRadius:8, width:32, height:32, fontSize:16, cursor:'pointer', color: muted }}>✕</button>
             </div>
             <div style={{ fontSize:12, color: muted, marginBottom:16 }}>
-              Marcá los grupos a los que va. Los días, la sede y los cupos se actualizan solos.
+              Marca los grupos a los que va. Los días, la sede y los cupos se actualizan solos.
             </div>
 
             <div style={{ maxHeight:'50vh', overflowY:'auto', margin:'0 -4px', padding:'0 4px' }}>
@@ -1845,7 +1845,7 @@ export default function JugadorDetallePage() {
                 borderRadius:8, padding:'10px 12px', color:text, fontSize:14, outline:'none' }}
             />
             <div style={{ fontSize:11, color:hint, marginTop:6, marginBottom:16 }}>
-              Poné <strong>0</strong> si le eximís la matrícula: queda marcada como pagada y no se genera ingreso.
+              Pon <strong>0</strong> si le eximes la matrícula: queda marcada como pagada y no se genera ingreso.
             </div>
 
             <div style={{ display:'flex', gap:10 }}>

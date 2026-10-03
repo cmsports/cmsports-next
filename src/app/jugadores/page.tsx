@@ -1032,7 +1032,7 @@ export default function JugadoresPage() {
                   onChange={e => setForm(prev => ({ ...prev, mensualidad: e.target.value }))}
                 />
                 <div style={{ fontSize:11, color: hint, marginTop:5 }}>
-                  Si todavía no sabés cuánto va a pagar, dejalo vacío: queda como &ldquo;{SIN_CUOTA}&rdquo;.
+                  Si todavía no sabes cuánto va a pagar, déjalo vacío: queda como &ldquo;{SIN_CUOTA}&rdquo;.
                 </div>
               </div>
             </div>

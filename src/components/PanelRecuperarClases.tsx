@@ -220,10 +220,10 @@ export default function PanelRecuperarClases({
       {saldo > 0 && (
         <div style={{ ...card, padding: 16, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#15803d' }}>
-            Tenés {saldo} {saldo === 1 ? 'clase' : 'clases'} por recuperar
+            Tienes {saldo} {saldo === 1 ? 'clase' : 'clases'} por recuperar
           </div>
           <div style={{ fontSize: 12, color: '#166534', marginTop: 4, lineHeight: 1.5 }}>
-            Elegí abajo un bloque con lugar y mandale el mensaje al profe. Él te asigna y te aparece acá.
+            Elige abajo un bloque con lugar y mándale el mensaje al profe. Él te asigna y te aparece acá.
           </div>
           {/* Que caduquen sin avisar es lo que hacía la versión anterior, y era
               lo peor: el alumno perdía el derecho sin que nada se lo dijera. */}
@@ -256,12 +256,12 @@ export default function PanelRecuperarClases({
       <section>
         <h2 style={{ fontSize: 14, fontWeight: 700, color: text, margin: '0 0 2px' }}>Tus próximas clases</h2>
         <p style={{ fontSize: 12, color: hint, margin: '0 0 10px' }}>
-          Si no vas a poder ir, avisá acá. Con {HORAS_AVISO} horas o más de anticipación conservás el derecho a recuperarla.
+          Si no vas a poder ir, avisa acá. Con {HORAS_AVISO} horas o más de anticipación conservas el derecho a recuperarla.
         </p>
 
         {proximas.length === 0 ? (
           <div style={{ ...card, padding: 24, textAlign: 'center', color: hint, fontSize: 13 }}>
-            No tenés clases en las próximas dos semanas.
+            No tienes clases en las próximas dos semanas.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -329,14 +329,14 @@ export default function PanelRecuperarClases({
       {/* ── Dónde recuperar ── */}
       {saldo > 0 && (
         <section>
-          <h2 style={{ fontSize: 14, fontWeight: 700, color: text, margin: '0 0 2px' }}>Dónde podés recuperar</h2>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: text, margin: '0 0 2px' }}>Dónde puedes recuperar</h2>
           <p style={{ fontSize: 12, color: hint, margin: '0 0 10px' }}>
-            Bloques con lugar en las próximas dos semanas. Elegí uno y mandale el mensaje al profe: él te asigna.
+            Bloques con lugar en las próximas dos semanas. Elige uno y mándale el mensaje al profe: él te asigna.
           </p>
 
           {disponibles.length === 0 ? (
             <div style={{ ...card, padding: 24, textAlign: 'center', color: hint, fontSize: 13 }}>
-              Ahora mismo no hay bloques con lugar. Volvé a mirar en un rato: cuando alguien avisa que no va, aparece acá.
+              Ahora mismo no hay bloques con lugar. Vuelve a mirar en un rato: cuando alguien avisa que no va, aparece acá.
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
@@ -372,7 +372,7 @@ export default function PanelRecuperarClases({
                       </WhatsAppBtn>
                     ) : (
                       <div style={{ fontSize: 11, color: hint }}>
-                        El club todavía no cargó su WhatsApp. Avisale al profe en la cancha.
+                        El club todavía no cargó su WhatsApp. Avísale al profe en la cancha.
                       </div>
                     )}
                   </div>
@@ -401,12 +401,12 @@ export default function PanelRecuperarClases({
 
               {conDerecho ? (
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#166534', lineHeight: 1.5 }}>
-                  Estás avisando con más de {HORAS_AVISO} horas, así que <strong>conservás el derecho a recuperar</strong> esta
+                  Estás avisando con más de {HORAS_AVISO} horas, así que <strong>conservas el derecho a recuperar</strong> esta
                   clase. Tu lugar queda disponible para otro compañero.
                 </div>
               ) : (
                 <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#b91c1c', lineHeight: 1.5 }}>
-                  Quedan menos de {HORAS_AVISO} horas para esta clase. Si confirmás, <strong>perdés el bloque y no vas a poder
+                  Quedan menos de {HORAS_AVISO} horas para esta clase. Si confirmas, <strong>pierdes el bloque y no vas a poder
                   recuperarlo</strong>. Tu lugar igual queda disponible para otro compañero.
                 </div>
               )}

@@ -18,6 +18,7 @@ import { categoriaLabel } from '@/lib/domain/categoriaBuin'
 import { enBonito } from '@/lib/domain/nombreJugador'
 import { TABLA_PUNTAJE } from '@/lib/domain/puntajeTorneo'
 import type { ResultadoJugadorRanking } from '@/lib/domain/rankingInterno'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 const ORO: RGB = [217, 119, 6]
 const PLATA: RGB = [100, 116, 139]
@@ -180,5 +181,5 @@ export async function exportarRankingPdf(
   pieDePagina(doc, meta.marca, `${titulo}${desde ? ` · ${desde}` : ''}`)
 
   const slug = `${ranking.categoria}${gen ? `_${gen}` : ''}`.replace(/[^a-zA-Z0-9]+/g, '_')
-  doc.save(`ranking_${slug}_${new Date().toISOString().slice(0, 10)}.pdf`)
+  doc.save(`ranking_${slug}_${fechaChile()}.pdf`)
 }

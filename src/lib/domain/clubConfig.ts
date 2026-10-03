@@ -107,6 +107,25 @@ export const CONFIG_CLUB = [
     // mano —hay de $7.000, de $30.000, de $50.000— y ninguna tabla puede
     // adivinarlas". Eso es correcto para Buin y no se toca.
   },
+  {
+    clave: 'mensualidad.emision_automatica',
+    tipo: 'opcion',
+    opciones: ['auto', 'si', 'no'],
+    defecto: 'auto',
+    editablePor: 'admin',
+    label: 'Si las cuotas de cada mes se crean solas',
+    // 'auto' = lo que hacía el cron de la migración 107 antes de que existiera
+    // esta clave: emitía solo para Buin, escrito con su UUID en la llamada, y
+    // ningún otro club recibía cuotas automáticas. Es el default por la misma
+    // razón que `categorias.esquema`: con 'si' los otros clubes empezarían a
+    // recibir cuotas de la noche a la mañana, y con 'no' Buin dejaría de
+    // cobrar. La resuelve `emitir_mensualidades_automaticas()` en SQL
+    // (migración 286), que es quien la lee: el cron corre sin sesión.
+    //
+    // No tiene precondición técnica —la función respeta `mensualidad.modo` y
+    // el plan de cada jugador—, así que es del admin. Lo grave es que genera
+    // deuda, y eso lo dice la pantalla antes de guardar.
+  },
 
   // ── Morosidad ──────────────────────────────────────────────────────────
   // Los dos umbrales en 0 = nunca. Buin no bloquea a nadie automáticamente: lo

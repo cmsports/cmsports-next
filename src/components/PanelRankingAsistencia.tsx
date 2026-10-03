@@ -661,7 +661,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                     <td style={{ ...td, textAlign: 'right' }}>
                       {a.completo.telefono && (
                         <WhatsAppBtn variant="compact" href={linkWhatsApp(a.completo.telefono,
-                          `Hola ${a.jugador.nombre.split(' ')[0]}! 👋 Te echamos de menos en los entrenamientos. ¿Todo bien? Cualquier cosa nos avisás.`) ?? ''} />
+                          `Hola ${a.jugador.nombre.split(' ')[0]}! 👋 Te echamos de menos en los entrenamientos. ¿Todo bien? Cualquier cosa nos avisas.`) ?? ''} />
                       )}
                     </td>
                   </tr>
@@ -713,7 +713,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
           de la semana/mes/trimestre de arriba, porque la gracia es poder
           mirar un bloque bien atrás sin importar qué período se esté viendo
           en el resto de la pantalla. ── */}
-      <Seccion titulo="Por bloque" nota="Elegí el día primero — así solo se ofrecen los bloques que funcionan ese día">
+      <Seccion titulo="Por bloque" nota="Elige el día primero — así solo se ofrecen los bloques que funcionan ese día">
         <div style={{ padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sedesDisponibles.length > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -820,7 +820,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                           Se ocultan {historialBloque.length - historialBloque.filter(f => !f.inferido).length} asistencias
                           {' '}<strong>inferidas</strong> — de antes de que el sistema guardara a qué bloque fue cada
                           uno; se habían completado adivinando por el grupo en que estaba inscrito ese día, y pueden
-                          estar mal si esa persona tenía más de un bloque el mismo día. Marcá esto para verlas igual.
+                          estar mal si esa persona tenía más de un bloque el mismo día. Marca esto para verlas igual.
                         </span>
                       </label>
                     )}
@@ -847,7 +847,7 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
                         {mostradas.length === 0 && (
                           <tr><td colSpan={2} style={{ ...td, textAlign: 'center', color: hint }}>
                             {hayInferidos && !incluirInferido
-                              ? 'Nada confirmado ese día — marcá el check de arriba para ver lo inferido.'
+                              ? 'Nada confirmado ese día — marca el check de arriba para ver lo inferido.'
                               : <>Nadie marcado presente ahí el {fechaCorta(fechaHistorialBloque)}</>}
                           </td></tr>
                         )}

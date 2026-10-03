@@ -264,7 +264,7 @@ function FinanzasContent() {
     // Al crear un sueldo de staff el nombre es lo único que distingue un pago
     // de otro: sin él quedan varias filas idénticas de "Sueldo staff".
     if (!esEdicion && esStaff && !form.nombreStaff.trim()) {
-      setErrorMovimiento('Escribí el nombre de la persona a la que se le paga.')
+      setErrorMovimiento('Escribe el nombre de la persona a la que se le paga.')
       return
     }
     setGuardando(true)
@@ -673,7 +673,7 @@ function FinanzasContent() {
                   <option value="ingreso">💰 Ingreso</option>
                   <option value="gasto">💸 Gasto</option>
                 </select>
-                {esEdicion && <div style={{ fontSize:11, color: hint, marginTop:4 }}>El tipo no se cambia. Si está mal, borrá y cargá de nuevo.</div>}
+                {esEdicion && <div style={{ fontSize:11, color: hint, marginTop:4 }}>El tipo no se cambia. Si está mal, borra y carga de nuevo.</div>}
               </div>
               <div>
                 <label style={{ fontSize:12, color: muted, display:'block', marginBottom:5 }}>Fecha</label>

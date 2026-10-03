@@ -47,7 +47,7 @@ export default function GestionProfesores({ clubId }: { clubId: string }) {
   // de la que nadie usa.
   async function darAcceso(profesor: Profesor) {
     setError(''); setMensaje('')
-    if (!acceso.email.trim()) { setError('Escribí el correo de acceso'); return }
+    if (!acceso.email.trim()) { setError('Escribe el correo de acceso'); return }
     if (acceso.password.length < 6) { setError('La contraseña debe tener al menos 6 caracteres'); return }
     setGuardando(true)
     const res = await crearAccesoProfesor({

@@ -72,7 +72,7 @@ export default function LigaFutbolFinanzasTab({ clubId }: { clubId: string | nul
   async function confirmarPago() {
     if (!pagoAbierto) return
     const m = Number(monto)
-    if (!m || m <= 0) { setError('Ingresá un monto válido'); return }
+    if (!m || m <= 0) { setError('Ingresa un monto válido'); return }
     setGuardando(true)
     setError('')
     const res = await registrarPagoEquipo(pagoAbierto.id, m, metodo)

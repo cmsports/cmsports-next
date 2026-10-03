@@ -384,7 +384,7 @@ export default function RankingPage() {
                                   {enBonito(f.nombre)}
                                 </div>
                                 {soyYo && (
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#c4b5fd', marginBottom: 3 }}>· vos ·</div>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#c4b5fd', marginBottom: 3 }}>· tú ·</div>
                                 )}
                                 {/* La columna del podio */}
                                 <div className={`columna-podio ${col.clase}`}
@@ -451,7 +451,7 @@ export default function RankingPage() {
                                   color: soyYo ? '#5b21b6' : text,
                                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {enBonito(fila.nombre)}
-                                  {soyYo && <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed' }}> · vos</span>}
+                                  {soyYo && <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed' }}> · tú</span>}
                                 </div>
                                 <div style={{ height: 7, background: '#eef2f7', borderRadius: 4, overflow: 'hidden' }}>
                                   <div className="barra-ranking" style={{

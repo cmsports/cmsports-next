@@ -86,7 +86,7 @@ describe('guardarGrupo', () => {
   })
 
   it('no deja un grupo sin días', async () => {
-    expect(await guardarGrupo({ ...base, dias: [] })).toEqual({ error: 'Marcá al menos un día' })
+    expect(await guardarGrupo({ ...base, dias: [] })).toEqual({ error: 'Marca al menos un día' })
   })
 
   it('no deja una hora de fin anterior a la de inicio', async () => {

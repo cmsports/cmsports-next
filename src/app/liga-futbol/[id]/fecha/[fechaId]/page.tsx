@@ -129,7 +129,7 @@ export default function FechaLigaFutbol() {
 
   async function handleAgregarGol(p: Partido, equipoId: string) {
     const form = golForm[p.id]
-    if (!form?.jugadorId) { setError('Elegí el jugador que anotó'); return }
+    if (!form?.jugadorId) { setError('Elige el jugador que anotó'); return }
     setError('')
     const res = await registrarGol({
       partido_id: p.id, jugador_id: form.jugadorId, equipo_id: equipoId,
@@ -149,7 +149,7 @@ export default function FechaLigaFutbol() {
 
   async function handleAgregarTarjeta(p: Partido, equipoId: string) {
     const form = tarjetaForm[p.id]
-    if (!form?.jugadorId || !form?.tipo) { setError('Elegí jugador y tipo de tarjeta'); return }
+    if (!form?.jugadorId || !form?.tipo) { setError('Elige jugador y tipo de tarjeta'); return }
     setError('')
     const res = await registrarTarjeta({
       partido_id: p.id, jugador_id: form.jugadorId, equipo_id: equipoId,
@@ -170,7 +170,7 @@ export default function FechaLigaFutbol() {
 
   async function handleWO(p: Partido) {
     const equipoId = woEquipo[p.id]
-    if (!equipoId) { setError('Elegí qué equipo no se presentó'); return }
+    if (!equipoId) { setError('Elige qué equipo no se presentó'); return }
     setError('')
     const res = await registrarWO(p.id, equipoId)
     if (res.error) { setError(res.error); return }
@@ -372,7 +372,7 @@ export default function FechaLigaFutbol() {
                             const jugId = golForm[p.id]?.jugadorId
                             const equipoId = jugId ? jugadorPorId(jugId)?.equipo_id : null
                             if (equipoId) handleAgregarGol(p, equipoId)
-                            else setError('Elegí el jugador que anotó')
+                            else setError('Elige el jugador que anotó')
                           }}
                           style={{ ...btn, background: green, color: 'white' }}>+ Gol</button>
                       </div>
@@ -419,7 +419,7 @@ export default function FechaLigaFutbol() {
                             const jugId = tarjetaForm[p.id]?.jugadorId
                             const equipoId = jugId ? jugadorPorId(jugId)?.equipo_id : null
                             if (equipoId) handleAgregarTarjeta(p, equipoId)
-                            else setError('Elegí el jugador')
+                            else setError('Elige el jugador')
                           }}
                           style={{ ...btn, background: '#d97706', color: 'white' }}>+ Tarjeta</button>
                       </div>

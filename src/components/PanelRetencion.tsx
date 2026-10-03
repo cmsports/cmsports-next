@@ -212,7 +212,7 @@ export default function PanelRetencion({ clubId }: { clubId: string }) {
           </p>
           <p style={{ margin: '6px auto 0', fontSize: 13, color: muted, maxWidth: 460, lineHeight: 1.55 }}>
             El club no avisa ni bloquea a nadie automáticamente, que es como
-            funciona hoy. Poné umbrales en Configuración para ver acá a quién
+            funciona hoy. Pon umbrales en Configuración para ver acá a quién
             afectarían — sin que les pase nada todavía.
           </p>
         </div>
@@ -288,8 +288,8 @@ export default function PanelRetencion({ clubId }: { clubId: string }) {
           <div style={{ ...card, padding: '13px 16px', marginTop: 14, borderLeft: '3px solid #b45309', display: 'flex', gap: 9 }}>
             <TriangleAlert size={15} color="#b45309" style={{ flexShrink: 0, marginTop: 2 }} />
             <p style={{ margin: 0, fontSize: 12.5, color: '#92400e', lineHeight: 1.55 }}>
-              <strong>Revisá esta lista con nombre y apellido.</strong> Si
-              reconocés a alguien que está al día, el umbral o la fecha de
+              <strong>Revisa esta lista con nombre y apellido.</strong> Si
+              reconoces a alguien que está al día, el umbral o la fecha de
               vencimiento están mal. Encender el bloqueo con un solo falso
               positivo acá significa dejar afuera a un alumno que paga.
             </p>

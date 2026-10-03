@@ -303,7 +303,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     // en finanzas no hay cómo distinguirlo después de uno real.
     const monto = montoIngresado(montoPago)
     if (monto == null || monto <= 0) {
-      setErrorPago('Escribí el monto que pagó. No se registra un pago sin monto.')
+      setErrorPago('Escribe el monto que pagó. No se registra un pago sin monto.')
       return
     }
     setErrorPago('')
@@ -609,7 +609,7 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                     const detalle = d.cuotas.map(etiquetaCuota).join(', ')
                     const url = linkWhatsApp(
                       d.jugador.telefono,
-                      `Hola ${d.jugador.nombre.split(' ')[0]}! 👋 Te escribimos de ${clubNombre || 'el club'}. Tenés ${d.cuotas.length} ${d.cuotas.length === 1 ? 'mensualidad pendiente' : 'mensualidades pendientes'}: *${detalle}*${d.total > 0 ? `, por un total de $${d.total.toLocaleString('es-CL')}` : ''}. Cuando puedas, regularicemos. ¡Gracias! 🏓`,
+                      `Hola ${d.jugador.nombre.split(' ')[0]}! 👋 Te escribimos de ${clubNombre || 'el club'}. Tienes ${d.cuotas.length} ${d.cuotas.length === 1 ? 'mensualidad pendiente' : 'mensualidades pendientes'}: *${detalle}*${d.total > 0 ? `, por un total de $${d.total.toLocaleString('es-CL')}` : ''}. Cuando puedas, regularicemos. ¡Gracias! 🏓`,
                     )
                     return (
                       <tr key={d.jugador.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
@@ -726,7 +726,7 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
                       {(extrasPorJugador.get(j.id) ?? 0) > 0 && (
                         <button
                           onClick={() => document.getElementById('clases-extra')?.scrollIntoView({ behavior:'smooth', block:'start' })}
-                          title="Se cobra aparte de la mensualidad. Tocá acá para ir al panel de Clases extraordinarias, más abajo en esta misma pestaña."
+                          title="Se cobra aparte de la mensualidad. Toca acá para ir al panel de Clases extraordinarias, más abajo en esta misma pestaña."
                           style={{ fontFamily:'inherit', fontSize:10.5, fontWeight:700, color:'#a16207',
                             background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6,
                             padding:'3px 7px', marginTop:5, display:'inline-block', whiteSpace:'nowrap',
@@ -818,7 +818,7 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
               )}
               {!modalPago.esperado && (
                 <div style={{ marginTop:6, fontSize:11, color: hint }}>
-                  Este jugador no tiene cuota asignada. Escribí cuánto pagó.
+                  Este jugador no tiene cuota asignada. Escribe cuánto pagó.
                 </div>
               )}
             </div>

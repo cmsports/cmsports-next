@@ -1667,7 +1667,7 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   if (esEliminacion && jugadores.length > MAX_JUGADORES_EN_CUADRO) {
     return {
       error: `Un cuadro de eliminación admite hasta ${MAX_JUGADORES_EN_CUADRO} jugadores y hay ${jugadores.length}. ` +
-        `Usá el formato tradicional de grupos, que reparte a todos antes de la llave.`,
+        `Usa el formato tradicional de grupos, que reparte a todos antes de la llave.`,
     }
   }
 
@@ -1693,8 +1693,8 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
       // 210 partidos, y la única salida real es cambiar de formato.
       const cabenEnUna = maxJugadoresDeLiguilla(CONFIG.LIGUILLA_MAX_PARTIDOS, 1)
       const salida = ruedas === 2
-        ? `Probá con una sola rueda (serían ${partidosDeLiguilla(jugadores.length, 1)} partidos), ` +
-          `o usá el formato tradicional de grupos.`
+        ? `Prueba con una sola rueda (serían ${partidosDeLiguilla(jugadores.length, 1)} partidos), ` +
+          `o usa el formato tradicional de grupos.`
         : `Una liguilla admite hasta ${cabenEnUna} inscritos; con más, conviene el formato ` +
           `tradicional de grupos, que reparte a todos y termina en una llave.`
 
@@ -2776,7 +2776,7 @@ export async function generarGruposTardios(params: {
   if (modalidadTardios === 'liguilla') {
     return {
       error: 'En una liguilla todos juegan contra todos, así que no se pueden sumar jugadores ' +
-        'después de cerrar la inscripción. Volvé a cerrar la inscripción con todos adentro.',
+        'después de cerrar la inscripción. Vuelve a cerrar la inscripción con todos adentro.',
     }
   }
   // Un cuadro de eliminación tiene su tamaño fijado y sus BYE repartidos por
@@ -3260,7 +3260,7 @@ export async function inscribirEnMesa(params: {
     if (errBuscar) return { error: 'No se pudo buscar al jugador: ' + errBuscar.message }
 
     if ((coincidencias?.length ?? 0) > 1) {
-      return { error: `Hay más de un jugador llamado "${nombreBuscado}". Elegilo de la lista que aparece al escribir, para no crear una ficha repetida.` }
+      return { error: `Hay más de un jugador llamado "${nombreBuscado}". Elígelo de la lista que aparece al escribir, para no crear una ficha repetida.` }
     }
 
     const exacto = coincidencias?.[0] ?? null

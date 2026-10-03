@@ -50,7 +50,7 @@ function ModalEnviarWhatsApp({ filas, onClose }: { filas: FilaCredencial[]; onCl
             <MessageCircle size={18} color="#16a34a" /> Enviar credenciales por WhatsApp
           </div>
           <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
-            Elegí a quién. Cada uno se abre en WhatsApp con el mensaje listo — solo falta apretar enviar.
+            Elige a quién. Cada uno se abre en WhatsApp con el mensaje listo — solo falta apretar enviar.
           </div>
 
           <button onClick={() => setSeleccion(s => s.size === enviables.length ? new Set() : new Set(enviables.map(c => c.usuarioId)))}
@@ -207,7 +207,7 @@ export default function CredencialesPage() {
     const url = `${window.location.origin}${pathGrupo}`
     const texto = cual === 'link'
       ? url
-      : `Hola! Para entrar a CmSports, abrí este link, poné tu RUT y vas a ver tu usuario y tu contraseña (solo los tuyos):\n\n${url}\n\nDespués ingresá en ${window.location.origin}/login\n\nNo compartas tus datos.`
+      : `Hola! Para entrar a CmSports, abre este link, pon tu RUT y vas a ver tu usuario y tu contraseña (solo los tuyos):\n\n${url}\n\nDespués ingresa en ${window.location.origin}/login\n\nNo compartas tus datos.`
     const ok = await copiarTexto(texto)
     if (ok) { setCopiadoGrupo(cual); setTimeout(() => setCopiadoGrupo(null), 1600) }
   }
@@ -372,7 +372,7 @@ export default function CredencialesPage() {
         <div style={{ fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
           <Link2 size={15} /> Link para el grupo
         </div>
-        En vez de mandar el PDF o la lista de claves, copiá este link. Cada jugador pone su RUT y ve solo sus datos.
+        En vez de mandar el PDF o la lista de claves, copia este link. Cada jugador pone su RUT y ve solo sus datos.
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
           <button onClick={() => void copiarGrupo('link')}
             style={{ background: C.sky, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>

@@ -168,7 +168,7 @@ export default function PanelAsistenciaProfes({
       // correos distintos, así que get_my_profesor_id() devuelve NULL y la RLS
       // no lo deja escribir. El mensaje crudo de Postgres no ayuda a nadie.
       setError(err.code === '42501' || /row-level security/i.test(err.message ?? '')
-        ? 'No podés marcar esta asistencia. Si sos el profesor, pedile al admin que revise que el correo de tu ficha sea el mismo con el que entrás.'
+        ? 'No puedes marcar esta asistencia. Si eres el profesor, pídele al admin que revise que el correo de tu ficha sea el mismo con el que entras.'
         : err.message)
       return
     }
@@ -214,8 +214,8 @@ export default function PanelAsistenciaProfes({
 
           {!esAdmin && !yoSoy && (
             <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', borderRadius: 10, padding: '12px 14px', fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
-              No pude enlazar tu cuenta con tu ficha de profesor. Pedile al admin que revise que el correo de la ficha
-              sea el mismo con el que entrás a la plataforma.
+              No pude enlazar tu cuenta con tu ficha de profesor. Pídele al admin que revise que el correo de la ficha
+              sea el mismo con el que entras a la plataforma.
             </div>
           )}
 
@@ -274,7 +274,7 @@ export default function PanelAsistenciaProfes({
                               <span style={{ flex: 1 }}>
                                 {nombreDe.get(profesorId) ?? 'Profesor'}
                                 {profesorId === yoSoy && (
-                                  <span style={{ fontSize: 11, color: '#4f46e5', fontWeight: 700 }}> · vos</span>
+                                  <span style={{ fontSize: 11, color: '#4f46e5', fontWeight: 700 }}> · tú</span>
                                 )}
                                 {!esAsignado && (
                                   <span style={{ fontSize: 11, color: hint }}> · no asignado</span>

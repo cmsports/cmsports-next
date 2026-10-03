@@ -29,7 +29,7 @@ export default function ModalRetiro({
     {
       valor: 'walkover' as const,
       titulo: 'Dar por ganados a sus rivales',
-      detalle: 'Cada rival gana ese partido por no presentación y suma los puntos. Es lo que hacen las federaciones. Tené en cuenta que al que le tocaba jugar contra él más adelante le queda un partido regalado.',
+      detalle: 'Cada rival gana ese partido por no presentación y suma los puntos. Es lo que hacen las federaciones. Ten en cuenta que al que le tocaba jugar contra él más adelante le queda un partido regalado.',
     },
     {
       valor: 'eliminar' as const,
@@ -87,7 +87,7 @@ export default function ModalRetiro({
         )}
 
         <div style={{ fontSize: 11.5, color: mutado, marginBottom: 16, lineHeight: 1.5 }}>
-          Si después reprogramás, {nombreJugador} ya no entra en el horario. Se puede
+          Si después reprogramas, {nombreJugador} ya no entra en el horario. Se puede
           reincorporar más adelante, pero los partidos que se resuelvan ahora no vuelven solos.
         </div>
 

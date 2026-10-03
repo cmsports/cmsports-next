@@ -26,6 +26,8 @@ import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { CONFIG_POR_DEFECTO, type LectorConfig } from '@/lib/domain/clubConfig'
 import { configDelClub } from '@/lib/supabase/clubConfig'
+import { fechaChile } from '@/lib/domain/fechaChile'
+import { sumarDias } from '@/lib/domain/cuposDia'
 import {
   debeAlertarPorFaltas,
   faltasSeguidas,
@@ -74,8 +76,10 @@ export default function AlertaFaltas({
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const db = supabase as any
 
-    const desde = new Date(Date.now() - DIAS_DE_HISTORIAL * 86_400_000)
-      .toISOString().slice(0, 10)
+    // Contado desde el día de Chile: con `toISOString()` sobre la hora actual,
+    // después de las 20:00/21:00 de acá ya era mañana en UTC y la ventana se
+    // corría un día.
+    const desde = sumarDias(fechaChile(), -DIAS_DE_HISTORIAL)
 
     const [cfg, club, res] = await Promise.all([
       configDelClub(clubId),

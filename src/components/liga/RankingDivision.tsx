@@ -166,7 +166,7 @@ export function RankingDivision({ divisionId, nombreDivision }: { divisionId: st
       }
     } catch (err) {
       console.error('Error cargando ranking:', err)
-      setError('No se pudo cargar el ranking. Intentá de nuevo.')
+      setError('No se pudo cargar el ranking. Intenta de nuevo.')
     } finally {
       setLoading(false)
     }

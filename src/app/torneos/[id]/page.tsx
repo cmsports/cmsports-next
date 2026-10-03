@@ -135,6 +135,16 @@ export default function TorneoDetallePage() {
   const [accionGrupoManual, setAccionGrupoManual] = useState<{ grupoId: string; tipo: 'finalizar' | 'cancelar' } | null>(null)
   const [informeOpen, setInformeOpen] = useState(false)
   const [gastosGestion, setGastosGestion] = useState<{ tipo: string; monto: string }[]>([{ tipo: '', monto: '' }])
+  // Los gastos de gestión que ya están en Finanzas. El informe los muestra y
+  // solo manda los nuevos: antes el formulario nunca se vaciaba y cada
+  // "Descargar PDF" —y además "Guardar premios"— volvía a insertar los mismos
+  // gastos, porque el RPC agrega y no reemplaza (auditoría 2026-09-24).
+  const [gastosRegistrados, setGastosRegistrados] = useState<{ tipo: string; monto: number }[]>([])
+  // Una clave por tanda de gastos: un doble clic o un reintento tras un error
+  // de red reusa la misma y el RPC devuelve la operación ya hecha.
+  const claveGastosRef = useRef<string | null>(null)
+  const clavePremiosRef = useRef<string | null>(null)
+  const descargandoInformeRef = useRef(false)
   // En celu NO montamos el cuadro SVG (divs absolutos + SVG de conectores): con
   // display:none React lo reconcilía igual en cada re-render y reventaba la
   // pestaña por memoria al marcar. Con este flag el SVG ni entra al árbol.
@@ -218,6 +228,24 @@ export default function TorneoDetallePage() {
     } catch {
       // Sin mesas la línea de tandas simplemente no se muestra.
       setMesasDelClub(0)
+    }
+
+    // Mismo criterio que las mesas: dato accesorio, fuera del camino crítico.
+    // El profesor que gestiona torneos no lee `movimientos` y recibe la lista
+    // vacía, que está bien: tampoco puede registrar gastos (el RPC exige admin).
+    try {
+      const { data: movs } = await supabase.from('movimientos')
+        .select('descripcion,monto').eq('torneo_id', torneoId)
+        .eq('tipo', 'gasto').eq('categoria', 'otro_gasto').order('fecha')
+      const sufijo = t?.nombre ? ` — ${t.nombre}` : null
+      setGastosRegistrados((movs || []).map(m => ({
+        tipo: sufijo && String(m.descripcion ?? '').endsWith(sufijo)
+          ? String(m.descripcion).slice(0, -sufijo.length)
+          : String(m.descripcion ?? 'Gasto'),
+        monto: m.monto ?? 0,
+      })))
+    } catch {
+      setGastosRegistrados([])
     }
 
     const todos = [...(gj || [])].sort((a: any, b: any) =>
@@ -2375,11 +2403,16 @@ export default function TorneoDetallePage() {
                       </button>
                       <button
                         onClick={async () => {
+                          if (guardandoPremios) return
                           setGuardandoPremios(true)
-                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, consuelo: pC, metodo: premioMetodo, gastosGestion: gastosGestion.filter(g => g.tipo.trim() && g.monto).map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 })) })
+                          // Los gastos de gestión ya no viajan acá: se registran desde el
+                          // informe. Mandarlos en los dos lados los cargaba dos veces.
+                          clavePremiosRef.current ??= crypto.randomUUID()
+                          const res = await guardarPremios({ torneoId, torneoNombre: torneo?.nombre || '', primero: p1, segundo: p2, tercero: p3, consuelo: pC, metodo: premioMetodo, idempotencyKey: clavePremiosRef.current })
                           setGuardandoPremios(false)
                           setModalPremios(false)
                           if (res.error) { alert(res.error); return }
+                          clavePremiosRef.current = null
                           await cargarTorneo()
                         }}
                         disabled={guardandoPremios}
@@ -2508,7 +2541,20 @@ export default function TorneoDetallePage() {
             <div style={{ fontSize:16, fontWeight:700, color: text, marginBottom:4 }}>📄 Informe financiero</div>
             <div style={{ fontSize:12, color: muted, marginBottom:20 }}>Agrega gastos de gestión o gastos extra (opcional). Se incluirán en el PDF.</div>
 
-            <div style={{ fontSize:12, fontWeight:600, color: text, marginBottom:8 }}>Gastos de gestión</div>
+            {gastosRegistrados.length > 0 && (
+              <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:'10px 14px', marginBottom:16 }}>
+                <div style={{ fontSize:12, fontWeight:600, color:'#16a34a', marginBottom:6 }}>✓ Ya registrados en Finanzas</div>
+                {gastosRegistrados.map((g, i) => (
+                  <div key={i} style={{ display:'flex', justifyContent:'space-between', fontSize:12, color: text, padding:'2px 0' }}>
+                    <span>{g.tipo}</span>
+                    <span style={{ fontVariantNumeric:'tabular-nums' }}>{fmt(g.monto)}</span>
+                  </div>
+                ))}
+                <div style={{ fontSize:11, color: muted, marginTop:6 }}>Salen en el PDF. Abajo agrega solo los que falten: se registran al descargar.</div>
+              </div>
+            )}
+
+            <div style={{ fontSize:12, fontWeight:600, color: text, marginBottom:8 }}>{gastosRegistrados.length ? 'Gastos nuevos' : 'Gastos de gestión'}</div>
             {gastosGestion.map((g, i) => (
               <div key={i} style={{ display:'flex', gap:8, marginBottom:8, alignItems:'center' }}>
                 <input
@@ -2540,6 +2586,11 @@ export default function TorneoDetallePage() {
               <button onClick={() => setInformeOpen(false)} style={{ flex:1, padding:11, background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, color: muted, fontSize:13, cursor:'pointer' }}>Cancelar</button>
               <button
                 onClick={async () => {
+                  // El segundo clic llega antes de que React repinte: sin esta ref,
+                  // dos descargas seguidas registraban los gastos nuevos dos veces.
+                  if (descargandoInformeRef.current) return
+                  descargandoInformeRef.current = true
+                  try {
                   const pFinal = (partidosPorFase.get('final') || []).find(p => p.ganador)
                   const campeon1 = pFinal ? (pFinal as any).jg : podioGuardado.campeon
                   const subcampeon = pFinal ? (pFinal.ganador === pFinal.jugador_a ? (pFinal as any).jb : (pFinal as any).ja) : podioGuardado.subcampeon
@@ -2563,14 +2614,20 @@ export default function TorneoDetallePage() {
                     // Solo en eliminación + consolación; en el resto no existe la fila.
                     ...(campeonConsuelo ? [{ lugar: 'Campeón del consuelo', nombre: campeonConsuelo.nombre as string, monto: torneo?.premio_consuelo }] : []),
                   ]
-                  const premiosYaGuardados = torneo?.premio_primero != null || torneo?.premio_segundo != null || torneo?.premio_tercero != null || torneo?.premio_consuelo != null
-                  const gastos = gastosGestion
-                    .filter(g => g.tipo.trim() && g.monto)
+                  // Solo los gastos nuevos se mandan; los ya registrados vienen de
+                  // Finanzas. Descargar el PDF dos veces ya no vuelve a cargarlos.
+                  const nuevos = gastosGestion
+                    .filter(g => g.tipo.trim() && (parseInt(g.monto) || 0) > 0)
                     .map(g => ({ tipo: g.tipo.trim(), monto: parseInt(g.monto) || 0 }))
-                  if (gastos.length) {
-                    const res = await guardarGastosGestion({ torneoId, torneoNombre: torneo?.nombre || '', gastos })
+                  if (nuevos.length) {
+                    claveGastosRef.current ??= crypto.randomUUID()
+                    const res = await guardarGastosGestion({ torneoId, torneoNombre: torneo?.nombre || '', gastos: nuevos, idempotencyKey: claveGastosRef.current })
                     if (res.error) { alert('Error al guardar gastos: ' + res.error); return }
+                    claveGastosRef.current = null
+                    setGastosGestion([{ tipo: '', monto: '' }])
+                    setGastosRegistrados(prev => [...prev, ...nuevos])
                   }
+                  const gastos = [...gastosRegistrados, ...nuevos]
                   const [{ descargarInformeFinancieroPdf }, { marcaDesdeClub }] = await Promise.all([
                     import('@/lib/torneo-informe-pdf'), import('@/lib/pdf/marcaClub'),
                   ])
@@ -2580,9 +2637,14 @@ export default function TorneoDetallePage() {
                     fecha: torneo?.fecha_inicio ? new Date(torneo.fecha_inicio + 'T12:00:00').toLocaleDateString('es-CL') : null,
                     cuota, totalInscritos, pagados, recaudado,
                     recaudadoEfectivo, recaudadoTransferencia, recaudadoPendienteSubir: recaudadoPendiente,
-                    jugadores: listaJug, premios, gastos, gastosRegistradosEnFinanzas: premiosYaGuardados, metodoPremio: premioMetodo,
+                    // Llegar acá implica que todo gasto del PDF ya quedó en Finanzas:
+                    // los viejos venían de ahí y los nuevos se acaban de registrar.
+                    jugadores: listaJug, premios, gastos, gastosRegistradosEnFinanzas: true, metodoPremio: premioMetodo,
                   }, marca)
                   setInformeOpen(false)
+                  } finally {
+                    descargandoInformeRef.current = false
+                  }
                 }}
                 style={{ flex:1, padding:11, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border:'none', borderRadius:8, color:'white', fontSize:13, fontWeight:600, cursor:'pointer' }}>
                 Descargar PDF
@@ -2844,7 +2906,7 @@ export default function TorneoDetallePage() {
                 {porFechaLiguilla} partidos por fecha
                 {tandasLiguilla > 0
                   ? ` · ${tandasLiguilla} ${tandasLiguilla === 1 ? 'tanda' : 'tandas'} con ${mesasDelClub} ${mesasDelClub === 1 ? 'mesa' : 'mesas'}`
-                  : ' · cargá las mesas de la sede para saber cuántas tandas ocupa'}
+                  : ' · carga las mesas de la sede para saber cuántas tandas ocupa'}
                 {jugadoresInscritos.length % 2 === 1 && ' · descansa uno por fecha'}
               </div>
             )}

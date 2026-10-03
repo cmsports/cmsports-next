@@ -2,6 +2,7 @@
 // y tarjetas, cada uno en su propia hoja.
 
 import type { EquipoStats, GoleadorStats, TarjetasJugador } from '@/lib/domain/liga-futbol'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 interface NombresPorId {
   equipo: (id: string) => string
@@ -38,5 +39,5 @@ export async function exportarStatsLigaFutbolExcel(
   utils.book_append_sheet(wb, utils.json_to_sheet(hojaTarjetas), 'Tarjetas')
 
   const slug = ligaNombre.replace(/[^a-zA-Z0-9]+/g, '_')
-  writeFile(wb, `stats_${slug}_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  writeFile(wb, `stats_${slug}_${fechaChile()}.xlsx`)
 }

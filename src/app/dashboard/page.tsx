@@ -639,7 +639,7 @@ export default function DashboardPage() {
               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔑 Credenciales oficiales del club</span>
             </div>
             <p style={{ fontSize: 12, color: C.muted, margin: '0 0 10px' }}>
-              Nombre, usuario y clave de cada admin y jugador. Se actualiza sola cuando aceptás una solicitud o creás un jugador.
+              Nombre, usuario y clave de cada admin y jugador. Se actualiza sola cuando aceptas una solicitud o creas un jugador.
             </p>
             <span style={{ display: 'inline-block', background: C.skyL, color: C.skyD, borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600 }}>
               Ver reporte →

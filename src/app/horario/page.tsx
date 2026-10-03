@@ -422,7 +422,7 @@ export default function HorarioPage() {
           {franjas.length === 0 ? (
             <div style={{ ...card, padding: 40, textAlign: 'center', color: hint, fontSize: 13 }}>
               Sin bloques en {sedeLabel(sedeVista)}.
-              {esStaff && <> Usá <strong>Nuevo bloque</strong> para crear el primero.</>}
+              {esStaff && <> Usa <strong>Nuevo bloque</strong> para crear el primero.</>}
             </div>
           ) : (
             <div style={{ ...card, overflow: 'hidden' }}>
@@ -850,7 +850,7 @@ export default function HorarioPage() {
             })()}
 
             {/* Los días ya marcados. Si te equivocaste de fecha, acá lo ves y
-                lo devolvés; sin esto había que adivinar cuál marcaste. */}
+                lo devuelves; sin esto había que adivinar cuál marcaste. */}
             <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 18, paddingTop: 14 }}>
               <div style={{ fontSize: 11, color: muted, fontWeight: 600, marginBottom: 8 }}>
                 Días marcados sin clase

@@ -240,7 +240,7 @@ export default function PanelFeedback({ clubId, userId, puedeTodo }: {
   if (!elegido) {
     return (
       <div style={{ ...card, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>💬 Elegí un alumno</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: text, marginBottom: 4 }}>💬 Elige un alumno</div>
         <div style={{ fontSize: 12, color: hint, marginBottom: 12 }}>
           El número al lado del nombre es cuántos feedbacks tiene. Los que están en gris todavía no tienen ninguno.
         </div>

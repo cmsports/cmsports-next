@@ -170,7 +170,7 @@ export default function PanelPlanes({ clubId }: { clubId: string }) {
     if (cuantos > 0 && !confirm(
       `El plan "${plan.nombre}" pasa de ${pesos(plan.monto)} a ${pesos(monto)}.\n\n` +
       `Afecta a ${cuantos} ${cuantos === 1 ? 'jugador' : 'jugadores'} desde la PRÓXIMA emisión. ` +
-      `Las cuotas ya emitidas no cambian.\n\n¿Confirmás?`,
+      `Las cuotas ya emitidas no cambian.\n\n¿Confirmas?`,
     )) { await cargar(); return }
 
     setError('')
@@ -211,7 +211,7 @@ export default function PanelPlanes({ clubId }: { clubId: string }) {
           <p style={{ margin: 0, fontSize: 12.5, color: '#92400e', lineHeight: 1.55 }}>
             Estos planes están cargados pero <strong>no se están usando</strong>: el
             club todavía cobra con el monto escrito en cada ficha. Para que las
-            cuotas salgan de acá, cambiá <em>&ldquo;Cómo se determina la cuota&rdquo;</em> en
+            cuotas salgan de acá, cambia <em>&ldquo;Cómo se determina la cuota&rdquo;</em> en
             Configuración.
           </p>
         </div>
@@ -284,7 +284,7 @@ export default function PanelPlanes({ clubId }: { clubId: string }) {
             Todavía no hay planes cargados
           </p>
           <p style={{ margin: '6px auto 0', fontSize: 13, color: muted, maxWidth: 440, lineHeight: 1.55 }}>
-            Cargá uno por cada tarifa que cobra el club. Mientras no haya
+            Carga uno por cada tarifa que cobra el club. Mientras no haya
             ninguno, las cuotas salen del monto escrito en cada ficha, como
             hasta ahora.
           </p>

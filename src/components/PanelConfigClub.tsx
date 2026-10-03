@@ -47,6 +47,9 @@ const ETIQUETAS: Record<string, string> = {
   off:             'Solo el staff inscribe',
   pide_aprobacion: 'El alumno pide y el staff aprueba',
   directo:         'El alumno se inscribe solo',
+  auto:            'Como hasta ahora',
+  si:              'Sí',
+  no:              'No',
 }
 
 /**
@@ -62,6 +65,8 @@ const CONSECUENCIA: Partial<Record<ClaveConfig, string>> = {
     'Con un valor mayor que cero, las cuentas con esa deuda se bloquean solas y el alumno no puede entrar. Se puede desbloquear a mano, pero quien se entera primero es él.',
   'retencion.dias_inactivo':
     'Con un valor mayor que cero, los jugadores sin movimiento pasan a inactivos y dejan de contar en el padrón y en los indicadores.',
+  'mensualidad.emision_automatica':
+    'Cada noche se crea la cuota del mes de todo jugador activo que no la tenga, con el monto de su ficha o de su plan. Esa cuota queda como deuda pendiente: revisa los montos antes de encenderlo.',
 }
 
 type Fila = { clave: string; valor: unknown }
@@ -142,8 +147,10 @@ export default function PanelConfigClub({ clubId, rol }: { clubId: string; rol: 
     if (def.tipo === 'entero' && !Number.isInteger(valor)) return
 
     const aviso = CONSECUENCIA[clave]
-    if (aviso && def.tipo === 'entero' && (valor as number) > 0) {
-      if (!confirm(`${def.label}\n\n${aviso}\n\n¿Confirmás el valor ${valor}?`)) return
+    const actua = def.tipo === 'entero' ? (valor as number) > 0 : valor === 'si'
+    if (aviso && actua) {
+      const mostrado = def.tipo === 'entero' ? String(valor) : (ETIQUETAS[String(valor)] ?? String(valor))
+      if (!confirm(`${def.label}\n\n${aviso}\n\n¿Confirmas el valor "${mostrado}"?`)) return
     }
 
     await guardar(clave, valor)
@@ -187,7 +194,9 @@ export default function PanelConfigClub({ clubId, rol }: { clubId: string; rol: 
                 const puede  = puedeEditarClave(def.clave, rol)
                 const ocupado = guardando === def.clave
                 const aviso = CONSECUENCIA[def.clave]
-                const activo = def.tipo === 'entero' && (estado.valor as number) > 0
+                const activo = def.tipo === 'entero'
+                  ? (estado.valor as number) > 0
+                  : estado.valor === 'si'
 
                 return (
                   <div key={def.clave} style={{ padding: '12px 14px', background: puede ? '#f8fafc' : '#f1f5f9', borderRadius: 8, opacity: puede ? 1 : 0.75 }}>
@@ -254,7 +263,7 @@ export default function PanelConfigClub({ clubId, rol }: { clubId: string; rol: 
                     {!puede && (
                       <p style={{ margin: '8px 0 0', fontSize: 11.5, color: hint, lineHeight: 1.5 }}>
                         Este ajuste lo cambia el equipo de CMsports: encenderlo
-                        antes de tiempo deja el club sin poder operar. Pedilo y lo
+                        antes de tiempo deja el club sin poder operar. Pídelo y lo
                         activamos.
                       </p>
                     )}

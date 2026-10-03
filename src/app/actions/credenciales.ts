@@ -339,6 +339,6 @@ export async function credencialDelJugador(jugadorId: string): Promise<{ error?:
   // hay que resetear a propósito desde el informe de credenciales.
   const { login } = usuarioLoginDe({ email: jug?.email, telefono: jug?.telefono, rut: jug?.rut })
   return {
-    error: `No tenemos guardada la contraseña de ${perfil.nombre} (la cambió por su cuenta o es anterior al informe). Usá "Resetear" en Credenciales para generarle una nueva.${login ? ` Su usuario es ${login}.` : ''}`,
+    error: `No tenemos guardada la contraseña de ${perfil.nombre} (la cambió por su cuenta o es anterior al informe). Usa "Resetear" en Credenciales para generarle una nueva.${login ? ` Su usuario es ${login}.` : ''}`,
   }
 }

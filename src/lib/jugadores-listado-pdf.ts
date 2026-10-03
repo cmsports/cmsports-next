@@ -5,6 +5,7 @@
 
 import { camposDesdeIds, type ContextoExportJugadores } from '@/lib/domain/jugadorExport'
 import { TINTA, nuevoDocumento, pieDePagina, tabla, marcaDelClub, type Marca } from '@/lib/pdf/papel'
+import { fechaChile } from '@/lib/domain/fechaChile'
 
 type Meta = { clubNombre: string; marca?: Marca }
 
@@ -35,5 +36,5 @@ export async function exportarJugadoresPdf(jugadores: any[], camposIds: string[]
 
   doc.setTextColor(...TINTA)
   pieDePagina(doc, marca, 'Listado de jugadores')
-  doc.save(`jugadores_${new Date().toISOString().slice(0, 10)}.pdf`)
+  doc.save(`jugadores_${fechaChile()}.pdf`)
 }

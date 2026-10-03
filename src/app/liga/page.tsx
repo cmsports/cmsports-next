@@ -277,7 +277,7 @@ export default function LigaPage() {
           }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🏓</div>
             <div style={{ fontSize: 15, fontWeight: 700, color: muted, marginBottom: 6 }}>Sin ligas todavía</div>
-            <div style={{ fontSize: 13, color: hint }}>Creá la primera para empezar a armar divisiones y fixture</div>
+            <div style={{ fontSize: 13, color: hint }}>Crea la primera para empezar a armar divisiones y fixture</div>
           </div>
         )}
       </div>

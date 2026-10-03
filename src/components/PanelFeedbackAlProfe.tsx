@@ -82,8 +82,8 @@ export default function PanelFeedbackAlProfe({
 
   async function enviar() {
     const texto = comentario.trim()
-    if (!profesorId) { setError('Elegí a qué profesor le querés escribir'); return }
-    if (!texto) { setError('Escribí tu comentario'); return }
+    if (!profesorId) { setError('Elige a qué profesor le quieres escribir'); return }
+    if (!texto) { setError('Escribe tu comentario'); return }
 
     setGuardando(true); setError(''); setListo(false)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -96,7 +96,7 @@ export default function PanelFeedbackAlProfe({
     if (err) {
       // 23505 = ya le escribió hoy. El mensaje crudo no le dice nada a nadie.
       setError(err.code === '23505'
-        ? 'Ya le dejaste un comentario a ese profesor hoy. Si querés cambiarlo, borrá el anterior.'
+        ? 'Ya le dejaste un comentario a ese profesor hoy. Si quieres cambiarlo, borra el anterior.'
         : err.message)
       return
     }
@@ -123,7 +123,7 @@ export default function PanelFeedbackAlProfe({
       <div style={{ ...card, padding: 30, textAlign: 'center' }}>
         <div style={{ fontSize: 32, marginBottom: 10 }}>🗓️</div>
         <div style={{ fontSize: 14, fontWeight: 600, color: text, marginBottom: 4 }}>
-          Todavía no tenés profesor asignado
+          Todavía no tienes profesor asignado
         </div>
         <div style={{ fontSize: 12, color: muted }}>
           Cuando te agreguen a un grupo vas a poder dejarle tu comentario.
@@ -137,13 +137,13 @@ export default function PanelFeedbackAlProfe({
       <div style={{ ...card, padding: 18 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: text }}>Dejale tu comentario al profe</div>
         <p style={{ fontSize: 12, color: hint, margin: '4px 0 14px', lineHeight: 1.5 }}>
-          Cómo te sentís con las clases, qué te sirve, qué cambiarías. Lo lee el profesor.
+          Cómo te sientes con las clases, qué te sirve, qué cambiarías. Lo lee el profesor.
         </p>
 
         <label style={{ fontSize: 12, color: muted, display: 'block', marginBottom: 6 }}>Profesor</label>
         <select value={profesorId} onChange={e => { setProfesorId(e.target.value); setListo(false) }}
           style={{ width: '100%', boxSizing: 'border-box', background: '#f4f7fa', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', fontSize: 13, color: text, marginBottom: 12 }}>
-          <option value="">Elegí un profesor...</option>
+          <option value="">Elige un profesor...</option>
           {profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
 
@@ -162,7 +162,7 @@ export default function PanelFeedbackAlProfe({
           <span style={{ fontSize: 13, color: text }}>
             Enviarlo de forma anónima
             <span style={{ display: 'block', fontSize: 11, color: hint, marginTop: 2, lineHeight: 1.5 }}>
-              El profe va a leer tu comentario pero no va a saber que es tuyo. Vos lo seguís viendo acá abajo.
+              El profe va a leer tu comentario pero no va a saber que es tuyo. Tú lo sigues viendo acá abajo.
             </span>
           </span>
         </label>
@@ -213,7 +213,7 @@ export default function PanelFeedbackAlProfe({
       )}
 
       <p style={{ fontSize: 11, color: hint, textAlign: 'center', margin: 0 }}>
-        Hoy es {fechaChile()}. Podés dejarle un comentario por día a cada profesor.
+        Hoy es {fechaChile()}. Puedes dejarle un comentario por día a cada profesor.
       </p>
     </div>
   )

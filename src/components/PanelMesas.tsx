@@ -258,7 +258,7 @@ export default function PanelMesas({ clubId, sede }: { clubId: string; sede: str
             Todavía no está cargada la cantidad de mesas
           </p>
           <p style={{ margin: '6px auto 0', fontSize: 13, color: muted, maxWidth: 420, lineHeight: 1.55 }}>
-            Poné arriba cuántas mesas tiene la sede. Después, al decir cuántas usa
+            Pon arriba cuántas mesas tiene la sede. Después, al decir cuántas usa
             cada bloque, su cupo se calcula solo.
           </p>
         </div>

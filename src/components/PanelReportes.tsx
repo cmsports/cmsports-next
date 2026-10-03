@@ -368,7 +368,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
           <div style={comoSe}>
             Se recorre el mes día por día: cada clase que le tocó dictar suma su duración.
             No suman los días marcados sin clase, ni los grupos antes de que se los asignaran o después de que se los sacaran.
-            Tocá un profesor para ver de qué clases salió el número.
+            Toca un profesor para ver de qué clases salió el número.
           </div>
         </div>
 
@@ -440,7 +440,7 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
           <div style={tituloSec}>Grupos</div>
           <div style={comoSe}>
             Cuántas veces se dictó cada grupo este mes y cuánta gente tiene hoy.
-            Tocá uno para ver las fechas, lo que no se dictó y quiénes están inscritos.
+            Toca uno para ver las fechas, lo que no se dictó y quiénes están inscritos.
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             {sedesDelMes.map(v => {
