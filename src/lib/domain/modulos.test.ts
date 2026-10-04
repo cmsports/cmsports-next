@@ -1,9 +1,18 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { MODULOS, MODULOS_KEYS, conDependencias } from './modulos'
+import { MODULOS, MODULOS_KEYS, MODULOS_FALLBACK, MODULOS_HABILITACION_EXPLICITA, conDependencias } from './modulos'
 
 describe('conDependencias', () => {
+  it('un fallo de red conserva módulos antiguos sin habilitar funciones Spinhouse', () => {
+    for (const modulo of MODULOS_HABILITACION_EXPLICITA) {
+      expect(MODULOS_FALLBACK).not.toContain(modulo)
+    }
+    expect(MODULOS_FALLBACK).toContain('finanzas')
+    expect(MODULOS_FALLBACK).toContain('calendario')
+    expect(MODULOS_FALLBACK).toContain('tienda_buin')
+    expect(new Set([...MODULOS_FALLBACK, ...MODULOS_HABILITACION_EXPLICITA]).size).toBe(MODULOS_KEYS.length)
+  })
   it('descarta claves que no son módulos', () => {
     expect(conDependencias(['torneos', 'inventado', 'liga'])).toEqual(['torneos', 'liga'])
   })

@@ -807,6 +807,7 @@ export interface Database {
           sets_b: number | null
           puntos_a: number | null
           puntos_b: number | null
+          parciales: (readonly [number, number])[] | null
           slot_a_grupo_id: string | null
           slot_a_posicion: number | null
           slot_b_grupo_id: string | null
@@ -837,6 +838,7 @@ export interface Database {
           sets_b?: number | null
           puntos_a?: number | null
           puntos_b?: number | null
+          parciales?: (readonly [number, number])[] | null
           slot_a_grupo_id?: string | null
           slot_a_posicion?: number | null
           slot_b_grupo_id?: string | null
@@ -857,6 +859,7 @@ export interface Database {
           sets_b?: number | null
           puntos_a?: number | null
           puntos_b?: number | null
+          parciales?: (readonly [number, number])[] | null
           slot_a_grupo_id?: string | null
           slot_a_posicion?: number | null
           slot_b_grupo_id?: string | null

@@ -179,7 +179,7 @@ export default function PanelConfigClub({ clubId, rol }: { clubId: string; rol: 
 
       {grupos.map(grupo => {
         const meta = GRUPOS[grupo] ?? { titulo: grupo, ayuda: '' }
-        const claves = CONFIG_CLUB.filter(d => d.clave.startsWith(`${grupo}.`))
+        const claves = CONFIG_CLUB.filter(d => d.clave !== 'retencion.automatismo' && d.clave.startsWith(`${grupo}.`))
 
         return (
           <section key={grupo} style={{ marginBottom: 24 }}>

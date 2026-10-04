@@ -1,6 +1,7 @@
 'use server'
 
 import { requireAdminClub } from '@/lib/auth/require'
+import { moduloExportacionPartidos } from '@/lib/supabase/exportacionPartidosModulo'
 import { modalidadDe } from '@/lib/domain/modalidadTorneo'
 import { generarRoundRobin } from '@/lib/domain/torneos'
 import { parcialesDeWalkover, resumirPartido } from '@/lib/domain/marcador'
@@ -303,6 +304,7 @@ export async function marcarPartidoDeEncuentro(params: {
   const ganador = resumen.setsA > resumen.setsB ? partido.jugador_a : partido.jugador_b
   const { error } = await db.from('torneo_partidos').update({
     ganador, sets_a: resumen.setsA, sets_b: resumen.setsB, puntos_a: resumen.puntosA, puntos_b: resumen.puntosB, es_walkover: esWalkover,
+    ...((await moduloExportacionPartidos(supabase, clubId)).habilitado ? { parciales: pares } : {}),
   }).eq('id', partido.id)
   if (error) return { error: 'No se pudo guardar el resultado: ' + error.message }
 

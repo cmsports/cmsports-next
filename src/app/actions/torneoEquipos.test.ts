@@ -26,6 +26,21 @@ function montar(extra: Record<string, unknown> = {}) {
 describe('torneo por equipos', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('guarda el detalle del dobles solo para clubes con exportación habilitada', async () => {
+    for (const modulos of [[], ['exportacion_partidos']]) {
+      const fake = montar({
+        clubes: [{ id: 'club-1', modulos_habilitados: modulos }],
+        torneo_encuentros: [{ id: 'enc1', equipo_a_id: 'e1', equipo_b_id: 'e2' }],
+        torneo_partidos: [{ id: 'p3', encuentro_id: 'enc1', numero_en_encuentro: 3, jugador_a: 'a1', jugador_b: 'b1', ganador: null }],
+      })
+      const parciales: [number, number][] = [[11, 9], [11, 7], [11, 5]]
+      expect((await marcarPartidoDeEncuentro({ torneoId: 't1', partidoId: 'p3', parciales })).error).toBeUndefined()
+      const [escrito] = fake.escrituras('torneo_partidos')
+      if (modulos.includes('exportacion_partidos')) expect(escrito.parciales).toEqual(parciales)
+      else expect(escrito).not.toHaveProperty('parciales')
+    }
+  })
+
   it('corta sin autorización', async () => {
     mocks.requireAdminClub.mockResolvedValue({ error: 'Acceso denegado', supabase: null, clubId: null })
     await expect(guardarEquipo({ torneoId: 't1', nombre: 'A', jugadorIds: ['j1', 'j2'] })).resolves.toEqual({ error: 'Acceso denegado' })

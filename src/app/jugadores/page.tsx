@@ -23,6 +23,7 @@ import { calcularEdad } from '@/lib/domain/jugadorExport'
 import ModalExportarJugadores from '@/components/ModalExportarJugadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import { idsInactivos } from '@/lib/supabase/inactivos'
+import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
 
@@ -157,6 +158,7 @@ export default function JugadoresPage() {
   const clubId = perfil?.club_id ?? null
   const { tiene } = useModulos()
   const conRetencion = tiene('retencion')
+  const conRetencionAutomatica = tiene('retencion_automatica')
 
   useEffect(() => {
     if (authLoading) return
@@ -266,6 +268,9 @@ export default function JugadoresPage() {
     // `conRetencion` y no `tiene`: la función se recrea en cada render del
     // proveedor de módulos y el efecto volvería a consultar la base por nada.
   }, [clubId, conRetencion])
+  useEnVivo(conRetencionAutomatica ? ['retencion_estado'] : [], clubId, () => {
+    if (clubId) void idsInactivos(clubId).then(setInactivos)
+  }, { conClub: ['retencion_estado'] })
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -461,7 +466,7 @@ export default function JugadoresPage() {
         && (cats.length === 0 || cats.some(c => (j.categorias?.length ? j.categorias.includes(c) : j.categoria === c)))
         && (sedes.length === 0 || sedes.some(s => entrenaEnSede(j.sede, s)))
         && (filtroGrupo.size === 0 || filtroGrupo.has(j.grupo))
-        && (filtroEstado.size === 0 || filtroEstado.has(j.estado))
+        && (filtroEstado.size === 0 || filtroEstado.has(conRetencionAutomatica && inactivos.has(j.id) ? 'inactivo' : j.estado))
         && (!filtroSinHorario || sinHorario(j))
         && (dias.length === 0 || dias.some(d => j[`entrena_${d}`] === true))
         && (filtroFederado.size === 0 || (filtroFederado.has('si') && j.federado === true) || (filtroFederado.has('no') && !j.federado))
@@ -477,7 +482,7 @@ export default function JugadoresPage() {
   }, [
     jugadores, busquedaDiferida, filtroCat, filtroSede, filtroGrupo, filtroEstado,
     filtroSinHorario, filtroDia, filtroFederado, filtroDoc, filtroPago, filtroHorario,
-    filtroPresente, conDocumento, estadoPago, asistenciaHoy, edadMin, edadMax, orden, colador,
+    filtroPresente, conDocumento, estadoPago, asistenciaHoy, edadMin, edadMax, orden, colador, conRetencionAutomatica, inactivos,
   ])
 
   // Las dos salen de `jugadores` y de nada más: no tenían por qué recalcularse
@@ -494,7 +499,7 @@ export default function JugadoresPage() {
   const chipsActivos: { key: string; label: string; onRemove: () => void }[] = [
     ...(busqueda ? [{ key:'q', label:`"${busqueda}"`, onRemove: () => setBusqueda('') }] : []),
     ...[...filtroCat].map(c => ({ key:`cat-${c}`, label:c, onRemove: () => setFiltroCat(prev => setToggle(prev, c)) })),
-    ...[...filtroEstado].map(v => ({ key:`estado-${v}`, label: v === 'activo' ? 'Activo' : 'Bloqueado', onRemove: () => setFiltroEstado(prev => setToggle(prev, v)) })),
+    ...[...filtroEstado].map(v => ({ key:`estado-${v}`, label: v === 'activo' ? 'Activo' : v === 'inactivo' ? 'Inactivo / retirado' : 'Bloqueado', onRemove: () => setFiltroEstado(prev => setToggle(prev, v)) })),
     ...(filtroSinHorario ? [{ key:'sinhorario', label:'Sin horario', onRemove: () => setFiltroSinHorario(false) }] : []),
     ...[...filtroDia].map(d => ({ key:`dia-${d}`, label: diaLabel(d), onRemove: () => setFiltroDia(prev => setToggle(prev, d)) })),
     ...[...filtroFederado].map(v => ({ key:`fed-${v}`, label: v === 'si' ? 'Federado' : 'No federado', onRemove: () => setFiltroFederado(prev => setToggle(prev, v)) })),
@@ -552,7 +557,7 @@ export default function JugadoresPage() {
 
           <FiltroMultiSelect
             label="Todos los estados"
-            options={[{ value:'activo', label:'Activo' }, { value:'bloqueado', label:'Bloqueado' }]}
+            options={[{ value:'activo', label:'Activo' }, { value:'bloqueado', label:'Bloqueado' }, ...(conRetencionAutomatica ? [{ value:'inactivo', label:'Inactivo / retirado' }] : [])]}
             selected={filtroEstado}
             onChange={setFiltroEstado}
           />

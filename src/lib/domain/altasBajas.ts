@@ -57,6 +57,34 @@ export type AltasBajas = {
   neto: number
 }
 
+/** Movimiento real del padrón. Un cambio de bloque no genera uno. */
+export type EventoPermanencia = {
+  jugadorId: string | null
+  tipo: 'alta' | 'inactivo' | 'retiro' | 'reingreso' | 'bloqueo_mora' | 'desbloqueo_mora'
+  /** Día del hecho en Chile; para retiros declarados puede ser anterior a la carga. */
+  fecha: string
+}
+
+/**
+ * El historial se empieza a registrar al habilitar el módulo. No deriva bajas
+ * de inscripciones ni convierte los alumnos existentes en altas históricas.
+ * Cada transición cuenta, incluso si alguien se retira y vuelve en el mes.
+ * Bloquear una cuenta por deuda no es retirar al alumno del club.
+ */
+export function movimientosDelPadronDelMes(
+  eventos: readonly EventoPermanencia[],
+  mes: Mes,
+): AltasBajas {
+  let altas = 0, bajas = 0, reingresos = 0
+  for (const evento of eventos) {
+    if (evento.fecha < mes.desde || evento.fecha > mes.hasta) continue
+    if (evento.tipo === 'alta') altas++
+    if (evento.tipo === 'retiro' || evento.tipo === 'inactivo') bajas++
+    if (evento.tipo === 'reingreso') reingresos++
+  }
+  return { altas, bajas, reingresos, neto: altas + reingresos - bajas }
+}
+
 /** ¿Estaba vigente esa inscripción ese día? Ambos extremos cuentan. */
 function vigenteEl(i: Inscripcion, fecha: string): boolean {
   return i.desde <= fecha && (i.hasta === null || i.hasta >= fecha)

@@ -49,6 +49,7 @@ const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => ({ default: m.Q
 import CabezasSerieEditor, { type CabezaSerieJugador } from '@/components/torneos/CabezasSerieEditor'
 import ManualTorneos from '@/components/torneos/ManualTorneos'
 import MarcadorSets from '@/components/torneos/MarcadorSets'
+import ExportarPartidos from '@/components/ExportarPartidos'
 import { formatoDe, FORMATO_LABEL, FORMATO_EXPLICACION, parcialesDeWalkover } from '@/lib/domain/marcador'
 
 const supabase = createClient()
@@ -1125,6 +1126,7 @@ export default function TorneoDetallePage() {
         {puedeGestionar && torneo?.inscripcion_abierta && !hayBracketJugado && (
           <button onClick={() => setMesaOpen(true)} style={{ background:'#f43f5e', color:'white', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>🪑 Mesa inscripción</button>
         )}
+        <ExportarPartidos tipo="torneo" competenciaId={torneoId} />
         {puedeGestionar && faseActual !== 'inscripcion' && (
           <button
             onClick={async () => {

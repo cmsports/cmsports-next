@@ -166,6 +166,14 @@ export const CONFIG_CLUB = [
 
   // ── Retención ──────────────────────────────────────────────────────────
   {
+    clave: 'retencion.automatismo',
+    tipo: 'opcion',
+    opciones: ['no', 'si'],
+    defecto: 'no',
+    editablePor: 'admin',
+    label: 'Automatización de retención (activar desde la revisión de retención)',
+  },
+  {
     clave: 'retencion.faltas_alerta',
     tipo: 'entero',
     min: 0,

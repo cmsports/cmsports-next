@@ -1,7 +1,9 @@
 'use client'
 
 /**
- * Quiénes están inactivos hoy — calculado, no guardado.
+ * Quiénes están inactivos hoy. Con retencion_automatica se lee el estado
+ * persistido, incluyendo retiros declarados; sin él se conserva el cálculo
+ * previo. Ninguno añade valores a jugadores.estado ni afecta otros clubes.
  *
  * El club pidió marcar "inactivo" al alumno que lleva 60 días sin asistir ni
  * pagar. Se **calcula** en vez de escribirse como un tercer valor de
@@ -21,8 +23,21 @@ import { createClient } from '@/lib/supabase/client'
 import { configDelClub } from '@/lib/supabase/clubConfig'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { debeMarcarseInactivo, diasSinMovimiento } from '@/lib/domain/retencion'
+import { cachedFetch } from '@/lib/query-cache'
 
 const supabase = createClient()
+
+/** Persistidos: incluye retiros declarados y no inventa estados ante fallas. */
+export async function idsInactivosRetencion(clubId: string): Promise<Set<string>> {
+  const ids = await cachedFetch<string[]>(`retencion-inactivos:${clubId}`, async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any).from('retencion_estado')
+      .select('jugador_id').eq('club_id', clubId).eq('inactivo', true)
+    if (error) throw new Error(error.message)
+    return (data ?? []).map((r: { jugador_id: string }) => r.jugador_id)
+  }, 60_000, ['retencion_estado'])
+  return new Set(ids)
+}
 
 /**
  * Cuánta asistencia se mira hacia atrás.
@@ -48,6 +63,14 @@ function restarDias(iso: string, dias: number): string {
 export async function idsInactivos(clubId: string): Promise<Set<string>> {
   const vacio = new Set<string>()
   if (!clubId) return vacio
+
+  const { data: club, error: clubError } = await supabase.from('clubes')
+    .select('modulos_habilitados').eq('id', clubId).single()
+  if (clubError) { console.error('[inactivos] club no disponible', clubError); return vacio }
+  if (club?.modulos_habilitados?.includes('retencion_automatica')) {
+    try { return await idsInactivosRetencion(clubId) }
+    catch (error) { console.error('[inactivos] estado no disponible', error); return vacio }
+  }
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const db = supabase as any

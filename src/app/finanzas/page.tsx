@@ -12,6 +12,7 @@ import { registrarMovimiento, editarMovimiento, eliminarMovimiento } from '@/app
 import { MensualidadesPanel } from '@/components/MensualidadesPanel'
 import PanelPlanes from '@/components/PanelPlanes'
 import PanelRetencion from '@/components/PanelRetencion'
+import PanelFinanzasSpinhouse from '@/components/spinhouse/PanelFinanzasSpinhouse'
 import LigaFutbolFinanzasTab from '@/components/liga-futbol/FinanzasTab'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
@@ -73,10 +74,10 @@ function FinanzasContent() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const searchParams = useSearchParams()
-  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'planes'|'retencion'|'historicas'|'reportes'|'liga'>(
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'planes'|'retencion'|'historicas'|'reportes'|'liga'|'margenes'>(
     // Se aceptan todas las pestañas, no solo mensualidades: `/reportes` redirige
     // acá con ?tab=reportes y antes caía en Movimientos sin decir nada.
-    (['movimientos', 'mensualidades', 'planes', 'retencion', 'historicas', 'reportes', 'liga'] as const)
+    (['movimientos', 'mensualidades', 'planes', 'retencion', 'historicas', 'reportes', 'liga', 'margenes'] as const)
       .find(t => t === searchParams.get('tab')) ?? 'movimientos',
   )
   // Monta Mensualidades solo cuando se abre por primera vez (evita sus consultas al entrar en "Movimientos"); una vez montado queda vivo
@@ -415,6 +416,7 @@ function FinanzasContent() {
           // La marcha en seco: a quién le tocaría un aviso o un bloqueo. No
           // toca a nadie; el plan exige revisarla un mes antes de encender.
           ...(tiene('retencion') ? [{ key:'retencion', label:'👁️ Retención' }] : []),
+          ...(tiene('finanzas_spinhouse') ? [{ key:'margenes', label:'💰 Márgenes y liquidaciones' }] : []),
           { key:'historicas', label:'🗓️ Históricas' },
           { key:'reportes', label:'📈 Reportes' },
         ].map(t => (
@@ -643,6 +645,10 @@ function FinanzasContent() {
 
       {tabActivo === 'planes' && clubId && tiene('planes') && (
         <PanelPlanes clubId={clubId} />
+      )}
+
+      {tabActivo === 'margenes' && clubId && tiene('finanzas_spinhouse') && (
+        <PanelFinanzasSpinhouse clubId={clubId} mes={mes} anio={anio} />
       )}
 
       {tabActivo === 'historicas' && clubId && (

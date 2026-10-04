@@ -27,6 +27,7 @@ import type { DiffDivision, PartidoFinalizado, FilaRanking } from '@/lib/domain/
 import ModalRestricciones from '@/components/liga/ModalRestricciones'
 import type { RestriccionEditable } from '@/components/liga/ModalRestricciones'
 import ModalRetiro from '@/components/liga/ModalRetiro'
+import ExportarPartidos from '@/components/ExportarPartidos'
 
 const supabase = createClient()
 
@@ -915,6 +916,7 @@ export default function LigaDetallePage() {
                 📅 Fechas y PDF
               </a>
             )}
+            <ExportarPartidos tipo="liga" competenciaId={ligaId} />
             {/* Reporte de pagos — siempre disponible, sin importar la división/fecha activa */}
             <button
               onClick={() => setPagosReporteAbierto(true)}

@@ -35,7 +35,9 @@ import { TALLAS_UNIFORME } from '@/lib/domain/tallas'
 import { CATEGORIAS_EDAD, MANOS, NIVELES, categoriaPorEdad, manoLabel, nivelLabel } from '@/lib/domain/perfilDeportivo'
 import PanelPerfilTecnico from '@/components/PanelPerfilTecnico'
 import PanelConsentimientos from '@/components/PanelConsentimientos'
+import PanelFichaParalimpica from '@/components/PanelFichaParalimpica'
 import { idsInactivos } from '@/lib/supabase/inactivos'
+import { useEnVivo } from '@/lib/useEnVivo'
 import { cuentaDelJugador, type ClaseExtraJugador } from '@/lib/domain/estadoCuenta'
 
 const supabase = createClient()
@@ -169,6 +171,22 @@ export default function JugadorDetallePage() {
   const router = useRouter()
   const params = useParams()
   const jugadorId = params.id as string
+  const retencionPersistida = tiene('retencion_automatica')
+
+  const cargarRetencion = useCallback(async () => {
+    if (!retencionPersistida || !perfil?.club_id) return
+    const ids = await idsInactivos(perfil.club_id)
+    setInactivo(ids.has(jugadorId))
+  }, [retencionPersistida, perfil?.club_id, jugadorId])
+  useEffect(() => {
+    if (!retencionPersistida) return
+    let vigente = true
+    void idsInactivos(perfil?.club_id ?? '').then(ids => {
+      if (vigente) setInactivo(ids.has(jugadorId))
+    })
+    return () => { vigente = false }
+  }, [retencionPersistida, perfil?.club_id, jugadorId])
+  useEnVivo(retencionPersistida ? ['retencion_estado'] : [], perfil?.club_id ?? null, () => { void cargarRetencion() }, { conClub: ['retencion_estado'] })
 
 
   // Qué alcanza a ver el profesor en este club. Se pide antes que la ficha
@@ -875,7 +893,7 @@ export default function JugadorDetallePage() {
               <span style={{ background:'rgba(255,255,255,0.2)', color:'#fff', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>{jugador.categoria || '—'}</span>
               {jugador.es_externo && <span style={{ background:'rgba(251,191,36,0.3)', color:'#fde68a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>Externo</span>}
               <span style={{ background: jugador.estado === 'activo' ? 'rgba(34,197,94,0.25)' : 'rgba(239,68,68,0.25)', color: jugador.estado === 'activo' ? '#86efac' : '#fca5a5', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                {jugador.estado === 'activo' ? 'Activo' : 'Bloqueado'}
+                {jugador.estado === 'activo' ? (retencionPersistida && inactivo ? 'Cuenta habilitada' : 'Activo') : 'Bloqueado'}
               </span>
               {/* Va JUNTO a "Activo", no en su lugar: son dos cosas distintas y
                   el club necesita ver las dos. "Activo" es que su cuenta está
@@ -883,8 +901,8 @@ export default function JugadorDetallePage() {
                   vida. Un alumno puede estar en las dos a la vez, y ese es
                   justamente el que hay que llamar. */}
               {inactivo && (
-                <span title="60 días o más sin asistir ni pagar" style={{ background:'rgba(245,158,11,0.3)', color:'#fde68a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>
-                  Inactivo
+                <span title={retencionPersistida ? 'Fuera del padrón vigente por retiro declarado o inactividad registrada' : '60 días o más sin asistir ni pagar'} style={{ background:'rgba(245,158,11,0.3)', color:'#fde68a', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600 }}>
+                  {retencionPersistida ? 'Inactivo / retirado' : 'Inactivo'}
                 </span>
               )}
             </div>
@@ -1151,6 +1169,15 @@ export default function JugadorDetallePage() {
             jugadorId={jugador.id}
             clubId={jugador.club_id}
             puedeEditar={puedeEditar}
+          />
+        )}
+
+        {tiene('ficha_paralimpica') && jugador.club_id && (esAdmin || esProfesor || perfil?.rol === 'superadmin' || perfil?.jugador_id === jugador.id) && (
+          <PanelFichaParalimpica
+            jugadorId={jugador.id}
+            clubId={jugador.club_id}
+            fechaNacimiento={jugador.fecha_nacimiento ?? null}
+            puedeEditar={esAdmin || esProfesor || perfil?.rol === 'superadmin'}
           />
         )}
 

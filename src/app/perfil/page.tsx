@@ -16,6 +16,7 @@ import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from 
 import { SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useEnVivo } from '@/lib/useEnVivo'
 import RankingJugador from '@/components/RankingJugador'
+import PanelFichaParalimpica from '@/components/PanelFichaParalimpica'
 
 const CAMPOS_FICHA = 'id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite,foto_path,rut,email,telefono,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,talla_polera,talla_short'
 
@@ -251,6 +252,15 @@ export default function PerfilPage() {
           {indicaciones && <Dato label="Indicaciones médicas" value={indicaciones} />}
         </div>
       </div>
+
+      {tiene('ficha_paralimpica') && perfil?.club_id && (
+        <PanelFichaParalimpica
+          jugadorId={jugador.id}
+          clubId={perfil.club_id}
+          fechaNacimiento={jugador.fecha_nacimiento ?? null}
+          puedeEditar={false}
+        />
+      )}
 
       {/* Auspiciadores — los mismos tres logos que ve el admin en su dashboard.
           Los descuentos son de los jugadores: son ellos los que los usan, así
