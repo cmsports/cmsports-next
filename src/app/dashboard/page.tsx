@@ -25,6 +25,7 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { MessageSquare } from 'lucide-react'
 import { useTextoMonto } from '@/components/Monto'
+import compactStyles from './DashboardCompacto.module.css'
 
 const supabase = createClient()
 
@@ -508,7 +509,7 @@ export default function DashboardPage() {
         )}
 
         {/* Altas y bajas del mes — la señal temprana de deserción. */}
-        {tiene('retencion') && <TarjetaAltasBajas clubId={perfil?.club_id} />}
+        {tiene('retencion') && <TarjetaAltasBajas clubId={perfil?.club_id} compacto={tieneOcupacion} />}
 
         {/* Ingresos por línea de negocio.
             Cuelga de 'finanzas_categorias' —el módulo de las categorías propias
@@ -518,7 +519,7 @@ export default function DashboardPage() {
             pidiera. El plan §7.2: las tarjetas nuevas van abajo y el dashboard
             de Buin no se reordena. */}
         {tiene('finanzas') && tiene('finanzas_categorias') && (
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: tieneOcupacion ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: C.greenL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
               <DollarSign size={16} color={C.green} />
             </div>
@@ -526,7 +527,7 @@ export default function DashboardPage() {
             <div style={{ fontSize: 24, fontWeight: 700, color: C.green, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
               {errorDatos ? '—' : fmt(kpis.ingresos || 0)}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+            <div className={tieneOcupacion ? compactStyles.financeDetails : undefined} tabIndex={tieneOcupacion ? 0 : undefined} aria-label={tieneOcupacion ? 'Desglose de ingresos por línea' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
               {desgloseIngresos.length === 0 ? (
                 <div style={{ fontSize: 11, color: C.hint }}>Sin ingresos registrados este mes</div>
               ) : desgloseIngresos.slice(0, 5).map(d => {
@@ -549,7 +550,7 @@ export default function DashboardPage() {
 
         {/* Gastos este mes */}
         {tiene('finanzas') && (
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: tieneOcupacion ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
               <DollarSign size={16} color={C.red} />
             </div>
@@ -557,7 +558,7 @@ export default function DashboardPage() {
             <div style={{ fontSize: 24, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
               {errorDatos ? '—' : fmt(kpis.gastos || 0)}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+            <div className={tieneOcupacion ? compactStyles.financeDetails : undefined} tabIndex={tieneOcupacion ? 0 : undefined} aria-label={tieneOcupacion ? 'Desglose de gastos' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
               {desgloseGastos.length === 0 ? (
                 <div style={{ fontSize: 11, color: C.hint }}>Sin gastos registrados este mes</div>
               ) : desgloseGastos.slice(0, 4).map(d => {
@@ -580,15 +581,15 @@ export default function DashboardPage() {
 
         {/* Link de inscripción — flujo de solicitud individual, no aplica a fútbol (los equipos se inscriben desde el módulo de liga) */}
         {!esFutbol && (
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: tieneOcupacion ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Link2 size={15} color={C.sky} />
               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔗 Link de inscripción</span>
             </div>
-            <p style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
-              Comparte este link para que los jugadores soliciten unirse al club
+            <p style={{ fontSize: 12, color: C.muted, marginBottom: tieneOcupacion ? 8 : 14 }}>
+              {tieneOcupacion ? 'Comparte el acceso al club.' : 'Comparte este link para que los jugadores soliciten unirse al club'}
             </p>
-            <LinkInvitacion clubId={perfil?.club_id || ''} />
+            <LinkInvitacion clubId={perfil?.club_id || ''} compacto={tieneOcupacion} />
           </div>
         )}
 
@@ -942,7 +943,7 @@ function AsistenciaHoyCard({ data, totalActivos }: { data: { total: number; nomb
 }
 
 /* ── LinkInvitacion ── */
-function LinkInvitacion({ clubId }: { clubId: string }) {
+function LinkInvitacion({ clubId, compacto = false }: { clubId: string; compacto?: boolean }) {
   const [linkCargado, setLinkCargado] = useState<{ clubId: string; valor: string } | null>(null)
   const [copiado, setCopiado] = useState(false)
   const [generandoQr, setGenerandoQr] = useState(false)
@@ -984,9 +985,10 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
 
   return (
     <div>
-      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px', fontSize: 11, color: '#3730a3', wordBreak: 'break-all', marginBottom: 10 }}>
+      <div title={compacto ? link : undefined} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: compacto ? '8px' : '10px 14px', fontSize: 11, color: '#3730a3', wordBreak: compacto ? undefined : 'break-all', whiteSpace: compacto ? 'nowrap' : undefined, overflow: compacto ? 'hidden' : undefined, textOverflow: compacto ? 'ellipsis' : undefined, marginBottom: 10 }}>
         {link || 'Generando enlace...'}
       </div>
+      <div className={compacto ? compactStyles.inviteActions : undefined}>
       <button onClick={copiar} style={{
         width: '100%',
         background: copiado ? '#f0fdf4' : '#ede9fe',
@@ -996,11 +998,11 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
         fontSize: 12, cursor: 'pointer', fontWeight: 500,
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         transition: 'all 0.2s',
-        marginBottom: 8,
+        marginBottom: compacto ? 0 : 8,
       }}>
         {copiado ? <><Check size={14} /> Copiado!</> : <><Copy size={14} /> Copiar link</>}
       </button>
-      <button onClick={generarQr} disabled={!link || generandoQr} style={{
+      <button onClick={generarQr} aria-label="Generar QR para imprimir" disabled={!link || generandoQr} style={{
         width: '100%',
         background: '#fff',
         color: '#3730a3',
@@ -1010,8 +1012,9 @@ function LinkInvitacion({ clubId }: { clubId: string }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         opacity: (!link || generandoQr) ? 0.6 : 1,
       }}>
-        <QrCode size={14} /> {generandoQr ? 'Generando...' : 'Generar QR para imprimir'}
+        <QrCode size={14} /> {generandoQr ? 'Generando...' : compacto ? 'Generar QR' : 'Generar QR para imprimir'}
       </button>
+      </div>
     </div>
   )
 }

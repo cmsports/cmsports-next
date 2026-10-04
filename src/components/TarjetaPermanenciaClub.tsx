@@ -21,7 +21,7 @@ const etiquetas: Record<EventoPermanencia['tipo'], string> = {
   reingreso: 'Reingreso', bloqueo_mora: 'Bloqueo por deuda', desbloqueo_mora: 'Desbloqueo',
 }
 
-export default function TarjetaPermanenciaClub({ clubId }: { clubId: string | null | undefined }) {
+export default function TarjetaPermanenciaClub({ clubId, compacto = false }: { clubId: string | null | undefined; compacto?: boolean }) {
   const { perfil } = usePerfil()
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
@@ -96,10 +96,17 @@ export default function TarjetaPermanenciaClub({ clubId }: { clubId: string | nu
   }
   if (!datos && !error) return null
   const input = { border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', width: '100%', background: '#f8fafc', color: '#0f172a', fontSize: 13, fontFamily: 'inherit' } as const
-  return <div className={styles.permanencia}>
-    <div className={styles.summaryIcon}><UserPlus size={16} /></div>
-    <div style={{ fontSize: 12, color: '#64748b' }}>Altas y bajas del club · {hoy.slice(0, 7)}</div>
-    <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '6px 0 12px', color: resumen.neto < 0 ? '#dc2626' : resumen.neto > 0 ? '#16a34a' : '#64748b' }}>
+  const explicacion = <p style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6, margin: '12px 0' }}>
+    Alta: nuevo jugador del club. Baja: retiro declarado{datos && datos.diasInactivo > 0 ? ` o ${datos.diasInactivo} días sin asistencia presente ni pago, con automatización activada` : ' o inactividad registrada por retención'}.
+    Reingreso: vuelta después de una baja. Cambiar de bloque o bloquear por deuda no cuenta como baja.
+    Cada transición cuenta; el historial comienza al activar el indicador y no reconstruye bajas anteriores.
+  </p>
+  return <div className={`${styles.permanencia}${compacto ? ` ${styles.compactSummary}` : ''}`}>
+    <div className={compacto ? styles.compactHeader : undefined}>
+      <div className={styles.summaryIcon}><UserPlus size={16} /></div>
+      <div style={{ fontSize: 12, color: '#64748b' }}>Altas y bajas del club · {hoy.slice(0, 7)}</div>
+    </div>
+    <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: compacto ? '6px 0 8px' : '6px 0 12px', color: resumen.neto < 0 ? '#dc2626' : resumen.neto > 0 ? '#16a34a' : '#64748b' }}>
       {error ? '—' : `${resumen.neto > 0 ? '+' : ''}${resumen.neto}`} <span style={{ fontSize: 12, color: '#64748b' }}>neto</span>
     </div>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
@@ -107,15 +114,11 @@ export default function TarjetaPermanenciaClub({ clubId }: { clubId: string | nu
         <strong style={{ fontSize: 17 }}>{error ? '—' : c.n}</strong><div style={{ fontSize: 11, color: '#64748b' }}>{c.label}</div>
       </div>)}
     </div>
-    <p style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6, margin: '12px 0' }}>
-      Alta: nuevo jugador del club. Baja: retiro declarado{datos && datos.diasInactivo > 0 ? ` o ${datos.diasInactivo} días sin asistencia presente ni pago, con automatización activada` : ' o inactividad registrada por retención'}.
-      Reingreso: vuelta después de una baja. Cambiar de bloque o bloquear por deuda no cuenta como baja.
-      Cada transición cuenta; el historial comienza al activar el indicador y no reconstruye bajas anteriores.
-    </p>
+    {compacto ? <details className={styles.summaryDefinition}><summary>Cómo se calcula</summary>{explicacion}</details> : explicacion}
     {error && <p role="alert" style={{ color: '#dc2626', fontSize: 12 }}>No se pudo cargar: {error} <button className={styles.secondaryButton} onClick={() => { void cargar() }}>Reintentar</button></p>}
     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
-      <button type="button" onClick={() => setDetalle(!detalle)} aria-expanded={detalle} style={{ color: '#4f46e5', background: 'none', border: 0, padding: 0, fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}>
-        {detalle ? 'Cerrar historial' : 'Historial y retiro/reingreso'}
+      <button type="button" onClick={() => setDetalle(!detalle)} aria-expanded={detalle} aria-label={detalle ? 'Cerrar historial' : 'Historial y retiro/reingreso'} style={{ color: '#4f46e5', background: 'none', border: 0, padding: 0, fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}>
+        {detalle ? 'Cerrar historial' : compacto ? 'Historial' : 'Historial y retiro/reingreso'}
       </button>
       <Link href="/finanzas?tab=retencion" style={{ color: '#4f46e5', textDecoration: 'none' }}>Ver retención →</Link>
     </div>
