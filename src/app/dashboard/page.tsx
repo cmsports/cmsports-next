@@ -84,6 +84,7 @@ export default function DashboardPage() {
   const { tiene } = useModulos()
   const esFutbol = tiene('liga_futbol')
   const tieneOcupacion = tiene('mesas')
+  const dashboardSpinhouse = tiene('finanzas_spinhouse')
   const [kpis, setKpis]                           = useState<any>({})
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
@@ -491,6 +492,8 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {tieneOcupacion && !dashboardSpinhouse && <TarjetaOcupacion clubId={perfil?.club_id} />}
+
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
       <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 16 }}>
 
@@ -509,7 +512,7 @@ export default function DashboardPage() {
         )}
 
         {/* Altas y bajas del mes — la señal temprana de deserción. */}
-        {tiene('retencion') && <TarjetaAltasBajas clubId={perfil?.club_id} compacto={tieneOcupacion} />}
+        {tiene('retencion') && <TarjetaAltasBajas clubId={perfil?.club_id} compacto={dashboardSpinhouse} />}
 
         {/* Ingresos por línea de negocio.
             Cuelga de 'finanzas_categorias' —el módulo de las categorías propias
@@ -519,7 +522,7 @@ export default function DashboardPage() {
             pidiera. El plan §7.2: las tarjetas nuevas van abajo y el dashboard
             de Buin no se reordena. */}
         {tiene('finanzas') && tiene('finanzas_categorias') && (
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: tieneOcupacion ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: dashboardSpinhouse ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: C.greenL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
               <DollarSign size={16} color={C.green} />
             </div>
@@ -527,7 +530,7 @@ export default function DashboardPage() {
             <div style={{ fontSize: 24, fontWeight: 700, color: C.green, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
               {errorDatos ? '—' : fmt(kpis.ingresos || 0)}
             </div>
-            <div className={tieneOcupacion ? compactStyles.financeDetails : undefined} tabIndex={tieneOcupacion ? 0 : undefined} aria-label={tieneOcupacion ? 'Desglose de ingresos por línea' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+            <div className={dashboardSpinhouse ? compactStyles.financeDetails : undefined} tabIndex={dashboardSpinhouse ? 0 : undefined} aria-label={dashboardSpinhouse ? 'Desglose de ingresos por línea' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
               {desgloseIngresos.length === 0 ? (
                 <div style={{ fontSize: 11, color: C.hint }}>Sin ingresos registrados este mes</div>
               ) : desgloseIngresos.slice(0, 5).map(d => {
@@ -550,7 +553,7 @@ export default function DashboardPage() {
 
         {/* Gastos este mes */}
         {tiene('finanzas') && (
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: tieneOcupacion ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: dashboardSpinhouse ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', display: 'flex', flexDirection: 'column' }}>
             <div style={{ width: 32, height: 32, borderRadius: 8, background: C.redL, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
               <DollarSign size={16} color={C.red} />
             </div>
@@ -558,7 +561,7 @@ export default function DashboardPage() {
             <div style={{ fontSize: 24, fontWeight: 700, color: C.red, fontVariantNumeric: 'tabular-nums', marginBottom: 12 }}>
               {errorDatos ? '—' : fmt(kpis.gastos || 0)}
             </div>
-            <div className={tieneOcupacion ? compactStyles.financeDetails : undefined} tabIndex={tieneOcupacion ? 0 : undefined} aria-label={tieneOcupacion ? 'Desglose de gastos' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
+            <div className={dashboardSpinhouse ? compactStyles.financeDetails : undefined} tabIndex={dashboardSpinhouse ? 0 : undefined} aria-label={dashboardSpinhouse ? 'Desglose de gastos' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
               {desgloseGastos.length === 0 ? (
                 <div style={{ fontSize: 11, color: C.hint }}>Sin gastos registrados este mes</div>
               ) : desgloseGastos.slice(0, 4).map(d => {
@@ -581,15 +584,15 @@ export default function DashboardPage() {
 
         {/* Link de inscripción — flujo de solicitud individual, no aplica a fútbol (los equipos se inscriben desde el módulo de liga) */}
         {!esFutbol && (
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: tieneOcupacion ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: dashboardSpinhouse ? 14 : 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Link2 size={15} color={C.sky} />
               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔗 Link de inscripción</span>
             </div>
-            <p style={{ fontSize: 12, color: C.muted, marginBottom: tieneOcupacion ? 8 : 14 }}>
-              {tieneOcupacion ? 'Comparte el acceso al club.' : 'Comparte este link para que los jugadores soliciten unirse al club'}
+            <p style={{ fontSize: 12, color: C.muted, marginBottom: dashboardSpinhouse ? 8 : 14 }}>
+              {dashboardSpinhouse ? 'Comparte el acceso al club.' : 'Comparte este link para que los jugadores soliciten unirse al club'}
             </p>
-            <LinkInvitacion clubId={perfil?.club_id || ''} compacto={tieneOcupacion} />
+            <LinkInvitacion clubId={perfil?.club_id || ''} compacto={dashboardSpinhouse} />
           </div>
         )}
 
@@ -639,8 +642,8 @@ export default function DashboardPage() {
 
         {/* Credenciales oficiales — reporte para entregar accesos.
             El admin decide cuándo ver la clave; la tarjeta no la muestra. */}
-        <Link href="/credenciales" style={{ textDecoration: 'none', display: tieneOcupacion ? 'flex' : undefined }}>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: 'pointer', flex: tieneOcupacion ? 1 : undefined }}>
+        <Link href="/credenciales" style={{ textDecoration: 'none', display: dashboardSpinhouse ? 'flex' : undefined }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: 'pointer', flex: dashboardSpinhouse ? 1 : undefined }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <ClipboardCheck size={15} color={C.skyD} />
               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔑 Credenciales oficiales del club</span>
@@ -695,7 +698,7 @@ export default function DashboardPage() {
 
       {/* Ocupación por bloque — al final del dashboard de Spinhouse.
           Cuelga del módulo 'mesas', que Buin no tiene. */}
-      {tieneOcupacion && <TarjetaOcupacion clubId={perfil?.club_id} />}
+      {tieneOcupacion && dashboardSpinhouse && <TarjetaOcupacion clubId={perfil?.club_id} />}
 
       {feedbackOpen && perfil?.club_id && (
         <ModalCrearFeedback clubId={perfil.club_id} onClose={() => setFeedbackOpen(false)} />
