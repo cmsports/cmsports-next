@@ -25,6 +25,7 @@ import { indexar, calendarioJugador } from '@/lib/domain/historialAsistencia'
 import { armarHistorialDetallado, type BloqueInfo } from '@/lib/domain/historialDetalladoAsistencia'
 import { ETIQUETAS, categoriasGastoDe, categoriasIngresoDe } from '@/lib/domain/categoriasFinanzas'
 import { analizarGeneral } from '@/lib/domain/reporteGeneral'
+import styles from './page.module.css'
 
 const supabase = createClient()
 
@@ -391,6 +392,7 @@ function FinanzasContent() {
 
   return (
     <AppLayout perfil={perfil}>
+      <div className={tiene('finanzas_spinhouse') ? styles.spinhouse : undefined}>
       {/* Header */}
       <div className="header-responsive" style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:10 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center' }}>
@@ -795,6 +797,7 @@ function FinanzasContent() {
           </div>
         </div>
       )}
+      </div>
     </AppLayout>
   )
 }

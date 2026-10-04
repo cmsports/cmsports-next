@@ -8,6 +8,7 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { rangoMesCalendario } from '@/lib/domain/calendarioIntegrado'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { esUuid } from '@/lib/domain/uuid'
+import styles from '@/components/SpinhouseComplementos.module.css'
 
 type EventoPublico = { id: string; titulo: string; tipo: string; fecha: string; hora_inicio: string | null; hora_fin: string | null; lugar: string }
 const tablas = ['calendario_actividades','ligas','liga_fechas','liga_fecha_sesiones','liga_divisiones']
@@ -36,11 +37,21 @@ export default function CalendarioPublicoPage() {
   // Los visitantes no tienen permisos sobre las tablas privadas; la RPC sirve
   // exclusivamente la proyección pública. El intervalo renueva también anon.
   useEnVivo(tablas,esUuid(clubId) ? clubId : null,cargar,{conClub:['calendario_actividades','ligas']})
-  return <main style={{maxWidth:760,margin:'30px auto',padding:20,color:'#0f172a'}}>
-    <h1>Calendario público</h1><p>Actividades publicadas y jornadas de liga.</p>
-    <label>Mes <input type="month" value={mes} onChange={e => { if(e.target.value) { setMes(e.target.value); setEventos([]) } }} style={{padding:8,marginBottom:20}}/></label>
-    {error && <p role="alert">{error}</p>}
-    {!error && !eventos.length && <p>No hay actividades públicas disponibles en este mes.</p>}
-    {eventos.map(e => <article key={e.id} style={{padding:16,border:'1px solid #e2e8f0',borderRadius:12,marginBottom:12}}><strong>{e.titulo}</strong><p>{e.fecha}{e.hora_inicio ? ` · ${e.hora_inicio.slice(0,5)}${e.hora_fin ? `–${e.hora_fin.slice(0,5)}` : ''}` : ''}{e.lugar ? ` · ${e.lugar}` : ''}</p></article>)}
+  const nombreMes = new Date(`${mes}-01T12:00:00`).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+  const etiquetasTipo: Record<string, string> = { liga_tdm: 'Liga', externo: 'Actividad externa', clinica: 'Clínica', campamento: 'Campamento', reunion: 'Reunión', suspension: 'Suspensión', feriado: 'Feriado', otro: 'Actividad' }
+  return <main className={styles.publicCalendar}>
+    <h1 className={styles.pageHeading}>Calendario público</h1>
+    <p className={styles.pageDescription}>Actividades publicadas y jornadas de liga del club.</p>
+    <div className={styles.publicToolbar}>
+      <strong>{nombreMes}</strong>
+      <label className={styles.publicMonth}>Mes<input type="month" value={mes} onChange={e => { if(e.target.value) { setMes(e.target.value); setEventos([]) } }}/></label>
+    </div>
+    {error && <p role="alert" className={styles.emptyState} style={{ color: '#dc2626' }}>{error}</p>}
+    {!error && !eventos.length && <p className={styles.emptyState}>No hay actividades públicas disponibles en este mes.</p>}
+    {eventos.map(e => <article key={e.id} className={styles.publicEvent}>
+      <header><strong>{e.titulo}</strong><span className={styles.eventBadge}>{etiquetasTipo[e.tipo] ?? 'Actividad'}</span></header>
+      <p>{new Date(`${e.fecha}T12:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}{e.hora_inicio ? ` · ${e.hora_inicio.slice(0,5)}${e.hora_fin ? `–${e.hora_fin.slice(0,5)}` : ''}` : ''}</p>
+      {e.lugar && <p>{e.lugar}</p>}
+    </article>)}
   </main>
 }

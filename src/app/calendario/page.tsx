@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
@@ -15,6 +15,7 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 const text = '#0f172a'
 const muted = '#64748b'
 const hint = '#94a3b8'
+const suscribirMontaje = () => () => {}
 
 const diasSemana = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -41,7 +42,13 @@ export default function CalendarioPage() {
 function CalendarioContent() {
   const { perfil } = usePerfil()
   const { tiene } = useModulos()
-  if (perfil && tiene('calendario_integrado')) return <AppLayout perfil={perfil}><CalendarioIntegrado key={`${perfil.club_id}:${perfil.id}:${perfil.rol}:${perfil.jugador_id}`} perfil={perfil} /></AppLayout>
+  const hidratado = useSyncExternalStore(suscribirMontaje, () => true, () => false)
+  if (perfil && tiene('calendario_integrado')) {
+    // El servidor no tiene el perfil cacheado del navegador. El primer dibujo
+    // conserva su estado de carga antes de montar el calendario integrado.
+    if (!hidratado) return <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#a9bac8' }}><div style={{ color: hint }}>Cargando...</div></div>
+    return <AppLayout perfil={perfil}><CalendarioIntegrado key={`${perfil.club_id}:${perfil.id}:${perfil.rol}:${perfil.jugador_id}`} perfil={perfil} /></AppLayout>
+  }
   return <CalendarioLegacy />
 }
 

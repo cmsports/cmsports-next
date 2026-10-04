@@ -12,6 +12,8 @@ import { CONFIG_POR_DEFECTO, type LectorConfig } from '@/lib/domain/clubConfig'
 import { leerRetencionPaginada } from '@/lib/supabase/retencionPaginada'
 import { configDelClub } from '@/lib/supabase/clubConfig'
 import { useModulos } from '@/lib/hooks/useModulos'
+import { Bell, CheckCircle2, ClipboardCheck, LoaderCircle, MessageCircle, Pause, RefreshCw, ShieldCheck, TriangleAlert, UserMinus, Users } from 'lucide-react'
+import styles from './PanelRetencion.module.css'
 
 const supabase = createClient()
 const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16, marginBottom: 12 } as const
@@ -109,7 +111,108 @@ export default function PanelRetencion({ clubId }: { clubId: string }) {
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo completar la operación.') }
     finally { setOcupado(false) }
   }
-  if (cargando) return <p>Revisando el padrón…</p>
+  if (cargando) return automaticoDisponible
+    ? <div className={styles.loading} role="status"><LoaderCircle size={20} className={styles.spinner} /> Revisando el padrón…</div>
+    : <p>Revisando el padrón…</p>
+  // El panel legado conserva su presentación para clubes sin el módulo nuevo.
+  if (automaticoDisponible) {
+    const registrados = estados.filter(e => e.inactivo || e.bloqueado_por_mora)
+    const resumen = [
+      { label: 'Jugadores por revisar', valor: propuestas.length, Icono: Users, tono: styles.purple },
+      { label: 'Avisos abiertos', valor: alertas.length, Icono: Bell, tono: styles.amber },
+      { label: 'Bloqueados por mora', valor: estados.filter(e => e.bloqueado_por_mora).length, Icono: TriangleAlert, tono: styles.red },
+      { label: 'Jugadores inactivos', valor: estados.filter(e => e.inactivo).length, Icono: UserMinus, tono: styles.muted },
+    ]
+    return <div className={styles.panel}>
+      <section className={styles.card}>
+        <div className={styles.header}>
+          <div className={styles.heading}><ShieldCheck size={18} className={styles.purple} /><h3>Retención y morosidad</h3></div>
+          <span className={`${styles.badge} ${activo ? styles.greenBadge : styles.purpleBadge}`}>{activo ? 'Automatismo activo' : 'Modo revisión'}</span>
+        </div>
+        <div className={styles.body}>
+          <p className={styles.description}>Revisa las cuotas y asistencias, contacta a los alumnos y acompaña su permanencia en el club.</p>
+          <div className={styles.rules}>
+            <div><span>Aviso de deuda</span><strong>{config('morosidad.dias_aviso')} días</strong></div>
+            <div><span>Bloqueo por mora</span><strong>Desde {config('morosidad.dias_bloqueo')} días</strong></div>
+            <div><span>Alerta de asistencia</span><strong>{config('retencion.faltas_alerta')} faltas seguidas</strong></div>
+            <div><span>Inactividad</span><strong>{config('retencion.dias_inactivo')} días sin asistir ni pagar</strong></div>
+          </div>
+          <p className={styles.note}>Los bloqueos manuales se conservan. Las faltas no bloquean.</p>
+        </div>
+      </section>
+
+      {error && <div role="alert" className={`${styles.notice} ${styles.error}`}><TriangleAlert size={18} /><span>{error}</span><button className={styles.secondaryButton} onClick={() => void cargar()}>Reintentar</button></div>}
+      {resultado && <div role="status" className={`${styles.notice} ${styles.success}`}><CheckCircle2 size={18} /><span>{resultado}</span></div>}
+
+      <div className={styles.stats}>
+        {resumen.map(({ label, valor, Icono, tono }) => <div className={styles.stat} key={label}>
+          <div className={styles.statTop}><span>{label}</span><Icono size={17} className={tono} /></div>
+          <strong className={tono}>{valor}</strong>
+        </div>)}
+      </div>
+
+      {control && <section className={styles.card}>
+        <div className={styles.header}>
+          <div className={styles.heading}><ClipboardCheck size={17} className={styles.purple} /><h3>{activo ? 'Control del automatismo' : 'Revisión antes de activar'}</h3></div>
+          {!activo && <span className={`${styles.badge} ${styles.neutralBadge}`}>{Math.min(diasRevision, 30)} / 30 días mínimos</span>}
+        </div>
+        <div className={styles.body}>
+          <p className={styles.description}>Revisión iniciada el {fechaChile(new Date(control.preparacion_en))}. {activo ? 'Las reglas se ejecutan cada día.' : 'Hasta la activación solo se generan avisos; no se bloquea ni inactiva automáticamente.'}</p>
+          {!activo && <>
+            <div className={styles.progress} role="progressbar" aria-label="Período mínimo de revisión" aria-valuemin={0} aria-valuemax={30} aria-valuenow={Math.min(diasRevision, 30)}><div style={{ width: `${Math.min(diasRevision / 30, 1) * 100}%` }} /></div>
+            <p className={styles.note}>{diasRevision < 30 ? `Faltan ${30 - diasRevision} días para completar el período mínimo.` : 'El período mínimo está completo. Confirma la revisión del padrón antes de activar.'}</p>
+          </>}
+          <div className={styles.actions}>
+            <button className={styles.primaryButton} disabled={ocupado || Boolean(error)} onClick={() => void operar('ejecutar')}><RefreshCw size={15} />{ocupado ? 'Procesando…' : activo ? 'Ejecutar reglas ahora' : 'Actualizar avisos'}</button>
+            {activo && <button className={styles.secondaryButton} disabled={ocupado} onClick={() => void operar('pausar')}><Pause size={15} />Pausar automatismo</button>}
+          </div>
+          {!activo && <div className={styles.activation}>
+            <label className={styles.checkboxLabel}><input type="checkbox" checked={revision} onChange={e => setRevision(e.target.checked)} /><span>Revisé el padrón, las cuotas y el vencimiento; no hay falsos positivos.</span></label>
+            <button className={styles.secondaryButton} disabled={ocupado || !revision || diasRevision < 30 || Boolean(error)} onClick={() => void operar('activar')}><ShieldCheck size={15} />Activar bloqueos e inactivación</button>
+          </div>}
+          <p className={styles.note}>Los avisos quedan en la aplicación. WhatsApp abre un mensaje para enviarlo manualmente.</p>
+        </div>
+      </section>}
+
+      <section className={styles.card}>
+        <div className={styles.header}><div className={styles.heading}><Users size={17} className={styles.purple} /><h3>Jugadores por revisar</h3><span className={`${styles.badge} ${styles.neutralBadge}`}>{propuestas.length}</span></div></div>
+        <p className={styles.sectionDescription}>Vista previa con las cuotas y asistencias de hoy. Revisa cada caso antes de activar cambios automáticos.</p>
+        {propuestas.length === 0 ? <div className={styles.empty}><CheckCircle2 size={28} className={styles.green} /><strong>Ningún jugador requiere revisión</strong><p>No hay avisos ni cambios propuestos según los umbrales actuales.</p></div> : <div className={styles.list}>
+          {propuestas.map(v => {
+            const waFaltas = v.alertaPorFaltas ? linkWhatsApp(contactos.get(v.id)?.telefono, mensajeFaltasApoderado({ nombreAlumno: v.nombre, nombreClub })) : null
+            const waDeuda = v.diasMora > 0 ? linkWhatsApp(contactos.get(v.id)?.telefono, `Hola, te escribimos de ${nombreClub}. Tu mensualidad lleva ${v.diasMora} días de atraso. Contacta a administración para regularizar tu cuenta.`) : null
+            return <div key={v.id} className={styles.playerRow}>
+              <div className={styles.playerInfo}>
+                <div className={styles.playerTitle}><strong>{v.nombre}</strong>
+                  {v.estado === 'para_bloquear' && <span className={`${styles.badge} ${styles.redBadge}`}>Bloqueo propuesto</span>}
+                  {v.estado === 'para_avisar' && <span className={`${styles.badge} ${styles.amberBadge}`}>Aviso de deuda</span>}
+                  {v.alertaPorFaltas && <span className={`${styles.badge} ${styles.amberBadge}`}>Inasistencias</span>}
+                  {v.paraInactivar && <span className={`${styles.badge} ${styles.neutralBadge}`}>Inactividad propuesta</span>}
+                </div>
+                <p>{v.motivo}</p>
+                {v.deuda > 0 && <span className={styles.debt}>Deuda: ${v.deuda.toLocaleString('es-CL')}</span>}
+              </div>
+              {(waFaltas || waDeuda) && <div className={styles.contactActions}>
+                {waFaltas && <a className={styles.whatsappButton} href={waFaltas} target="_blank" rel="noopener noreferrer"><MessageCircle size={14} />Contactar por faltas</a>}
+                {waDeuda && <a className={styles.whatsappButton} href={waDeuda} target="_blank" rel="noopener noreferrer"><MessageCircle size={14} />Contactar por mensualidad</a>}
+              </div>}
+            </div>
+          })}
+        </div>}
+      </section>
+
+      {(alertas.length > 0 || registrados.length > 0) && <div className={styles.detailsGrid}>
+        {alertas.length > 0 && <section className={styles.card}>
+          <div className={styles.header}><div className={styles.heading}><Bell size={17} className={styles.amber} /><h3>Avisos abiertos</h3><span className={`${styles.badge} ${styles.neutralBadge}`}>{alertas.length}</span></div></div>
+          <div className={styles.list}>{alertas.map(a => <div key={`${a.jugador_id}:${a.tipo}`} className={styles.detailRow}><strong>{contactos.get(a.jugador_id)?.nombre ?? 'Jugador'}</strong><span className={`${styles.badge} ${styles.amberBadge}`}>{a.tipo === 'deuda' ? 'Deuda' : 'Inasistencias'}</span><p>{a.mensaje}</p></div>)}</div>
+        </section>}
+        {registrados.length > 0 && <section className={styles.card}>
+          <div className={styles.header}><div className={styles.heading}><ShieldCheck size={17} className={styles.muted} /><h3>Estados registrados</h3></div></div>
+          <div className={styles.list}>{registrados.map(e => <div key={e.jugador_id} className={styles.detailRow}><strong>{contactos.get(e.jugador_id)?.nombre ?? 'Jugador'}</strong><div className={styles.playerTitle}>{e.inactivo && <span className={`${styles.badge} ${styles.neutralBadge}`}>Inactivo</span>}{e.bloqueado_por_mora && <span className={`${styles.badge} ${styles.redBadge}`}>Bloqueado por mora</span>}</div></div>)}</div>
+        </section>}
+      </div>}
+    </div>
+  }
   return <div style={{ color: '#0f172a' }}>
     <div style={card}>
       <strong>{activo ? 'Retención automática activa' : 'Revisión de retención'}</strong>

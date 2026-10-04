@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { cachedFetch, invalidarPorTabla } from '@/lib/query-cache'
 import { useEnVivo } from '@/lib/useEnVivo'
@@ -9,20 +10,24 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { TIPOS_ACTIVIDAD, clasesDelMes, partidosPropiosDelMes, rangoMesCalendario, sumarDiasCalendario, type ActividadCalendario, type InscripcionCalendario, type ItemCalendario, type PartidoCalendario } from '@/lib/domain/calendarioIntegrado'
 import { esUuid } from '@/lib/domain/uuid'
 import type { Perfil } from '@/types'
+import styles from './CalendarioIntegrado.module.css'
 
 const supabase = createClient()
 const TABLAS = ['calendario_actividades','calendario_nomina','ligas','liga_fechas','liga_fecha_sesiones','liga_divisiones','liga_partidos','liga_mesas','bloque_jugadores','bloques_horario','eventos','torneos','jugadores']
 const CON_CLUB = ['calendario_actividades','calendario_nomina','ligas','bloques_horario','eventos','torneos','jugadores']
-const estilo = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16, marginBottom: 12 }
-const entrada = { padding: 9, border: '1px solid #cbd5e1', borderRadius: 8, width: '100%' }
-const boton = { padding: '9px 14px', border: '1px solid #cbd5e1', borderRadius: 8, cursor: 'pointer', background: '#fff' }
-const etiquetas: Record<string,string> = { externo: 'Torneo externo', clinica: 'Clínica', campamento: 'Campamento', reunion: 'Reunión', suspension: 'Suspensión', feriado: 'Feriado', otro: 'Otro', clase: 'Mi clase', liga_tdm: 'Liga de tenis de mesa', torneo: 'Torneo' }
+const etiquetas: Record<string,string> = { externo: 'Torneo externo', clinica: 'Clínica', campamento: 'Campamento', reunion: 'Reunión', suspension: 'Suspensión', feriado: 'Feriado', otro: 'Otro', clase: 'Mi clase', liga_tdm: 'Liga de tenis de mesa', torneo: 'Torneo', entrenamiento: 'Entrenamiento', pago: 'Pago' }
+const diasSemana = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+const colores: Record<string, string> = { clase: '#f43f5e', entrenamiento: '#16a34a', torneo: '#4f46e5', externo: '#4f46e5', liga_tdm: '#059669', feriado: '#dc2626', suspension: '#dc2626', pago: '#d97706', clinica: '#0284c7', campamento: '#0284c7', reunion: '#d97706', otro: '#64748b' }
 const vacio = () => ({ titulo: '', tipo: 'externo', fecha: fechaChile(), hora_inicio: '', hora_fin: '', lugar: '', descripcion: '', publico: false })
 type Datos = { actividades: ActividadCalendario[]; items: ItemCalendario[]; jugadores: { id: string; nombre: string }[]; nomina: { actividad_id: string; jugador_id: string }[] }
 type FechaLiga = { id: string; numero: number; fecha: string | null; liga_id: string; ligas: { nombre: string; hora_inicio: string; hora_fin: string }; liga_fecha_sesiones: { division_id: string; dia_offset: number; liga_divisiones: { nombre: string } }[] }
 
 export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
-  const [mes, setMes] = useState(fechaChile().slice(0,7))
+  const searchParams = useSearchParams()
+  const fechaEnlace = searchParams.get('fecha')
+  const fechaInicial = fechaEnlace && /^\d{4}-\d{2}-\d{2}$/.test(fechaEnlace) && !Number.isNaN(new Date(`${fechaEnlace}T12:00:00Z`).getTime()) && new Date(`${fechaEnlace}T12:00:00Z`).toISOString().slice(0,10) === fechaEnlace ? fechaEnlace : ''
+  const [mes, setMes] = useState((fechaInicial || fechaChile()).slice(0,7))
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
   const [editar, setEditar] = useState(false)
@@ -30,7 +35,7 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
   const [form, setForm] = useState(vacio)
   const [nomina, setNomina] = useState<string[]>([])
   const [guardando, setGuardando] = useState(false)
-  const [dia, setDia] = useState('')
+  const [dia, setDia] = useState(fechaInicial)
   const carga = useRef(0)
   const clubId = perfil.club_id!
   const staff = perfil.rol === 'admin' || perfil.rol === 'profesor'
@@ -77,7 +82,7 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
 
   function abrir(a?: ActividadCalendario) {
     setIdEdicion(a?.id ?? null)
-    setForm(a ? { titulo:a.titulo,tipo:a.tipo,fecha:a.fecha,hora_inicio:a.hora_inicio?.slice(0,5) ?? '',hora_fin:a.hora_fin?.slice(0,5) ?? '',lugar:a.lugar,descripcion:a.descripcion,publico:a.publico } : vacio())
+    setForm(a ? { titulo:a.titulo,tipo:a.tipo,fecha:a.fecha,hora_inicio:a.hora_inicio?.slice(0,5) ?? '',hora_fin:a.hora_fin?.slice(0,5) ?? '',lugar:a.lugar,descripcion:a.descripcion,publico:a.publico } : { ...vacio(), fecha: dia || fechaChile() })
     setNomina(a ? datos?.nomina.filter(n => n.actividad_id === a.id).map(n => n.jugador_id) ?? [] : [])
     setEditar(true)
   }
@@ -93,49 +98,100 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
     } catch(e) { setError(e instanceof Error ? e.message : 'No se pudo guardar el evento') }
     finally { setGuardando(false) }
   }
-  const visibles = datos?.items.filter(i => !dia || i.fecha === dia) ?? []
-  const proximaLiga = datos?.items.find(i => i.origen === 'liga' && i.fecha >= fechaChile())
-  return <div style={{color:'#0f172a'}}>
-    <h1 style={{fontSize:22}}>Calendario del club</h1>
-    <p>Clases propias, jornadas de liga y actividades del club. Las cuentas de jugadores y apoderados ven las clases del alumno vinculado.</p>
-    <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16,alignItems:'center'}}>
-      <label>Mes <input aria-label="Mes del calendario" type="month" value={mes} onChange={e => { if(e.target.value) { setMes(e.target.value); setDia(''); setDatos(null) } }} style={entrada}/></label>
-      <label>Día <input type="date" value={dia} onChange={e => { setDia(e.target.value); if(e.target.value) setMes(e.target.value.slice(0,7)) }} style={entrada}/></label>
-      {dia && <button style={boton} onClick={() => setDia('')}>Ver todo el mes</button>}
-      {staff && <button style={{...boton,background:'#4f46e5',color:'#fff'}} onClick={() => abrir()}>Agregar actividad</button>}
-      <Link href={`/calendario-publico/${clubId}`} target="_blank">Vista pública</Link>
-    </div>
-    {error && <div role="alert" style={{...estilo,color:'#b91c1c'}}>{error}<button style={{...boton,marginLeft:8}} onClick={() => void cargar()}>Reintentar</button></div>}
-    {proximaLiga && <p style={{...estilo}}>Próxima jornada este mes: {proximaLiga.fecha} · {proximaLiga.titulo} · {proximaLiga.hora_inicio?.slice(0,5)}–{proximaLiga.hora_fin?.slice(0,5)}</p>}
-    {!datos && !error && <p>Cargando calendario…</p>}
-    {datos && visibles.length === 0 && <p style={estilo}>Sin actividades en este período.</p>}
-    {visibles.map(i => {
-      const convocados = datos?.nomina.filter(n => n.actividad_id === i.id) ?? []
-      return <article key={`${i.origen}-${i.id}`} style={estilo}>
-        <div style={{display:'flex',justifyContent:'space-between',gap:12}}><strong>{i.titulo}</strong>{staff && i.origen === 'actividad' && <button style={boton} onClick={() => abrir(datos!.actividades.find(a => a.id === i.id))}>Editar</button>}</div>
-        <p style={{margin:'8px 0',fontSize:13}}>{i.fecha} · {etiquetas[i.tipo] ?? i.tipo}{i.hora_inicio ? ` · ${i.hora_inicio.slice(0,5)}${i.hora_fin ? `–${i.hora_fin.slice(0,5)}` : ''}` : ''}{i.lugar ? ` · ${i.lugar}` : ''}</p>
-        {i.descripcion && <p>{i.descripcion}</p>}
-        {['suspension','feriado'].includes(i.tipo) && <p>Sin clases habituales este día.</p>}
-        {staff && i.tipo === 'externo' && <p style={{fontSize:13}}>Nómina: {convocados.length ? convocados.map(n => datos?.jugadores.find(j => j.id === n.jugador_id)?.nombre ?? 'Jugador').join(', ') : 'Sin jugadores convocados'}</p>}
-        {!staff && i.tipo === 'externo' && convocados.length > 0 && <p>Estás en la nómina de este torneo.</p>}
-        {i.enlace && <Link href={i.enlace}>Ver programación</Link>}
-      </article>
-    })}
-    {editar && <div role="dialog" aria-modal="true" aria-label="Editar actividad" style={{position:'fixed',inset:0,background:'#0006',zIndex:100,display:'flex',justifyContent:'center',alignItems:'center',padding:16}}><div style={{...estilo,maxWidth:560,width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
-      <h2>{idEdicion ? 'Editar actividad' : 'Nueva actividad'}</h2>
-      <div style={{display:'grid',gap:12}}>
-        <label>Título <input maxLength={160} value={form.titulo} onChange={e => setForm({...form,titulo:e.target.value})} style={entrada}/></label>
-        <label>Tipo <select value={form.tipo} onChange={e => setForm({...form,tipo:e.target.value})} style={entrada}>{TIPOS_ACTIVIDAD.map(t => <option key={t} value={t}>{etiquetas[t]}</option>)}</select></label>
-        <label>Fecha <input type="date" value={form.fecha} onChange={e => setForm({...form,fecha:e.target.value})} style={entrada}/></label>
-        <div style={{display:'flex',gap:10}}><label>Inicio <input type="time" value={form.hora_inicio} onChange={e => setForm({...form,hora_inicio:e.target.value})} style={entrada}/></label><label>Fin <input type="time" value={form.hora_fin} onChange={e => setForm({...form,hora_fin:e.target.value})} style={entrada}/></label></div>
-        <label>Lugar <input maxLength={240} value={form.lugar} onChange={e => setForm({...form,lugar:e.target.value})} style={entrada}/></label>
-        <label>Detalles internos <textarea maxLength={2000} value={form.descripcion} onChange={e => setForm({...form,descripcion:e.target.value})} style={entrada}/></label>
-        <label><input type="checkbox" checked={form.publico} onChange={e => setForm({...form,publico:e.target.checked})}/> Publicar título, fecha, horas y lugar en la vista pública</label>
-        <small>Usa un título y lugar sin nombres de alumnos. Los detalles y la nómina se mantienen dentro del club.</small>
-        {form.tipo === 'externo' && <fieldset style={{maxHeight:180,overflowY:'auto',border:'1px solid #cbd5e1'}}><legend>Nómina de jugadores</legend>{datos?.jugadores.map(j => <label key={j.id} style={{display:'block',padding:5}}><input type="checkbox" checked={nomina.includes(j.id)} onChange={e => setNomina(e.target.checked ? [...nomina,j.id] : nomina.filter(id => id !== j.id))}/> {j.nombre}</label>)}</fieldset>}
-        {error && <p role="alert" style={{color:'#b91c1c'}}>{error}</p>}
-        <div style={{display:'flex',gap:8}}><button disabled={guardando} style={boton} onClick={() => setEditar(false)}>Cancelar</button><button disabled={guardando} style={{...boton,background:'#4f46e5',color:'#fff'}} onClick={() => void guardar()}>{guardando ? 'Guardando…' : 'Guardar'}</button></div>
+  const [anio, numeroMes] = mes.split('-').map(Number)
+  const primerDia = new Date(anio, numeroMes - 1, 1).getDay()
+  const diasEnMes = new Date(anio, numeroMes, 0).getDate()
+  const hoy = fechaChile()
+  const porDia = new Map<string, ItemCalendario[]>()
+  for (const item of datos?.items ?? []) porDia.set(item.fecha, [...(porDia.get(item.fecha) ?? []), item])
+  const itemsDelDia = porDia.get(dia) ?? []
+  const proximaLiga = datos?.items.find(i => i.origen === 'liga' && i.fecha >= hoy)
+
+  function irAlMes(destino: string) {
+    if (destino === mes) return
+    setMes(destino); setDia(''); setDatos(null)
+  }
+  function cambiarMes(direccion: number) {
+    const destino = new Date(anio, numeroMes - 1 + direccion, 1)
+    irAlMes(`${destino.getFullYear()}-${String(destino.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  return <div className={styles.root}>
+    <div className={styles.toolbar}>
+      <div className={styles.navigation}>
+        <button type="button" aria-label="Mes anterior" className={`${styles.button} ${styles.arrow}`} onClick={() => cambiarMes(-1)}>◀</button>
+        <span className={styles.month} aria-live="polite">{meses[numeroMes - 1]} {anio}</span>
+        <button type="button" aria-label="Mes siguiente" className={`${styles.button} ${styles.arrow}`} onClick={() => cambiarMes(1)}>▶</button>
+        <button type="button" className={styles.button} onClick={() => { irAlMes(hoy.slice(0, 7)); setDia(hoy) }}>Hoy</button>
       </div>
-    </div></div>}
+      <div className={styles.actions}>
+        <Link className={styles.button} href={`/calendario-publico/${clubId}`} target="_blank" rel="noopener noreferrer">Vista pública ↗</Link>
+        {staff && <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => abrir()}>+ Agregar actividad</button>}
+      </div>
+    </div>
+    <p className={styles.subtitle}>{staff ? 'Torneos, jornadas de liga y actividades del club. Selecciona un día para ver el detalle.' : 'Tus clases, partidos de liga y actividades del club. Selecciona un día para ver el detalle.'}</p>
+    {error && <div role="alert" className={styles.notice}>{error} <button className={styles.button} onClick={() => void cargar()}>Reintentar</button></div>}
+    <div className={`${styles.layout}${dia ? ` ${styles.withPanel}` : ''}`}>
+      <div>
+        <div className={`${styles.card} ${styles.calendar}`} aria-label="Calendario mensual" aria-busy={!datos && !error}>
+          <div className={styles.week}>{diasSemana.map(d => <span key={d}>{d}</span>)}</div>
+          <div className={styles.days}>
+            {Array.from({ length: primerDia }, (_, i) => <div key={`vacio-${i}`} className={styles.blank} aria-hidden="true" />)}
+            {Array.from({ length: diasEnMes }, (_, i) => {
+              const fecha = `${mes}-${String(i + 1).padStart(2, '0')}`
+              const items = porDia.get(fecha) ?? []
+              const seleccionado = dia === fecha
+              return <button type="button" key={fecha} aria-label={`${i + 1} de ${meses[numeroMes - 1]}, ${items.length} actividades`} aria-pressed={seleccionado} className={`${styles.day}${seleccionado ? ` ${styles.selected}` : ''}`} onClick={() => setDia(seleccionado ? '' : fecha)}>
+                <span className={`${styles.number}${fecha === hoy ? ` ${styles.today}` : ''}`}>{i + 1}</span>
+                {items.slice(0, 2).map(item => <span key={`${item.origen}-${item.id}`} className={styles.eventLabel} style={{ color: colores[item.tipo] ?? '#64748b' }}>{item.titulo}</span>)}
+                {items.length > 2 && <span className={styles.more}>+{items.length - 2} más</span>}
+                {items.length > 0 && <span className={styles.dots} style={{ color: colores[items[0].tipo] ?? '#64748b' }}>●{items.length > 1 ? ` ${items.length}` : ''}</span>}
+              </button>
+            })}
+          </div>
+        </div>
+        <div className={styles.legend}>
+          {[['clase', 'Clases'], ['torneo', 'Torneos'], ['liga_tdm', 'Liga'], ['clinica', 'Actividades'], ['feriado', 'Sin actividad']].map(([tipo, nombre]) => <span key={tipo}><i className={styles.dot} style={{ background: colores[tipo] }} />{nombre}</span>)}
+        </div>
+        {!datos && !error && <p role="status" className={styles.empty}>Cargando calendario…</p>}
+        {proximaLiga && <div className={`${styles.card} ${styles.upcoming}`}><strong>Próxima jornada</strong><br />{new Date(`${proximaLiga.fecha}T12:00:00`).toLocaleDateString('es-CL', { day: 'numeric', month: 'long' })} · {proximaLiga.titulo}{proximaLiga.hora_inicio ? ` · ${proximaLiga.hora_inicio.slice(0,5)}${proximaLiga.hora_fin ? `–${proximaLiga.hora_fin.slice(0,5)}` : ''}` : ''}</div>}
+      </div>
+      {dia && <aside className={`${styles.card} ${styles.panel}`} aria-label="Detalle del día">
+        <div className={styles.panelHeader}><h2>{new Date(`${dia}T12:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}</h2><button type="button" className={styles.close} aria-label="Cerrar detalle del día" onClick={() => setDia('')}>✕</button></div>
+        {itemsDelDia.map(i => {
+          const convocados = datos?.nomina.filter(n => n.actividad_id === i.id) ?? []
+          return <article key={`${i.origen}-${i.id}`} className={styles.item} style={{ borderLeftColor: colores[i.tipo] ?? '#64748b' }}>
+            <div className={styles.itemHeader}><h3>{i.titulo}</h3>{staff && i.origen === 'actividad' && <button type="button" className={`${styles.button} ${styles.edit}`} onClick={() => abrir(datos!.actividades.find(a => a.id === i.id))}>Editar</button>}</div>
+            <p className={styles.meta}>{etiquetas[i.tipo] ?? i.tipo}{i.hora_inicio ? ` · ${i.hora_inicio.slice(0,5)}${i.hora_fin ? `–${i.hora_fin.slice(0,5)}` : ''}` : ''}{i.lugar ? ` · ${i.lugar}` : ''}</p>
+            {i.descripcion && <p className={styles.description}>{i.descripcion}</p>}
+            {['suspension','feriado'].includes(i.tipo) && <p className={styles.description}>Sin clases habituales este día.</p>}
+            {staff && i.tipo === 'externo' && <p className={styles.description}>Nómina: {convocados.length ? convocados.map(n => datos?.jugadores.find(j => j.id === n.jugador_id)?.nombre ?? 'Jugador').join(', ') : 'Sin jugadores convocados'}</p>}
+            {!staff && i.tipo === 'externo' && convocados.length > 0 && <p className={styles.description}>Estás en la nómina de este torneo.</p>}
+            {i.enlace && <Link className={styles.link} href={i.enlace}>Ver programación →</Link>}
+          </article>
+        })}
+        {datos && !itemsDelDia.length && <p className={styles.empty}>Sin actividades este día.</p>}
+        {!datos && !error && <p className={styles.empty}>Cargando actividades…</p>}
+        {staff && <button type="button" className={`${styles.button} ${styles.primary}`} style={{ width: '100%', marginTop: 8 }} onClick={() => abrir()}>+ Agregar actividad</button>}
+      </aside>}
+    </div>
+    {editar && <div role="dialog" aria-modal="true" aria-labelledby="titulo-actividad" className={styles.overlay}>
+      <div className={styles.modal}>
+        <div className={styles.modalHeader}><h2 id="titulo-actividad">{idEdicion ? 'Editar actividad' : 'Nueva actividad'}</h2><button type="button" className={styles.close} aria-label="Cerrar formulario" disabled={guardando} onClick={() => setEditar(false)}>✕</button></div>
+        <div className={styles.form}>
+          <label className={styles.label}>Título<input autoFocus maxLength={160} value={form.titulo} onChange={e => setForm({...form,titulo:e.target.value})} className={styles.input} placeholder="Nombre de la actividad" /></label>
+          <label className={styles.label}>Tipo<select value={form.tipo} onChange={e => setForm({...form,tipo:e.target.value})} className={styles.input}>{TIPOS_ACTIVIDAD.map(t => <option key={t} value={t}>{etiquetas[t]}</option>)}</select></label>
+          <label className={styles.label}>Fecha<input type="date" value={form.fecha} onChange={e => setForm({...form,fecha:e.target.value})} className={styles.input} /></label>
+          <div className={styles.pair}><label className={styles.label}>Hora de inicio<input type="time" value={form.hora_inicio} onChange={e => setForm({...form,hora_inicio:e.target.value})} className={styles.input} /></label><label className={styles.label}>Hora de término<input type="time" value={form.hora_fin} onChange={e => setForm({...form,hora_fin:e.target.value})} className={styles.input} /></label></div>
+          <label className={styles.label}>Lugar<input maxLength={240} value={form.lugar} onChange={e => setForm({...form,lugar:e.target.value})} className={styles.input} placeholder="Sede o lugar del evento" /></label>
+          <label className={styles.label}>Detalles internos<textarea rows={3} maxLength={2000} value={form.descripcion} onChange={e => setForm({...form,descripcion:e.target.value})} className={styles.input} /></label>
+          <label className={styles.checkbox}><input type="checkbox" checked={form.publico} onChange={e => setForm({...form,publico:e.target.checked})} />Publicar título, fecha, horas y lugar en la vista pública</label>
+          <p className={styles.help}>Usa un título y lugar sin nombres de alumnos. Los detalles y la nómina se mantienen dentro del club.</p>
+          {form.tipo === 'externo' && <fieldset className={styles.roster}><legend>Nómina de jugadores</legend>{datos?.jugadores.map(j => <label key={j.id} className={styles.checkbox}><input type="checkbox" checked={nomina.includes(j.id)} onChange={e => setNomina(e.target.checked ? [...nomina,j.id] : nomina.filter(id => id !== j.id))} />{j.nombre}</label>)}</fieldset>}
+          {error && <p role="alert" className={styles.notice}>{error}</p>}
+          <div className={styles.footer}><button disabled={guardando} className={styles.button} onClick={() => setEditar(false)}>Cancelar</button><button disabled={guardando} className={`${styles.button} ${styles.primary}`} onClick={() => void guardar()}>{guardando ? 'Guardando…' : 'Guardar actividad'}</button></div>
+        </div>
+      </div>
+    </div>}
   </div>
 }
