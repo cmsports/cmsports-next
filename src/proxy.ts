@@ -60,6 +60,7 @@ export const anyAuthRoutes = [
 // pantalla del club. '/liga-futbol/publica' es el mismo patrón para la liga de
 // fútbol: no usa usePerfil() y se comparte por código, sin cuenta.
 export const rutasPublicasTorneo = [
+  '/calendario-publico',
   '/vivo', '/torneo-oficial/vivo', '/torneo-oficial/manual', '/liga-futbol/publica',
   // El ranking que se pega en la sede con un QR: nombre y puntos, sin cuenta.
   // La API que lo alimenta exige que el club tenga el módulo 'qr_publico'.

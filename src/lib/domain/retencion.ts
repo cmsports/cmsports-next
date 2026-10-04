@@ -41,6 +41,7 @@ export type Marca = {
 }
 
 const PAGADA = new Set(['pagado', 'pagada'])
+const SIN_DEUDA = new Set(['exento', 'exenta', 'anulado', 'anulada', 'condonado', 'condonada'])
 
 /** Si la cuota quedó saldada. Todo lo demás —pendiente, atrasado— es deuda. */
 export function estaPagada(cuota: Cuota): boolean {
@@ -56,7 +57,7 @@ export function estaPagada(cuota: Cuota): boolean {
  */
 export function cuotasImpagas(cuotas: readonly Cuota[]): Cuota[] {
   return cuotas
-    .filter(c => !estaPagada(c) && (c.monto ?? 0) > 0)
+    .filter(c => !estaPagada(c) && !SIN_DEUDA.has((c.estado ?? '').toLowerCase()) && (c.monto ?? 0) > 0)
     .sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes))
 }
 
@@ -68,8 +69,8 @@ export function vencimientoDe(cuota: Cuota, diaVencimiento: number): string {
 
 /** Días entre dos fechas ISO. Negativo si la segunda es anterior. */
 export function diasEntre(desdeISO: string, hastaISO: string): number {
-  const a = new Date(`${desdeISO}T12:00:00`)
-  const b = new Date(`${hastaISO}T12:00:00`)
+  const a = new Date(`${desdeISO}T12:00:00Z`)
+  const b = new Date(`${hastaISO}T12:00:00Z`)
   return Math.round((b.getTime() - a.getTime()) / 86_400_000)
 }
 
@@ -129,7 +130,16 @@ export function estadoDeMorosidad(config: LectorConfig, diasMora: number): Estad
  * Un feriado tampoco rompe la racha, por la misma razón: no deja registro.
  */
 export function faltasSeguidas(marcas: readonly Marca[]): number {
-  const ordenadas = [...marcas].sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
+  // Una asistencia presente en el día corta la racha aunque existan registros
+  // duplicados de otra clase. SQL y UI usan la misma unidad: días con lista.
+  const porDia = new Map<string, string>()
+  for (const marca of marcas) {
+    const estado = (marca.estado ?? '').toLowerCase()
+    if (estado === 'presente' || porDia.get(marca.fecha) !== 'presente') {
+      if (estado === 'presente' || estado === 'ausente' || estado === 'falta') porDia.set(marca.fecha, estado)
+    }
+  }
+  const ordenadas = [...porDia].map(([fecha, estado]) => ({ fecha, estado })).sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
 
   let seguidas = 0
   for (const m of ordenadas) {

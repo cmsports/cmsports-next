@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { altasYBajasDelMes, type Inscripcion } from './altasBajas'
+import { altasYBajasDelMes, movimientosDelPadronDelMes, type Inscripcion, type EventoPermanencia } from './altasBajas'
 
 const SEPTIEMBRE = { desde: '2026-09-01', hasta: '2026-09-30' }
 
@@ -76,5 +76,31 @@ describe('altas y bajas del mes', () => {
     const r = altasYBajasDelMes(mezcla, SEPTIEMBRE)
     expect(r).toEqual({ altas: 2, bajas: 1, reingresos: 1, neto: 2 })
     expect(r.neto).toBe(r.altas + r.reingresos - r.bajas)
+  })
+})
+
+describe('movimientos reales del padrón', () => {
+  const evento = (tipo: EventoPermanencia['tipo'], fecha = '2026-09-12'): EventoPermanencia => ({ jugadorId: 'a', tipo, fecha })
+  it('cuenta retiros e inactividad, pero no cuenta bloqueos por deuda como bajas', () => {
+    expect(movimientosDelPadronDelMes([
+      evento('retiro'), evento('inactivo'), evento('bloqueo_mora'), evento('desbloqueo_mora'),
+    ], SEPTIEMBRE)).toEqual({ altas: 0, bajas: 2, reingresos: 0, neto: -2 })
+  })
+  it('cuenta cada transición real, incluida baja y vuelta dentro del mismo mes', () => {
+    expect(movimientosDelPadronDelMes([
+      evento('alta', '2026-09-01'), evento('retiro', '2026-09-02'),
+      evento('reingreso', '2026-09-12'), evento('inactivo', '2026-09-30'),
+    ], SEPTIEMBRE)).toEqual({ altas: 1, bajas: 2, reingresos: 1, neto: 0 })
+  })
+  it('usa el día declarado y excluye hechos de meses anteriores o futuros', () => {
+    expect(movimientosDelPadronDelMes([
+      evento('alta', '2026-08-31'), evento('retiro', '2026-09-30'), evento('reingreso', '2026-10-01'),
+    ], SEPTIEMBRE)).toEqual({ altas: 0, bajas: 1, reingresos: 0, neto: -1 })
+  })
+  it('sin historial no inventa altas ni bajas de los jugadores existentes', () => {
+    expect(movimientosDelPadronDelMes([], SEPTIEMBRE)).toEqual({ altas: 0, bajas: 0, reingresos: 0, neto: 0 })
+  })
+  it('conserva las cifras cuando se elimina la ficha del jugador', () => {
+    expect(movimientosDelPadronDelMes([{ ...evento('retiro'), jugadorId: null }], SEPTIEMBRE)).toEqual({ altas: 0, bajas: 1, reingresos: 0, neto: -1 })
   })
 })

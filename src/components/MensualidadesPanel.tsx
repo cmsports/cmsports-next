@@ -14,6 +14,8 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { useEnVivo } from '@/lib/useEnVivo'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { calendarioJugador, indexar, indicadores } from '@/lib/domain/historialAsistencia'
+import { useModulos } from '@/lib/hooks/useModulos'
+import { idsInactivosRetencion } from '@/lib/supabase/inactivos'
 
 const supabase = createClient()
 
@@ -26,6 +28,10 @@ const mesesN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto
 
 export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioProp }: { onPagoRegistrado?: () => void; mes?: number; anio?: number } = {}) {
   const { perfil } = usePerfil()
+  const { tiene } = useModulos()
+  const conRetencionAutomatica = tiene('retencion_automatica')
+  const [inactivosRetencion, setInactivosRetencion] = useState<Set<string>>(new Set())
+  const [errorRetencion, setErrorRetencion] = useState('')
   const [jugadores, setJugadores] = useState<any[]>([])
   const [mensualidades, setMensualidades] = useState<any[]>([])
   // Lo que cada jugador debe por clases extra, aparte de su cuota. Es un aviso,
@@ -91,7 +97,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
       })
     }
     setAsistenciaPorJugador(mapa)
-  }, [clubId, mes, anio])
+  }, [clubId, mes, anio, conRetencionAutomatica])
 
   useEffect(() => {
     if (alcance !== 'mes' || jugadores.length === 0) return
@@ -180,9 +186,20 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   useEnVivo(['clases_extraordinarias'], clubId ?? null, recargarExtras, {
     conClub: ['clases_extraordinarias'],
   })
+  useEnVivo(conRetencionAutomatica ? ['retencion_estado'] : [], clubId ?? null, () => {
+    void cargarMensualidades()
+    if (alcance === 'deuda') void cargarDeuda()
+  }, { conClub: ['retencion_estado'] })
 
   async function cargarMensualidades(cid?: string) {
     const id = cid || clubId
+    if (!id) return
+    let inactivos = new Set<string>()
+    if (conRetencionAutomatica) {
+      try { inactivos = await idsInactivosRetencion(id); setErrorRetencion('') }
+      catch { setErrorRetencion('No se pudo leer el padrón de retención. Reintenta antes de generar cuotas.'); return }
+    }
+    setInactivosRetencion(inactivos)
     const [{ data: j }, { data: m }, { data: ex }] = await Promise.all([
       supabase.from('jugadores').select('id,nombre,rut,estado,mensualidad,tipo_plan,sesiones_limite,categoria,categorias,grupo,sede,telefono').eq('club_id', id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').order('nombre'),
       supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio),
@@ -204,7 +221,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     setExtrasPorJugador(porJugador)
     // ponytail: un jugador dado de baja igual puede tener mensualidad del mes;
     // sin esto desaparece de la tabla y su pago queda invisible
-    const jugActivos = j || []
+    const jugActivos = (j || []).filter(jugador => !inactivos.has(jugador.id))
     const mens = m || []
     const idsActivos = new Set(jugActivos.map((jug: any) => jug.id))
     const idsFaltantes = [...new Set(mens.filter((me: any) => !idsActivos.has(me.jugador_id)).map((me: any) => me.jugador_id))]
@@ -220,7 +237,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
         // bloqueada. Su plata no desaparece: pagados/recaudado arriba se
         // calculan desde `mensualidades` directo, no desde esta lista.
         .eq('estado', 'activo')
-      if (extras?.length) jugTodos = [...jugActivos, ...extras].sort((a: any, b: any) => (a.nombre || '').localeCompare(b.nombre || ''))
+      if (extras?.length) jugTodos = [...jugActivos, ...extras.filter(jugador => !inactivos.has(jugador.id))].sort((a: any, b: any) => (a.nombre || '').localeCompare(b.nombre || ''))
     }
     setJugadores(jugTodos)
     setMensualidades(mens)
@@ -231,9 +248,10 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
     const anioActual = new Date().getFullYear()
     const esMesActual = mes === mesActual && anio === anioActual
     if (esMesActual) {
-      const sinMens = (j || []).filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
+      const sinMens = jugActivos.filter(jug => !(m || []).find((mens: any) => mens.jugador_id === jug.id))
       if (sinMens.length > 0) {
-        await generarMensualidadesPendientes({ jugadorIds: sinMens.map(jug => jug.id), mes, anio })
+        const generacion = await generarMensualidadesPendientes({ jugadorIds: sinMens.map(jug => jug.id), mes, anio })
+        if (generacion.error) { setErrorRetencion(generacion.error); return }
         const { data: mActual2 } = await supabase.from('mensualidades').select('id,club_id,jugador_id,mes,anio,monto,estado,fecha_pago,notas').eq('club_id', id).eq('mes', mes).eq('anio', anio)
         setMensualidades(mActual2 || [])
       }
@@ -247,6 +265,11 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
   async function cargarDeuda(cid?: string) {
     const id = cid || clubId
     if (!id) return
+    let inactivos = new Set<string>()
+    if (conRetencionAutomatica) {
+      try { inactivos = await idsInactivosRetencion(id) }
+      catch { setErrorRetencion('No se pudo leer el padrón de retención.'); return }
+    }
     setCargandoDeuda(true)
     const { data } = await supabase
       .from('mensualidades')
@@ -276,7 +299,7 @@ export function MensualidadesPanel({ onPagoRegistrado, mes: mesProp, anio: anioP
         // eliminado no deja fila en esta tabla. Su deuda no se pierde: sigue
         // en `mensualidades` y visible desde su propia ficha.
         .eq('estado', 'activo')
-      setJugadoresDeuda(extras || [])
+      setJugadoresDeuda((extras || []).filter(jugador => !inactivos.has(jugador.id)))
     } else {
       setJugadoresDeuda([])
     }
@@ -431,8 +454,8 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
   }
 
   const pagados = mensualidades.filter(m => m.estado === 'pagado').length
-  const pendientes = mensualidades.filter(m => m.estado === 'pendiente').length
-  const atrasados = mensualidades.filter(m => m.estado === 'atrasado').length
+  const pendientes = mensualidades.filter(m => m.estado === 'pendiente' && !inactivosRetencion.has(m.jugador_id)).length
+  const atrasados = mensualidades.filter(m => m.estado === 'atrasado' && !inactivosRetencion.has(m.jugador_id)).length
   const totalRecaudado = mensualidades.filter(m => m.estado === 'pagado').reduce((s,m) => s + (m.monto||0), 0)
   // Respeta el ojito. Los mensajes de WhatsApp más abajo NO lo usan a
   // propósito: ahí el monto le llega al jugador, que necesita saber cuánto
@@ -507,6 +530,7 @@ La cuota deja de cobrarse y sale de los pendientes. El mes siguiente se emite no
 
   return (
     <div>
+      {errorRetencion && <div role="alert" style={{ ...card, padding: 14, marginBottom: 12, color: '#b91c1c' }}>{errorRetencion}<button onClick={() => void cargarMensualidades()} style={{ marginLeft: 12 }}>Reintentar</button></div>}
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         {!tienePropsExternos && alcance === 'mes' && (

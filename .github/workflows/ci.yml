@@ -32,4 +32,10 @@ jobs:
         run: npm run test
 
       - name: Build Next.js app
+        # CI verifica la compilación sin conectarse a datos reales. Vercel
+        # compila por separado con las variables de su propio proyecto.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://build-only.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: build-only-anon-key
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
         run: npm run build

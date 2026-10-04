@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/app/layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { useModulos } from '@/lib/hooks/useModulos'
+import CalendarioIntegrado from '@/components/CalendarioIntegrado'
 
 const supabase = createClient()
 
@@ -37,6 +39,13 @@ export default function CalendarioPage() {
 }
 
 function CalendarioContent() {
+  const { perfil } = usePerfil()
+  const { tiene } = useModulos()
+  if (perfil && tiene('calendario_integrado')) return <AppLayout perfil={perfil}><CalendarioIntegrado key={`${perfil.club_id}:${perfil.id}:${perfil.rol}:${perfil.jugador_id}`} perfil={perfil} /></AppLayout>
+  return <CalendarioLegacy />
+}
+
+function CalendarioLegacy() {
   const { perfil, loading: authLoading } = usePerfil()
   const searchParams = useSearchParams()
   const fechaInicial = fechaValida(searchParams.get('fecha'))

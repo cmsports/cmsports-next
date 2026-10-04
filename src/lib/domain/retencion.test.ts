@@ -71,6 +71,9 @@ describe('con la configuración por defecto NO pasa nada', () => {
 })
 
 describe('cuotasImpagas', () => {
+  it('no bloquea por una cuota exenta, anulada o condonada aunque conserve monto', () => {
+    expect(cuotasImpagas([cuota({ estado: 'exento' }), cuota({ estado: 'anulado' }), cuota({ estado: 'condonado' })])).toEqual([])
+  })
   it('descarta las pagadas', () => {
     expect(cuotasImpagas([cuota({ estado: 'pagado' }), cuota({ mes: 9 })])).toHaveLength(1)
   })
@@ -88,6 +91,28 @@ describe('cuotasImpagas', () => {
       cuota({ mes: 1, anio: 2026 }),
     ])
     expect(orden.map(c => `${c.anio}-${c.mes}`)).toEqual(['2025-12', '2026-1', '2026-2'])
+  })
+})
+
+describe('reglas operativas de retención', () => {
+  it('superar 30 días significa bloquear desde el día 31', () => {
+    const config = crearLectorConfig([
+      { clave: 'morosidad.dias_aviso', valor: 15 },
+      { clave: 'morosidad.dias_bloqueo', valor: 31 },
+    ])
+    expect(estadoDeMorosidad(config, 14)).toBe('con_deuda')
+    expect(estadoDeMorosidad(config, 15)).toBe('para_avisar')
+    expect(estadoDeMorosidad(config, 30)).toBe('para_avisar')
+    expect(estadoDeMorosidad(config, 31)).toBe('para_bloquear')
+  })
+  it('un duplicado de asistencia no cuenta dos faltas y una presencia del día corta la racha', () => {
+    expect(faltasSeguidas([
+      { fecha: '2026-10-03', estado: 'ausente' },
+      { fecha: '2026-10-03', estado: 'ausente' },
+      { fecha: '2026-10-02', estado: 'presente' },
+      { fecha: '2026-10-02', estado: 'ausente' },
+      { fecha: '2026-10-01', estado: 'ausente' },
+    ])).toBe(1)
   })
 })
 

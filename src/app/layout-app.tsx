@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
 import CampanaNotificaciones from '@/components/campana-notificaciones'
+import AvisoMorosidadJugador from '@/components/AvisoMorosidadJugador'
 import { verificarBloqueoPerfil } from '@/app/actions/jugadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import {
@@ -436,6 +437,9 @@ export default function AppLayout({ children, perfil }: { children: React.ReactN
             de módulo React monta un div nuevo y el contenido entra. Sin ella
             solo se animaría la primera carga de la sesión. */}
         <div key={pathname} className="anim-pagina">
+          {perfil?.rol === 'jugador' && perfil.club_id && perfil.jugador_id && tiene('retencion_automatica') && (
+            <AvisoMorosidadJugador clubId={perfil.club_id} jugadorId={perfil.jugador_id} />
+          )}
           {children}
         </div>
       </main>

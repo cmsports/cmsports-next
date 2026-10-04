@@ -3,7 +3,7 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
-import { MODULOS_CORE as CORE, MODULOS_KEYS as ALL_MODULOS, type Modulo } from '@/lib/domain/modulos'
+import { MODULOS_CORE as CORE, MODULOS_KEYS as ALL_MODULOS, MODULOS_FALLBACK, type Modulo } from '@/lib/domain/modulos'
 
 export type { Modulo }
 
@@ -61,23 +61,24 @@ export function ModulosProvider({ children }: { children: React.ReactNode }) {
   // así el menú sale con los módulos desde el primer dibujo, sin esperar.
   const recordados = useMemo(() => (clubId ? leerCacheModulos(clubId) : null), [clubId])
 
-  // Sin `?? ALL_MODULOS` a la salida, un corte de red acá no se veía como un
+  // Sin fallback a la salida, un corte de red acá no se veía como un
   // error en ningún lado: `estado` se quedaba en null, `modulos` en `[]`
   // (ver más abajo) y el menú lateral perdía toda la sección de Recursos
   // (tienda, bibliografía, libro del profe) sin aviso ni reintento, para el
   // resto de esa sesión — se veía como un cuadro en blanco en la barra
-  // lateral. Mejor pecar de permisivo (mostrar todo) que de vacío.
+  // lateral. Se conservan los módulos anteriores en ese fallback; las nuevas
+  // funciones Spinhouse requieren confirmación explícita de la base.
   const cargar = useCallback(async (id: string) => {
     if (!id) return
     const supabase = createClient()
     try {
       const { data } = await supabase.from('clubes').select('modulos_habilitados').eq('id', id).single()
-      const modulos = data?.modulos_habilitados ?? ALL_MODULOS
+      const modulos = data?.modulos_habilitados ?? MODULOS_FALLBACK
       setEstado({ clubId: id, modulos })
       // Solo se recuerda lo que la base confirmó, nunca el "todos" de emergencia.
       if (data?.modulos_habilitados) guardarCacheModulos(id, data.modulos_habilitados)
     } catch {
-      setEstado({ clubId: id, modulos: ALL_MODULOS })
+      setEstado({ clubId: id, modulos: MODULOS_FALLBACK })
     }
   }, [])
 
@@ -90,13 +91,13 @@ export function ModulosProvider({ children }: { children: React.ReactNode }) {
       .then(
         ({ data }) => {
           if (!activo) return
-          setEstado({ clubId, modulos: data?.modulos_habilitados ?? ALL_MODULOS })
+          setEstado({ clubId, modulos: data?.modulos_habilitados ?? MODULOS_FALLBACK })
           if (data?.modulos_habilitados) guardarCacheModulos(clubId, data.modulos_habilitados)
         },
         () => {
           if (!activo) return
-          // Sin red: lo recordado sigue valiendo; sin nada recordado, todo.
-          setEstado({ clubId, modulos: recordados ?? ALL_MODULOS })
+          // Sin red: lo recordado sigue valiendo; sin caché, módulos anteriores.
+          setEstado({ clubId, modulos: recordados ?? MODULOS_FALLBACK })
         },
       )
     return () => { activo = false }

@@ -1,5 +1,7 @@
 'use server'
 
+import { moduloExportacionPartidos } from '@/lib/supabase/exportacionPartidosModulo'
+
 import {
   seedingSerpenteo,
   seedingSerpenteoConClubes,
@@ -765,7 +767,7 @@ export async function corregirResultadoGrupos(params: {
   /** Corregir a un W.O.: quién se presentó. Manda sobre sets y parciales. */
   walkoverGanadorId?: string
 }) {
-  const { error: authErr, supabase } = await requireGestorTorneos()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { partidoId } = params
@@ -824,7 +826,15 @@ export async function corregirResultadoGrupos(params: {
     partido.ganador === nuevoGanadorId &&
     partido.sets_a === setsA && partido.sets_b === setsB &&
     partido.puntos_a === puntosA && partido.puntos_b === puntosB
-  ) return { success: true }
+  ) {
+    // Los totales pueden coincidir con parciales distintos (11-9 + 11-7 y
+    // 11-8 + 11-8). Actualizamos también ese detalle sin rehacer el bracket.
+    if ((await moduloExportacionPartidos(supabase, perfil?.club_id)).habilitado) {
+      const { error } = await supabase.from('torneo_partidos').update({ parciales: parcialesCorregidos?.map(([a, b]): [number, number] => [a, b]) ?? null, es_walkover: !!params.walkoverGanadorId }).eq('id', partidoId)
+      if (error) return { error: 'No se pudieron corregir los parciales: ' + error.message }
+    }
+    return { success: true }
+  }
 
   const anteriorGanadorId: string = partido.ganador
   const anteriorPerdedorId: string | null = anteriorGanadorId === partido.jugador_a ? partido.jugador_b : partido.jugador_a
@@ -967,7 +977,7 @@ export async function marcarGanadorPartido(params: {
    */
   walkoverGanadorId?: string
 }) {
-  const { error: authErr, supabase } = await requireGestorTorneos()
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
 
   const { partidoId } = params
@@ -1028,6 +1038,10 @@ export async function marcarGanadorPartido(params: {
   const marcador = {
     ...(sets ? { sets_a: sets.a, sets_b: sets.b, ...(puntos ? { puntos_a: puntos.puntosA, puntos_b: puntos.puntosB } : {}) } : {}),
     es_walkover: esWalkover,
+    // El opt-in es explícito y exclusivo de Spinhouse al activarlo. En los
+    // demás clubes se escribe exactamente el marcador que se escribía antes.
+    ...((await moduloExportacionPartidos(supabase, perfil?.club_id)).habilitado
+      ? { parciales: parcialesEntrada?.map(([a, b]): [number, number] => [a, b]) ?? null } : {}),
   }
 
   if (partido.fase !== 'grupos') {

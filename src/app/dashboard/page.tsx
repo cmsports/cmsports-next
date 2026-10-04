@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import AppLayout from '../layout-app'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { useModulos } from '@/lib/hooks/useModulos'
+import { useEnVivo } from '@/lib/useEnVivo'
 import {
   Users, TrendingUp, AlertTriangle, DollarSign,
   Link2, Mail, X, HelpCircle, Copy, Check, UserX, ClipboardCheck, QrCode,
@@ -304,6 +305,14 @@ export default function DashboardPage() {
       if (typeof cancelarCarga === 'function') cancelarCarga()
     }
   }, [authLoading, perfil, router])
+
+  // Los retiros no alteran jugadores.estado. Actualiza los KPI cuando cambia
+  // el padrón persistido; los clubes sin el módulo mantienen su carga anterior.
+  useEnVivo(tiene('retencion_automatica') ? ['retencion_estado', 'jugadores', 'mensualidades', 'movimientos'] : [], perfil?.club_id ?? null, () => {
+    if (!perfil?.club_id) return
+    void Promise.all([cargarDatos(perfil.club_id), cargarDesgloses(perfil.club_id)])
+      .catch(() => setErrorDatos(true))
+  }, { conClub: ['retencion_estado', 'jugadores', 'mensualidades', 'movimientos'] })
 
   // Pasa por el interruptor del ojito: con los montos ocultos devuelve puntos
   // en vez de la cifra, sin que cada tarjeta tenga que saberlo.

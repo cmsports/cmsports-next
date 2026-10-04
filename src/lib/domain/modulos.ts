@@ -12,6 +12,13 @@
  * casilla con el nombre que el admin del club va a ver.
  */
 export const MODULOS = [
+  // Implementación Spinhouse: solo se habilitan por migraciones de ese club.
+  { key: 'finanzas_spinhouse', label: 'Márgenes, liquidaciones y proyección de caja' },
+  { key: 'retencion_automatica', label: 'Avisos y automatización de retención' },
+  { key: 'calendario_integrado', label: 'Agenda integrada y calendario público' },
+  { key: 'ficha_paralimpica', label: 'Ficha paralímpica privada' },
+  { key: 'exportacion_partidos', label: 'Exportación de partidos CSV y JSON' },
+  { key: 'indicador_bajas_club', label: 'Altas, bajas y reingresos del club' },
   { key: 'torneos', label: 'Torneos' },
   { key: 'torneo_oficial', label: 'Torneo oficial' },
   { key: 'liga', label: 'Liga' },
@@ -134,6 +141,15 @@ export type Modulo = (typeof MODULOS)[number]['key']
 export const MODULOS_CORE: readonly string[] = ['dashboard', 'jugadores']
 
 export const MODULOS_KEYS: Modulo[] = MODULOS.map(m => m.key)
+
+/** Las funciones nuevas requieren habilitación explícita, incluso sin red. */
+export const MODULOS_HABILITACION_EXPLICITA: readonly Modulo[] = [
+  'finanzas_spinhouse', 'retencion_automatica', 'calendario_integrado',
+  'ficha_paralimpica', 'exportacion_partidos', 'indicador_bajas_club',
+]
+
+// Conserva el fallback previo de los clubes antiguos sin encenderles funciones nuevas.
+export const MODULOS_FALLBACK = MODULOS_KEYS.filter(m => !MODULOS_HABILITACION_EXPLICITA.includes(m))
 
 export function esModulo(valor: string): valor is Modulo {
   return (MODULOS_KEYS as string[]).includes(valor)

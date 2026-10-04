@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import AppLayout from '@/app/layout-app'
 import MarcadorSets from '@/components/torneos/MarcadorSets'
+import ExportarPartidos from '@/components/ExportarPartidos'
 import { armarEncuentro, borrarEncuentros, eliminarEquipo, generarEncuentros, guardarEquipo, marcarPartidoDeEncuentro } from '@/app/actions/torneoEquipos'
 import { finalizarTorneo } from '@/app/actions/torneos'
 import { modalidadDe } from '@/lib/domain/modalidadTorneo'
@@ -236,6 +237,7 @@ export default function TorneoEquiposPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
           <button onClick={() => router.push(`/torneos/${torneoId}`)} style={{ background: 'transparent', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', color: muted, fontSize: 13, cursor: 'pointer' }}>← Torneo</button>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: ink, margin: 0, flex: 1 }}>{torneo?.nombre} · Equipos</h1>
+          <ExportarPartidos tipo="torneo" competenciaId={torneoId} />
           {esAdmin && !hayEncuentros && (
             <button onClick={generar} disabled={ocupado || equipos.length < 2} style={{ ...boton(true), opacity: equipos.length < 2 ? 0.5 : 1 }}>
               ⚔️ Generar encuentros{equipos.length >= 2 ? ` (${(equipos.length * (equipos.length - 1)) / 2})` : ''}

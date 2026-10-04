@@ -27,6 +27,9 @@ import { linkWhatsApp } from '@/lib/whatsapp'
 import { CONFIG_POR_DEFECTO, type LectorConfig } from '@/lib/domain/clubConfig'
 import { configDelClub } from '@/lib/supabase/clubConfig'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { cachedFetch } from '@/lib/query-cache'
+import { leerRetencionPaginada } from '@/lib/supabase/retencionPaginada'
+import { useEnVivo } from '@/lib/useEnVivo'
 import { sumarDias } from '@/lib/domain/cuposDia'
 import {
   debeAlertarPorFaltas,
@@ -81,19 +84,20 @@ export default function AlertaFaltas({
     // corría un día.
     const desde = sumarDias(fechaChile(), -DIAS_DE_HISTORIAL)
 
-    const [cfg, club, res] = await Promise.all([
+    const [cfg, club, res] = await cachedFetch(`alertas-faltas:${clubId}:${ids}:${desde}`, () => Promise.all([
       configDelClub(clubId),
       db.from('clubes').select('nombre').eq('id', clubId).single(),
       // A propósito SIN filtrar `estado = 'presente'`. La regla general del
       // proyecto es filtrarlo, y acá sería justo al revés: lo que se cuenta
       // son las faltas, y un 'presente' es lo que CORTA la racha. Sin esa fila
       // la racha nunca se cortaría y alertaría por todos.
-      db.from('asistencia')
+      leerRetencionPaginada((desdeFila, hastaFila) => db.from('asistencia')
         .select('jugador_id, fecha, estado')
+        .eq('club_id', clubId)
         .in('jugador_id', ids.split(','))
         .gte('fecha', desde)
-        .order('fecha', { ascending: false }),
-    ])
+        .order('fecha', { ascending: false }).order('id').range(desdeFila, hastaFila)),
+    ]), 60_000, ['asistencia', 'clubes', 'club_config'])
 
     if (res.error) {
       // Sin datos no se inventa una alerta: mejor no mostrar nada que decirle
@@ -115,6 +119,7 @@ export default function AlertaFaltas({
   }, [clubId, ids])
 
   useEffect(() => { void cargar() }, [cargar])
+  useEnVivo(['asistencia', 'club_config'], clubId ?? null, () => { void cargar() }, { conClub: ['asistencia', 'club_config'] })
 
   const enRiesgo = useMemo(() => alumnos
     .map(a => ({ ...a, faltas: faltasSeguidas(marcas[a.id] ?? []) }))

@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({ requireAdmin: vi.fn(), createAdminClient: vi.f
 vi.mock('@/lib/auth/require', () => ({ requireAdmin: mocks.requireAdmin, requireGestorTorneos: mocks.requireAdmin }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.createAdminClient }))
 
-import { marcarGanadorPartido } from './torneos'
+import { corregirResultadoGrupos, marcarGanadorPartido } from './torneos'
 
 type Fila = Record<string, any>
 
@@ -91,6 +91,28 @@ const errorDe = (r: unknown) => (r as { error?: string }).error
 
 describe('el marcador se valida con el formato de SU fase', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('guarda parciales únicamente si el club habilitó la exportación de partidos', async () => {
+    for (const modulos of [null, [], ['torneos'], ['exportacion_partidos']]) {
+      const t = escenario()
+      t.clubes = [{ id: 'club', modulos_habilitados: modulos }]
+      montar(t)
+      const parciales = [[11, 9], [8, 11], [11, 6]] as [number, number][]
+      expect(await marcarGanadorPartido({ partidoId: 'pg', parciales })).toMatchObject({ success: true })
+      if (modulos?.includes('exportacion_partidos')) expect(partido(t, 'pg').parciales).toEqual(parciales)
+      else expect(partido(t, 'pg')).not.toHaveProperty('parciales')
+    }
+  })
+
+  it('corrige parciales diferentes con los mismos totales sin rehacer el resultado', async () => {
+    const t = escenario()
+    t.clubes = [{ id: 'club', modulos_habilitados: ['exportacion_partidos'] }]
+    Object.assign(partido(t, 'pg'), { ganador: 'ana', sets_a: 2, sets_b: 0, puntos_a: 22, puntos_b: 16, parciales: [[11, 9], [11, 7]] })
+    montar(t)
+    expect(await corregirResultadoGrupos({ partidoId: 'pg', parciales: [[11, 8], [11, 8]] })).toMatchObject({ success: true })
+    expect(partido(t, 'pg').parciales).toEqual([[11, 8], [11, 8]])
+    expect(partido(t, 'pg').ganador).toBe('ana')
+  })
 
   it('en los grupos al mejor de 3 acepta un 2-1', async () => {
     const t = montar(escenario())

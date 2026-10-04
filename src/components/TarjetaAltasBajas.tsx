@@ -25,6 +25,8 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import { UserPlus } from 'lucide-react'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { altasYBajasDelMes, type Inscripcion } from '@/lib/domain/altasBajas'
+import { useModulos } from '@/lib/hooks/useModulos'
+import TarjetaPermanenciaClub from '@/components/TarjetaPermanenciaClub'
 
 const supabase = createClient()
 
@@ -45,6 +47,13 @@ function mesEnCurso(): { desde: string; hasta: string } {
 }
 
 export default function TarjetaAltasBajas({ clubId }: { clubId: string | null | undefined }) {
+  const { tiene } = useModulos()
+  return tiene('indicador_bajas_club')
+    ? <TarjetaPermanenciaClub key={clubId ?? ''} clubId={clubId} />
+    : <TarjetaAltasBajasBloques clubId={clubId} />
+}
+
+function TarjetaAltasBajasBloques({ clubId }: { clubId: string | null | undefined }) {
   const [inscripciones, setInscripciones] = useState<Inscripcion[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(false)
