@@ -82,6 +82,7 @@ export default function DashboardPage() {
   const { perfil, loading: authLoading } = usePerfil()
   const { tiene } = useModulos()
   const esFutbol = tiene('liga_futbol')
+  const tieneOcupacion = tiene('mesas')
   const [kpis, setKpis]                           = useState<any>({})
   const [solicitudes, setSolicitudes]             = useState<any[]>([])
   const [jugadoresInactivos, setJugadoresInactivos] = useState<any[]>([])
@@ -489,10 +490,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Ocupación por bloque — debajo de los KPIs, sin reordenar nada de lo de
-          arriba. Cuelga del módulo 'mesas', que Buin no tiene. */}
-      {tiene('mesas') && <TarjetaOcupacion clubId={perfil?.club_id} />}
-
       {/* ── Fila inferior: Gastos + Link + Asistencia hoy + Solicitudes ── */}
       <div className="anim-lista grid-responsive-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 16 }}>
 
@@ -641,8 +638,8 @@ export default function DashboardPage() {
 
         {/* Credenciales oficiales — reporte para entregar accesos.
             El admin decide cuándo ver la clave; la tarjeta no la muestra. */}
-        <Link href="/credenciales" style={{ textDecoration: 'none' }}>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: 'pointer' }}>
+        <Link href="/credenciales" style={{ textDecoration: 'none', display: tieneOcupacion ? 'flex' : undefined }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', cursor: 'pointer', flex: tieneOcupacion ? 1 : undefined }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <ClipboardCheck size={15} color={C.skyD} />
               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🔑 Credenciales oficiales del club</span>
@@ -694,6 +691,10 @@ export default function DashboardPage() {
       </div>
 
       {tiene('liga_futbol') && <LigaFutbolDashboardWidget clubId={perfil?.club_id} />}
+
+      {/* Ocupación por bloque — al final del dashboard de Spinhouse.
+          Cuelga del módulo 'mesas', que Buin no tiene. */}
+      {tieneOcupacion && <TarjetaOcupacion clubId={perfil?.club_id} />}
 
       {feedbackOpen && perfil?.club_id && (
         <ModalCrearFeedback clubId={perfil.club_id} onClose={() => setFeedbackOpen(false)} />
