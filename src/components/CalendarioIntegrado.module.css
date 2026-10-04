@@ -35,6 +35,12 @@
 .itemHeader { justify-content: space-between; align-items: flex-start; }
 .itemHeader h3 { font-size: 13px; font-weight: 600; line-height: 1.5; }
 .edit { padding: 4px 8px; font-size: 11px; flex-shrink: 0; }
+.itemActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.danger { color: #dc2626; border-color: #fecaca; }
+.dangerPrimary { background: #dc2626; color: white; border-color: #dc2626; }
+.success { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.confirmText { font-size: 13px; line-height: 1.6; margin-bottom: 10px; overflow-wrap: anywhere; }
+.deleteFromForm { margin-right: auto; }
 .meta, .description { font-size: 11px; color: var(--text-muted); line-height: 1.6; margin-top: 4px; overflow-wrap: anywhere; }
 .link { color: #4f46e5; font-size: 11px; font-weight: 600; display: inline-block; margin-top: 8px; text-decoration: none; }
 .empty { font-size: 13px; color: var(--text-muted); text-align: center; padding: 24px 12px; line-height: 1.6; }
@@ -55,7 +61,7 @@
 .roster { max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .roster legend { padding: 0 5px; font-size: 12px; font-weight: 600; }
 .roster label { padding: 6px 0; }
-.footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
+.footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 14px; }
 @media (min-width: 900px) { .withPanel { grid-template-columns: minmax(0,1fr) 320px; } }
 @media (max-width: 767px) {
   .toolbar { gap: 14px; }

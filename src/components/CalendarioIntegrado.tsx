@@ -11,6 +11,7 @@ import { TIPOS_ACTIVIDAD, clasesDelMes, partidosPropiosDelMes, rangoMesCalendari
 import { esUuid } from '@/lib/domain/uuid'
 import type { Perfil } from '@/types'
 import styles from './CalendarioIntegrado.module.css'
+import { eliminarActividadCalendario } from '@/app/actions/calendario'
 
 const supabase = createClient()
 const TABLAS = ['calendario_actividades','calendario_nomina','ligas','liga_fechas','liga_fecha_sesiones','liga_divisiones','liga_partidos','liga_mesas','bloque_jugadores','bloques_horario','eventos','torneos','jugadores']
@@ -35,6 +36,9 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
   const [form, setForm] = useState(vacio)
   const [nomina, setNomina] = useState<string[]>([])
   const [guardando, setGuardando] = useState(false)
+  const [confirmacion, setConfirmacion] = useState<ItemCalendario | null>(null)
+  const [eliminando, setEliminando] = useState(false)
+  const [mensaje, setMensaje] = useState('')
   const [dia, setDia] = useState(fechaInicial)
   const carga = useRef(0)
   const clubId = perfil.club_id!
@@ -81,12 +85,14 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
   useEnVivo(TABLAS,clubId,cargar,{conClub:CON_CLUB})
 
   function abrir(a?: ActividadCalendario) {
+    setMensaje('')
     setIdEdicion(a?.id ?? null)
     setForm(a ? { titulo:a.titulo,tipo:a.tipo,fecha:a.fecha,hora_inicio:a.hora_inicio?.slice(0,5) ?? '',hora_fin:a.hora_fin?.slice(0,5) ?? '',lugar:a.lugar,descripcion:a.descripcion,publico:a.publico } : { ...vacio(), fecha: dia || fechaChile() })
     setNomina(a ? datos?.nomina.filter(n => n.actividad_id === a.id).map(n => n.jugador_id) ?? [] : [])
     setEditar(true)
   }
   async function guardar() {
+    if (guardando || eliminando) return
     if (!form.titulo.trim() || !form.fecha) { setError('Completa título y fecha'); return }
     if (form.hora_fin && (!form.hora_inicio || form.hora_fin <= form.hora_inicio)) { setError('La hora final debe ser posterior al inicio'); return }
     setGuardando(true)
@@ -97,6 +103,26 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
       setEditar(false); setMes(form.fecha.slice(0,7)); setDia(form.fecha); await cargar()
     } catch(e) { setError(e instanceof Error ? e.message : 'No se pudo guardar el evento') }
     finally { setGuardando(false) }
+  }
+  async function eliminar() {
+    if (!confirmacion || eliminando || guardando || !['actividad', 'evento'].includes(confirmacion.origen)) return
+    const actividad = confirmacion
+    setEliminando(true); setError(''); setMensaje('')
+    try {
+      const resultado = await eliminarActividadCalendario({ id: actividad.id, origen: actividad.origen as 'actividad' | 'evento' })
+      if (resultado.error) { setError(resultado.error); return }
+      invalidarPorTabla(actividad.origen === 'actividad' ? 'calendario_actividades' : 'eventos')
+      if (actividad.origen === 'actividad') invalidarPorTabla('calendario_nomina')
+      setDatos(actuales => actuales ? {
+        ...actuales,
+        actividades: actuales.actividades.filter(a => actividad.origen !== 'actividad' || a.id !== actividad.id),
+        items: actuales.items.filter(i => i.origen !== actividad.origen || i.id !== actividad.id),
+        nomina: actuales.nomina.filter(n => actividad.origen !== 'actividad' || n.actividad_id !== actividad.id),
+      } : actuales)
+      setConfirmacion(null); setEditar(false); setMensaje('Actividad eliminada.')
+      await cargar()
+    } catch { setError('No se pudo eliminar la actividad. Intenta nuevamente.') }
+    finally { setEliminando(false) }
   }
   const [anio, numeroMes] = mes.split('-').map(Number)
   const primerDia = new Date(anio, numeroMes - 1, 1).getDay()
@@ -131,6 +157,7 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
     </div>
     <p className={styles.subtitle}>{staff ? 'Torneos, jornadas de liga y actividades del club. Selecciona un día para ver el detalle.' : 'Tus clases, partidos de liga y actividades del club. Selecciona un día para ver el detalle.'}</p>
     {error && <div role="alert" className={styles.notice}>{error} <button className={styles.button} onClick={() => void cargar()}>Reintentar</button></div>}
+    {mensaje && <div role="status" className={`${styles.notice} ${styles.success}`}>{mensaje}</div>}
     <div className={`${styles.layout}${dia ? ` ${styles.withPanel}` : ''}`}>
       <div>
         <div className={`${styles.card} ${styles.calendar}`} aria-label="Calendario mensual" aria-busy={!datos && !error}>
@@ -161,7 +188,10 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
         {itemsDelDia.map(i => {
           const convocados = datos?.nomina.filter(n => n.actividad_id === i.id) ?? []
           return <article key={`${i.origen}-${i.id}`} className={styles.item} style={{ borderLeftColor: colores[i.tipo] ?? '#64748b' }}>
-            <div className={styles.itemHeader}><h3>{i.titulo}</h3>{staff && i.origen === 'actividad' && <button type="button" className={`${styles.button} ${styles.edit}`} onClick={() => abrir(datos!.actividades.find(a => a.id === i.id))}>Editar</button>}</div>
+            <div className={styles.itemHeader}><h3>{i.titulo}</h3>{staff && ['actividad', 'evento'].includes(i.origen) && <div className={styles.itemActions}>
+              {i.origen === 'actividad' && <button type="button" className={`${styles.button} ${styles.edit}`} onClick={() => abrir(datos!.actividades.find(a => a.id === i.id))}>Editar</button>}
+              <button type="button" aria-label={`Eliminar ${i.titulo}`} className={`${styles.button} ${styles.edit} ${styles.danger}`} disabled={eliminando || guardando} onClick={() => { setError(''); setConfirmacion(i) }}>Eliminar</button>
+            </div>}</div>
             <p className={styles.meta}>{etiquetas[i.tipo] ?? i.tipo}{i.hora_inicio ? ` · ${i.hora_inicio.slice(0,5)}${i.hora_fin ? `–${i.hora_fin.slice(0,5)}` : ''}` : ''}{i.lugar ? ` · ${i.lugar}` : ''}</p>
             {i.descripcion && <p className={styles.description}>{i.descripcion}</p>}
             {['suspension','feriado'].includes(i.tipo) && <p className={styles.description}>Sin clases habituales este día.</p>}
@@ -175,7 +205,7 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
         {staff && <button type="button" className={`${styles.button} ${styles.primary}`} style={{ width: '100%', marginTop: 8 }} onClick={() => abrir()}>+ Agregar actividad</button>}
       </aside>}
     </div>
-    {editar && <div role="dialog" aria-modal="true" aria-labelledby="titulo-actividad" className={styles.overlay}>
+    {editar && !confirmacion && <div role="dialog" aria-modal="true" aria-labelledby="titulo-actividad" className={styles.overlay}>
       <div className={styles.modal}>
         <div className={styles.modalHeader}><h2 id="titulo-actividad">{idEdicion ? 'Editar actividad' : 'Nueva actividad'}</h2><button type="button" className={styles.close} aria-label="Cerrar formulario" disabled={guardando} onClick={() => setEditar(false)}>✕</button></div>
         <div className={styles.form}>
@@ -189,8 +219,20 @@ export default function CalendarioIntegrado({ perfil }: { perfil: Perfil }) {
           <p className={styles.help}>Usa un título y lugar sin nombres de alumnos. Los detalles y la nómina se mantienen dentro del club.</p>
           {form.tipo === 'externo' && <fieldset className={styles.roster}><legend>Nómina de jugadores</legend>{datos?.jugadores.map(j => <label key={j.id} className={styles.checkbox}><input type="checkbox" checked={nomina.includes(j.id)} onChange={e => setNomina(e.target.checked ? [...nomina,j.id] : nomina.filter(id => id !== j.id))} />{j.nombre}</label>)}</fieldset>}
           {error && <p role="alert" className={styles.notice}>{error}</p>}
-          <div className={styles.footer}><button disabled={guardando} className={styles.button} onClick={() => setEditar(false)}>Cancelar</button><button disabled={guardando} className={`${styles.button} ${styles.primary}`} onClick={() => void guardar()}>{guardando ? 'Guardando…' : 'Guardar actividad'}</button></div>
+          <div className={styles.footer}>
+            {idEdicion && <button type="button" className={`${styles.button} ${styles.danger} ${styles.deleteFromForm}`} disabled={guardando || eliminando} onClick={() => { const actividad = datos?.items.find(i => i.origen === 'actividad' && i.id === idEdicion); if (actividad) { setError(''); setConfirmacion(actividad) } }}>Eliminar actividad</button>}
+            <button disabled={guardando} className={styles.button} onClick={() => setEditar(false)}>Cancelar</button><button disabled={guardando} className={`${styles.button} ${styles.primary}`} onClick={() => void guardar()}>{guardando ? 'Guardando…' : 'Guardar actividad'}</button>
+          </div>
         </div>
+      </div>
+    </div>}
+    {confirmacion && <div role="dialog" aria-modal="true" aria-labelledby="titulo-eliminar-actividad" className={styles.overlay}>
+      <div className={styles.modal}>
+        <div className={styles.modalHeader}><h2 id="titulo-eliminar-actividad">Eliminar actividad</h2><button type="button" aria-label="Cerrar confirmación" className={styles.close} disabled={eliminando} onClick={() => setConfirmacion(null)}>✕</button></div>
+        <p className={styles.confirmText}>¿Quieres eliminar <strong>{confirmacion.titulo}</strong> del calendario?</p>
+        <p className={styles.help}>{confirmacion.origen === 'actividad' ? 'También se quitará su nómina de participantes y dejará de aparecer en la agenda pública. ' : ''}Esta acción no se puede deshacer.</p>
+        {error && <p role="alert" className={styles.notice} style={{ marginTop: 14 }}>{error}</p>}
+        <div className={styles.footer}><button type="button" autoFocus className={styles.button} disabled={eliminando} onClick={() => setConfirmacion(null)}>Cancelar</button><button type="button" className={`${styles.button} ${styles.dangerPrimary}`} disabled={eliminando} onClick={() => void eliminar()}>{eliminando ? 'Eliminando…' : 'Sí, eliminar'}</button></div>
       </div>
     </div>}
   </div>
