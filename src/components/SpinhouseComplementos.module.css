@@ -68,6 +68,13 @@
   background: #dcfce7;
 }
 
+.compactSummary { padding: 14px; }
+.compactHeader { display: flex; align-items: center; gap: 8px; }
+.compactHeader .summaryIcon { margin-bottom: 0; }
+.summaryDefinition { margin: 8px 0; font-size: 11px; color: #64748b; }
+.summaryDefinition summary { cursor: pointer; }
+.summaryDefinition summary:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+
 .formBox {
   margin: 14px 0;
   padding: 16px;

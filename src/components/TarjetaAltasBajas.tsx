@@ -46,10 +46,10 @@ function mesEnCurso(): { desde: string; hasta: string } {
   return { desde: `${hoy.slice(0, 7)}-01`, hasta: `${hoy.slice(0, 7)}-${dd}` }
 }
 
-export default function TarjetaAltasBajas({ clubId }: { clubId: string | null | undefined }) {
+export default function TarjetaAltasBajas({ clubId, compacto = false }: { clubId: string | null | undefined; compacto?: boolean }) {
   const { tiene } = useModulos()
   return tiene('indicador_bajas_club')
-    ? <TarjetaPermanenciaClub key={clubId ?? ''} clubId={clubId} />
+    ? <TarjetaPermanenciaClub key={clubId ?? ''} clubId={clubId} compacto={compacto} />
     : <TarjetaAltasBajasBloques clubId={clubId} />
 }
 
