@@ -1,0 +1,15 @@
+.spinhouse {
+  width: 100%;
+  min-width: 0;
+  max-width: calc(100vw - 268px);
+}
+
+.spinhouse :global(.tabs-scroll) {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+@media (max-width: 768px) {
+  .spinhouse { max-width: calc(100vw - 24px); }
+}

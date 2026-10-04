@@ -1,0 +1,160 @@
+.panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.card,
+.stat,
+.loading {
+  min-width: 0;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.18);
+  animation: entraTarjeta var(--normal) var(--curva) both;
+}
+
+.card { overflow: hidden; }
+.body { padding: 18px 20px 20px; }
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.heading,
+.playerTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.heading h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.description { margin: 0 0 16px; color: var(--text-muted); font-size: 13px; }
+.note { margin-top: 12px; color: var(--text-muted); font-size: 11.5px; }
+.sectionDescription { margin: 0; padding: 14px 20px; color: var(--text-muted); font-size: 12px; }
+
+.rules {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rules > div { padding: 12px; border-radius: 8px; background: var(--surface-elevated); }
+.rules span { display: block; margin-bottom: 4px; font-size: 11px; color: var(--text-muted); }
+.rules strong { font-size: 12px; font-weight: 600; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.stat { padding: 18px 20px; }
+.statTop { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--text-muted); font-size: 12px; }
+.stat > strong { font-family: monospace; font-size: 24px; font-weight: 700; }
+.statTop svg { flex-shrink: 0; }
+.purple { color: var(--sky); }
+.amber { color: var(--yellow); }
+.red { color: var(--red); }
+.green { color: var(--green); }
+.muted { color: var(--text-muted); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.purpleBadge { color: var(--sky); background: var(--sky-light); }
+.greenBadge { color: var(--green); background: var(--green-light); }
+.amberBadge { color: var(--yellow); background: var(--yellow-light); }
+.redBadge { color: var(--red); background: var(--red-light); }
+.neutralBadge { color: var(--text-muted); background: var(--surface-elevated); }
+.progress { height: 6px; border-radius: 20px; overflow: hidden; background: var(--surface-elevated); }
+.progress > div { height: 100%; border-radius: inherit; background: var(--sky); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 18px; }
+
+.primaryButton,
+.secondaryButton,
+.whatsappButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.primaryButton { border: 1px solid var(--sky); background: var(--sky); color: #fff; }
+.secondaryButton { border: 1px solid var(--border); background: var(--surface-card); color: var(--sky); }
+.whatsappButton { border: 1px solid var(--border); background: var(--green-light); color: var(--green); font-size: 11.5px; }
+.primaryButton:disabled,
+.secondaryButton:disabled { cursor: not-allowed; opacity: 0.5; }
+.activation { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+.checkboxLabel { display: flex; align-items: flex-start; gap: 9px; flex: 1 1 280px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.checkboxLabel input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--sky); flex-shrink: 0; }
+.notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; overflow-wrap: anywhere; }
+.notice > span { flex: 1 1 240px; }
+.notice svg { flex-shrink: 0; }
+.error { color: var(--red); background: var(--red-light); }
+.success { color: var(--green); background: var(--green-light); }
+.empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 30px 20px; text-align: center; }
+.empty strong { font-size: 13px; font-weight: 600; }
+.empty p { max-width: 420px; margin: 0; color: var(--text-muted); font-size: 12px; }
+.list { border-top: 1px solid var(--border); }
+.playerRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 20px; }
+.playerRow + .playerRow,
+.detailRow + .detailRow { border-top: 1px solid var(--border); }
+.playerInfo { flex: 1 1 300px; min-width: 0; }
+.playerInfo strong,
+.detailRow strong { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.playerInfo p,
+.detailRow p { margin: 6px 0 0; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.debt { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--red); }
+.contactActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.detailsGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; align-items: start; }
+.detailRow { padding: 14px 20px; }
+.detailRow > .badge { margin-left: 8px; }
+.detailRow > .playerTitle { margin-top: 7px; }
+.loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 32px 20px; color: var(--text-muted); font-size: 13px; }
+.spinner { animation: giraRetencion 1s linear infinite; }
+@keyframes giraRetencion { to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+  .stats,
+  .rules { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .panel,
+  .stats { gap: 12px; }
+  .header { padding: 14px 16px; }
+  .body { padding: 16px; }
+  .stat { padding: 14px; }
+  .statTop { font-size: 11px; }
+  .stat > strong { font-size: 22px; }
+  .sectionDescription,
+  .playerRow,
+  .detailRow { padding-left: 16px; padding-right: 16px; }
+  .contactActions { width: 100%; }
+  .activation > button { width: 100%; }
+  .whatsappButton { flex: 1 1 auto; }
+}

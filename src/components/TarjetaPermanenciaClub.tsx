@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { UserPlus } from 'lucide-react'
+import styles from './SpinhouseComplementos.module.css'
 import { createClient } from '@/lib/supabase/client'
 import { cachedFetch, invalidarPorTabla } from '@/lib/query-cache'
 import { useEnVivo } from '@/lib/useEnVivo'
@@ -93,45 +95,46 @@ export default function TarjetaPermanenciaClub({ clubId }: { clubId: string | nu
     }
   }
   if (!datos && !error) return null
-  const input = { border: '1px solid #cbd5e1', borderRadius: 6, padding: 8, width: '100%', background: '#fff', color: '#0f172a', fontSize: 12 } as const
-  return <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 18, color: '#0f172a', boxShadow: '0 4px 16px rgba(15,23,42,0.18)' }}>
+  const input = { border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 12px', width: '100%', background: '#f8fafc', color: '#0f172a', fontSize: 13, fontFamily: 'inherit' } as const
+  return <div className={styles.permanencia}>
+    <div className={styles.summaryIcon}><UserPlus size={16} /></div>
     <div style={{ fontSize: 12, color: '#64748b' }}>Altas y bajas del club · {hoy.slice(0, 7)}</div>
-    <div style={{ fontSize: 24, fontWeight: 700, margin: '6px 0 12px', color: resumen.neto < 0 ? '#dc2626' : '#16a34a' }}>
+    <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '6px 0 12px', color: resumen.neto < 0 ? '#dc2626' : resumen.neto > 0 ? '#16a34a' : '#64748b' }}>
       {error ? '—' : `${resumen.neto > 0 ? '+' : ''}${resumen.neto}`} <span style={{ fontSize: 12, color: '#64748b' }}>neto</span>
     </div>
-    <div style={{ display: 'flex', gap: 16, borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
       {[{ n: resumen.altas, label: 'altas' }, { n: resumen.bajas, label: 'bajas' }, { n: resumen.reingresos, label: 'reingresos' }].map(c => <div key={c.label}>
         <strong style={{ fontSize: 17 }}>{error ? '—' : c.n}</strong><div style={{ fontSize: 11, color: '#64748b' }}>{c.label}</div>
       </div>)}
     </div>
-    <p style={{ fontSize: 11, color: '#64748b', lineHeight: 1.5 }}>
+    <p style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6, margin: '12px 0' }}>
       Alta: nuevo jugador del club. Baja: retiro declarado{datos && datos.diasInactivo > 0 ? ` o ${datos.diasInactivo} días sin asistencia presente ni pago, con automatización activada` : ' o inactividad registrada por retención'}.
       Reingreso: vuelta después de una baja. Cambiar de bloque o bloquear por deuda no cuenta como baja.
       Cada transición cuenta; el historial comienza al activar el indicador y no reconstruye bajas anteriores.
     </p>
-    {error && <p role="alert" style={{ color: '#dc2626', fontSize: 12 }}>No se pudo cargar: {error} <button onClick={() => { void cargar() }}>Reintentar</button></p>}
+    {error && <p role="alert" style={{ color: '#dc2626', fontSize: 12 }}>No se pudo cargar: {error} <button className={styles.secondaryButton} onClick={() => { void cargar() }}>Reintentar</button></p>}
     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
-      <button type="button" onClick={() => setDetalle(!detalle)} aria-expanded={detalle} style={{ color: '#4f46e5', background: 'none', border: 0, padding: 0, cursor: 'pointer' }}>
+      <button type="button" onClick={() => setDetalle(!detalle)} aria-expanded={detalle} style={{ color: '#4f46e5', background: 'none', border: 0, padding: 0, fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}>
         {detalle ? 'Cerrar historial' : 'Historial y retiro/reingreso'}
       </button>
       <Link href="/finanzas?tab=retencion" style={{ color: '#4f46e5', textDecoration: 'none' }}>Ver retención →</Link>
     </div>
     {detalle && <div style={{ marginTop: 14 }}>
-      {perfil?.rol === 'admin' && <form onSubmit={guardar} style={{ display: 'grid', gap: 8 }}>
-        <label style={{ fontSize: 12 }}>Jugador<select value={jugadorId} onChange={e => setJugadorId(e.target.value)} required style={input}>
+      {perfil?.rol === 'admin' && <form onSubmit={guardar} className={styles.formBox}>
+        <label className={styles.label}>Jugador<select value={jugadorId} onChange={e => setJugadorId(e.target.value)} required style={input}>
           <option value="">Selecciona un jugador</option>{datos?.jugadores.map(j => <option key={j.id} value={j.id}>{j.nombre}</option>)}
         </select></label>
-        <label style={{ fontSize: 12 }}>Movimiento<select value={tipo} onChange={e => setTipo(e.target.value as 'retiro' | 'reingreso')} style={input}>
+        <label className={styles.label}>Movimiento<select value={tipo} onChange={e => setTipo(e.target.value as 'retiro' | 'reingreso')} style={input}>
           <option value="retiro">Retiro declarado</option><option value="reingreso">Reingreso declarado</option>
         </select></label>
-        <label style={{ fontSize: 12 }}>Fecha del movimiento<input type="date" value={fecha} max={hoy} onChange={e => setFecha(e.target.value)} required style={input} /></label>
-        <label style={{ fontSize: 12 }}>Motivo<textarea value={motivo} onChange={e => setMotivo(e.target.value)} maxLength={500} required style={input} /></label>
-        <button type="submit" disabled={guardando || !!error} style={{ ...input, background: '#4f46e5', color: '#fff', cursor: 'pointer' }}>{guardando ? 'Registrando…' : 'Registrar movimiento'}</button>
+        <label className={styles.label}>Fecha del movimiento<input type="date" value={fecha} max={hoy} onChange={e => setFecha(e.target.value)} required style={input} /></label>
+        <label className={styles.label}>Motivo<textarea value={motivo} onChange={e => setMotivo(e.target.value)} maxLength={500} required style={input} /></label>
+        <button type="submit" disabled={guardando || !!error} className={styles.primaryButton}>{guardando ? 'Registrando…' : 'Registrar movimiento'}</button>
         {mensaje && <p role="status" style={{ fontSize: 12, margin: 0 }}>{mensaje}</p>}
       </form>}
       <p style={{ fontSize: 11, color: '#64748b' }}>Últimos 30 movimientos de permanencia ({historial.length} registrados).</p>
-      <ul style={{ paddingLeft: 16, fontSize: 11, lineHeight: 1.6 }}>
-        {historial.slice(0, 30).map(e => <li key={e.id}>{e.fecha} · {nombres.get(e.jugadorId ?? '') ?? 'Ficha eliminada'} · {etiquetas[e.tipo]}<br /><span style={{ color: '#64748b' }}>{e.motivo}</span></li>)}
+      <ul className={styles.eventHistory}>
+        {historial.slice(0, 30).map(e => <li key={e.id} className={styles.historyEntry}>{e.fecha} · {nombres.get(e.jugadorId ?? '') ?? 'Ficha eliminada'} · {etiquetas[e.tipo]}<br /><span style={{ color: '#64748b' }}>{e.motivo}</span></li>)}
       </ul>
       {historial.length === 0 && <p style={{ color: '#64748b', fontSize: 12 }}>Aún no hay movimientos registrados. Los jugadores existentes no se cuentan como altas nuevas.</p>}
     </div>}

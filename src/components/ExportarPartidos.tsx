@@ -54,7 +54,7 @@ export default function ExportarPartidos({ tipo, competenciaId }: { tipo: TipoCo
   return <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
     {(['csv', 'json'] as const).map(formato => <button key={formato} type="button" onClick={() => descargar(formato)} disabled={ocupado}
       title={`Exportar todos los partidos a ${formato.toUpperCase()}`}
-      style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: ocupado ? 'wait' : 'pointer', opacity: ocupado ? 0.6 : 1 }}>
+      style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: ocupado ? 'wait' : 'pointer', opacity: ocupado ? 0.6 : 1 }}>
       {ocupado ? 'Exportando…' : `Partidos ${formato.toUpperCase()}`}
     </button>)}
     {mensaje && <span role={esError ? 'alert' : 'status'} style={{ color: esError ? '#b91c1c' : '#166534', background: '#fff', borderRadius: 6, padding: '4px 6px', fontSize: 12 }}>{mensaje}</span>}

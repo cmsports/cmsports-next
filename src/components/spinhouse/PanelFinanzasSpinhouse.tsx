@@ -1,6 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertCircle, ArrowRightLeft, CheckCircle2, Clock, Coins, Tag, TrendingUp, Users, Wallet } from 'lucide-react'
+import styles from './PanelFinanzasSpinhouse.module.css'
 import { cargarFinanzasSpinhouse, guardarTarifaSpinhouse, confirmarHorasSpinhouse, asignarIngresoSpinhouse, liquidarEntrenadorSpinhouse } from '@/app/actions/finanzasSpinhouse'
 import { calcularLiquidacion, calcularMargenes, proyectarCaja, TIPOS_FINANZAS, type DatosFinanzasSpinhouse, type TipoFinanzas } from '@/lib/domain/finanzasSpinhouse'
 import { cachedFetch, invalidate } from '@/lib/query-cache'
@@ -10,9 +12,8 @@ import { useTextoMonto } from '@/components/Monto'
 import { etiquetaCategoria } from '@/lib/domain/categoriasFinanzas'
 
 const TABLAS = ['spinhouse_finanzas_tarifas', 'spinhouse_finanzas_horas', 'spinhouse_finanzas_asignaciones', 'spinhouse_finanzas_liquidaciones', 'asistencia_profesores', 'mensualidades', 'movimientos', 'profesores', 'bloques_horario']
-const inputClass = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900'
-const buttonClass = 'rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50'
-const panelClass = 'rounded-xl border border-slate-200 bg-white p-4 space-y-3'
+
+const TIPOS_ETIQUETAS: Record<TipoFinanzas, string> = { grupal: 'Grupal', competitivo: 'Competitivo', particular: 'Particular', adultos: 'Adultos', paralimpico: 'Paralímpico', arriendo: 'Arriendo' }
 
 export default function PanelFinanzasSpinhouse({ clubId, mes, anio }: { clubId: string | null; mes: number; anio: number }) {
   const fmt = useTextoMonto()
@@ -51,7 +52,15 @@ export default function PanelFinanzasSpinhouse({ clubId, mes, anio }: { clubId: 
     finally { setOcupado(false) }
   }
 
-  if (!datos) return <div className={panelClass}><p role={error ? 'alert' : 'status'}>{error || 'Cargando finanzas…'}</p><button onClick={() => { invalidate(`spinhouse-finanzas:${clubId}`); void cargar() }} className={buttonClass}>Reintentar</button></div>
+  if (!datos) return (
+    <div className={styles.panel}>
+      <div className={`${styles.card} ${styles.loading}`}>
+        {error ? <AlertCircle size={26} /> : <Wallet size={26} />}
+        <p role={error ? 'alert' : 'status'}>{error || 'Cargando finanzas…'}</p>
+        {error && <div className={styles.actions}><button type="button" onClick={() => { invalidate(`spinhouse-finanzas:${clubId}`); void cargar() }} className={styles.button}>Reintentar</button></div>}
+      </div>
+    </div>
+  )
   const cerrados = new Set(datos.liquidaciones.map(l => l.profesor_id))
   const calculo = calcularLiquidacion(datos.sesiones.filter(s => !cerrados.has(s.profesor_id)), datos.tarifas)
   const detalles = [...datos.liquidaciones.flatMap(l => l.detalles), ...calculo.detalles]
@@ -60,39 +69,108 @@ export default function PanelFinanzasSpinhouse({ clubId, mes, anio }: { clubId: 
   const ultimoDia = new Date(anio, mes, 0).getDate()
   const mesTerminado = `${anio}-${String(mes).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}` < fechaChile()
   const profesoresPeriodo = [...new Set([...datos.sesiones.map(s => s.profesor_id), ...datos.liquidaciones.map(l => l.profesor_id)])]
+  const ingresosMes = datos.ingresos.reduce((sum, ingreso) => sum + ingreso.monto, 0)
+  const costoMes = detalles.reduce((sum, detalle) => sum + detalle.costo, 0)
 
-  function verTabla(filas: typeof margenes.bloques) {
-    return <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th className="p-2">Línea / bloque</th><th className="p-2">Ingresos cobrados</th><th className="p-2">Costo entrenadores</th><th className="p-2">Margen</th></tr></thead><tbody>{filas.map(f => <tr key={f.clave} className="border-t border-slate-100"><td className="p-2">{datos?.bloques.find(b => b.id === f.clave)?.nombre ?? etiquetaCategoria(f.nombre)}</td><td className="p-2">{fmt(f.ingresos)}</td><td className="p-2">{fmt(f.costo)}</td><td className="p-2">{fmt(f.margen)}</td></tr>)}</tbody></table>{!filas.length && <p>No hay ingresos ni horas valorizadas en este periodo.</p>}</div>
+  function verTabla(filas: typeof margenes.bloques, nombre: string) {
+    if (!filas.length) return <div className={styles.empty}><Coins size={25} /><p className={styles.emptyTitle}>Sin movimientos en este periodo</p><p className={styles.emptyDescription}>Los ingresos cobrados y las horas valorizadas aparecerán aquí.</p></div>
+    return (
+      <div className={styles.tableWrap}>
+        <table className={styles.table} aria-label={`Márgenes por ${nombre.toLowerCase()}`}>
+          <thead><tr><th scope="col">{nombre}</th><th scope="col" className={styles.number}>Ingresos cobrados</th><th scope="col" className={styles.number}>Costo entrenadores</th><th scope="col" className={styles.number}>Margen</th></tr></thead>
+          <tbody>{filas.map(f => <tr key={f.clave}>
+            <td>{datos?.bloques.find(b => b.id === f.clave)?.nombre ?? etiquetaCategoria(f.nombre)}</td>
+            <td className={`${styles.number} ${styles.income}`}>{fmt(f.ingresos)}</td>
+            <td className={`${styles.number} ${styles.cost}`}>{fmt(f.costo)}</td>
+            <td className={`${styles.number} ${f.margen < 0 ? styles.cost : styles.margin}`}>{fmt(f.margen)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+    )
   }
-  return <div className="space-y-4 text-slate-900">
-    {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-red-700">{error}</p>}
-    {mensaje && <p role="status" className="rounded-lg bg-green-50 p-3 text-green-800">{mensaje}</p>}
-    <section className={panelClass}><h2 className="text-lg font-bold">Márgenes y liquidaciones</h2><p className="text-sm text-slate-600">Las tarifas y las horas confirmadas valorizan las clases dictadas. Al liquidar se guarda el detalle definitivo y se registra un gasto de sueldo. Revisa los gastos de sueldo ya ingresados para evitar duplicarlos.</p>
-      {calculo.pendientes.length > 0 && <p className="rounded-lg bg-amber-50 p-3 text-amber-900">Margen parcial: {calculo.pendientes.length} sesiones todavía tienen horas o tarifas pendientes.</p>}
-      <h3 className="font-semibold">Por línea de negocio</h3>{verTabla(margenes.lineas)}<h3 className="font-semibold">Por bloque</h3>{verTabla(margenes.bloques)}
-      <p className="text-xs text-slate-600">El margen descuenta solamente el costo de entrenadores. Los ingresos sin bloque se muestran separados; así evitas atribuir cuotas a grupos sin respaldo.</p>
+
+  return <div className={styles.panel}>
+    {error && <div role="alert" className={`${styles.alert} ${styles.error}`}><AlertCircle size={16} /><p>{error}</p></div>}
+    {mensaje && <div role="status" className={`${styles.alert} ${styles.success}`}><CheckCircle2 size={16} /><p>{mensaje}</p></div>}
+
+    <div className={styles.kpis}>
+      <div className={`${styles.card} ${styles.kpi} ${styles.kpiIncome}`}><div className={styles.kpiValue}>{fmt(ingresosMes)}</div><div className={styles.kpiLabel}>💰 Ingresos cobrados</div><div className={styles.kpiHint}>Movimientos del mes seleccionado</div></div>
+      <div className={`${styles.card} ${styles.kpi} ${styles.kpiCost}`}><div className={styles.kpiValue}>{fmt(costoMes)}</div><div className={styles.kpiLabel}>💸 Costo de entrenadores</div><div className={styles.kpiHint}>Horas con tarifa confirmada</div></div>
+      <div className={`${styles.card} ${styles.kpi}`}><div className={styles.kpiValue}>{fmt(ingresosMes - costoMes)}</div><div className={styles.kpiLabel}>📊 {calculo.pendientes.length ? 'Margen parcial' : 'Margen del mes'}</div><div className={styles.kpiHint}>Ingresos menos costo de entrenadores</div></div>
+    </div>
+
+    <section className={styles.card}>
+      <div className={styles.header}><div><h2 className={styles.title}><TrendingUp size={18} /> Márgenes del mes</h2><p className={styles.description}>Consulta los ingresos y el costo de las clases por línea de negocio y bloque.</p></div></div>
+      {calculo.pendientes.length > 0 && <div className={styles.alert}><AlertCircle size={16} /><p><strong>Margen parcial.</strong> {calculo.pendientes.length} sesiones todavía tienen horas o tarifas pendientes.</p></div>}
+      <h3 className={styles.subheading}>Por línea de negocio</h3>{verTabla(margenes.lineas, 'Línea de negocio')}
+      <h3 className={styles.subheading}>Por bloque</h3>{verTabla(margenes.bloques, 'Bloque')}
+      <p className={styles.note}>El margen descuenta solamente el costo de entrenadores. Los ingresos sin bloque se muestran separados; así evitas atribuir cuotas a grupos sin respaldo.</p>
     </section>
-    <section className={panelClass}><h3 className="font-bold">Tarifa por entrenador, clase y rol</h3>
-      <form className="flex flex-wrap gap-2" onSubmit={e => { e.preventDefault(); void operar(() => guardarTarifaSpinhouse({ ...tarifa, montoHora: Number(tarifa.montoHora) }), 'Tarifa guardada. Las liquidaciones cerradas conservan sus importes.') }}>
-        <select aria-label="Entrenador" required className={inputClass} value={tarifa.profesorId} onChange={e => setTarifa({ ...tarifa, profesorId: e.target.value })}><option value="">Entrenador</option>{datos.profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
-        <select aria-label="Tipo de clase" className={inputClass} value={tarifa.tipoClase} onChange={e => setTarifa({ ...tarifa, tipoClase: e.target.value as TipoFinanzas })}>{TIPOS_FINANZAS.map(t => <option key={t}>{t}</option>)}</select>
-        <select aria-label="Rol del entrenador" className={inputClass} value={tarifa.rol} onChange={e => setTarifa({ ...tarifa, rol: e.target.value as 'principal' | 'auxiliar' })}><option>principal</option><option>auxiliar</option></select>
-        <label className="text-sm">Vigente desde el mes<input aria-label="Mes de vigencia" required type="month" className={inputClass} value={tarifa.desde.slice(0,7)} onChange={e => setTarifa({ ...tarifa, desde: `${e.target.value}-01` })} /></label>
-        <input aria-label="Tarifa CLP por hora" required type="number" min="0" max="10000000" placeholder="CLP por hora" className={inputClass} value={tarifa.montoHora} onChange={e => setTarifa({ ...tarifa, montoHora: e.target.value })} /><button disabled={ocupado} className={buttonClass}>Guardar tarifa</button>
-      </form><div className="space-y-1 text-sm">{datos.tarifas.map(t => <p key={`${t.profesor_id}:${t.tipo_clase}:${t.rol}:${t.desde}`}>{datos.profesores.find(p => p.id === t.profesor_id)?.nombre} · {t.tipo_clase} · {t.rol} · desde {t.desde}: {fmt(t.monto_hora)} / hora</p>)}</div>
+
+    <section className={styles.card}>
+      <div className={styles.header}><div><h3 className={styles.title}><Tag size={18} /> Tarifas de entrenadores</h3><p className={styles.description}>Define el valor por hora según entrenador, tipo de clase, rol y mes de vigencia.</p></div></div>
+      <form onSubmit={e => { e.preventDefault(); void operar(() => guardarTarifaSpinhouse({ ...tarifa, montoHora: Number(tarifa.montoHora) }), 'Tarifa guardada. Las liquidaciones cerradas conservan sus importes.') }}>
+        <div className={styles.formGrid}>
+          <label className={styles.field}><span className={styles.label}>Entrenador</span><select required className={styles.input} value={tarifa.profesorId} onChange={e => setTarifa({ ...tarifa, profesorId: e.target.value })}><option value="">Selecciona un entrenador</option>{datos.profesores.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></label>
+          <label className={styles.field}><span className={styles.label}>Tipo de clase</span><select className={styles.input} value={tarifa.tipoClase} onChange={e => setTarifa({ ...tarifa, tipoClase: e.target.value as TipoFinanzas })}>{TIPOS_FINANZAS.map(t => <option key={t} value={t}>{TIPOS_ETIQUETAS[t]}</option>)}</select></label>
+          <label className={styles.field}><span className={styles.label}>Rol del entrenador</span><select className={styles.input} value={tarifa.rol} onChange={e => setTarifa({ ...tarifa, rol: e.target.value as 'principal' | 'auxiliar' })}><option value="principal">Principal</option><option value="auxiliar">Auxiliar</option></select></label>
+          <label className={styles.field}><span className={styles.label}>Vigente desde el mes</span><input required type="month" className={styles.input} value={tarifa.desde.slice(0,7)} onChange={e => setTarifa({ ...tarifa, desde: `${e.target.value}-01` })} /></label>
+          <label className={styles.field}><span className={styles.label}>Tarifa por hora · CLP</span><input required type="number" min="0" max="10000000" placeholder="Ej. 15000" className={styles.input} value={tarifa.montoHora} onChange={e => setTarifa({ ...tarifa, montoHora: e.target.value })} /></label>
+        </div>
+        <div className={styles.actions}><button disabled={ocupado} className={styles.button}>{ocupado ? 'Guardando…' : 'Guardar tarifa'}</button></div>
+      </form>
+      <h4 className={styles.subheading}>Tarifas registradas</h4>
+      {datos.tarifas.length ? <div className={styles.tableWrap}><table className={styles.table} aria-label="Tarifas registradas"><thead><tr><th scope="col">Entrenador</th><th scope="col">Clase y rol</th><th scope="col">Vigencia</th><th scope="col" className={styles.number}>Tarifa por hora</th></tr></thead><tbody>{datos.tarifas.map(t => <tr key={`${t.profesor_id}:${t.tipo_clase}:${t.rol}:${t.desde}`}><td>{datos.profesores.find(p => p.id === t.profesor_id)?.nombre}</td><td>{TIPOS_ETIQUETAS[t.tipo_clase as TipoFinanzas] ?? t.tipo_clase}<span className={styles.detail}>{t.rol === 'principal' ? 'Principal' : 'Auxiliar'}</span></td><td>{t.desde}</td><td className={`${styles.number} ${styles.margin}`}>{fmt(t.monto_hora)}</td></tr>)}</tbody></table></div> : <div className={styles.empty}><Tag size={25} /><p className={styles.emptyTitle}>Todavía no hay tarifas cargadas</p><p className={styles.emptyDescription}>Registra la tarifa vigente para valorizar las horas dictadas. Las liquidaciones cerradas conservarán su importe.</p></div>}
     </section>
-    {datos.sesiones.some(s => !cerrados.has(s.profesor_id)) && <section className={panelClass}><h3 className="font-bold">Confirmar o corregir horas dictadas</h3><p className="text-sm text-slate-600">Revisa la duración efectivamente dictada antes de liquidar. Las marcas nuevas conservan el horario del día; los históricos necesitan confirmación porque el horario actual no permite reconstruirlos.</p>{datos.sesiones.filter(s => !cerrados.has(s.profesor_id)).map(s => {
-      const valor = horas[s.asistencia_id] ?? { minutos: s.minutos ? String(s.minutos) : '', tipoClase: (s.tipo_clase ?? 'grupal') as TipoFinanzas, rol: (s.rol ?? 'principal') as 'principal' | 'auxiliar', seCobraAparte: s.se_cobra_aparte }
-      const editar = (cambio: Partial<typeof valor>) => setHoras({ ...horas, [s.asistencia_id]: { ...valor, ...cambio } })
-      return <form key={s.asistencia_id} className="flex flex-wrap items-center gap-2 border-t pt-2 text-sm" onSubmit={e => { e.preventDefault(); void operar(() => confirmarHorasSpinhouse({ asistenciaId: s.asistencia_id, minutos: Number(valor.minutos), tipoClase: valor.tipoClase, rol: valor.rol, seCobraAparte: valor.seCobraAparte! }), 'Horas confirmadas') }}><span>{s.fecha} · {s.profesor_nombre} · {s.bloque_nombre}</span><input aria-label={`Minutos dictados por ${s.profesor_nombre} el ${s.fecha}`} required type="number" min="1" max="1440" placeholder="Minutos" className={inputClass} value={valor.minutos} onChange={e => editar({ minutos: e.target.value })} /><select aria-label="Tipo histórico" className={inputClass} value={valor.tipoClase} onChange={e => editar({ tipoClase: e.target.value as TipoFinanzas })}>{TIPOS_FINANZAS.map(t => <option key={t}>{t}</option>)}</select><select aria-label="Rol histórico" className={inputClass} value={valor.rol} onChange={e => editar({ rol: e.target.value as 'principal' | 'auxiliar' })}><option>principal</option><option>auxiliar</option></select><select aria-label="Modalidad de cobro histórica" required className={inputClass} value={valor.seCobraAparte === null ? '' : String(valor.seCobraAparte)} onChange={e => editar({ seCobraAparte: e.target.value === '' ? null : e.target.value === 'true' })}><option value="">Confirma modalidad de cobro</option><option value="false">Incluida en mensualidad</option><option value="true">Cobro aparte</option></select><button className={buttonClass} disabled={ocupado}>Confirmar horas</button></form>
-    })}</section>}
-    <section className={panelClass}><h3 className="font-bold">Liquidación mensual por entrenador</h3>{!mesTerminado && <p className="text-sm text-slate-600">La liquidación estará disponible al terminar el mes.</p>}{profesoresPeriodo.map(id => {
-      const liquidada = datos.liquidaciones.find(l => l.profesor_id === id)
-      const ds = detalles.filter(d => d.profesor_id === id)
-      const pendientes = calculo.pendientes.filter(p => p.sesion.profesor_id === id)
-      return <div key={id} className="space-y-2 border-t py-3"><p className="font-medium">{liquidada?.profesor_nombre ?? datos.profesores.find(p => p.id === id)?.nombre} · {liquidada ? 'Liquidada' : 'Por liquidar'} · {fmt(liquidada?.total ?? ds.reduce((sum,d) => sum + d.costo,0))}</p><ul className="text-sm">{ds.map(d => <li key={d.asistencia_id}>{d.fecha} · {d.bloque_nombre} · {d.tipo_clase} / {d.rol} · {d.tipo_clase === 'arriendo' ? 'Arriendo' : d.se_cobra_aparte ? 'Cobro aparte' : 'Incluida en mensualidad'}: {d.minutos} min × {fmt(d.monto_hora)} / hora = {fmt(d.costo)}</li>)}</ul>{pendientes.map(p => <p className="text-sm text-amber-800" key={p.sesion.asistencia_id}>{p.sesion.fecha}: {p.motivo}</p>)}{!liquidada && <button className={buttonClass} disabled={ocupado || !mesTerminado || pendientes.length > 0 || !ds.length} onClick={() => { if (window.confirm('Se cerrará la liquidación y se registrará el gasto de sueldo. Verifica que no exista un pago manual para este periodo. ¿Liquidar?')) void operar(() => liquidarEntrenadorSpinhouse({ profesorId: id, mes, anio }), 'Liquidación cerrada y gasto registrado') }}>Liquidar y registrar gasto</button>}</div>
-    })}{!profesoresPeriodo.length && <p>No hay asistencias de entrenadores en este mes.</p>}</section>
-    <section className={panelClass}><h3 className="font-bold">Asignar ingresos a bloques</h3><p className="text-sm text-slate-600">Asigna solamente ingresos que correspondan a un bloque concreto. La categoría y el importe original se conservan.</p>{datos.ingresos.map(i => <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm"><span>{i.descripcion || etiquetaCategoria(i.categoria)} · {fmt(i.monto)}</span><select aria-label={`Bloque de ${i.descripcion ?? i.categoria}`} className={inputClass} value={i.bloque_id ?? ''} disabled={ocupado} onChange={e => { void operar(() => asignarIngresoSpinhouse({ movimientoId: i.id, bloqueId: e.target.value || null }), 'Asignación guardada') }}><option value="">Sin bloque asignado</option>{datos.bloques.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}</select></div>)}</section>
-    <section className={panelClass}><h3 className="font-bold">Proyección de cobros del mes siguiente</h3><p>{caja.cantidadCuotas} cuotas emitidas · {fmt(caja.emitido)}</p><p>Morosidad de los seis meses anteriores: {caja.morosidad === null ? 'Sin historial suficiente' : `${(caja.morosidad * 100).toFixed(1)} %`}</p><p className="font-semibold">Cobro esperado: {caja.proyectado === null ? 'Sin proyección disponible' : fmt(caja.proyectado)}</p><p className="text-xs text-slate-600">Cuotas emitidas del próximo mes × porcentaje de cuotas históricas pagadas, ponderado por monto. Excluye exentos. Si todavía no se emitieron cuotas o no hay historial, no se estima un importe. Este cálculo proyecta cobros; no descuenta otros gastos futuros.</p></section>
+
+    {datos.sesiones.some(s => !cerrados.has(s.profesor_id)) && <section className={styles.card}>
+      <div className={styles.header}><div><h3 className={styles.title}><Clock size={18} /> Confirmar o corregir horas dictadas</h3><p className={styles.description}>Revisa la duración efectivamente dictada antes de liquidar. Las marcas nuevas conservan el horario del día; los históricos necesitan confirmación.</p></div></div>
+      <div className={styles.sessionList}>{datos.sesiones.filter(s => !cerrados.has(s.profesor_id)).map(s => {
+        const valor = horas[s.asistencia_id] ?? { minutos: s.minutos ? String(s.minutos) : '', tipoClase: (s.tipo_clase ?? 'grupal') as TipoFinanzas, rol: (s.rol ?? 'principal') as 'principal' | 'auxiliar', seCobraAparte: s.se_cobra_aparte }
+        const editar = (cambio: Partial<typeof valor>) => setHoras({ ...horas, [s.asistencia_id]: { ...valor, ...cambio } })
+        const confirmada = Boolean(s.minutos && s.tipo_clase && s.rol && typeof s.se_cobra_aparte === 'boolean')
+        return <form key={s.asistencia_id} className={styles.session} onSubmit={e => { e.preventDefault(); void operar(() => confirmarHorasSpinhouse({ asistenciaId: s.asistencia_id, minutos: Number(valor.minutos), tipoClase: valor.tipoClase, rol: valor.rol, seCobraAparte: valor.seCobraAparte! }), 'Horas confirmadas') }}>
+          <div className={styles.sessionHeader}><div><p className={styles.sessionName}>{s.profesor_nombre}</p><p className={styles.sessionMeta}>{s.fecha} · {s.bloque_nombre}</p></div><span className={`${styles.badge} ${confirmada ? '' : styles.pendingBadge}`}>{confirmada ? 'Horas confirmadas' : 'Por confirmar'}</span></div>
+          <div className={styles.formGrid}>
+            <label className={styles.field}><span className={styles.label}>Minutos dictados</span><input aria-label={`Minutos dictados por ${s.profesor_nombre} el ${s.fecha}`} required type="number" min="1" max="1440" placeholder="Duración en minutos" className={styles.input} value={valor.minutos} onChange={e => editar({ minutos: e.target.value })} /></label>
+            <label className={styles.field}><span className={styles.label}>Tipo de clase</span><select className={styles.input} value={valor.tipoClase} onChange={e => editar({ tipoClase: e.target.value as TipoFinanzas })}>{TIPOS_FINANZAS.map(t => <option key={t} value={t}>{TIPOS_ETIQUETAS[t]}</option>)}</select></label>
+            <label className={styles.field}><span className={styles.label}>Rol</span><select className={styles.input} value={valor.rol} onChange={e => editar({ rol: e.target.value as 'principal' | 'auxiliar' })}><option value="principal">Principal</option><option value="auxiliar">Auxiliar</option></select></label>
+            <label className={styles.field}><span className={styles.label}>Modalidad de cobro</span><select required className={styles.input} value={valor.seCobraAparte === null ? '' : String(valor.seCobraAparte)} onChange={e => editar({ seCobraAparte: e.target.value === '' ? null : e.target.value === 'true' })}><option value="">Confirma modalidad</option><option value="false">Incluida en mensualidad</option><option value="true">Cobro aparte</option></select></label>
+          </div>
+          <div className={styles.actions}><button className={styles.button} disabled={ocupado}>Confirmar horas</button></div>
+        </form>
+      })}</div>
+    </section>}
+
+    <section className={styles.card}>
+      <div className={styles.header}><div><h3 className={styles.title}><Users size={18} /> Liquidación mensual por entrenador</h3><p className={styles.description}>Revisa el detalle de horas y tarifas. Al liquidar se guarda el importe definitivo y se registra un gasto de sueldo.</p></div></div>
+      <div className={styles.alert}><AlertCircle size={16} /><p>Revisa los gastos de sueldo ya ingresados para evitar duplicarlos.{!mesTerminado && ' La liquidación estará disponible al terminar el mes.'}</p></div>
+      {profesoresPeriodo.length ? <div className={styles.payroll} style={{ marginTop: 16 }}>{profesoresPeriodo.map(id => {
+        const liquidada = datos.liquidaciones.find(l => l.profesor_id === id)
+        const ds = detalles.filter(d => d.profesor_id === id)
+        const pendientes = calculo.pendientes.filter(p => p.sesion.profesor_id === id)
+        return <div key={id} className={styles.payrollItem}>
+          <div className={styles.sessionHeader}><div><p className={styles.sessionName}>{liquidada?.profesor_nombre ?? datos.profesores.find(p => p.id === id)?.nombre}</p><span className={`${styles.badge} ${liquidada ? '' : styles.pendingBadge}`} style={{ marginTop: 6 }}>{liquidada ? <CheckCircle2 size={12} /> : <Clock size={12} />}{liquidada ? 'Liquidada' : 'Por liquidar'}</span></div><div className={styles.payrollTotal}>{fmt(liquidada?.total ?? ds.reduce((sum,d) => sum + d.costo,0))}<div className={styles.payrollTotalLabel}>{liquidada ? 'Importe cerrado' : 'Horas valorizadas'}</div></div></div>
+          {ds.length > 0 && <div className={styles.tableWrap}><table className={styles.table} aria-label={`Detalle de liquidación de ${liquidada?.profesor_nombre ?? datos.profesores.find(p => p.id === id)?.nombre}`}><thead><tr><th scope="col">Fecha y bloque</th><th scope="col">Clase y cobro</th><th scope="col" className={styles.number}>Minutos</th><th scope="col" className={styles.number}>Tarifa / hora</th><th scope="col" className={styles.number}>Costo</th></tr></thead><tbody>{ds.map(d => <tr key={d.asistencia_id}><td>{d.fecha}<span className={styles.detail}>{d.bloque_nombre}</span></td><td>{TIPOS_ETIQUETAS[d.tipo_clase as TipoFinanzas] ?? d.tipo_clase} · {d.rol}<span className={styles.detail}>{d.tipo_clase === 'arriendo' ? 'Arriendo' : d.se_cobra_aparte ? 'Cobro aparte' : 'Incluida en mensualidad'}</span></td><td className={styles.number}>{d.minutos}</td><td className={styles.number}>{fmt(d.monto_hora)}</td><td className={`${styles.number} ${styles.margin}`}>{fmt(d.costo)}</td></tr>)}</tbody></table></div>}
+          {pendientes.length > 0 && <div className={styles.pendingList}>{pendientes.map(p => <p key={p.sesion.asistencia_id}>{p.sesion.fecha}: {p.motivo}</p>)}</div>}
+          {!liquidada && <div className={styles.actions}><button className={styles.button} disabled={ocupado || !mesTerminado || pendientes.length > 0 || !ds.length} onClick={() => { if (window.confirm('Se cerrará la liquidación y se registrará el gasto de sueldo. Verifica que no exista un pago manual para este periodo. ¿Liquidar?')) void operar(() => liquidarEntrenadorSpinhouse({ profesorId: id, mes, anio }), 'Liquidación cerrada y gasto registrado') }}>Liquidar y registrar gasto</button></div>}
+        </div>
+      })}</div> : <div className={styles.empty} style={{ marginTop: 16 }}><Users size={25} /><p className={styles.emptyTitle}>Sin asistencias de entrenadores</p><p className={styles.emptyDescription}>Cuando haya clases dictadas en este mes, podrás revisar y liquidar sus horas.</p></div>}
+    </section>
+
+    <section className={styles.card}>
+      <div className={styles.header}><div><h3 className={styles.title}><ArrowRightLeft size={18} /> Asignar ingresos a bloques</h3><p className={styles.description}>Asigna solamente ingresos que correspondan a un bloque concreto. La categoría y el importe original se conservan.</p></div></div>
+      {datos.ingresos.length ? <div className={styles.tableWrap}><table className={styles.table} aria-label="Asignación de ingresos a bloques"><thead><tr><th scope="col">Ingreso</th><th scope="col" className={styles.number}>Monto</th><th scope="col">Bloque asignado</th></tr></thead><tbody>{datos.ingresos.map(i => <tr key={i.id}><td>{i.descripcion || etiquetaCategoria(i.categoria)}{i.descripcion && <span className={styles.detail}>{etiquetaCategoria(i.categoria)}</span>}</td><td className={`${styles.number} ${styles.income}`}>{fmt(i.monto)}</td><td><select aria-label={`Bloque de ${i.descripcion ?? i.categoria}`} className={styles.input} value={i.bloque_id ?? ''} disabled={ocupado} onChange={e => { void operar(() => asignarIngresoSpinhouse({ movimientoId: i.id, bloqueId: e.target.value || null }), 'Asignación guardada') }}><option value="">Sin bloque asignado</option>{datos.bloques.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}</select></td></tr>)}</tbody></table></div> : <div className={styles.empty}><ArrowRightLeft size={25} /><p className={styles.emptyTitle}>Sin ingresos para asignar</p><p className={styles.emptyDescription}>Los ingresos del mes aparecerán aquí cuando estén registrados.</p></div>}
+    </section>
+
+    <section className={styles.card}>
+      <div className={styles.header}><div><h3 className={styles.title}><Wallet size={18} /> Proyección de cobros del mes siguiente</h3><p className={styles.description}>Estimación según cuotas emitidas y morosidad de los seis meses anteriores.</p></div></div>
+      <div className={styles.cashStats}>
+        <div className={styles.cashStat}><p className={styles.kpiLabel}>Cuotas emitidas</p><div className={styles.cashValue}>{fmt(caja.emitido)}</div><p className={styles.detail}>{caja.cantidadCuotas} cuotas del próximo mes</p></div>
+        <div className={styles.cashStat}><p className={styles.kpiLabel}>Morosidad histórica</p><div className={caja.morosidad === null ? styles.cashMissing : styles.cashValue}>{caja.morosidad === null ? 'Sin historial suficiente' : `${(caja.morosidad * 100).toFixed(1)} %`}</div><p className={styles.detail}>Seis meses anteriores</p></div>
+        <div className={`${styles.cashStat} ${styles.cashStatExpected}`}><p className={styles.kpiLabel}>Cobro esperado</p><div className={caja.proyectado === null ? styles.cashMissing : styles.cashValue}>{caja.proyectado === null ? 'Sin proyección disponible' : fmt(caja.proyectado)}</div><p className={styles.detail}>Importe estimado</p></div>
+      </div>
+      <p className={styles.note}>Cuotas emitidas del próximo mes × porcentaje de cuotas históricas pagadas, ponderado por monto. Excluye exentos. Si todavía no se emitieron cuotas o no hay historial, no se estima un importe. Este cálculo proyecta cobros; no descuenta otros gastos futuros.</p>
+    </section>
   </div>
 }
