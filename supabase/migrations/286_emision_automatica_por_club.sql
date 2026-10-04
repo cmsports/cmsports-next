@@ -20,15 +20,40 @@
 -- idéntico al de la 204: el `CASE` cae en `j.mensualidad`.
 --
 -- No escribe ninguna fila: redefine funciones y reprograma el cron.
+--
+-- ══ Se pega DESPUÉS de la 294 (ajustada el 2026-10-04) ═══════════════════
+-- Esta migración se escribió el 2026-09-24 y no se pegó. Entretanto la
+-- `294_retencion_automatica_spinhouse` dejó en producción esta misma versión
+-- de `emitir_mensualidades_mes_actual` más un filtro: no emitir cuota a quien
+-- la retención automática marcó inactivo (`_jugador_inactivo_retencion`, que
+-- solo responde "sí" en clubes con el módulo `retencion_automatica`). La
+-- versión original de la 286 no lo tenía y, pegada después, lo borraba. Ahora
+-- lo trae, así que la sección 1 deja la función exactamente como ya está; lo
+-- nuevo de verdad son las secciones 2 a 4.
+--
+-- ══ ANTES de pegarla (solo lectura) ═════════════════════════════════════
+--   -- Debe dar 0 filas:
+--   SELECT nombre FROM _migraciones_aplicadas WHERE nombre LIKE '286%';
+--   -- Debe dar 1 fila (sin la 294 esta migración se detiene sola):
+--   SELECT nombre FROM _migraciones_aplicadas WHERE nombre LIKE '294%';
 
 BEGIN;
 SELECT _migracion_nueva('286_emision_automatica_por_club');
 SELECT _migracion_para_todos_los_clubes(
   'redefine la emisión automática y su cron para todos los clubes; con la clave en su default el resultado es el mismo de antes y no escribe filas');
 
+-- Sin la 294 no existe `_jugador_inactivo_retencion` y la emisión fallaría
+-- recién a medianoche, en el cron, sin que nadie lo vea. Mejor fallar acá.
+DO $$
+BEGIN
+  IF to_regprocedure('public._jugador_inactivo_retencion(uuid,uuid)') IS NULL THEN
+    RAISE EXCEPTION 'Falta la 294_retencion_automatica_spinhouse: pégala antes que esta.';
+  END IF;
+END $$;
+
 -- ── 1. La emisión respeta el plan de cada jugador ────────────────────────
--- Misma firma, mismos filtros y mismo ON CONFLICT que la 204. Lo único nuevo
--- es el monto, que sale como en `generar_mensualidades` (252).
+-- Misma firma, mismos filtros y mismo ON CONFLICT que la 204. Lo nuevo es el
+-- monto, que sale como en `generar_mensualidades` (252), y el filtro de la 294.
 CREATE OR REPLACE FUNCTION public.emitir_mensualidades_mes_actual(p_club_id uuid DEFAULT NULL)
 RETURNS integer
 LANGUAGE plpgsql SECURITY DEFINER
@@ -51,7 +76,7 @@ BEGIN
     ON pl.id = j.plan_id AND pl.club_id = j.club_id
   WHERE j.club_id IS NOT NULL
     AND (p_club_id IS NULL OR j.club_id = p_club_id)
-    AND j.estado = 'activo'
+    AND j.estado = 'activo' AND NOT public._jugador_inactivo_retencion(j.club_id,j.id)
     AND (j.es_externo IS NULL OR j.es_externo = false)
     AND (j.cobrar_desde IS NULL
          OR make_date(v_anio, v_mes, 1) >= date_trunc('month', j.cobrar_desde)::date)
