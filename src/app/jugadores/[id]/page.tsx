@@ -1138,9 +1138,14 @@ export default function JugadorDetallePage() {
               <InfoRow label="Mano hábil" value={jugador.mano_habil ? manoLabel(jugador.mano_habil) : null} />
               <InfoRow label="Estilo de juego" value={jugador.estilo_juego} />
               <InfoRow label="Material" value={jugador.material} />
-              <InfoRow label="Licencia FECHITEME" value={jugador.licencia_fechiteme} />
+              <InfoRow label="Licencia FECHITEME" value={
+                jugador.federado === true
+                  ? (jugador.licencia_fechiteme ? `Sí · N.º ${jugador.licencia_fechiteme}` : 'Sí')
+                  : jugador.federado === false && !jugador.licencia_fechiteme ? 'No'
+                  : jugador.licencia_fechiteme
+              } />
               {!jugador.nivel && !jugador.mano_habil && !jugador.estilo_juego
-                && !jugador.material && !jugador.licencia_fechiteme
+                && !jugador.material && !jugador.licencia_fechiteme && jugador.federado == null
                 && !categoriaPorEdad(jugador.fecha_nacimiento, fechaChile()) && (
                 <div style={{ padding:'12px 0', fontSize:12, color: hint }}>
                   {puedeEditar ? 'Todavía sin datos deportivos — Editar' : 'Todavía sin datos deportivos'}
@@ -1504,11 +1509,40 @@ export default function JugadorDetallePage() {
                         </select>
                       </FormField>
                     </div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                      <FormField label="N.º de licencia FECHITEME">
-                        <input style={inputStyle} value={contactoForm.licencia_fechiteme}
+                    {/* "Condición de federado y número de licencia FECHITEME"
+                        (formulario de Spinhouse): estar federado ES tener la
+                        licencia, así que es una sola pregunta. El Sí/No escribe
+                        `federado`, el mismo dato que filtra el listado; el
+                        número es opcional y solo aparece si tiene. */}
+                    <FormField label="¿Tiene licencia FECHITEME?">
+                      <div style={{ display:'flex', gap:8 }}>
+                        {([[true, 'Sí'], [false, 'No']] as const).map(([valor, etiqueta]) => {
+                          const activo = contactoForm.federado === valor
+                          return (
+                            <button key={etiqueta} type="button" aria-pressed={activo}
+                              onClick={() => setContactoForm(f => ({
+                                ...f, federado: valor,
+                                licencia_fechiteme: valor ? f.licencia_fechiteme : '',
+                              }))}
+                              style={{
+                                flex:1, padding:'9px 0', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer',
+                                border: activo ? '1px solid #4f46e5' : '1px solid #e2e8f0',
+                                background: activo ? '#eef2ff' : '#fff',
+                                color: activo ? '#3730a3' : muted,
+                              }}>
+                              {etiqueta}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </FormField>
+                    {contactoForm.federado === true && (
+                      <FormField label="N.º de licencia (opcional)">
+                        <input style={inputStyle} placeholder="Si lo tienes a mano" value={contactoForm.licencia_fechiteme}
                           onChange={e => setContactoForm(f => ({ ...f, licencia_fechiteme: e.target.value }))} />
                       </FormField>
+                    )}
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                       <FormField label="Estilo de juego">
                         <input style={inputStyle} placeholder="Ataque de revés, defensa..." value={contactoForm.estilo_juego}
                           onChange={e => setContactoForm(f => ({ ...f, estilo_juego: e.target.value }))} />
@@ -1550,12 +1584,12 @@ export default function JugadorDetallePage() {
                           value={contactoForm.necesidades_accesibilidad} onChange={e => setContactoForm(f => ({ ...f, necesidades_accesibilidad: e.target.value }))} />
                       </FormField>
                     )}
-                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+                    {!tiene('perfil_deportivo') && <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
                       <input type="checkbox" id="federado-check" checked={contactoForm.federado === true}
                         onChange={e => setContactoForm(f => ({ ...f, federado: e.target.checked }))}
                         style={{ accentColor:'#4f46e5', width:18, height:18 }} />
                       <label htmlFor="federado-check" style={{ fontSize:13, color: text, cursor:'pointer' }}>Jugador federado</label>
-                    </div>
+                    </div>}
                   </>
                 )}
               </>

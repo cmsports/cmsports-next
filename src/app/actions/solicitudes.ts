@@ -126,7 +126,11 @@ export async function aprobarSolicitud(params: {
     talla_polera: talla_polera || null,
     talla_short: talla_short || null,
     nivel: nivel || null,
-    licencia_fechiteme: licencia_fechiteme || null,
+    // El formulario de inscripción manda 'Sí' cuando tiene licencia pero no puso
+    // el número. Tener licencia FECHITEME es estar federado. Solo llega en clubes
+    // con perfil deportivo: en los demás el campo no existe y nada cambia.
+    licencia_fechiteme: licencia_fechiteme && licencia_fechiteme !== 'Sí' ? licencia_fechiteme : null,
+    ...(licencia_fechiteme ? { federado: true } : {}),
     mano_habil: mano_habil || null,
     estilo_juego: estilo_juego || null,
     material: material || null,

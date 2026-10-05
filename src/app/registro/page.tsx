@@ -88,6 +88,9 @@ function RegistroForm() {
     nivel: '', licencia_fechiteme: '', mano_habil: '', estilo_juego: '', material: '',
   })
   const [perfilDeportivo, setPerfilDeportivo] = useState(false)
+  // Sí / No de la licencia FECHITEME. Va aparte del número porque el número es
+  // opcional: quien tiene licencia y no se la sabe igual tiene que poder decirlo.
+  const [tieneLicencia, setTieneLicencia] = useState<'' | 'si' | 'no'>('')
   const [enviado, setEnviado] = useState(false)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -183,7 +186,9 @@ function RegistroForm() {
       // Si el club no tiene el módulo, los cinco van vacíos y la función los
       // guarda como NULL. No hace falta condicionar el envío.
       nivel: form.nivel || undefined,
-      licencia_fechiteme: form.licencia_fechiteme || undefined,
+      // "Sí" sin número viaja como 'Sí': al aprobar la solicitud se convierte en
+      // federado = true y la ficha queda sin número (solicitudes.ts).
+      licencia_fechiteme: tieneLicencia === 'si' ? (form.licencia_fechiteme.trim() || 'Sí') : undefined,
       mano_habil: form.mano_habil || undefined,
       estilo_juego: form.estilo_juego || undefined,
       material: form.material || undefined,
@@ -382,10 +387,35 @@ function RegistroForm() {
               </div>
 
               <div style={{ marginBottom: 14 }}>
-                <label style={labelStyle}>Licencia FECHITEME</label>
-                <input style={inputStyle} type="text" placeholder="Número de licencia, si tienes"
-                  value={form.licencia_fechiteme} onChange={e => set('licencia_fechiteme', e.target.value)} />
+                <label style={labelStyle}>¿Tienes licencia FECHITEME?</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {([['si', 'Sí'], ['no', 'No']] as const).map(([valor, etiqueta]) => {
+                    const activo = tieneLicencia === valor
+                    return (
+                      <button key={valor} type="button" aria-pressed={activo}
+                        onClick={() => {
+                          setTieneLicencia(valor)
+                          if (valor === 'no') set('licencia_fechiteme', '')
+                        }}
+                        style={{
+                          flex: 1, padding: '10px 0', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                          border: activo ? '1px solid #4f46e5' : '1px solid #e2e8f0',
+                          background: activo ? '#eef2ff' : '#fff',
+                          color: activo ? '#3730a3' : '#64748b',
+                        }}>
+                        {etiqueta}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
+              {tieneLicencia === 'si' && (
+                <div style={{ marginBottom: 14 }}>
+                  <label style={labelStyle}>N.º de licencia (opcional)</label>
+                  <input style={inputStyle} type="text" placeholder="Si lo tienes a mano"
+                    value={form.licencia_fechiteme} onChange={e => set('licencia_fechiteme', e.target.value)} />
+                </div>
+              )}
             </>
           )}
 
