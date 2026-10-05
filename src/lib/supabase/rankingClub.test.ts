@@ -20,7 +20,14 @@ function fakeSupabase(tablas: Record<string, Fila[]>) {
     }
     return builder
   }
-  return { from }
+  // Imita a `jugadores_para_ranking`: devuelve los jugadores cuyo id está en
+  // p_ids (la función real además filtra por club, acá hay uno solo).
+  const rpc = (nombre: string, params: any) => {
+    if (nombre !== 'jugadores_para_ranking') return Promise.resolve({ data: null, error: null })
+    const ids: any[] = params?.p_ids ?? []
+    return Promise.resolve({ data: (tablas['jugadores'] ?? []).filter(f => ids.includes(f.id)), error: null })
+  }
+  return { from, rpc }
 }
 
 const CLUB = 'club-1'

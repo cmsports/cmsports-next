@@ -140,10 +140,15 @@ export async function cargarRankingDelClub(sb: any, clubId: string): Promise<Ran
 
   // 6. Nombres (y la ruta de la foto, para quien la quiera firmar), en una
   // sola consulta.
+  //
+  // Vía RPC y no un SELECT directo a `jugadores`: con la sesión de un jugador,
+  // RLS (migración 131) solo le deja leer su propia ficha, así que el SELECT
+  // directo devolvía al resto sin nombre ("Desconocido") y sin foto. La función
+  // `jugadores_para_ranking` (migración 300) devuelve solo id/nombre/foto del
+  // club de quien pregunta, sin abrir el resto de la ficha. Sirve igual al
+  // cliente de servicio del QR público.
   const { data: jugadoresData } = await sb
-    .from('jugadores')
-    .select('id,nombre,foto_path')
-    .in('id', [...jugadoresIds])
+    .rpc('jugadores_para_ranking', { p_ids: [...jugadoresIds] })
   const jugadores = ((jugadoresData ?? []) as { id: string; nombre: string | null; foto_path?: string | null }[])
     .map(j => ({ id: j.id, nombre: j.nombre ?? '', foto_path: j.foto_path ?? null }))
   const nombreMap: Record<string, string> = {}
