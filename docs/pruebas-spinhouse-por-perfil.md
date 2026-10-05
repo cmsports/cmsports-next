@@ -74,14 +74,19 @@ pruebas hacen falta:
 3. Nombre: `Admin PRUEBA` · Correo: `prueba.admin.spinhouse@cmsports.cl` ·
    Contraseña inicial: la que quieras (mínimo 6).
 4. **Crear administrador**.
-- [ ] Sales y entras con ese correo: llegas al **Dashboard** de Spinhouse.
+- [x] Sales y entras con ese correo: llegas al **Dashboard** de Spinhouse.
+  ✅ 2026-10-04 · quedó como `benjamin@spinhouse.cl`.
 
 **1.2 🏓 Profe de prueba**
 1. Con el Admin PRUEBA: **Configuración** → sección **Profesores**.
 2. Nombre: `Profe PRUEBA` · Correo: `prueba.profe.spinhouse@cmsports.cl` ·
    Especialidad: vacía · Contraseña inicial: la que quieras.
 3. **Crear profesor**.
-- [ ] Entras con ese correo y llegas al **Dashboard del profesor**.
+- [x] Entras con ese correo y llegas al **Dashboard del profesor**.
+  ✅ 2026-10-04 · quedó como `prueba.profe.spinhouse@cmports.cl` (sin la "s"
+  de cmsports: así se escribió al crearlo, y así hay que entrar).
+  Ojo: un correo que ya tiene cuenta no sirve. `bcardenasc@fen.uchile.cl` era
+  una cuenta de jugador de julio, y el profe no se creó.
 
 **1.3 🙋 Jugador de prueba**
 1. Con el Admin PRUEBA: **Jugadores** → **Nuevo jugador**.
@@ -186,9 +191,14 @@ Grupal martes` → agrega a Jugador PRUEBA y a Jugador PRUEBA 2.
 
 **4.1 Perfil deportivo** 🛠️
 1. **Jugadores** → Jugador PRUEBA → tarjeta **Perfil deportivo** → lápiz.
-2. Llena: federado sí y un N.º de licencia, mano hábil, estilo, madera, gomas y
-   nivel (iniciación, intermedio o competitivo).
+2. Llena: mano hábil, estilo, madera, gomas y nivel (iniciación, intermedio o
+   competitivo). En **¿Tiene licencia FECHITEME?** aprieta **Sí** y pon un número.
 - [ ] Se guarda y se ve en la tarjeta.
+- [ ] La tarjeta dice "Licencia FECHITEME: Sí · N.º …". Con **No**, el campo del
+  número desaparece y la tarjeta dice "No".
+- [ ] En **Jugadores**, el filtro de federados lo encuentra cuando dijo Sí.
+- [ ] En el formulario de inscripción (link del club) aparece el mismo Sí/No.
+  Una solicitud que dice Sí, al aprobarla, deja al jugador como federado.
 - [ ] La **categoría por edad sale sola** de la fecha de nacimiento (con
   2014-05-10, una sub de menores). Cambia la fecha a una de adulto y la categoría cambia.
 - [ ] El **grupo** que aparece es `PRUEBA Grupal martes`, el de su inscripción.
