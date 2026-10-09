@@ -16,6 +16,7 @@ import GestionProfesores from '@/components/configuracion/GestionProfesores'
 import GestionKioscos from '@/components/configuracion/GestionKioscos'
 import PerfilPersonalConfig from '@/components/configuracion/PerfilPersonalConfig'
 import PanelConfigClub from '@/components/PanelConfigClub'
+import PanelLicenciaAnual from '@/components/configuracion/PanelLicenciaAnual'
 import { useModulos } from '@/lib/hooks/useModulos'
 
 const C = {
@@ -260,6 +261,9 @@ export default function ConfiguracionPage() {
           no puede encontrarse esa perilla en su pantalla sin haberla pedido. */}
       {perfil.club_id && tiene('config_club') && (
         <PanelConfigClub clubId={perfil.club_id} rol={perfil.rol} />
+      )}
+      {perfil.club_id && perfil.rol === 'admin' && tiene('licencia_anual') && (
+        <PanelLicenciaAnual clubId={perfil.club_id} />
       )}
       </>}
 

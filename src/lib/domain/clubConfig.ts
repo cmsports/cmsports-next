@@ -315,6 +315,23 @@ export const CONFIG_CLUB = [
     // toman el mismo último cupo. Ver §10.6 del plan maestro.
   },
 
+  // ── Licencia anual ─────────────────────────────────────────────────────
+  {
+    clave: 'licencia.anio',
+    tipo: 'entero',
+    min: 2026,
+    max: 2100,
+    defecto: 2027,
+    editablePor: 'admin',
+    label: 'Año de la licencia que se está cobrando',
+    // Inerte sin el módulo 'licencia_anual': nadie la lee. 2027 es lo que Buin
+    // empezó a cobrar en octubre de 2026, y el mismo número que usa
+    // `_licencia_anio_cobro` en la migración 301 cuando no hay fila
+    // (`licenciaAnual.test.ts` los cruza). El admin la sube cuando empieza a
+    // cobrar el año siguiente: no se calcula de la fecha, porque en enero el
+    // club puede seguir cobrando la del año en curso a quien pagó tarde.
+  },
+
   // ── Hasta dónde llega el profesor ──────────────────────────────────────
   //
   // Dos clubes pueden tener el mismo módulo de clases y no estar de acuerdo

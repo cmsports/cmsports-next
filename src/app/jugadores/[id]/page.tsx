@@ -17,6 +17,7 @@ import { CATEGORIAS_BUIN, categoriaBuinPorFechaNacimiento, categoriaLabel } from
 import { calcularRankingInterno, type TorneoConPartidos } from '@/lib/domain/rankingInterno'
 import { sumarDias } from '@/lib/domain/panoramaAsistencia'
 import DocumentosJugador from '@/components/DocumentosJugador'
+import LicenciaAnualJugador from '@/components/LicenciaAnualJugador'
 import ResumenAsistenciaJugador from '@/components/ResumenAsistenciaJugador'
 import RankingJugador from '@/components/RankingJugador'
 import FeedbackJugador from '@/components/FeedbackJugador'
@@ -1324,6 +1325,16 @@ export default function JugadorDetallePage() {
             )}
           </div>
         </div>
+
+        {/* Licencia anual: tarjeta propia y no dentro de Plan porque se paga
+            una vez al año y por adelantado, no es parte de la cuota. */}
+        {tiene('licencia_anual') && jugador.club_id && (
+          <div style={cardStyle}>
+            <CardHeader title="Licencia anual" />
+            <LicenciaAnualJugador clubId={jugador.club_id} jugadorId={jugadorId} jugadorNombre={jugador.nombre}
+              puedeCobrar={esAdmin} veMonto={veMensualidad} />
+          </div>
+        )}
 
         {/* Documentos firmados — los sube el staff o el propio jugador */}
         <div style={cardStyle}>

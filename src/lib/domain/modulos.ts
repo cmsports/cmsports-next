@@ -131,6 +131,10 @@ export const MODULOS = [
   // programación: el modo de siempre (una mesa por división, fecha larga)
   // sigue siendo el de San Bernardo y no se toca.
   { key: 'liga_jornadas', label: 'Liga por jornadas (varias mesas por división)' },
+  // El botón "Pago confirmado licencia 2027" de la ficha y el filtro por
+  // licencia del listado. Lo pidió Buin, que cobra en octubre la licencia del
+  // año siguiente; el año lo fija el admin en `licencia.anio` (migración 301).
+  { key: 'licencia_anual', label: 'Licencia anual del jugador' },
   // Tareas NO va acá: es la lista privada de los superadmin
   // (/superadmin/tareas), no una función que un club pueda activar.
 ] as const
@@ -146,6 +150,7 @@ export const MODULOS_KEYS: Modulo[] = MODULOS.map(m => m.key)
 export const MODULOS_HABILITACION_EXPLICITA: readonly Modulo[] = [
   'finanzas_spinhouse', 'retencion_automatica', 'calendario_integrado',
   'ficha_paralimpica', 'exportacion_partidos', 'indicador_bajas_club',
+  'licencia_anual',
 ]
 
 // Conserva el fallback previo de los clubes antiguos sin encenderles funciones nuevas.

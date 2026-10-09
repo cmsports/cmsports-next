@@ -23,6 +23,7 @@ import { calcularEdad } from '@/lib/domain/jugadorExport'
 import ModalExportarJugadores from '@/components/ModalExportarJugadores'
 import { useModulos } from '@/lib/hooks/useModulos'
 import { idsInactivos } from '@/lib/supabase/inactivos'
+import { licenciasDelClub } from '@/lib/supabase/licencias'
 import { useEnVivo } from '@/lib/useEnVivo'
 
 const supabase = createClient()
@@ -159,6 +160,12 @@ export default function JugadoresPage() {
   const { tiene } = useModulos()
   const conRetencion = tiene('retencion')
   const conRetencionAutomatica = tiene('retencion_automatica')
+  // Quiénes pagaron la licencia del año que el admin está cobrando
+  // (`licencia.anio`). `null` mientras no llega: el filtro "no han pagado" no
+  // puede correr sobre un Set vacío, porque mostraría a todo el club.
+  const conLicencia = tiene('licencia_anual')
+  const [filtroLicencia, setFiltroLicencia] = useState<Set<string>>(() => setDesdeParam(searchParams, 'licencia'))
+  const [licencia, setLicencia] = useState<{ anio: number; pagaron: Set<string> } | null>(null)
 
   useEffect(() => {
     if (authLoading) return
@@ -272,6 +279,21 @@ export default function JugadoresPage() {
     if (clubId) void idsInactivos(clubId).then(setInactivos)
   }, { conClub: ['retencion_estado'] })
 
+  const cargarLicencias = useCallback(async () => {
+    if (!clubId) return
+    try {
+      const anio = (await configDelClub(clubId))('licencia.anio')
+      const pagaron = await licenciasDelClub(clubId, anio)
+      setLicencia({ anio, pagaron: new Set(pagaron.keys()) })
+    } catch {
+      mostrarToast('No se pudo leer quiénes pagaron la licencia')
+    }
+  }, [clubId])
+  useEffect(() => {
+    if (conLicencia) void cargarLicencias()
+  }, [conLicencia, cargarLicencias])
+  useEnVivo(conLicencia ? ['licencias_pagadas', 'club_config'] : [], clubId, () => { void cargarLicencias() })
+
   useEffect(() => {
     const params = new URLSearchParams()
     if (busqueda) params.set('q', busqueda)
@@ -280,6 +302,7 @@ export default function JugadoresPage() {
     if (filtroDia.size) params.set('dia', [...filtroDia].join(','))
     if (filtroFederado.size) params.set('federado', [...filtroFederado].join(','))
     if (filtroDoc.size) params.set('doc', [...filtroDoc].join(','))
+    if (filtroLicencia.size) params.set('licencia', [...filtroLicencia].join(','))
     if (filtroPago.size) params.set('pago', [...filtroPago].join(','))
     if (filtroHorario.size) params.set('horario', [...filtroHorario].join(','))
     if (filtroPresente.size) params.set('presente', [...filtroPresente].join(','))
@@ -292,7 +315,7 @@ export default function JugadoresPage() {
     const qs = params.toString()
     router.replace(qs ? `/jugadores?${qs}` : '/jugadores', { scroll: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroDoc, filtroPago, filtroHorario, filtroPresente, filtroSede, filtroGrupo, filtroSinHorario, edadMin, edadMax, orden])
+  }, [busqueda, filtroCat, filtroEstado, filtroDia, filtroFederado, filtroDoc, filtroLicencia, filtroPago, filtroHorario, filtroPresente, filtroSede, filtroGrupo, filtroSinHorario, edadMin, edadMax, orden])
 
   function mostrarToast(msg: string) {
     setToast(msg)
@@ -471,6 +494,10 @@ export default function JugadoresPage() {
         && (dias.length === 0 || dias.some(d => j[`entrena_${d}`] === true))
         && (filtroFederado.size === 0 || (filtroFederado.has('si') && j.federado === true) || (filtroFederado.has('no') && !j.federado))
         && (filtroDoc.size === 0 || (filtroDoc.has('si') && conDocumento.has(j.id)) || (filtroDoc.has('no') && !conDocumento.has(j.id)))
+        // Mientras no se sabe quién pagó, el filtro no deja pasar a nadie: es
+        // preferible "0 jugadores" un instante que una lista de deudores falsa.
+        && (!conLicencia || filtroLicencia.size === 0 || (!!licencia
+          && ((filtroLicencia.has('si') && licencia.pagaron.has(j.id)) || (filtroLicencia.has('no') && !licencia.pagaron.has(j.id)))))
         && (filtroPago.size === 0 || filtroPago.has(estadoPago[j.id] || ''))
         && (filtroHorario.size === 0 || filtroHorario.has(j.horario || ''))
         && (filtroPresente.size === 0 || (filtroPresente.has('presente') && asistenciaHoy.has(j.id)) || (filtroPresente.has('ausente') && !asistenciaHoy.has(j.id)))
@@ -482,7 +509,7 @@ export default function JugadoresPage() {
   }, [
     jugadores, busquedaDiferida, filtroCat, filtroSede, filtroGrupo, filtroEstado,
     filtroSinHorario, filtroDia, filtroFederado, filtroDoc, filtroPago, filtroHorario,
-    filtroPresente, conDocumento, estadoPago, asistenciaHoy, edadMin, edadMax, orden, colador, conRetencionAutomatica, inactivos,
+    filtroPresente, conDocumento, conLicencia, filtroLicencia, licencia, estadoPago, asistenciaHoy, edadMin, edadMax, orden, colador, conRetencionAutomatica, inactivos,
   ])
 
   // Las dos salen de `jugadores` y de nada más: no tenían por qué recalcularse
@@ -504,6 +531,7 @@ export default function JugadoresPage() {
     ...[...filtroDia].map(d => ({ key:`dia-${d}`, label: diaLabel(d), onRemove: () => setFiltroDia(prev => setToggle(prev, d)) })),
     ...[...filtroFederado].map(v => ({ key:`fed-${v}`, label: v === 'si' ? 'Federado' : 'No federado', onRemove: () => setFiltroFederado(prev => setToggle(prev, v)) })),
     ...[...filtroDoc].map(v => ({ key:`doc-${v}`, label: v === 'si' ? 'Con formulario' : 'Sin formulario', onRemove: () => setFiltroDoc(prev => setToggle(prev, v)) })),
+    ...(conLicencia ? [...filtroLicencia] : []).map(v => ({ key:`licencia-${v}`, label: `${v === 'si' ? 'Pagaron' : 'No han pagado'} licencia ${licencia?.anio ?? ''}`.trim(), onRemove: () => setFiltroLicencia(prev => setToggle(prev, v)) })),
     ...[...filtroPago].map(v => ({ key:`pago-${v}`, label: v === 'pagado' ? 'Al día' : v === 'pendiente' ? 'Pendiente' : 'Atrasado', onRemove: () => setFiltroPago(prev => setToggle(prev, v)) })),
     ...[...filtroHorario].map(h => ({ key:`horario-${h}`, label:h, onRemove: () => setFiltroHorario(prev => setToggle(prev, h)) })),
     ...[...filtroPresente].map(v => ({ key:`presente-${v}`, label: v === 'presente' ? 'Presente hoy' : 'Ausente hoy', onRemove: () => setFiltroPresente(prev => setToggle(prev, v)) })),
@@ -587,7 +615,7 @@ export default function JugadoresPage() {
             <button
               onClick={() => {
                 setBusqueda(''); setFiltroCat(new Set()); setFiltroEstado(new Set()); setFiltroSinHorario(false)
-                setFiltroDia(new Set()); setFiltroFederado(new Set()); setFiltroDoc(new Set()); setFiltroPago(new Set())
+                setFiltroDia(new Set()); setFiltroFederado(new Set()); setFiltroDoc(new Set()); setFiltroPago(new Set()); setFiltroLicencia(new Set())
                 setFiltroHorario(new Set()); setFiltroPresente(new Set()); setEdadMin(''); setEdadMax('')
                 setFiltroSede(new Set()); setFiltroGrupo(new Set())
               }}
@@ -639,6 +667,19 @@ export default function JugadoresPage() {
             onChange={setFiltroPago}
             colorActivo={{ bg:'#f0fdf4', border:'#bbf7d0', text:'#16a34a' }}
           />
+
+          {conLicencia && (
+            <FiltroMultiSelect
+              label={licencia ? `Licencia ${licencia.anio}` : 'Licencia'}
+              options={[
+                { value:'si', label:`Pagaron licencia ${licencia?.anio ?? ''}`.trim() },
+                { value:'no', label:`No han pagado licencia ${licencia?.anio ?? ''}`.trim() },
+              ]}
+              selected={filtroLicencia}
+              onChange={setFiltroLicencia}
+              colorActivo={{ bg:'#f0fdf4', border:'#bbf7d0', text:'#16a34a' }}
+            />
+          )}
 
           <FiltroMultiSelect
             label="Presente hoy"

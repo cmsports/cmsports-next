@@ -73,6 +73,8 @@ export const ETIQUETAS: Record<string, string> = {
   arriendo_cancha: 'Arriendo cancha',
   donacion: 'Donación',
   clase_extraordinaria: 'Clase extra',
+  // La escribe solo `registrar_pago_licencia_atomico` (migración 301).
+  licencia: 'Licencia',
   otro_ingreso: 'Otro ingreso',
   clase_particular: 'Clase particular',
   arriendo_mesa: 'Arriendo de mesa',

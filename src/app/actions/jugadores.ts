@@ -659,3 +659,48 @@ export async function traspasarJugador(input: { jugadorId: string; clubIdNuevo: 
   if (error) return { error: error.message }
   return { ok: true }
 }
+
+/**
+ * Confirma la licencia anual y registra su ingreso en Finanzas como
+ * "Pago licencia año 2027 — <jugador>". Todo en el RPC (migración 301): el
+ * año viaja para que la base lo compare con `licencia.anio` y rechace si el
+ * admin cambió de año con la ficha abierta.
+ */
+export async function registrarLicencia(params: {
+  jugadorId: string
+  anio: number
+  monto: number
+  idempotencyKey?: string
+}) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+  if (!Number.isFinite(params.monto) || params.monto < 0) return { error: 'El monto no puede ser negativo' }
+  if (!Number.isInteger(params.anio)) return { error: 'Año inválido' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('registrar_pago_licencia_atomico', {
+    p_jugador_id: params.jugadorId,
+    p_anio: params.anio,
+    p_monto: Math.round(params.monto),
+    p_idempotency_key: params.idempotencyKey ?? crypto.randomUUID(),
+  })
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+/**
+ * Desmarca la licencia de ese año, sin tocar Finanzas: mismo criterio que
+ * `desmarcarMatricula`. El RPC deja en audit_log lo que se borró.
+ */
+export async function desmarcarLicencia(params: { jugadorId: string; anio: number }) {
+  const { error: authErr, supabase } = await requireAdminClub()
+  if (authErr) return { error: authErr }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('desmarcar_licencia_atomico', {
+    p_jugador_id: params.jugadorId,
+    p_anio: params.anio,
+  })
+  if (error) return { error: error.message }
+  return { success: true }
+}

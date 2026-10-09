@@ -87,6 +87,12 @@ describe('los defaults son el comportamiento actual de Buin', () => {
     expect(valorPorDefecto('inscripcion.autoservicio')).toBe('off')
   })
 
+  it('licencia: se cobra la de 2027 hasta que el admin diga otra cosa', () => {
+    // Inerte sin el módulo 'licencia_anual'. 2027 es lo que Buin empezó a
+    // cobrar en octubre de 2026; la migración 301 usa el mismo número.
+    expect(valorPorDefecto('licencia.anio')).toBe(2027)
+  })
+
   it('liga: el formulario NO pregunta el horario', () => {
     // 'off' es el formulario de siempre: ventana fija 09:00-17:00, sin campos
     // de hora. Encenderlo solo agrega dos inputs — no hay nada técnico detrás,

@@ -158,7 +158,9 @@ export default function PanelConfigClub({ clubId, rol }: { clubId: string; rol: 
 
   if (cargando) return <p style={{ fontSize: 13, color: muted }}>Cargando configuración…</p>
 
-  const grupos = [...new Set(CONFIG_CLUB.map(d => d.clave.split('.')[0]))]
+  // `licencia.anio` tiene su propio panel detrás del módulo 'licencia_anual'
+  // (PanelLicenciaAnual): acá aparecería en clubes que no cobran licencia.
+  const grupos = [...new Set(CONFIG_CLUB.map(d => d.clave.split('.')[0]))].filter(g => g !== 'licencia')
 
   return (
     <div style={{ ...card, padding: 20, maxWidth: 760, marginTop: 16 }}>
