@@ -85,9 +85,14 @@ export default function LicenciaAnualJugador({ clubId, jugadorId, jugadorNombre,
     await cargar()
   }
 
+  // Anular borra la marca Y su ingreso (migración 302): así volver a marcar
+  // registra un solo ingreso, nunca dos por la misma licencia.
   async function desmarcar() {
-    if (anio == null) return
-    if (!confirm(`¿Desmarcar la licencia ${anio} de ${jugadorNombre}?\n\nEl ingreso que se registró queda en Finanzas: esto solo cambia la ficha.`)) return
+    if (anio == null || !pagada) return
+    const queSeBorra = pagada.monto > 0
+      ? `Se quita la marca y se borra su ingreso de ${fmtMonto(pagada.monto)} en Finanzas.`
+      : 'Se quita la marca. No había ingreso en Finanzas (se confirmó sin cobro).'
+    if (!confirm(`¿Anular el pago de la licencia ${anio} de ${jugadorNombre}?\n\n${queSeBorra}`)) return
     setGuardando(true)
     const res = await desmarcarLicencia({ jugadorId, anio })
     setGuardando(false)
@@ -120,7 +125,7 @@ export default function LicenciaAnualJugador({ clubId, jugadorId, jugadorNombre,
               style={{ marginTop:12, padding:'6px 12px', borderRadius:20, fontSize:12, fontWeight:600,
                 cursor: guardando ? 'default' : 'pointer', border:'1px solid #bbf7d0',
                 background:'#f0fdf4', color:'#15803d' }}>
-              {guardando ? '...' : 'Desmarcar'}
+              {guardando ? '...' : 'Anular pago'}
             </button>
           )}
         </div>

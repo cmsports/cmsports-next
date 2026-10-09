@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useRef, useState, Suspense } from 'react'
+import { useCallback, useEffect, useRef, useState, Suspense } from 'react'
 import PanelMensualidadesHistoricas from '@/components/PanelMensualidadesHistoricas'
 import PanelClasesExtra from '@/components/PanelClasesExtra'
 import { createClient } from '@/lib/supabase/client'
@@ -128,6 +128,23 @@ function FinanzasContent() {
     void cargarMovimientos()
   }, { conClub: ['movimientos', 'mensualidades'] })
 
+  // Los ingresos que son el pago de una licencia (migración 302). Consulta
+  // aparte y no embebida en la de movimientos: esa es de todos los clubes, y
+  // un embebido que fallara dejaría la lista de Finanzas en blanco para todos.
+  // Si esto falla solo se pierde el candado visual; el RPC rechaza igual.
+  const conLicencia = tiene('licencia_anual')
+  const [deLicencia, setDeLicencia] = useState<Set<string>>(new Set())
+  const cargarDeLicencia = useCallback(async () => {
+    if (!clubId || !conLicencia) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any).from('licencias_pagadas')
+      .select('movimiento_id').eq('club_id', clubId).not('movimiento_id', 'is', null)
+    if (error) { console.error('[finanzas] no se pudo leer licencias_pagadas', error.message); return }
+    setDeLicencia(new Set((data ?? []).map((r: { movimiento_id: string }) => r.movimiento_id)))
+  }, [clubId, conLicencia])
+  useEffect(() => { void cargarDeLicencia() }, [cargarDeLicencia])
+  useEnVivo(conLicencia ? ['licencias_pagadas'] : [], clubId, () => { void cargarDeLicencia() })
+
   async function cargarMovimientos(cid?: string) {
     const id = cid || clubId
     const mesStr = String(mes).padStart(2, '0')
@@ -166,6 +183,7 @@ function FinanzasContent() {
     if (m.mensualidad_id || m.categoria === 'mensualidad') return 'Pago de mensualidad — se corrige revirtiendo el pago en la pestaña Mensualidades'
     if (m.torneo_id) return 'Viene de un torneo — se corrige desde la ficha del torneo'
     if (bloqueados.has(m.id)) return 'Viene de liga o clases extra — se corrige revirtiendo el cobro en su propia pantalla'
+    if (deLicencia.has(m.id)) return 'Pago de licencia — se corrige con "Anular pago" en la ficha del jugador'
     return null
   }
 

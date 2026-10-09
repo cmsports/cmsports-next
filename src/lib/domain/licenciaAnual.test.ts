@@ -59,6 +59,23 @@ describe('licencia anual (migración 301)', () => {
     expect(bloque).not.toContain("from('movimientos')")
   })
 
+  it('anular el pago borra también su ingreso, así volver a marcar no lo duplica (302)', () => {
+    const m302 = leer('supabase/migrations/302_licencia_anular_pago.sql')
+    expect(m302).toContain("SELECT _migracion_nueva('302_licencia_anular_pago');")
+    const desmarcar = m302.slice(m302.indexOf('FUNCTION public.desmarcar_licencia_atomico'))
+    expect(desmarcar).toContain('DELETE FROM public.movimientos WHERE id = v_fila.movimiento_id AND club_id = v_club_id')
+    expect(desmarcar).toContain("'movimientos', v_fila.movimiento_id, 'eliminar', v_mov")
+  })
+
+  it('el candado de Finanzas envuelve la regla de producción en vez de reescribirla', () => {
+    // El repo va atrás de la base: reescribir `_movimiento_editable` desde la
+    // copia de la 105 podría borrar una regla que solo está en producción.
+    const m302 = leer('supabase/migrations/302_licencia_anular_pago.sql')
+    expect(m302).toContain('ALTER FUNCTION public._movimiento_editable(uuid, uuid) RENAME TO _movimiento_editable_base;')
+    expect(m302).toContain('RETURN public._movimiento_editable_base(p_movimiento_id, p_club_id);')
+    expect(m302).not.toContain('CREATE OR REPLACE FUNCTION public._movimiento_editable(')
+  })
+
   it('el movimiento se lee como "Licencia" en Finanzas, no con la clave cruda', () => {
     expect(etiquetaCategoria('licencia')).toBe('Licencia')
   })

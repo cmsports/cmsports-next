@@ -689,8 +689,10 @@ export async function registrarLicencia(params: {
 }
 
 /**
- * Desmarca la licencia de ese año, sin tocar Finanzas: mismo criterio que
- * `desmarcarMatricula`. El RPC deja en audit_log lo que se borró.
+ * Anula el pago de la licencia de ese año: el RPC quita la marca Y borra su
+ * ingreso en Finanzas (migración 302), así volver a marcar no lo duplica. A
+ * diferencia de `desmarcarMatricula`, que deja la plata donde está. El RPC
+ * deja en audit_log las dos cosas con lo que valían.
  */
 export async function desmarcarLicencia(params: { jugadorId: string; anio: number }) {
   const { error: authErr, supabase } = await requireAdminClub()
