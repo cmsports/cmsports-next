@@ -11,6 +11,7 @@
 // la licencia y registra el ingreso en Finanzas en una sola transacción.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { configDelClub } from '@/lib/supabase/clubConfig'
 import { licenciasDelClub, type LicenciaPagada } from '@/lib/supabase/licencias'
 import { registrarLicencia, desmarcarLicencia } from '@/app/actions/jugadores'
@@ -140,7 +141,11 @@ export default function LicenciaAnualJugador({ clubId, jugadorId, jugadorNombre,
         </div>
       ))}
 
-      {modal && anio != null && (
+      {/* Al body con un portal: cada tarjeta de la ficha entra con una
+          animación de opacidad que la vuelve su propio contexto de apilamiento,
+          así que dentro de la tarjeta el z-index no alcanza y las tarjetas
+          siguientes (Documentos, Feedback) se pintaban encima del fondo. */}
+      {modal && anio != null && createPortal(
         <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', display:'flex',
           alignItems:'center', justifyContent:'center', zIndex:200, padding:16 }}>
           <div style={{ background:'#fff', borderRadius:14, padding:22, width:'100%', maxWidth:400 }}>
@@ -184,7 +189,8 @@ export default function LicenciaAnualJugador({ clubId, jugadorId, jugadorNombre,
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
