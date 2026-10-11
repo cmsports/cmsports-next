@@ -1611,21 +1611,26 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   const esLiguilla = modalidad === 'liguilla'
   const esEliminacion = modalidad === 'eliminacion_consolacion'
 
-  const { data: gruposPrev } = await supabase.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  const { data: gruposPrev, error: errLeerGrupos } = await supabase.from('torneo_grupos').select('id,nombre').eq('torneo_id', torneoId)
+  if (errLeerGrupos) return { error: 'No se pudieron leer los grupos: ' + errLeerGrupos.message }
   const grupoIds = (gruposPrev || []).map(g => g.id)
 
-  const { data: inscritos } = await supabase
+  const { data: inscritos, error: errLeerInscritos } = await supabase
     .from('grupo_jugadores')
-    .select('jugador_id, club_procedencia, jugadores(id,nombre,es_externo)')
+    .select('grupo_id, jugador_id, club_procedencia, jugadores(id,nombre,es_externo)')
     .in('grupo_id', grupoIds.length ? grupoIds : ['00000000-0000-0000-0000-000000000000'])
+
+  if (errLeerInscritos) return { error: 'No se pudieron leer los inscritos: ' + errLeerInscritos.message }
 
   // El club declarado en la inscripción se conserva al rearmar los grupos:
   // más abajo se borran y recrean todas las filas de grupo_jugadores.
   const clubPorJugador = new Map<string, string | null>()
+  const vistos = new Set<string>()
   const jugadores: JugadorTorneo[] = (inscritos || [])
     .map((i): JugadorTorneo | null => {
       const j = Array.isArray(i.jugadores) ? i.jugadores[0] : i.jugadores
-      if (!j) return null
+      if (!j || vistos.has(j.id)) return null
+      vistos.add(j.id)
       clubPorJugador.set(j.id, i.club_procedencia ?? null)
       return { id: j.id, nombre: j.nombre ?? '', club: esExterno ? clubKeyDeInscripcion(i.club_procedencia, j.es_externo) : null }
     })
@@ -1720,6 +1725,27 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     }
   }
 
+  // Conservar una inscripción recuperable hasta confirmar todos los grupos.
+  // Antes se borraba la MESA y después se intentaba crear el reparto: una
+  // interrupción dejaba el torneo sin inscritos. También al regenerar se
+  // respalda en MESA antes de borrar los grupos anteriores.
+  let mesaRespaldo = (gruposPrev || []).find(g => g.nombre === 'MESA')
+  if (!mesaRespaldo) {
+    const { data: mesas, error } = await supabase.from('torneo_grupos')
+      .insert({ torneo_id: torneoId, nombre: 'MESA' }).select('id,nombre')
+    if (error || !mesas?.length) return { error: 'No se pudo conservar la inscripción en MESA. No se regeneraron los grupos.' }
+    mesaRespaldo = mesas[0]
+  }
+  const idsEnMesa = new Set((inscritos || []).filter(m => m.grupo_id === mesaRespaldo.id).map(m => m.jugador_id))
+  const respaldoFaltante = jugadores.filter(j => !idsEnMesa.has(j.id)).map(j => ({
+    grupo_id: mesaRespaldo.id, jugador_id: j.id, club_procedencia: clubPorJugador.get(j.id) ?? null,
+  }))
+  if (respaldoFaltante.length) {
+    const { data: guardados, error } = await supabase.from('grupo_jugadores').insert(respaldoFaltante).select('jugador_id')
+    if (error || guardados?.length !== respaldoFaltante.length) return { error: 'No se pudo conservar la inscripción completa en MESA. No se regeneraron los grupos.' }
+  }
+  const gruposAReemplazar = grupoIds.filter(id => id !== mesaRespaldo.id)
+
   // Cada paso revisa su error y corta antes del siguiente.
   //
   // Antes ninguno lo hacía. Si el insert de `grupo_jugadores` fallaba, los
@@ -1732,10 +1758,10 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
     const { error } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId)
     if (error) return { error: `No se pudieron limpiar los partidos anteriores: ${error.message}` }
   }
-  if (grupoIds.length) {
-    const { error: errMiembros } = await supabase.from('grupo_jugadores').delete().in('grupo_id', grupoIds)
+  if (gruposAReemplazar.length) {
+    const { error: errMiembros } = await supabase.from('grupo_jugadores').delete().in('grupo_id', gruposAReemplazar)
     if (errMiembros) return { error: `No se pudieron limpiar los grupos anteriores: ${errMiembros.message}` }
-    const { error: errGrupos } = await supabase.from('torneo_grupos').delete().in('id', grupoIds)
+    const { error: errGrupos } = await supabase.from('torneo_grupos').delete().in('id', gruposAReemplazar)
     if (errGrupos) return { error: `No se pudieron borrar los grupos anteriores: ${errGrupos.message}` }
   }
 
@@ -1883,6 +1909,12 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   // '16vos', lo que toque por tamaño— y no en 'grupos', que es la fase que no
   // va a jugar. Se toma del propio cuadro recién generado en vez de recalcular
   // el tamaño: así no hay dos cuentas que puedan discrepar.
+  // Solo retirar el respaldo cuando el reparto y todos los partidos existen.
+  const { error: errRetirarMesa } = await supabase.from('grupo_jugadores').delete().eq('grupo_id', mesaRespaldo.id)
+  if (errRetirarMesa) return { error: 'Los grupos están creados, pero no se pudo retirar el respaldo de MESA. Reintenta el cierre.' }
+  const { error: errBorrarMesa } = await supabase.from('torneo_grupos').delete().eq('id', mesaRespaldo.id)
+  if (errBorrarMesa) return { error: 'Los grupos están creados, pero no se pudo cerrar MESA. Reintenta el cierre.' }
+
   const faseDestino = esEliminacion ? (partidos[0]?.fase ?? 'grupos') : 'grupos'
 
   const { error: errFase } = await supabase.from('torneos')
@@ -2663,17 +2695,19 @@ async function limpiarExternosDeTorneo(
   const admin = createAdminClient()
 
   // IDs de grupos de este torneo
-  const { data: grupos } = await admin.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  const { data: grupos, error: errGrupos } = await admin.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  if (errGrupos) return `El torneo se finalizó, pero no se pudieron revisar sus grupos para limpiar externos: ${errGrupos.message}`
   if (!grupos?.length) return null
 
   const grupoIds = grupos.map(g => g.id)
 
   // Externos que participaron en este torneo
-  const { data: rows } = await (admin as any)
+  const { data: rows, error: errExternos } = await (admin as any)
     .from('grupo_jugadores')
     .select('jugador_id, jugadores!inner(id)')
     .in('grupo_id', grupoIds)
     .eq('jugadores.es_externo', true)
+  if (errExternos) return `El torneo se finalizó, pero no se pudieron revisar sus jugadores externos: ${errExternos.message}`
   if (!rows?.length) return null
 
   // Excluir el podio: campeón, subcampeón y —desde que se disputa— el tercero.
@@ -2683,11 +2717,13 @@ async function limpiarExternosDeTorneo(
   if (!candidatos.length) return null
 
   // Excluir los que también están en otros torneos
-  const { data: enOtros } = await (admin as any)
+  const { data: enOtros, error: errOtros } = await (admin as any)
     .from('grupo_jugadores')
     .select('jugador_id, torneo_grupos!inner(torneo_id)')
     .in('jugador_id', candidatos)
     .neq('torneo_grupos.torneo_id', torneoId)
+  // Una lectura fallida no demuestra que el jugador esté libre para borrar.
+  if (errOtros) return `El torneo se finalizó, pero no se pudieron comprobar las inscripciones en otros torneos: ${errOtros.message}`
   const enOtrosIds = new Set((enOtros ?? []).map((r: { jugador_id: string }) => r.jugador_id))
 
   // Excluir a quien ya jugó algún partido con resultado. Antes esto no se
@@ -2699,11 +2735,12 @@ async function limpiarExternosDeTorneo(
   // Pasó con 8 jugadores del torneo TC (ver migración 213). Un externo cuyo
   // grupo ya tiene partidos jugados se queda, igual que ya exige
   // quitarJugadorDeGrupo para sacar a alguien a mano.
-  const { data: partidosJugados } = await admin
+  const { data: partidosJugados, error: errPartidos } = await admin
     .from('torneo_partidos')
     .select('jugador_a, jugador_b')
     .eq('torneo_id', torneoId)
     .not('ganador', 'is', null)
+  if (errPartidos) return `El torneo se finalizó, pero no se pudieron comprobar los resultados para limpiar externos: ${errPartidos.message}`
   const conResultado = new Set<string>()
   for (const p of partidosJugados ?? []) {
     if (p.jugador_a) conResultado.add(p.jugador_a)
@@ -3030,26 +3067,25 @@ export async function actualizarEstadoPago(params: {
   const fechaPago = estado === 'pagado' ? fechaChile() : null
   const metodoFinal = estado === 'pagado' ? (metodoPago || 'efectivo') : null
 
-  // ponytail: delete duplicates then upsert — prevents race condition on rapid clicks
-  const { data: existingRows } = await supabase
-    .from('torneo_pagos')
-    .select('id')
-    .eq('torneo_id', torneoId)
-    .eq('jugador_id', jugadorId)
-    .order('id', { ascending: true })
-
-  if (existingRows && existingRows.length > 1) {
-    const idsToDelete = existingRows.slice(1).map(r => r.id)
-    await supabase.from('torneo_pagos').delete().in('id', idsToDelete)
+  // El índice único (torneo_id, jugador_id) resuelve duplicados. Nunca se
+  // borran filas de pago para resolver una lectura fallida o un doble clic.
+  const { data: existente, error: lecturaError } = await supabase
+    .from('torneo_pagos').select('id,subido_a_finanzas')
+    .eq('torneo_id', torneoId).eq('jugador_id', jugadorId).maybeSingle()
+  if (lecturaError) return { error: 'No se pudo revisar el pago: ' + lecturaError.message }
+  if (existente?.subido_a_finanzas) {
+    return { error: 'Este pago ya está en Finanzas. Registra cualquier corrección o devolución desde Finanzas.' }
   }
 
-  if (existingRows && existingRows.length > 0) {
-    const { error } = await supabase.from('torneo_pagos').update({
+  if (existente) {
+    // El filtro también protege si el traspaso termina después de la lectura.
+    const { data: actualizado, error } = await supabase.from('torneo_pagos').update({
       estado,
       fecha_pago: fechaPago,
       metodo_pago: metodoFinal,
-    }).eq('id', existingRows[0].id)
+    }).eq('id', existente.id).eq('subido_a_finanzas', false).select('id')
     if (error) return { error: 'No se pudo actualizar el pago: ' + error.message }
+    if (!actualizado?.length) return { error: 'El pago cambió o ya fue enviado a Finanzas. Recarga antes de continuar.' }
   } else {
     const { error } = await supabase.from('torneo_pagos').insert({
       torneo_id: torneoId,
@@ -3331,22 +3367,35 @@ export async function inscribirEnMesa(params: {
     return { error: `No se pudo inscribir a ${jugadorNombre}: ${inscripcionError.message}` }
   }
 
+  let aviso: string | undefined
   if ((torneo?.cuota_inscripcion ?? 0) > 0) {
-    const estaPagado = metodoPago !== 'pendiente'
-    const { error: pagoError } = await supabase.from('torneo_pagos').insert({
-      torneo_id: torneoId,
-      jugador_id: jugadorId,
-      estado: estaPagado ? 'pagado' : 'pendiente',
-      metodo_pago: estaPagado ? metodoPago : null,
-      fecha_pago: estaPagado ? fechaChile() : null,
-    })
+    // Retirar a alguien conserva su historial de pago. Al reinscribirlo se
+    // reutiliza esa fila: otro INSERT violaría la restricción única y lo
+    // sacaría de la mesa otra vez, incluso si ya había pagado.
+    const { data: previo, error: errorPrevio } = await supabase.from('torneo_pagos')
+      .select('id,estado,subido_a_finanzas').eq('torneo_id', torneoId).eq('jugador_id', jugadorId).maybeSingle()
+    let pagoError = errorPrevio?.message
+    if (!pagoError) {
+      if (previo && (previo.estado !== 'pendiente' || metodoPago === 'pendiente' || previo.subido_a_finanzas)) {
+        aviso = `Se conservó el estado de pago anterior: ${previo.estado}.`
+      } else {
+        const resultadoPago = await actualizarEstadoPago({
+          torneoId, jugadorId,
+          estado: metodoPago === 'pendiente' ? 'pendiente' : 'pagado',
+          metodoPago: metodoPago === 'pendiente' ? undefined : metodoPago,
+        })
+        pagoError = resultadoPago.error
+      }
+    }
     if (pagoError) {
-      await supabase.from('grupo_jugadores').delete().eq('grupo_id', grupoMesa.id).eq('jugador_id', jugadorId)
-      return { error: 'No se pudo registrar el pago; la inscripción fue cancelada' }
+      const { error: deshacerError } = await supabase.from('grupo_jugadores')
+        .delete().eq('grupo_id', grupoMesa.id).eq('jugador_id', jugadorId)
+      if (deshacerError) return { error: `No se pudo registrar el pago (${pagoError}) ni cancelar la inscripción. Revisa la mesa antes de reintentar.` }
+      return { error: 'No se pudo registrar el pago; la inscripción fue cancelada: ' + pagoError }
     }
   }
 
-  return { success: true, jugadorId, jugadorNombre }
+  return { success: true, jugadorId, jugadorNombre, ...(aviso ? { aviso } : {}) }
 }
 
 export async function archivarTorneo(params: { torneoId: string }) {

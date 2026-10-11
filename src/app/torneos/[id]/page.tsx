@@ -561,6 +561,8 @@ export default function TorneoDetallePage() {
 
       if (res.error) { alert(res.error); return }
 
+      if (!('success' in res) || !res.success) return
+      if ('aviso' in res && res.aviso) alert(res.aviso)
       setBusquedaMesa('')
       setRutMesa('')
       setClubMesa('')
@@ -2699,7 +2701,7 @@ export default function TorneoDetallePage() {
             )}
             <div style={{ position:'relative', marginBottom:10 }}>
               <input style={{ width:'100%', background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
-                placeholder={torneo?.tipo === 'interno' ? 'Buscar jugador o visita...' : 'Buscar jugador del club o escribir nombre nuevo...'}
+                placeholder={torneo?.tipo === 'interno' ? 'Buscar jugador o visita...' : 'Buscar jugador o visita, o escribir nombre nuevo...'}
                 value={busquedaMesa}
                 onFocus={() => {
                   if (torneo?.tipo === 'interno' && jugadoresPorCategoria.length > 0) setJugSuggestions(jugadoresPorCategoria)
@@ -2720,7 +2722,7 @@ export default function TorneoDetallePage() {
                       // inscribirlo escribiéndolo completo —el nombre exacto
                       // reutiliza su ficha—, pero pasa a ser una decisión y no
                       // un clic accidental en el autocompletado.
-                      const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria').eq('club_id', perfil.club_id).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false').ilike('nombre', `%${e.target.value}%`).limit(8)
+                      const { data } = await supabase.from('jugadores').select('id,nombre,rut,categoria,es_externo').eq('club_id', perfil.club_id).eq('estado', 'activo').ilike('nombre', `%${e.target.value}%`).limit(8)
                       setJugSuggestions(data || [])
                     } else {
                       setJugSuggestions([])
@@ -2773,7 +2775,7 @@ export default function TorneoDetallePage() {
             <div style={{ display:'flex', gap:8, marginBottom:10 }}>
               <input style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                 placeholder="12345678-9" value={rutMesa} onChange={e => setRutMesa(formatRut(e.target.value))} maxLength={10} />
-              {torneo?.tipo !== 'interno' && !jugadorIdSeleccionado && (
+              {torneo?.tipo !== 'interno' && (
                 <>
                   <input style={{ flex:1, background:'#f4f7fa', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 12px', color: text, fontSize:13, outline:'none' }}
                     placeholder="Club de procedencia (opcional)" value={clubMesa} onChange={e => setClubMesa(e.target.value)} list="clubes-conocidos" />
