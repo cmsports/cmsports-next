@@ -33,6 +33,11 @@ const DUPLICADOS_HISTORICOS = new Set([
   // `_migraciones_aplicadas` con ese nombre, así que renumerar una la dejaría
   // mintiendo sobre lo que se ejecutó.
   '254',
+  // 303: otra vez dos ramas a la vez —`303_votaciones_buin` (Buin, 10-20) y
+  // `303_torneos_integridad_financiera`, que llegó a main mientras la primera
+  // ya estaba corrida en producción—. Renumerar la de votaciones la dejaría
+  // mintiendo: `_migraciones_aplicadas` la tiene como `303_votaciones_buin`.
+  '303',
 ])
 
 describe('numeración de migraciones', () => {
