@@ -46,6 +46,9 @@ export const anyAuthRoutes = [
   '/torneos-internos', '/torneo-oficial', '/feedbacks', '/central-de-pago',
   '/tienda-buin', '/tienda-profe', '/libro-profe', '/bibliografia-tdm',
   '/redes-sociales',
+  // Votaciones: la ven todos los roles. Quien puede votar, y quién crea o
+  // cierra, lo deciden los RPC de la migración 303, no la ruta.
+  '/votaciones',
   // Módulo de ligas de fútbol: llegó en el merge del 2026-08-27 sin entrada en
   // ninguna lista de acá — mismo hueco que las once de arriba. Sus páginas
   // usan usePerfil() y solo exigen "hay perfil", sin filtrar rol (las

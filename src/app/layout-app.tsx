@@ -15,7 +15,7 @@ import {
   CreditCard, DollarSign, User, BarChart2, Globe,
   Receipt, LogOut, Menu, X, ShoppingBag, Settings,
   Store, Library, BookLock, Eye, EyeOff, Award, Home, Landmark, CalendarClock,
-  MessageSquare, Gavel, Video,
+  MessageSquare, Gavel, Video, Vote,
 } from 'lucide-react'
 import { useMontos } from '@/lib/ui/MontosProvider'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
@@ -37,6 +37,7 @@ const navAdmin = [
   { section: 'Gestión' },
   { label: 'Asistencia', emoji: '✅',      icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
   { label: 'Feedbacks', emoji: '📝',       icon: MessageSquare,   href: '/feedbacks',  modulo: 'feedback' },
+  { label: 'Votaciones', emoji: '🗳️',     icon: Vote,            href: '/votaciones', modulo: 'votaciones' },
   { label: 'Cupos/bloques', emoji: '🗓️', icon: CalendarClock,  href: '/horario',    modulo: 'clases' },
   { label: 'Calendario', emoji: '📅',    icon: Calendar,         href: '/calendario', modulo: 'calendario' },
   { label: 'Finanzas', emoji: '💰',        icon: DollarSign,       href: '/finanzas',          modulo: 'finanzas' },
@@ -56,6 +57,7 @@ const navProfesor = [
   { section: 'Gestión' },
   { label: 'Asistencia', emoji: '✅', icon: ClipboardCheck,  href: '/asistencia', modulo: 'asistencia' },
   { label: 'Feedbacks', emoji: '📝', icon: MessageSquare,    href: '/feedbacks',  modulo: 'feedback' },
+  { label: 'Votaciones', emoji: '🗳️', icon: Vote,            href: '/votaciones', modulo: 'votaciones' },
   { label: 'Cupos/bloques', emoji: '🗓️', icon: CalendarClock, href: '/horario',   modulo: 'clases' },
   { label: 'Calendario', emoji: '📅', icon: Calendar,        href: '/calendario', modulo: 'calendario' },
   { label: 'Torneo Externo', emoji: '🌎', icon: Globe,           href: '/torneos',          modulo: 'torneos' },
@@ -79,6 +81,7 @@ const navJugador = [
   { label: 'Central de Pago', emoji: '🏦',     icon: Landmark,      href: '/central-de-pago' },
   { label: 'Asistencia', emoji: '✅',          icon: ClipboardCheck,href: '/asistencia',    modulo: 'asistencia' },
   { label: 'Mis Feedbacks', emoji: '📝',       icon: MessageSquare, href: '/feedbacks',     modulo: 'feedback' },
+  { label: 'Votaciones', emoji: '🗳️',          icon: Vote,          href: '/votaciones',    modulo: 'votaciones' },
   { section: 'Club' },
   { label: 'Mi horario', emoji: '🗓️',         icon: CalendarClock, href: '/mi-horario',    modulo: 'clases' },
   { label: 'Ranking', emoji: '🥇',             icon: Award,         href: '/ranking',          modulo: 'torneos' },
