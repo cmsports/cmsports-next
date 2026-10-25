@@ -37,14 +37,22 @@ import {
 
 type Fila = Record<string, any>
 
-function fakeSupabase(tablas: Record<string, Fila[]>, opts: { fallaTorneos?: boolean } = {}) {
+function fakeSupabase(tablas: Record<string, Fila[]>, opts: { fallaTorneos?: boolean; lecturaVieja?: string } = {}) {
   let seq = 0
+  // lecturaVieja: esa tabla responde los SELECT con la foto de la primera
+  // lectura, como hizo producción el 2026-10-25 al mover jugadores de grupo.
+  let foto: Fila[] | null = null
   const from = (tabla: string) => {
     const filas = () => (tablas[tabla] ||= [])
     const filtros: Array<(f: Fila) => boolean> = []
     let op: 'select' | 'insert' | 'update' | 'delete' = 'select'
     let payload: Fila | Fila[] = {}
     const aplicar = () => filas().filter(f => filtros.every(p => p(f)))
+    const leer = () => {
+      if (tabla !== opts.lecturaVieja) return aplicar()
+      foto ??= structuredClone(filas())
+      return foto.filter(f => filtros.every(p => p(f)))
+    }
     const respuesta = (data: any) => (tabla === 'torneos' && opts.fallaTorneos ? { data: null, error: { message: 'JWT expired' } } : { data, error: null })
     const builder: any = {
       select: () => builder,
@@ -78,7 +86,7 @@ function fakeSupabase(tablas: Record<string, Fila[]>, opts: { fallaTorneos?: boo
           tablas[tabla] = filas().filter(f => !fuera.has(f))
           return resolve({ data: null, error: null })
         }
-        return resolve({ data: aplicar(), error: null })
+        return resolve({ data: leer(), error: null })
       },
     }
     return builder
@@ -87,7 +95,7 @@ function fakeSupabase(tablas: Record<string, Fila[]>, opts: { fallaTorneos?: boo
 }
 
 const perfil = { id: 'u1', club_id: 'club', rol: 'admin', nombre: 'Admin' }
-const montar = (tablas: Record<string, Fila[]>, opts?: { fallaTorneos?: boolean }) => {
+const montar = (tablas: Record<string, Fila[]>, opts?: { fallaTorneos?: boolean; lecturaVieja?: string }) => {
   mocks.requireAdmin.mockResolvedValue({ error: null, supabase: fakeSupabase(tablas, opts), perfil })
   return tablas
 }
@@ -261,5 +269,26 @@ describe('la MESA no es un grupo entre los que mover', () => {
     const res = await moverJugadorEntreGrupos({ torneoId: 't1', jugadorId: 'j1', grupoOrigenId: 'g1', grupoDestinoId: 'mesa' })
     expect(res.error).toMatch(/mesa de inscripción/)
     expect(t.grupo_jugadores[0].grupo_id).toBe('g1')
+  })
+})
+
+describe('mover a un jugador regenera los partidos con el jugador ya movido', () => {
+  it('el origen pierde sus partidos y el destino los gana, aunque la relectura venga vieja', async () => {
+    const t = montar({
+      torneos: [{ id: 't1', club_id: 'club', formato: 'grupos', ruedas: 1, estado: 'en_curso', fase: 'grupos' }],
+      torneo_grupos: [{ id: 'gE', torneo_id: 't1', nombre: 'E', en_preparacion: false }, { id: 'gA', torneo_id: 't1', nombre: 'A', en_preparacion: false }],
+      grupo_jugadores: [
+        ...['e0', 'e1', 'ismael', 'e3'].map((j, orden) => ({ id: `m-${j}`, grupo_id: 'gE', jugador_id: j, orden })),
+        ...['a0', 'a1'].map((j, orden) => ({ id: `m-${j}`, grupo_id: 'gA', jugador_id: j, orden })),
+      ],
+      torneo_partidos: [],
+    }, { lecturaVieja: 'grupo_jugadores' })
+    const res = await moverJugadorEntreGrupos({ torneoId: 't1', jugadorId: 'ismael', grupoOrigenId: 'gE', grupoDestinoId: 'gA' })
+    expect(res.error).toBeUndefined()
+    const de = (g: string) => t.torneo_partidos.filter(p => p.grupo_id === g)
+    expect(de('gE')).toHaveLength(3)
+    expect(de('gE').some(p => p.jugador_a === 'ismael' || p.jugador_b === 'ismael')).toBe(false)
+    expect(de('gA')).toHaveLength(3)
+    expect(de('gA').filter(p => p.jugador_a === 'ismael' || p.jugador_b === 'ismael')).toHaveLength(2)
   })
 })

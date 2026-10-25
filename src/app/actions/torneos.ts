@@ -1381,10 +1381,10 @@ export async function moverJugadorEntreGrupos(params: {
     if (restaurados.length) await supabase.from('torneo_partidos').insert(restaurados)
   }
 
-  const { error: moveErr } = await supabase.from('grupo_jugadores')
+  const { data: movido, error: moveErr } = await supabase.from('grupo_jugadores')
     .update({ grupo_id: grupoDestinoId, orden: ordenDestino })
-    .eq('jugador_id', jugadorId).eq('grupo_id', grupoOrigenId)
-  if (moveErr) return { error: 'No se pudo mover al jugador' }
+    .eq('jugador_id', jugadorId).eq('grupo_id', grupoOrigenId).select('id')
+  if (moveErr || !movido?.length) return { error: 'No se pudo mover al jugador' }
 
   const { error: borrarPartidosError } = await supabase.from('torneo_partidos')
     .delete().eq('torneo_id', torneoId).in('grupo_id', [grupoOrigenId, grupoDestinoId])
@@ -1393,12 +1393,14 @@ export async function moverJugadorEntreGrupos(params: {
     return { error: 'No se pudieron actualizar los partidos de los grupos' }
   }
 
-  const { data: miembros, error: miembrosError } = await supabase.from('grupo_jugadores')
-    .select('id, jugador_id, grupo_id, orden').in('grupo_id', [grupoOrigenId, grupoDestinoId])
-  if (miembrosError) {
-    await restaurarMovimiento()
-    return { error: 'No se pudieron regenerar los grupos' }
-  }
+  // Los integrantes de después se arman en memoria, no con una segunda lectura.
+  // Esa relectura era la misma consulta que `miembrosAntes` y en producción
+  // devolvía la foto de ANTES del movimiento: el origen se regeneraba con el
+  // jugador que se iba (partidos "contra —") y el destino sin el que llegaba
+  // (partidos faltantes). Pasó en TC A y TC B del 2026-10-25.
+  const miembros = (miembrosAntes || []).map(m => m.jugador_id === jugadorId && m.grupo_id === grupoOrigenId
+    ? { ...m, grupo_id: grupoDestinoId, orden: ordenDestino }
+    : m)
 
   const inserts: { torneo_id: string; grupo_id: string; fase: string; jugador_a: string; jugador_b: string; orden: number }[] = []
   for (const gid of [grupoOrigenId, grupoDestinoId]) {
