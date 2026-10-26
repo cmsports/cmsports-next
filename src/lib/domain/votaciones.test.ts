@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  enCategoria, idsDeSeleccion, edadCumplida, enRangoDeEdad, sinFechaDeNacimiento, idsDeEdicion, validarEdicion, validarCreacion, porcentajeDeVotos, ganadores, resumenSeleccion,
+  enCategoria, idsDeSeleccion, votacionesPendientes, edadCumplida, enRangoDeEdad, sinFechaDeNacimiento, idsDeEdicion, validarEdicion, validarCreacion, porcentajeDeVotos, ganadores, resumenSeleccion,
   type JugadorVotacion, type Seleccion,
 } from './votaciones'
 import { puestosDeVotacion } from '@/lib/votaciones-pdf'
@@ -210,5 +210,24 @@ describe('filtrar por edad', () => {
   })
   it('avisa cuántos activos no se pueden ubicar por edad', () => {
     expect(sinFechaDeNacimiento(lista)).toBe(1)
+  })
+})
+
+describe('aviso de votaciones pendientes en Mi perfil', () => {
+  const vs = [
+    { id: 'abierta-sin-votar', estado: 'abierta' },
+    { id: 'abierta-votada', estado: 'abierta' },
+    { id: 'cerrada', estado: 'cerrada' },
+  ]
+  it('solo las abiertas en las que todavía no vota', () => {
+    expect(votacionesPendientes(vs, new Set(['abierta-votada'])).map(v => v.id)).toEqual(['abierta-sin-votar'])
+  })
+  it('sin votaciones o con todo votado no hay aviso', () => {
+    expect(votacionesPendientes([], new Set())).toEqual([])
+    expect(votacionesPendientes(vs, new Set(['abierta-sin-votar', 'abierta-votada']))).toEqual([])
+  })
+  it('el perfil lo muestra solo con el módulo encendido', () => {
+    const perfil = leer('src/app/perfil/page.tsx')
+    expect(perfil).toContain("tiene('votaciones') && perfil?.club_id && <AvisoVotacionesPendientes")
   })
 })

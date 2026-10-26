@@ -16,6 +16,7 @@ import { cuentaDelJugador, tieneExtrasPendientes, type ClaseExtraJugador } from 
 import { SIN_CUOTA } from '@/lib/domain/mensualidades'
 import { useEnVivo } from '@/lib/useEnVivo'
 import RankingJugador from '@/components/RankingJugador'
+import AvisoVotacionesPendientes from '@/components/AvisoVotacionesPendientes'
 import PanelFichaParalimpica from '@/components/PanelFichaParalimpica'
 
 const CAMPOS_FICHA = 'id,nombre,categoria,tipo_plan,sesiones_usadas,sesiones_limite,foto_path,rut,email,telefono,fecha_nacimiento,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,talla_polera,talla_short'
@@ -227,6 +228,10 @@ export default function PerfilPage() {
           </div>
         )}
       </div>
+
+      {/* Arriba de todo lo demás: el perfil es la primera pestaña en el
+          celular, y ahí el menú de Votaciones queda escondido. */}
+      {tiene('votaciones') && perfil?.club_id && <AvisoVotacionesPendientes clubId={perfil.club_id} />}
 
       {/* Ficha: los mismos datos que se editan en Configuración. Sin esto el
           jugador guardaba el RUT y volvía acá y no veía nada. */}

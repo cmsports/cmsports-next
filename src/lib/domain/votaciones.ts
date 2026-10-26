@@ -133,7 +133,17 @@ export function validarEdicion(p: { titulo: string; votantes: readonly string[] 
 
 export type VotanteVotacion = { id: string; nombre: string | null; voto: boolean }
 
-export type OpcionResultado ={ id: string; texto: string; votos: number }
+/**
+ * Las que el alumno todavía tiene que votar: abiertas y sin voto suyo. No
+ * filtra por habilitado porque el RLS ya le entrega solo esas (migración 303).
+ */
+export function votacionesPendientes<V extends { id: string; estado: string }>(
+  votaciones: readonly V[], votadas: ReadonlySet<string>,
+): V[] {
+  return votaciones.filter(v => v.estado === 'abierta' && !votadas.has(v.id))
+}
+
+export type OpcionResultado = { id: string; texto: string; votos: number }
 
 export type ResultadoVotacion = {
   titulo: string
