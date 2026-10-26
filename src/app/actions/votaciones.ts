@@ -2,7 +2,7 @@
 
 import { requireStaffClub, requirePerfil } from '@/lib/auth/require'
 import { esUuid } from '@/lib/domain/uuid'
-import { validarCreacion, type ResultadoVotacion } from '@/lib/domain/votaciones'
+import { validarCreacion, validarEdicion, type ResultadoVotacion, type VotanteVotacion } from '@/lib/domain/votaciones'
 
 // Todo pasa por los RPC de la migración 303: ellos validan módulo, club, rol,
 // que el votante esté habilitado y que no vote dos veces. Acá solo se corta
@@ -38,6 +38,42 @@ export async function crearVotacion(params: {
   })
   if (error) return { error: error.message }
   return { success: true, id: data as string }
+}
+
+/** `votantes: null` deja la lista de votantes como está (solo nombre y descripción). */
+export async function editarVotacion(params: {
+  votacionId: string
+  titulo: string
+  descripcion?: string
+  votantes: string[] | null
+}) {
+  const { error: authErr, supabase } = await requireStaffClub()
+  if (authErr || !supabase) return { error: authErr ?? 'Sin sesión' }
+  if (!esUuid(params.votacionId)) return { error: 'Votación inválida' }
+  if (params.votantes && !params.votantes.every(esUuid)) return { error: 'Hay jugadores con un identificador inválido' }
+  const invalido = validarEdicion(params)
+  if (invalido) return { error: invalido }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any).rpc('editar_votacion_atomico', {
+    p_votacion_id: params.votacionId,
+    p_titulo: params.titulo,
+    p_descripcion: params.descripcion ?? null,
+    p_votantes: params.votantes,
+  })
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function votantesDeVotacion(params: { votacionId: string }): Promise<{ error: string } | { votantes: VotanteVotacion[] }> {
+  const { error: authErr, supabase } = await requireStaffClub()
+  if (authErr || !supabase) return { error: authErr ?? 'Sin sesión' }
+  if (!esUuid(params.votacionId)) return { error: 'Votación inválida' }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any).rpc('votantes_de_votacion', { p_votacion_id: params.votacionId })
+  if (error) return { error: error.message }
+  return { votantes: (data ?? []) as VotanteVotacion[] }
 }
 
 export async function cambiarEstadoVotacion(params: { votacionId: string; estado: 'abierta' | 'cerrada' }) {

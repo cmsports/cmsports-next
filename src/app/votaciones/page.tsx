@@ -9,11 +9,11 @@ import { useEnVivo } from '@/lib/useEnVivo'
 import { cachedFetch } from '@/lib/query-cache'
 import { CATEGORIAS_BUIN } from '@/lib/domain/categoriaBuin'
 import {
-  idsDeSeleccion, resumenSeleccion, validarCreacion, porcentajeDeVotos, ganadores,
+  idsDeSeleccion, idsDeEdicion, sinFechaDeNacimiento, resumenSeleccion, validarCreacion, validarEdicion, porcentajeDeVotos, ganadores,
   seleccionVacia, type JugadorVotacion, type Seleccion, type ResultadoVotacion,
 } from '@/lib/domain/votaciones'
 import {
-  crearVotacion, cambiarEstadoVotacion, eliminarVotacion, votar, resultadosDeVotacion,
+  crearVotacion, editarVotacion, votantesDeVotacion, cambiarEstadoVotacion, eliminarVotacion, votar, resultadosDeVotacion,
 } from '@/app/actions/votaciones'
 
 // Los tipos generados todavía no conocen las tablas de la migración 303.
@@ -132,7 +132,7 @@ export default function VotacionesPage() {
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
           {votaciones.map(v => esStaff
-            ? <TarjetaStaff key={v.id} v={v} opciones={opcionesDe[v.id] ?? []} clubNombre={clubNombre} avisar={avisar} alCambiar={cargar} />
+            ? <TarjetaStaff key={v.id} v={v} opciones={opcionesDe[v.id] ?? []} clubId={clubId} clubNombre={clubNombre} avisar={avisar} alCambiar={cargar} />
             : <TarjetaAlumno key={v.id} v={v} opciones={opcionesDe[v.id] ?? []} miOpcion={misVotos[v.id]}
                 miJugadorId={perfil.jugador_id ?? null} avisar={avisar} alCambiar={cargar} />
           )}
@@ -221,13 +221,14 @@ function TarjetaAlumno({ v, opciones, miOpcion, miJugadorId, avisar, alCambiar }
 }
 
 // ── Vista del profe ─────────────────────────────────────────────────────────
-function TarjetaStaff({ v, opciones, clubNombre, avisar, alCambiar }: {
-  v: Votacion; opciones: Opcion[]; clubNombre: string
+function TarjetaStaff({ v, opciones, clubId, clubNombre, avisar, alCambiar }: {
+  v: Votacion; opciones: Opcion[]; clubId: string | null; clubNombre: string
   avisar: (m: string) => void; alCambiar: () => Promise<void>
 }) {
   const [abierta, setAbierta] = useState(false)
   const [res, setRes] = useState<ResultadoVotacion | null>(null)
   const [ocupado, setOcupado] = useState(false)
+  const [editando, setEditando] = useState(false)
 
   const cargarResultados = useCallback(async () => {
     const r = await resultadosDeVotacion({ votacionId: v.id })
@@ -294,11 +295,17 @@ function TarjetaStaff({ v, opciones, clubNombre, avisar, alCambiar }: {
           {abierta ? 'Ocultar resultados' : 'Ver resultados'}
         </button>
         <button onClick={exportar} disabled={ocupado} style={boton('#fff', text, '1px solid #e2e8f0')}>Exportar PDF</button>
+        <button onClick={() => setEditando(true)} disabled={ocupado} style={boton('#fff', text, '1px solid #e2e8f0')}>Editar</button>
         <button onClick={cambiarEstado} disabled={ocupado} style={boton('#fff', text, '1px solid #e2e8f0')}>
           {v.estado === 'abierta' ? 'Cerrar votación' : 'Reabrir'}
         </button>
         <button onClick={borrar} disabled={ocupado} style={boton('#fff', '#dc2626', '1px solid #fecaca')}>Eliminar</button>
       </div>
+
+      {editando && clubId && (
+        <ModalEditar v={v} clubId={clubId} alCerrar={() => setEditando(false)}
+          alGuardar={() => { setEditando(false); avisar('Cambios guardados'); void alCambiar(); if (abierta) void cargarResultados() }} />
+      )}
 
       {abierta && (
         <div style={{ marginTop: 14 }}>
@@ -341,16 +348,23 @@ function TarjetaStaff({ v, opciones, clubNombre, avisar, alCambiar }: {
 }
 
 // ── Crear una votación ──────────────────────────────────────────────────────
-function SelectorDeJugadores({ titulo, jugadores, categorias, valor, onChange, unidad }: {
+const SIN_FIJOS: ReadonlySet<string> = new Set()
+
+// `fijos`: jugadores que no se pueden sacar de la lista (en la edición, quienes
+// ya votaron). Siempre cuentan y se ven marcados y bloqueados.
+function SelectorDeJugadores({ titulo, jugadores, categorias, valor, onChange, unidad, fijos = SIN_FIJOS }: {
   titulo: string; jugadores: JugadorVotacion[]; categorias: string[]
   valor: Seleccion; onChange: (s: Seleccion) => void; unidad: 'votantes' | 'candidatos'
+  fijos?: ReadonlySet<string>
 }) {
   const [busqueda, setBusqueda] = useState('')
-  const cantidad = idsDeSeleccion(jugadores, valor).length
+  const cantidad = idsDeEdicion(jugadores, valor, fijos).length
   const visibles = jugadores.filter(j => !busqueda || (j.nombre ?? '').toLowerCase().includes(busqueda.toLowerCase()))
   const modos: { v: Seleccion['modo']; l: string }[] = [
-    { v: 'categorias', l: 'Por categoría' }, { v: 'jugadores', l: 'Jugadores específicos' }, { v: 'todos', l: 'Todos los activos' },
+    { v: 'edad', l: 'Por edad' }, { v: 'categorias', l: 'Por categoría' }, { v: 'jugadores', l: 'Jugadores específicos' }, { v: 'todos', l: 'Todos los activos' },
   ]
+  const sinFecha = sinFechaDeNacimiento(jugadores)
+  const aEdad = (v: string) => { const n = parseInt(v, 10); return Number.isNaN(n) ? null : Math.max(0, Math.min(120, n)) }
   const alternar = (campo: 'categorias' | 'jugadores', id: string) => {
     const s = new Set(valor[campo]); if (s.has(id)) s.delete(id); else s.add(id)
     onChange({ ...valor, [campo]: s })
@@ -367,6 +381,26 @@ function SelectorDeJugadores({ titulo, jugadores, categorias, valor, onChange, u
           </button>
         ))}
       </div>
+
+      {valor.modo === 'edad' && (
+        <div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 13, color: muted }}>
+            Desde
+            <input type="number" min={0} max={120} value={valor.edadMin ?? ''} placeholder="mín."
+              onChange={e => onChange({ ...valor, edadMin: aEdad(e.target.value) })}
+              style={{ width: 64, padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13 }} />
+            hasta
+            <input type="number" min={0} max={120} value={valor.edadMax ?? ''} placeholder="máx."
+              onChange={e => onChange({ ...valor, edadMax: aEdad(e.target.value) })}
+              style={{ width: 64, padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13 }} />
+            años cumplidos
+          </div>
+          <div style={{ fontSize: 11, color: hint, marginTop: 6 }}>
+            Deja un lado vacío para no poner tope (ej.: solo “hasta 13” son todos los menores de 14).
+            {sinFecha > 0 && ` ${sinFecha} ${sinFecha === 1 ? 'jugador activo no tiene' : 'jugadores activos no tienen'} fecha de nacimiento y no ${sinFecha === 1 ? 'entra' : 'entran'} por edad.`}
+          </div>
+        </div>
+      )}
 
       {valor.modo === 'categorias' && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -386,8 +420,9 @@ function SelectorDeJugadores({ titulo, jugadores, categorias, valor, onChange, u
           <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: 8 }}>
             {visibles.map(j => (
               <label key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', fontSize: 13, color: text, cursor: 'pointer' }}>
-                <input type="checkbox" checked={valor.jugadores.has(j.id)} onChange={() => alternar('jugadores', j.id)} />
-                {j.nombre}
+                <input type="checkbox" checked={fijos.has(j.id) || valor.jugadores.has(j.id)} disabled={fijos.has(j.id)}
+                  onChange={() => alternar('jugadores', j.id)} />
+                {j.nombre}{fijos.has(j.id) && <span style={{ color: hint, fontSize: 11 }}> · ya votó</span>}
               </label>
             ))}
             {visibles.length === 0 && <div style={{ padding: 10, fontSize: 12, color: hint }}>Sin resultados</div>}
@@ -395,28 +430,24 @@ function SelectorDeJugadores({ titulo, jugadores, categorias, valor, onChange, u
         </>
       )}
 
-      <div style={{ fontSize: 12, color: cantidad ? '#059669' : hint, marginTop: 8 }}>{resumenSeleccion(cantidad, unidad)}</div>
+      <div style={{ fontSize: 12, color: cantidad ? '#059669' : hint, marginTop: 8 }}>
+        {resumenSeleccion(cantidad, unidad)}
+        {fijos.size > 0 && ` · ${fijos.size} ya ${fijos.size === 1 ? 'votó y no se puede quitar' : 'votaron y no se pueden quitar'}`}
+      </div>
     </div>
   )
 }
 
-function ModalCrear({ clubId, alCerrar, alCrear }: { clubId: string; alCerrar: () => void; alCrear: () => void }) {
+// Jugadores del club para armar las listas, y las categorías que tienen.
+function useJugadoresVotacion(clubId: string) {
   const [jugadores, setJugadores] = useState<JugadorVotacion[]>([])
-  const [titulo, setTitulo] = useState('')
-  const [descripcion, setDescripcion] = useState('')
-  const [tipo, setTipo] = useState<'jugadores' | 'opciones'>('jugadores')
-  const [quienVota, setQuienVota] = useState<Seleccion>(seleccionVacia)
-  const [aQuien, setAQuien] = useState<Seleccion>(seleccionVacia)
-  const [textoOpciones, setTextoOpciones] = useState('')
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState('')
 
   useEffect(() => {
     let vivo = true
     void (async () => {
-      const lista = await cachedFetch(`votaciones:jugadores:${clubId}`, async () => {
+      const lista = await cachedFetch(`votaciones:jugadores-edad:${clubId}`, async () => {
         const { data } = await db.from('jugadores')
-          .select('id,nombre,estado,categoria,categorias').eq('club_id', clubId)
+          .select('id,nombre,estado,categoria,categorias,fecha_nacimiento').eq('club_id', clubId)
           .or('es_externo.is.null,es_externo.eq.false').order('nombre')
         return (data ?? []) as JugadorVotacion[]
       }, 120_000, ['jugadores'])
@@ -434,6 +465,20 @@ function ModalCrear({ clubId, alCerrar, alCrear }: { clubId: string; alCerrar: (
     const conocidas = (CATEGORIAS_BUIN as readonly string[]).filter(c => presentes.has(c))
     return [...conocidas, ...[...presentes].filter(c => !conocidas.includes(c)).sort()]
   }, [jugadores])
+
+  return { jugadores, categorias }
+}
+
+function ModalCrear({ clubId, alCerrar, alCrear }: { clubId: string; alCerrar: () => void; alCrear: () => void }) {
+  const { jugadores, categorias } = useJugadoresVotacion(clubId)
+  const [titulo, setTitulo] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [tipo, setTipo] = useState<'jugadores' | 'opciones'>('jugadores')
+  const [quienVota, setQuienVota] = useState<Seleccion>(seleccionVacia)
+  const [aQuien, setAQuien] = useState<Seleccion>(seleccionVacia)
+  const [textoOpciones, setTextoOpciones] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
 
   const opciones = textoOpciones.split('\n').map(s => s.trim()).filter(Boolean)
 
@@ -492,6 +537,88 @@ function ModalCrear({ clubId, alCerrar, alCrear }: { clubId: string; alCerrar: (
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button onClick={alCerrar} style={boton('transparent', muted, '1px solid #e2e8f0')}>Cancelar</button>
           <button onClick={crear} disabled={guardando} style={boton(guardando ? '#cbd5e1' : '#4f46e5')}>{guardando ? 'Creando…' : 'Crear votación'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Editar una votación ─────────────────────────────────────────────────────
+// Se cambia el nombre, la descripción y quién puede votar. Las opciones no se
+// editan: borrar una con votos se llevaría esos votos. Quien ya votó queda fijo
+// en la lista porque su voto es secreto y no se puede retirar.
+function ModalEditar({ v, clubId, alCerrar, alGuardar }: {
+  v: Votacion; clubId: string; alCerrar: () => void; alGuardar: () => void
+}) {
+  const { jugadores, categorias } = useJugadoresVotacion(clubId)
+  const [titulo, setTitulo] = useState(v.titulo)
+  const [descripcion, setDescripcion] = useState(v.descripcion ?? '')
+  const [quienVota, setQuienVota] = useState<Seleccion>({ ...seleccionVacia(), modo: 'jugadores' })
+  const [yaVotaron, setYaVotaron] = useState<ReadonlySet<string>>(new Set())
+  // Con la votación cerrada la lista de votantes ya no cambia: solo texto.
+  const puedeCambiarVotantes = v.estado === 'abierta'
+  const [cargandoVotantes, setCargandoVotantes] = useState(puedeCambiarVotantes)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!puedeCambiarVotantes) return
+    let vivo = true
+    void (async () => {
+      const r = await votantesDeVotacion({ votacionId: v.id })
+      if (!vivo) return
+      if ('error' in r) { setError(r.error); setCargandoVotantes(false); return }
+      setQuienVota({ ...seleccionVacia(), modo: 'jugadores', jugadores: new Set(r.votantes.map(x => x.id)) })
+      setYaVotaron(new Set(r.votantes.filter(x => x.voto).map(x => x.id)))
+      setCargandoVotantes(false)
+    })()
+    return () => { vivo = false }
+  }, [v.id, puedeCambiarVotantes])
+
+  async function guardar() {
+    const votantes = puedeCambiarVotantes ? idsDeEdicion(jugadores, quienVota, yaVotaron) : null
+    const invalido = validarEdicion({ titulo, votantes })
+    if (invalido) { setError(invalido); return }
+    setError(''); setGuardando(true)
+    const r = await editarVotacion({ votacionId: v.id, titulo, descripcion, votantes })
+    setGuardando(false)
+    if ('error' in r && r.error) { setError(String(r.error)); return }
+    alGuardar()
+  }
+
+  const campo = { width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: text } as const
+  const listo = !cargandoVotantes && !guardando
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 16, overflowY: 'auto' }}>
+      <div style={{ background: '#fff', borderRadius: 14, padding: 20, width: '100%', maxWidth: 560, margin: '24px 0', display: 'grid', gap: 14 }}>
+        <h2 style={{ fontSize: 17, fontWeight: 600, color: text, margin: 0 }}>Editar votación</h2>
+
+        <div>
+          <label style={{ fontSize: 12, color: muted }}>Nombre</label>
+          <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} style={campo} />
+        </div>
+        <div>
+          <label style={{ fontSize: 12, color: muted }}>Descripción (opcional)</label>
+          <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} maxLength={500} rows={3} style={campo} />
+        </div>
+
+        {!puedeCambiarVotantes ? (
+          <p style={{ fontSize: 12, color: hint, margin: 0 }}>
+            La votación está cerrada: puedes cambiar el nombre y la descripción. Para cambiar quién vota, reábrela primero.
+          </p>
+        ) : cargandoVotantes ? (
+          <p style={{ fontSize: 13, color: hint, margin: 0 }}>Cargando votantes…</p>
+        ) : (
+          <SelectorDeJugadores titulo="¿Quién puede votar?" unidad="votantes" jugadores={jugadores} categorias={categorias}
+            valor={quienVota} onChange={setQuienVota} fijos={yaVotaron} />
+        )}
+
+        {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#dc2626' }}>{error}</div>}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={alCerrar} style={boton('transparent', muted, '1px solid #e2e8f0')}>Cancelar</button>
+          <button onClick={guardar} disabled={!listo} style={boton(!listo ? '#cbd5e1' : '#4f46e5')}>{guardando ? 'Guardando…' : 'Guardar cambios'}</button>
         </div>
       </div>
     </div>
