@@ -2327,9 +2327,7 @@ export async function sincronizarLlaves(params: {
     .order('orden')
   // Sin revisar esta lectura, un fallo dejaba la lista vacía, ningún BYE avanzaba y la función
   // respondía éxito con la llave a medio propagar.
-  // El `as` es a propósito: un retorno literal más cambia el tipo inferido de esta función y deja
-  // de compilar `.error` en quien la llama.
-  if (errRondaInicial) return { error: 'No se pudo leer la ronda inicial para avanzar los BYE.' } as { error: string }
+  if (errRondaInicial) return { error: 'No se pudo leer la ronda inicial para avanzar los BYE.' }
   const byesConGanador = (rondaInicial || []).filter(p => p.ganador && !p.jugador_b)
   if (byesConGanador.length) {
     const erroresBye = await Promise.all(byesConGanador.map(p => propagarGanadorPlayoff(supabase, p, p.ganador!)))
