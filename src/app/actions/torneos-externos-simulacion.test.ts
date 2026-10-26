@@ -103,6 +103,12 @@ function montar(tablas: Record<string, Fila[]>) {
 beforeEach(() => vi.clearAllMocks())
 
 // Tamaños y cantidades de cabezas observados el 11 de octubre, sin datos personales.
+/**
+ * `sincronizarLlaves` devuelve una unión de varias formas y no todas traen `error`: leerlo como
+ * propiedad no compila (`tsc --noEmit` del CI lo rechaza). Así se lee de forma segura.
+ */
+const errorDe = (res: object): string | undefined => ('error' in res ? (res as { error?: string }).error : undefined)
+
 describe('simulaciones de grupos → llaves → campeón → cierre', () => {
   it.each(['externo', 'interno'].flatMap(tipo =>
     [[29, 0], [11, 0], [12, 0], [14, 5], [7, 3], [20, 2], [25, 2], [30, 2], [64, 4], [128, 8]]
@@ -121,7 +127,7 @@ describe('simulaciones de grupos → llaves → campeón → cierre', () => {
       expect('error' in res ? res.error : undefined).toBeUndefined()
     }
     for (const p of tablas.torneo_partidos.filter(p => p.fase === 'grupos')) await jugar(p)
-    expect((await sincronizarLlaves({ torneoId: 't' })).error).toBeUndefined()
+    expect(errorDe(await sincronizarLlaves({ torneoId: 't' }))).toBeUndefined()
     for (let paso = 0; paso < n * 2; paso++) {
       const siguiente = tablas.torneo_partidos.find(p => p.fase !== 'grupos' && !p.ganador && p.jugador_a && p.jugador_b)
       if (!siguiente) break
@@ -270,7 +276,7 @@ it('dos torneos simultáneos conservan sus cuadros y a las visitas compartidas',
       expect(await marcarGanadorPartido({ partidoId: p.id, setsA: a ? 3 : 0, setsB: a ? 0 : 3 })).toMatchObject({ success: true })
     }
     for (const p of tablas.torneo_partidos.filter(p => p.torneo_id === torneoId && p.fase === 'grupos')) await jugar(p)
-    expect((await sincronizarLlaves({ torneoId })).error).toBeUndefined()
+    expect(errorDe(await sincronizarLlaves({ torneoId }))).toBeUndefined()
     for (let i = 0; i < 32; i++) {
       const p = tablas.torneo_partidos.find(p => p.torneo_id === torneoId && p.fase !== 'grupos' && !p.ganador && p.jugador_a && p.jugador_b)
       if (!p) break

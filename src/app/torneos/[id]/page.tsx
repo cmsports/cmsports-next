@@ -42,6 +42,7 @@ import { FASE_CONSOLACION_LABEL, esFaseDeConsolacion, fasesParaMostrarConConsuel
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { usePuedeGestionarTorneos } from '@/lib/hooks/usePuedeGestionarTorneos'
 import { useEnVivo } from '@/lib/useEnVivo'
+import AvisoConsistencia from '@/components/torneos/AvisoConsistencia'
 import { copiarTexto } from '@/lib/clipboard'
 import { useTextoMonto } from '@/components/Monto'
 import dynamic from 'next/dynamic'
@@ -1074,6 +1075,10 @@ export default function TorneoDetallePage() {
 
   return (
     <AppLayout perfil={perfil}>
+      {/* Solo informa si los grupos y los partidos no cuadran (ver AvisoConsistencia). */}
+      {puedeGestionar && torneo && faseActual !== 'inscripcion' && !esEquipos && (
+        <AvisoConsistencia torneoId={torneoId} clubId={perfil?.club_id ?? null} />
+      )}
       {/* Header */}
       <div style={{ display:'flex', gap:10, marginBottom:20, alignItems:'center', flexWrap:'wrap' }}>
         <button onClick={() => router.push(torneo?.tipo === 'interno' ? '/torneos-internos' : '/torneos')} style={{ background:'transparent', border:'1px solid #e2e8f0', borderRadius:8, padding:'6px 14px', color: muted, fontSize:13, cursor:'pointer' }}>← Volver</button>

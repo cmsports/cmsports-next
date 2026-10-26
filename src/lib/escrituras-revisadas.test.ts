@@ -40,8 +40,8 @@ const RAIZ = join(process.cwd(), 'src')
  */
 const EXCEPCIONES: Record<string, { max: number; motivo: string }> = {
   'app/actions/torneos.ts': {
-    max: 27,
-    motivo: 'Reversiones (`restaurarMovimiento`, `deshacerGrupos`, `limpiarNuevosGrupos`) y limpiezas de cabezas de serie: si fallan, el error que importa ya se está devolviendo por otro lado.',
+    max: 18,
+    motivo: 'Reversiones (`restaurarMovimiento`, `limpiarNuevosGrupos`, el rollback de `generarGruposTardios`) y limpiezas de cabezas de serie: si fallan, el error que importa ya se devuelve por otro lado. Sin revisar y TODAVÍA NO justificadas: los contadores y el reseteo del partido al corregir un resultado de grupos, el avance de fase tras un ganador, el borrado de partidos de un grupo manual y la baja de la mesa. Al arreglar una, bajar este tope.',
   },
   'app/actions/torneo-oficial.ts': {
     max: 23,
