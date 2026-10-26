@@ -55,6 +55,7 @@ import { esUuid } from '@/lib/domain/uuid'
 import { requireAdmin, requireGestorTorneos } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { inconsistenciasDeGrupos } from '@/lib/domain/torneoConsistencia'
 
 // Clave de club para la regla blanda anti-choque de grupos (solo torneos
 // externos). El club sale de la INSCRIPCIÓN, no de la ficha del jugador: la
@@ -170,12 +171,14 @@ async function regenerarGrupo(
 ): Promise<string | null> {
   const updates = await Promise.all(ordenados.map((m, orden) => supabase.from('grupo_jugadores').update({ orden }).eq('id', m.id)))
   if (updates.some(r => r.error)) return 'No se pudo guardar el nuevo orden del grupo.'
+  // La modalidad se lee ANTES de borrar: si la lectura fallaba después, el grupo se quedaba
+  // sin partidos y la función devolvía el error de lectura como si no hubiera pasado nada más.
+  const { modalidad, ruedas, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+  if (errModalidad) return errModalidad
   const { error: deleteErr } = await supabase.from('torneo_partidos').delete().eq('torneo_id', torneoId).eq('grupo_id', grupoId)
   if (deleteErr) return 'No se pudieron regenerar los partidos del grupo.'
   if (enPreparacion) return null
   const ids = ordenados.map(m => m.jugador_id).filter((id): id is string => !!id)
-  const { modalidad, ruedas, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
-  if (errModalidad) return errModalidad
   const parejas: Array<[string, string]> = modalidad === 'liguilla'
     ? generarLiguilla(ids, ruedas).map(p => [p.jugadorA, p.jugadorB])
     : generarRoundRobin(ids)
@@ -1329,11 +1332,14 @@ export async function moverJugadorEntreGrupos(params: {
     .select('id').eq('grupo_id', grupoOrigenId).eq('jugador_id', jugadorId).maybeSingle()
   if (!miembroOrigen) return { error: 'El jugador no pertenece al grupo de origen' }
 
-  const { data: partidosAfectados } = await supabase
+  const { data: partidosAfectados, error: errPartidosAfectados } = await supabase
     .from('torneo_partidos')
     .select('id, ganador')
     .eq('torneo_id', torneoId)
     .in('grupo_id', [grupoOrigenId, grupoDestinoId])
+  // Si esta lectura fallaba, `partidosAfectados` quedaba en null, la guarda no saltaba y se
+  // borraban resultados ya jugados. Ahora no se mueve a nadie sin poder comprobarlo.
+  if (errPartidosAfectados) return { error: 'No se pudieron leer los partidos de los grupos. No se movió a nadie.' }
 
   if (partidosAfectados?.some(p => p.ganador)) {
     return { error: 'No se puede mover jugadores: alguno de los dos grupos ya tiene partidos jugados' }
@@ -1427,14 +1433,20 @@ export async function moverJugadorEntreGrupos(params: {
 
   const origenQuedoVacio = !(miembros || []).some(m => m.grupo_id === grupoOrigenId)
   if (origenQuedoVacio) {
-    const { data: grupoOrigen } = await supabase
+    const { data: grupoOrigen, error: errGrupoOrigen } = await supabase
       .from('torneo_grupos')
       .select('nombre')
       .eq('id', grupoOrigenId)
       .maybeSingle()
-    if (grupoOrigen?.nombre !== 'MESA') {
-      await supabase.from('torneo_partidos').delete().eq('grupo_id', grupoOrigenId)
-      await supabase.from('torneo_grupos').delete().eq('id', grupoOrigenId)
+    const AVISO_GRUPO_VACIO = 'El jugador se movió, pero no se pudo eliminar el grupo que quedó vacío. Recarga el torneo y límpialo antes de seguir.'
+    // Con la lectura fallida `nombre` quedaba indefinido y el grupo MESA (la lista de inscritos)
+    // se borraba como si fuera un grupo vacío cualquiera.
+    if (errGrupoOrigen || !grupoOrigen) return { error: AVISO_GRUPO_VACIO }
+    if (grupoOrigen.nombre !== 'MESA') {
+      const { error: errPartidosVacio } = await supabase.from('torneo_partidos').delete().eq('grupo_id', grupoOrigenId)
+      if (errPartidosVacio) return { error: AVISO_GRUPO_VACIO }
+      const { error: errGrupoVacio } = await supabase.from('torneo_grupos').delete().eq('id', grupoOrigenId)
+      if (errGrupoVacio) return { error: AVISO_GRUPO_VACIO }
     }
   }
 
@@ -1476,11 +1488,12 @@ export async function reordenarJugadorEnGrupo(params: {
     if (no) return { error: no }
   }
 
-  const { data: partidosGrupo } = await supabase
+  const { data: partidosGrupo, error: errPartidosGrupo } = await supabase
     .from('torneo_partidos')
     .select('id, ganador')
     .eq('torneo_id', torneoId)
     .eq('grupo_id', grupoId)
+  if (errPartidosGrupo) return { error: 'No se pudieron leer los partidos del grupo. No se reordenó nada.' }
 
   if (partidosGrupo?.some(p => !!p.ganador)) {
     return { error: 'No se puede reordenar este grupo porque ya tiene partidos jugados.' }
@@ -1536,14 +1549,16 @@ export async function quitarJugadorDeGrupo(params: {
     .select('id,nombre,en_preparacion').eq('id', grupoId).eq('torneo_id', torneoId).maybeSingle()
   if (!grupo) return { error: 'El grupo no pertenece a este torneo' }
 
-  const { data: bracket } = await supabase.from('torneo_partidos')
+  const { data: bracket, error: errBracket } = await supabase.from('torneo_partidos')
     .select('ganador,jugador_b').eq('torneo_id', torneoId).neq('fase', 'grupos')
+  if (errBracket) return { error: 'No se pudo leer la llave del torneo. No se quitó a nadie.' }
   if ((bracket || []).some(llaveFueJugada)) {
     return { error: 'No se puede quitar jugadores: el bracket ya tiene partidos jugados' }
   }
 
-  const { data: partidosGrupo } = await supabase.from('torneo_partidos')
+  const { data: partidosGrupo, error: errPartidosQuitar } = await supabase.from('torneo_partidos')
     .select('id,ganador').eq('torneo_id', torneoId).eq('grupo_id', grupoId)
+  if (errPartidosQuitar) return { error: 'No se pudieron leer los partidos del grupo. No se quitó a nadie.' }
   if (partidosGrupo?.some(p => !!p.ganador)) {
     return { error: 'No se puede quitar al jugador: este grupo ya tiene partidos jugados' }
   }
@@ -1570,7 +1585,8 @@ export async function quitarJugadorDeGrupo(params: {
   if (errorRegenerar) return { error: errorRegenerar }
 
   if (!restantes.length && grupo.nombre !== 'MESA') {
-    await supabase.from('torneo_grupos').delete().eq('id', grupoId)
+    const { error: errBorrarGrupo } = await supabase.from('torneo_grupos').delete().eq('id', grupoId)
+    if (errBorrarGrupo) return { error: 'Se quitó al jugador, pero no se pudo eliminar el grupo que quedó vacío. Recarga el torneo y límpialo.' }
     return { success: true, grupoEliminado: true }
   }
 
@@ -1579,6 +1595,8 @@ export async function quitarJugadorDeGrupo(params: {
 
 export async function cerrarInscripcionYGenerarGrupos(params: {
   torneoId: string
+  /** Solo "reiniciar el cuadro": borra TODO lo jugado a propósito. Ver volverAGrupos. */
+  reiniciar?: boolean
 }) {
   const { error: authErr, supabase } = await requireGestorTorneos()
   if (authErr) return { error: authErr }
@@ -1595,6 +1613,15 @@ export async function cerrarInscripcionYGenerarGrupos(params: {
   {
     const cerrado = rechazarSiEstaCerrado(torneoInfo.estado ?? null, 'no se puede volver a armar')
     if (cerrado) return { error: cerrado }
+  }
+  // Armar los grupos de nuevo borra TODOS los partidos del torneo (más abajo). Con un solo
+  // resultado cargado eso es perder lo jugado, y antes solo lo impedía la pantalla. Solo el reinicio
+  // explícito del cuadro (`volverAGrupos` en eliminación directa) lo hace a propósito.
+  {
+    const { data: jugados, error: errJugados } = await supabase.from('torneo_partidos')
+      .select('id, ganador').eq('torneo_id', torneoId)
+    if (errJugados) return { error: 'No se pudo comprobar si hay partidos jugados: ' + errJugados.message }
+    if (!params.reiniciar && jugados?.some(p => !!p.ganador)) return { error: 'Ya hay partidos con resultado, así que no se pueden volver a armar los grupos. Si hay que rehacerlos, reabre el torneo y corrige desde ahí.' }
   }
   // Por equipos la inscripción se cierra desde su propia pantalla
   // (`generarEncuentros`): los inscritos se quedan en la mesa y de ahí salen
@@ -2293,11 +2320,16 @@ export async function sincronizarLlaves(params: {
 
   // Los BYE ya conocidos avanzan automáticamente a la fase siguiente igual
   // que un ganador manual, incluso mientras siguen abiertos otros grupos.
-  const { data: rondaInicial } = await supabase.from('torneo_partidos')
+  const { data: rondaInicial, error: errRondaInicial } = await supabase.from('torneo_partidos')
     .select('torneo_id,fase,orden,ganador,jugador_b')
     .eq('torneo_id', torneoId)
     .eq('fase', layout.faseInicial)
     .order('orden')
+  // Sin revisar esta lectura, un fallo dejaba la lista vacía, ningún BYE avanzaba y la función
+  // respondía éxito con la llave a medio propagar.
+  // El `as` es a propósito: un retorno literal más cambia el tipo inferido de esta función y deja
+  // de compilar `.error` en quien la llama.
+  if (errRondaInicial) return { error: 'No se pudo leer la ronda inicial para avanzar los BYE.' } as { error: string }
   const byesConGanador = (rondaInicial || []).filter(p => p.ganador && !p.jugador_b)
   if (byesConGanador.length) {
     const erroresBye = await Promise.all(byesConGanador.map(p => propagarGanadorPlayoff(supabase, p, p.ganador!)))
@@ -2318,7 +2350,8 @@ export async function sincronizarLlaves(params: {
       faseObjetivo = fase
       if (ronda.some(p => !p.ganador)) break
     }
-    await supabase.from('torneos').update({ fase: faseObjetivo, estado: 'en_curso' }).eq('id', torneoId)
+    const { error: errFaseTorneo } = await supabase.from('torneos').update({ fase: faseObjetivo, estado: 'en_curso' }).eq('id', torneoId)
+    if (errFaseTorneo) return { error: 'La llave quedó armada, pero no se pudo avanzar la fase del torneo. Vuelve a sincronizar.' }
   }
 
   return { success: true, faseInicial: layout.faseInicial, todosCompletos, bracketCreado: true }
@@ -2380,7 +2413,7 @@ export async function volverAGrupos(params: { torneoId: string }) {
     if (cerrado) return { error: cerrado }
     if (modalidad === 'equipos') return { error: 'Un torneo por equipos no tiene llave que deshacer.' }
     if (modalidad === 'eliminacion_consolacion') {
-      const res = await cerrarInscripcionYGenerarGrupos({ torneoId })
+      const res = await cerrarInscripcionYGenerarGrupos({ torneoId, reiniciar: true })
       if ('error' in res && res.error) return { error: res.error }
       return { success: true, cuadroRearmado: true }
     }
@@ -2779,30 +2812,48 @@ export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
 
   const { torneoId } = params
 
-  const { data: grupos } = await supabase
+  const { data: grupos, error: errGrupos } = await supabase
     .from('torneo_grupos')
     .select('id, nombre')
     .eq('torneo_id', torneoId)
     .neq('nombre', 'MESA')
+  if (errGrupos) return { error: 'No se pudieron leer los grupos del torneo. No se borró nada.' }
 
   if (!grupos?.length) return { success: true, eliminados: 0 }
 
   const grupoIdsAll = grupos.map(g => g.id)
-  const { data: miembros } = await supabase
+  const { data: miembros, error: errMiembros } = await supabase
     .from('grupo_jugadores')
     .select('grupo_id')
     .in('grupo_id', grupoIdsAll)
+  // Sin revisar este error, una lectura fallida dejaba `miembros` en null y TODOS los
+  // grupos pasaban por vacíos: se borraban con sus partidos, jugados o no.
+  if (errMiembros) return { error: 'No se pudieron leer los integrantes de los grupos. No se borró nada.' }
 
   const conMiembros = new Set((miembros || []).map(m => m.grupo_id))
   const vacios = grupoIdsAll.filter(id => !conMiembros.has(id))
-  if (vacios.length) {
-    await Promise.all([
-      supabase.from('torneo_partidos').delete().in('grupo_id', vacios),
-      supabase.from('torneo_grupos').delete().in('id', vacios),
-    ])
+  if (!vacios.length) return { success: true, eliminados: 0, omitidos: 0 }
+
+  // Un grupo sin integrantes pero con resultados cargados no es un huérfano: es un grupo
+  // al que le faltan sus jugadores, y borrarlo se llevaría los resultados. Ese no se toca.
+  const { data: conPartidos, error: errPartidos } = await supabase
+    .from('torneo_partidos')
+    .select('grupo_id, ganador')
+    .in('grupo_id', vacios)
+  if (errPartidos) return { error: 'No se pudieron leer los partidos de los grupos vacíos. No se borró nada.' }
+  const conResultado = new Set((conPartidos || []).filter(p => !!p.ganador).map(p => p.grupo_id))
+  const borrables = vacios.filter(id => !conResultado.has(id))
+
+  if (borrables.length) {
+    // Primero los partidos y después los grupos, cada paso revisado: un DELETE que falla no
+    // lanza, devuelve { error }, y antes se ignoraba.
+    const { error: errBorrarPartidos } = await supabase.from('torneo_partidos').delete().in('grupo_id', borrables)
+    if (errBorrarPartidos) return { error: 'No se pudieron borrar los partidos de los grupos vacíos.' }
+    const { error: errBorrarGrupos } = await supabase.from('torneo_grupos').delete().in('id', borrables)
+    if (errBorrarGrupos) return { error: 'No se pudieron borrar los grupos vacíos.' }
   }
 
-  return { success: true, eliminados: vacios.length }
+  return { success: true, eliminados: borrables.length, omitidos: vacios.length - borrables.length }
 }
 
 export async function generarGruposTardios(params: {
@@ -2904,9 +2955,10 @@ export async function generarGruposTardios(params: {
 
   // 1 jugador: meter en grupo existente con menos integrantes
   if (jugadores.length === 1) {
+    const lectura = { error: null as string | null }
     const counts = await Promise.all(
       (gruposExistentes || []).map(async g => {
-        const { data: gjs } = await supabase.from('grupo_jugadores').select('jugador_id, orden, club_procedencia, jugadores(es_externo)').eq('grupo_id', g.id)
+        const { data: gjs, error: errGjs } = await supabase.from('grupo_jugadores').select('jugador_id, orden, club_procedencia, jugadores(es_externo)').eq('grupo_id', g.id)
         const ordenados = ordenarMiembros(gjs || [])
         const clubesPresentes = new Set(
           (gjs || [])
@@ -2916,6 +2968,9 @@ export async function generarGruposTardios(params: {
         return { id: g.id, nombre: g.nombre ?? '', enPreparacion: g.en_preparacion, count: ordenados.length, playerIds: ordenados.map(x => x.jugador_id).filter((id): id is string => !!id), clubesPresentes }
       }),
     )
+    // Con una lectura fallida el grupo parecía tener 0 integrantes y el tardío caía ahí,
+    // en un grupo que en realidad ya estaba armado (el mismo síntoma del 2026-10-25).
+    if (lectura.error) return { error: 'No se pudieron leer los integrantes de los grupos: ' + lectura.error }
     const cabezasIds = new Set(cabezas.map(c => c.jugadorId))
     const jugadorEsCabeza = cabezasIds.has(jugadores[0].id)
     const preparacion = counts.find(g => g.enPreparacion && g.count < 4)
@@ -3601,4 +3656,59 @@ export async function guardarGastosGestion(params: {
   if (error) return { error: error.message }
 
   return { success: true, cantidad: (data as { cantidad?: number } | null)?.cantidad ?? validos.length }
+}
+
+/**
+ * Mira el torneo y dice si los grupos y los partidos de la fase de grupos son consistentes
+ * entre sí. No escribe nada.
+ *
+ * Existe porque ningún paso del motor exige esa regla (ver `torneoConsistencia.ts`): el
+ * 2026-10-25 un movimiento de jugadores dejó partidos contra quien ya no estaba en el grupo
+ * y nadie lo supo hasta que se jugó encima.
+ */
+export async function verificarTorneo(params: { torneoId: string }) {
+  const { error: authErr, supabase, perfil } = await requireGestorTorneos()
+  if (authErr) return { error: authErr }
+  const { torneoId } = params
+
+  const { data: torneo, error: errTorneo } = await supabase.from('torneos')
+    .select('club_id, formato, ruedas').eq('id', torneoId).maybeSingle()
+  if (errTorneo) return { error: 'No se pudo leer el torneo: ' + errTorneo.message }
+  if (!torneo) return { error: 'Torneo no encontrado' }
+  if (torneo.club_id !== perfil.club_id) return { error: 'Acceso denegado' }
+  // Un torneo por equipos no tiene grupos: sus encuentros viven en otras tablas.
+  if (modalidadDe(torneo.formato) === 'equipos') return { inconsistencias: [], grupos: 0, partidos: 0 }
+
+  const { data: grupos, error: errGrupos } = await supabase.from('torneo_grupos')
+    .select('id, nombre, en_preparacion').eq('torneo_id', torneoId)
+  if (errGrupos) return { error: 'No se pudieron leer los grupos del torneo' }
+  const grupoIds = (grupos || []).map(g => g.id)
+
+  const { data: miembros, error: errMiembros } = await supabase.from('grupo_jugadores')
+    .select('grupo_id, jugador_id').in('grupo_id', grupoIds)
+  if (errMiembros) return { error: 'No se pudieron leer los integrantes de los grupos' }
+
+  const { data: partidos, error: errPartidos } = await supabase.from('torneo_partidos')
+    .select('id, grupo_id, jugador_a, jugador_b').eq('torneo_id', torneoId).eq('fase', 'grupos')
+  if (errPartidos) return { error: 'No se pudieron leer los partidos de los grupos' }
+
+  // Los nombres son para que el aviso diga "Juan Pérez" y no un id. Si la lectura falla, se
+  // avisa igual con los ids: verificar no puede depender de que el resto funcione.
+  const ids = new Set<string>()
+  for (const m of miembros || []) if (m.jugador_id) ids.add(m.jugador_id)
+  for (const p of partidos || []) { if (p.jugador_a) ids.add(p.jugador_a); if (p.jugador_b) ids.add(p.jugador_b) }
+  const nombres = new Map<string, string>()
+  if (ids.size) {
+    const { data: js, error: errNombres } = await supabase.from('jugadores').select('id, nombre').in('id', [...ids])
+    if (!errNombres) for (const j of js || []) nombres.set(j.id, j.nombre ?? j.id)
+  }
+
+  const inconsistencias = inconsistenciasDeGrupos({
+    grupos: grupos || [],
+    miembros: (miembros || []).filter((m): m is { grupo_id: string; jugador_id: string | null } => !!m.grupo_id),
+    partidos: partidos || [],
+    ruedas: ruedasDe(torneo.ruedas),
+    nombreDe: id => nombres.get(id) ?? id,
+  })
+  return { inconsistencias, grupos: (grupos || []).length, partidos: (partidos || []).length }
 }
