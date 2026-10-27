@@ -403,6 +403,50 @@ export async function toggleEstadoJugador(params: { jugadorId: string; nuevoEsta
   return { success: true }
 }
 
+/**
+ * Torneos que siguen vivos y en cuyos GRUPOS está el jugador.
+ *
+ * `eliminar_jugador_atomico` le suelta el lugar a sus partidos (rival en NULL,
+ * que la pantalla muestra como "vs —") y le saca la fila al grupo, pero no
+ * rearma los partidos de ese grupo: queda un grupo con uno menos y partidos
+ * contra nadie. Pasó en TCB (2026-09-06) y otra vez con TC A y TC B
+ * (2026-10-25, dos eliminaciones a las 02:07 UTC, horas después de armar los
+ * grupos). Sacar a alguien de un torneo en curso tiene su camino propio,
+ * `quitarJugadorDeGrupo`, que sí regenera los partidos y cuida los grupos de 1.
+ *
+ * La MESA (la bolsa de inscripción) no cuenta: no tiene partidos.
+ */
+async function torneosVivosConElJugador(
+  supabase: Awaited<ReturnType<typeof requireAdminClub>>['supabase'],
+  jugadorId: string,
+): Promise<{ error?: string; torneos: { nombre: string; grupo: string }[] }> {
+  if (!supabase) return { error: 'Sin conexión', torneos: [] }
+  const { data: filas, error: errFilas } = await supabase.from('grupo_jugadores')
+    .select('grupo_id').eq('jugador_id', jugadorId)
+  if (errFilas) return { error: 'No se pudo revisar si el jugador está en un torneo', torneos: [] }
+  const grupoIds = (filas ?? []).map(f => f.grupo_id).filter((id): id is string => !!id)
+  if (!grupoIds.length) return { torneos: [] }
+
+  const { data: grupos, error: errGrupos } = await supabase.from('torneo_grupos')
+    .select('id,nombre,torneo_id').in('id', grupoIds)
+  if (errGrupos) return { error: 'No se pudo revisar si el jugador está en un torneo', torneos: [] }
+  const delTorneo = (grupos ?? []).filter(g => g.nombre !== 'MESA' && !!g.torneo_id)
+  if (!delTorneo.length) return { torneos: [] }
+
+  const { data: torneos, error: errTorneos } = await supabase.from('torneos')
+    .select('id,nombre,estado').in('id', [...new Set(delTorneo.map(g => g.torneo_id as string))])
+  if (errTorneos) return { error: 'No se pudo revisar si el jugador está en un torneo', torneos: [] }
+  const vivos = new Map((torneos ?? [])
+    .filter(t => !['finalizado', 'archivado', 'cancelado'].includes(t.estado ?? ''))
+    .map(t => [t.id, t.nombre ?? 'sin nombre']))
+
+  return {
+    torneos: delTorneo
+      .filter(g => vivos.has(g.torneo_id as string))
+      .map(g => ({ nombre: vivos.get(g.torneo_id as string)!, grupo: g.nombre ?? '' })),
+  }
+}
+
 export async function eliminarJugador(params: { jugadorId: string }) {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
   if (authErr) return { error: authErr }
@@ -410,6 +454,15 @@ export async function eliminarJugador(params: { jugadorId: string }) {
   const { data: jugador } = await supabase.from('jugadores')
     .select('id').eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
   if (!jugador) return { error: 'Jugador no encontrado' }
+
+  const vivos = await torneosVivosConElJugador(supabase, params.jugadorId)
+  if (vivos.error) return { error: vivos.error }
+  if (vivos.torneos.length) {
+    const donde = vivos.torneos.map(t => `"${t.nombre}" (grupo ${t.grupo})`).join(', ')
+    return {
+      error: `No se puede eliminar: está jugando en ${donde}. Sácalo primero del grupo desde el torneo, para que los partidos se rearmen bien, y después elimínalo.`,
+    }
+  }
 
   const admin = createAdminClient()
 

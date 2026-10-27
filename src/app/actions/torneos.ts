@@ -1393,11 +1393,16 @@ export async function moverJugadorEntreGrupos(params: {
     return { error: 'No se pudieron actualizar los partidos de los grupos' }
   }
 
-  // Los integrantes de después se arman en memoria, no con una segunda lectura.
-  // Esa relectura era la misma consulta que `miembrosAntes` y en producción
-  // devolvía la foto de ANTES del movimiento: el origen se regeneraba con el
-  // jugador que se iba (partidos "contra —") y el destino sin el que llegaba
-  // (partidos faltantes). Pasó en TC A y TC B del 2026-10-25.
+  // Los integrantes de después se arman en memoria, sin una segunda lectura
+  // idéntica: se sabe exactamente qué fila se movió, y ahorra un viaje.
+  //
+  // OJO: este cambio NO es el arreglo del "vs —" de TC A y TC B (2026-10-25).
+  // Se creyó que la relectura devolvía la foto de antes, y se descartó con
+  // pruebas el 2026-10-27: Next 16.2.7 y 16.3.6 mandan la segunda lectura al
+  // servidor y ve el dato nuevo, y 60 escrituras seguidas en la base real
+  // dieron 60 lecturas frescas. Lo que sí dejaba partidos "contra —" era borrar
+  // al jugador desde Jugadores en pleno torneo (ver `torneosVivosConElJugador`
+  // en jugadores.ts).
   const miembros = (miembrosAntes || []).map(m => m.jugador_id === jugadorId && m.grupo_id === grupoOrigenId
     ? { ...m, grupo_id: grupoDestinoId, orden: ordenDestino }
     : m)

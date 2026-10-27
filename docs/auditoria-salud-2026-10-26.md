@@ -17,6 +17,8 @@ El software compila y pasa todo lo automático, pero eso no lo hace sano: las pr
 
 ## 2. Qué pasó en los torneos de Buin
 
+> **Actualización 2026-10-27:** las tres hipótesis de esta sección quedaron **descartadas con pruebas** y la causa real es otra. Ver el Anexo 2 al final.
+
 **Lo comprobado**
 
 - El 2026-10-25, en TC A y TC B, al mover un jugador de grupo quedaron partidos "vs —" en el grupo de origen y faltaron los del destino. Se corrigió ese día (commit `3655203`/`1eba5bf`: los integrantes de después se arman en memoria y el `UPDATE` ahora verifica que movió una fila).
@@ -101,3 +103,25 @@ Confirmado por el usuario: solo fútbol, para todos los clubes.
 - **Orden obligatorio:** primero subir la aplicación, después pegar la 305. El calendario de la versión anterior consulta `lf_fechas`; con la tabla borrada daría error de carga a todos los clubes.
 - **Verificación:** `tsc` completo, 1.861 pruebas, ESLint sin errores (734 advertencias, bajaron 83) y `next build` aprobados.
 - **Hallazgo aparte:** `tsc --noEmit` pasaba solo por el caché incremental (`tsconfig.tsbuildinfo`, ignorado por git). Con chequeo completo, `torneos-externos-simulacion.test.ts` tenía dos líneas que no compilaban desde el 11 de octubre; en una copia limpia, como CI, el paso de tipos habría fallado. Corregidas. Para chequear de verdad: `npx tsc --noEmit --incremental false`.
+
+## Anexo 2 — Causa real de los torneos de Buin (2026-10-27)
+
+**Descartado con pruebas (la explicación del commit del 25-oct era incorrecta):**
+
+| Hipótesis | Prueba | Resultado |
+|---|---|---|
+| Next deduplica la lectura repetida | La misma Server Action (leer, mover, releer) en Next 16.2.7 y 16.3.6, contra un servidor que registra cada petición | La segunda lectura llega al servidor y ve el dato nuevo, en las dos versiones |
+| La actualización de Next del 3-oct | Mismo experimento | Sin diferencia entre versiones |
+| Lectura con retraso en Supabase | 60 escrituras seguidas, cada una con lectura inmediata, en la base real (fila temporal en Demostración, ya borrada) | 0 lecturas con dato viejo |
+
+**Lo que sí está demostrado:**
+
+- `eliminar_jugador_atomico` deja los partidos del jugador con el rival en `NULL` (la pantalla lo muestra como "vs —") y le saca la fila al grupo, **sin rearmar los partidos del grupo** ni mirar si el torneo sigue vivo. El botón de eliminar de Jugadores no revisaba torneos.
+- El 2026-10-25 a las 02:07 UTC se eliminaron dos jugadoras (auditoría de la base), horas después de armar los grupos de TC A (22:53 UTC) y TC B (23:22 UTC) del día 24. El torneo TCB del 2026-09-06 conserva la huella del mismo patrón: un grupo con 2 jugadores y 3 partidos, 2 de ellos con rival vacío.
+- La llave se arma desde los grupos: con grupos así, sus cruces salen mal y hubo que reordenarla a mano (4 reordenamientos el 25-oct a las 14:38 UTC).
+
+**Arreglo (en esta entrega):** `eliminarJugador` se niega, con un mensaje claro, si el jugador está en un grupo de un torneo que no esté finalizado, archivado ni cancelado, y lo manda a sacarlo desde el torneo (`quitarJugadorDeGrupo`, que sí rearma los partidos). La MESA no cuenta. Si no puede revisar los torneos, no borra. Seis pruebas nuevas. El comentario engañoso de `moverJugadorEntreGrupos` quedó corregido.
+
+**Lo que no pude reproducir:** no tengo el registro de lo que el administrador hizo clic a clic el 25-oct, y el estado actual de TC A y TC B ya está reparado. La causa del "vs —" encaja con los datos y con el código, pero es una inferencia, no una reproducción del día. Si vuelve a aparecer un grupo con partidos vacíos, hay que mirar primero la auditoría de la base (`audit_log`, acción `jugadores/eliminar`) para ver si alguien fue eliminado en esa ventana.
+
+**Pendiente:** la migración 303 de torneos (protecciones financieras) sigue sin aplicarse en producción.

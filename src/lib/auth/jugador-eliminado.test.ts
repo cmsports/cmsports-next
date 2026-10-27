@@ -79,6 +79,6 @@ describe('eliminar un jugador le libera el correo', () => {
 
   it('borra su usuario de Auth, así puede volver a postular con el mismo mail', () => {
     const eliminar = accion.slice(accion.indexOf('export async function eliminarJugador'))
-    expect(eliminar.slice(0, 1400)).toContain('auth.admin.deleteUser')
+    expect(eliminar.slice(0, 3200)).toContain('auth.admin.deleteUser')
   })
 })
