@@ -381,7 +381,7 @@ morosos**— se puede entregar en la Fase 2 con lo que ya existe.
   empezar por el CSV/JSON**, que cubre el caso real que declaran ("alimentar su
   archivo de partidos sin transcribir a mano") sin abrir una superficie nueva.
 - **Vista pública del calendario**, sin datos personales: el molde existe
-  (`/vivo/[codigo]`, `/liga-futbol/publica/[codigo]`, `limites_publicos`).
+  (`/vivo/[codigo]`, `limites_publicos`).
 
 ---
 

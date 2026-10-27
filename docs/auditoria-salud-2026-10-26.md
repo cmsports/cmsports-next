@@ -87,7 +87,7 @@ El mecanismo en sí (`query-cache.ts`) está bien pensado: anota las tablas al l
 1. **Reproducir la falla de grupos** en Demostración con Next 16.3.6 vs 16.2.7 antes de volver a un torneo real.
 2. Declarar las tablas en las 6 llamadas de `cachedFetch` (cambio chico, sin riesgo).
 3. Borrar los 3 archivos huérfanos y las acciones sin llamador (en especial `traspasarJugador`).
-4. Eliminar Liga Fútbol (con migración de baja y respaldo).
+4. Eliminar Liga Fútbol (con migración de baja).
 5. Decidir sobre la Liga de tenis de mesa con los otros dos clubes en la mesa.
 6. Separar `torneos.ts` y `torneos/[id]/page.tsx`; mover las páginas más pesadas a lectura en servidor.
 7. Dejar de mezclar actualizaciones de dependencias con arreglos funcionales en el mismo commit.
@@ -97,7 +97,7 @@ El mecanismo en sí (`query-cache.ts`) está bien pensado: anota las tablas al l
 Confirmado por el usuario: solo fútbol, para todos los clubes.
 
 - **Código:** 18 archivos borrados (`liga-futbol` en páginas, componentes, acción, dominio, Excel y PDF, más su plan) y 11 editados (dashboard, finanzas, calendario, menú, superadmin, `proxy.ts`, `modulos.ts`, tipos de la base, dos pruebas y un comentario).
-- **Migración nueva:** `305_eliminar_liga_futbol.sql`. **No se ha pegado.** Aborta si alguna tabla `lf_*` tiene una sola fila, respalda las nueve con nombre único y sin permisos de API, quita la clave de `modulos_habilitados` y borra las tablas sin `CASCADE`.
+- **Migración nueva:** `305_eliminar_liga_futbol.sql`. **No se ha pegado.** Había 281 filas del club `Liga Fut` (liga "Apertura 2026"); el dueño confirmó que eran datos inventados y pidió **no guardar respaldo**. La migración cuenta las filas, quita la clave de `modulos_habilitados` y borra las nueve tablas sin `CASCADE`. No borra la fila del club `Liga Fut`: eso se hace desde el panel del superadmin, que también quita sus cuentas.
 - **Orden obligatorio:** primero subir la aplicación, después pegar la 305. El calendario de la versión anterior consulta `lf_fechas`; con la tabla borrada daría error de carga a todos los clubes.
 - **Verificación:** `tsc` completo, 1.861 pruebas, ESLint sin errores (734 advertencias, bajaron 83) y `next build` aprobados.
 - **Hallazgo aparte:** `tsc --noEmit` pasaba solo por el caché incremental (`tsconfig.tsbuildinfo`, ignorado por git). Con chequeo completo, `torneos-externos-simulacion.test.ts` tenía dos líneas que no compilaban desde el 11 de octubre; en una copia limpia, como CI, el paso de tipos habría fallado. Corregidas. Para chequear de verdad: `npx tsc --noEmit --incremental false`.
