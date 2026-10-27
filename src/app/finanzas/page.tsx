@@ -13,7 +13,6 @@ import { MensualidadesPanel } from '@/components/MensualidadesPanel'
 import PanelPlanes from '@/components/PanelPlanes'
 import PanelRetencion from '@/components/PanelRetencion'
 import PanelFinanzasSpinhouse from '@/components/spinhouse/PanelFinanzasSpinhouse'
-import LigaFutbolFinanzasTab from '@/components/liga-futbol/FinanzasTab'
 import WhatsAppBtn from '@/components/WhatsAppBtn'
 import { linkWhatsApp } from '@/lib/whatsapp'
 import { cachedFetch } from '@/lib/query-cache'
@@ -75,10 +74,10 @@ function FinanzasContent() {
   const [filtroTipo, setFiltroTipo] = useState('')
   const [busqueda, setBusqueda] = useState('')
   const searchParams = useSearchParams()
-  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'planes'|'retencion'|'historicas'|'reportes'|'liga'|'margenes'>(
+  const [tabActivo, setTabActivo] = useState<'movimientos'|'mensualidades'|'planes'|'retencion'|'historicas'|'reportes'|'margenes'>(
     // Se aceptan todas las pestañas, no solo mensualidades: `/reportes` redirige
     // acá con ?tab=reportes y antes caía en Movimientos sin decir nada.
-    (['movimientos', 'mensualidades', 'planes', 'retencion', 'historicas', 'reportes', 'liga', 'margenes'] as const)
+    (['movimientos', 'mensualidades', 'planes', 'retencion', 'historicas', 'reportes', 'margenes'] as const)
       .find(t => t === searchParams.get('tab')) ?? 'movimientos',
   )
   // Monta Mensualidades solo cuando se abre por primera vez (evita sus consultas al entrar en "Movimientos"); una vez montado queda vivo
@@ -428,7 +427,6 @@ function FinanzasContent() {
       <div className="tabs-scroll" style={{ display:'flex', background:'#e2e8f0', borderRadius:10, padding:4, marginBottom:20 }}>
         {[
           { key:'movimientos', label:'📋 Movimientos' },
-          ...(tiene('liga_futbol') ? [{ key:'liga', label:'⚽ Liga' }] : []),
           { key:'mensualidades', label:'💳 Mensualidades' },
           // Solo donde la cuota sale de una tarifa. En un club de monto libre
           // no hay planes que mostrar y la pestaña quedaría vacía.
@@ -678,11 +676,6 @@ function FinanzasContent() {
       <div style={{ display: tabActivo === 'reportes' ? 'block' : 'none' }}>
         <ReportesTab clubId={clubId} />
       </div>
-
-      {/* TAB LIGA — pagos de inscripción por equipo, solo para clubes de fútbol */}
-      {tabActivo === 'liga' && tiene('liga_futbol') && (
-        <LigaFutbolFinanzasTab clubId={clubId} />
-      )}
 
       {/* Modal nuevo movimiento */}
       {modalOpen && (

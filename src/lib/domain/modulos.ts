@@ -96,7 +96,6 @@ export const MODULOS = [
   // campo más que llenar. Y porque 'particular' cambia la cuenta de las mesas,
   // que es algo que solo tiene sentido con 'mesas' encendido (migración 257).
   { key: 'tipos_clase', label: 'Tipos de clase y entrenador auxiliar' },
-  { key: 'liga_futbol', label: 'Liga Fútbol' },
   // El registro de autorizaciones —hoy solo uso de imagen— y el campo de
   // necesidades de accesibilidad. Apagado por defecto aunque los seis clubes lo
   // vayan a necesitar antes del 2026-12-01: encenderlo le agrega un panel a la

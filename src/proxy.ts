@@ -49,22 +49,15 @@ export const anyAuthRoutes = [
   // Votaciones: la ven todos los roles. Quien puede votar, y quién crea o
   // cierra, lo deciden los RPC de la migración 303, no la ruta.
   '/votaciones',
-  // Módulo de ligas de fútbol: llegó en el merge del 2026-08-27 sin entrada en
-  // ninguna lista de acá — mismo hueco que las once de arriba. Sus páginas
-  // usan usePerfil() y solo exigen "hay perfil", sin filtrar rol (las
-  // Server Actions de escritura sí exigen admin, con requireAdminClub). Lo
-  // encontró rutas-protegidas.test.ts al mezclar, no una revisión manual.
-  '/liga-futbol',
 ]
 
 // Públicas a propósito: la vista en vivo de un torneo se comparte por código y
 // el manual del juez es material de consulta. No llevan datos personales más
 // allá del nombre del jugador en el cuadro, que es lo que se proyecta en la
-// pantalla del club. '/liga-futbol/publica' es el mismo patrón para la liga de
-// fútbol: no usa usePerfil() y se comparte por código, sin cuenta.
+// pantalla del club.
 export const rutasPublicasTorneo = [
   '/calendario-publico',
-  '/vivo', '/torneo-oficial/vivo', '/torneo-oficial/manual', '/liga-futbol/publica',
+  '/vivo', '/torneo-oficial/vivo', '/torneo-oficial/manual',
   // El ranking que se pega en la sede con un QR: nombre y puntos, sin cuenta.
   // La API que lo alimenta exige que el club tenga el módulo 'qr_publico'.
   '/ranking-publico',

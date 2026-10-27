@@ -205,10 +205,10 @@ async function leerCabezasSerie(supabase: AdminSupabase, torneoId: string): Prom
  * Los módulos del club, para decidir qué modalidades puede elegir un torneo.
  *
  * ⚠️ Acá `modulos_habilitados` en NULL significa **ninguno**, y eso se aparta a
- * propósito de `liga-futbol.ts:312` y `proxy.ts:254`, que en ese caso asumen
+ * propósito de `proxy.ts:254`, que en ese caso asume
  * que están todos encendidos.
  *
- * El default permisivo de esos dos existe para no ESCONDER funciones que el
+ * El default permisivo de ese existe para no ESCONDER funciones que el
  * club ya usa: un club sin la lista cargada que de pronto pierde el menú es
  * peor que uno que ve de más. Acá el costo del error está del otro lado. Las
  * modalidades son funciones nuevas que nadie usa todavía, así que mostrarlas

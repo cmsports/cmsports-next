@@ -121,7 +121,7 @@ describe('simulaciones de grupos → llaves → campeón → cierre', () => {
       expect('error' in res ? res.error : undefined).toBeUndefined()
     }
     for (const p of tablas.torneo_partidos.filter(p => p.fase === 'grupos')) await jugar(p)
-    expect((await sincronizarLlaves({ torneoId: 't' })).error).toBeUndefined()
+    { const r = await sincronizarLlaves({ torneoId: 't' }); expect('error' in r ? r.error : undefined).toBeUndefined() }
     for (let paso = 0; paso < n * 2; paso++) {
       const siguiente = tablas.torneo_partidos.find(p => p.fase !== 'grupos' && !p.ganador && p.jugador_a && p.jugador_b)
       if (!siguiente) break
@@ -270,7 +270,7 @@ it('dos torneos simultáneos conservan sus cuadros y a las visitas compartidas',
       expect(await marcarGanadorPartido({ partidoId: p.id, setsA: a ? 3 : 0, setsB: a ? 0 : 3 })).toMatchObject({ success: true })
     }
     for (const p of tablas.torneo_partidos.filter(p => p.torneo_id === torneoId && p.fase === 'grupos')) await jugar(p)
-    expect((await sincronizarLlaves({ torneoId })).error).toBeUndefined()
+    { const r = await sincronizarLlaves({ torneoId }); expect('error' in r ? r.error : undefined).toBeUndefined() }
     for (let i = 0; i < 32; i++) {
       const p = tablas.torneo_partidos.find(p => p.torneo_id === torneoId && p.fase !== 'grupos' && !p.ganador && p.jugador_a && p.jugador_b)
       if (!p) break

@@ -23,7 +23,6 @@ const card = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius:
 // antes de crear el club.
 const PRESET_MODULOS: Record<string, string[]> = {
   'tenis de mesa': [...MODULOS_OPCIONALES.map(m => m.key)],
-  futbol: ['liga_futbol', 'finanzas', 'calendario'],
 }
 
 export default function SuperadminPage() {
@@ -287,7 +286,6 @@ export default function SuperadminPage() {
                 }}
                 style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13, background: 'white' }}>
                 <option value="tenis de mesa">Tenis de mesa</option>
-                <option value="futbol">Fútbol</option>
                 <option value="otro">Otro...</option>
               </select>
               {!(form.deporte in PRESET_MODULOS) && (
