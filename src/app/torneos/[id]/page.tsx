@@ -42,6 +42,7 @@ import { FASE_CONSOLACION_LABEL, esFaseDeConsolacion, fasesParaMostrarConConsuel
 import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { usePuedeGestionarTorneos } from '@/lib/hooks/usePuedeGestionarTorneos'
 import { useEnVivo } from '@/lib/useEnVivo'
+import { gruposFueraDeSincronia } from '@/lib/domain/sincroniaGrupos'
 import { copiarTexto } from '@/lib/clipboard'
 import { useTextoMonto } from '@/components/Monto'
 import dynamic from 'next/dynamic'
@@ -160,6 +161,29 @@ export default function TorneoDetallePage() {
   const params = useParams()
   const torneoId = params.id as string
 
+  // Dos cosas que importan cuando varias personas usan el torneo a la vez
+  // (admin, profesor, teléfonos) y que causaron el "vs —" de TC A y TC B
+  // (2026-10-25):
+  //
+  //  · Las respuestas pueden llegar desordenadas. Mover un jugador borra y
+  //    reinserta los partidos de dos grupos, y cada fila dispara una recarga:
+  //    una lectura hecha a mitad de la operación podía terminar DESPUÉS de la
+  //    definitiva y pisarla con partidos viejos. Cada carga lleva un número y
+  //    una respuesta más vieja que la ya aplicada se descarta.
+  //  · `grupo_jugadores` y `torneo_grupos` no están en el tiempo real, así que
+  //    cuando OTRA pantalla mueve a alguien, esta recibe los partidos nuevos y
+  //    se queda con los integrantes viejos. El nombre del rival sale de la lista
+  //    de integrantes, y el partido aparece "contra —" con la base perfecta. Si
+  //    los partidos no cuadran con los integrantes que hay acá, se recarga el
+  //    torneo completo.
+  const ticketPartidos = useRef(0)
+  const partidosAplicado = useRef(0)
+  const ticketTorneo = useRef(0)
+  const torneoAplicado = useRef(0)
+  const estructuraRef = useRef<{ grupos: any[]; jugadores: any[]; formato: string | null }>({ grupos: [], jugadores: [], formato: null })
+  const recargarTodoRef = useRef<() => Promise<void>>(async () => {})
+  const recargandoTodoRef = useRef(false)
+
   /**
    * Solo los partidos. Es lo único que cambia mientras se juega, y es la
    * recarga que corre en cada marca y en cada aviso en vivo: una consulta de
@@ -167,14 +191,27 @@ export default function TorneoDetallePage() {
    * estado, que obligaba a redibujar la pantalla entera.
    */
   const cargarPartidos = useCallback(async () => {
+    const ticket = ++ticketPartidos.current
     const { data } = await supabase
       .from('torneo_partidos')
       .select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,es_walkover,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)')
       .eq('torneo_id', torneoId)
-    if (data) setPartidos(data)
+    if (!data || ticket < partidosAplicado.current) return
+    partidosAplicado.current = ticket
+    setPartidos(data)
+
+    const e = estructuraRef.current
+    if ((e.formato ?? 'grupos') === 'grupos' && !recargandoTodoRef.current
+        && gruposFueraDeSincronia(e.grupos, e.jugadores, data).length) {
+      void recargarTodoRef.current()
+    }
   }, [torneoId])
 
   const cargarTorneo = useCallback(async () => {
+    const miTicket = ++ticketTorneo.current
+    const ticketDePartidos = ++ticketPartidos.current
+    recargandoTodoRef.current = true
+    try {
     // Un solo viaje: las 5 queries en paralelo. grupo_jugadores se filtra por
     // torneo vía el join a torneo_grupos, así no hay que esperar los grupos.
     //
@@ -197,9 +234,16 @@ export default function TorneoDetallePage() {
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
 
+    // Una carga completa más nueva ya se aplicó: esta quedó vieja.
+    if (miTicket < torneoAplicado.current) return
+    torneoAplicado.current = miTicket
+
     setTorneo(t)
     setGrupos(g || [])
-    setPartidos(pts || [])
+    if (ticketDePartidos >= partidosAplicado.current) {
+      partidosAplicado.current = ticketDePartidos
+      setPartidos(pts || [])
+    }
     setPagos(pgs || [])
     const cabezasCargadas = (cabezasData || []).map((c: any) => ({
       id: c.jugador_id,
@@ -261,7 +305,16 @@ export default function TorneoDetallePage() {
     } else {
       setJugadoresInscritos([])
     }
+    } finally {
+      recargandoTodoRef.current = false
+    }
   }, [torneoId])
+
+  // Lo que `cargarPartidos` necesita para comparar, sin volver a crearlo.
+  useEffect(() => {
+    recargarTodoRef.current = cargarTorneo
+    estructuraRef.current = { grupos, jugadores, formato: torneo?.formato ?? null }
+  })
 
   useEffect(() => {
     if (authLoading) return

@@ -125,3 +125,20 @@ Confirmado por el usuario: solo fútbol, para todos los clubes.
 **Lo que no pude reproducir:** no tengo el registro de lo que el administrador hizo clic a clic el 25-oct, y el estado actual de TC A y TC B ya está reparado. La causa del "vs —" encaja con los datos y con el código, pero es una inferencia, no una reproducción del día. Si vuelve a aparecer un grupo con partidos vacíos, hay que mirar primero la auditoría de la base (`audit_log`, acción `jugadores/eliminar`) para ver si alguien fue eliminado en esa ventana.
 
 **Pendiente:** la migración 303 de torneos (protecciones financieras) sigue sin aplicarse en producción.
+
+## Anexo 3 — Por qué "mover jugadores de grupo" parecía fallar (2026-10-27)
+
+Mover jugadores entre grupos **tiene que poder hacerse**, y en el servidor funciona. Lo que falló fue lo que la pantalla mostraba.
+
+**Probado:** la acción `moverJugadorEntreGrupos` real, ejecutada contra la base real (torneo temporal en Demostración, borrado al terminar), pasó 7 casos: mover A→B, devolver B→A, rechazo con 4 en el destino, vaciar un grupo (se borra solo), 5 movimientos seguidos y quitar a alguien. Después de cada movimiento, los integrantes y los partidos de cada grupo cuadraban exactamente.
+
+**El mecanismo del "vs —" está en la pantalla, no en la base:**
+
+1. En la tarjeta de cada grupo (`torneos/[id]/page.tsx`), el nombre del rival se busca en la lista de **integrantes** del grupo, no en el partido. Si los partidos y los integrantes que tiene la pantalla no coinciden, sale "vs —" con la base perfecta.
+2. Desde el 2026-09-06 la pantalla se refresca sola escuchando `torneo_partidos` y, ante un cambio, recarga **solo los partidos** ("sin pisar grupos"). Pero `grupo_jugadores` y `torneo_grupos` **no están en el tiempo real**.
+3. Resultado: cuando alguien mueve a un jugador, **las demás pantallas abiertas** (otro teléfono, el profesor) reciben los partidos regenerados y se quedan con los integrantes viejos: partidos nuevos con integrantes viejos = "vs —", grupos sin los partidos del que llegó. Recargar a mano lo arreglaba, y por eso la base siempre se veía bien después. Antes del 6-sep no había tiempo real y no pasaba: eso explica el "andaba bien".
+4. Además, mover borra y reinserta decenas de partidos y cada fila dispara una recarga; sin protección, una respuesta lenta de a mitad de la operación podía pisar a la definitiva.
+
+**Arreglo:** la pantalla ahora (a) descarta las respuestas viejas (cada carga lleva un número) y (b) compara partidos contra integrantes tras cada recarga en vivo; si no cuadran, recarga el torneo completo. La comparación es una función pura (`sincroniaGrupos.ts`, 9 pruebas) que ignora la MESA, los grupos en preparación y los partidos con rival vacío (para no recargar para siempre por un daño de la base).
+
+**Lo que no pude comprobar:** que esto sea lo que ocurrió exactamente el 25-oct. Es la explicación que encaja con el código, con la fecha de regresión y con el estado de la base, pero no pude abrir la pantalla con dos sesiones a la vez. El guardia de eliminación de jugadores (Anexo 2) sigue siendo válido: TCB (2026-09-06) tiene en la base un grupo con partidos de rival vacío, huella de borrar a alguien en pleno torneo.
