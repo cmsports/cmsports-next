@@ -5,6 +5,7 @@ import { MODULOS_CLUB, puedeAccederModulo } from '@/lib/auth/modulos-rutas'
 import { esAdminDeClub } from '@/lib/auth/roles'
 import { esCuentaDemo } from '@/lib/auth/demo'
 import { pathCanonicoMiAcceso } from '@/lib/domain/clubSlug'
+import { rutaInternaSegura } from '@/lib/domain/rutaSegura'
 import type { Database } from '@/types/database'
 
 export const publicRoutes = ['/login', '/registro']
@@ -154,9 +155,20 @@ export async function proxy(request: NextRequest) {
   // Public routes — allow without auth
   if (publicRoutes.some((r) => pathname.startsWith(r))) {
     if (user) {
-      // Already logged in, redirect to their home
+      // Already logged in, redirect to their home — o a donde iba antes de
+      // pasar por el login (el QR de una votación, por ejemplo).
+      const destino = pathname.startsWith('/login')
+        ? rutaInternaSegura(request.nextUrl.searchParams.get('next'))
+        : null
       const url = request.nextUrl.clone()
-      url.pathname = getRolRedirect(perfil?.rol ?? null)
+      if (destino) {
+        const dest = new URL(destino, request.url)
+        url.pathname = dest.pathname
+        url.search = dest.search
+        url.hash = dest.hash
+      } else {
+        url.pathname = getRolRedirect(perfil?.rol ?? null)
+      }
       return NextResponse.redirect(url)
     }
 
@@ -171,7 +183,10 @@ export async function proxy(request: NextRequest) {
     ]
     if (protectedRoutes.some((r) => pathname === r || pathname.startsWith(r + '/'))) {
       const url = request.nextUrl.clone()
+      // Se guarda a dónde iba para devolverlo ahí después de iniciar sesión.
+      const volver = rutaInternaSegura(pathname + request.nextUrl.search)
       url.pathname = '/login'
+      url.search = volver ? `?next=${encodeURIComponent(volver)}` : ''
       return NextResponse.redirect(url)
     }
     return supabaseResponse

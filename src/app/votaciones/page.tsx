@@ -13,28 +13,14 @@ import {
   seleccionVacia, type JugadorVotacion, type Seleccion, type ResultadoVotacion,
 } from '@/lib/domain/votaciones'
 import {
-  crearVotacion, editarVotacion, votantesDeVotacion, cambiarEstadoVotacion, eliminarVotacion, votar, resultadosDeVotacion,
+  crearVotacion, editarVotacion, votantesDeVotacion, cambiarEstadoVotacion, eliminarVotacion, resultadosDeVotacion,
 } from '@/app/actions/votaciones'
+import { card, text, muted, hint, boton, Etiqueta, TarjetaAlumno, type Votacion, type Opcion } from '@/components/VotacionAlumno'
+import QrVotacion from '@/components/QrVotacion'
 
 // Los tipos generados todavía no conocen las tablas de la migración 303.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const db = createClient() as any
-
-const card  = { background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 4px 16px rgba(15,23,42,0.18)', animation: 'entraTarjeta var(--normal) var(--curva) both' } as const
-const text  = '#0f172a'
-const muted = '#64748b'
-const hint  = '#94a3b8'
-
-type Votacion = {
-  id: string; titulo: string; descripcion: string | null; tipo: 'jugadores' | 'opciones'
-  estado: 'abierta' | 'cerrada'; votos_total: number; creado_en: string; cerrada_en: string | null
-}
-type Opcion = { id: string; votacion_id: string; jugador_id: string | null; texto: string; orden: number }
-
-const boton = (fondo: string, color = '#fff', borde = 'none') => ({
-  background: fondo, color, border: borde, borderRadius: 8, padding: '8px 14px',
-  fontSize: 13, fontWeight: 600, cursor: 'pointer',
-}) as const
 
 export default function VotacionesPage() {
   const { perfil, loading } = usePerfil()
@@ -153,73 +139,6 @@ export default function VotacionesPage() {
   )
 }
 
-function Etiqueta({ v }: { v: Votacion }) {
-  const abierta = v.estado === 'abierta'
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
-      background: abierta ? '#ecfdf5' : '#f1f5f9', color: abierta ? '#059669' : muted }}>
-      {abierta ? 'Abierta' : 'Cerrada'}
-    </span>
-  )
-}
-
-// ── Vista del alumno ────────────────────────────────────────────────────────
-function TarjetaAlumno({ v, opciones, miOpcion, miJugadorId, avisar, alCambiar }: {
-  v: Votacion; opciones: Opcion[]; miOpcion: string | undefined; miJugadorId: string | null
-  avisar: (m: string) => void; alCambiar: () => Promise<void>
-}) {
-  const [elegida, setElegida] = useState('')
-  const [enviando, setEnviando] = useState(false)
-  // No se ofrece votar por uno mismo: el servidor igual lo rechaza.
-  const elegibles = opciones.filter(o => !miJugadorId || o.jugador_id !== miJugadorId)
-  const votada = miOpcion ? opciones.find(o => o.id === miOpcion) : undefined
-
-  async function enviar() {
-    if (!elegida) return
-    if (!confirm('Tu voto es definitivo: no podrás cambiarlo. ¿Votar?')) return
-    setEnviando(true)
-    const res = await votar({ votacionId: v.id, opcionId: elegida })
-    setEnviando(false)
-    if ('error' in res && res.error) { avisar(String(res.error)); return }
-    avisar('Voto registrado. ¡Gracias!')
-    await alCambiar()
-  }
-
-  return (
-    <div style={{ ...card, padding: 18 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: text, margin: 0 }}>{v.titulo}</h2>
-        <Etiqueta v={v} />
-      </div>
-      {v.descripcion && <p style={{ fontSize: 13, color: muted, margin: '6px 0 0' }}>{v.descripcion}</p>}
-
-      {votada ? (
-        <p style={{ fontSize: 13, color: '#059669', margin: '12px 0 0' }}>✓ Ya votaste por <b>{votada.texto}</b></p>
-      ) : miOpcion ? (
-        <p style={{ fontSize: 13, color: '#059669', margin: '12px 0 0' }}>✓ Ya votaste</p>
-      ) : v.estado === 'cerrada' ? (
-        <p style={{ fontSize: 13, color: muted, margin: '12px 0 0' }}>Esta votación ya se cerró.</p>
-      ) : (
-        <>
-          <div style={{ display: 'grid', gap: 6, marginTop: 12 }}>
-            {elegibles.map(o => (
-              <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
-                border: `1px solid ${elegida === o.id ? '#a5b4fc' : '#e2e8f0'}`, background: elegida === o.id ? '#eef2ff' : '#fff', fontSize: 14, color: text }}>
-                <input type="radio" name={`voto-${v.id}`} checked={elegida === o.id} onChange={() => setElegida(o.id)} />
-                {o.texto}
-              </label>
-            ))}
-          </div>
-          <button onClick={enviar} disabled={!elegida || enviando}
-            style={{ ...boton(!elegida || enviando ? '#cbd5e1' : '#4f46e5'), marginTop: 12, cursor: !elegida || enviando ? 'not-allowed' : 'pointer' }}>
-            {enviando ? 'Enviando…' : 'Votar'}
-          </button>
-        </>
-      )}
-    </div>
-  )
-}
-
 // ── Vista del profe ─────────────────────────────────────────────────────────
 function TarjetaStaff({ v, opciones, clubId, clubNombre, avisar, alCambiar }: {
   v: Votacion; opciones: Opcion[]; clubId: string | null; clubNombre: string
@@ -229,6 +148,7 @@ function TarjetaStaff({ v, opciones, clubId, clubNombre, avisar, alCambiar }: {
   const [res, setRes] = useState<ResultadoVotacion | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [editando, setEditando] = useState(false)
+  const [verQr, setVerQr] = useState(false)
 
   const cargarResultados = useCallback(async () => {
     const r = await resultadosDeVotacion({ votacionId: v.id })
@@ -294,6 +214,7 @@ function TarjetaStaff({ v, opciones, clubId, clubNombre, avisar, alCambiar }: {
         <button onClick={() => setAbierta(a => !a)} style={boton('#eef2ff', '#3730a3', '1px solid #c7d2fe')}>
           {abierta ? 'Ocultar resultados' : 'Ver resultados'}
         </button>
+        <button onClick={() => setVerQr(true)} style={boton('#fff', text, '1px solid #e2e8f0')}>Código QR</button>
         <button onClick={exportar} disabled={ocupado} style={boton('#fff', text, '1px solid #e2e8f0')}>Exportar PDF</button>
         <button onClick={() => setEditando(true)} disabled={ocupado} style={boton('#fff', text, '1px solid #e2e8f0')}>Editar</button>
         <button onClick={cambiarEstado} disabled={ocupado} style={boton('#fff', text, '1px solid #e2e8f0')}>
@@ -301,6 +222,10 @@ function TarjetaStaff({ v, opciones, clubId, clubNombre, avisar, alCambiar }: {
         </button>
         <button onClick={borrar} disabled={ocupado} style={boton('#fff', '#dc2626', '1px solid #fecaca')}>Eliminar</button>
       </div>
+
+      {verQr && (
+        <QrVotacion votacionId={v.id} titulo={v.titulo} abierta={v.estado === 'abierta'} alCerrar={() => setVerQr(false)} />
+      )}
 
       {editando && clubId && (
         <ModalEditar v={v} clubId={clubId} alCerrar={() => setEditando(false)}

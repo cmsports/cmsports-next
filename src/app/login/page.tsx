@@ -7,6 +7,7 @@ import { Mail, Lock, ArrowRight, Loader2, Phone, IdCard } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import ThemeToggle from '@/components/ThemeToggle'
+import { rutaInternaSegura } from '@/lib/domain/rutaSegura'
 
 export default function LoginPage() {
   const [credential, setCredential] = useState('')
@@ -36,7 +37,11 @@ export default function LoginPage() {
         .select('rol')
         .eq('id', data.user.id)
         .single()
-      if (perfil?.rol === 'superadmin') window.location.href = '/superadmin'
+      // Si llegó por el QR de una votación (u otra ruta protegida), vuelve ahí.
+      // Se lee del navegador y no con useSearchParams para no exigir Suspense.
+      const volver = rutaInternaSegura(new URLSearchParams(window.location.search).get('next'))
+      if (volver) window.location.href = volver
+      else if (perfil?.rol === 'superadmin') window.location.href = '/superadmin'
       else if (perfil?.rol === 'profesor') window.location.href = '/dashboard-profesor'
       else if (perfil?.rol === 'admin') window.location.href = '/dashboard'
       else window.location.href = '/perfil'
