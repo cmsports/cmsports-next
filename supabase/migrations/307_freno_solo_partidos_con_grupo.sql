@@ -20,7 +20,7 @@
 -- comportarse como antes. No modifica ninguna fila al aplicarse.
 --
 -- EJECUCIÓN MANUAL: Supabase Dashboard > SQL Editor.
--- Corrida el: ____________
+-- Corrida el: 2026-10-29 (verificado: registrada en _migraciones_aplicadas)
 
 BEGIN;
 SELECT _migracion_nueva('307_freno_solo_partidos_con_grupo');
