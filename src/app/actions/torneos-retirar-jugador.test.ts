@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ auth: vi.fn(), admin: vi.fn() }))
 vi.mock('@/lib/auth/require', () => ({ requireAdmin: mocks.auth, requireGestorTorneos: mocks.auth }))
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: mocks.admin }))
 vi.mock('@/lib/supabase/exportacionPartidosModulo', () => ({ moduloExportacionPartidos: async () => ({ habilitado: false }) }))
-import { cerrarInscripcionYGenerarGrupos, sincronizarLlaves, marcarGanadorPartido, finalizarTorneo, retirarJugadorDeTorneo } from './torneos'
+import { cerrarInscripcionYGenerarGrupos, sincronizarLlaves, marcarGanadorPartido, finalizarTorneo, retirarJugadorDeTorneo, archivarTorneo, eliminarTorneoDefinitivo } from './torneos'
 
 /**
  * Retirar a un jugador de un torneo en curso sin dejar partidos contra nadie.
@@ -20,7 +20,9 @@ const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0
 const TORNEO = UUID(900)
 const OTRO_TORNEO = UUID(901)
 
-function base(tablas: Record<string, Fila[]>, log: string[]) {
+// `alEscribir` corre después de cada escritura: sirve para simular lo que otra
+// persona hace en la base en ese mismo instante.
+function base(tablas: Record<string, Fila[]>, log: string[], alEscribir?: (op: string, tabla: string, payload: Fila | Fila[]) => void) {
   let secuencia = 1000
   const from = (tabla: string) => {
     let op = 'select'
@@ -48,6 +50,7 @@ function base(tablas: Record<string, Fila[]>, log: string[]) {
       }
       if (op === 'update') data.forEach(f => Object.assign(f, payload))
       if (op === 'delete') tablas[tabla] = filas.filter(f => !data.includes(f))
+      if (op !== 'select') alEscribir?.(op, tabla, payload)
       data = [...data].sort((a, b) => {
         for (const [col, asc] of ordenes) {
           if (a[col] === b[col]) continue
@@ -97,10 +100,10 @@ function base(tablas: Record<string, Fila[]>, log: string[]) {
   }
 }
 
-function escenario(n: number): Record<string, Fila[]> {
+function escenario(n: number, formato = 'grupos'): Record<string, Fila[]> {
   const jugadores = Array.from({ length: n }, (_, i) => ({ id: UUID(i + 1), nombre: `J${i + 1}`, club_id: 'club', es_externo: false }))
   return {
-    torneos: [{ id: TORNEO, club_id: 'club', nombre: 'TC prueba', tipo: 'interno', formato: 'grupos', estado: 'en_curso', fase: 'inscripcion', formato_grupos: 'bo5', formato_llave: 'bo5' }],
+    torneos: [{ id: TORNEO, club_id: 'club', nombre: 'TC prueba', tipo: 'interno', formato, estado: 'en_curso', fase: 'inscripcion', formato_grupos: 'bo5', formato_llave: 'bo5' }],
     jugadores,
     torneo_grupos: [{ id: UUID(500), torneo_id: TORNEO, nombre: 'MESA' }],
     grupo_jugadores: jugadores.map((j, i) => ({ id: UUID(600 + i), grupo_id: UUID(500), jugador_id: j.id })),
@@ -110,9 +113,9 @@ function escenario(n: number): Record<string, Fila[]> {
 }
 
 let log: string[] = []
-function montar(tablas: Record<string, Fila[]>) {
+function montar(tablas: Record<string, Fila[]>, alEscribir?: (op: string, tabla: string, payload: Fila | Fila[]) => void) {
   log = []
-  const db = base(tablas, log)
+  const db = base(tablas, log, alEscribir)
   mocks.auth.mockResolvedValue({ supabase: db, perfil: { club_id: 'club' }, error: null })
   mocks.admin.mockReturnValue(db)
   return db
@@ -241,5 +244,67 @@ describe('retirarJugadorDeTorneo', () => {
     expect(await finalizarTorneo({ torneoId: TORNEO })).toEqual({ success: true })
     expect(db.rpc).not.toHaveBeenCalled()
     expect(t.jugadores).toHaveLength(4)
+  })
+
+  // Un torneo que no se finaliza también deja de estar en curso: la ficha que
+  // esperaba su final no puede quedar esperando para siempre.
+  async function conRetiradoPendiente() {
+    const t = escenario(9)
+    const db = montar(t)
+    const { grupo, miembros: [x, y] } = await armarGrupos(t)
+    const xy = t.torneo_partidos.find(p => p.grupo_id === grupo.id && [p.jugador_a, p.jugador_b].includes(x) && [p.jugador_a, p.jugador_b].includes(y))!
+    await gana(xy, x)
+    expect(await retirarJugadorDeTorneo({ torneoId: TORNEO, jugadorId: x })).toMatchObject({ modo: 'retirado' })
+    t.jugadores.find(j => j.id === x)!.borrar_al_finalizar_torneo = true
+    return { t, db, x }
+  }
+
+  it('archivar el torneo también borra la ficha pendiente', async () => {
+    const { t, db, x } = await conRetiradoPendiente()
+    expect(await archivarTorneo({ torneoId: TORNEO })).toEqual({ success: true })
+    expect(db.rpc).toHaveBeenCalledWith('eliminar_jugador_atomico', { p_jugador_id: x })
+    expect(t.jugadores.some(j => j.id === x)).toBe(false)
+  })
+
+  it('eliminar el torneo también borra la ficha pendiente (leída antes de borrar los grupos)', async () => {
+    const { t, db, x } = await conRetiradoPendiente()
+    expect(await eliminarTorneoDefinitivo({ torneoId: TORNEO })).toEqual({ success: true })
+    expect(db.rpc).toHaveBeenCalledWith('eliminar_jugador_atomico', { p_jugador_id: x })
+    expect(t.jugadores.some(j => j.id === x)).toBe(false)
+    expect(t.torneos).toHaveLength(0)
+  })
+
+  it('dos retiros a la vez en el mismo grupo: el que deja un grupo de uno se deshace', async () => {
+    const t = escenario(9)
+    let otroAdmin: (() => void) | null = null
+    montar(t, (op, tabla, payload) => {
+      if (op === 'update' && tabla === 'grupo_jugadores' && (payload as Fila).retirado_en && otroAdmin) {
+        const f = otroAdmin; otroAdmin = null; f()
+      }
+    })
+    const { grupo, miembros: [x, y, z] } = await armarGrupos(t)
+    const xy = t.torneo_partidos.find(p => p.grupo_id === grupo.id && [p.jugador_a, p.jugador_b].includes(x) && [p.jugador_a, p.jugador_b].includes(y))!
+    await gana(xy, x)
+    // Justo cuando este retiro marca a X, otro admin ya había retirado a Y.
+    otroAdmin = () => { t.grupo_jugadores.find(m => m.jugador_id === y)!.retirado_en = '2026-10-29T23:00:00Z' }
+    const r = await retirarJugadorDeTorneo({ torneoId: TORNEO, jugadorId: x })
+    expect('error' in r && r.error).toContain('un solo jugador')
+    expect(t.grupo_jugadores.find(m => m.jugador_id === x)!.retirado_en).toBeNull()
+    // No se anotó ningún W.O. a nombre de este retiro deshecho.
+    expect(t.torneo_partidos.some(p => p.es_walkover)).toBe(false)
+    expect(z).toBeTruthy()
+  })
+
+  it('eliminación directa: queda retirado y su partido pendiente del cuadro pasa a W.O.', async () => {
+    const t = escenario(8, 'eliminacion_consolacion')
+    montar(t)
+    expect((await cerrarInscripcionYGenerarGrupos({ torneoId: TORNEO })).error).toBeUndefined()
+    const cuadro = t.torneo_partidos.filter(p => p.fase !== 'grupos' && p.jugador_a && p.jugador_b && !p.ganador)
+    expect(cuadro.length).toBeGreaterThan(0)
+    const p = cuadro[0]
+    const r = await retirarJugadorDeTorneo({ torneoId: TORNEO, jugadorId: p.jugador_a })
+    expect(r).toMatchObject({ success: true, modo: 'retirado' })
+    expect(p.ganador).toBe(p.jugador_b)
+    expect(p.es_walkover).toBe(true)
   })
 })

@@ -421,14 +421,17 @@ export async function toggleEstadoJugador(params: { jugadorId: string; nuevoEsta
  *  - si no había jugado en su grupo, sale y los partidos se rehacen, y se
  *    borra la ficha en el acto;
  *  - si ya había jugado, queda retirado con W.O. en lo pendiente, y la ficha se
- *    borra sola al finalizar el torneo (`borrar_al_finalizar_torneo`). Borrarla
- *    ya le cambiaría la tabla al grupo a mitad de camino.
+ *    borra sola cuando el torneo deja de estar en curso (al finalizarlo,
+ *    archivarlo o eliminarlo; `borrar_al_finalizar_torneo`). Borrarla ya le
+ *    cambiaría la tabla al grupo a mitad de camino. Mientras espera queda
+ *    `bloqueado`, igual que una baja (migración 081): fuera de la lista de
+ *    activos y sin mensualidades.
  * La decisión es de `retirarJugadorDeTorneo`. Y si algo se saltara este camino,
- * la base frena el borrado (migración 306).
+ * la base frena el borrado (migraciones 306 y 307).
  */
 export async function eliminarJugador(params: { jugadorId: string }): Promise<
   | { error: string }
-  | { success: true; diferido?: false }
+  | { success: true; diferido?: false; aviso?: string }
   | { success: true; diferido: true; mensaje: string }
 > {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
@@ -444,11 +447,18 @@ export async function eliminarJugador(params: { jugadorId: string }): Promise<
   if (vivos.error) return { error: vivos.error }
 
   const retiradoEn: string[] = []
+  const yaSalioDe: string[] = []
   const avisos: string[] = []
   for (const torneoId of new Set(vivos.torneos.map(t => t.torneoId))) {
     const nombre = vivos.torneos.find(t => t.torneoId === torneoId)?.nombre ?? ''
     const r = await retirarJugadorDeTorneo({ torneoId, jugadorId: params.jugadorId })
-    if ('error' in r) return { error: `No se pudo retirar del torneo "${nombre}": ${r.error} No se eliminó al jugador.` }
+    if ('error' in r) {
+      // Lo de los torneos anteriores ya quedó hecho: se dice, para que nadie
+      // crea que "no se eliminó" significa "no cambió nada".
+      const antes = yaSalioDe.length ? ` Ya salió de ${yaSalioDe.map(n => `"${n}"`).join(', ')}.` : ''
+      return { error: `No se pudo retirar del torneo "${nombre}": ${r.error} No se eliminó al jugador.${antes}` }
+    }
+    yaSalioDe.push(nombre)
     if (r.modo === 'retirado') retiradoEn.push(nombre)
     avisos.push(...r.avisos)
   }
@@ -456,7 +466,7 @@ export async function eliminarJugador(params: { jugadorId: string }): Promise<
   if (retiradoEn.length) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: marcado, error: errMarca } = await (supabase as any).from('jugadores')
-      .update({ borrar_al_finalizar_torneo: true })
+      .update({ borrar_al_finalizar_torneo: true, estado: 'bloqueado' })
       .eq('id', params.jugadorId).eq('club_id', clubId).select('id')
     if (errMarca || !marcado?.length) {
       return { error: 'Se retiró del torneo, pero no se pudo dejar programado su borrado' + (errMarca ? ': ' + errMarca.message : '.') }
@@ -466,14 +476,15 @@ export async function eliminarJugador(params: { jugadorId: string }): Promise<
       success: true,
       diferido: true,
       mensaje: `Ya había jugado en ${torneos}: quedó retirado, lo que jugó se mantiene y sus partidos pendientes pasaron a W.O. ` +
-        'Su ficha se borrará sola cuando ese torneo se finalice.' +
+        'Mientras tanto queda bloqueado (fuera de los activos y sin mensualidades), y su ficha se borrará sola cuando ese torneo se finalice, archive o elimine.' +
         (avisos.length ? ' ' + avisos.join(' ') : ''),
     }
   }
 
-  const errorBorrado = await borrarFichaJugador({ rpc: supabase, clubId: clubId!, jugadorId: params.jugadorId })
-  if (errorBorrado) return { error: 'Error al eliminar jugador: ' + errorBorrado }
-  return { success: true }
+  const borrado = await borrarFichaJugador({ rpc: supabase, clubId: clubId!, jugadorId: params.jugadorId })
+  if ('error' in borrado) return { error: 'Error al eliminar jugador: ' + borrado.error }
+  const aviso = [...avisos, borrado.aviso].filter(Boolean).join(' ')
+  return aviso ? { success: true, aviso } : { success: true }
 }
 
 export async function verificarBloqueoPerfil(): Promise<boolean> {

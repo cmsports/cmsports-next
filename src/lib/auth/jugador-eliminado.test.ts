@@ -93,8 +93,8 @@ describe('eliminar un jugador le libera el correo', () => {
     expect(eliminar.slice(0, 4000)).toContain('borrarFichaJugador(')
   })
 
-  it('el borrado diferido al finalizar un torneo también', () => {
-    const diferido = torneos.slice(torneos.indexOf('async function borrarRetiradosPendientes'))
-    expect(diferido.slice(0, 2500)).toContain('borrarFichaJugador(')
+  it('el borrado diferido (al finalizar, archivar o eliminar el torneo) también', () => {
+    const diferido = torneos.slice(torneos.indexOf('async function borrarFichasPendientes'))
+    expect(diferido.slice(0, 1500)).toContain('borrarFichaJugador(')
   })
 })

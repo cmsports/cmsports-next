@@ -421,6 +421,7 @@ export default function JugadoresPage() {
       if ('error' in resultado) { mostrarToast(resultado.error); return }
       // Ya había jugado en un torneo en curso: quedó retirado y se borra al finalizarlo.
       if (resultado.diferido) { alert(resultado.mensaje); void cargarJugadores(); return }
+      if (resultado.aviso) alert(resultado.aviso)
       mostrarToast('Jugador eliminado')
       void cargarJugadores()
     } catch (e) {

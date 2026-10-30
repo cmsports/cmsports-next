@@ -55,7 +55,7 @@ import { esUuid } from '@/lib/domain/uuid'
 import { requireAdmin, requireGestorTorneos } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fechaChile } from '@/lib/domain/fechaChile'
-import { decidirRetiro } from '@/lib/domain/retiroTorneo'
+import { decidirRetiro, MOTIVO_GRUPO_DE_UNO } from '@/lib/domain/retiroTorneo'
 import { torneosVivosDelJugador } from '@/lib/supabase/torneosVivosDelJugador'
 import { borrarFichaJugador } from '@/lib/supabase/borrarFichaJugador'
 
@@ -1603,8 +1603,10 @@ export async function quitarJugadorDeGrupo(params: {
  *    queda, sus pendientes pasan a W.O. para el rival y no clasifica.
  *  - `sin_grupo`: no estaba en ningún grupo de este torneo (o solo en la MESA).
  *
- * Solo para tradicional y liguilla: en eliminación directa y por equipos el
- * ausente se resuelve marcando W.O. en su partido, como siempre.
+ * En eliminación directa no hay grupo que rehacer: su lista de inscritos es un
+ * grupo sin partidos, así que siempre queda `retirado` con W.O. en lo que tenga
+ * pendiente en el cuadro. Por equipos sus jugadores viven en la MESA (no llegan
+ * acá); el ausente se resuelve en la alineación.
  */
 export async function retirarJugadorDeTorneo(params: { torneoId: string; jugadorId: string }): Promise<
   | { error: string }
@@ -1616,15 +1618,16 @@ export async function retirarJugadorDeTorneo(params: { torneoId: string; jugador
   const { torneoId, jugadorId } = params
   if (!esUuid(torneoId) || !esUuid(jugadorId)) return { error: 'Torneo o jugador inválido' }
 
+  const { modalidad, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+  if (errModalidad) return { error: errModalidad }
   {
-    const { modalidad, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
-    if (errModalidad) return { error: errModalidad }
     const cerrado = rechazarSiEstaCerrado(estado, 'ya no se retira a nadie')
     if (cerrado) return { error: cerrado }
-    if (modalidad !== 'grupos' && modalidad !== 'liguilla') {
-      return { error: 'En esta modalidad el retiro se hace marcando W.O. en sus partidos pendientes.' }
+    if (modalidad === 'equipos') {
+      return { error: 'En un torneo por equipos el retiro se hace cambiando la alineación de su equipo.' }
     }
   }
+  const esEliminacion = modalidad === 'eliminacion_consolacion'
 
   // Su fila en un grupo de este torneo. La MESA es la bolsa de inscripción:
   // no tiene partidos, y "Eliminar jugador" la limpia sola.
@@ -1650,15 +1653,21 @@ export async function retirarJugadorDeTorneo(params: { torneoId: string; jugador
   if (errPartidos || errMiembros) return { error: 'No se pudieron leer los partidos del torneo' }
   const todos = partidos ?? []
   const llave = todos.filter(p => p.fase !== 'grupos')
+  const estaEnLaLlave = llave.some(p => p.jugador_a === jugadorId || p.jugador_b === jugadorId)
+  type Miembro = { jugador_id: string | null; retirado_en: string | null }
+  const otrosActivosEn = (lista: Miembro[]) => lista.filter(m => m.jugador_id !== jugadorId && !m.retirado_en).length
 
-  const decision = decidirRetiro({
-    enPreparacion: !!grupo?.en_preparacion,
-    partidosGrupo: todos.filter(p => p.fase === 'grupos' && p.grupo_id === fila.grupo_id),
-    otrosActivos: ((miembros ?? []) as { jugador_id: string | null; retirado_en: string | null }[])
-      .filter(m => m.jugador_id !== jugadorId && !m.retirado_en).length,
-    estaEnLaLlave: llave.some(p => p.jugador_a === jugadorId || p.jugador_b === jugadorId),
-    llaveConResultados: llave.some(llaveFueJugada),
-  })
+  // En eliminación directa su "grupo" es solo la lista de inscritos: no hay
+  // tabla que cuidar ni grupo que rehacer, todo se juega en el cuadro.
+  const decision = esEliminacion
+    ? { modo: 'wo' as const }
+    : decidirRetiro({
+        enPreparacion: !!grupo?.en_preparacion,
+        partidosGrupo: todos.filter(p => p.fase === 'grupos' && p.grupo_id === fila.grupo_id),
+        otrosActivos: otrosActivosEn((miembros ?? []) as Miembro[]),
+        estaEnLaLlave,
+        llaveConResultados: llave.some(llaveFueJugada),
+      })
   if (decision.modo === 'bloqueado') return { error: decision.motivo }
 
   if (decision.modo === 'quitar') {
@@ -1675,6 +1684,23 @@ export async function retirarJugadorDeTorneo(params: { torneoId: string; jugador
     .eq('id', fila.id).is('retirado_en', null).select('id')
   if (errMarca) return { error: 'No se pudo marcar al jugador como retirado: ' + errMarca.message }
   if (!marcado?.length) return { success: true, modo: 'retirado', avisos: [] }
+
+  // La regla de "quedan dos activos" se decidió leyendo antes de escribir: si
+  // otro admin retiró a alguien del mismo grupo en ese mismo momento, los dos
+  // pasaron el chequeo. Se vuelve a contar ya con la marca puesta, y si el
+  // grupo quedó con uno solo, este retiro se deshace (antes de anotar W.O.).
+  // En el peor caso se deshacen los dos y hay que reintentar uno: nunca queda
+  // un grupo que cuelgue la llave.
+  if (!esEliminacion && !estaEnLaLlave) {
+    const { data: ahora, error: errAhora } = await db.from('grupo_jugadores')
+      .select('jugador_id, retirado_en').eq('grupo_id', fila.grupo_id)
+    if (errAhora || otrosActivosEn((ahora ?? []) as Miembro[]) < 2) {
+      const { error: errDeshacer } = await db.from('grupo_jugadores')
+        .update({ retirado_en: null }).eq('id', fila.id)
+      if (errDeshacer) return { error: 'Se marcó como retirado pero no se pudo confirmar el grupo; revisa el torneo antes de seguir: ' + errDeshacer.message }
+      return { error: errAhora ? 'No se pudo confirmar el grupo después del retiro; no se retiró a nadie.' : MOTIVO_GRUPO_DE_UNO }
+    }
+  }
 
   // Uno por uno y no en paralelo: un W.O. de llave hace avanzar el cuadro, y el
   // siguiente tiene que ver ese avance.
@@ -2897,20 +2923,21 @@ async function limpiarExternosDeTorneo(
 }
 
 /**
- * Borra las fichas que "Eliminar jugador" dejó programadas para el final de
- * este torneo (`borrar_al_finalizar_torneo`): el jugador ya había jugado y se
+ * Fichas que "Eliminar jugador" dejó programadas (`borrar_al_finalizar_torneo`)
+ * y que están en los grupos de este torneo: el jugador ya había jugado y se
  * retiró, y borrarlo en ese momento le habría cambiado la tabla al grupo.
  *
- * Corre con el torneo ya finalizado, así que el freno de la migración 306 no
- * lo detiene. Si la persona sigue en otro torneo en curso, se espera a ese.
- * Como la limpieza de externos, no puede tumbar la finalización: si algo
- * falla, vuelve como aviso.
+ * Se borran cuando el torneo deja de estar en curso, por cualquiera de los
+ * tres caminos: finalizarlo, archivarlo o eliminarlo. Si solo se hiciera al
+ * finalizar, un torneo archivado dejaba la ficha esperando para siempre.
  */
-async function borrarRetiradosPendientes(torneoId: string): Promise<string | null> {
+type FichaPendiente = { id: string; club_id: string; nombre: string | null }
+
+async function retiradosPorBorrar(torneoId: string): Promise<{ error: string } | { fichas: FichaPendiente[] }> {
   const admin = createAdminClient()
   const { data: grupos, error: errGrupos } = await admin.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
-  if (errGrupos) return `El torneo se finalizó, pero no se pudieron revisar los retirados: ${errGrupos.message}`
-  if (!grupos?.length) return null
+  if (errGrupos) return { error: errGrupos.message }
+  if (!grupos?.length) return { fichas: [] }
 
   // `borrar_al_finalizar_torneo` (migración 306) no está en los tipos generados.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2918,26 +2945,42 @@ async function borrarRetiradosPendientes(torneoId: string): Promise<string | nul
     .select('jugador_id, jugadores!inner(id, club_id, nombre, borrar_al_finalizar_torneo)')
     .in('grupo_id', grupos.map(g => g.id))
     .eq('jugadores.borrar_al_finalizar_torneo', true)
-  if (errFilas) return `El torneo se finalizó, pero no se pudieron revisar los retirados: ${errFilas.message}`
+  if (errFilas) return { error: errFilas.message }
 
-  type Ficha = { id: string; club_id: string; nombre: string | null }
-  const fichas = new Map<string, Ficha>()
-  for (const f of (filas ?? []) as { jugadores: Ficha | Ficha[] }[]) {
+  const fichas = new Map<string, FichaPendiente>()
+  for (const f of (filas ?? []) as { jugadores: FichaPendiente | FichaPendiente[] }[]) {
     const j = Array.isArray(f.jugadores) ? f.jugadores[0] : f.jugadores
     if (j) fichas.set(j.id, j)
   }
+  return { fichas: [...fichas.values()] }
+}
 
+/**
+ * Borra las fichas pendientes. Corre con el torneo ya fuera de curso, así que
+ * el freno de la migración 306 no lo detiene. Si la persona sigue en otro
+ * torneo en curso, se espera a ese. No puede tumbar lo que la llamó: si algo
+ * falla, vuelve como aviso.
+ */
+async function borrarFichasPendientes(fichas: FichaPendiente[]): Promise<string | null> {
+  const admin = createAdminClient()
   const fallidos: string[] = []
-  for (const ficha of fichas.values()) {
+  const avisos: string[] = []
+  for (const ficha of fichas) {
     const vivos = await torneosVivosDelJugador(admin, ficha.id)
     if (vivos.error) { fallidos.push(ficha.nombre ?? ficha.id); continue }
     if (vivos.torneos.length) continue // juega otro torneo: se borra cuando ese termine
-    const error = await borrarFichaJugador({ rpc: admin, clubId: ficha.club_id, jugadorId: ficha.id })
-    if (error) fallidos.push(ficha.nombre ?? ficha.id)
+    const r = await borrarFichaJugador({ rpc: admin, clubId: ficha.club_id, jugadorId: ficha.id })
+    if ('error' in r) fallidos.push(ficha.nombre ?? ficha.id)
+    else if (r.aviso) avisos.push(r.aviso)
   }
-  return fallidos.length
-    ? `El torneo se finalizó, pero no se pudo borrar la ficha de ${fallidos.join(', ')}. Elimínalos desde Jugadores.`
-    : null
+  if (fallidos.length) avisos.unshift(`No se pudo borrar la ficha de ${fallidos.join(', ')}, que estaba pendiente; elimínalos desde Jugadores.`)
+  return avisos.length ? avisos.join(' ') : null
+}
+
+async function borrarRetiradosPendientes(torneoId: string): Promise<string | null> {
+  const pendientes = await retiradosPorBorrar(torneoId)
+  if ('error' in pendientes) return `No se pudieron revisar las fichas pendientes de borrar: ${pendientes.error}`
+  return borrarFichasPendientes(pendientes.fichas)
 }
 
 export async function limpiarGruposHuerfanos(params: { torneoId: string }) {
@@ -3587,7 +3630,10 @@ export async function archivarTorneo(params: { torneoId: string }) {
   if (error) return { error: `No se pudo archivar: ${error.message}` }
   if (!data?.length) return { error: 'Torneo no encontrado en tu club' }
 
-  return { success: true }
+  // Archivado ya no está en curso: las fichas que esperaban su final se borran.
+  const aviso = await borrarRetiradosPendientes(torneoId)
+    .catch(e => e instanceof Error ? e.message : 'No se pudieron borrar las fichas pendientes')
+  return aviso ? { success: true, aviso } : { success: true }
 }
 
 export const eliminarTorneo = archivarTorneo
@@ -3664,6 +3710,10 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
     .from('torneo_grupos').select('id').eq('torneo_id', torneoId)
   const grupoIds = (grupos || []).map(g => g.id)
 
+  // Las fichas que esperaban el final de este torneo se leen ANTES de borrarlo:
+  // después ya no queda grupo donde encontrarlas.
+  const pendientes = await retiradosPorBorrar(torneoId)
+
   // La plata del torneo NO se borra. Misma regla que al dar de baja a un
   // jugador (migración 127): el club sigue existiendo y los totales de un mes
   // ya cerrado no pueden moverse porque después se borre el torneo. La FK
@@ -3706,7 +3756,11 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
   { const { error } = await supabase.from('torneos').delete().eq('id', torneoId)
     if (error) return { error: `No se pudo borrar el torneo: ${error.message}` } }
 
-  return { success: true }
+  const aviso = 'error' in pendientes
+    ? `El torneo se borró, pero no se pudieron revisar las fichas pendientes de borrar: ${pendientes.error}`
+    : await borrarFichasPendientes(pendientes.fichas)
+        .catch(e => e instanceof Error ? e.message : 'No se pudieron borrar las fichas pendientes')
+  return aviso ? { success: true, aviso } : { success: true }
 }
 
 export async function guardarPremios(params: {

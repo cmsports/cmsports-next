@@ -15,14 +15,17 @@ import { BUCKET_PRIVADO, rutaFotoJugador } from '@/lib/supabase/privado'
  * cliente admin, y ahí sería un endpoint público. Quien la llama ya validó
  * permisos y club.
  *
- * Devuelve el mensaje de error del borrado, o null si quedó borrado.
+ * Devuelve `{ error }` si la ficha NO se borró, o `{ aviso? }` si se borró: el
+ * aviso aparece cuando la ficha ya no existe pero su cuenta de acceso no se
+ * pudo eliminar (la persona no podría volver a postular con ese correo hasta
+ * que alguien borre la cuenta a mano).
  */
 export async function borrarFichaJugador(params: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rpc: SupabaseClient<any>
   clubId: string
   jugadorId: string
-}): Promise<string | null> {
+}): Promise<{ error: string } | { aviso?: string }> {
   const admin = createAdminClient()
 
   const { data: perfilJugador } = await admin.from('perfiles')
@@ -33,19 +36,25 @@ export async function borrarFichaJugador(params: {
   const { error } = await params.rpc.rpc('eliminar_jugador_atomico', { p_jugador_id: params.jugadorId })
   if (error) {
     console.error('eliminar_jugador_atomico falló', params.jugadorId, error)
-    return error.message
+    return { error: error.message }
   }
 
   // Si tenía cuenta de acceso, borrarla de Auth para no dejar fantasmas
   // (credencial_visible cae sola por ON DELETE CASCADE hacia auth.users).
-  if (perfilJugador?.id) await admin.auth.admin.deleteUser(perfilJugador.id)
+  // La ficha ya se fue y eso no se revierte, pero si la cuenta queda viva
+  // se avisa en vez de responder "listo".
+  let aviso: string | undefined
+  if (perfilJugador?.id) {
+    const { error: errCuenta } = await admin.auth.admin.deleteUser(perfilJugador.id)
+    if (errCuenta) aviso = `Se eliminó la ficha, pero su cuenta de acceso no se pudo borrar (${errCuenta.message}); con ese correo no podrá volver a postular hasta que se borre a mano.`
+  }
 
-  // Limpieza de archivos best-effort: la ficha ya no existe, y un archivo
-  // huérfano en el bucket privado no se ve desde ninguna pantalla.
+  // Limpieza de archivos best-effort, a propósito: la ficha ya no existe, y un
+  // archivo huérfano en el bucket privado no se ve desde ninguna pantalla.
   const rutasStorage = (documentos ?? []).map(d => d.archivo_path).filter(Boolean) as string[]
   rutasStorage.push(rutaFotoJugador(params.clubId, params.jugadorId))
   await admin.storage.from(BUCKET_PRIVADO).remove(rutasStorage)
   await admin.storage.from('galeria-fotos').remove([`avatares/${params.jugadorId}.jpg`])
 
-  return null
+  return aviso ? { aviso } : {}
 }

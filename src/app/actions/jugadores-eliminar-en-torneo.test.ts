@@ -78,9 +78,40 @@ describe('eliminarJugador y los torneos vivos', () => {
     montar(enTorneoVivo(jugadores))
     const r = await eliminarJugador({ jugadorId: JUGADOR })
     expect(rpc).not.toHaveBeenCalled()
-    expect(jugadores.update).toHaveBeenCalledWith({ borrar_al_finalizar_torneo: true })
+    // Bloqueado mientras espera: fuera de los activos y sin mensualidades.
+    expect(jugadores.update).toHaveBeenCalledWith({ borrar_al_finalizar_torneo: true, estado: 'bloqueado' })
     expect(r).toMatchObject({ success: true, diferido: true })
     expect('mensaje' in r && r.mensaje).toContain('"TC A"')
+  })
+
+  it('si el retiro falla en el segundo torneo, dice de cuál ya salió', async () => {
+    mocks.retirar
+      .mockResolvedValueOnce({ success: true, modo: 'quitado', avisos: [] })
+      .mockResolvedValueOnce({ error: 'Su grupo quedaría con un solo jugador.' })
+    const OTRO = '55555555-5555-4555-8555-555555555555'
+    montar({
+      jugadores: consulta([{ id: JUGADOR }]),
+      grupo_jugadores: consulta([{ grupo_id: 'g1' }, { grupo_id: 'g2' }]),
+      torneo_grupos: consulta([{ id: 'g1', nombre: 'A', torneo_id: TORNEO }, { id: 'g2', nombre: 'B', torneo_id: OTRO }]),
+      torneos: consulta([{ id: TORNEO, nombre: 'TC A', estado: 'en_curso' }, { id: OTRO, nombre: 'TC B', estado: 'en_curso' }]),
+    })
+    const r = await eliminarJugador({ jugadorId: JUGADOR })
+    expect(rpc).not.toHaveBeenCalled()
+    expect('error' in r && r.error).toContain('"TC B"')
+    expect('error' in r && r.error).toContain('Ya salió de "TC A"')
+  })
+
+  it('si la ficha se borró pero la cuenta de acceso no, avisa en vez de responder "listo"', async () => {
+    montar({ jugadores: consulta({ id: JUGADOR }), grupo_jugadores: consulta([]) })
+    mocks.createAdminClient.mockReturnValue({
+      from: vi.fn((t: string) => t === 'perfiles' ? consulta({ id: 'cuenta-1' }) : consulta([])),
+      storage: { from: () => ({ remove: vi.fn().mockResolvedValue({}) }) },
+      auth: { admin: { deleteUser: vi.fn().mockResolvedValue({ error: { message: 'Auth caído' } }) } },
+    })
+    const r = await eliminarJugador({ jugadorId: JUGADOR })
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(r).toMatchObject({ success: true })
+    expect('aviso' in r && r.aviso).toContain('cuenta de acceso no se pudo borrar')
   })
 
   it('si no se puede retirar del torneo, no borra nada y explica por qué', async () => {

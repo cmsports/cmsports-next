@@ -226,6 +226,7 @@ export default function TorneosPage() {
                         if (!confirm(`¿Eliminar "${t.nombre}" definitivamente? Esta acción no se puede deshacer.`)) return
                         const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
                         if (res.error) { alert(res.error); return }
+                        if ('aviso' in res && res.aviso) alert(res.aviso)
                         await cargarTorneos()
                       }}
                       style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer' }}
@@ -255,6 +256,7 @@ export default function TorneosPage() {
                           if (!confirm(`¿Borrar definitivamente "${t.nombre}"?\n\nEsto elimina el torneo, grupos, partidos, pagos y movimientos asociados en Finanzas.`)) return
                           const res = await eliminarTorneoDefinitivo({ torneoId: t.id })
                           if (res.error) { alert(res.error); return }
+                          if ('aviso' in res && res.aviso) alert(res.aviso)
                           await cargarTorneos()
                         }}
                         style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'5px 10px', color:'#dc2626', fontSize:12, cursor:'pointer', fontWeight:600 }}

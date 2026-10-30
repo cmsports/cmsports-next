@@ -1164,6 +1164,7 @@ export default function TorneoDetallePage() {
             if (!confirm(`¿Archivar "${torneo?.nombre}"? Quedará guardado, pero no aparecerá en la lista normal.`)) return
             const res = await archivarTorneo({ torneoId })
             if (res.error) { alert(res.error); return }
+            if ('aviso' in res && res.aviso) alert(res.aviso)
             router.push(torneo?.tipo === 'interno' ? '/torneos-internos' : '/torneos')
           }} style={{ background:'transparent', border:'1px solid #fecaca', borderRadius:8, padding:'6px 14px', color:'#dc2626', fontSize:13, cursor:'pointer' }}>
             Archivar
