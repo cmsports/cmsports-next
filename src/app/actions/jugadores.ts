@@ -8,6 +8,9 @@ import { authEmailDe as emailParaAuth, generarEmailInicial, generarPasswordInici
 import { sincronizarEmailAuth } from '@/lib/credencialesAuth'
 import { BUCKET_PRIVADO, rutaFotoJugador, rutaDocumentoJugador } from '@/lib/supabase/privado'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { torneosVivosDelJugador } from '@/lib/supabase/torneosVivosDelJugador'
+import { borrarFichaJugador } from '@/lib/supabase/borrarFichaJugador'
+import { retirarJugadorDeTorneo } from '@/app/actions/torneos'
 
 type PlanFields = {
   categoria: string
@@ -404,91 +407,72 @@ export async function toggleEstadoJugador(params: { jugadorId: string; nuevoEsta
 }
 
 /**
- * Torneos que siguen vivos y en cuyos GRUPOS está el jugador.
+ * Elimina a un jugador. Si está en un torneo en curso, primero lo retira de
+ * ese torneo y recién después lo borra.
  *
  * `eliminar_jugador_atomico` le suelta el lugar a sus partidos (rival en NULL,
  * que la pantalla muestra como "vs —") y le saca la fila al grupo, pero no
- * rearma los partidos de ese grupo: queda un grupo con uno menos y partidos
- * contra nadie. Pasó en TCB (2026-09-06) y otra vez con TC A y TC B
- * (2026-10-25, dos eliminaciones a las 02:07 UTC, horas después de armar los
- * grupos). Sacar a alguien de un torneo en curso tiene su camino propio,
- * `quitarJugadorDeGrupo`, que sí regenera los partidos y cuida los grupos de 1.
+ * rearma nada: eso es trabajo del módulo de torneos, y la base no puede
+ * llamarlo. Borrar así en pleno torneo dejó partidos contra nadie en sub19
+ * (2026-08-16), TCB (2026-09-06) y TC A / TC B (2026-10-25).
  *
- * La MESA (la bolsa de inscripción) no cuenta: no tiene partidos.
+ * Entre el 26 y el 29 de octubre la salida fue negarse. Pero un jugador que se
+ * arrepiente tiene que poder irse, así que ahora se coordina:
+ *  - si no había jugado en su grupo, sale y los partidos se rehacen, y se
+ *    borra la ficha en el acto;
+ *  - si ya había jugado, queda retirado con W.O. en lo pendiente, y la ficha se
+ *    borra sola al finalizar el torneo (`borrar_al_finalizar_torneo`). Borrarla
+ *    ya le cambiaría la tabla al grupo a mitad de camino.
+ * La decisión es de `retirarJugadorDeTorneo`. Y si algo se saltara este camino,
+ * la base frena el borrado (migración 306).
  */
-async function torneosVivosConElJugador(
-  supabase: Awaited<ReturnType<typeof requireAdminClub>>['supabase'],
-  jugadorId: string,
-): Promise<{ error?: string; torneos: { nombre: string; grupo: string }[] }> {
-  if (!supabase) return { error: 'Sin conexión', torneos: [] }
-  const { data: filas, error: errFilas } = await supabase.from('grupo_jugadores')
-    .select('grupo_id').eq('jugador_id', jugadorId)
-  if (errFilas) return { error: 'No se pudo revisar si el jugador está en un torneo', torneos: [] }
-  const grupoIds = (filas ?? []).map(f => f.grupo_id).filter((id): id is string => !!id)
-  if (!grupoIds.length) return { torneos: [] }
-
-  const { data: grupos, error: errGrupos } = await supabase.from('torneo_grupos')
-    .select('id,nombre,torneo_id').in('id', grupoIds)
-  if (errGrupos) return { error: 'No se pudo revisar si el jugador está en un torneo', torneos: [] }
-  const delTorneo = (grupos ?? []).filter(g => g.nombre !== 'MESA' && !!g.torneo_id)
-  if (!delTorneo.length) return { torneos: [] }
-
-  const { data: torneos, error: errTorneos } = await supabase.from('torneos')
-    .select('id,nombre,estado').in('id', [...new Set(delTorneo.map(g => g.torneo_id as string))])
-  if (errTorneos) return { error: 'No se pudo revisar si el jugador está en un torneo', torneos: [] }
-  const vivos = new Map((torneos ?? [])
-    .filter(t => !['finalizado', 'archivado', 'cancelado'].includes(t.estado ?? ''))
-    .map(t => [t.id, t.nombre ?? 'sin nombre']))
-
-  return {
-    torneos: delTorneo
-      .filter(g => vivos.has(g.torneo_id as string))
-      .map(g => ({ nombre: vivos.get(g.torneo_id as string)!, grupo: g.nombre ?? '' })),
-  }
-}
-
-export async function eliminarJugador(params: { jugadorId: string }) {
+export async function eliminarJugador(params: { jugadorId: string }): Promise<
+  | { error: string }
+  | { success: true; diferido?: false }
+  | { success: true; diferido: true; mensaje: string }
+> {
   const { error: authErr, supabase, clubId } = await requireAdminClub()
-  if (authErr) return { error: authErr }
+  if (authErr || !supabase) return { error: authErr ?? 'Sin conexión' }
 
   const { data: jugador } = await supabase.from('jugadores')
     .select('id').eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
   if (!jugador) return { error: 'Jugador no encontrado' }
 
-  const vivos = await torneosVivosConElJugador(supabase, params.jugadorId)
+  // Si no se puede saber en qué torneos está, no se borra: el silencio sería
+  // justo el resultado que dejó los "vs —".
+  const vivos = await torneosVivosDelJugador(supabase, params.jugadorId)
   if (vivos.error) return { error: vivos.error }
-  if (vivos.torneos.length) {
-    const donde = vivos.torneos.map(t => `"${t.nombre}" (grupo ${t.grupo})`).join(', ')
+
+  const retiradoEn: string[] = []
+  const avisos: string[] = []
+  for (const torneoId of new Set(vivos.torneos.map(t => t.torneoId))) {
+    const nombre = vivos.torneos.find(t => t.torneoId === torneoId)?.nombre ?? ''
+    const r = await retirarJugadorDeTorneo({ torneoId, jugadorId: params.jugadorId })
+    if ('error' in r) return { error: `No se pudo retirar del torneo "${nombre}": ${r.error} No se eliminó al jugador.` }
+    if (r.modo === 'retirado') retiradoEn.push(nombre)
+    avisos.push(...r.avisos)
+  }
+
+  if (retiradoEn.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: marcado, error: errMarca } = await (supabase as any).from('jugadores')
+      .update({ borrar_al_finalizar_torneo: true })
+      .eq('id', params.jugadorId).eq('club_id', clubId).select('id')
+    if (errMarca || !marcado?.length) {
+      return { error: 'Se retiró del torneo, pero no se pudo dejar programado su borrado' + (errMarca ? ': ' + errMarca.message : '.') }
+    }
+    const torneos = retiradoEn.map(n => `"${n}"`).join(', ')
     return {
-      error: `No se puede eliminar: está jugando en ${donde}. Sácalo primero del grupo desde el torneo, para que los partidos se rearmen bien, y después elimínalo.`,
+      success: true,
+      diferido: true,
+      mensaje: `Ya había jugado en ${torneos}: quedó retirado, lo que jugó se mantiene y sus partidos pendientes pasaron a W.O. ` +
+        'Su ficha se borrará sola cuando ese torneo se finalice.' +
+        (avisos.length ? ' ' + avisos.join(' ') : ''),
     }
   }
 
-  const admin = createAdminClient()
-
-  // Perfil y documentos ANTES de borrar: después ya no hay de dónde sacar
-  // el user_id de Auth ni las rutas de archivos que hay que limpiar del bucket.
-  const { data: perfilJugador } = await admin.from('perfiles')
-    .select('id').eq('jugador_id', params.jugadorId).maybeSingle()
-  const { data: documentos } = await admin.from('jugador_documentos')
-    .select('archivo_path').eq('jugador_id', params.jugadorId)
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any).rpc('eliminar_jugador_atomico', { p_jugador_id: params.jugadorId })
-  if (error) {
-    console.error('eliminarJugador RPC falló', params.jugadorId, error)
-    return { error: 'Error al eliminar jugador: ' + error.message }
-  }
-
-  // Si tenía cuenta de acceso, borrarla de Auth para no dejar fantasmas
-  // (credencial_visible cae sola por ON DELETE CASCADE hacia auth.users)
-  if (perfilJugador?.id) await admin.auth.admin.deleteUser(perfilJugador.id)
-
-  const rutasStorage = (documentos ?? []).map(d => d.archivo_path).filter(Boolean) as string[]
-  rutasStorage.push(rutaFotoJugador(clubId!, params.jugadorId))
-  await admin.storage.from(BUCKET_PRIVADO).remove(rutasStorage)
-  await admin.storage.from('galeria-fotos').remove([`avatares/${params.jugadorId}.jpg`])
-
+  const errorBorrado = await borrarFichaJugador({ rpc: supabase, clubId: clubId!, jugadorId: params.jugadorId })
+  if (errorBorrado) return { error: 'Error al eliminar jugador: ' + errorBorrado }
   return { success: true }
 }
 

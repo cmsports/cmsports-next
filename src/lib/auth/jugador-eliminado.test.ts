@@ -75,10 +75,26 @@ describe('/sin-club: corta la sesión muerta y ofrece volver', () => {
 })
 
 describe('eliminar un jugador le libera el correo', () => {
+  // Desde el 2026-10-29 el borrado vive en `borrarFichaJugador`, que usan los
+  // dos caminos: "Eliminar jugador" y el borrado diferido al finalizar un
+  // torneo (el jugador ya había jugado y se retiró). Los dos liberan el correo.
   const accion = leer('src/app/actions/jugadores.ts')
+  const borrado = leer('src/lib/supabase/borrarFichaJugador.ts')
+  const torneos = leer('src/app/actions/torneos.ts')
 
   it('borra su usuario de Auth, así puede volver a postular con el mismo mail', () => {
+    expect(borrado).toContain('auth.admin.deleteUser')
+    // Después del RPC: si el borrado falla, la cuenta no se toca.
+    expect(borrado.indexOf('auth.admin.deleteUser')).toBeGreaterThan(borrado.indexOf("rpc('eliminar_jugador_atomico'"))
+  })
+
+  it('"Eliminar jugador" pasa por ese borrado', () => {
     const eliminar = accion.slice(accion.indexOf('export async function eliminarJugador'))
-    expect(eliminar.slice(0, 3200)).toContain('auth.admin.deleteUser')
+    expect(eliminar.slice(0, 4000)).toContain('borrarFichaJugador(')
+  })
+
+  it('el borrado diferido al finalizar un torneo también', () => {
+    const diferido = torneos.slice(torneos.indexOf('async function borrarRetiradosPendientes'))
+    expect(diferido.slice(0, 2500)).toContain('borrarFichaJugador(')
   })
 })

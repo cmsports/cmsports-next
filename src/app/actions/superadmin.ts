@@ -251,6 +251,18 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
   if (perfilesError) return { error: 'No se pudieron identificar las cuentas del club' }
   const cuentas = (perfiles || []).map(perfil => perfil.id).filter(id => id !== user?.id)
 
+  // torneos.club_id y ligas.club_id tampoco tienen ON DELETE CASCADE: un club
+  // con torneos o ligas propias (no solo jugadores inscritos) bloqueaba el
+  // borrado con "torneos_club_id_fkey" apenas se intentaba borrar `clubes`.
+  //
+  // Van ANTES que los jugadores: la migración 306 frena borrar a alguien que
+  // sigue en un grupo de un torneo en curso (para que no queden partidos contra
+  // nadie). Borrando primero el torneo entero, ya no hay grupo que cuidar.
+  const torneosError = await eliminarTorneosDelClub(admin, club.id)
+  if (torneosError) return { error: `No se pudieron eliminar los torneos del club: ${torneosError.message}. El club no se borró.` }
+  const ligasError = await eliminarLigasDelClub(admin, club.id)
+  if (ligasError) return { error: `No se pudieron eliminar las ligas del club: ${ligasError.message}. El club no se borró.` }
+
   // jugadores.club_id no tiene ON DELETE CASCADE hacia clubes, así que un club
   // con jugadores reales bloqueaba el borrado con una violación de llave
   // foránea. Se borran uno por uno con la misma función que ya usa "Eliminar
@@ -270,14 +282,6 @@ export async function eliminarClub(input: { clubId: string; confirmacion: string
     const error = await eliminarCarpetaClub(admin, bucket, club.id)
     if (error) return { error: `No se pudieron eliminar los archivos del club: ${error.message}` }
   }
-
-  // torneos.club_id y ligas.club_id tampoco tienen ON DELETE CASCADE: un club
-  // con torneos o ligas propias (no solo jugadores inscritos) bloqueaba el
-  // borrado con "torneos_club_id_fkey" apenas se intentaba borrar `clubes`.
-  const torneosError = await eliminarTorneosDelClub(admin, club.id)
-  if (torneosError) return { error: `No se pudieron eliminar los torneos del club: ${torneosError.message}. El club no se borró.` }
-  const ligasError = await eliminarLigasDelClub(admin, club.id)
-  if (ligasError) return { error: `No se pudieron eliminar las ligas del club: ${ligasError.message}. El club no se borró.` }
 
   // Todas las tablas con club_id, de una sola vez.
   const errorBarrido = await barrerTablasDelClub(admin, club.id)

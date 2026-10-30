@@ -28,7 +28,7 @@ import {
   eliminarGrupoManualVacio,
   moverJugadorEntreGrupos,
   reordenarJugadorEnGrupo,
-  quitarJugadorDeGrupo,
+  retirarJugadorDeTorneo,
   quitarJugadorDeMesa,
   guardarDesempateGrupo,
   intercambiarJugadores,
@@ -230,7 +230,9 @@ export default function TorneoDetallePage() {
       supabase.from('torneo_grupos').select('id,nombre,en_preparacion,orden,desempate_primero_id,desempate_segundo_id').eq('torneo_id', torneoId).order('orden', { nullsFirst: false }).order('nombre'),
       supabase.from('torneo_partidos').select('id,jugador_a,jugador_b,ganador,sets_a,sets_b,puntos_a,puntos_b,es_walkover,grupo_id,fase,orden,slot_a_grupo_id,slot_b_grupo_id,slot_a_posicion,slot_b_posicion,ja:jugador_a(id,nombre),jb:jugador_b(id,nombre),jg:ganador(id,nombre)').eq('torneo_id', torneoId),
       supabase.from('torneo_pagos').select('id,jugador_id,estado,metodo_pago,subido_a_finanzas,creado_en').eq('torneo_id', torneoId),
-      supabase.from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,club_procedencia,jugadores(id,nombre,es_externo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
+      // `retirado_en` (migración 306) no está en los tipos generados.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase as any).from('grupo_jugadores').select('id,grupo_id,jugador_id,orden,retirado_en,club_procedencia,jugadores(id,nombre,es_externo),torneo_grupos!inner(torneo_id)').eq('torneo_grupos.torneo_id', torneoId),
       supabase.from('torneo_cabezas_serie').select('jugador_id,numero,jugadores(id,nombre)').eq('torneo_id', torneoId).order('numero'),
     ])
 
@@ -520,19 +522,35 @@ export default function TorneoDetallePage() {
     }
   }
 
+  // Las flechas también esperan a que termine la anterior: cada toque borra y
+  // rehace los partidos del grupo, y dos toques seguidos los rehacían dos
+  // veces a la vez.
   async function reordenarEnGrupo(jugadorId: string, grupoId: string, direccion: 'arriba' | 'abajo') {
-    const res = await reordenarJugadorEnGrupo({ torneoId, jugadorId, grupoId, direccion })
-    if (res.error) { alert(res.error); return }
-    await cargarTorneo()
-  }
-
-  async function quitarDelGrupo(jugadorId: string, jugadorNombre: string, grupoId: string, grupoNombre: string) {
     if (moviendoJugadorId) return
-    if (!confirm(`¿Quitar a ${jugadorNombre} del Grupo ${grupoNombre}?\n\nQueda fuera del torneo y los partidos del grupo se rehacen sin él.`)) return
     setMoviendoJugadorId(jugadorId)
     try {
-      const res = await quitarJugadorDeGrupo({ torneoId, jugadorId, grupoId })
+      const res = await reordenarJugadorEnGrupo({ torneoId, jugadorId, grupoId, direccion })
       if (res.error) { alert(res.error); return }
+      await cargarTorneo()
+    } finally {
+      setMoviendoJugadorId(null)
+    }
+  }
+
+  // Sacar a alguien de un torneo en curso. El servidor decide cómo: si no se
+  // jugó nada en su grupo, sale y el grupo se rehace; si ya hay resultados,
+  // queda retirado con W.O. en lo pendiente y no clasifica.
+  async function retirarDelTorneo(jugadorId: string, jugadorNombre: string, conResultados: boolean) {
+    if (moviendoJugadorId) return
+    const pregunta = conResultados
+      ? `¿Retirar a ${jugadorNombre} del torneo?\n\nLo que ya jugó se mantiene, sus partidos pendientes pasan a W.O. para el rival y no clasifica.`
+      : `¿Quitar a ${jugadorNombre} del torneo?\n\nSale del grupo y los partidos del grupo se rehacen sin él.`
+    if (!confirm(pregunta)) return
+    setMoviendoJugadorId(jugadorId)
+    try {
+      const res = await retirarJugadorDeTorneo({ torneoId, jugadorId })
+      if ('error' in res) { alert(res.error); return }
+      if (res.avisos.length) alert(res.avisos.join('\n\n'))
       await cargarTorneo()
     } finally {
       setMoviendoJugadorId(null)
@@ -707,29 +725,38 @@ export default function TorneoDetallePage() {
     const clubDe = new Map<string, string | null>(jugsGrupo.map((j: any) => [j.jugador_id, j.club_procedencia ?? null]))
     const jugadores = [...jugsGrupo]
       .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
-      .map((j: any) => ({ id: j.jugador_id, nombre: j.jugadores?.nombre ?? '', ficha: j.jugadores }))
+      .map((j: any) => ({ id: j.jugador_id, nombre: j.jugadores?.nombre ?? '', ficha: j.jugadores, retirado: !!j.retirado_en }))
+    const partidosJugados = partidosGrupo
+      .filter((p: any) => p.ganador && p.jugador_a && p.jugador_b)
+      .map((p: any) => ({
+        jugadorA: p.jugador_a, jugadorB: p.jugador_b, ganador: p.ganador,
+        setsA: p.sets_a, setsB: p.sets_b, puntosA: p.puntos_a, puntosB: p.puntos_b,
+      }))
 
+    // Mismo criterio que `calcularClasificadosDesdeBD` en el servidor: el
+    // retirado no entra a la tabla (no clasifica), pero sus partidos cuentan
+    // para los demás. Se lo muestra al final, con su propio registro.
     const { stats: tabla, hayTripleEmpate } = calcularStatsGrupo(
-      jugadores.map(j => ({ id: j.id, nombre: j.nombre })),
-      partidosGrupo
-        .filter((p: any) => p.ganador && p.jugador_a && p.jugador_b)
-        .map((p: any) => ({
-          jugadorA: p.jugador_a, jugadorB: p.jugador_b, ganador: p.ganador,
-          setsA: p.sets_a, setsB: p.sets_b, puntosA: p.puntos_a, puntosB: p.puntos_b,
-        })),
+      jugadores.filter(j => !j.retirado).map(j => ({ id: j.id, nombre: j.nombre })),
+      partidosJugados,
     )
+    const retirados = jugadores.filter(j => j.retirado)
+    const { stats: tablaRetirados } = calcularStatsGrupo(retirados.map(j => ({ id: j.id, nombre: j.nombre })), partidosJugados)
 
-    const ordenados = tabla.map(s => ({
+    const ordenados = [...tabla, ...tablaRetirados].map(s => ({
       jugador: jugadores.find(j => j.id === s.jugadorId)?.ficha ?? { id: s.jugadorId, nombre: s.jugador.nombre },
       club: clubDe.get(s.jugadorId) ?? null,
       pts: s.pts, pg: s.pg, pp: s.pp, sf: s.sf, sc: s.sc,
       orden: jugadores.findIndex(j => j.id === s.jugadorId),
+      retirado: retirados.some(r => r.id === s.jugadorId),
     }))
     const stats = Object.fromEntries(ordenados.map(o => [o.jugador?.id, o]))
 
-    const puntosCorte = ordenados[1]?.pts
-    const empatados = ordenados.filter(j => j.pts === puntosCorte)
-    const primeroFijo = hayTripleEmpate ? ordenados.find(j => j.pts > puntosCorte) ?? null : null
+    // El desempate se arma solo entre los que siguen jugando.
+    const activos = ordenados.filter(j => !j.retirado)
+    const puntosCorte = activos[1]?.pts
+    const empatados = activos.filter(j => j.pts === puntosCorte)
+    const primeroFijo = hayTripleEmpate ? activos.find(j => j.pts > puntosCorte) ?? null : null
     return { stats, ordenados, hayTripleEmpate, empatados, primeroFijo }
   }
 
@@ -755,7 +782,9 @@ export default function TorneoDetallePage() {
           if (jid) pendientes.set(jid, (pendientes.get(jid) ?? 0) + 1)
         }
       }
-      const tabla = ordenados
+      // Sin retirados, igual que el servidor: no clasifican.
+      const activos = ordenados.filter((j: any) => !j.retirado)
+      const tabla = activos
         .filter((j: any) => !!j.jugador?.id)
         .map((j: any) => ({ jugadorId: j.jugador.id as string, pts: j.pts as number }))
       if (!grupoTieneSusDosCuposDecididos(tabla, pendientes, todosJugados)) continue
@@ -766,8 +795,8 @@ export default function TorneoDetallePage() {
         segundoId = grupo.desempate_segundo_id
         if (!primeroId || !segundoId || primeroId === segundoId) continue
       } else {
-        primeroId = ordenados[0]?.jugador?.id
-        segundoId = ordenados[1]?.jugador?.id
+        primeroId = activos[0]?.jugador?.id
+        segundoId = activos[1]?.jugador?.id
       }
       if (primeroId && segundoId) out.push({ grupoId: grupo.id, primeroId, segundoId })
     }
@@ -1505,13 +1534,16 @@ export default function TorneoDetallePage() {
                 )}
                 {ordenados.map((j: any, i: number) => (
                   <div key={`${grupo.id}-${j.jugador?.id ?? i}`}
-                    draggable={puedeGestionar && !hayBracketJugado && !!j.jugador?.id}
-                    onDragStart={puedeGestionar && !hayBracketJugado && j.jugador?.id ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
+                    draggable={puedeGestionar && !hayBracketJugado && !!j.jugador?.id && !j.retirado}
+                    onDragStart={puedeGestionar && !hayBracketJugado && j.jugador?.id && !j.retirado ? () => setDragJugadorGrupo({ jugadorId: j.jugador.id, grupoId: grupo.id }) : undefined}
                     style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', borderLeft:`3px solid ${i===0?'#d97706':i===1?'#94a3b8':'transparent'}`, cursor: puedeGestionar && !hayBracketJugado ? 'grab' : 'default', opacity: dragJugadorGrupo?.jugadorId === j.jugador?.id ? 0.4 : 1 }}>
-                    <span style={{ fontSize:14 }}>{i===0?'🥇':i===1?'🥈':'—'}</span>
-                    <div style={{ flex:1 }}>
+                    <span style={{ fontSize:14 }}>{j.retirado ? '🚫' : i===0?'🥇':i===1?'🥈':'—'}</span>
+                    <div style={{ flex:1, opacity: j.retirado ? 0.6 : 1 }}>
                       <div style={{ fontSize:13, color: text }}>
                         {j.jugador?.nombre||'—'}
+                        {j.retirado && (
+                          <span style={{ marginLeft:6, background:'#fef2f2', color:'#b91c1c', fontSize:10, fontWeight:700, padding:'1px 6px', borderRadius:8 }}>Retirado</span>
+                        )}
                         {j.club && (
                           <span style={{ marginLeft:6, background:'#eef2ff', color:'#4338ca', fontSize:10, fontWeight:600, padding:'1px 6px', borderRadius:8 }}>{j.club}</span>
                         )}
@@ -1530,7 +1562,22 @@ export default function TorneoDetallePage() {
                         inscritos: el cuadro ya está armado y el servidor
                         rechaza reordenar o quitar (el ausente se resuelve en
                         la llave, marcando al rival). */}
-                    {puedeGestionar && !hayBracketJugado && !grupoConResultados && !esEliminacion && (
+                    {/* Con resultados ya no se reordena ni se rehace el grupo,
+                        pero alguien igual puede irse: queda retirado con W.O. */}
+                    {puedeGestionar && (hayBracketJugado || grupoConResultados) && !esEliminacion && !j.retirado && j.jugador?.id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          retirarDelTorneo(j.jugador.id, j.jugador.nombre || 'este jugador', true)
+                        }}
+                        disabled={!!moviendoJugadorId}
+                        title="Retirar del torneo: lo jugado se mantiene y lo pendiente pasa a W.O."
+                        style={{ minHeight:24, border:'1px solid #fecaca', borderRadius:6, background:'#fff', color:'#dc2626', padding:'3px 8px', cursor:moviendoJugadorId?'not-allowed':'pointer', opacity:moviendoJugadorId?0.55:1, fontSize:10, fontWeight:700, whiteSpace:'nowrap' }}
+                      >
+                        {moviendoJugadorId === j.jugador.id ? 'Retirando…' : 'Retirar'}
+                      </button>
+                    )}
+                    {puedeGestionar && !hayBracketJugado && !grupoConResultados && !esEliminacion && !j.retirado && (
                       <div style={{ display:'flex', gap:4 }}>
                         {isMobile && grupoEnPreparacion && grupo.id !== grupoEnPreparacion.id && (
                           <button
@@ -1550,7 +1597,7 @@ export default function TorneoDetallePage() {
                             e.stopPropagation()
                             j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'arriba')
                           }}
-                          disabled={i === 0}
+                          disabled={i === 0 || !!moviendoJugadorId}
                           title="Subir en el grupo"
                           style={{ width:24, height:24, border:'1px solid #e2e8f0', borderRadius:6, background:i === 0 ? '#f8fafc' : '#ffffff', color:i === 0 ? hint : text, cursor:i === 0 ? 'not-allowed' : 'pointer', fontSize:12 }}
                         >
@@ -1561,7 +1608,7 @@ export default function TorneoDetallePage() {
                             e.stopPropagation()
                             j.jugador?.id && reordenarEnGrupo(j.jugador.id, grupo.id, 'abajo')
                           }}
-                          disabled={i === ordenados.length - 1}
+                          disabled={i === ordenados.length - 1 || !!moviendoJugadorId}
                           title="Bajar en el grupo"
                           style={{ width:24, height:24, border:'1px solid #e2e8f0', borderRadius:6, background:i === ordenados.length - 1 ? '#f8fafc' : '#ffffff', color:i === ordenados.length - 1 ? hint : text, cursor:i === ordenados.length - 1 ? 'not-allowed' : 'pointer', fontSize:12 }}
                         >
@@ -1570,10 +1617,10 @@ export default function TorneoDetallePage() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
-                            j.jugador?.id && quitarDelGrupo(j.jugador.id, j.jugador.nombre || 'este jugador', grupo.id, grupo.nombre)
+                            j.jugador?.id && retirarDelTorneo(j.jugador.id, j.jugador.nombre || 'este jugador', false)
                           }}
                           disabled={!j.jugador?.id || !!moviendoJugadorId}
-                          title="Quitar del grupo (no asistió)"
+                          title="Quitar del torneo (no asistió o se arrepintió)"
                           style={{ width:24, height:24, border:'1px solid #fecaca', borderRadius:6, background:'#fff', color:'#dc2626', cursor:moviendoJugadorId?'not-allowed':'pointer', opacity:moviendoJugadorId?0.55:1, fontSize:12 }}
                         >
                           ✕

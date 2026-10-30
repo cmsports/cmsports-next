@@ -55,6 +55,9 @@ import { esUuid } from '@/lib/domain/uuid'
 import { requireAdmin, requireGestorTorneos } from '@/lib/auth/require'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fechaChile } from '@/lib/domain/fechaChile'
+import { decidirRetiro } from '@/lib/domain/retiroTorneo'
+import { torneosVivosDelJugador } from '@/lib/supabase/torneosVivosDelJugador'
+import { borrarFichaJugador } from '@/lib/supabase/borrarFichaJugador'
 
 // Clave de club para la regla blanda anti-choque de grupos (solo torneos
 // externos). El club sale de la INSCRIPCIÓN, no de la ficha del jugador: la
@@ -458,10 +461,12 @@ async function calcularClasificadosDesdeBD(
 
   const grupoIds = grupos.map(g => g.id)
   const [{ data: miembros }, { data: partidos }] = await Promise.all([
-    supabase
+    // `retirado_en` (migración 306) no está en los tipos generados.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any)
       .from('grupo_jugadores')
-      .select('grupo_id, jugador_id, orden, jugadores(id,nombre)')
-      .in('grupo_id', grupoIds),
+      .select('grupo_id, jugador_id, orden, retirado_en, jugadores(id,nombre)')
+      .in('grupo_id', grupoIds) as Promise<{ data: { grupo_id: string; jugador_id: string | null; orden: number | null; retirado_en: string | null; jugadores: { id: string; nombre: string | null } | { id: string; nombre: string | null }[] | null }[] | null }>,
     supabase
       .from('torneo_partidos')
       .select('grupo_id, jugador_a, jugador_b, ganador, sets_a, sets_b, puntos_a, puntos_b')
@@ -472,7 +477,11 @@ async function calcularClasificadosDesdeBD(
 
   const clasificados: ClasificadoGrupo[] = []
   for (const grupo of grupos) {
-    const jugadoresGrupo: JugadorTorneo[] = ordenarMiembros((miembros || []).filter(m => m.grupo_id === grupo.id))
+    // Un retirado no clasifica aunque haya ganado partidos: queda fuera de la
+    // tabla. Sus partidos SÍ cuentan para los demás (`calcularStatsGrupo` suma
+    // al que está en la lista aunque el rival no esté), así que el que le ganó,
+    // jugando o por W.O., conserva esa victoria.
+    const jugadoresGrupo: JugadorTorneo[] = ordenarMiembros((miembros || []).filter(m => m.grupo_id === grupo.id && !m.retirado_en))
       .map(m => {
         const j = Array.isArray(m.jugadores) ? m.jugadores[0] : m.jugadores
         return j ? { id: j.id, nombre: j.nombre ?? '' } : null
@@ -1582,6 +1591,109 @@ export async function quitarJugadorDeGrupo(params: {
   return { success: true }
 }
 
+/**
+ * Retira a un jugador de un torneo en curso sin dejar partidos contra nadie.
+ *
+ * Es el único camino para sacar a alguien de un grupo vivo: lo usan el botón
+ * de retirar del torneo y "Eliminar jugador". Cómo se retira lo decide
+ * `decidirRetiro`:
+ *  - `quitado`: no se había jugado nada en su grupo. Sale y el grupo se rehace
+ *    (`quitarJugadorDeGrupo`).
+ *  - `retirado`: ya había resultados, o él ya estaba en la llave. Lo jugado
+ *    queda, sus pendientes pasan a W.O. para el rival y no clasifica.
+ *  - `sin_grupo`: no estaba en ningún grupo de este torneo (o solo en la MESA).
+ *
+ * Solo para tradicional y liguilla: en eliminación directa y por equipos el
+ * ausente se resuelve marcando W.O. en su partido, como siempre.
+ */
+export async function retirarJugadorDeTorneo(params: { torneoId: string; jugadorId: string }): Promise<
+  | { error: string }
+  | { success: true; modo: 'quitado' | 'retirado' | 'sin_grupo'; avisos: string[] }
+> {
+  const { error: authErr, supabase } = await requireGestorTorneos()
+  if (authErr || !supabase) return { error: authErr ?? 'Acceso denegado' }
+
+  const { torneoId, jugadorId } = params
+  if (!esUuid(torneoId) || !esUuid(jugadorId)) return { error: 'Torneo o jugador inválido' }
+
+  {
+    const { modalidad, estado, error: errModalidad } = await modalidadDelTorneo(supabase, torneoId)
+    if (errModalidad) return { error: errModalidad }
+    const cerrado = rechazarSiEstaCerrado(estado, 'ya no se retira a nadie')
+    if (cerrado) return { error: cerrado }
+    if (modalidad !== 'grupos' && modalidad !== 'liguilla') {
+      return { error: 'En esta modalidad el retiro se hace marcando W.O. en sus partidos pendientes.' }
+    }
+  }
+
+  // Su fila en un grupo de este torneo. La MESA es la bolsa de inscripción:
+  // no tiene partidos, y "Eliminar jugador" la limpia sola.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any
+  const { data: filas, error: errFilas } = await db.from('grupo_jugadores')
+    .select('id, grupo_id, retirado_en, torneo_grupos!inner(id, nombre, en_preparacion, torneo_id)')
+    .eq('jugador_id', jugadorId).eq('torneo_grupos.torneo_id', torneoId)
+  if (errFilas) return { error: 'No se pudo leer en qué grupo está el jugador: ' + errFilas.message }
+  type Fila = { id: string; grupo_id: string; retirado_en: string | null; torneo_grupos: { id: string; nombre: string | null; en_preparacion: boolean | null } | { id: string; nombre: string | null; en_preparacion: boolean | null }[] }
+  const grupoDe = (f: Fila) => Array.isArray(f.torneo_grupos) ? f.torneo_grupos[0] : f.torneo_grupos
+  const fila = ((filas ?? []) as Fila[]).find(f => grupoDe(f)?.nombre !== 'MESA')
+  if (!fila) return { success: true, modo: 'sin_grupo', avisos: [] }
+  if (fila.retirado_en) return { success: true, modo: 'retirado', avisos: [] }
+  const grupo = grupoDe(fila)
+
+  const [{ data: partidos, error: errPartidos }, { data: miembros, error: errMiembros }] = await Promise.all([
+    supabase.from('torneo_partidos')
+      .select('id, fase, grupo_id, jugador_a, jugador_b, ganador')
+      .eq('torneo_id', torneoId),
+    db.from('grupo_jugadores').select('jugador_id, retirado_en').eq('grupo_id', fila.grupo_id),
+  ])
+  if (errPartidos || errMiembros) return { error: 'No se pudieron leer los partidos del torneo' }
+  const todos = partidos ?? []
+  const llave = todos.filter(p => p.fase !== 'grupos')
+
+  const decision = decidirRetiro({
+    enPreparacion: !!grupo?.en_preparacion,
+    partidosGrupo: todos.filter(p => p.fase === 'grupos' && p.grupo_id === fila.grupo_id),
+    otrosActivos: ((miembros ?? []) as { jugador_id: string | null; retirado_en: string | null }[])
+      .filter(m => m.jugador_id !== jugadorId && !m.retirado_en).length,
+    estaEnLaLlave: llave.some(p => p.jugador_a === jugadorId || p.jugador_b === jugadorId),
+    llaveConResultados: llave.some(llaveFueJugada),
+  })
+  if (decision.modo === 'bloqueado') return { error: decision.motivo }
+
+  if (decision.modo === 'quitar') {
+    const r = await quitarJugadorDeGrupo({ torneoId, grupoId: fila.grupo_id, jugadorId })
+    if ('error' in r && r.error) return { error: r.error }
+    return { success: true, modo: 'quitado', avisos: [] }
+  }
+
+  // W.O. Primero la marca y después los resultados: el último W.O. de un grupo
+  // puede cerrarlo y armar la llave, y para entonces el retirado ya no tiene
+  // que contar. El `.is(null)` hace que dos retiros a la vez no se pisen.
+  const { data: marcado, error: errMarca } = await db.from('grupo_jugadores')
+    .update({ retirado_en: new Date().toISOString() })
+    .eq('id', fila.id).is('retirado_en', null).select('id')
+  if (errMarca) return { error: 'No se pudo marcar al jugador como retirado: ' + errMarca.message }
+  if (!marcado?.length) return { success: true, modo: 'retirado', avisos: [] }
+
+  // Uno por uno y no en paralelo: un W.O. de llave hace avanzar el cuadro, y el
+  // siguiente tiene que ver ese avance.
+  const avisos: string[] = []
+  const pendientes = todos.filter(p => !p.ganador
+    && (p.jugador_a === jugadorId || p.jugador_b === jugadorId)
+    && (p.fase !== 'grupos' || p.grupo_id === fila.grupo_id))
+  for (const p of pendientes) {
+    const rival = p.jugador_a === jugadorId ? p.jugador_b : p.jugador_a
+    if (!rival) {
+      avisos.push(`Su partido de ${p.fase} todavía no tiene rival: cuando se defina, márcale W.O. a ese rival.`)
+      continue
+    }
+    const r = await marcarGanadorPartido({ partidoId: p.id, walkoverGanadorId: rival })
+    if ('error' in r && r.error) avisos.push(`Un partido pendiente no se pudo dar por W.O. (${r.error}); márcalo a mano.`)
+  }
+  return { success: true, modo: 'retirado', avisos }
+}
+
 export async function cerrarInscripcionYGenerarGrupos(params: {
   torneoId: string
 }) {
@@ -2543,7 +2655,10 @@ export async function finalizarTorneo(params: { torneoId: string }) {
       const avisoLimpieza = await limpiarExternosDeTorneo(
         params.torneoId, podio.campeonId, podio.subcampeonId, podio.terceroId)
         .catch(e => e instanceof Error ? e.message : 'No se pudo limpiar a los jugadores externos')
-      return { success: true, ...(avisoLimpieza ? { aviso: avisoLimpieza } : {}) }
+      const avisoRetirados = await borrarRetiradosPendientes(params.torneoId)
+        .catch(e => e instanceof Error ? e.message : 'No se pudieron borrar las fichas de los retirados')
+      const aviso = [avisoLimpieza, avisoRetirados].filter(Boolean).join(' ')
+      return { success: true, ...(aviso ? { aviso } : {}) }
     }
 
     // Por equipos se define en la tabla de encuentros. El campeón es un
@@ -2636,8 +2751,11 @@ export async function finalizarTorneo(params: { torneoId: string }) {
   // devuelve como aviso en vez de desaparecer en un `.catch(() => {})`.
   const avisoLimpieza = await limpiarExternosDeTorneo(params.torneoId, podio.campeonId, podio.subcampeonId, tercer?.ganador ?? null, campeonConsueloId)
     .catch(e => e instanceof Error ? e.message : 'No se pudo limpiar a los jugadores externos')
+  const avisoRetirados = await borrarRetiradosPendientes(params.torneoId)
+    .catch(e => e instanceof Error ? e.message : 'No se pudieron borrar las fichas de los retirados')
+  const aviso = [avisoLimpieza, avisoRetirados].filter(Boolean).join(' ')
 
-  return avisoLimpieza ? { success: true, aviso: avisoLimpieza } : { success: true }
+  return aviso ? { success: true, aviso } : { success: true }
 }
 
 /**
@@ -2776,6 +2894,50 @@ async function limpiarExternosDeTorneo(
   }
 
   return null
+}
+
+/**
+ * Borra las fichas que "Eliminar jugador" dejó programadas para el final de
+ * este torneo (`borrar_al_finalizar_torneo`): el jugador ya había jugado y se
+ * retiró, y borrarlo en ese momento le habría cambiado la tabla al grupo.
+ *
+ * Corre con el torneo ya finalizado, así que el freno de la migración 306 no
+ * lo detiene. Si la persona sigue en otro torneo en curso, se espera a ese.
+ * Como la limpieza de externos, no puede tumbar la finalización: si algo
+ * falla, vuelve como aviso.
+ */
+async function borrarRetiradosPendientes(torneoId: string): Promise<string | null> {
+  const admin = createAdminClient()
+  const { data: grupos, error: errGrupos } = await admin.from('torneo_grupos').select('id').eq('torneo_id', torneoId)
+  if (errGrupos) return `El torneo se finalizó, pero no se pudieron revisar los retirados: ${errGrupos.message}`
+  if (!grupos?.length) return null
+
+  // `borrar_al_finalizar_torneo` (migración 306) no está en los tipos generados.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: filas, error: errFilas } = await (admin as any).from('grupo_jugadores')
+    .select('jugador_id, jugadores!inner(id, club_id, nombre, borrar_al_finalizar_torneo)')
+    .in('grupo_id', grupos.map(g => g.id))
+    .eq('jugadores.borrar_al_finalizar_torneo', true)
+  if (errFilas) return `El torneo se finalizó, pero no se pudieron revisar los retirados: ${errFilas.message}`
+
+  type Ficha = { id: string; club_id: string; nombre: string | null }
+  const fichas = new Map<string, Ficha>()
+  for (const f of (filas ?? []) as { jugadores: Ficha | Ficha[] }[]) {
+    const j = Array.isArray(f.jugadores) ? f.jugadores[0] : f.jugadores
+    if (j) fichas.set(j.id, j)
+  }
+
+  const fallidos: string[] = []
+  for (const ficha of fichas.values()) {
+    const vivos = await torneosVivosDelJugador(admin, ficha.id)
+    if (vivos.error) { fallidos.push(ficha.nombre ?? ficha.id); continue }
+    if (vivos.torneos.length) continue // juega otro torneo: se borra cuando ese termine
+    const error = await borrarFichaJugador({ rpc: admin, clubId: ficha.club_id, jugadorId: ficha.id })
+    if (error) fallidos.push(ficha.nombre ?? ficha.id)
+  }
+  return fallidos.length
+    ? `El torneo se finalizó, pero no se pudo borrar la ficha de ${fallidos.join(', ')}. Elimínalos desde Jugadores.`
+    : null
 }
 
 export async function limpiarGruposHuerfanos(params: { torneoId: string }) {

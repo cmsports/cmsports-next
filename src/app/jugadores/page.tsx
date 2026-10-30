@@ -415,10 +415,12 @@ export default function JugadoresPage() {
   }
 
   async function eliminar(id: string) {
-    if (!confirm('¿Eliminar este jugador? Esta acción no se puede deshacer.')) return
+    if (!confirm('¿Eliminar este jugador? Esta acción no se puede deshacer.\n\nSi está jugando un torneo, primero se lo retira de ese torneo sin desarmar los grupos.')) return
     try {
       const resultado = await eliminarJugador({ jugadorId: id })
-      if (resultado.error) { mostrarToast(resultado.error); return }
+      if ('error' in resultado) { mostrarToast(resultado.error); return }
+      // Ya había jugado en un torneo en curso: quedó retirado y se borra al finalizarlo.
+      if (resultado.diferido) { alert(resultado.mensaje); void cargarJugadores(); return }
       mostrarToast('Jugador eliminado')
       void cargarJugadores()
     } catch (e) {
