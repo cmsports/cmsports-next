@@ -421,7 +421,14 @@ export async function registrarPagoClub(input: {
     clubId: z.string().uuid('Club inválido').optional(),
     // Un ingreso que no es de ningún club (reembolso, aporte, etc) lleva
     // categoría en su lugar — igual que `gastos_cmsports.categoria`.
-    categoria: z.string().trim().min(2, 'Escribe de dónde vino').max(60).optional(),
+    //
+    // El formulario manda '' cuando el pago es de un club (la categoría no
+    // aplica). Sin el preprocess, '' no es `undefined` y chocaba con el
+    // `min(2)`: todo pago de club salía con "Escribe de dónde vino".
+    categoria: z.preprocess(
+      v => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().trim().min(2, 'Escribe de dónde vino').max(60).optional(),
+    ),
     monto: z.number().finite().positive('El monto debe ser mayor a cero'),
     periodoMes: z.number().int().min(1).max(12),
     periodoAnio: z.number().int().min(2020).max(2100),

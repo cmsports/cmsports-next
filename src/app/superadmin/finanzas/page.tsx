@@ -740,6 +740,7 @@ export default function FinanzasSuperadminPage() {
               <p style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.4 }}>
                 La factura se adjunta después, con el botón &quot;Subir&quot; de la fila en el historial.
               </p>
+              {error && <div style={{ padding: '8px 10px', borderRadius: 7, background: '#fee2e2', color: '#b91c1c', fontSize: 12 }}>{error}</div>}
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => setModalPago(null)} style={{
