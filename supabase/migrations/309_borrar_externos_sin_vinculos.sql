@@ -20,7 +20,8 @@
 -- recién borrada.
 --
 -- Solo la llama el servidor con service_role (eliminarTorneoDefinitivo).
--- EJECUCIÓN MANUAL: SQL Editor de Supabase. Aplicada el: ____________
+-- EJECUCIÓN MANUAL: SQL Editor de Supabase. Aplicada el: 2026-11-03
+-- (verificación: authenticated_puede = false, service_role_puede = true)
 BEGIN;
 SELECT _migracion_nueva('309_borrar_externos_sin_vinculos');
 SELECT _migracion_para_todos_los_clubes('crea una función; no toca ninguna fila');
