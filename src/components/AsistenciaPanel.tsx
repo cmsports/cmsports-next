@@ -251,7 +251,10 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
       j = await cachedFetch(jugKey, async () => {
         let q = supabase.from('jugadores')
           .select('id,nombre,categoria,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
-          .eq('club_id', id).eq('estado', 'activo').order('nombre')
+          .eq('club_id', id).eq('estado', 'activo')
+          // Las visitas de torneos y ligas (es_externo) no son del padrón: sin
+          // este filtro llenaban la lista con "55", "56", "6"... como clase extra.
+          .or('es_externo.is.null,es_externo.eq.false').order('nombre')
         if (perfil?.rol === 'jugador' && perfil.jugador_id) q = q.eq('id', perfil.jugador_id)
         const { data, error } = await q
         if (error) throw error
