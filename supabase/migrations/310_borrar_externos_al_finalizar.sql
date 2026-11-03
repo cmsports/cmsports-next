@@ -18,7 +18,7 @@
 -- Se borra la firma de dos argumentos y se crea la de tres con default NULL:
 -- dejar las dos haría ambigua la llamada de dos argumentos que ya está en
 -- producción (eliminarTorneoDefinitivo), que sigue funcionando igual.
--- EJECUCIÓN MANUAL: SQL Editor de Supabase. Aplicada el: ____________
+-- EJECUCIÓN MANUAL: SQL Editor de Supabase. Aplicada el: 2026-11-03
 BEGIN;
 SELECT _migracion_nueva('310_borrar_externos_al_finalizar');
 SELECT _migracion_para_todos_los_clubes('reemplaza una función; no toca ninguna fila');
