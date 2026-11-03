@@ -81,7 +81,14 @@ function base(tablas: Record<string, Fila[]>, log: string[], alEscribir?: (op: s
   }
   // El RPC de borrado, con el mismo efecto que eliminar_jugador_atomico sobre
   // las tablas que importan acá.
-  const rpc = vi.fn(async (nombre: string, args: { p_jugador_id: string }) => {
+  const rpc = vi.fn(async (nombre: string, args: Fila) => {
+    // La de la migración 309, en el caso en que ninguna ficha tiene vínculos:
+    // borra los externos que le pasan y nunca a un socio.
+    if (nombre === 'borrar_externos_sin_vinculos') {
+      const antes = tablas.jugadores.length
+      tablas.jugadores = tablas.jugadores.filter(j => !(args.p_ids.includes(j.id) && j.es_externo))
+      return { data: antes - tablas.jugadores.length, error: null }
+    }
     if (nombre !== 'eliminar_jugador_atomico') return { data: null, error: { message: 'rpc desconocido' } }
     const id = args.p_jugador_id
     for (const p of tablas.torneo_partidos) {
@@ -272,6 +279,40 @@ describe('retirarJugadorDeTorneo', () => {
     expect(db.rpc).toHaveBeenCalledWith('eliminar_jugador_atomico', { p_jugador_id: x })
     expect(t.jugadores.some(j => j.id === x)).toBe(false)
     expect(t.torneos).toHaveLength(0)
+  })
+
+  // Las visitas inscritas escribiendo su nombre quedaban vivas al eliminar el
+  // torneo y aparecían en Asistencia (migración 308): 126 en Buin.
+  it('eliminar el torneo le pasa a la base sus fichas externas, y solo esas', async () => {
+    const t = escenario(4)
+    t.jugadores[1].es_externo = true
+    t.jugadores[3].es_externo = true
+    const db = montar(t)
+    expect(await eliminarTorneoDefinitivo({ torneoId: TORNEO })).toEqual({ success: true })
+    expect(db.rpc).toHaveBeenCalledTimes(1)
+    expect(db.rpc).toHaveBeenCalledWith('borrar_externos_sin_vinculos', { p_club_id: 'club', p_ids: [UUID(2), UUID(4)] })
+    expect(t.jugadores.map(j => j.id)).toEqual([UUID(1), UUID(3)])
+    expect(t.torneos).toHaveLength(0)
+  })
+
+  it('un torneo sin externos no llama a la limpieza', async () => {
+    const t = escenario(3)
+    const db = montar(t)
+    expect(await eliminarTorneoDefinitivo({ torneoId: TORNEO })).toEqual({ success: true })
+    expect(db.rpc).not.toHaveBeenCalled()
+    expect(t.jugadores).toHaveLength(3)
+  })
+
+  it('si la base no puede limpiar las fichas externas, el torneo igual se borra y se avisa', async () => {
+    const t = escenario(3)
+    t.jugadores[0].es_externo = true
+    const db = montar(t)
+    db.rpc.mockResolvedValueOnce({ data: null, error: { message: 'la función no existe' } })
+    expect(await eliminarTorneoDefinitivo({ torneoId: TORNEO })).toMatchObject({
+      success: true, aviso: expect.stringContaining('fichas externas no se pudieron limpiar'),
+    })
+    expect(t.torneos).toHaveLength(0)
+    expect(t.jugadores).toHaveLength(3)
   })
 
   it('dos retiros a la vez en el mismo grupo: el que deja un grupo de uno se deshace', async () => {

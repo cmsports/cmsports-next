@@ -3714,6 +3714,22 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
   // después ya no queda grupo donde encontrarlas.
   const pendientes = await retiradosPorBorrar(torneoId)
 
+  // Las fichas externas del torneo, también ANTES de borrar los grupos. Son las
+  // que se crean al inscribir a alguien escribiendo su nombre, y eliminar el
+  // torneo no las borraba: quedaban como jugadores activos sin nada colgando y
+  // aparecían en Asistencia (la migración 308 tuvo que borrar 126 en Buin). Si
+  // esta lectura falla, se corta acá con el torneo todavía entero.
+  let externos: string[] = []
+  if (grupoIds.length) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any).from('grupo_jugadores')
+      .select('jugador_id, jugadores!inner(es_externo)')
+      .in('grupo_id', grupoIds)
+      .eq('jugadores.es_externo', true)
+    if (error) return { error: `No se pudo borrar el torneo (fichas externas): ${error.message}` }
+    externos = [...new Set(((data || []) as Array<{ jugador_id: string }>).map(r => r.jugador_id))]
+  }
+
   // La plata del torneo NO se borra. Misma regla que al dar de baja a un
   // jugador (migración 127): el club sigue existiendo y los totales de un mes
   // ya cerrado no pueden moverse porque después se borre el torneo. La FK
@@ -3760,7 +3776,23 @@ export async function eliminarTorneoDefinitivo(params: { torneoId: string }) {
     ? `El torneo se borró, pero no se pudieron revisar las fichas pendientes de borrar: ${pendientes.error}`
     : await borrarFichasPendientes(pendientes.fichas)
         .catch(e => e instanceof Error ? e.message : 'No se pudieron borrar las fichas pendientes')
-  return aviso ? { success: true, aviso } : { success: true }
+
+  // Cuáles de esas fichas se borran lo decide la base, mirando TODAS las FK
+  // hacia jugadores (migración 309): una visita que además juega otro torneo o
+  // una liga se queda. Va después de las pendientes, que pueden ser las mismas.
+  // Si falla, el torneo ya no existe: se avisa y no se deshace nada.
+  let avisoExternos: string | null = null
+  if (externos.length) {
+    // `borrar_externos_sin_vinculos` (migración 309) no está en los tipos generados.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (createAdminClient() as any).rpc('borrar_externos_sin_vinculos', {
+      p_club_id: perfil.club_id, p_ids: externos,
+    })
+    if (error) avisoExternos = `El torneo se borró, pero sus fichas externas no se pudieron limpiar: ${error.message}`
+  }
+
+  const avisos = [aviso, avisoExternos].filter(Boolean).join(' ')
+  return avisos ? { success: true, aviso: avisos } : { success: true }
 }
 
 export async function guardarPremios(params: {
