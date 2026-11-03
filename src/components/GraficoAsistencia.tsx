@@ -91,8 +91,11 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
       // lista — es el denominador. Antes los días salían de la tabla `clases`,
       // que se eliminó junto con su módulo; un día con todos ausentes tiene
       // que seguir contando como día de 0%, no desaparecer.
+      // Sin las visitas de torneos y ligas (es_externo): no son del padrón, y
+      // llenaban "sin asistencia" de "18", "40", "ALEXANDER TARBES"...
       const [{ data: jugs }, { data: asist }] = await Promise.all([
-        supabase.from('jugadores').select('id,nombre').eq('club_id', clubId).eq('estado', 'activo'),
+        supabase.from('jugadores').select('id,nombre').eq('club_id', clubId).eq('estado', 'activo')
+          .or('es_externo.is.null,es_externo.eq.false'),
         supabase.from('asistencia').select('fecha,jugador_id,estado').eq('club_id', clubId).gte('fecha', desdeStr),
       ])
 
@@ -222,7 +225,9 @@ export default function GraficoAsistencia({ clubId, modo = 'dashboard', fechaSel
       const supabase = createClient()
       const [{ data: asistAll }, { data: jugsAll }] = await Promise.all([
         supabase.from('asistencia').select('fecha,jugador_id,estado').eq('club_id', clubId).order('fecha', { ascending: true }),
-        supabase.from('jugadores').select('id').eq('club_id', clubId).eq('estado', 'activo'),
+        // Mismo filtro: este número es el denominador del promedio del Excel.
+        supabase.from('jugadores').select('id').eq('club_id', clubId).eq('estado', 'activo')
+          .or('es_externo.is.null,es_externo.eq.false'),
       ])
 
       const activos = (jugsAll || []).length || 1
