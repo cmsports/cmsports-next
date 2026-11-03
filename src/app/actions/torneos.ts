@@ -2913,8 +2913,22 @@ async function limpiarExternosDeTorneo(
     return `El torneo se finalizó, pero no se pudo retirar a ${aEliminar.length} jugador(es) externo(s): ${errMiembros.message}`
   }
 
-  // torneo_partidos tiene ON DELETE SET NULL → se actualiza al borrar la ficha.
-  const { error: errFichas } = await admin.from('jugadores').delete().in('id', aEliminar)
+  // Las fichas las borra la base, no un DELETE directo. Antes era
+  // `jugadores.delete().in('id', aEliminar)`, que no miraba nada fuera de los
+  // torneos: una visita que además juega una liga perdía sus partidos de liga
+  // por el ON DELETE CASCADE. La función revisa TODAS las FK hacia jugadores
+  // (migración 309) y, con `p_ignorar_torneo` (310), deja de contar solo lo que
+  // este torneo tiene de ellas sin jugar —partidos sin resultado, cabezas de
+  // serie, felicitaciones—, que el DELETE de antes limpiaba igual.
+  const { data: torneo, error: errTorneo } = await admin.from('torneos').select('club_id').eq('id', torneoId).maybeSingle()
+  if (errTorneo || !torneo?.club_id) {
+    return `El torneo se finalizó y los externos salieron de los grupos, pero no se pudo leer su club para borrar las fichas: ${errTorneo?.message ?? 'torneo sin club'}`
+  }
+  // `p_ignorar_torneo` (migración 310) no está en los tipos generados.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: errFichas } = await (admin as any).rpc('borrar_externos_sin_vinculos', {
+    p_club_id: torneo.club_id, p_ids: aEliminar, p_ignorar_torneo: torneoId,
+  })
   if (errFichas) {
     return `El torneo se finalizó y los externos salieron de los grupos, pero sus fichas no se pudieron borrar: ${errFichas.message}`
   }

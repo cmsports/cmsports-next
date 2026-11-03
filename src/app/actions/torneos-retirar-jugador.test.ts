@@ -253,6 +253,34 @@ describe('retirarJugadorDeTorneo', () => {
     expect(t.jugadores).toHaveLength(4)
   })
 
+  // Antes era un DELETE directo sobre jugadores: una visita que además jugaba
+  // una liga perdía sus partidos de liga por CASCADE. Ahora decide la base.
+  it('al finalizar, la visita que no jugó se borra por la función de la base, no con un DELETE directo', async () => {
+    const t = escenario(4)
+    const [a, b] = [t.jugadores[0].id, t.jugadores[1].id]
+    t.torneo_partidos.push({ id: UUID(800), torneo_id: TORNEO, fase: 'final', orden: 0, jugador_a: a, jugador_b: b, ganador: a })
+    t.jugadores[3].es_externo = true
+    const db = montar(t)
+    expect(await finalizarTorneo({ torneoId: TORNEO })).toEqual({ success: true })
+    expect(db.rpc).toHaveBeenCalledWith('borrar_externos_sin_vinculos', { p_club_id: 'club', p_ids: [UUID(4)], p_ignorar_torneo: TORNEO })
+    expect(log.some(l => l.startsWith('delete jugadores'))).toBe(false)
+    expect(t.jugadores.map(j => j.id)).toEqual([UUID(1), UUID(2), UUID(3)])
+  })
+
+  it('si la base no puede borrar las fichas al finalizar, el torneo queda finalizado y se avisa', async () => {
+    const t = escenario(4)
+    const [a, b] = [t.jugadores[0].id, t.jugadores[1].id]
+    t.torneo_partidos.push({ id: UUID(800), torneo_id: TORNEO, fase: 'final', orden: 0, jugador_a: a, jugador_b: b, ganador: a })
+    t.jugadores[3].es_externo = true
+    const db = montar(t)
+    db.rpc.mockResolvedValueOnce({ data: null, error: { message: 'la función no existe' } })
+    expect(await finalizarTorneo({ torneoId: TORNEO })).toMatchObject({
+      aviso: expect.stringContaining('sus fichas no se pudieron borrar'),
+    })
+    expect(t.torneos[0].estado).toBe('finalizado')
+    expect(t.jugadores).toHaveLength(4)
+  })
+
   // Un torneo que no se finaliza también deja de estar en curso: la ficha que
   // esperaba su final no puede quedar esperando para siempre.
   async function conRetiradoPendiente() {
