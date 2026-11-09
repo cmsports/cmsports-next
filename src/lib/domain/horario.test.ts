@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { minutosDelDia, ventanaAbierta } from './horario'
+import { DIAS, DIAS_VALIDOS, diaDesdeFecha, esDiaHabil, minutosDelDia, ventanaAbierta } from './horario'
 
 describe('minutosDelDia', () => {
   it('acepta el HH:MM:SS que devuelve Postgres', () => {
@@ -50,3 +50,22 @@ describe('ventanaAbierta', () => {
 
 // Las pruebas de `inicioVentana` se fueron con la función: el alumno ya no se
 // marca solo, así que no hay a quién explicarle desde qué hora podía.
+
+describe('fin de semana', () => {
+  it('diaDesdeFecha reconoce sábado y domingo', () => {
+    expect(diaDesdeFecha('2026-08-08')).toBe('sab')
+    expect(diaDesdeFecha('2026-08-09')).toBe('dom')
+    expect(diaDesdeFecha('2026-08-10')).toBe('lun')
+  })
+
+  it('esDiaHabil separa la semana laboral del fin de semana', () => {
+    expect(['2026-08-03', '2026-08-07'].every(esDiaHabil)).toBe(true)
+    expect(['2026-08-08', '2026-08-09'].some(esDiaHabil)).toBe(false)
+  })
+
+  it('DIAS tiene los siete días y DIAS_VALIDOS los acepta todos', () => {
+    expect(DIAS.map(d => d.value)).toEqual(['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'])
+    expect(DIAS_VALIDOS).toContain('sab')
+    expect(DIAS_VALIDOS).not.toContain('xxx')
+  })
+})

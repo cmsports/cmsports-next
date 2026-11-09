@@ -7,7 +7,7 @@ import { usePerfil } from '@/lib/auth/PerfilProvider'
 import { createClient } from '@/lib/supabase/client'
 import { Pencil, Plus, Trash2, X, Clock, MapPin } from 'lucide-react'
 import { diasSinClase, eliminarBloque, estadoDiaSinClase, guardarGrupo, marcarDiaSinClase } from '@/app/actions/horario'
-import { DIAS, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
+import { DIAS, DIAS_HABILES, diaLabel, franjasDe, hhmm, horasSemanales, rangoHorario, type BloqueHorario } from '@/lib/domain/horario'
 import { SEDES, sedeLabel, sedesDe } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { soloVigentes } from '@/lib/supabase/vigentes'
@@ -83,6 +83,7 @@ export default function HorarioPage() {
   const [planes, setPlanes]         = useState<Plan[]>([])
   const [cargando, setCargando]     = useState(true)
   const [sedeActiva, setSedeActiva] = useState('')
+  const [verFinDeSemana, setVerFinDeSemana] = useState(false)
   // Las sedes que el club declaró en Mesas. Un club recién entregado todavía
   // no tiene bloques, y sin esto `sedesDe([])` volvía vacío y la pestaña de
   // Mesas caía en la sede escrita duro: a Spinhouse le decía "Buin".
@@ -321,7 +322,7 @@ export default function HorarioPage() {
     const aviso = cuantos > 0
       ? `\n\nSe le cierra la inscripción a ${cuantos} jugador${cuantos === 1 ? '' : 'es'}: ese grupo deja de ser uno de sus días de entrenamiento.`
       : ''
-    if (!confirm(`¿Dar de baja el grupo "${b.nombre}" del ${b.dia_semana}?${aviso}\n\nLas clases ya generadas y el historial se conservan.`)) return
+    if (!confirm(`¿Dar de baja el grupo "${b.nombre}" del ${diaLabel(b.dia_semana)}?${aviso}\n\nLas clases ya generadas y el historial se conservan.`)) return
     setEliminandoId(b.id)
     const res = await eliminarBloque({ id: b.id })
     setEliminandoId(null)
@@ -339,6 +340,15 @@ export default function HorarioPage() {
   const sedeVista = sedesDelClub.includes(sedeActiva) ? sedeActiva : (sedesDelClub[0] ?? sedeActiva)
   const bloquesSede = bloques.filter(b => b.sede === sedeVista)
   const franjas = franjasDe(bloquesSede)
+  // Lunes a viernes siempre; sábado y domingo solo si la sede tiene bloques ese
+  // día o si se pidió verlos. Así un club que no abre el fin de semana no ve dos
+  // columnas vacías, y uno que sí abre las ve sin hacer nada.
+  const diasGrilla = DIAS.filter(d =>
+    DIAS_HABILES.includes(d.value) || verFinDeSemana || bloquesSede.some(b => b.dia_semana === d.value))
+  const hayFinDeSemana = diasGrilla.some(d => !DIAS_HABILES.includes(d.value))
+  // El botón solo sirve cuando la sede NO tiene bloques de fin de semana: si los
+  // tiene, esas columnas ya se ven y apretarlo no cambiaría nada.
+  const sedeTieneFinDeSemana = bloquesSede.some(b => !DIAS_HABILES.includes(b.dia_semana as typeof DIAS_HABILES[number]))
   const nombreProfesor = (id: string) => profesores.find(p => p.id === id)?.nombre ?? ''
 
   if (authLoading || cargando) return (
@@ -416,6 +426,13 @@ export default function HorarioPage() {
                 </button>
               )
             })}
+            {esStaff && franjas.length > 0 && !sedeTieneFinDeSemana && (
+              <button onClick={() => setVerFinDeSemana(v => !v)}
+                style={{ marginLeft: 'auto', background: 'transparent', color: muted, border: '1px dashed #cbd5e1',
+                  borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+                {verFinDeSemana ? 'Ocultar fin de semana' : 'Mostrar fin de semana'}
+              </button>
+            )}
           </div>
 
           {/* Grilla */}
@@ -427,11 +444,11 @@ export default function HorarioPage() {
           ) : (
             <div style={{ ...card, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: hayFinDeSemana ? 960 : 780 }}>
                   <thead>
                     <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                       <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', width: 92 }}>Hora</th>
-                      {DIAS.map(d => (
+                      {diasGrilla.map(d => (
                         <th key={d.value} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, color: muted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{d.label}</th>
                       ))}
                     </tr>
@@ -442,7 +459,7 @@ export default function HorarioPage() {
                         <td style={{ padding: '10px 12px', fontSize: 12, color: text, fontWeight: 600, whiteSpace: 'nowrap', verticalAlign: 'top' }}>
                           {franja}
                         </td>
-                        {DIAS.map(d => {
+                        {diasGrilla.map(d => {
                           const b = bloquesSede.find(x => hhmm(x.hora_inicio) === franja && x.dia_semana === d.value)
                           if (!b) return (
                             <td key={d.value} style={{ padding: 6, verticalAlign: 'top' }}>

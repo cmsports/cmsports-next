@@ -48,9 +48,9 @@ const jugadoresCache: Record<string, any[]> = {}
 
 // No depende de nada del componente, así que vive acá y no se rearma en cada
 // render ni obliga a listarla como dependencia.
-const sinHorario = (j: any) => !j.entrena_lun && !j.entrena_mar && !j.entrena_mie && !j.entrena_jue && !j.entrena_vie
+const sinHorario = (j: any) => !j.entrena_lun && !j.entrena_mar && !j.entrena_mie && !j.entrena_jue && !j.entrena_vie && !j.entrena_sab && !j.entrena_dom
 
-const CAMPOS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,talla_polera,talla_short'
+const CAMPOS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,tipo_plan,entrenamientos_por_semana,mensualidad,sesiones_usadas,sesiones_limite,estado,fecha_nacimiento,direccion,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,federado,comuna,sede,grupo,foto_url,foto_path,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,entrena_sab,entrena_dom,talla_polera,talla_short'
 
 /**
  * Los jugadores y el estado de pago del mes, en un solo viaje.
@@ -651,7 +651,7 @@ export default function JugadoresPage() {
 
           <FiltroMultiSelect
             label="Día de entrenamiento"
-            options={[{ value:'lun',label:'Lunes' },{ value:'mar',label:'Martes' },{ value:'mie',label:'Miércoles' },{ value:'jue',label:'Jueves' },{ value:'vie',label:'Viernes' }]}
+            options={DIAS.map(d => ({ value: d.value, label: d.label }))}
             selected={filtroDia}
             onChange={setFiltroDia}
           />
@@ -835,7 +835,8 @@ export default function JugadoresPage() {
                         const dias = [
                           { k:'entrena_lun', l:'Lu' }, { k:'entrena_mar', l:'Ma' },
                           { k:'entrena_mie', l:'Mi' }, { k:'entrena_jue', l:'Ju' },
-                          { k:'entrena_vie', l:'Vi' },
+                          { k:'entrena_vie', l:'Vi' }, { k:'entrena_sab', l:'Sá' },
+                          { k:'entrena_dom', l:'Do' },
                         ]
                         const activos = dias.filter(d => j[d.k] === true).map(d => d.l)
                         if (activos.length === 0 && !j.horario) return <span style={{ color: hint }}>—</span>

@@ -1,15 +1,30 @@
 // Horario semanal del club: la plantilla fija desde la que se generan las
 // clases de cada semana. Cambia poco (rotación de profesores cada ~3 meses).
 
+/**
+ * Los siete días, de lunes a domingo (la semana del club arranca el lunes).
+ *
+ * `bloques_horario.dia_semana` acepta los siete desde la migración 073. Las
+ * pantallas que dibujan una grilla filtran a los días que tienen bloques, así
+ * que un club que no abre el fin de semana sigue viendo solo lunes a viernes.
+ */
 export const DIAS = [
   { value: 'lun', label: 'Lunes',     corto: 'Lun' },
   { value: 'mar', label: 'Martes',    corto: 'Mar' },
   { value: 'mie', label: 'Miércoles', corto: 'Mié' },
   { value: 'jue', label: 'Jueves',    corto: 'Jue' },
   { value: 'vie', label: 'Viernes',   corto: 'Vie' },
+  { value: 'sab', label: 'Sábado',    corto: 'Sáb' },
+  { value: 'dom', label: 'Domingo',   corto: 'Dom' },
 ] as const
 
 export type DiaSemana = typeof DIAS[number]['value']
+
+/** Claves válidas de `dia_semana`, para validar lo que llega del navegador. */
+export const DIAS_VALIDOS: readonly string[] = DIAS.map(d => d.value)
+
+/** Los días de la semana laboral de siempre; el fin de semana es opcional. */
+export const DIAS_HABILES: readonly DiaSemana[] = ['lun', 'mar', 'mie', 'jue', 'vie']
 
 export type BloqueHorario = {
   id: string
@@ -66,28 +81,35 @@ export function diaLabel(dia: string): string {
 }
 
 // getDay() usa domingo=0; la semana del club arranca el lunes.
-const DIA_POR_INDICE: Record<number, DiaSemana | undefined> = {
-  1: 'lun', 2: 'mar', 3: 'mie', 4: 'jue', 5: 'vie',
-}
+const DIA_POR_INDICE: readonly DiaSemana[] = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
 
-export function diaDesdeFecha(fechaISO: string): DiaSemana | null {
-  const d = new Date(`${fechaISO}T12:00:00`)
-  return DIA_POR_INDICE[d.getDay()] ?? null
+/**
+ * El día de la semana de una fecha, sábado y domingo incluidos.
+ *
+ * Antes devolvía null el fin de semana ("el club no abre") y los llamadores
+ * usaban ese null para dos cosas distintas: saber si hay clases y saber si la
+ * semana en curso ya cerró. Son preguntas separadas desde que hay bloques de
+ * fin de semana: para la segunda está `esDiaHabil`.
+ */
+export function diaDesdeFecha(fechaISO: string): DiaSemana {
+  return DIA_POR_INDICE[new Date(`${fechaISO}T12:00:00`).getDay()]
 }
 
 /**
- * La clave del día de la semana, incluidos sábado y domingo.
+ * Si la fecha cae de lunes a viernes.
  *
- * `diaDesdeFecha` devuelve null el fin de semana —el club no abre— y eso sirve
- * para decidir si hay clases. Para comparar contra `bloques_horario.dia_semana`
- * hace falta la clave cruda, y la línea que la sacaba estaba copiada con su
- * arreglo literal en cuatro pantallas.
+ * Es la guarda de "no reescribir una semana cerrada": el sábado y el domingo
+ * `fechasDeSemanaChile` apunta a la semana que ya terminó, y mover inscripciones
+ * o asistencias ahí cambia algo que ya pasó y se contó. Que un club tenga
+ * bloques de fin de semana no cambia eso.
  */
-export function diaSemanaDeFecha(fechaISO: string): string {
-  return ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'][
-    new Date(`${fechaISO}T12:00:00`).getDay()
-  ]
+export function esDiaHabil(fechaISO: string): boolean {
+  const d = new Date(`${fechaISO}T12:00:00`).getDay()
+  return d >= 1 && d <= 5
 }
+
+/** Alias histórico: la clave cruda del día. Hoy es lo mismo que `diaDesdeFecha`. */
+export const diaSemanaDeFecha = diaDesdeFecha
 
 /** Un bloque, con lo justo para decidir desde cuándo vale estar inscrito en él. */
 export type BloqueDiaHora = { id: string; dia_semana: string; hora_inicio: string }
@@ -106,7 +128,7 @@ export type BloqueDiaHora = { id: string; dia_semana: string; hora_inicio: strin
  * traslada con él y si no quedaría parada en un día en que no figuraba inscrito.
  *
  * "La semana que está corriendo" es la parte fina. `fechasDeSemanaChile` cuenta
- * el domingo como día 7, así que un fin de semana devuelve la semana que ya
+ * el domingo como día 7, y el sábado y el domingo cuentan como fin de semana: el domingo cierra la semana que ya
  * terminó entera. Cambiar a alguien de jueves a viernes un domingo lo metía en
  * la lista del viernes anterior y le movía la asistencia del jueves pasado:
  * reescribir una semana cerrada porque se tocó el horario el fin de semana. Por
@@ -126,7 +148,7 @@ export function iniciosDeInscripcion(params: {
   for (const b of entran) inicios.set(b.id, hoy)
 
   // Fin de semana: no hay semana en curso que completar.
-  if (diaDesdeFecha(hoy) === null) return inicios
+  if (!esDiaHabil(hoy)) return inicios
 
   for (const sale of salen) {
     const entra = entran.find(e => e.hora_inicio === sale.hora_inicio && e.dia_semana !== sale.dia_semana)

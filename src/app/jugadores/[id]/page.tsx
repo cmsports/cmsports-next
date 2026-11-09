@@ -237,7 +237,7 @@ export default function JugadorDetallePage() {
       // descuido — cuántas sesiones le quedan al alumno es justo lo que el
       // entrenador necesita para la clase; lo que no le toca es el precio.
       const COLUMNAS_PLATA = 'mensualidad,matricula_monto,matricula_fecha,matricula_pagada'
-      const COLUMNAS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,necesidades_accesibilidad,federado,talla_polera,talla_short'
+      const COLUMNAS_JUGADOR = 'id,nombre,rut,email,telefono,categoria,categorias,sede,grupo,foto_url,foto_path,sesiones_usadas,sesiones_limite,tipo_plan,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,entrena_sab,entrena_dom,estado,fecha_nacimiento,es_externo,entrenamientos_por_semana,club_id,plan_id,direccion,comuna,contacto_emergencia_nombre,contacto_emergencia_telefono,indicaciones_medicas,necesidades_accesibilidad,federado,talla_polera,talla_short'
         + (veMensualidad ? ',' + COLUMNAS_PLATA : '')
         + (tiene('perfil_deportivo') ? ',nivel,licencia_fechiteme,mano_habil,estilo_juego,material' : '')
 
@@ -817,8 +817,10 @@ export default function JugadorDetallePage() {
         import('@/lib/pdf/papel'),
       ])
       const marca = await marcaDelClub({ nombre: clubFila?.nombre || clubNombre || 'CmSports', logo_url: clubFila?.logo_url ?? null })
-      const diasDeClase = [jugador.entrena_lun ? 1 : 0, jugador.entrena_mar ? 2 : 0, jugador.entrena_mie ? 3 : 0, jugador.entrena_jue ? 4 : 0, jugador.entrena_vie ? 5 : 0].filter(Boolean)
-      const nombresDias = [jugador.entrena_lun ? 'Lunes' : '', jugador.entrena_mar ? 'Martes' : '', jugador.entrena_mie ? 'Miércoles' : '', jugador.entrena_jue ? 'Jueves' : '', jugador.entrena_vie ? 'Viernes' : ''].filter(Boolean)
+      // 0 = domingo … 6 = sábado, como lo espera el PDF.
+      const diasDeClase = ([[jugador.entrena_dom, 0], [jugador.entrena_lun, 1], [jugador.entrena_mar, 2], [jugador.entrena_mie, 3], [jugador.entrena_jue, 4], [jugador.entrena_vie, 5], [jugador.entrena_sab, 6]] as const)
+        .filter(([entrena]) => entrena).map(([, n]) => n)
+      const nombresDias = [jugador.entrena_lun ? 'Lunes' : '', jugador.entrena_mar ? 'Martes' : '', jugador.entrena_mie ? 'Miércoles' : '', jugador.entrena_jue ? 'Jueves' : '', jugador.entrena_vie ? 'Viernes' : '', jugador.entrena_sab ? 'Sábado' : '', jugador.entrena_dom ? 'Domingo' : ''].filter(Boolean)
       await descargar({
         marca,
         generado: new Date().toLocaleDateString('es-CL'),
@@ -1050,6 +1052,8 @@ export default function JugadorDetallePage() {
             jugador.entrena_mie && 'Mi',
             jugador.entrena_jue && 'Ju',
             jugador.entrena_vie && 'Vi',
+            jugador.entrena_sab && 'Sá',
+            jugador.entrena_dom && 'Do',
           ].filter(Boolean)
           const diasLabel = diasCortos.length > 0 ? diasCortos.join(' · ') : '—'
           return (
@@ -1222,6 +1226,8 @@ export default function JugadorDetallePage() {
               { key:'entrena_mie', label:'Miércoles' },
               { key:'entrena_jue', label:'Jueves' },
               { key:'entrena_vie', label:'Viernes' },
+              { key:'entrena_sab', label:'Sábado' },
+              { key:'entrena_dom', label:'Domingo' },
             ] as const).map(({ key, label }) => (
               <div key={key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid #f1f5f9' }}>
                 <span style={{ fontSize:13, color: text }}>{label}</span>
@@ -1230,7 +1236,7 @@ export default function JugadorDetallePage() {
                 </span>
               </div>
             ))}
-            {!jugador.horario && ![jugador.entrena_lun, jugador.entrena_mar, jugador.entrena_mie, jugador.entrena_jue, jugador.entrena_vie].some(Boolean) && (
+            {!jugador.horario && ![jugador.entrena_lun, jugador.entrena_mar, jugador.entrena_mie, jugador.entrena_jue, jugador.entrena_vie, jugador.entrena_sab, jugador.entrena_dom].some(Boolean) && (
               <div style={{ padding:'16px 0', fontSize:12, color: hint }}>Sin horario asignado — haz clic en Editar</div>
             )}
           </div>

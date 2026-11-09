@@ -57,6 +57,13 @@ export function viernesDeLaSemana(fecha: string): string {
   return aIso(d)
 }
 
+/** El domingo de esa misma semana: donde termina el rango cuando hay bloques de fin de semana. */
+export function domingoDeEstaSemana(fecha: string): string {
+  const d = comoFecha(lunesDeLaSemana(fecha))
+  d.setDate(d.getDate() + 6)
+  return aIso(d)
+}
+
 export function sumarDias(fecha: string, n: number): string {
   const d = comoFecha(fecha)
   d.setDate(d.getDate() + n)

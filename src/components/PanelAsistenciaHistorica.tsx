@@ -510,8 +510,9 @@ function Mes({ anio, mes, nombre, porFecha, hoy, onDia }: {
         {celdas.map((c, i) => {
           if (c === null) return <div key={i} />
           // Un día en que no le tocaba entrenar. Se puede abrir igual: es donde
-          // se registra que vino a otro grupo. El fin de semana no, porque el
-          // club no abre y no hay ningún bloque al que pudiera haber venido.
+          // se registra que vino a otro grupo. El fin de semana no: un sábado o
+          // domingo con grupo ya aparece como día con entreno (más abajo) y se
+          // abre desde ahí; uno sin grupo no tiene a qué grupo haber venido.
           if (typeof c === 'number') {
             const fecha = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(c).padStart(2, '0')}`
             const dia = diaDeFecha(fecha)

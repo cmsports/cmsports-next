@@ -99,7 +99,6 @@ export function ocurrencias<B extends BloqueSemanal>(params: {
   for (let i = 0; i <= dias; i++) {
     const fecha = sumarDias(params.hoy, i)
     const dia = diaDesdeFecha(fecha)
-    if (!dia) continue // el club no abre fin de semana
     for (const bloque of params.bloques) {
       if (bloque.dia_semana !== dia) continue
       if (excluir.has(`${bloque.id}|${fecha}`)) continue

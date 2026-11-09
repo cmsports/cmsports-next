@@ -45,7 +45,7 @@ export function calcularEdad(fechaNacimiento: string | null | undefined): number
 }
 
 const diasEntrenamiento = (j: any) =>
-  ['lun', 'mar', 'mie', 'jue', 'vie'].filter(d => j[`entrena_${d}`]).join('-') || 'sin horario'
+  ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'].filter(d => j[`entrena_${d}`]).join('-') || 'sin horario'
 
 const fechaLegible = (f: string | null | undefined) =>
   f ? new Date(f + 'T12:00:00').toLocaleDateString('es-CL') : ''

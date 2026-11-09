@@ -63,7 +63,6 @@ export default function DashboardProfesorPage() {
     if (!club) { setLoading(false); return }
 
     const dia = diaDesdeFecha(hoy)
-    if (!dia) { setBloques([]); setLoading(false); return }   // fin de semana
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as any

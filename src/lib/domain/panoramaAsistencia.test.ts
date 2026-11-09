@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DiaCalendario } from './historialAsistencia'
 import {
-  lunesDeLaSemana, viernesDeLaSemana, sumarDias, sumarSemanas, diaDeLaSemana,
+  lunesDeLaSemana, viernesDeLaSemana, domingoDeEstaSemana, sumarDias, sumarSemanas, diaDeLaSemana,
   conteoDelRango, resumenPorDia, resumenPorSemana, resumenPorGrupo,
   diferencia, ordenarPorRiesgo, ordenarPorMerito,
   type CalendarioDeJugador,
@@ -222,5 +222,17 @@ describe('orden de los rankings', () => {
       ...filas,
     ]
     expect(ordenarPorRiesgo(conNull).at(-1)!.jugador.nombre).toBe('Nuevo')
+  })
+})
+
+describe('domingoDeEstaSemana', () => {
+  it('es el domingo que cierra la semana lunes a domingo', () => {
+    expect(domingoDeEstaSemana('2026-08-05')).toBe('2026-08-09')   // miércoles
+    expect(domingoDeEstaSemana('2026-08-03')).toBe('2026-08-09')   // lunes
+    expect(domingoDeEstaSemana('2026-08-09')).toBe('2026-08-09')   // el domingo se da a sí mismo
+  })
+
+  it('cruza el cambio de mes', () => {
+    expect(domingoDeEstaSemana('2026-07-29')).toBe('2026-08-02')
   })
 })

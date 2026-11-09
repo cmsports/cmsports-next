@@ -957,7 +957,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       const [{ data: jugador }, { data: mens }, { data: asist }, { data: torneoJug }, { data: ligaJug }] = await Promise.all([
         // `estado` va en el select porque el reporte lo imprime: sin él la
         // ficha del PDF mostraba "undefined" en el estado del jugador.
-        supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,estado,foto_url,foto_path,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('id', jugadorId).single(),
+        supabase.from('jugadores').select('id,nombre,rut,email,telefono,categoria,estado,foto_url,foto_path,tipo_plan,mensualidad,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,entrena_sab,entrena_dom').eq('id', jugadorId).single(),
         supabase.from('mensualidades').select('id,mes,anio,monto,estado,fecha_pago').eq('jugador_id', jugadorId).order('anio', { ascending: false }).order('mes', { ascending: false }),
         supabase.from('asistencia').select('id,jugador_id,fecha').eq('jugador_id', jugadorId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         supabase.from('torneo_jugadores').select('id,torneo_id,torneos(id,nombre,fecha_inicio,estado)').eq('jugador_id', jugadorId),
@@ -1026,7 +1026,7 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
         supabase.from('asistencia').select('jugador_id,fecha,bloque_id,jugadores(nombre,categoria)').eq('club_id', clubId).eq('estado', 'presente').gte('fecha', inicio).lte('fecha', fin).order('fecha'),
         // Los días de entrenamiento van para que el PDF compare a cada jugador
         // contra SUS clases, no contra todos los días en que el club abrió.
-        supabase.from('jugadores').select('id,nombre,categoria,estado,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
+        supabase.from('jugadores').select('id,nombre,categoria,estado,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,entrena_sab,entrena_dom').eq('club_id', clubId).eq('estado', 'activo').or('es_externo.is.null,es_externo.eq.false'),
         supabase.from('bloques_horario').select('id,nombre,sede,hora_inicio,hora_fin').eq('club_id', clubId),
         supabase.from('asistencia').select('id', { count: 'exact', head: true }).eq('club_id', clubId).eq('estado', 'presente').gte('fecha', prev.inicio).lte('fecha', prev.fin),
       ])
@@ -1150,8 +1150,10 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
       // La foto está en el bucket privado: hay que firmar el enlace.
       const { firmarUrl } = await import('@/lib/supabase/privado')
       const fotoUrl = j.foto_path ? await firmarUrl(j.foto_path) : (j.foto_url ?? null)
-      const diasDeClase = [j.entrena_lun ? 1 : 0, j.entrena_mar ? 2 : 0, j.entrena_mie ? 3 : 0, j.entrena_jue ? 4 : 0, j.entrena_vie ? 5 : 0].filter(Boolean)
-      const nombresDias = [j.entrena_lun ? 'Lunes' : '', j.entrena_mar ? 'Martes' : '', j.entrena_mie ? 'Miércoles' : '', j.entrena_jue ? 'Jueves' : '', j.entrena_vie ? 'Viernes' : ''].filter(Boolean)
+      // 0 = domingo … 6 = sábado, como lo espera el PDF.
+      const diasDeClase = ([[j.entrena_dom, 0], [j.entrena_lun, 1], [j.entrena_mar, 2], [j.entrena_mie, 3], [j.entrena_jue, 4], [j.entrena_vie, 5], [j.entrena_sab, 6]] as const)
+        .filter(([entrena]) => entrena).map(([, n]) => n)
+      const nombresDias = [j.entrena_lun ? 'Lunes' : '', j.entrena_mar ? 'Martes' : '', j.entrena_mie ? 'Miércoles' : '', j.entrena_jue ? 'Jueves' : '', j.entrena_vie ? 'Viernes' : '', j.entrena_sab ? 'Sábado' : '', j.entrena_dom ? 'Domingo' : ''].filter(Boolean)
       await descargarReporteJugador({
         marca,
         generado: new Date().toLocaleDateString('es-CL'),
@@ -1201,7 +1203,8 @@ function ReportesTab({ clubId }: { clubId: string | null }) {
           porDia: preview.porDia, porDiaSemana: preview.porDiaSemana,
           activos: (preview.activos as any[]).map(j => ({
             id: j.id, nombre: j.nombre, categoria: j.categoria,
-            dias: [j.entrena_lun ? 1 : 0, j.entrena_mar ? 2 : 0, j.entrena_mie ? 3 : 0, j.entrena_jue ? 4 : 0, j.entrena_vie ? 5 : 0].filter(Boolean),
+            dias: ([[j.entrena_dom, 0], [j.entrena_lun, 1], [j.entrena_mar, 2], [j.entrena_mie, 3], [j.entrena_jue, 4], [j.entrena_vie, 5], [j.entrena_sab, 6]] as const)
+              .filter(([entrena]) => entrena).map(([, n]) => n),
           })),
           porJugador: preview.porJugador,
           historialDetallado: preview.historialDetallado,

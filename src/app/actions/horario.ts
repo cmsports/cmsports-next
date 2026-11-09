@@ -1,6 +1,6 @@
 'use server'
 
-import { diaDesdeFecha, hhmm, iniciosDeInscripcion } from '@/lib/domain/horario'
+import { DIAS_VALIDOS, diaDesdeFecha, diaLabel, esDiaHabil, hhmm, iniciosDeInscripcion } from '@/lib/domain/horario'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import { cierreVigencia } from '@/lib/domain/vigencia'
 import { SEDES } from '@/lib/domain/sedeGrupo'
@@ -35,16 +35,19 @@ function cierreISO(): string {
   return cierreVigencia(hoyISO())
 }
 
-/** Fechas de lun-vie de la semana actual en Chile (clave = dia_semana del bloque). */
+/** Fechas de lun-dom de la semana actual en Chile (clave = dia_semana del bloque). */
 function fechasDeSemanaChile(): Record<string, string> {
-  const hoy = new Date()
-  const diaStr = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Santiago', weekday: 'short' }).format(hoy)
-  const diaJS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(diaStr)
-  const offsetLunes = diaJS === 0 ? 6 : diaJS - 1 // cuántos días desde el lunes
+  // Aritmética sobre la fecha de Chile como texto, anclada al mediodía UTC: sumar
+  // milisegundos a la hora real corría un día las fechas en la hora de la noche
+  // que cruza un cambio de horario (el domingo salía una fecha atrás).
+  const hoy = hoyISO()
+  const orden = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']
+  const offsetLunes = orden.indexOf(diaDesdeFecha(hoy)) // cuántos días desde el lunes
+  const base = Date.parse(`${hoy}T12:00:00Z`)
   const result: Record<string, string> = {}
-  for (const [dia, idx] of Object.entries({ lun: 0, mar: 1, mie: 2, jue: 3, vie: 4 })) {
-    result[dia] = fechaChile(new Date(hoy.getTime() + (idx - offsetLunes) * 86400000))
-  }
+  orden.forEach((dia, idx) => {
+    result[dia] = new Date(base + (idx - offsetLunes) * 86400000).toISOString().slice(0, 10)
+  })
   return result
 }
 
@@ -137,7 +140,6 @@ export async function estadoDiaSinClase(params: { fecha: string }) {
   if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
 
   const dia = diaDesdeFecha(params.fecha)
-  if (!dia) return { error: 'El club no abre los fines de semana' }
 
   const { data: bloques, error: errBloques } = await supabase.from('bloques_horario')
     .select('id').eq('club_id', clubId).eq('dia_semana', dia)
@@ -166,7 +168,6 @@ export async function marcarDiaSinClase(params: { fecha: string; motivo?: string
   if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
 
   const dia = diaDesdeFecha(params.fecha)
-  if (!dia) return { error: 'El club no abre los fines de semana' }
 
   // Deshacer va primero y por su cuenta: borra las suspensiones de esa fecha
   // sin fijarse en qué grupos funcionan hoy ese día de la semana.
@@ -193,7 +194,10 @@ export async function marcarDiaSinClase(params: { fecha: string; motivo?: string
     .lte('vigente_desde', params.fecha)
     .or(`vigente_hasta.is.null,vigente_hasta.gte.${params.fecha}`)
   if (errBloques) return { error: 'No se pudo leer el horario: ' + errBloques.message }
-  if (!bloques?.length) return { error: `No hay grupos que funcionen los ${dia}` }
+  if (!bloques?.length) {
+    const nombre = diaLabel(dia).toLowerCase()
+    return { error: `No hay grupos que funcionen los ${nombre.endsWith('s') ? nombre : nombre + 's'}` }
+  }
 
   const ids = bloques.map((b: { id: string }) => b.id)
 
@@ -240,7 +244,7 @@ export async function diasSinClase() {
   }
 
   return {
-    dias: [...porFecha.values()].map(d => ({ ...d, dia: diaDesdeFecha(d.fecha) ?? '' })),
+    dias: [...porFecha.values()].map(d => ({ ...d, dia: diaDesdeFecha(d.fecha) })),
   }
 }
 
@@ -291,10 +295,10 @@ export async function guardarGrupo(params: {
   if (params.tipoClase && !esTipoClase(params.tipoClase)) return { error: 'Tipo de clase inválido' }
 
   for (const d of params.dias) {
-    if (!['lun', 'mar', 'mie', 'jue', 'vie'].includes(d.dia_semana)) return { error: 'Día inválido' }
-    if (!d.hora_inicio || !d.hora_fin) return { error: `Falta el horario del ${d.dia_semana}` }
+    if (!DIAS_VALIDOS.includes(d.dia_semana)) return { error: 'Día inválido' }
+    if (!d.hora_inicio || !d.hora_fin) return { error: `Falta el horario del ${diaLabel(d.dia_semana)}` }
     if (hhmm(d.hora_fin) <= hhmm(d.hora_inicio)) {
-      return { error: `En ${d.dia_semana}, la hora de fin debe ser posterior a la de inicio` }
+      return { error: `En ${diaLabel(d.dia_semana)}, la hora de fin debe ser posterior a la de inicio` }
     }
   }
 
@@ -354,8 +358,8 @@ export async function guardarGrupo(params: {
       // quedó como estaba. Es preferible el error a la mentira.
       if (error) {
         return { error: error.code === '23505'
-          ? `Ya hay otro grupo en ${params.sede} el ${b.dia_semana} a las ${hhmm(pedido.hora_inicio)}`
-          : `No se pudo guardar el ${b.dia_semana}: ${error.message}` }
+          ? `Ya hay otro grupo en ${params.sede} el ${diaLabel(b.dia_semana)} a las ${hhmm(pedido.hora_inicio)}`
+          : `No se pudo guardar el ${diaLabel(b.dia_semana)}: ${error.message}` }
       }
       // Reabrir el día no reabría a su gente: al destildarlo se cierran las
       // inscripciones (más abajo), y al volver a tildarlo solo se reabría el
@@ -371,7 +375,7 @@ export async function guardarGrupo(params: {
           .update({ vigente_hasta: null })
           .eq('bloque_id', b.id).eq('vigente_hasta', b.vigente_hasta)
         if (errReabrir) {
-          return { error: `El ${b.dia_semana} se reabrió pero sus inscripciones no: ${errReabrir.message}` }
+          return { error: `El ${diaLabel(b.dia_semana)} se reabrió pero sus inscripciones no: ${errReabrir.message}` }
         }
       }
       const errProfes = await guardarProfesores(supabase, b.id, params.profesorIds, params.auxiliarIds ?? [])
@@ -381,7 +385,7 @@ export async function guardarGrupo(params: {
       // Se destildó: se cierra, junto con sus inscripciones.
       const { error } = await supabase.from('bloques_horario')
         .update({ vigente_hasta: cierreISO() }).eq('id', b.id)
-      if (error) return { error: `No se pudo dar de baja el ${b.dia_semana}: ${error.message}` }
+      if (error) return { error: `No se pudo dar de baja el ${diaLabel(b.dia_semana)}: ${error.message}` }
 
       const { error: errIns } = await supabase.from('bloque_jugadores')
         .update({ vigente_hasta: cierreISO() }).eq('bloque_id', b.id).is('vigente_hasta', null)
@@ -405,7 +409,7 @@ export async function guardarGrupo(params: {
     }).select('id').single()
     if (error) {
       return { error: error.code === '23505'
-        ? `Ya hay otro grupo en ${params.sede} el ${d.dia_semana} a las ${hhmm(d.hora_inicio)}`
+        ? `Ya hay otro grupo en ${params.sede} el ${diaLabel(d.dia_semana)} a las ${hhmm(d.hora_inicio)}`
         : 'No se pudo crear el día: ' + error.message }
     }
     const errProfes = await guardarProfesores(supabase, data.id, params.profesorIds, params.auxiliarIds ?? [])
@@ -488,7 +492,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   if (authErr || !supabase || !clubId) return { error: authErr ?? 'Acceso denegado' }
 
   const { data: jugador } = await supabase.from('jugadores')
-    .select('id,club_id,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie')
+    .select('id,club_id,horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,entrena_sab,entrena_dom')
     .eq('id', params.jugadorId).eq('club_id', clubId).maybeSingle()
   if (!jugador) return { error: 'Jugador no encontrado' }
 
@@ -566,7 +570,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   // semana: el sábado y el domingo `semana` apunta a una semana ya cerrada, y
   // mover una asistencia de ahí es reescribir algo que ya pasó y se contó.
   const asistenciasSinMover: string[] = []
-  if (salen.length > 0 && entran.length > 0 && diaDesdeFecha(hoyISO()) !== null) {
+  if (salen.length > 0 && entran.length > 0 && esDiaHabil(hoyISO())) {
     for (const bSale of (bloquesSalen ?? [])) {
       const bEntra = bloques.find(b => entran.includes(b.id) && b.hora_inicio === bSale.hora_inicio)
       if (!bEntra || bEntra.dia_semana === bSale.dia_semana) continue
@@ -574,6 +578,10 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
       const fechaVieja = semana[bSale.dia_semana]
       const fechaNueva = semana[bEntra.dia_semana]
       if (!fechaVieja || !fechaNueva) continue
+      // Una asistencia no se muda a un día que todavía no llegó: ya pasaba con
+      // un viernes futuro, y con bloques de fin de semana es más fácil topársela
+      // (sale lun 17:00, entra sáb 17:00 un miércoles).
+      if (fechaNueva > hoyISO()) continue
 
       const { data: asistVieja } = await supabase.from('asistencia')
         .select('id').eq('jugador_id', params.jugadorId).eq('fecha', fechaVieja).maybeSingle()
@@ -634,7 +642,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
   // y cualquier escritura manual la corrige en silencio. Acá solo se leen de
   // vuelta, para cortar el tramo del historial si algo cambió.
   const { data: actualizado } = await supabase.from('jugadores')
-    .select('horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,sede')
+    .select('horario,entrena_lun,entrena_mar,entrena_mie,entrena_jue,entrena_vie,entrena_sab,entrena_dom,sede')
     .eq('id', params.jugadorId).single()
   const campos = {
     horario:     actualizado?.horario ?? null,
@@ -643,7 +651,9 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     entrena_mie: actualizado?.entrena_mie ?? false,
     entrena_jue: actualizado?.entrena_jue ?? false,
     entrena_vie: actualizado?.entrena_vie ?? false,
-    sede:        actualizado?.sede ?? null,
+    entrena_sab: actualizado?.entrena_sab ?? false,
+    entrena_dom: actualizado?.entrena_dom ?? false,
+    sede:       actualizado?.sede ?? null,
   }
 
   // `jugador_horario_historial` es una bitácora de "qué días entrenaba esta
@@ -662,7 +672,9 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
     campos.entrena_mar !== (jugador.entrena_mar ?? false) ||
     campos.entrena_mie !== (jugador.entrena_mie ?? false) ||
     campos.entrena_jue !== (jugador.entrena_jue ?? false) ||
-    campos.entrena_vie !== (jugador.entrena_vie ?? false)
+    campos.entrena_vie !== (jugador.entrena_vie ?? false) ||
+    campos.entrena_sab !== (jugador.entrena_sab ?? false) ||
+    campos.entrena_dom !== (jugador.entrena_dom ?? false)
 
   if (cambio) {
     // En Chile, no en UTC: desde las 20:00 el toISOString ya iba un día
@@ -692,6 +704,7 @@ export async function asignarBloquesJugador(params: { jugadorId: string; bloqueI
       entrena_lun: campos.entrena_lun, entrena_mar: campos.entrena_mar,
       entrena_mie: campos.entrena_mie, entrena_jue: campos.entrena_jue,
       entrena_vie: campos.entrena_vie,
+      entrena_sab: campos.entrena_sab, entrena_dom: campos.entrena_dom,
       vigente_desde: hoy,
     })
     if (errNuevo) return { error: 'No se pudo anotar el cambio en el historial de horarios: ' + errNuevo.message }

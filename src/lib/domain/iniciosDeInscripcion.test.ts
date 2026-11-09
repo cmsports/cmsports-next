@@ -60,3 +60,19 @@ describe('iniciosDeInscripcion', () => {
     expect(r.get('b-lun')).toBe('2026-07-31')
   })
 })
+
+describe('bloques de fin de semana', () => {
+  const SAB = { id: 'b-sab', dia_semana: 'sab', hora_inicio: '10:00' }
+  const SEMANA_7 = { ...SEMANA, sab: '2026-08-01', dom: '2026-08-02' }
+
+  it('un bloque de sábado que entra un viernes arranca hoy', () => {
+    const r = iniciosDeInscripcion({ hoy: '2026-07-31', semana: SEMANA_7, salen: [], entran: [SAB] })
+    expect(r.get('b-sab')).toBe('2026-07-31')
+  })
+
+  it('cambiar de un bloque de semana a uno de sábado a la misma hora no retrocede', () => {
+    const LUN = { id: 'b-lun', dia_semana: 'lun', hora_inicio: '10:00' }
+    const r = iniciosDeInscripcion({ hoy: '2026-07-29', semana: SEMANA_7, salen: [LUN], entran: [SAB] })
+    expect(r.get('b-sab')).toBe('2026-07-29')   // el sábado todavía no llega
+  })
+})

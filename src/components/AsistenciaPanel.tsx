@@ -409,7 +409,6 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
     let vigente = true
     void (async () => {
       const dia = diaDesdeFecha(fechaVista)
-      if (!dia) { setBloquesDelDia([]); setInscritosDe({}); return }   // fin de semana
 
       const { data: bloques } = await supabase.from('bloques_horario')
         .select('id,nombre,sede,hora_inicio,hora_fin,dia_semana')
@@ -709,7 +708,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
 
   const bloqueElegido = bloquesDelDia.find(b => b.id === bloqueSel) ?? null
 
-  // Ese día no se dicta nada: fin de semana, feriado, o el horario sin cargar.
+  // Ese día no se dicta nada: feriado, un día sin grupos (un club que no abre el fin de semana), o el horario sin cargar.
   const sinGruposEseDia = esAdminOProfesor && bloquesDelDia.length === 0
 
   // Cambiar de día resetea el grupo elegido y la salida de emergencia: los dos
@@ -1213,7 +1212,7 @@ export default function AsistenciaPanel({ perfil }: { perfil: any }) {
               )}
             </div>
           )}
-          {/* Un día sin ningún grupo —fin de semana, feriado, o el horario
+          {/* Un día sin ningún grupo —feriado, fin de semana sin grupos, o el horario
               todavía sin cargar— mostraba igual el padrón entero con el botón
               Presente al lado de cada nombre. Y como la marca de "ese día no
               entrena" depende de que haya grupos, tampoco aparecía: ciento

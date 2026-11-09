@@ -85,13 +85,23 @@ const DIA_POR_INDICE = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab']
 
 /** Fechas de lunes a viernes en el rango, con su día de la semana. */
 export function diasHabiles(desde: string, hasta: string): { fecha: string; dia: string }[] {
+  return diasDelRango(desde, hasta).filter(d => d.dia !== 'sab' && d.dia !== 'dom')
+}
+
+/**
+ * Todas las fechas del rango, sábado y domingo incluidos.
+ *
+ * Es lo que recorre el calendario de un jugador. No inventa faltas el fin de
+ * semana: un día solo aparece si el jugador tiene un bloque ese día, así que
+ * quien no tiene bloques de fin de semana ve exactamente lo mismo que antes.
+ */
+export function diasDelRango(desde: string, hasta: string): { fecha: string; dia: string }[] {
   const out: { fecha: string; dia: string }[] = []
   if (desde > hasta) return out
   const d = new Date(desde + 'T12:00:00')
   const fin = new Date(hasta + 'T12:00:00')
   while (d <= fin) {
-    const dow = d.getDay()
-    if (dow >= 1 && dow <= 5) out.push({ fecha: iso(d), dia: DIA_POR_INDICE[dow] })
+    out.push({ fecha: iso(d), dia: DIA_POR_INDICE[d.getDay()] })
     d.setDate(d.getDate() + 1)
   }
   return out
@@ -188,7 +198,7 @@ export function calendarioJugador(
   const misExtras = extrasDe.get(jugadorId) ?? new Set<string>()
 
   const out: DiaCalendario[] = []
-  for (const { fecha, dia } of diasHabiles(desde, hasta)) {
+  for (const { fecha, dia } of diasDelRango(desde, hasta)) {
     const nombres: string[] = []
     const ids: string[] = []
     for (const i of mias) {

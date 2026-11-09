@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  bloquesSinInscripcion, calendarioJugador, diasHabiles, indexar, indicadores,
+  bloquesSinInscripcion, calendarioJugador, diasDelRango, diasHabiles, indexar, indicadores,
   sesionesDelMes,
   type DatosHistorial, type EstadoDia,
 } from './historialAsistencia'
@@ -512,5 +512,53 @@ describe('sesionesDelMes', () => {
     expect(sesionesDelMes(JUG, d, '2026-02-01').limite).toBe(4)
     // Diciembre 2026: lunes 7, 14, 21 y 28.
     expect(sesionesDelMes(JUG, { ...d, hoy: '2026-12-01' }, '2026-12-01').limite).toBe(4)
+  })
+})
+
+describe('bloques de fin de semana', () => {
+  const bloqueSab = { id: 'b-sab', nombre: 'Sábado Libre', sede: 'buin', dia_semana: 'sab', vigente_desde: '2026-08-01', vigente_hasta: null }
+  const insSab = { bloque_id: 'b-sab', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null }
+  const insMar = { bloque_id: 'b-mar', jugador_id: JUG, vigente_desde: '2026-08-01', vigente_hasta: null }
+
+  it('quien tiene un bloque de sábado lo ve en su calendario', () => {
+    const cal = calendarioJugador(JUG, '2026-08-01', '2026-08-14', datos({
+      bloques: [bloqueSab], inscripciones: [insSab],
+    }))
+    expect(cal.map(d => d.fecha)).toEqual(['2026-08-01', '2026-08-08'])
+  })
+
+  it('un sábado vencido sin registro cuenta como falta, igual que un día de semana', () => {
+    const cal = calendarioJugador(JUG, '2026-08-01', '2026-08-08', datos({
+      bloques: [bloqueSab], inscripciones: [insSab], hoy: '2026-08-20',
+    }))
+    expect(cal.every(d => d.estado === 'ausente')).toBe(true)
+  })
+
+  it('quien NO tiene bloques de fin de semana no recibe días nuevos', () => {
+    const sin = calendarioJugador(JUG, '2026-08-01', '2026-08-14', datos({
+      bloques: [bloqueMar], inscripciones: [insMar],
+    }))
+    expect(sin.map(d => d.fecha)).toEqual(['2026-08-04', '2026-08-11'])
+  })
+
+  it('un sábado suspendido no aparece', () => {
+    const cal = calendarioJugador(JUG, '2026-08-01', '2026-08-14', datos({
+      bloques: [bloqueSab], inscripciones: [insSab],
+      excepciones: [{ bloque_id: 'b-sab', fecha: '2026-08-08' }],
+    }))
+    expect(cal.map(d => d.fecha)).toEqual(['2026-08-01'])
+  })
+
+  it('diasHabiles sigue dejando fuera el fin de semana', () => {
+    expect(diasHabiles('2026-08-01', '2026-08-09')).toHaveLength(5)
+  })
+})
+
+describe('diasDelRango', () => {
+  it('incluye sábado y domingo', () => {
+    expect(diasDelRango('2026-08-07', '2026-08-10').map(d => d.dia)).toEqual(['vie', 'sab', 'dom', 'lun'])
+  })
+  it('devuelve vacío si el rango está al revés', () => {
+    expect(diasDelRango('2026-08-10', '2026-08-07')).toEqual([])
   })
 })

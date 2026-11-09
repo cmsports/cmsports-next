@@ -20,7 +20,7 @@ import { fechaChile } from '@/lib/domain/fechaChile'
 import { cargarHistorialClub } from '@/lib/supabase/historial'
 import { calendarioJugador, indexar, indicadores, type DatosHistorial } from '@/lib/domain/historialAsistencia'
 import {
-  lunesDeLaSemana, viernesDeLaSemana, sumarDias, sumarSemanas,
+  lunesDeLaSemana, domingoDeEstaSemana, sumarDias, sumarSemanas,
   conteoDelRango, resumenPorDia, resumenPorSemana, resumenPorGrupo,
   diferencia, ordenarPorRiesgo, ordenarPorMerito,
   type CalendarioDeJugador, type FilaJugador,
@@ -61,7 +61,7 @@ function color(pct: number | null) {
   return pct >= 75 ? verde : pct >= 50 ? '#d97706' : rojo
 }
 
-const DIA_LARGO: Record<string, string> = { lun: 'Lunes', mar: 'Martes', mie: 'Miércoles', jue: 'Jueves', vie: 'Viernes' }
+const DIA_LARGO: Record<string, string> = { lun: 'Lunes', mar: 'Martes', mie: 'Miércoles', jue: 'Jueves', vie: 'Viernes', sab: 'Sábado', dom: 'Domingo' }
 
 /** "3 ago" — para etiquetas cortas donde el año sobra. */
 function fechaCorta(iso: string) {
@@ -193,16 +193,17 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
 
   const hoy = fechaChile()
 
-  // El rango que se está mirando. La semana va de lunes a viernes porque es la
-  // semana laboral del club; el finde no tiene bloques.
+  // El rango que se está mirando. La semana va de lunes a domingo: un grupo de
+  // fin de semana tiene que contar. Un día sin bloques no suma nada, así que
+  // para un club que no abre el finde el resultado es el mismo de siempre.
   const { desde, hasta, desdeAnterior, hastaAnterior, etiqueta } = useMemo(() => {
     if (rango === 'semana') {
       const lunes = sumarSemanas(lunesDeLaSemana(hoy), -atras)
       const prev  = sumarSemanas(lunes, -1)
       return {
-        desde: lunes, hasta: viernesDeLaSemana(lunes),
-        desdeAnterior: prev, hastaAnterior: viernesDeLaSemana(prev),
-        etiqueta: atras === 0 ? 'Esta semana' : atras === 1 ? 'Semana pasada' : `${fechaCorta(lunes)} — ${fechaCorta(viernesDeLaSemana(lunes))}`,
+        desde: lunes, hasta: domingoDeEstaSemana(lunes),
+        desdeAnterior: prev, hastaAnterior: domingoDeEstaSemana(prev),
+        etiqueta: atras === 0 ? 'Esta semana' : atras === 1 ? 'Semana pasada' : `${fechaCorta(lunes)} — ${fechaCorta(domingoDeEstaSemana(lunes))}`,
       }
     }
     const meses = rango === 'mes' ? 1 : 3
@@ -422,7 +423,11 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
   const conteoPre = conteoDelRango(calendarios, desdeAnterior, hastaAnterior)
   const delta     = diferencia(conteo, conteoPre)
 
-  const dias    = resumenPorDia(calendarios, desde, rango === 'semana' ? hasta : hasta)
+  const dias    = resumenPorDia(calendarios, desde, hasta)
+  // La tira semanal siempre dibuja lunes a viernes; sábado y domingo solo si ese
+  // día hay jugadores programados, para no mostrarle columnas vacías a un club
+  // que no abre el fin de semana.
+  const diasVisibles = dias.filter(d => (d.dia !== 'sab' && d.dia !== 'dom') || d.programados > 0)
   const semanas = resumenPorSemana(calendarios, sumarSemanas(lunesDeLaSemana(hoy), -7), hoy)
   const grupos  = resumenPorGrupo(calendarios, desde, hasta)
   const gruposPre = new Map(resumenPorGrupo(calendarios, desdeAnterior, hastaAnterior).map(g => [g.nombre, g]))
@@ -580,8 +585,8 @@ export default function PanelRankingAsistencia({ clubId }: { clubId: string }) {
 
       {/* ── La tira de días: solo tiene sentido en la vista semanal ── */}
       {rango === 'semana' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-          {dias.filter(d => d.dia !== 'sab' && d.dia !== 'dom').map(d => {
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${diasVisibles.length}, 1fr)`, gap: 8 }}>
+          {diasVisibles.map(d => {
             const esHoy = d.fecha === hoy
             const futuro = d.fecha > hoy
             const vacio = d.programados === 0

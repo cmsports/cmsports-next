@@ -47,6 +47,23 @@ export function diasHabilesDelMes(anio: number, mes: number): string[] {
   return out
 }
 
+/**
+ * Todas las fechas de un mes, sábado y domingo incluidos.
+ *
+ * Es lo que se recorre para sumar horas dictadas: un grupo de sábado tiene que
+ * pagarse como cualquier otro. `diasHabilesDelMes` queda para `semanasDelMes`,
+ * que divide por cinco y no debe inflarse con el fin de semana.
+ */
+export function diasDelMes(anio: number, mes: number): string[] {
+  const out: string[] = []
+  const d = new Date(Date.UTC(anio, mes - 1, 1))
+  while (d.getUTCMonth() === mes - 1) {
+    out.push(d.toISOString().slice(0, 10))
+    d.setUTCDate(d.getUTCDate() + 1)
+  }
+  return out
+}
+
 /** El día de la semana de una fecha ISO, en el código corto del horario. */
 export function diaDe(fecha: string): string {
   return NOMBRE_DIA[new Date(fecha + 'T12:00:00Z').getUTCDay()]
@@ -102,6 +119,7 @@ export function calcularReporteMes(params: {
 }): ReporteMes {
   const { anio, mes, hoy, bloques, asignaciones, inscripciones, suspensiones } = params
   const fechas = diasHabilesDelMes(anio, mes)
+  const fechasDelMes = diasDelMes(anio, mes)
 
   const suspendidoEn = new Map<string, string | null>()
   for (const s of suspensiones) suspendidoEn.set(`${s.bloque_id}|${s.fecha}`, s.motivo)
@@ -119,7 +137,7 @@ export function calcularReporteMes(params: {
 
   const grupos: ResumenGrupo[] = bloques.map(b => {
     const duracion = duracionMin(b)
-    const delDia = fechas.filter(f => diaDe(f) === b.dia_semana)
+    const delDia = fechasDelMes.filter(f => diaDe(f) === b.dia_semana)
 
     const dictadas: ClaseDictada[] = []
     const suspendidas: ClaseOmitida[] = []

@@ -7,7 +7,7 @@ import { DIAS, diaLabel, rangoHorario } from '@/lib/domain/horario'
 import { sedeLabel, sedesDe } from '@/lib/domain/sedeGrupo'
 import { fechaChile } from '@/lib/domain/fechaChile'
 import {
-  calcularReporteMes, diaDe, horas, porDia, semanasDelMes,
+  calcularReporteMes, diaDe, diasDelMes, horas, porDia, semanasDelMes,
   type AsignacionProfesor, type BloqueMes, type ClaseOmitida,
   type DiaSuspendido, type InscripcionMes, type ReporteMes,
 } from '@/lib/domain/reportesMes'
@@ -174,8 +174,11 @@ export default function PanelReportes({ clubId }: { clubId: string }) {
     setExportando(formato)
     try {
       if (formato === 'excel') {
-        const desde = r.fechas[0] ?? hoy
-        const hasta = r.fechas[r.fechas.length - 1] ?? hoy
+        // Del primer al último día del mes, no del primer al último hábil: un
+        // grupo de fin de semana perdería su primer o último sábado del porcentaje.
+        const delMes = diasDelMes(anio, mes)
+        const desde = delMes[0] ?? hoy
+        const hasta = delMes[delMes.length - 1] ?? hoy
         const pctAsistencia = await calcularAsistenciaPorGrupo(desde, hasta)
         await descargarExcelReporteMes({ clubNombre: 'CmSports', tituloMes, r, asignaciones, nombreProf, inscripciones, nombreJug, pctAsistencia })
       } else {

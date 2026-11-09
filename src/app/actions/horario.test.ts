@@ -85,6 +85,23 @@ describe('guardarGrupo', () => {
     expect(fake.llamadas.some(l => l.tabla === 'bloque_jugadores' && l.op === 'update')).toBe(true)
   })
 
+  it('acepta un grupo de sábado y de domingo', async () => {
+    conBase({ grupos_entrenamiento: { id: 'g-nuevo' }, bloques_horario: [], bloque_profesores: [] })
+
+    const res = await guardarGrupo({ ...base, dias: [
+      { dia_semana: 'sab', hora_inicio: '10:00', hora_fin: '12:00' },
+      { dia_semana: 'dom', hora_inicio: '10:00', hora_fin: '12:00' },
+    ] })
+
+    expect(res).toMatchObject({ success: true })
+    expect(fake.escrituras('bloques_horario').map(d => d.dia_semana)).toEqual(['sab', 'dom'])
+  })
+
+  it('rechaza un día que no existe', async () => {
+    const res = await guardarGrupo({ ...base, dias: [{ dia_semana: 'xxx', hora_inicio: '10:00', hora_fin: '12:00' }] })
+    expect(res).toEqual({ error: 'Día inválido' })
+  })
+
   it('no deja un grupo sin días', async () => {
     expect(await guardarGrupo({ ...base, dias: [] })).toEqual({ error: 'Marca al menos un día' })
   })
@@ -292,9 +309,16 @@ describe('marcarDiaSinClase', () => {
     expect(fake.escrituras('bloque_excepciones').map(e => e.bloque_id)).toEqual(['b1', 'b2'])
   })
 
-  it('el fin de semana no tiene clases que suspender', async () => {
+  it('un domingo sin grupos no tiene nada que suspender', async () => {
+    conBase({ bloques_horario: [] })
     const res = await marcarDiaSinClase({ fecha: '2026-08-09' })   // domingo
-    expect(res).toEqual({ error: 'El club no abre los fines de semana' })
+    expect(res).toEqual({ error: 'No hay grupos que funcionen los domingos' })
+  })
+
+  it('un sábado con grupo se puede marcar sin clase', async () => {
+    conBase({ bloques_horario: [{ id: 'b1' }], bloque_excepciones: [] })
+    const res = await marcarDiaSinClase({ fecha: '2026-08-08', motivo: 'torneo' })   // sábado
+    expect(res).toMatchObject({ success: true, grupos: 1 })
   })
 
   it('deshacer borra la excepción', async () => {
@@ -361,9 +385,10 @@ describe('estadoDiaSinClase', () => {
     expect(res).toMatchObject({ grupos: 2, suspendidos: 2, motivo: 'feriado' })
   })
 
-  it('el fin de semana no se consulta', async () => {
+  it('el fin de semana se consulta como cualquier día', async () => {
+    conBase({ bloques_horario: [{ id: 'b1' }], bloque_excepciones: [] })
     const res = await estadoDiaSinClase({ fecha: '2026-08-09' })   // domingo
-    expect(res).toEqual({ error: 'El club no abre los fines de semana' })
+    expect(res).toEqual({ dia: 'dom', grupos: 1, suspendidos: 0, motivo: null })
   })
 
   it('un día sin grupos no tiene nada que suspender', async () => {

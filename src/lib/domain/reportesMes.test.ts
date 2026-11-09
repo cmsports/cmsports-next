@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  calcularReporteMes, diaDe, diasHabilesDelMes, horas, semanasDelMes,
+  calcularReporteMes, diaDe, diasDelMes, diasHabilesDelMes, horas, semanasDelMes,
   type AsignacionProfesor, type BloqueMes, type DiaSuspendido, type InscripcionMes,
 } from './reportesMes'
 
@@ -161,5 +161,43 @@ describe('formato', () => {
 
   it('las semanas del mes salen de los días hábiles, no de un 4 fijo', () => {
     expect(semanasDelMes(diasHabilesDelMes(2026, 7))).toBeCloseTo(4.6)
+  })
+})
+
+describe('grupos de fin de semana', () => {
+  it('las clases de sábado suman horas al profesor', () => {
+    // Julio 2026: sábados 4, 11, 18, 25.
+    const r = calcularReporteMes({
+      ...JULIO,
+      bloques: [bloque({ id: 'bs', dia_semana: 'sab', hora_inicio: '10:00', hora_fin: '12:00' })],
+      asignaciones: [{ bloque_id: 'bs', profesor_id: 'p1', vigente_desde: '2026-01-01', vigente_hasta: null } as AsignacionProfesor],
+      inscripciones: [], suspensiones: [],
+    })
+    expect(r.grupos[0].dictadas.map(d => d.fecha)).toEqual(['2026-07-04', '2026-07-11', '2026-07-18', '2026-07-25'])
+    expect(r.grupos[0].minutos).toBe(4 * 120)
+  })
+
+  it('un domingo suspendido no suma', () => {
+    const r = calcularReporteMes({
+      ...JULIO,
+      bloques: [bloque({ id: 'bd', dia_semana: 'dom' })],
+      asignaciones: [], inscripciones: [],
+      suspensiones: [{ bloque_id: 'bd', fecha: '2026-07-12', motivo: 'torneo' }],
+    })
+    expect(r.grupos[0].dictadas).toHaveLength(3)
+    expect(r.grupos[0].suspendidas).toHaveLength(1)
+  })
+
+  it('las semanas del mes siguen contando solo lunes a viernes', () => {
+    expect(correr().fechas).toHaveLength(23)
+    expect(semanasDelMes(correr().fechas)).toBeCloseTo(4.6)
+  })
+})
+
+describe('diasDelMes', () => {
+  it('devuelve todos los días, fin de semana incluido', () => {
+    expect(diasDelMes(2026, 7)).toHaveLength(31)
+    expect(diasDelMes(2026, 2)).toHaveLength(28)
+    expect(diasDelMes(2026, 7)).toContain('2026-07-04')
   })
 })

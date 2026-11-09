@@ -78,9 +78,15 @@ describe('ocurrencias', () => {
     expect(r.map(o => o.fecha)).toEqual([MAR])
   })
 
-  it('nunca cae en fin de semana', () => {
+  it('un bloque de sábado se ofrece en sus sábados, y solo en esos', () => {
     const finde = { id: 'f', dia_semana: 'sab', hora_inicio: '10:00:00' }
-    expect(ocurrencias({ bloques: [finde], hoy: MAR, dias: 14 })).toEqual([])
+    expect(ocurrencias({ bloques: [finde], hoy: MAR, dias: 14 }).map(o => o.fecha))
+      .toEqual(['2026-09-05', '2026-09-12'])
+  })
+
+  it('un club sin bloques de fin de semana no recibe ninguna ocurrencia en sábado ni domingo', () => {
+    const r = ocurrencias({ bloques: [martes, jueves], hoy: MAR, dias: 14 })
+    expect(r.every(o => !['2026-09-05', '2026-09-06', '2026-09-12', '2026-09-13'].includes(o.fecha))).toBe(true)
   })
 
   it('ordena por fecha y después por hora', () => {
